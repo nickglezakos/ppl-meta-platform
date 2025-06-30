@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # PPL Meta Media Service
+  ppl-meta-media:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_db
+      - ENVIRONMENT=development
+      - USER_SERVICE_URL=http://ppl-meta-node:8001
+      - SERVICE_SECRET=shared-service-secret-key-for-inter-service-auth
+    depends_on:
+      - postgres
+      - ppl-meta-node
+    networks:
+      - ppl-network
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PPL Meta Node - User Management Service
+  ppl-meta-node:
+    build:
+      context: ../ppl-meta-node
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_db
+      - ENVIRONMENT=development
+      - HOST=0.0.0.0
+      - PORT=8001
+      - DEBUG=false
+      - PPL_MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+      - SERVICE_SECRET=shared-service-secret-key-for-inter-service-auth
+      - SECRET_KEY=QwErTy123456!@#$%^&*()_+zxcvbnmQWERTYuiopASDFGHJKL
+      - RESET_PASSWORD_SECRET=QwErTy123456!@#$%^&*()_+zxcvbnmQWERTYuiopASDFGHJKL
+    depends_on:
+      - postgres
+    networks:
+      - ppl-network
+    volumes:
+      - ../ppl-meta-node/src/logs:/app/src/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Shared PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=nickadmin
+      - POSTGRES_PASSWORD=Kodikos@23
+      - POSTGRES_DB=ppl_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql
+    networks:
+      - ppl-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nickadmin -d ppl_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Service Discovery (Consul)
+  consul:
+    image: consul:latest
+    ports:
+      - "8500:8500"
+    networks:
+      - ppl-network
+    command: consul agent -dev -ui -client=0.0.0.0
+
+  # Optional: API Gateway (nginx)
+  api-gateway:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - ppl-meta-media
+      - ppl-meta-node
+    networks:
+      - ppl-network
+
+volumes:
+  postgres_data:
+
+networks:
+  ppl-network:
+    driver: bridge

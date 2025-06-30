@@ -1,0 +1,22 @@
+{
+  "name": "ppl-meta-platform",
+  "version": "1.0.0",
+  "description": "PPL Meta Platform - Complete Infrastructure Workspace",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "shared/*",
+    "tools/*"
+  ],
+  "scripts": {
+    "dev": "docker-compose -f infrastructure/docker-compose.dev.yml up -d",
+    "prod": "docker-compose -f infrastructure/docker-compose.prod.yml up -d",
+    "test": "npm run test --workspaces",
+    "build": "npm run build --workspaces",
+    "setup": "./tools/dev/setup-workspace.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.0",
+    "nodemon": "^3.0.0"
+  }
+}

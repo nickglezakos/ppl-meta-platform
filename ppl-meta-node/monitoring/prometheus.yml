@@ -1,0 +1,80 @@
+# Prometheus configuration for PPL Meta Platform monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Nginx Gateway
+  - job_name: 'nginx-gateway'
+    static_configs:
+      - targets: ['nginx-gateway:80']
+    metrics_path: /nginx_status
+    scrape_interval: 30s
+
+  # PPL Meta Gateway Service
+  - job_name: 'ppl-meta-gateway'
+    static_configs:
+      - targets: ['ppl-meta-gateway:8080']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # User Management Service
+  - job_name: 'ppl-meta-node'
+    static_configs:
+      - targets: ['ppl-meta-node:8001']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Media Service
+  - job_name: 'ppl-meta-media'
+    static_configs:
+      - targets: ['ppl-meta-media:8000']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # Orchestrator Service
+  - job_name: 'ppl-meta-orchestrator'
+    static_configs:
+      - targets: ['ppl-meta-orchestrator:8002']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # PostgreSQL Database
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    scrape_interval: 30s
+
+  # Redis Cache
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 30s
+
+  # Consul Service Discovery
+  - job_name: 'consul'
+    static_configs:
+      - targets: ['consul:8500']
+    metrics_path: /v1/agent/metrics
+    params:
+      format: ['prometheus']
+    scrape_interval: 30s
+
+  # Service Discovery - Auto-discover services registered in Consul
+  - job_name: 'consul-services'
+    consul_sd_configs:
+      - server: 'consul:8500'
+    relabel_configs:
+      - source_labels: [__meta_consul_service]
+        target_label: job
+      - source_labels: [__meta_consul_service_address]
+        target_label: instance

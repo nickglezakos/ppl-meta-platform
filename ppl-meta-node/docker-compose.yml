@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  ppl-meta-node:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_db
+      - HOST=0.0.0.0
+      - PORT=8001
+      - DEBUG=false
+      - PPL_MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+    depends_on:
+      - postgres
+    volumes:
+      - ./src/logs:/app/src/logs
+    networks:
+      - ppl-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ppl_db
+      POSTGRES_USER: nickadmin
+      POSTGRES_PASSWORD: Kodikos@23
+    ports:
+      - "5433:5432"  # Use different port to avoid conflicts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ppl-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nickadmin -d ppl_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  ppl-network:
+    driver: bridge
+    external: true  # This network should be shared with ppl-meta-media

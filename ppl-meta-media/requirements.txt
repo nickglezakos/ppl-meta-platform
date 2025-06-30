@@ -1,0 +1,27 @@
+# Database
+psycopg[binary]>=3.1.0
+SQLAlchemy>=2.0.25
+
+# Environment management
+python-dotenv==1.0.0
+
+# Web framework
+fastapi==0.103.0
+uvicorn[standard]==0.23.2
+pydantic>=2.4.0
+
+# Database migrations
+alembic==1.11.1
+
+# Microservices dependencies
+psutil>=5.9.0  # System monitoring
+httpx>=0.24.0  # HTTP client for service-to-service communication
+
+# Python compiler for executable creation
+nuitka>=2.7.0
+
+# Development dependencies (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0

@@ -1,0 +1,141 @@
+
+uvicorn src.main:app --host 0.0.0.0 --port 8000
+0.0.0.0 ----> avaiable on all network interfaces
+
+uvicorn src.main:app --host 127.0.0.1 --port 8000
+127.0.0.1 ----> available on localhost
+
+--port 8000 can be changed
+
+app password for email:
+kxvo zxtk twwj qvam
+
+
+
+https://www.markdownguide.org/extended-syntax/
+
+'''
+GET /users/actions/?email=user@example.com&start=2024-06-01T00:00:00&end=2024-06-02T00:00:00
+'''
+
+# SETUP the fastapi app *******************************************
+
+Client (Browser, API Consumer)
+        |
+        v
+    [Nginx:443/80]
+        |
+        v
+    [Uvicorn:8000]
+        |
+        v
+   [FastAPI App]
+        |
+        v
+   [PostgreSQL]
+
+
+[Client] <--HTTPS--> [Nginx] <--HTTP--> [Uvicorn/FastAPI] <---> [PostgreSQL]
+
+
+To set up nginx locally:
+
+nano /opt/homebrew/etc/nginx/nginx.conf
+
+server {
+    listen 80;
+    server_name localhost;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+To comnfigure supervisor locally:
+
+mkdir -p /opt/homebrew/etc/supervisord.d
+nano /opt/homebrew/etc/supervisord.d/fastapi.ini
+
+[program:fastapi]
+command=/Users/nickgklezakos/Documents/code/ppl-meta-node/venv/bin/uvicorn src.main:app --host 127.0.0.1 --port 8000
+directory=/Users/nickgklezakos/Documents/code/ppl-meta-node
+autostart=true
+autorestart=true
+stderr_logfile=/Users/nickgklezakos/Documents/code/ppl-meta-node/logs/fastapi.err.log
+stdout_logfile=/Users/nickgklezakos/Documents/code/ppl-meta-node/logs/fastapi.out.log
+user=nickgklezakos
+
+
+For running the fastapi app via nginx:
+sudo nginx
+source venv/bin/activate
+uvicorn src.main:app --host 127.0.0.1 --port 8000
+
+For running the fastapi app via nginx with supervisor:
+supervisord -c /opt/homebrew/etc/supervisord.conf
+supervisorctl reread
+supervisorctl update
+supervisorctl start fastapi
+
+
+
+# RUN the fastapi app *******************************************
+
+Running Manually (with uvicorn command)
+uvicorn src.main:app --host 127.0.0.1 --port 8000
+nohup run:
+nohup uvicorn src.main:app --host 127.0.0.1 --port 8000 &
+this output logs to nohup.out.
+To stop it, find the process with:
+ps aux | grep uvicorn
+and kill it with:
+kill <PID>
+
+Running with Supervisor:
+supervisord -c /opt/homebrew/etc/supervisord.conf
+supervisorctl reread
+supervisorctl update
+supervisorctl start fastapi
+
+The app will keep running even after you close the terminal.
+Control the app with:
+supervisorctl stop fastapi (to stop)
+supervisorctl start fastapi (to start)
+supervisorctl restart fastapi (to restart)
+supervisorctl status (to check status)
+
+
+
+
+Functions & Capabilities
+
+Capabilities
+register
+login
+logout
+get_user_by_id
+get_current_user
+get_users
+get_user_actions_by_email
+
+
+Default Roles
+Subscriber
+    (Employee)
+    (Customer)
+Manager
+Admin
+
+the topic
+
+
+
+
+
+
+
+

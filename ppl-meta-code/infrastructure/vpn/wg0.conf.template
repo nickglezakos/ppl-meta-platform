@@ -1,0 +1,45 @@
+# WireGuard Server Configuration for PPL Meta Mesh VPN
+# This enables secure communication between cloud and edge devices
+
+[Interface]
+# Server configuration
+PrivateKey = ${SERVER_PRIVATE_KEY}
+Address = 10.13.13.1/24
+ListenPort = 51820
+PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth+ -j MASQUERADE
+PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth+ -j MASQUERADE
+
+# Edge Device 1 - IoT Controller
+[Peer]
+# Edge device for IoT management
+PublicKey = ${EDGE_DEVICE_1_PUBLIC_KEY}
+AllowedIPs = 10.13.13.10/32
+PersistentKeepalive = 25
+
+# Edge Device 2 - Camera System
+[Peer]
+# Edge device for camera/vision services
+PublicKey = ${EDGE_DEVICE_2_PUBLIC_KEY}
+AllowedIPs = 10.13.13.11/32
+PersistentKeepalive = 25
+
+# Edge Device 3 - Local Processing Unit
+[Peer]
+# Edge device for local data processing
+PublicKey = ${EDGE_DEVICE_3_PUBLIC_KEY}
+AllowedIPs = 10.13.13.12/32
+PersistentKeepalive = 25
+
+# Admin Device 1 - Mobile
+[Peer]
+# Admin mobile device
+PublicKey = ${ADMIN_MOBILE_PUBLIC_KEY}
+AllowedIPs = 10.13.13.20/32
+PersistentKeepalive = 25
+
+# Admin Device 2 - Laptop
+[Peer]
+# Admin laptop
+PublicKey = ${ADMIN_LAPTOP_PUBLIC_KEY}
+AllowedIPs = 10.13.13.21/32
+PersistentKeepalive = 25

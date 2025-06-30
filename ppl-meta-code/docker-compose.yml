@@ -1,0 +1,146 @@
+# PPL Meta Platform - Main Docker Compose
+# This orchestrates the entire platform infrastructure
+
+version: '3.8'
+
+services:
+  # Load balancer and reverse proxy
+  nginx-gateway:
+    build: ./infrastructure/nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/conf:/etc/nginx/conf.d
+      - ./infrastructure/nginx/ssl:/etc/ssl
+    depends_on:
+      - api-gateway
+      - user-management
+      - media-service
+    networks:
+      - ppl-public
+      - ppl-internal
+
+  # API Gateway service
+  api-gateway:
+    build: ./services/gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVICE_NAME=api-gateway
+      - CONSUL_HOST=consul
+    depends_on:
+      - consul
+      - redis
+    networks:
+      - ppl-internal
+    volumes:
+      - ./shared:/app/shared
+
+  # User Management service
+  user-management:
+    build: ./services/user-management
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://admin:password@postgres:5432/user_db
+    depends_on:
+      - postgres
+    networks:
+      - ppl-internal
+    volumes:
+      - ./shared:/app/shared
+
+  # Media service
+  media-service:
+    build: ./services/media
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://admin:password@postgres:5432/media_db
+    depends_on:
+      - postgres
+    networks:
+      - ppl-internal
+    volumes:
+      - ./shared:/app/shared
+      - media-storage:/app/media
+
+  # Orchestrator service
+  orchestrator:
+    build: ./services/orchestrator
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://admin:password@postgres:5432/orchestrator_db
+    depends_on:
+      - postgres
+      - user-management
+      - media-service
+    networks:
+      - ppl-internal
+    volumes:
+      - ./shared:/app/shared
+
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ppl_platform
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/database/init:/docker-entrypoint-initdb.d
+    networks:
+      - ppl-internal
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    networks:
+      - ppl-internal
+    volumes:
+      - redis_data:/data
+
+  # Service discovery
+  consul:
+    image: consul:1.16
+    ports:
+      - "8500:8500"
+    networks:
+      - ppl-internal
+    volumes:
+      - consul_data:/consul/data
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - ppl-internal
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    networks:
+      - ppl-internal
+
+volumes:
+  postgres_data:
+  redis_data:
+  consul_data:
+  media-storage:
+
+networks:
+  ppl-public:
+    driver: bridge
+  ppl-internal:
+    driver: bridge
+    internal: false

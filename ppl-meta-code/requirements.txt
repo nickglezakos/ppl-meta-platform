@@ -1,0 +1,30 @@
+# PPL Meta Platform - Root Python Dependencies
+# Shared dependencies across all services
+
+# FastAPI and core web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Database
+sqlalchemy>=2.0.23
+alembic>=1.12.0
+
+# HTTP client for inter-service communication
+httpx>=0.25.0
+requests>=2.31.0
+
+# Development and testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Monitoring and logging
+structlog>=23.0.0
+prometheus-client>=0.17.0

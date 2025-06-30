@@ -1,0 +1,306 @@
+# PPL Meta Platform - Complete Infrastructure
+# Implements the hybrid microservices deployment with Nginx Gateway
+version: '3.8'
+
+services:
+  # Nginx API Gateway - Cloud-hosted entry point
+  nginx-gateway:
+    image: nginx:1.25-alpine
+    container_name: ppl-nginx-gateway
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Internal communication port
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - ppl-meta-gateway
+      - ppl-meta-node
+      - ppl-meta-media
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PPL Meta Gateway Service - API Router and Service Discovery
+  ppl-meta-gateway:
+    build:
+      context: ../ppl-meta-gateway
+      dockerfile: Dockerfile
+    container_name: ppl-meta-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVICE_NAME=ppl-meta-gateway
+      - SERVICE_VERSION=1.0.0
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DEBUG=false
+      - SERVICE_DISCOVERY_ENABLED=true
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - PROMETHEUS_ENABLED=true
+      - RATE_LIMIT_ENABLED=true
+    depends_on:
+      - consul
+      - prometheus
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # User Management Service - Authentication and User Operations
+  ppl-meta-node:
+    build: .
+    container_name: ppl-meta-node
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_db
+      - HOST=0.0.0.0
+      - PORT=8001
+      - DEBUG=false
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - RESET_PASSWORD_SECRET=${RESET_PASSWORD_SECRET:-your-reset-secret-here}
+      - SERVICE_SECRET=${SERVICE_SECRET:-your-service-secret-here}
+      - PPL_MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+      - PPL_GATEWAY_URL=http://ppl-meta-gateway:8080
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_FROM=${MAIL_FROM}
+      - MAIL_SERVER=${MAIL_SERVER}
+      - MAIL_PORT=${MAIL_PORT:-587}
+    depends_on:
+      - postgres
+    volumes:
+      - ./src/logs:/app/src/logs
+      - user-data:/app/data
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Media Service - File Processing and Storage
+  ppl-meta-media:
+    image: ppl-meta-media:latest  # Build this separately or add build context
+    container_name: ppl-meta-media
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=false
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_media_db
+      - STORAGE_PATH=/app/media
+      - MAX_FILE_SIZE=500MB
+      - ALLOWED_EXTENSIONS=jpg,jpeg,png,gif,pdf,mp4,avi,mov
+    depends_on:
+      - postgres
+    volumes:
+      - media-storage:/app/media
+      - ./logs/media:/app/logs
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Orchestrator Service - Business Logic and Workflow Coordination
+  ppl-meta-orchestrator:
+    image: ppl-meta-orchestrator:latest  # Build this separately or add build context
+    container_name: ppl-meta-orchestrator
+    ports:
+      - "8002:8002"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8002
+      - DEBUG=false
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_orchestrator_db
+      - USER_SERVICE_URL=http://ppl-meta-node:8001
+      - MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+      - GATEWAY_URL=http://ppl-meta-gateway:8080
+    depends_on:
+      - postgres
+      - ppl-meta-node
+      - ppl-meta-media
+    volumes:
+      - orchestrator-data:/app/data
+      - ./logs/orchestrator:/app/logs
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database - Shared by all services
+  postgres:
+    image: postgres:15-alpine
+    container_name: ppl-postgres
+    environment:
+      POSTGRES_DB: ppl_db
+      POSTGRES_USER: nickadmin
+      POSTGRES_PASSWORD: Kodikos@23
+      POSTGRES_MULTIPLE_DATABASES: ppl_db,ppl_media_db,ppl_orchestrator_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nickadmin -d ppl_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Caching and Session Storage
+  redis:
+    image: redis:7-alpine
+    container_name: ppl-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Consul - Service Discovery
+  consul:
+    image: consul:1.16
+    container_name: ppl-consul
+    ports:
+      - "8500:8500"
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+    volumes:
+      - consul_data:/consul/data
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+    command: >
+      consul agent -server -bootstrap-expect=1 -node=consul-server
+      -bind=0.0.0.0 -client=0.0.0.0 -ui
+
+  # Prometheus - Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ppl-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Grafana - Monitoring Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ppl-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+
+  # WireGuard VPN Server - For Mesh VPN functionality
+  wireguard:
+    image: linuxserver/wireguard:latest
+    container_name: ppl-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - SERVERURL=your-server-domain.com  # Update this
+      - SERVERPORT=51820
+      - PEERS=5  # Number of peer configurations to generate
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+    ports:
+      - "51820:51820/udp"
+    volumes:
+      - wireguard_config:/config
+      - /lib/modules:/lib/modules
+    networks:
+      - ppl-mesh
+    restart: unless-stopped
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+
+volumes:
+  postgres_data:
+  redis_data:
+  consul_data:
+  prometheus_data:
+  grafana_data:
+  wireguard_config:
+  media-storage:
+  user-data:
+  orchestrator-data:
+
+networks:
+  # Public-facing network for external access
+  ppl-network:
+    driver: bridge
+    external: false
+    
+  # Internal network for service-to-service communication
+  ppl-internal:
+    driver: bridge
+    internal: false  # Allow external access for development
+    
+  # Mesh VPN network for edge devices
+  ppl-mesh:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.13.13.0/24

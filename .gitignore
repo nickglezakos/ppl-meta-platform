@@ -1,0 +1,296 @@
+# PPL Meta Monorepo - Unified .gitignore
+
+# =============================================
+# PYTHON
+# =============================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+venv*/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# =============================================
+# NODE.JS / JAVASCRIPT
+# =============================================
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage
+.grunt
+
+# Bower dependency directory
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons
+build/Release
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# =============================================
+# ENVIRONMENT & SECRETS
+# =============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+!.env.example
+
+# =============================================
+# DATABASES
+# =============================================
+*.db
+*.sqlite
+*.sqlite3
+
+# =============================================
+# LOGS
+# =============================================
+logs/
+*.log
+log.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =============================================
+# OPERATING SYSTEM
+# =============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.fseventsd
+.TemporaryItems
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.tmp
+*.temp
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# =============================================
+# DOCKER
+# =============================================
+# Docker volumes
+docker-volumes/
+
+# =============================================
+# CERTIFICATES & KEYS
+# =============================================
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+certs/
+ssl/
+
+# =============================================
+# IDE & EDITOR
+# =============================================
+# Visual Studio Code
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+.vscode/.ropeproject
+
+# PyCharm
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# =============================================
+# BUILD ARTIFACTS
+# =============================================
+# Python builds
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+
+# Nuitka builds
+*.build/
+*.dist/
+*.onefile-build/
+
+# =============================================
+# MEDIA & TEMPORARY FILES
+# =============================================
+# Image processing
+frames/
+face_pics/
+static-stage/
+Personprints_dir/
+
+# Reports and temporary data
+reports/
+*.tmp
+*.bak
+*.backup
+
+# =============================================
+# GIT & VERSION CONTROL
+# =============================================
+# BFG Repo-Cleaner reports
+*.bfg-report/
+
+# =============================================
+# SERVICE-SPECIFIC IGNORES
+# =============================================
+# Media service
+hello_nuitka.bin
+hello_nuitka.build/
+hello_nuitka.dist/
+hello_nuitka.onefile-build/
+
+# Legacy directories that shouldn't be tracked
+ppl-meta-legacy/
+ppl_meta_new.bfg-report/
