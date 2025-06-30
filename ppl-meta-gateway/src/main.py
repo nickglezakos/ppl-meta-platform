@@ -12,16 +12,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
-from src.config import settings, CORS_SETTINGS
-from src.api.v1.router import api_router
-from src.core.middleware import (
+from config import settings, CORS_SETTINGS
+from api.v1.router import api_router
+from core.middleware import (
     LoggingMiddleware,
     PrometheusMiddleware,
     RateLimitMiddleware
 )
-from src.core.service_discovery import ServiceRegistry
-from src.core.health import health_router
-from src.utils.logger import setup_logging
+from core.service_discovery import ServiceRegistry
+from core.health import health_router
+from utils.logger import setup_logging
 
 # Setup structured logging
 setup_logging()
@@ -133,7 +133,7 @@ app = create_app()
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        app,
         host=settings.host,
         port=settings.port,
         reload=settings.debug,

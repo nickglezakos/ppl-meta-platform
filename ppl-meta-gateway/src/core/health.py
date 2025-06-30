@@ -8,7 +8,7 @@ import time
 import psutil
 import httpx
 
-from src.config import settings
+from config import settings
 
 health_router = APIRouter()
 

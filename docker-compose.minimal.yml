@@ -1,0 +1,156 @@
+# PPL Meta Platform - Minimal Essential Services
+# This includes only the core services needed for basic functionality
+version: "3.8"
+
+services:
+  # PostgreSQL Database - Shared by all services
+  postgres:
+    image: postgres:15-alpine
+    container_name: ppl-postgres
+    environment:
+      POSTGRES_DB: ppl_db
+      POSTGRES_USER: nickadmin
+      POSTGRES_PASSWORD: Kodikos@23
+      POSTGRES_MULTIPLE_DATABASES: ppl_db,ppl_media_db,ppl_orchestrator_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nickadmin -d ppl_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis - Caching and Session Storage
+  redis:
+    image: redis:7-alpine
+    container_name: ppl-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PPL Meta Gateway Service - API Router and Service Discovery
+  ppl-meta-gateway:
+    image: ppl-meta-gateway:latest
+    container_name: ppl-meta-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SERVICE_NAME=ppl-meta-gateway
+      - SERVICE_VERSION=1.0.0
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DEBUG=false
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - USER_SERVICE_URL=http://ppl-meta-node:8001
+      - MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+      - REDIS_URL=redis://redis:6379/0
+      - SERVICE_DISCOVERY_ENABLED=false
+      - PROMETHEUS_ENABLED=false
+      - RATE_LIMIT_ENABLED=true
+    depends_on:
+      - redis
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # User Management Service - Authentication and User Operations
+  ppl-meta-node:
+    image: ppl-meta-node:latest
+    container_name: ppl-meta-node
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_db
+      - HOST=0.0.0.0
+      - PORT=8001
+      - DEBUG=false
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - RESET_PASSWORD_SECRET=${RESET_PASSWORD_SECRET:-your-reset-secret-here}
+      - SERVICE_SECRET=${SERVICE_SECRET:-your-service-secret-here}
+      - PPL_MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+      - PPL_GATEWAY_URL=http://ppl-meta-gateway:8080
+      - MAIL_USERNAME=${MAIL_USERNAME:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_FROM=${MAIL_FROM:-}
+      - MAIL_SERVER=${MAIL_SERVER:-}
+      - MAIL_PORT=${MAIL_PORT:-587}
+    depends_on:
+      - postgres
+    volumes:
+      - user-data:/app/data
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Media Processing Service
+  ppl-meta-media:
+    image: ppl-meta-media:latest
+    container_name: ppl-meta-media
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_media_db
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=false
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - PPL_NODE_SERVICE_URL=http://ppl-meta-node:8001
+      - PPL_GATEWAY_URL=http://ppl-meta-gateway:8080
+      - REDIS_URL=redis://redis:6379/1
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - media-storage:/app/storage
+    networks:
+      - ppl-network
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+  media-storage:
+  user-data:
+
+networks:
+  # Public-facing network for external access
+  ppl-network:
+    driver: bridge
+    external: false
+
+  # Internal network for service-to-service communication
+  ppl-internal:
+    driver: bridge
+    internal: false # Allow external access for development

@@ -1,6 +1,6 @@
 # PPL Meta Platform - Complete Infrastructure
 # Implements the hybrid microservices deployment with Nginx Gateway
-version: '3.8'
+version: "3.8"
 
 services:
   # Nginx API Gateway - Cloud-hosted entry point
@@ -10,7 +10,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"  # Internal communication port
+      - "8080:8080" # Internal communication port
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
@@ -33,9 +33,7 @@ services:
 
   # PPL Meta Gateway Service - API Router and Service Discovery
   ppl-meta-gateway:
-    build:
-      context: ../ppl-meta-gateway
-      dockerfile: Dockerfile
+    image: ppl-meta-gateway:latest
     container_name: ppl-meta-gateway
     ports:
       - "8080:8080"
@@ -45,14 +43,18 @@ services:
       - HOST=0.0.0.0
       - PORT=8080
       - DEBUG=false
-      - SERVICE_DISCOVERY_ENABLED=true
-      - CONSUL_HOST=consul
-      - CONSUL_PORT=8500
-      - PROMETHEUS_ENABLED=true
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - USER_SERVICE_URL=http://ppl-meta-node:8001
+      - MEDIA_SERVICE_URL=http://ppl-meta-media:8000
+      - REDIS_URL=redis://redis:6379/0
+      - SERVICE_DISCOVERY_ENABLED=false
+      # - CONSUL_HOST=consul
+      # - CONSUL_PORT=8500
+      - PROMETHEUS_ENABLED=false
       - RATE_LIMIT_ENABLED=true
-    depends_on:
-      - consul
-      - prometheus
+    # depends_on:
+    #   - consul
+    #   - prometheus
     networks:
       - ppl-network
       - ppl-internal
@@ -65,7 +67,7 @@ services:
 
   # User Management Service - Authentication and User Operations
   ppl-meta-node:
-    build: .
+    image: ppl-meta-node:latest
     container_name: ppl-meta-node
     ports:
       - "8001:8001"
@@ -102,7 +104,7 @@ services:
 
   # Media Service - File Processing and Storage
   ppl-meta-media:
-    image: ppl-meta-media:latest  # Build this separately or add build context
+    image: ppl-meta-media:latest # Build this separately or add build context
     container_name: ppl-meta-media
     ports:
       - "8000:8000"
@@ -131,7 +133,7 @@ services:
 
   # Orchestrator Service - Business Logic and Workflow Coordination
   ppl-meta-orchestrator:
-    image: ppl-meta-orchestrator:latest  # Build this separately or add build context
+    image: ppl-meta-orchestrator:latest # Build this separately or add build context
     container_name: ppl-meta-orchestrator
     ports:
       - "8002:8002"
@@ -230,10 +232,10 @@ services:
       - ppl-internal
     restart: unless-stopped
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
 
   # Grafana - Monitoring Dashboard
   grafana:
@@ -260,9 +262,9 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=UTC
-      - SERVERURL=your-server-domain.com  # Update this
+      - SERVERURL=your-server-domain.com # Update this
       - SERVERPORT=51820
-      - PEERS=5  # Number of peer configurations to generate
+      - PEERS=5 # Number of peer configurations to generate
       - PEERDNS=auto
       - INTERNAL_SUBNET=10.13.13.0
     ports:
@@ -292,12 +294,12 @@ networks:
   ppl-network:
     driver: bridge
     external: false
-    
+
   # Internal network for service-to-service communication
   ppl-internal:
     driver: bridge
-    internal: false  # Allow external access for development
-    
+    internal: false # Allow external access for development
+
   # Mesh VPN network for edge devices
   ppl-mesh:
     driver: bridge

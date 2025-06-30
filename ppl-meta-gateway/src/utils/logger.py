@@ -8,7 +8,7 @@ from typing import Any, Dict
 import structlog
 from structlog.stdlib import LoggerFactory
 
-from src.config import settings
+from config import settings
 
 def setup_logging() -> None:
     """Configure structured logging."""

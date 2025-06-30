@@ -1,59 +1,17 @@
 # PPL Meta Platform - Complete Ecosystem
 # This orchestrates all microservices in the platform
 
-version: '3.8'
+version: "3.8"
 
 # Include the infrastructure from the node service
 include:
   - path: ./ppl-meta-node/docker-compose.infrastructure.yml
 
 services:
-  # Override the gateway service to use the properly located code
-  ppl-meta-gateway:
-    build:
-      context: ./ppl-meta-gateway
-      dockerfile: Dockerfile
-    container_name: ppl-meta-gateway
-    ports:
-      - "8080:8080"
-    environment:
-      - SERVICE_NAME=ppl-meta-gateway
-      - SERVICE_VERSION=1.0.0
-      - HOST=0.0.0.0
-      - PORT=8080
-      - DEBUG=false
-      - SERVICE_DISCOVERY_ENABLED=true
-      - CONSUL_HOST=consul
-      - CONSUL_PORT=8500
-    networks:
-      - ppl-network
-      - ppl-internal
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Add other services as you create them
-  # ppl-meta-media:
-  #   build: ./ppl-meta-media
-  #   ports:
-  #     - "8000:8000"
-  #   networks:
-  #     - ppl-network
-  #     - ppl-internal
-
-  # ppl-meta-orchestrator:
-  #   build: ./ppl-meta-orchestrator
-  #   ports:
-  #     - "8002:8002"
-  #   networks:
-  #     - ppl-network
-  #     - ppl-internal
-
-networks:
-  ppl-network:
-    external: true
-  ppl-internal:
-    external: true
+  # All services are defined in the included infrastructure file
+  # This placeholder ensures valid compose structure
+  placeholder:
+    image: hello-world
+    profiles:
+      - never-run
+# Networks are defined in the infrastructure file
