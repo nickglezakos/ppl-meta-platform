@@ -305,15 +305,41 @@ The PPL Meta Platform consists of multiple microservices and infrastructure comp
   - [ ] Fix permission issues
   - [ ] Add storage monitoring
 
+#### ISSUE-021: Duplicate Microservices Architecture
+- **Component**: Repository Structure
+- **Status**: ✅ Resolved
+- **Priority**: 🟡 Medium
+- **Description**: Duplicate microservices code existed in two locations
+- **Duplicate Locations**:
+  - **Active**: Root-level directories (`/ppl-meta-gateway/`, `/ppl-meta-node/`, etc.) ✅
+  - **Legacy**: Monorepo structure (`/ppl-meta-code/services/gateway/`, `/ppl-meta-code/services/user-management/`, etc.) ❌ REMOVED
+- **Impact**: 
+  - Code maintenance confusion ✅ RESOLVED
+  - Potential deployment to wrong codebase ✅ RESOLVED
+  - Increased repository size ✅ RESOLVED
+  - Developer confusion about active codebase ✅ RESOLVED
+- **Root Cause**: Evolution from monorepo to individual microservices without cleanup
+- **Resolution**: ✅ COMPLETED
+  - [x] Audit code differences between duplicate locations → No differences found
+  - [x] Confirm root-level services are the active/current versions → Confirmed
+  - [x] Archive legacy `/ppl-meta-code/services/` directory → Archived to `/archive/legacy-services-20250702/`
+  - [x] Remove legacy `/ppl-meta-code/services/` directory → Removed
+  - [x] Update legacy docker-compose.yml → Marked as deprecated with clear instructions
+  - [x] Archive obsolete migration scripts → Moved to archive
+  - [x] Update documentation to clarify active service locations → Updated
+- **Archive Location**: `/archive/legacy-services-20250702/`
+
 ---
 
 ## 🎯 Improvement Roadmap
 
 ### Phase 1: Critical Stability (Immediate)
+
 1. ✅ Fix Docker image availability issues → Use minimal compose
 2. ⏳ Resolve service startup problems
 3. ⏳ Standardize environment configuration
 4. ⏳ Fix database connectivity issues
+5. ✅ Clean up duplicate microservices architecture → COMPLETED
 
 ### Phase 2: Core Functionality (Short-term)
 1. ⏳ Implement proper health checks
