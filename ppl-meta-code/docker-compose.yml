@@ -6,14 +6,14 @@
 #
 # This file is kept for reference only
 
-version: '3.8'
+version: "3.8"
 
 services:
   # ⚠️  ALL SERVICES HAVE BEEN MOVED TO ROOT-LEVEL DIRECTORIES
-  # 
+  #
   # Active microservices are now located at:
   # - /ppl-meta-gateway     (API Gateway)
-  # - /ppl-meta-node        (User Management)  
+  # - /ppl-meta-node        (User Management)
   # - /ppl-meta-media       (Media Service)
   # - /ppl-meta-orchestrator (Orchestrator)
   #
@@ -22,7 +22,7 @@ services:
   # - docker-compose.ecosystem.yml  (Full ecosystem)
   #
   # This file is kept for reference only
-  
+
   # Load balancer and reverse proxy (LEGACY)
   # nginx-gateway:
   #   build: ./infrastructure/nginx

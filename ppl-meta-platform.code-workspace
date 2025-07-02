@@ -3,30 +3,6 @@
         {
             "name": "PPL Meta Platform",
             "path": "."
-        },
-        {
-            "name": "User Management",
-            "path": "./ppl-meta-node"
-        },
-        {
-            "name": "Media Service", 
-            "path": "./ppl-meta-media"
-        },
-        {
-            "name": "Gateway Service",
-            "path": "./ppl-meta-gateway"
-        },
-        {
-            "name": "Orchestrator",
-            "path": "./ppl-meta-orchestrator"
-        },
-        {
-            "name": "Service Template",
-            "path": "./service-template"
-        },
-        {
-            "name": "Shared Code",
-            "path": "./ppl-meta-code"
         }
     ],
     "settings": {
