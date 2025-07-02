@@ -32,6 +32,8 @@ The PPL Meta Platform employs a microservices architecture requiring sophisticat
 - **ppl-meta-node**: User management and authentication
 - **ppl-meta-media**: Media processing and storage
 - **ppl-meta-orchestrator**: Service coordination and workflows
+- **ppl-meta-frontend**: Flutter-based cross-platform frontend
+- **ppl-meta-frontend**: Flutter web/mobile frontend application
 
 ### Infrastructure Components
 - **Database**: PostgreSQL with migration management
@@ -99,6 +101,7 @@ Compatible Services:
   ppl-meta-node: ^1.5.0
   ppl-meta-media: ^1.3.0
   ppl-meta-orchestrator: ^1.0.0
+  ppl-meta-frontend: ^1.0.0
 ```
 
 ### Microservice-Level Versioning
@@ -120,6 +123,11 @@ ppl-meta-node:
 ppl-meta-media:
   current: 1.3.1
   api_version: v1
+  compatibility: PPL-2025.06.x
+
+ppl-meta-frontend:
+  current: 1.0.0
+  build_target: web, mobile
   compatibility: PPL-2025.06.x
 ```
 
@@ -186,7 +194,8 @@ ppl-meta-platform/
 │   ├── ppl-meta-gateway/
 │   ├── ppl-meta-node/
 │   ├── ppl-meta-media/
-│   └── ppl-meta-orchestrator/
+│   ├── ppl-meta-orchestrator/
+│   └── ppl-meta-frontend/
 ├── infrastructure/
 │   ├── docker-compose/
 │   ├── kubernetes/
@@ -318,7 +327,8 @@ ecosystem-integration:
           --namespace ppl-test \
           --set gateway.image.tag=${{ needs.gateway-build.outputs.image-tag }} \
           --set node.image.tag=${{ needs.node-build.outputs.image-tag }} \
-          --set media.image.tag=${{ needs.media-build.outputs.image-tag }}
+          --set media.image.tag=${{ needs.media-build.outputs.image-tag }} \
+          --set frontend.image.tag=${{ needs.frontend-build.outputs.image-tag }}
 
     - name: Run E2E Tests
       run: |
@@ -1000,6 +1010,7 @@ jobs:
       node: ${{ steps.changes.outputs.node }}
       media: ${{ steps.changes.outputs.media }}
       orchestrator: ${{ steps.changes.outputs.orchestrator }}
+      frontend: ${{ steps.changes.outputs.frontend }}
     steps:
     - uses: actions/checkout@v3
     - uses: dorny/paths-filter@v2
@@ -1014,6 +1025,8 @@ jobs:
             - 'ppl-meta-media/**'
           orchestrator:
             - 'ppl-meta-orchestrator/**'
+          frontend:
+            - 'ppl-meta-frontend/**'
 
   build-gateway:
     needs: detect-changes
@@ -1056,8 +1069,69 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+  build-frontend:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.10.0'
+    
+    - name: Install dependencies
+      run: |
+        cd ppl-meta-frontend
+        flutter pub get
+    
+    - name: Run tests
+      run: |
+        cd ppl-meta-frontend
+        flutter test
+    
+    - name: Build web
+      run: |
+        cd ppl-meta-frontend
+        flutter build web --release
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/ppl-meta-frontend
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=semver,pattern={{version}}
+    
+    - name: Build and push
+      uses: docker/build-push-action@v4
+      with:
+        context: ./ppl-meta-frontend
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
   test-integration:
-    needs: [build-gateway, build-node, build-media]
+    needs: [build-gateway, build-node, build-media, build-frontend]
     if: always() && !failure()
     runs-on: ubuntu-latest
     steps:
@@ -1165,4 +1239,76 @@ volumes:
 
 ---
 
-This CI/CD strategy provides a comprehensive framework for managing the PPL Meta Platform ecosystem with automated testing, security scanning, and deployment processes. The implementation should be done incrementally, starting with basic CI/CD and gradually adding more sophisticated features.
+## Frontend Deployment Strategy
+
+#### Flutter Web Deployment
+The Flutter frontend supports multiple deployment targets with specific considerations for each:
+
+##### Web Deployment
+```yaml
+web-deployment:
+  build-target: web
+  output: build/web/
+  hosting-options:
+    - static-hosting: AWS S3, Cloudflare, Netlify
+    - cdn-integration: CloudFront distribution
+    - nginx-container: Containerized with nginx
+  
+  environment-config:
+    - api-endpoints: Injected via environment variables
+    - feature-flags: Runtime configuration
+    - analytics: Environment-specific tracking
+```
+
+##### Mobile Deployment (Future)
+```yaml
+mobile-deployment:
+  android:
+    build-target: apk, aab
+    distribution: Google Play Store, Firebase App Distribution
+    signing: Automated with CI/CD secrets
+  
+  ios:
+    build-target: ipa
+    distribution: App Store, TestFlight
+    signing: Apple Developer certificates
+    provisioning: Automated profile management
+```
+
+#### Frontend CI/CD Pipeline
+```yaml
+frontend-pipeline:
+  code-quality:
+    - flutter analyze: Static analysis
+    - dart format: Code formatting
+    - flutter test: Unit and widget tests
+  
+  build-process:
+    - flutter pub get: Dependency installation
+    - flutter build web: Web compilation
+    - docker build: Container packaging
+  
+  deployment:
+    - static-assets: Deploy to CDN
+    - api-config: Update environment endpoints
+    - cache-invalidation: Clear CDN cache
+```
+
+#### Environment Configuration
+```dart
+// lib/core/config/environment.dart
+class Environment {
+  static const String apiGatewayUrl = String.fromEnvironment(
+    'API_GATEWAY_URL',
+    defaultValue: 'http://localhost:8080',
+  );
+  
+  static const String environment = String.fromEnvironment(
+    'ENVIRONMENT',
+    defaultValue: 'development',
+  );
+  
+  static bool get isProduction => environment == 'production';
+  static bool get isDevelopment => environment == 'development';
+}
+```
