@@ -61,32 +61,51 @@ This document categorizes issues by component and priority to help with debuggin
 
 #### ISSUE-003: Node Service Container Restart Loop
 - **Component**: ppl-meta-node
-- **Status**: Unresolved
+- **Status**: ✅ Resolved
 - **Description**: Node service container continuously restarts when deployed via Docker
 - **Error Pattern**: `Restarting (1) X seconds ago`
-- **Likely Causes**:
-  - Database connection issues
-  - Missing environment variables
-  - Python module import errors
-  - Configuration validation failures
-- **Impact**: Node service unavailable in Docker deployments
-- **Investigation Needed**:
-  - [ ] Check container logs for specific error messages
-  - [ ] Verify database connectivity from container
-  - [ ] Validate environment variable loading
-  - [ ] Test import paths in Docker context
+- **Root Causes Identified & Fixed**:
+  - ✅ Pydantic settings validation errors (missing environment variables)
+  - ✅ Mail service configuration crashes with missing SMTP variables
+  - ✅ Configuration validation failures due to Pydantic v2 incompatibility
+  - ✅ Missing proper error handling for optional services
+- **Impact**: ✅ RESOLVED - Node service now starts reliably in Docker deployments
+- **Resolution Applied (v1.0.1)**:
+  - [x] Fixed Pydantic v2 configuration validation
+  - [x] Added graceful mail service fallback for missing SMTP configuration
+  - [x] Improved environment variable handling and validation
+  - [x] Enhanced Docker container startup reliability with proper health checks
+  - [x] Added comprehensive logging and error handling
+- **Files Modified**:
+  - `ppl-meta-node/src/config.py` - Environment variable mapping and Pydantic v2 migration
+  - `ppl-meta-node/src/mail.py` - Graceful handling of missing mail configuration
+  - `ppl-meta-node/src/main.py` - Improved logging and error handling
+  - `ppl-meta-node/src/api/v1/health.py` - Enhanced health check endpoints
+  - `ppl-meta-node/Dockerfile` - Container optimization and health checks
+- **Testing Status**: ✅ Service builds successfully, starts properly, handles missing configuration gracefully
 
 #### ISSUE-004: Media Service Container Failures
 - **Component**: ppl-meta-media
-- **Status**: Unresolved
+- **Status**: ✅ Resolved
 - **Description**: Media service fails to start consistently in Docker environment
 - **Symptoms**: Container exits or restarts frequently
-- **Impact**: Media processing functionality unavailable
-- **Investigation Needed**:
-  - [ ] Analyze container startup logs
-  - [ ] Check dependency installation in Docker image
-  - [ ] Verify database schema and connectivity
-  - [ ] Test file system permissions for media storage
+- **Impact**: ✅ RESOLVED - Media processing functionality now available
+- **Root Causes Identified & Fixed**:
+  - ✅ Pydantic v2 configuration compatibility issues
+  - ✅ Missing environment variable mappings (LOG_LEVEL, UPLOAD_DIR)
+  - ✅ PostgreSQL syntax errors in database initialization
+  - ✅ Docker container startup sequence and health checks
+- **Resolution Applied (v1.0.1)**:
+  - [x] Fixed Pydantic v2 configuration using `ConfigDict(extra='ignore')`
+  - [x] Added missing environment variables to Settings class
+  - [x] Corrected PostgreSQL database initialization syntax
+  - [x] Enhanced Docker container reliability with proper health checks
+  - [x] Verified service-to-service communication and API endpoints
+- **Files Modified**:
+  - `ppl-meta-media/src/config.py` - Pydantic v2 migration and environment variable mapping
+  - `ppl-meta-media/init-databases.sql` - PostgreSQL syntax fixes
+  - Container builds successfully and starts reliably
+- **Testing Status**: ✅ Service builds successfully, starts properly, serves API endpoints on port 8000
 
 ---
 
@@ -414,8 +433,8 @@ This document categorizes issues by component and priority to help with debuggin
 ### Phase 1: Critical Stability (Immediate)
 
 1. ✅ Fix Docker image availability issues → Use minimal compose
-2. ⏳ Resolve service startup problems
-3. ✅ Standardize environment configuration → Gateway completed
+2. ✅ Resolve service startup problems → Node service restart loop RESOLVED (v1.0.1)
+3. ✅ Standardize environment configuration → Gateway completed, Node completed
 4. ⏳ Fix database connectivity issues
 5. ✅ Clean up duplicate microservices architecture → COMPLETED
 6. ✅ Add frontend microservice → COMPLETED
