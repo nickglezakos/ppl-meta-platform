@@ -24,3 +24,4 @@ psutil==5.9.6
 
 # HTTP client for inter-service communication
 httpx==0.25.2
+requests==2.31.0
