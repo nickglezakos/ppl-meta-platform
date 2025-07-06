@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     # Application Settings
     APP_NAME: str = "PPL Meta Node - User Management Service"
-    APP_VERSION: str = "1.0.0"
+    APP_VERSION: str = "1.0.1"
     DEBUG: bool = False
     LOG_LEVEL: str = "info"
     HOST: str = "0.0.0.0"
