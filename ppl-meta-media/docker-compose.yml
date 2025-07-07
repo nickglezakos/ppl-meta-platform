@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PPL Meta Media Service
   ppl-meta-media:

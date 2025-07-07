@@ -1,6 +1,5 @@
 # PPL Meta Platform - Complete Infrastructure
 # Implements the hybrid microservices deployment with Nginx Gateway
-version: "3.8"
 
 services:
   # Nginx API Gateway - Cloud-hosted entry point

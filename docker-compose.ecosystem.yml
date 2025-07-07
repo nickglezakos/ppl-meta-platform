@@ -1,8 +1,6 @@
 # PPL Meta Platform - Complete Ecosystem
 # This orchestrates all microservices in the platform
 
-version: "3.8"
-
 # Include the infrastructure from the node service
 include:
   - path: ./ppl-meta-node/docker-compose.infrastructure.yml

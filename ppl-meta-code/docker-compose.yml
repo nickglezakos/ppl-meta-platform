@@ -6,8 +6,6 @@
 #
 # This file is kept for reference only
 
-version: "3.8"
-
 services:
   # ⚠️  ALL SERVICES HAVE BEEN MOVED TO ROOT-LEVEL DIRECTORIES
   #

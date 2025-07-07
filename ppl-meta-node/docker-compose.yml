@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ppl-meta-node:
     build: .
@@ -32,7 +30,7 @@ services:
       POSTGRES_USER: nickadmin
       POSTGRES_PASSWORD: Kodikos@23
     ports:
-      - "5433:5432"  # Use different port to avoid conflicts
+      - "5433:5432" # Use different port to avoid conflicts
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -50,4 +48,4 @@ volumes:
 networks:
   ppl-network:
     driver: bridge
-    external: true  # This network should be shared with ppl-meta-media
+    external: true # This network should be shared with ppl-meta-media

@@ -394,13 +394,22 @@ This document categorizes issues by component and priority to help with debuggin
 
 #### ISSUE-013: Deprecated Docker Compose Version Warnings
 - **Component**: Docker Compose Files
-- **Status**: Open
-- **Description**: All compose files show version deprecation warnings
+- **Status**: ✅ Resolved
+- **Description**: All compose files showed version deprecation warnings
 - **Warning**: `the attribute 'version' is obsolete, it will be ignored`
-- **Impact**: Cosmetic warnings in console output
-- **Resolution**:
-  - [ ] Remove version declarations from all compose files
-  - [ ] Update compose file format to current standard
+- **Impact**: ✅ RESOLVED - Cosmetic warnings in console output eliminated
+- **Resolution Applied (v1.1.1)**:
+  - [x] Removed version declarations from all compose files
+  - [x] Updated compose file format to current standard (version-less format)
+  - [x] Validated all compose files for proper syntax
+- **Files Modified**:
+  - `docker-compose.ecosystem.yml` - Removed `version: "3.8"`
+  - `docker-compose.minimal.yml` - Removed `version: "3.8"`
+  - `ppl-meta-node/docker-compose.infrastructure.yml` - Removed `version: "3.8"`
+  - `ppl-meta-node/docker-compose.yml` - Removed `version: '3.8'`
+  - `ppl-meta-media/docker-compose.yml` - Removed `version: '3.8'`
+  - `ppl-meta-code/docker-compose.yml` - Removed `version: "3.8"`
+- **Testing Status**: ✅ All compose files validated successfully with `docker-compose config`
 
 #### ISSUE-014: VS Code Tasks Need Refinement
 - **Component**: Development Environment

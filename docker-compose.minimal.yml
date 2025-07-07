@@ -1,6 +1,5 @@
 # PPL Meta Platform - Minimal Essential Services
 # This includes only the core services needed for basic functionality
-version: "3.8"
 
 services:
   # PostgreSQL Database - Shared by all services
