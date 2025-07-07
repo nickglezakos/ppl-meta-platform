@@ -1,7 +1,6 @@
+from config import settings
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-
-from config import settings
 
 app = FastAPI(
     title=settings.APP_NAME,

@@ -1,11 +1,9 @@
-import os
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
+from .config import settings
 
-SQLALCHEMY_DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://nickadmin:Kodikos%4023@localhost/ppl_db"
-)
+# Use the database URL from settings
+SQLALCHEMY_DATABASE_URL = settings.get_database_url()
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

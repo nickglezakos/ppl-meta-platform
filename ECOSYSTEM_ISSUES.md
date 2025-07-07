@@ -193,18 +193,38 @@ This document categorizes issues by component and priority to help with debuggin
   - ✅ 0 configuration inconsistencies detected by validation script
 
 #### ISSUE-006: Database Connection String Variations
-- **Component**: ppl-meta-node, ppl-meta-media
-- **Status**: Unresolved
+- **Component**: ppl-meta-node, ppl-meta-media, ppl-meta-orchestrator, ppl-meta-gateway
+- **Status**: ✅ Resolved
 - **Description**: Different services use different database connection formats
-- **Details**:
-  - URL encoding issues with special characters in passwords
-  - Different database names for different services
-  - Port mismatches between compose files (5432 vs 5433)
-- **Impact**: Database connectivity issues
-- **Resolution**:
-  - [ ] Standardize connection string format
-  - [ ] Use consistent database credentials across services
-  - [ ] Implement connection string validation
+- **Problems Resolved**:
+  - ✅ Standardized connection string format: `postgresql://user:password@host:port/database`
+  - ✅ Consistent credentials: `nickadmin:Kodikos@23` across all services
+  - ✅ URL encoding for special characters in passwords (`%40` for `@`, `%23` for `#`)
+  - ✅ Port standardization: 5433 (localhost), 5432 (Docker internal)
+  - ✅ Service-specific database names to prevent conflicts
+- **Impact**: ✅ RESOLVED - Database connectivity now reliable across all services
+- **Resolution Applied (v1.0.5)**:
+  - [x] Standardized database connection string format across all services
+  - [x] Updated .env.example files with consistent DATABASE_URL patterns
+  - [x] Added individual database component configuration (DB_HOST, DB_PORT, etc.)
+  - [x] Implemented database connection validation helpers in all service configs
+  - [x] Created service-specific databases: ppl_db, ppl_media_db, ppl_orchestrator_db, ppl_gateway_db
+  - [x] Updated database initialization script to create all service databases
+  - [x] Added comprehensive connection validation and debugging helpers
+  - [x] Created DATABASE_CONFIGURATION_GUIDE.md with complete documentation
+  - [x] Updated Docker Compose files with standardized database URLs
+  - [x] Created database connection test script for validation
+- **Standardized Configuration**:
+  - 🗄️ Node Service: `postgresql://nickadmin:Kodikos%4023@localhost:5433/ppl_db`
+  - 🗄️ Media Service: `postgresql://nickadmin:Kodikos%4023@localhost:5433/ppl_media_db`
+  - 🗄️ Orchestrator: `postgresql://nickadmin:Kodikos%4023@localhost:5433/ppl_orchestrator_db`
+  - 🗄️ Gateway: `postgresql://nickadmin:Kodikos%4023@localhost:5433/ppl_gateway_db`
+- **Validation Results**:
+  - ✅ All services use identical connection string format
+  - ✅ Password special characters properly URL encoded
+  - ✅ Port mismatches resolved (5432 vs 5433)
+  - ✅ Service-specific database names implemented
+  - ✅ Connection validation helpers added to all configs
 
 ### Service Dependencies
 

@@ -20,6 +20,56 @@ PROJECT_ROOT = Path(__file__).parent.parent
 class Settings(BaseSettings):
     """Application settings with environment variable support."""
     
+
+    def validate_database_url(self) -> bool:
+        """Validate the database connection string format and components."""
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(self.get_database_url())
+            
+            if not parsed.scheme.startswith('postgresql'):
+                logger.error("Database URL must use postgresql:// scheme")
+                return False
+                
+            if not parsed.username:
+                logger.error("Database URL missing username")
+                return False
+                
+            if not parsed.password:
+                logger.error("Database URL missing password")
+                return False
+                
+            if not parsed.hostname:
+                logger.error("Database URL missing hostname")
+                return False
+                
+            if not parsed.path or parsed.path == '/':
+                logger.error("Database URL missing database name")
+                return False
+                
+            logger.info("Database URL validation passed")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Database URL validation failed: {e}")
+            return False
+    
+    def get_database_info(self) -> dict:
+        """Get database connection information for debugging."""
+        url = self.get_database_url()
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            return {
+                'host': parsed.hostname,
+                'port': parsed.port or 5432,
+                'username': parsed.username,
+                'database': parsed.path.lstrip('/'),
+                'url_masked': url.replace(parsed.password or '', '*****') if parsed.password else url
+            }
+        except Exception:
+            return {'error': 'Failed to parse database URL'}
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

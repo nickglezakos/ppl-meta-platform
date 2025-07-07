@@ -11,7 +11,7 @@ services:
       POSTGRES_DB: ppl_db
       POSTGRES_USER: nickadmin
       POSTGRES_PASSWORD: Kodikos@23
-      POSTGRES_MULTIPLE_DATABASES: ppl_db,ppl_media_db,ppl_orchestrator_db
+      POSTGRES_MULTIPLE_DATABASES: ppl_db,ppl_media_db,ppl_orchestrator_db,ppl_gateway_db
     ports:
       - "5433:5432"
     volumes:
