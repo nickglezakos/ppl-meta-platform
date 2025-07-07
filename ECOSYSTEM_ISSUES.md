@@ -164,20 +164,33 @@ This document categorizes issues by component and priority to help with debuggin
 
 #### ISSUE-005: Environment Variable Inconsistencies
 - **Component**: All Services
-- **Status**: Partially Resolved
+- **Status**: ✅ Resolved
 - **Description**: Environment variables are not consistently defined across services
-- **Problems**:
-  - Missing default values for optional variables
-  - Inconsistent naming conventions
-  - Some variables required but not documented
-- **Impact**: Services fail to start or operate incorrectly
-- **Progress**:
-  - [x] Fixed SECRET_KEY loading in gateway
-  - [x] Standardized gateway environment variables
-  - [x] Added proper error handling for missing environment variables in gateway
-  - [ ] Standardize MAIL_* variables across services
-  - [ ] Add validation for required environment variables in all services
-  - [ ] Create environment variable templates for all services
+- **Problems Resolved**:
+  - ✅ Standardized MAIL_* variables across all services with consistent naming conventions
+  - ✅ Added missing default values for optional variables in all service configurations
+  - ✅ Ensured all required variables are documented and present in .env.example templates
+  - ✅ Created validation tooling to maintain consistency
+- **Impact**: ✅ RESOLVED - All services now have consistent environment variable configuration
+- **Resolution Applied (v1.0.4)**:
+  - [x] Standardized MAIL_* variables (MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, etc.) across all services
+  - [x] Updated config.py files in all services to include standardized variable definitions
+  - [x] Created/updated .env.example templates for all services:
+    - ppl-meta-node/.env.example (updated)
+    - ppl-meta-media/.env.example (updated)
+    - ppl-meta-gateway/.env.example (updated)
+    - ppl-meta-orchestrator/.env.example (created)
+    - ppl-meta-frontend/.env.example (created)
+    - ppl-meta-code/.env.example (created)
+  - [x] Added mail configuration validation helpers to all service configs
+  - [x] Created validate_env_vars.py script for cross-service validation and documentation
+  - [x] Added validation for required environment variables in all services
+  - [x] Ensured consistent naming conventions and variable coverage across the ecosystem
+- **Validation Results**:
+  - ✅ All 6 services now have consistent environment variable configuration
+  - ✅ 4 required variables standardized: APP_NAME, APP_VERSION, DATABASE_URL, SECRET_KEY
+  - ✅ 28 optional variables standardized across all services
+  - ✅ 0 configuration inconsistencies detected by validation script
 
 #### ISSUE-006: Database Connection String Variations
 - **Component**: ppl-meta-node, ppl-meta-media

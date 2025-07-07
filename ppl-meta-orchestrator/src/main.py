@@ -1,7 +1,12 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-app = FastAPI(title="PPL Meta Orchestrator", version="1.0.0")
+from config import settings
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+)
 
 
 @app.get("/health")
@@ -11,8 +16,9 @@ async def health_check():
         status_code=200,
         content={
             "status": "healthy",
-            "service": "ppl-meta-orchestrator",
-            "version": "1.0.0",
+            "service": settings.APP_NAME,
+            "version": settings.APP_VERSION,
+            "environment": settings.ENVIRONMENT,
         },
     )
 
@@ -20,10 +26,23 @@ async def health_check():
 @app.get("/")
 async def root():
     """Root endpoint."""
-    return {"message": "PPL Meta Orchestrator Service", "status": "running"}
+    return {
+        "message": f"{settings.APP_NAME} Service",
+        "status": "running",
+        "version": settings.APP_VERSION,
+    }
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    # Log configuration on startup
+    settings.log_configuration()
+
+    uvicorn.run(
+        app,
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG,
+        log_level=settings.LOG_LEVEL.lower(),
+    )

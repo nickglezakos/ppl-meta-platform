@@ -47,9 +47,18 @@ class Settings(BaseSettings):
 
     # Service Communication
     PPL_MEDIA_SERVICE_URL: str = "http://localhost:8000"
-    MEDIA_SERVICE_URL: str = "http://localhost:8002"
-    GATEWAY_SERVICE_URL: str = "http://localhost:8000"
+    MEDIA_SERVICE_URL: str = "http://localhost:8000"
+    GATEWAY_SERVICE_URL: str = "http://localhost:8080"
     SERVICE_SECRET: str = ""
+
+    # Redis Configuration
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # Additional standardized mail settings (already has main ones)
+    MAIL_STARTTLS: bool = True
+    MAIL_SSL_TLS: bool = False
+    USE_CREDENTIALS: bool = True
+    VALIDATE_CERTS: bool = True
 
     class Config:
         env_file = ".env"
@@ -68,6 +77,22 @@ class Settings(BaseSettings):
 
         logger.info("Configuration loaded - Database: %s", self.DATABASE_URL)
         logger.info("Service will run on %s:%s", self.HOST, self.PORT)
+
+    def is_mail_configured(self) -> bool:
+        """Check if mail configuration is properly set."""
+        return bool(
+            self.MAIL_USERNAME
+            and self.MAIL_PASSWORD
+            and self.MAIL_FROM
+            and self.MAIL_SERVER
+        )
+
+    def log_configuration(self):
+        """Log the current configuration (excluding sensitive data)."""
+        logger.info("App: %s v%s", self.APP_NAME, self.APP_VERSION)
+        logger.info("Environment: %s", self.DEBUG)
+        logger.info("Server: %s:%s", self.HOST, self.PORT)
+        logger.info("Mail configured: %s", self.is_mail_configured())
 
 
 settings = Settings()

@@ -1,8 +1,11 @@
+"""
+PPL Meta Orchestrator Configuration
+"""
 import logging
 from typing import Optional
 
 from dotenv import load_dotenv
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load environment variables from .env file
@@ -12,47 +15,56 @@ logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    """Configuration settings for the PPL Meta Media Service."""
+    """Configuration settings for the PPL Meta Orchestrator Service."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        env_prefix="",
+    )
 
     # Application configuration
-    APP_NAME: str = Field(default="ppl-meta-media", env="APP_NAME")
-    APP_VERSION: str = Field(default="1.0.2", env="APP_VERSION")
+    APP_NAME: str = Field(default="ppl-meta-orchestrator", env="APP_NAME")
+    APP_VERSION: str = Field(default="1.0.0", env="APP_VERSION")
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
     DEBUG: bool = Field(default=False, env="DEBUG")
     LOG_LEVEL: str = Field(default="info", env="LOG_LEVEL")
 
     # Server configuration
     HOST: str = Field(default="0.0.0.0", env="HOST")
-    PORT: int = Field(default=8000, env="PORT")
+    PORT: int = Field(default=8002, env="PORT")
 
     # Database configuration
     DATABASE_URL: Optional[str] = Field(default=None, env="DATABASE_URL")
     DB_HOST: str = Field(default="localhost", env="DB_HOST")
     DB_PORT: int = Field(default=5432, env="DB_PORT")
-    DB_NAME: Optional[str] = Field(default="ppl_media_db", env="DB_NAME")
+    DB_NAME: Optional[str] = Field(
+        default="ppl_orchestrator_db", env="DB_NAME"
+    )
     DB_USER: Optional[str] = Field(default="postgres", env="DB_USER")
     DB_PASSWORD: Optional[str] = Field(default="postgres", env="DB_PASSWORD")
 
     # Security
     SECRET_KEY: Optional[str] = Field(default=None, env="SECRET_KEY")
     JWT_SECRET: Optional[str] = Field(default=None, env="JWT_SECRET")
-
-    # Media processing configuration
-    STORAGE_PATH: str = Field(default="/tmp/ppl-meta-uploads", env="STORAGE_PATH")
-    UPLOAD_DIR: str = Field(default="/tmp/ppl-meta-uploads", env="UPLOAD_DIR")
-    MAX_FILE_SIZE: str = Field(default="50MB", env="MAX_FILE_SIZE")
-    ALLOWED_EXTENSIONS: str = Field(
-        default="jpg,jpeg,png,gif,mp4,avi,mov", env="ALLOWED_EXTENSIONS"
+    JWT_ALGORITHM: str = Field(default="HS256", env="JWT_ALGORITHM")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES"
     )
 
     # External services
     USER_SERVICE_URL: str = Field(
         default="http://localhost:8001", env="USER_SERVICE_URL"
     )
+    MEDIA_SERVICE_URL: str = Field(
+        default="http://localhost:8000", env="MEDIA_SERVICE_URL"
+    )
     GATEWAY_SERVICE_URL: str = Field(
         default="http://localhost:8080", env="GATEWAY_SERVICE_URL"
     )
-    VISION_SERVICE_URL: Optional[str] = Field(default=None, env="VISION_SERVICE_URL")
+
+    # Redis Configuration
+    REDIS_URL: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
 
     # Standardized Mail Configuration (consistent across all services)
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")
@@ -60,22 +72,19 @@ class Settings(BaseSettings):
     MAIL_FROM: str = Field(default="", env="MAIL_FROM")
     MAIL_SERVER: str = Field(default="", env="MAIL_SERVER")
     MAIL_PORT: int = Field(default=587, env="MAIL_PORT")
-    MAIL_FROM_NAME: str = Field(default="PPL Meta Media", env="MAIL_FROM_NAME")
+    MAIL_FROM_NAME: str = Field(
+        default="PPL Meta Orchestrator", env="MAIL_FROM_NAME"
+    )
     MAIL_STARTTLS: bool = Field(default=True, env="MAIL_STARTTLS")
     MAIL_SSL_TLS: bool = Field(default=False, env="MAIL_SSL_TLS")
     USE_CREDENTIALS: bool = Field(default=True, env="USE_CREDENTIALS")
     VALIDATE_CERTS: bool = Field(default=True, env="VALIDATE_CERTS")
 
-    # Redis Configuration
-    REDIS_URL: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
-
-    @field_validator("DEBUG", mode="before")
-    @classmethod
-    def parse_debug(cls, v):  # noqa: N805
+    def parse_debug_value(self, value):
         """Parse DEBUG environment variable."""
-        if isinstance(v, str):
-            return v.lower() in ("true", "1", "yes", "on")
-        return bool(v)
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes", "on")
+        return bool(value)
 
     def get_database_url(self) -> str:
         """Get database URL from DATABASE_URL or construct from components."""
@@ -106,24 +115,15 @@ class Settings(BaseSettings):
         logger.info("Environment: %s", self.ENVIRONMENT)
         logger.info("Debug mode: %s", self.DEBUG)
         logger.info("Server: %s:%s", self.HOST, self.PORT)
-        logger.info(
-            "Database: %s:%s/%s", self.DB_HOST, self.DB_PORT, self.DB_NAME
-        )
-        logger.info("Storage path: %s", self.STORAGE_PATH)
-        logger.info("Max file size: %s", self.MAX_FILE_SIZE)
+        if self.DATABASE_URL:
+            db_info = (
+                self.DATABASE_URL.split('@')[1]
+                if '@' in self.DATABASE_URL
+                else "Not configured"
+            )
+            logger.info("Database: %s", db_info)
         logger.info("Mail configured: %s", self.is_mail_configured())
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
-
-# Create global settings instance
+# Global settings instance
 settings = Settings()
-
-
-def get_config():
-    """Get the configuration instance."""
-    return settings
-
-
-# For backward compatibility
-config = settings
