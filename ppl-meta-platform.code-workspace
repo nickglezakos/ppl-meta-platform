@@ -82,6 +82,101 @@
                 "problemMatcher": []
             },
             {
+                "label": "🏗️ Build All Docker Images",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "build"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                },
+                "problemMatcher": []
+            },
+            {
+                "label": "🏗️ Build Gateway Image",
+                "type": "shell",
+                "command": "docker",
+                "args": ["build", "-t", "ppl-meta-gateway", "."],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-gateway"
+                },
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🏗️ Build Node Image",
+                "type": "shell",
+                "command": "docker",
+                "args": ["build", "-t", "ppl-meta-node", "."],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-node"
+                },
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🏗️ Build Media Image",
+                "type": "shell",
+                "command": "docker",
+                "args": ["build", "-t", "ppl-meta-media", "."],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-media"
+                },
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🏗️ Build Orchestrator Image",
+                "type": "shell",
+                "command": "docker",
+                "args": ["build", "-t", "ppl-meta-orchestrator", "."],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-orchestrator"
+                },
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🚀 Start All Services",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "up", "-d"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                },
+                "dependsOn": ["🏗️ Build All Docker Images"]
+            },
+            {
+                "label": "🛑 Stop All Services",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "down"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🔄 Restart All Services",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "restart"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
                 "label": "Start Infrastructure",
                 "type": "shell", 
                 "command": "docker-compose",
@@ -97,6 +192,133 @@
                 "command": "docker-compose", 
                 "args": ["-f", "docker-compose.ecosystem.yml", "down"],
                 "group": "build"
+            },
+            {
+                "label": "🏥 Health Check - All Services",
+                "type": "shell",
+                "command": "python",
+                "args": ["-c", "import requests; import sys; services = [('Gateway', 'http://localhost:8080/health'), ('Node', 'http://localhost:8001/health'), ('Media', 'http://localhost:8000/health'), ('Orchestrator', 'http://localhost:8002/health')]; results = []; [results.append(f'✅ {name}: {requests.get(url, timeout=5).status_code}' if (lambda: requests.get(url, timeout=5).status_code == 200)() else f'❌ {name}: Failed') for name, url in services]; [print(r) for r in results]"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "🏥 Health Check - Gateway",
+                "type": "shell",
+                "command": "curl",
+                "args": ["-s", "http://localhost:8080/health"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🏥 Health Check - Node Service",
+                "type": "shell",
+                "command": "curl",
+                "args": ["-s", "http://localhost:8001/health"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🏥 Health Check - Media Service",
+                "type": "shell",
+                "command": "curl",
+                "args": ["-s", "http://localhost:8000/health"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🏥 Health Check - Orchestrator",
+                "type": "shell",
+                "command": "curl",
+                "args": ["-s", "http://localhost:8002/health"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "📊 Docker Status",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "ps"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "📈 Service Metrics - All",
+                "type": "shell",
+                "command": "python",
+                "args": ["test_metrics_implementation.py"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "📋 View Logs - All Services",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "📋 View Logs - Gateway",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "ppl-meta-gateway"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "📋 View Logs - Node Service",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "ppl-meta-node"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "📋 View Logs - Media Service",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "ppl-meta-media"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "📋 View Logs - Database",
+                "type": "shell",
+                "command": "docker-compose",
+                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "postgres"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
             },
             {
                 "label": "Start User Management Service",
@@ -138,6 +360,61 @@
                 "presentation": {
                     "reveal": "always", 
                     "panel": "new"
+                }
+            },
+            {
+                "label": "Start Orchestrator Service",
+                "type": "shell",
+                "command": "python",
+                "args": ["src/main.py"],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-orchestrator"
+                },
+                "group": "build",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "🧪 Run Tests - All Services",
+                "type": "shell",
+                "command": "python",
+                "args": ["-m", "pytest", "tests/", "-v"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "🧹 Clean Docker Resources",
+                "type": "shell",
+                "command": "docker",
+                "args": ["system", "prune", "-f"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "📦 Show Docker Images",
+                "type": "shell",
+                "command": "docker",
+                "args": ["images", "--filter", "reference=ppl-meta-*"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🔍 Service Discovery Status",
+                "type": "shell",
+                "command": "docker",
+                "args": ["exec", "ppl-consul", "consul", "members"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
                 }
             }
         ]
