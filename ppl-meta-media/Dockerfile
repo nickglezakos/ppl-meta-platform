@@ -1,26 +1,57 @@
-# Dockerfile for containerized deployment
-FROM python:3.11-slim
+# Multi-stage build for PPL Meta Media Service
+# Stage 1: Build stage with all dependencies
+FROM python:3.11-alpine AS builder
+
+# Set environment variables for build
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install build dependencies
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    postgresql-dev \
+    python3-dev \
+    libffi-dev \
+    openssl-dev
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements and install Python dependencies
+# Copy and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --user --no-warn-script-location -r requirements.txt
+
+# Stage 2: Runtime stage with minimal footprint
+FROM python:3.11-alpine AS runtime
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/home/app/.local/bin:$PATH"
+
+# Install only runtime dependencies
+RUN apk add --no-cache \
+    postgresql-libs \
+    curl \
+    && addgroup -g 1001 -S app \
+    && adduser -S -D -H -u 1001 -h /home/app -s /sbin/nologin -G app app
+
+# Set working directory
+WORKDIR /app
+
+# Copy Python packages from builder stage
+COPY --from=builder /root/.local /home/app/.local
 
 # Copy application code
 COPY src/ ./src/
-COPY .env .env
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash app \
-    && chown -R app:app /app
+# Set permissions
+RUN chown -R app:app /app
+
+# Switch to non-root user
 USER app
 
 # Expose port

@@ -1,40 +1,58 @@
-# Use Python 3.11 slim image for compatibility and size optimization
-FROM python:3.11-slim
+# Multi-stage build for PPL Meta Node Service
+# Stage 1: Build stage with all dependencies
+FROM python:3.11-alpine AS builder
 
-# Set environment variables
+# Set environment variables for build
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Create app user (security best practice - don't run as root)
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-# Install system dependencies including curl for health checks
-RUN apt-get update && apt-get install -y \
+# Install build dependencies for compilation
+RUN apk add --no-cache \
     gcc \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    musl-dev \
+    postgresql-dev \
+    python3-dev \
+    libffi-dev \
+    openssl-dev \
+    cargo \
+    rust
 
 # Set work directory
 WORKDIR /app
 
-# Copy requirements first for better Docker layer caching
+# Copy and install Python dependencies
 COPY requirements.txt .
+RUN pip install --user --no-warn-script-location -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Stage 2: Runtime stage with minimal footprint
+FROM python:3.11-alpine AS runtime
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/home/appuser/.local/bin:$PATH"
+
+# Install only runtime dependencies
+RUN apk add --no-cache \
+    postgresql-libs \
+    curl \
+    && addgroup -g 1001 -S appuser \
+    && adduser -S -D -H -u 1001 -h /home/appuser -s /sbin/nologin -G appuser appuser
+
+# Set work directory
+WORKDIR /app
+
+# Copy Python packages from builder stage
+COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application code
-COPY . .
+COPY src/ ./src/
 
-# Create logs directory and ensure proper permissions
+# Create logs directory and set permissions
 RUN mkdir -p /app/src/logs && \
-    chmod 755 /app/src/logs
-
-# Change ownership to app user
-RUN chown -R appuser:appuser /app
+    chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser

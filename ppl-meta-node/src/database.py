@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
+
 from .config import settings
 
 # Use the database URL from settings
@@ -24,11 +25,13 @@ def print_database_structure():
         print(f"Table: {table_name}")
         columns = inspector.get_columns(table_name)
         for column in columns:
-            col_name = column['name']
-            col_type = column['type']
-            nullable = column['nullable']
-            default = column.get('default')
-            print(f"  - {col_name} ({col_type}), nullable={nullable}, default={default}")
+            col_name = column["name"]
+            col_type = column["type"]
+            nullable = column["nullable"]
+            default = column.get("default")
+            print(
+                f"  - {col_name} ({col_type}), nullable={nullable}, default={default}"
+            )
         print()
 
 
