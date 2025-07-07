@@ -29,20 +29,34 @@ This document categorizes issues by component and priority to help with debuggin
 
 #### ISSUE-001: Missing Infrastructure Docker Images
 - **Component**: Full Ecosystem Deployment
-- **Status**: Unresolved
-- **Description**: Several infrastructure services fail to start due to missing Docker images
+- **Status**: ✅ Resolved
+- **Description**: Several infrastructure services failed to start due to missing Docker images and SSL configuration
 - **Affected Services**: 
-  - `consul:1.16` - Service discovery
-  - `prom/prometheus` - Metrics collection
-  - `grafana/grafana` - Monitoring dashboard
-  - `linuxserver/wireguard` - VPN mesh networking
-- **Error**: `failed to resolve reference "docker.io/library/consul:1.16": not found`
-- **Impact**: Complete ecosystem (`docker-compose.ecosystem.yml`) fails to start
-- **Workaround**: Use `docker-compose.minimal.yml` with core services only
-- **Resolution**: 
-  - [ ] Find alternative image sources or versions
-  - [ ] Build custom images for unavailable services
-  - [ ] Create conditional service definitions
+  - ✅ `consul:1.16` → `hashicorp/consul:latest` (Fixed)
+  - ✅ `prom/prometheus` - Metrics collection (Working)
+  - ✅ `grafana/grafana` - Monitoring dashboard (Working)
+  - ✅ `linuxserver/wireguard` - VPN mesh networking (Working)
+  - ✅ `nginx-gateway` - SSL certificate issues (Fixed)
+- **Errors Resolved**:
+  - ✅ `failed to resolve reference "docker.io/library/consul:1.16": not found` → Updated to `hashicorp/consul:latest`
+  - ✅ `nginx: [emerg] cannot load certificate` → Created self-signed SSL certificates
+  - ✅ Port conflicts between nginx-gateway and ppl-meta-gateway → Fixed port mapping
+- **Impact**: ✅ RESOLVED - Complete ecosystem (`docker-compose.ecosystem.yml`) now starts successfully
+- **Resolution Applied (v1.0.3)**:
+  - [x] Updated Consul image to `hashicorp/consul:latest` with proper data directory configuration
+  - [x] Created self-signed SSL certificates for nginx-gateway using OpenSSL
+  - [x] Fixed port conflicts by changing nginx external port from 8080 to 8090
+  - [x] Fixed Consul configuration with proper `-data-dir=/consul/data` parameter
+  - [x] Updated health check configurations to use Python instead of curl
+  - [x] Built missing ppl-meta-orchestrator Docker image
+- **Current Status**:
+  - ✅ All infrastructure services running: nginx-gateway, postgres, redis, consul, prometheus, grafana, wireguard
+  - ✅ All core microservices running: ppl-meta-node, ppl-meta-media, ppl-meta-orchestrator, ppl-meta-gateway
+  - ⚠️ **Known Issue**: Gateway and Orchestrator health checks report unhealthy (services are functional but Docker health check needs refinement)
+- **SSL Configuration Notes**:
+  - Created self-signed certificates for development: `/nginx/ssl/ppl-meta.crt` and `/nginx/ssl/ppl-meta.key`
+  - For production deployment, replace with proper SSL certificates (Let's Encrypt recommended)
+  - Certificate paths configured in nginx: `/etc/ssl/ppl-meta.crt` and `/etc/ssl/ppl-meta.key`
 
 #### ISSUE-002: Service Configuration Port Mismatches
 - **Component**: Service Discovery & Load Balancing

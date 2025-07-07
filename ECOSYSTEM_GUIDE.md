@@ -876,6 +876,95 @@ docker rm ppl-postgres ppl-redis ppl-meta-gateway
 
 ---
 
+## SSL/TLS Security Configuration
+
+### Development SSL Setup
+
+The ecosystem includes nginx-gateway with SSL/TLS support for secure communications. For development environments, self-signed certificates are automatically configured.
+
+#### Current SSL Configuration
+
+- **Certificate Location**: `ppl-meta-node/nginx/ssl/`
+- **Certificate Files**:
+  - `ppl-meta.crt` - SSL certificate
+  - `ppl-meta.key` - Private key
+- **Nginx Configuration**: `/etc/ssl/ppl-meta.crt` and `/etc/ssl/ppl-meta.key`
+
+#### SSL Certificate Generation
+
+The current setup uses OpenSSL-generated self-signed certificates:
+
+```bash
+# Self-signed certificate generation (already done)
+cd ppl-meta-node/nginx/ssl
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout ppl-meta.key \
+  -out ppl-meta.crt \
+  -subj "/C=US/ST=State/L=City/O=PPL/OU=IT/CN=localhost"
+```
+
+#### SSL Endpoints
+
+- **HTTPS**: `https://localhost:443` (Main secure endpoint)
+- **HTTP**: `http://localhost:80` (Redirects to HTTPS)
+- **Internal**: `http://localhost:8090` (Internal nginx communication)
+
+### Production SSL Recommendations
+
+For production deployments, replace self-signed certificates with proper SSL certificates:
+
+#### Option 1: Let's Encrypt (Recommended)
+
+```bash
+# Install certbot
+sudo apt-get install certbot python3-certbot-nginx
+
+# Generate Let's Encrypt certificate
+sudo certbot --nginx -d yourdomain.com
+
+# Auto-renewal setup
+sudo crontab -e
+# Add: 0 12 * * * /usr/bin/certbot renew --quiet
+```
+
+#### Option 2: Commercial SSL Certificate
+
+```bash
+# Place your certificates in the nginx/ssl directory
+cp your-domain.crt ppl-meta-node/nginx/ssl/ppl-meta.crt
+cp your-domain.key ppl-meta-node/nginx/ssl/ppl-meta.key
+
+# Ensure proper permissions
+chmod 644 ppl-meta-node/nginx/ssl/ppl-meta.crt
+chmod 600 ppl-meta-node/nginx/ssl/ppl-meta.key
+```
+
+#### SSL Configuration Updates for Production
+
+Update `ppl-meta-node/nginx/conf.d/default.conf` for production:
+
+```nginx
+# Update server_name for your domain
+server_name your-production-domain.com;
+
+# Add HSTS header for security
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+# Update SSL protocols for production
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;
+```
+
+### SSL Security Notes
+
+1. **Development**: Self-signed certificates will show browser warnings (expected behavior)
+2. **Production**: Use Let's Encrypt or commercial certificates to avoid warnings
+3. **Certificate Renewal**: Set up automatic renewal for Let's Encrypt certificates
+4. **Security Headers**: Additional security headers are already configured in nginx
+5. **HTTPS Redirect**: HTTP traffic is automatically redirected to HTTPS
+
+---
+
 ## Environment Variables Reference
 
 | Variable | Description | Default | Required | Used By |

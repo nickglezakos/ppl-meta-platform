@@ -10,7 +10,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080" # Internal communication port
+      - "8090:8080" # Internal communication port (changed from 8080 to 8090)
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
@@ -60,7 +60,13 @@ services:
       - ppl-internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -157,7 +163,13 @@ services:
       - ppl-internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -204,7 +216,7 @@ services:
 
   # Consul - Service Discovery
   consul:
-    image: consul:1.16
+    image: hashicorp/consul:latest
     container_name: ppl-consul
     ports:
       - "8500:8500"
@@ -217,7 +229,7 @@ services:
     restart: unless-stopped
     command: >
       consul agent -server -bootstrap-expect=1 -node=consul-server
-      -bind=0.0.0.0 -client=0.0.0.0 -ui
+      -bind=0.0.0.0 -client=0.0.0.0 -ui -data-dir=/consul/data
 
   # Prometheus - Monitoring
   prometheus:
