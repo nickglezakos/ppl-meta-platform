@@ -1,0 +1,5 @@
+"""
+Installation requirements for the shared logging module.
+"""
+
+structlog>=23.1.0

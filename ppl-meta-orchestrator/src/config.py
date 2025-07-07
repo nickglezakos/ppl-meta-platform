@@ -18,55 +18,60 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     """Configuration settings for the PPL Meta Orchestrator Service."""
 
-
     def validate_database_url(self) -> bool:
         """Validate the database connection string format and components."""
         try:
             from urllib.parse import urlparse
+
             parsed = urlparse(self.get_database_url())
-            
-            if not parsed.scheme.startswith('postgresql'):
+
+            if not parsed.scheme.startswith("postgresql"):
                 logger.error("Database URL must use postgresql:// scheme")
                 return False
-                
+
             if not parsed.username:
                 logger.error("Database URL missing username")
                 return False
-                
+
             if not parsed.password:
                 logger.error("Database URL missing password")
                 return False
-                
+
             if not parsed.hostname:
                 logger.error("Database URL missing hostname")
                 return False
-                
-            if not parsed.path or parsed.path == '/':
+
+            if not parsed.path or parsed.path == "/":
                 logger.error("Database URL missing database name")
                 return False
-                
+
             logger.info("Database URL validation passed")
             return True
-            
+
         except Exception as e:
             logger.error(f"Database URL validation failed: {e}")
             return False
-    
+
     def get_database_info(self) -> dict:
         """Get database connection information for debugging."""
         url = self.get_database_url()
         try:
             from urllib.parse import urlparse
+
             parsed = urlparse(url)
             return {
-                'host': parsed.hostname,
-                'port': parsed.port or 5432,
-                'username': parsed.username,
-                'database': parsed.path.lstrip('/'),
-                'url_masked': url.replace(parsed.password or '', '*****') if parsed.password else url
+                "host": parsed.hostname,
+                "port": parsed.port or 5432,
+                "username": parsed.username,
+                "database": parsed.path.lstrip("/"),
+                "url_masked": (
+                    url.replace(parsed.password or "", "*****")
+                    if parsed.password
+                    else url
+                ),
             }
         except Exception:
-            return {'error': 'Failed to parse database URL'}
+            return {"error": "Failed to parse database URL"}
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -80,6 +85,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = Field(default="development", env="ENVIRONMENT")
     DEBUG: bool = Field(default=False, env="DEBUG")
     LOG_LEVEL: str = Field(default="info", env="LOG_LEVEL")
+    LOG_FORMAT: str = Field(default="console", env="LOG_FORMAT")
 
     # Server configuration
     HOST: str = Field(default="0.0.0.0", env="HOST")

@@ -11,12 +11,18 @@ uvicorn[standard]==0.23.2
 pydantic>=2.4.0
 pydantic-settings>=2.0.0
 
+# Logging
+structlog>=23.1.0
+
 # Database migrations
 alembic==1.11.1
 
 # Microservices dependencies
 psutil>=5.9.0  # System monitoring
 httpx>=0.24.0  # HTTP client for service-to-service communication
+
+# Metrics collection
+prometheus-client>=0.19.0
 
 # Python compiler for executable creation
 nuitka>=2.7.0

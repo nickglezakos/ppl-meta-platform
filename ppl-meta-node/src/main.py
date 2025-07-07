@@ -1,6 +1,5 @@
 """Main entry point for the PPL Meta Node - User Management Service."""
 
-import logging
 import os
 import sys
 import time
@@ -18,16 +17,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/app/src/logs/service.log"),
-    ],
-)
-logger = logging.getLogger(__name__)
+# Add the parent directory to Python path to import shared modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+from shared.logging import setup_logging
+from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
 
 try:
     from src.config import settings
@@ -54,6 +48,14 @@ from src.models.role import Capability, Role, RoleCapability, UserRole
 from src.models.user import User, UserAction
 from src.schemas.user import UserCreate
 from src.services.role_service import ensure_admin_role
+
+# Setup standardized logging
+logger = setup_logging(
+    service_name="ppl-meta-node",
+    log_level=settings.LOG_LEVEL.upper(),
+    log_format=settings.LOG_FORMAT.lower(),
+    log_file="/app/logs/node-service.log" if os.path.exists("/app") else None,
+)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -168,8 +170,16 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+# Initialize metrics
+metrics_collector = init_metrics(
+    service_name=settings.APP_NAME, service_version=settings.APP_VERSION
+)
+
 # Middleware
 app.add_middleware(TimingMiddleware)
+
+# Add metrics middleware
+app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
 
 # CORS middleware
 app.add_middleware(
@@ -193,6 +203,10 @@ app.add_middleware(
 # Include API routers
 app.include_router(v1_router)  # API v1 routes
 
+# Add metrics endpoint
+metrics_router = create_metrics_endpoint()
+app.include_router(metrics_router, tags=["Metrics"])
+
 # Legacy routes for backward compatibility
 app.include_router(roles.router)
 app.include_router(otp.router)
@@ -200,6 +214,13 @@ app.include_router(logs.router)
 app.include_router(backup.router)
 app.include_router(app_settings.router)
 app.include_router(capabilities.router)
+
+# Initialize metrics
+init_metrics()
+
+# Add Prometheus middleware for metrics endpoint
+app.add_middleware(PrometheusMiddleware)
+create_metrics_endpoint(app)
 
 
 # Root endpoint

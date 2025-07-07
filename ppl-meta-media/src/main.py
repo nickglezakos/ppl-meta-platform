@@ -2,7 +2,7 @@
 FastAPI microservice main application.
 """
 
-import logging
+import os
 import sys
 import time
 
@@ -11,16 +11,28 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+
+# Add the parent directory to Python path to import shared modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
 from src.api.health import router as legacy_health_router
 from src.api.v1.routes import v1_router
 from src.config import get_config
 from src.database import Base, engine, test_connection
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+from shared.logging import setup_logging
+from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+
+# Initialize configuration
+config = get_config()
+
+# Setup standardized logging
+logger = setup_logging(
+    service_name="ppl-meta-media",
+    log_level=config.LOG_LEVEL.upper(),
+    log_format=config.LOG_FORMAT.lower(),
+    log_file="/app/logs/media-service.log" if os.path.exists("/app") else None,
 )
-logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -32,10 +44,16 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+# Initialize metrics
+metrics_collector = init_metrics(service_name="ppl-meta-media", service_version="1.0.0")
+
 # Security middleware
 app.add_middleware(
     TrustedHostMiddleware, allowed_hosts=["*"]  # Configure for production
 )
+
+# Add metrics middleware
+app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
 
 # CORS middleware for microservices
 app.add_middleware(
@@ -67,6 +85,10 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(v1_router)  # Versioned API
 app.include_router(legacy_health_router)  # Legacy health endpoints
+
+# Add metrics endpoint
+metrics_router = create_metrics_endpoint()
+app.include_router(metrics_router, tags=["Metrics"])
 
 
 # Startup event
@@ -114,6 +136,9 @@ async def startup_event():
         logger.error("Failed to create database tables: %s", e)
         logger.info("Service will start but database operations will fail")
 
+    # Initialize metrics
+    init_metrics(app, service_name="ppl-meta-media")
+
 
 # Shutdown event
 @app.on_event("shutdown")
@@ -133,6 +158,10 @@ async def root():
         "api_versions": {"v1": "/api/v1", "legacy": "/health"},
         "documentation": {"swagger": "/docs", "redoc": "/redoc"},
     }
+
+
+# Add Prometheus metrics endpoint
+create_metrics_endpoint(app, app_name="ppl-meta-media")
 
 
 if __name__ == "__main__":

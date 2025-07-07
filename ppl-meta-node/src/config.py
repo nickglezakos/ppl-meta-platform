@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.1"
     DEBUG: bool = False
     LOG_LEVEL: str = "info"
+    LOG_FORMAT: str = "console"
     HOST: str = "0.0.0.0"
     PORT: int = 8001
 
