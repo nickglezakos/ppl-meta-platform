@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 from shared.logging import setup_logging
 from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+from shared.validation import handle_validation_error
 
 try:
     from src.config import settings
@@ -169,6 +170,24 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+# Add global exception handlers for validation errors
+from fastapi import HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    """Handle Pydantic validation errors."""
+    return handle_validation_error(exc)
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request, exc):
+    """Handle value errors from custom validation."""
+    return handle_validation_error(exc)
+
 
 # Initialize metrics
 metrics_collector = init_metrics(

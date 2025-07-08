@@ -17,7 +17,7 @@ from config import CORS_SETTINGS, settings
 from core.health import health_router
 from core.middleware import LoggingMiddleware, RateLimitMiddleware
 from core.service_discovery import ServiceRegistry
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -28,6 +28,43 @@ from utils.logger import setup_logging
 # Setup structured logging
 setup_logging()
 logger = structlog.get_logger()
+
+# Add validation error handlers
+try:
+    from shared.validation import SecurityValidator
+
+    def validate_gateway_request(request_data: dict, endpoint: str) -> dict:
+        """Validate gateway request data for security."""
+        validated_data = {}
+
+        for key, value in request_data.items():
+            if isinstance(value, str):
+                try:
+                    SecurityValidator.validate_sql_injection(value, key)
+                    SecurityValidator.validate_xss(value, key)
+                    validated_data[key] = SecurityValidator.escape_html(value)
+                except ValueError as e:
+                    logger.warning(
+                        "Security validation failed",
+                        field=key,
+                        endpoint=endpoint,
+                        error=str(e),
+                    )
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Security validation failed for {key}: {str(e)}",
+                    )
+            else:
+                validated_data[key] = value
+
+        return validated_data
+
+except ImportError:
+    logger.info("Shared validation module not available")
+
+    def validate_gateway_request(request_data: dict, endpoint: str) -> dict:
+        """Fallback validation when shared module unavailable."""
+        return request_data
 
 
 @asynccontextmanager

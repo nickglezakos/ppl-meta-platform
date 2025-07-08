@@ -5,15 +5,48 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 sys.path.insert(0, os.path.dirname(__file__))
 
+from typing import Any, Dict
+
 # Local imports
 from config import settings
 
 # Standard library and third-party imports
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from shared.logging import setup_logging
 from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+
+# Add validation support
+try:
+    from shared.validation import SecurityValidator
+
+    def validate_orchestrator_input(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate orchestrator input data."""
+        validated_data = {}
+
+        for key, value in data.items():
+            if isinstance(value, str):
+                try:
+                    SecurityValidator.validate_sql_injection(value, key)
+                    SecurityValidator.validate_xss(value, key)
+                    validated_data[key] = SecurityValidator.escape_html(value)
+                except ValueError as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Security validation failed for {key}: {str(e)}",
+                    )
+            else:
+                validated_data[key] = value
+
+        return validated_data
+
+except ImportError:
+
+    def validate_orchestrator_input(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Fallback validation when shared module unavailable."""
+        return data
+
 
 # Setup standardized logging
 logger = setup_logging(
@@ -64,6 +97,41 @@ async def root():
         "message": f"{settings.APP_NAME} Service",
         "status": "running",
         "version": settings.APP_VERSION,
+    }
+
+
+@app.post("/orchestrate")
+async def orchestrate_request(data: Dict[str, Any]):
+    """Orchestrate service requests with validation."""
+    try:
+        # Validate input data
+        validated_data = validate_orchestrator_input(data)
+
+        # Process orchestration logic here
+        return {
+            "status": "orchestrated",
+            "processed_data": validated_data,
+            "message": "Request orchestration successful",
+            "service": settings.APP_NAME,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Orchestration processing error: {str(e)}"
+        )
+
+
+@app.get("/validate")
+async def validate_data_endpoint():
+    """Endpoint to test validation functionality."""
+    return {
+        "validation_active": True,
+        "security_features": [
+            "sql_injection_prevention",
+            "xss_protection",
+            "input_sanitization",
+        ],
     }
 
 

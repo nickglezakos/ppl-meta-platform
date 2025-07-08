@@ -82,6 +82,39 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
+# Add validation error handlers
+try:
+    from shared.validation import ValidationError
+
+    @app.exception_handler(ValidationError)
+    async def validation_exception_handler(request: Request, exc: ValidationError):
+        logger.warning("Validation error: %s", exc)
+        return JSONResponse(
+            status_code=400,
+            content=exc.dict() if hasattr(exc, "dict") else {"detail": str(exc)},
+        )
+
+except ImportError:
+    logger.info("Shared validation module not available, using basic error handling")
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    """Handle validation-related ValueError exceptions."""
+    error_msg = str(exc)
+    if any(
+        keyword in error_msg.lower() for keyword in ["injection", "xss", "validation"]
+    ):
+        logger.warning("Security validation error: %s", exc)
+        return JSONResponse(
+            status_code=400,
+            content={"detail": error_msg, "error_type": "validation_error"},
+        )
+    else:
+        logger.error("Value error: %s", exc)
+        return JSONResponse(status_code=400, content={"detail": error_msg})
+
+
 # Include routers
 app.include_router(v1_router)  # Versioned API
 app.include_router(legacy_health_router)  # Legacy health endpoints

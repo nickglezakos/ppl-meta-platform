@@ -1,0 +1,11 @@
+"""
+Installation requirements for the shared validation module.
+"""
+
+# Core dependencies
+pydantic>=2.4.0
+fastapi>=0.104.0
+bleach>=6.0.0
+
+# Optional dependencies for enhanced functionality
+email-validator>=2.0.0

@@ -1,7 +1,7 @@
 {
   "name": "ppl-meta-platform",
-  "version": "1.0.2",
-  "description": "PPL Meta Platform - Complete Infrastructure Workspace",
+  "version": "1.3.0",
+  "description": "PPL Meta Platform - Complete Infrastructure Workspace with Comprehensive Input Validation",
   "private": true,
   "workspaces": [
     "services/*",

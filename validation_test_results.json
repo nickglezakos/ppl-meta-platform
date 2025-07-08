@@ -1,0 +1,131 @@
+{
+  "summary": null,
+  "detailed_results": [
+    {
+      "test_name": "SQL Injection - Safe Text",
+      "status": "PASS",
+      "details": "Safe text passed validation",
+      "service": "shared"
+    },
+    {
+      "test_name": "SQL Injection - Malicious Input",
+      "status": "PASS",
+      "details": "Malicious SQL correctly detected",
+      "service": "shared"
+    },
+    {
+      "test_name": "XSS - Malicious Script",
+      "status": "PASS",
+      "details": "Malicious script correctly detected",
+      "service": "shared"
+    },
+    {
+      "test_name": "HTML Escaping",
+      "status": "PASS",
+      "details": "HTML correctly escaped",
+      "service": "shared"
+    },
+    {
+      "test_name": "Username - Valid",
+      "status": "PASS",
+      "details": "Valid username accepted: valid_user123",
+      "service": "shared"
+    },
+    {
+      "test_name": "Username - Invalid",
+      "status": "PASS",
+      "details": "Invalid username correctly rejected",
+      "service": "shared"
+    },
+    {
+      "test_name": "Email - Valid",
+      "status": "FAIL",
+      "details": "type object 'FieldValidators' has no attribute 'validate_email'",
+      "service": "shared"
+    },
+    {
+      "test_name": "Password - Strong",
+      "status": "PASS",
+      "details": "Strong password accepted",
+      "service": "shared"
+    },
+    {
+      "test_name": "Password - Weak",
+      "status": "PASS",
+      "details": "Weak password correctly rejected",
+      "service": "shared"
+    },
+    {
+      "test_name": "User Creation - Valid Data",
+      "status": "PASS",
+      "details": "Valid user data processed: 3 fields",
+      "service": "shared"
+    },
+    {
+      "test_name": "User Creation - Invalid Data",
+      "status": "FAIL",
+      "details": "422: {'error': 'validation_failed', 'message': 'Request validation failed', 'details': [{'field': 'username', 'error_type': <ValidationErrorType.INVALID_FORMAT: 'invalid_format'>, 'message': 'Potential SQL injection detected in username', 'value': \"'; DROP TABLE users; --\", 'constraints': None}, {'field': 'email', 'error_type': <ValidationErrorType.INVALID_FORMAT: 'invalid_format'>, 'message': 'Invalid email format', 'value': 'invalid-email', 'constraints': None}, {'field': 'password', 'error_type': <ValidationErrorType.INVALID_FORMAT: 'invalid_format'>, 'message': 'Password must be at least 8 characters long', 'value': '[REDACTED]', 'constraints': None}], 'timestamp': '2025-07-08T07:58:12.971278', 'request_id': None}",
+      "service": "shared"
+    },
+    {
+      "test_name": "Password Update - Valid",
+      "status": "FAIL",
+      "details": "422: {'error': 'validation_failed', 'message': 'Request validation failed', 'details': [{'field': 'old_password', 'error_type': <ValidationErrorType.REQUIRED_FIELD: 'required_field'>, 'message': 'Current password is required', 'value': None, 'constraints': None}], 'timestamp': '2025-07-08T07:58:12.971326', 'request_id': None}",
+      "service": "shared"
+    },
+    {
+      "test_name": "Error Response Structure",
+      "status": "PASS",
+      "details": "Error response has all required fields",
+      "service": "shared"
+    },
+    {
+      "test_name": "ppl-meta-node - Validation Import",
+      "status": "PASS",
+      "details": "Service imports shared validation",
+      "service": "ppl-meta-node"
+    },
+    {
+      "test_name": "ppl-meta-node - Security Validation",
+      "status": "PASS",
+      "details": "Service uses security validation",
+      "service": "ppl-meta-node"
+    },
+    {
+      "test_name": "ppl-meta-media - Validation Import",
+      "status": "PASS",
+      "details": "Service imports shared validation",
+      "service": "ppl-meta-media"
+    },
+    {
+      "test_name": "ppl-meta-media - Security Validation",
+      "status": "PASS",
+      "details": "Service uses security validation",
+      "service": "ppl-meta-media"
+    },
+    {
+      "test_name": "ppl-meta-gateway - Validation Import",
+      "status": "PASS",
+      "details": "Service imports shared validation",
+      "service": "ppl-meta-gateway"
+    },
+    {
+      "test_name": "ppl-meta-gateway - Security Validation",
+      "status": "PASS",
+      "details": "Service uses security validation",
+      "service": "ppl-meta-gateway"
+    },
+    {
+      "test_name": "ppl-meta-orchestrator - Validation Import",
+      "status": "PASS",
+      "details": "Service imports shared validation",
+      "service": "ppl-meta-orchestrator"
+    },
+    {
+      "test_name": "ppl-meta-orchestrator - Security Validation",
+      "status": "PASS",
+      "details": "Service uses security validation",
+      "service": "ppl-meta-orchestrator"
+    }
+  ]
+}
