@@ -1,79 +1,106 @@
+import logging
 import os
-import sys
-
-# Add paths for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-sys.path.insert(0, os.path.dirname(__file__))
-
+from contextlib import asynccontextmanager
 from typing import Any, Dict
 
 # Local imports
 from config import settings
 
 # Standard library and third-party imports
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-from shared.logging import setup_logging
-from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
-
-# Add validation support
-try:
-    from shared.validation import SecurityValidator
-
-    def validate_orchestrator_input(data: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate orchestrator input data."""
-        validated_data = {}
-
-        for key, value in data.items():
-            if isinstance(value, str):
-                try:
-                    SecurityValidator.validate_sql_injection(value, key)
-                    SecurityValidator.validate_xss(value, key)
-                    validated_data[key] = SecurityValidator.escape_html(value)
-                except ValueError as e:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Security validation failed for {key}: {str(e)}",
-                    )
-            else:
-                validated_data[key] = value
-
-        return validated_data
-
-except ImportError:
-
-    def validate_orchestrator_input(data: Dict[str, Any]) -> Dict[str, Any]:
-        """Fallback validation when shared module unavailable."""
-        return data
-
-
-# Setup standardized logging
-logger = setup_logging(
-    service_name="ppl-meta-orchestrator",
-    log_level=settings.LOG_LEVEL.upper(),
-    log_format=settings.LOG_FORMAT.lower(),
-    log_file=(
-        "/app/logs/orchestrator-service.log" if os.path.exists("/app") else None
-    ),  # noqa: E501
+# Setup basic logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
+# Try to import consul for service discovery
+try:
+    import consul
+
+    service_discovery_available = True
+    logger.info("Consul module available for service discovery")
+except ImportError:
+    service_discovery_available = False
+    logger.warning("Consul module not available, service discovery disabled")
+
+# Global consul client
+consul_client = None
+
+# Consul configuration
+CONSUL_CONFIG = {
+    "host": os.getenv("CONSUL_HOST", "consul"),
+    "port": int(os.getenv("CONSUL_PORT", "8500")),
+    "enabled": os.getenv("CONSUL_ENABLED", "true").lower() == "true",
+}
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Application lifespan context manager for startup and shutdown tasks."""
+    global consul_client
+    logger.info("Starting PPL Meta Orchestrator Service...")
+
+    # Initialize service discovery if available
+    if service_discovery_available and CONSUL_CONFIG["enabled"]:
+        try:
+            consul_client = consul.Consul(
+                host=CONSUL_CONFIG["host"], port=CONSUL_CONFIG["port"]
+            )
+
+            # Register service with Consul
+            consul_client.agent.service.register(
+                name="ppl-meta-orchestrator",
+                service_id="ppl-meta-orchestrator",
+                address=settings.HOST,
+                port=settings.PORT,
+                tags=["orchestrator", "coordination", "microservice"],
+                check=consul.Check.http(
+                    f"http://{settings.HOST}:{settings.PORT}/health", interval="10s"
+                ),
+            )
+            logger.info("Service registered with Consul")
+        except Exception as e:
+            logger.error(f"Failed to initialize service discovery: {e}")
+            logger.info("Continuing without service discovery")
+            consul_client = None
+
+    logger.info("Service startup completed successfully")
+
+    yield
+
+    logger.info("Shutting down PPL Meta Orchestrator Service...")
+
+    # Deregister from service discovery
+    if consul_client:
+        try:
+            consul_client.agent.service.deregister("ppl-meta-orchestrator")
+            logger.info("Service deregistered from Consul")
+        except Exception as e:
+            logger.error(f"Failed to deregister service: {e}")
+
+
+def validate_orchestrator_input(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Basic validation for orchestrator input data."""
+    # Simple validation - can be extended later
+    validated_data = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            # Basic sanitization
+            validated_data[key] = value.strip()
+        else:
+            validated_data[key] = value
+    return validated_data
+
+
+# Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+    lifespan=lifespan,
 )
-
-# Initialize metrics
-metrics_collector = init_metrics(
-    service_name=settings.APP_NAME, service_version=settings.APP_VERSION
-)
-
-# Add metrics middleware
-app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
-
-# Add metrics endpoint
-metrics_router = create_metrics_endpoint()
-app.include_router(metrics_router, tags=["Metrics"])
 
 
 @app.get("/health")
@@ -119,7 +146,7 @@ async def orchestrate_request(data: Dict[str, Any]):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Orchestration processing error: {str(e)}"
-        )
+        ) from e
 
 
 @app.get("/validate")

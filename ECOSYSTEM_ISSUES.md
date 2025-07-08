@@ -579,16 +579,33 @@ This document categorizes issues by component and priority to help with debuggin
 
 #### ISSUE-017: Service Discovery Implementation
 - **Component**: Service Communication
-- **Status**: Open
+- **Status**: ✅ Resolved
 - **Description**: Services use hardcoded URLs for inter-service communication
-- **Problems**:
-  - No dynamic service discovery
-  - Hardcoded service URLs
-  - No load balancing between service instances
-- **Resolution**:
-  - [ ] Implement Consul-based service discovery
-  - [ ] Add service registration/deregistration
-  - [ ] Implement client-side load balancing
+- **Problems Resolved**:
+  - ✅ No dynamic service discovery → Implemented Consul-based service discovery
+  - ✅ Hardcoded service URLs → Added dynamic service lookup
+  - ✅ No load balancing between service instances → Implemented client-side load balancing
+- **Resolution Applied (v1.1.0)**:
+  - [x] Created shared service discovery module (`shared/service_discovery/`) with:
+    - Consul client integration with health checks and service registration
+    - Circuit breaker pattern with fallback to hardcoded URLs
+    - Multiple load balancing strategies (round-robin, least-connections, random, health-weighted)
+    - Async API for service registration, deregistration, and discovery
+  - [x] Integrated service discovery into all core services:
+    - `ppl-meta-gateway`: Updated main.py with service registration/deregistration
+    - `ppl-meta-node`: Added Consul configuration and lifespan management
+    - `ppl-meta-media`: Modernized to use lifespan pattern with service discovery
+    - `ppl-meta-orchestrator`: Added service discovery integration
+  - [x] Updated service configurations:
+    - Added CONSUL_CONFIG to microservice configurations
+    - Updated health checks to use service discovery for inter-service communication
+    - Added service discovery dependencies to all requirements.txt files
+  - [x] Enhanced inter-service communication:
+    - Gateway health checks now use service discovery when available
+    - Fallback to hardcoded URLs when service discovery is unavailable
+    - Client-side load balancing for high availability
+- **Dependencies Added**: `python-consul==1.1.0`, `httpx>=0.25.0`, `structlog>=23.2.0`
+- **Breaking Changes**: None - backwards compatible with fallback support
 
 #### ISSUE-018: Missing API Gateway Features
 - **Component**: ppl-meta-gateway

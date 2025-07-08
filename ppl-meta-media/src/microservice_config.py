@@ -1,6 +1,7 @@
 """
 Microservice configuration and settings.
 """
+
 import os
 from pathlib import Path
 
@@ -25,12 +26,25 @@ MICROSERVICE_CONFIG = {
     "circuit_breaker": {
         "failure_threshold": int(os.getenv("CIRCUIT_BREAKER_THRESHOLD", "5")),
         "timeout": int(os.getenv("CIRCUIT_BREAKER_TIMEOUT", "60")),
-    }
+    },
+}
+
+# Service registry configuration for Consul-based service discovery
+SERVICE_REGISTRY = {
+    "name": "ppl-meta-media",
+    "version": "1.0.0",
+    "host": "0.0.0.0",
+    "port": 8000,
+    "health_check": "http://0.0.0.0:8000/api/v1/health",
+    "tags": ["media", "processing", "microservice"],
+}
+
+# Consul configuration
+CONSUL_CONFIG = {
+    "host": os.getenv("CONSUL_HOST", "consul"),
+    "port": int(os.getenv("CONSUL_PORT", "8500")),
+    "enabled": os.getenv("CONSUL_ENABLED", "true").lower() == "true",
 }
 
 # Health check endpoints
-HEALTH_CHECK_PATHS = [
-    "/health",
-    "/health/ready", 
-    "/health/live"
-]
+HEALTH_CHECK_PATHS = ["/health", "/health/ready", "/health/live"]

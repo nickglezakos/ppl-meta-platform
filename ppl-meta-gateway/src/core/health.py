@@ -1,34 +1,49 @@
 """
 Health check endpoints and monitoring.
 """
-from typing import Dict, Any
+
+import time
+from typing import Any, Dict
+
+import httpx
+import psutil
+from config import settings
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-import time
-import psutil
-import httpx
 
-from config import settings
+# Try to import service discovery client
+try:
+    from shared.service_discovery import ServiceDiscoveryClient
+
+    service_discovery_available = True
+except ImportError:
+    service_discovery_available = False
 
 health_router = APIRouter()
 
+
 class HealthResponse(BaseModel):
     """Health check response model."""
+
     status: str
     timestamp: float
     service: str
     version: str
     environment: str
 
+
 class DetailedHealthResponse(HealthResponse):
     """Detailed health check response model."""
+
     uptime: float
     memory: Dict[str, Any]
     cpu_percent: float
     services: Dict[str, str]
 
+
 # Service start time for uptime calculation
 start_time = time.time()
+
 
 @health_router.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -38,34 +53,69 @@ async def health_check():
         timestamp=time.time(),
         service=settings.service_name,
         version=settings.service_version,
-        environment=settings.environment
+        environment=settings.environment,
     )
+
 
 @health_router.get("/health/ready", response_model=DetailedHealthResponse)
 async def readiness_check():
     """Readiness probe for Kubernetes."""
     # Check if dependent services are reachable
     services_status = {}
-    
+
     # Check user management service
     try:
+        if service_discovery_available:
+            # Use service discovery to get service URL
+            service_discovery_client = ServiceDiscoveryClient(
+                consul_host=settings.consul_host, consul_port=settings.consul_port
+            )
+            service_url = await service_discovery_client.get_service_url(
+                "ppl-meta-node"
+            )
+            if service_url:
+                health_url = f"{service_url}/health"
+            else:
+                health_url = f"{settings.user_service_url}/health"
+        else:
+            health_url = f"{settings.user_service_url}/health"
+
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{settings.user_service_url}/health")
-            services_status["user_service"] = "healthy" if response.status_code == 200 else "unhealthy"
+            response = await client.get(health_url)
+            services_status["user_service"] = (
+                "healthy" if response.status_code == 200 else "unhealthy"
+            )
     except Exception:
         services_status["user_service"] = "unreachable"
-    
+
     # Check media service
     try:
+        if service_discovery_available:
+            # Use service discovery to get service URL
+            service_discovery_client = ServiceDiscoveryClient(
+                consul_host=settings.consul_host, consul_port=settings.consul_port
+            )
+            service_url = await service_discovery_client.get_service_url(
+                "ppl-meta-media"
+            )
+            if service_url:
+                health_url = f"{service_url}/health"
+            else:
+                health_url = f"{settings.media_service_url}/health"
+        else:
+            health_url = f"{settings.media_service_url}/health"
+
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{settings.media_service_url}/health")
-            services_status["media_service"] = "healthy" if response.status_code == 200 else "unhealthy"
+            response = await client.get(health_url)
+            services_status["media_service"] = (
+                "healthy" if response.status_code == 200 else "unhealthy"
+            )
     except Exception:
         services_status["media_service"] = "unreachable"
-    
+
     # Get system metrics
     memory_info = psutil.virtual_memory()
-    
+
     return DetailedHealthResponse(
         status="ready",
         timestamp=time.time(),
@@ -76,11 +126,12 @@ async def readiness_check():
         memory={
             "total": memory_info.total,
             "available": memory_info.available,
-            "percent": memory_info.percent
+            "percent": memory_info.percent,
         },
         cpu_percent=psutil.cpu_percent(interval=1),
-        services=services_status
+        services=services_status,
     )
+
 
 @health_router.get("/health/live", response_model=HealthResponse)
 async def liveness_check():
@@ -90,5 +141,5 @@ async def liveness_check():
         timestamp=time.time(),
         service=settings.service_name,
         version=settings.service_version,
-        environment=settings.environment
+        environment=settings.environment,
     )

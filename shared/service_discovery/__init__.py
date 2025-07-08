@@ -1,0 +1,665 @@
+"""
+Shared Service Discovery Module for PPL Meta Platform
+
+This module provides Consul-based service discovery, registration, and health checking
+for all microservices in the PPL Meta Platform.
+
+Features:
+- Automatic service registration/deregistration
+- Health check monitoring
+- Load balancing with round-robin and least-connections strategies
+- Circuit breaker pattern for fault tolerance
+- Service mesh integration capabilities
+"""
+
+import asyncio
+import json
+import logging
+import os
+import random
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urljoin
+
+import httpx
+import structlog
+from fastapi import HTTPException
+
+logger = structlog.get_logger()
+
+
+class LoadBalancingStrategy(Enum):
+    """Load balancing strategies for service discovery."""
+
+    ROUND_ROBIN = "round_robin"
+    LEAST_CONNECTIONS = "least_connections"
+    RANDOM = "random"
+    HEALTH_WEIGHTED = "health_weighted"
+
+
+class ServiceStatus(Enum):
+    """Service health status."""
+
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    UNKNOWN = "unknown"
+    CRITICAL = "critical"
+
+
+@dataclass
+class ServiceInstance:
+    """Represents a service instance in the registry."""
+
+    service_name: str
+    host: str
+    port: int
+    health_endpoint: str = "/health"
+    protocol: str = "http"
+    version: str = "1.0.0"
+    tags: List[str] = field(default_factory=list)
+    metadata: Dict[str, str] = field(default_factory=dict)
+    status: ServiceStatus = ServiceStatus.UNKNOWN
+    last_health_check: float = 0
+    connection_count: int = 0
+    response_time: float = 0.0
+
+    @property
+    def url(self) -> str:
+        """Get the full URL for this service instance."""
+        return f"{self.protocol}://{self.host}:{self.port}"
+
+    @property
+    def health_url(self) -> str:
+        """Get the health check URL for this service instance."""
+        return f"{self.url}{self.health_endpoint}"
+
+
+@dataclass
+class CircuitBreakerConfig:
+    """Configuration for circuit breaker pattern."""
+
+    failure_threshold: int = 5
+    recovery_timeout: int = 60
+    half_open_max_calls: int = 3
+
+
+class CircuitBreaker:
+    """Implements circuit breaker pattern for service calls."""
+
+    def __init__(self, config: CircuitBreakerConfig):
+        self.config = config
+        self.failure_count = 0
+        self.last_failure_time = 0
+        self.state = "closed"  # closed, open, half_open
+
+    def can_execute(self) -> bool:
+        """Check if the circuit breaker allows execution."""
+        if self.state == "closed":
+            return True
+        elif self.state == "open":
+            if time.time() - self.last_failure_time > self.config.recovery_timeout:
+                self.state = "half_open"
+                return True
+            return False
+        else:  # half_open
+            return True
+
+    def record_success(self):
+        """Record a successful call."""
+        self.failure_count = 0
+        self.state = "closed"
+
+    def record_failure(self):
+        """Record a failed call."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+
+        if self.failure_count >= self.config.failure_threshold:
+            self.state = "open"
+
+
+class ConsulServiceDiscovery:
+    """Consul-based service discovery client."""
+
+    def __init__(
+        self,
+        consul_host: str = "consul",
+        consul_port: int = 8500,
+        service_ttl: int = 30,
+        health_check_interval: int = 10,
+    ):
+        self.consul_host = consul_host
+        self.consul_port = consul_port
+        self.consul_url = f"http://{consul_host}:{consul_port}"
+        self.service_ttl = service_ttl
+        self.health_check_interval = health_check_interval
+
+        self.services: Dict[str, List[ServiceInstance]] = {}
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        self.load_balancer_state: Dict[str, Dict] = {}
+
+        # Service registration tracking
+        self.registered_services: List[str] = []
+
+    async def register_service(
+        self,
+        service_name: str,
+        host: str,
+        port: int,
+        health_endpoint: str = "/health",
+        tags: List[str] = None,
+        metadata: Dict[str, str] = None,
+    ) -> bool:
+        """Register a service with Consul."""
+        try:
+            service_id = f"{service_name}-{host}-{port}"
+
+            registration_data = {
+                "ID": service_id,
+                "Name": service_name,
+                "Tags": tags or [],
+                "Address": host,
+                "Port": port,
+                "Meta": metadata or {},
+                "Check": {
+                    "HTTP": f"http://{host}:{port}{health_endpoint}",
+                    "Interval": f"{self.health_check_interval}s",
+                    "Timeout": "5s",
+                    "DeregisterCriticalServiceAfter": f"{self.service_ttl * 3}s",
+                },
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.put(
+                    f"{self.consul_url}/v1/agent/service/register",
+                    json=registration_data,
+                    timeout=10.0,
+                )
+
+                if response.status_code == 200:
+                    self.registered_services.append(service_id)
+                    logger.info(
+                        "Service registered successfully",
+                        service_name=service_name,
+                        service_id=service_id,
+                        host=host,
+                        port=port,
+                    )
+                    return True
+                else:
+                    logger.error(
+                        "Failed to register service",
+                        service_name=service_name,
+                        status_code=response.status_code,
+                        response=response.text,
+                    )
+                    return False
+
+        except Exception as e:
+            logger.error(
+                "Exception during service registration",
+                service_name=service_name,
+                error=str(e),
+            )
+            return False
+
+    async def deregister_service(self, service_name: str, host: str, port: int) -> bool:
+        """Deregister a service from Consul."""
+        try:
+            service_id = f"{service_name}-{host}-{port}"
+
+            async with httpx.AsyncClient() as client:
+                response = await client.put(
+                    f"{self.consul_url}/v1/agent/service/deregister/{service_id}",
+                    timeout=10.0,
+                )
+
+                if response.status_code == 200:
+                    if service_id in self.registered_services:
+                        self.registered_services.remove(service_id)
+                    logger.info(
+                        "Service deregistered successfully",
+                        service_name=service_name,
+                        service_id=service_id,
+                    )
+                    return True
+                else:
+                    logger.error(
+                        "Failed to deregister service",
+                        service_name=service_name,
+                        status_code=response.status_code,
+                    )
+                    return False
+
+        except Exception as e:
+            logger.error(
+                "Exception during service deregistration",
+                service_name=service_name,
+                error=str(e),
+            )
+            return False
+
+    async def discover_services(self, service_name: str) -> List[ServiceInstance]:
+        """Discover all healthy instances of a service."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.consul_url}/v1/health/service/{service_name}",
+                    params={"passing": "true"},
+                    timeout=10.0,
+                )
+
+                if response.status_code == 200:
+                    services_data = response.json()
+                    instances = []
+
+                    for service_data in services_data:
+                        service_info = service_data["Service"]
+                        health_checks = service_data.get("Checks", [])
+
+                        # Determine service status from health checks
+                        status = ServiceStatus.HEALTHY
+                        for check in health_checks:
+                            if check["Status"] != "passing":
+                                status = ServiceStatus.UNHEALTHY
+                                break
+
+                        instance = ServiceInstance(
+                            service_name=service_info["Service"],
+                            host=service_info["Address"],
+                            port=service_info["Port"],
+                            tags=service_info.get("Tags", []),
+                            metadata=service_info.get("Meta", {}),
+                            status=status,
+                        )
+                        instances.append(instance)
+
+                    # Update local cache
+                    self.services[service_name] = instances
+
+                    logger.debug(
+                        "Services discovered",
+                        service_name=service_name,
+                        instance_count=len(instances),
+                    )
+
+                    return instances
+                else:
+                    logger.error(
+                        "Failed to discover services",
+                        service_name=service_name,
+                        status_code=response.status_code,
+                    )
+                    return []
+
+        except Exception as e:
+            logger.error(
+                "Exception during service discovery",
+                service_name=service_name,
+                error=str(e),
+            )
+            return []
+
+    def get_service_instance(
+        self,
+        service_name: str,
+        strategy: LoadBalancingStrategy = LoadBalancingStrategy.ROUND_ROBIN,
+    ) -> Optional[ServiceInstance]:
+        """Get a service instance using the specified load balancing strategy."""
+        instances = self.services.get(service_name, [])
+        healthy_instances = [
+            instance
+            for instance in instances
+            if instance.status == ServiceStatus.HEALTHY
+        ]
+
+        if not healthy_instances:
+            logger.warning("No healthy instances found", service_name=service_name)
+            return None
+
+        if strategy == LoadBalancingStrategy.ROUND_ROBIN:
+            return self._round_robin_select(service_name, healthy_instances)
+        elif strategy == LoadBalancingStrategy.LEAST_CONNECTIONS:
+            return self._least_connections_select(healthy_instances)
+        elif strategy == LoadBalancingStrategy.RANDOM:
+            return random.choice(healthy_instances)
+        elif strategy == LoadBalancingStrategy.HEALTH_WEIGHTED:
+            return self._health_weighted_select(healthy_instances)
+        else:
+            return healthy_instances[0]
+
+    def _round_robin_select(
+        self, service_name: str, instances: List[ServiceInstance]
+    ) -> ServiceInstance:
+        """Select using round-robin strategy."""
+        if service_name not in self.load_balancer_state:
+            self.load_balancer_state[service_name] = {"current_index": 0}
+
+        state = self.load_balancer_state[service_name]
+        index = state["current_index"] % len(instances)
+        state["current_index"] = (index + 1) % len(instances)
+
+        return instances[index]
+
+    def _least_connections_select(
+        self, instances: List[ServiceInstance]
+    ) -> ServiceInstance:
+        """Select instance with least active connections."""
+        return min(instances, key=lambda x: x.connection_count)
+
+    def _health_weighted_select(
+        self, instances: List[ServiceInstance]
+    ) -> ServiceInstance:
+        """Select instance based on response time (health weighting)."""
+        # Prefer instances with lower response times
+        return min(instances, key=lambda x: x.response_time or float("inf"))
+
+    async def make_service_call(
+        self,
+        service_name: str,
+        endpoint: str,
+        method: str = "GET",
+        strategy: LoadBalancingStrategy = LoadBalancingStrategy.ROUND_ROBIN,
+        **kwargs,
+    ) -> httpx.Response:
+        """Make a call to a service with circuit breaker and load balancing."""
+        # Get circuit breaker for this service
+        if service_name not in self.circuit_breakers:
+            self.circuit_breakers[service_name] = CircuitBreaker(CircuitBreakerConfig())
+
+        circuit_breaker = self.circuit_breakers[service_name]
+
+        if not circuit_breaker.can_execute():
+            raise HTTPException(
+                status_code=503,
+                detail=f"Service {service_name} is currently unavailable (circuit breaker open)",
+            )
+
+        # Refresh service instances if needed
+        if service_name not in self.services:
+            await self.discover_services(service_name)
+
+        instance = self.get_service_instance(service_name, strategy)
+
+        if not instance:
+            circuit_breaker.record_failure()
+            raise HTTPException(
+                status_code=503,
+                detail=f"No healthy instances available for service {service_name}",
+            )
+
+        try:
+            # Track connection
+            instance.connection_count += 1
+            start_time = time.time()
+
+            url = urljoin(instance.url, endpoint)
+
+            async with httpx.AsyncClient() as client:
+                response = await client.request(method, url, timeout=30.0, **kwargs)
+
+                # Update metrics
+                instance.response_time = time.time() - start_time
+                instance.connection_count -= 1
+
+                # Record success
+                circuit_breaker.record_success()
+
+                logger.debug(
+                    "Service call successful",
+                    service_name=service_name,
+                    endpoint=endpoint,
+                    status_code=response.status_code,
+                    response_time=instance.response_time,
+                )
+
+                return response
+
+        except Exception as e:
+            instance.connection_count = max(0, instance.connection_count - 1)
+            circuit_breaker.record_failure()
+
+            logger.error(
+                "Service call failed",
+                service_name=service_name,
+                endpoint=endpoint,
+                error=str(e),
+            )
+
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to call service {service_name}: {str(e)}",
+            )
+
+    async def start_health_monitoring(self):
+        """Start background health monitoring for services."""
+
+        async def monitor_services():
+            while True:
+                try:
+                    for service_name in self.services.keys():
+                        await self.discover_services(service_name)
+                    await asyncio.sleep(self.health_check_interval)
+                except Exception as e:
+                    logger.error("Health monitoring error", error=str(e))
+                    await asyncio.sleep(5)
+
+        # Start monitoring task
+        asyncio.create_task(monitor_services())
+        logger.info("Health monitoring started")
+
+    async def cleanup(self):
+        """Cleanup and deregister all services."""
+        for service_id in self.registered_services:
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.put(
+                        f"{self.consul_url}/v1/agent/service/deregister/{service_id}",
+                        timeout=10.0,
+                    )
+            except Exception as e:
+                logger.error(
+                    "Failed to deregister service during cleanup",
+                    service_id=service_id,
+                    error=str(e),
+                )
+
+
+class ServiceDiscoveryClient:
+    """High-level client for service discovery operations."""
+
+    def __init__(
+        self,
+        consul_enabled: bool = True,
+        consul_host: str = None,
+        consul_port: int = None,
+        fallback_urls: Dict[str, str] = None,
+    ):
+        self.consul_enabled = consul_enabled
+        self.fallback_urls = fallback_urls or {}
+
+        if consul_enabled:
+            # Get Consul configuration from environment
+            consul_host = consul_host or os.getenv("CONSUL_HOST", "consul")
+            consul_port = consul_port or int(os.getenv("CONSUL_PORT", "8500"))
+
+            self.consul = ConsulServiceDiscovery(
+                consul_host=consul_host, consul_port=consul_port
+            )
+        else:
+            self.consul = None
+            logger.info("Service discovery running in fallback mode (hardcoded URLs)")
+
+    async def register_service(
+        self,
+        service_name: str,
+        host: str = None,
+        port: int = None,
+        health_endpoint: str = "/health",
+        tags: List[str] = None,
+        metadata: Dict[str, str] = None,
+    ) -> bool:
+        """Register this service with the discovery system."""
+        if not self.consul_enabled or not self.consul:
+            logger.info("Service registration skipped (Consul disabled)")
+            return True
+
+        # Use environment variables if not provided
+        host = host or os.getenv("HOST", "0.0.0.0")
+        port = port or int(os.getenv("PORT", "8000"))
+
+        # Add default metadata
+        default_metadata = {
+            "version": os.getenv("APP_VERSION", "1.0.0"),
+            "environment": os.getenv("ENVIRONMENT", "development"),
+        }
+        if metadata:
+            default_metadata.update(metadata)
+
+        return await self.consul.register_service(
+            service_name=service_name,
+            host=host,
+            port=port,
+            health_endpoint=health_endpoint,
+            tags=tags,
+            metadata=default_metadata,
+        )
+
+    async def deregister_service(
+        self, service_name: str, host: str = None, port: int = None
+    ) -> bool:
+        """Deregister this service from the discovery system."""
+        if not self.consul_enabled or not self.consul:
+            return True
+
+        host = host or os.getenv("HOST", "0.0.0.0")
+        port = port or int(os.getenv("PORT", "8000"))
+
+        return await self.consul.deregister_service(service_name, host, port)
+
+    async def get_service_url(self, service_name: str) -> Optional[str]:
+        """Get the URL for a service."""
+        if self.consul_enabled and self.consul:
+            instance = self.consul.get_service_instance(service_name)
+            if instance:
+                return instance.url
+
+        # Fall back to hardcoded URLs
+        return self.fallback_urls.get(service_name)
+
+    async def make_service_call(
+        self, service_name: str, endpoint: str, method: str = "GET", **kwargs
+    ) -> httpx.Response:
+        """Make a call to another service."""
+        if self.consul_enabled and self.consul:
+            return await self.consul.make_service_call(
+                service_name, endpoint, method, **kwargs
+            )
+        else:
+            # Fallback to direct URL call
+            service_url = self.fallback_urls.get(service_name)
+            if not service_url:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Service {service_name} not found in fallback configuration",
+                )
+
+            url = urljoin(service_url, endpoint)
+
+            async with httpx.AsyncClient() as client:
+                return await client.request(method, url, timeout=30.0, **kwargs)
+
+    async def start_health_monitoring(self):
+        """Start health monitoring if using Consul."""
+        if self.consul_enabled and self.consul:
+            await self.consul.start_health_monitoring()
+
+    async def cleanup(self):
+        """Cleanup resources."""
+        if self.consul_enabled and self.consul:
+            await self.consul.cleanup()
+
+
+# Global service discovery client instance
+_service_discovery_client: Optional[ServiceDiscoveryClient] = None
+
+
+def get_service_discovery() -> ServiceDiscoveryClient:
+    """Get the global service discovery client instance."""
+    global _service_discovery_client
+
+    if _service_discovery_client is None:
+        # Initialize with environment configuration
+        consul_enabled = os.getenv("CONSUL_ENABLED", "true").lower() == "true"
+
+        # Fallback URLs for development and non-Consul environments
+        fallback_urls = {
+            "ppl-meta-gateway": os.getenv(
+                "GATEWAY_SERVICE_URL", "http://ppl-meta-gateway:8080"
+            ),
+            "ppl-meta-node": os.getenv("USER_SERVICE_URL", "http://ppl-meta-node:8001"),
+            "ppl-meta-media": os.getenv(
+                "MEDIA_SERVICE_URL", "http://ppl-meta-media:8000"
+            ),
+            "ppl-meta-orchestrator": os.getenv(
+                "ORCHESTRATOR_SERVICE_URL", "http://ppl-meta-orchestrator:8002"
+            ),
+        }
+
+        _service_discovery_client = ServiceDiscoveryClient(
+            consul_enabled=consul_enabled, fallback_urls=fallback_urls
+        )
+
+    return _service_discovery_client
+
+
+# Convenience functions for common operations
+async def register_service(
+    service_name: str,
+    host: str = None,
+    port: int = None,
+    health_endpoint: str = "/health",
+    tags: List[str] = None,
+    metadata: Dict[str, str] = None,
+) -> bool:
+    """Register a service with the discovery system."""
+    client = get_service_discovery()
+    return await client.register_service(
+        service_name, host, port, health_endpoint, tags, metadata
+    )
+
+
+async def deregister_service(
+    service_name: str, host: str = None, port: int = None
+) -> bool:
+    """Deregister a service from the discovery system."""
+    client = get_service_discovery()
+    return await client.deregister_service(service_name, host, port)
+
+
+async def get_service_url(service_name: str) -> Optional[str]:
+    """Get the URL for a service."""
+    client = get_service_discovery()
+    return await client.get_service_url(service_name)
+
+
+async def make_service_call(
+    service_name: str, endpoint: str, method: str = "GET", **kwargs
+) -> httpx.Response:
+    """Make a call to another service."""
+    client = get_service_discovery()
+    return await client.make_service_call(service_name, endpoint, method, **kwargs)
+
+
+async def start_health_monitoring():
+    """Start health monitoring."""
+    client = get_service_discovery()
+    await client.start_health_monitoring()
+
+
+async def cleanup_service_discovery():
+    """Cleanup service discovery resources."""
+    client = get_service_discovery()
+    await client.cleanup()

@@ -16,7 +16,6 @@ from api.v1.router import api_router
 from config import CORS_SETTINGS, settings
 from core.health import health_router
 from core.middleware import LoggingMiddleware, RateLimitMiddleware
-from core.service_discovery import ServiceRegistry
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -24,6 +23,33 @@ from fastapi.responses import JSONResponse
 # Import shared metrics
 from metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
 from utils.logger import setup_logging
+
+# Import shared service discovery
+try:
+    from service_discovery import (
+        cleanup_service_discovery,
+        deregister_service,
+        register_service,
+        start_health_monitoring,
+    )
+
+    SERVICE_DISCOVERY_AVAILABLE = True
+except ImportError:
+    logger.info("Shared service discovery module not available, using legacy")
+    SERVICE_DISCOVERY_AVAILABLE = False
+
+    async def register_service(*args, **kwargs):
+        return True
+
+    async def deregister_service(*args, **kwargs):
+        return True
+
+    async def start_health_monitoring():
+        pass
+
+    async def cleanup_service_discovery():
+        pass
+
 
 # Setup structured logging
 setup_logging()
@@ -77,32 +103,41 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting PPL Meta Gateway", version=settings.service_version)
 
-    # Initialize service registry
-    if settings.service_discovery_enabled:
-        service_registry = ServiceRegistry()
-        await service_registry.initialize()
-        app.state.service_registry = service_registry
-        logger.info("Service discovery initialized")
-
-    # Register this service
-    try:
-        await app.state.service_registry.register_service(
-            name=settings.service_name,
-            address=settings.host,
+    # Register this service with discovery system
+    if SERVICE_DISCOVERY_AVAILABLE:
+        success = await register_service(
+            service_name="ppl-meta-gateway",
+            host=settings.host,
             port=settings.port,
-            health_check=f"http://{settings.host}:{settings.port}/health",
+            health_endpoint="/health",
+            tags=["api-gateway", "routing", "load-balancer"],
+            metadata={
+                "version": settings.service_version,
+                "environment": settings.environment,
+                "features": "routing,load_balancing,rate_limiting",
+            },
         )
-        logger.info("Gateway service registered")
-    except Exception as e:
-        logger.error("Failed to register gateway service", error=str(e))
+
+        if success:
+            logger.info("Gateway service registered with discovery system")
+        else:
+            logger.warning("Failed to register gateway service")
+
+        # Start health monitoring
+        await start_health_monitoring()
+        logger.info("Health monitoring started")
 
     yield
 
     # Cleanup
     logger.info("Shutting down PPL Meta Gateway")
-    if hasattr(app.state, "service_registry"):
-        await app.state.service_registry.deregister_service(settings.service_name)
-        await app.state.service_registry.close()
+
+    if SERVICE_DISCOVERY_AVAILABLE:
+        await deregister_service(
+            service_name="ppl-meta-gateway", host=settings.host, port=settings.port
+        )
+        await cleanup_service_discovery()
+        logger.info("Service deregistered and discovery cleaned up")
 
 
 def create_app() -> FastAPI:

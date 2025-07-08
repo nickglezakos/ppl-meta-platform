@@ -5,6 +5,7 @@ FastAPI microservice main application.
 import os
 import sys
 import time
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -19,9 +20,18 @@ from src.api.health import router as legacy_health_router
 from src.api.v1.routes import v1_router
 from src.config import get_config
 from src.database import Base, engine, test_connection
+from src.microservice_config import CONSUL_CONFIG
 
 from shared.logging import setup_logging
 from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+
+# Try to import the shared service discovery module
+try:
+    from shared.service_discovery import ServiceDiscoveryClient
+
+    service_discovery_available = True
+except ImportError:
+    service_discovery_available = False
 
 # Initialize configuration
 config = get_config()
@@ -34,6 +44,99 @@ logger = setup_logging(
     log_file="/app/logs/media-service.log" if os.path.exists("/app") else None,
 )
 
+# Global service discovery client
+service_discovery_client = None
+
+if service_discovery_available:
+    logger.info("Service discovery module available")
+else:
+    logger.warning("Service discovery module not available, using fallback mode")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Application lifespan context manager for startup and shutdown tasks."""
+    global service_discovery_client
+    logger.info("Starting PPL Meta Media Service...")
+
+    # Initialize service discovery if available
+    if service_discovery_available and CONSUL_CONFIG["enabled"]:
+        try:
+            service_discovery_client = ServiceDiscoveryClient(
+                consul_host=CONSUL_CONFIG["host"], consul_port=CONSUL_CONFIG["port"]
+            )
+            await service_discovery_client.register_service(
+                service_name="ppl-meta-media",
+                service_host="0.0.0.0",
+                service_port=8000,
+                health_check_path="/api/v1/health",
+                tags=["media", "processing", "microservice"],
+            )
+            logger.info("Service registered with Consul")
+
+            # Start health monitoring
+            await service_discovery_client.start_health_monitoring(
+                "ppl-meta-media", "0.0.0.0", 8000
+            )
+            logger.info("Health monitoring started")
+        except Exception as e:
+            logger.error(f"Failed to initialize service discovery: {e}")
+            logger.info("Continuing without service discovery")
+            service_discovery_client = None
+
+    # Get and log configuration
+    config.log_configuration()
+
+    # Test database connection with retries
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            logger.info(
+                "Testing database connection (attempt %d/%d)...",
+                attempt + 1,
+                max_retries,
+            )
+            if test_connection():
+                logger.info("Database connection successful")
+                break
+            else:
+                logger.error("Database connection test failed")
+        except Exception as e:
+            logger.error("Database connection error: %s", e)
+            if attempt == max_retries - 1:
+                logger.error(
+                    "Failed to connect to database after %d attempts", max_retries
+                )
+                logger.info("Service will start but database operations will fail")
+                logger.info("Ensure database is running and accessible")
+                break
+            else:
+                logger.info("Retrying database connection in 2 seconds...")
+                time.sleep(2)
+
+    # Create database tables (only if connection is available)
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.error("Failed to create database tables: %s", e)
+        logger.info("Service will start but database operations will fail")
+
+    logger.info("Service startup completed successfully")
+
+    yield
+
+    logger.info("Shutting down PPL Meta Media Service...")
+
+    # Deregister from service discovery
+    if service_discovery_client:
+        try:
+            await service_discovery_client.deregister_service("ppl-meta-media")
+            logger.info("Service deregistered from Consul")
+        except Exception as e:
+            logger.error(f"Failed to deregister service: {e}")
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="PPL Meta Media Service",
@@ -42,6 +145,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # Initialize metrics
@@ -124,62 +228,6 @@ metrics_router = create_metrics_endpoint()
 app.include_router(metrics_router, tags=["Metrics"])
 
 
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and services on startup."""
-    logger.info("Starting PPL Meta Media Service...")
-
-    # Get and log configuration
-    config = get_config()
-    config.log_configuration()
-
-    # Test database connection with retries
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            logger.info(
-                "Testing database connection (attempt %d/%d)...",
-                attempt + 1,
-                max_retries,
-            )
-            if test_connection():
-                logger.info("Database connection successful")
-                break
-            else:
-                logger.error("Database connection test failed")
-        except Exception as e:
-            logger.error("Database connection error: %s", e)
-            if attempt == max_retries - 1:
-                logger.error(
-                    "Failed to connect to database after %d attempts", max_retries
-                )
-                logger.info("Service will start but database operations will fail")
-                logger.info("Ensure database is running and accessible")
-                break
-            else:
-                logger.info("Retrying database connection in 2 seconds...")
-                time.sleep(2)
-
-    # Create database tables (only if connection is available)
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created/verified")
-    except Exception as e:
-        logger.error("Failed to create database tables: %s", e)
-        logger.info("Service will start but database operations will fail")
-
-    # Initialize metrics
-    init_metrics(app, service_name="ppl-meta-media")
-
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Shutting down PPL Meta Media Service...")
-
-
 # Root endpoint
 @app.get("/")
 async def root():
@@ -191,10 +239,6 @@ async def root():
         "api_versions": {"v1": "/api/v1", "legacy": "/health"},
         "documentation": {"swagger": "/docs", "redoc": "/redoc"},
     }
-
-
-# Add Prometheus metrics endpoint
-create_metrics_endpoint(app, app_name="ppl-meta-media")
 
 
 if __name__ == "__main__":

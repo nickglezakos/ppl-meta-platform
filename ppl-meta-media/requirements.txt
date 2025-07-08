@@ -32,3 +32,10 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 black>=23.0.0
 flake8>=6.0.0
+
+# Service discovery dependencies
+python-consul>=1.1.0
+httpx>=0.25.0
+
+# Shared modules dependencies
+-r ../shared/service_discovery/requirements.txt

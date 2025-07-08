@@ -5,6 +5,99 @@ All notable changes to the PPL Meta Platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2025-07-08
+
+### 🚀 MAJOR RELEASE - SERVICE DISCOVERY & ORCHESTRATOR IMPLEMENTATION
+
+This release completes the microservices architecture with a fully operational orchestrator service, comprehensive service discovery system, and robust inter-service communication capabilities.
+
+### Added
+
+- **Orchestrator Service (ppl-meta-orchestrator)**
+  - Complete FastAPI-based orchestrator service implementation
+  - Health monitoring and service coordination capabilities
+  - Docker containerization with optimized Alpine Linux base
+  - Integration with service discovery infrastructure
+  - Swagger UI documentation at `/docs` endpoint
+  - Standardized health check endpoint at `/health`
+
+- **Service Discovery Infrastructure**
+  - `shared/service_discovery/` - Complete service discovery module
+  - Consul-based service registration and discovery
+  - Automatic health monitoring and failover capabilities
+  - Load balancing and service URL resolution
+  - Graceful service registration/deregistration
+  - Integration across all microservices
+
+- **Comprehensive Testing Framework**
+  - `test_all_services.py` - Multi-service health and endpoint testing
+  - `test_service_discovery.py` - Service discovery functionality tests
+  - `test_consul_connection.py` - Consul connectivity validation
+  - `test_service_server.py` - Service discovery validation server
+  - Automated endpoint validation for all services
+  - Custom endpoint path handling per service
+
+- **Enhanced Docker Infrastructure**
+  - Updated `docker-compose.minimal.yml` with orchestrator integration
+  - `docker-compose.service-discovery-test.yml` - Testing environment
+  - Optimized container health checks and dependencies
+  - Clean database initialization and volume management
+
+- **Documentation & Resolution Tracking**
+  - `ISSUE-017-SERVICE-DISCOVERY-RESOLUTION.md` - Complete implementation guide
+  - Updated service architecture documentation
+  - Comprehensive deployment and testing procedures
+
+### Changed
+
+- **All Microservices Enhanced**
+  - Gateway Service: Updated health endpoints and service integration
+  - Node Service: Improved health check paths (`/api/v1/health`)
+  - Media Service: Enhanced service registration and health monitoring
+  - Orchestrator Service: Complete implementation from prototype to production
+
+- **Database Configuration**
+  - Resolved PostgreSQL authentication issues
+  - Fresh database initialization procedures
+  - Improved connection string management
+  - Volume management and persistence strategies
+
+- **Development Workflow**
+  - VS Code task integration for service management
+  - Streamlined Docker build and deployment processes
+  - Enhanced terminal session management
+  - Automated health checking and monitoring
+
+### Fixed
+
+- **Critical Service Issues**
+  - Node service restart loop caused by database authentication
+  - PostgreSQL password configuration and volume initialization
+  - Port conflicts and terminal session management
+  - Service endpoint inconsistencies across microservices
+
+- **Infrastructure Improvements**
+  - Container dependency management and startup ordering
+  - Health check reliability and timeout handling
+  - Service discovery registration and deregistration
+  - Docker Compose network configuration
+
+### Performance
+
+- **Optimized Service Architecture**
+  - All 4 core services now running successfully and healthy
+  - Service-to-service communication via internal Docker networks
+  - Efficient health monitoring and automated failover
+  - Streamlined container startup and dependency resolution
+
+### Security
+
+- **Enhanced Service Security**
+  - Secure inter-service communication
+  - Proper authentication between microservices
+  - Health endpoint protection and validation
+  - Secure service discovery and registration
+
 ## [1.3.0-validation] - 2025-07-08
 
 ### 🛡️ MAJOR SECURITY ENHANCEMENT - INPUT VALIDATION SYSTEM

@@ -27,6 +27,7 @@ from shared.validation import handle_validation_error
 try:
     from src.config import settings
     from src.database import SessionLocal, engine
+    from src.microservice_config import CONSUL_CONFIG
     from src.models.user import Base
     from src.services.user_service import create_user, get_user_by_email
 
@@ -57,6 +58,18 @@ logger = setup_logging(
     log_format=settings.LOG_FORMAT.lower(),
     log_file="/app/logs/node-service.log" if os.path.exists("/app") else None,
 )
+
+# Try to import the shared service discovery module
+try:
+    from shared.service_discovery import ServiceDiscoveryClient
+
+    service_discovery_available = True
+    service_discovery_client = None
+    logger.info("Service discovery module available")
+except ImportError:
+    service_discovery_available = False
+    service_discovery_client = None
+    logger.warning("Service discovery module not available, using fallback mode")
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -96,7 +109,33 @@ class TimingMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan context manager for startup and shutdown tasks."""
+    global service_discovery_client
     logger.info("Starting PPL Meta Node service...")
+
+    # Initialize service discovery if available
+    if service_discovery_available and CONSUL_CONFIG["enabled"]:
+        try:
+            service_discovery_client = ServiceDiscoveryClient(
+                consul_host=CONSUL_CONFIG["host"], consul_port=CONSUL_CONFIG["port"]
+            )
+            await service_discovery_client.register_service(
+                service_name="ppl-meta-node",
+                service_host=settings.HOST,
+                service_port=settings.PORT,
+                health_check_path="/api/v1/health",
+                tags=["user-management", "authentication", "microservice"],
+            )
+            logger.info("Service registered with Consul")
+
+            # Start health monitoring
+            await service_discovery_client.start_health_monitoring(
+                "ppl-meta-node", settings.HOST, settings.PORT
+            )
+            logger.info("Health monitoring started")
+        except Exception as e:
+            logger.error(f"Failed to initialize service discovery: {e}")
+            logger.info("Continuing without service discovery")
+            service_discovery_client = None
 
     try:
         clear_log_file()
@@ -158,6 +197,14 @@ async def lifespan(_app: FastAPI):
     yield
 
     logger.info("Service shutting down...")
+
+    # Deregister from service discovery
+    if service_discovery_client:
+        try:
+            await service_discovery_client.deregister_service("ppl-meta-node")
+            logger.info("Service deregistered from Consul")
+        except Exception as e:
+            logger.error(f"Failed to deregister service: {e}")
 
 
 # FastAPI application with metadata

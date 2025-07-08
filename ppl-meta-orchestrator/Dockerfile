@@ -46,13 +46,19 @@ WORKDIR /app
 COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy application code
-COPY src/ ./src/
+COPY src/ ./
+
+# Set working directory to src
+WORKDIR /app
 
 # Set permissions
 RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
+
+# Add debugging to check file structure
+RUN ls -la /app && echo "Python path check:" && python -c "import sys; print(sys.path)"
 
 # Expose port
 EXPOSE 8002
@@ -62,4 +68,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
     CMD curl -f http://localhost:8002/health || exit 1
 
 # Run the application
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8002"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
