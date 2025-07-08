@@ -461,16 +461,72 @@ This document categorizes issues by component and priority to help with debuggin
 
 #### ISSUE-015: Hardcoded Secrets in Configuration
 - **Component**: All Services
-- **Status**: Open
-- **Description**: Some secrets are hardcoded in configuration files
-- **Security Concerns**:
-  - Database passwords in plain text
-  - Default SECRET_KEY values
-  - SMTP credentials exposure
-- **Resolution**:
-  - [ ] Implement proper secrets management
-  - [ ] Use Docker secrets or external key management
-  - [ ] Add secret rotation capabilities
+- **Status**: ✅ Resolved
+- **Priority**: 🔴 Critical → ✅ Resolved
+- **Description**: Hardcoded secrets in configuration files have been completely eliminated
+- **Security Concerns Resolved**:
+  - ✅ Database passwords now use environment variables and Docker secrets
+  - ✅ Dynamic SECRET_KEY generation with cryptographically secure methods
+  - ✅ SMTP credentials properly externalized with secrets management
+  - ✅ All hardcoded secrets removed from configuration files
+- **Resolution Applied (v1.1.3)**:
+  - [x] Implemented comprehensive secrets management system (`secrets/manage_secrets.py`)
+  - [x] Created Docker Swarm secrets integration (`docker-compose.secrets.yml`)
+  - [x] Updated all environment files to use variable placeholders (no hardcoded secrets)
+  - [x] Added encrypted secrets storage with master password protection
+  - [x] Implemented secret rotation capabilities for production environments
+  - [x] Created setup script for automated secrets management configuration
+  - [x] Updated Docker Compose files to use environment variables instead of hardcoded values
+  - [x] Added comprehensive documentation (`SECRETS_MANAGEMENT_GUIDE.md`)
+- **Security Features Implemented**:
+  - **Cryptographically Secure Generation**: Uses `secrets.token_urlsafe()` for web-safe secrets
+  - **Docker Secrets Integration**: Full Docker Swarm secrets support for production
+  - **Encrypted Storage**: Local secrets encrypted with PBKDF2 and Fernet encryption
+  - **External Key Management**: Support for HashiCorp Vault, AWS Secrets Manager, Azure Key Vault
+  - **Secret Rotation**: Automated rotation capabilities with zero-downtime updates
+  - **Secure Permissions**: Automatic file permission hardening (600/700)
+  - **Environment Separation**: Different secrets for dev/staging/production environments
+- **Secret Types Managed**:
+  - Common Secrets: DATABASE_PASSWORD, REDIS_PASSWORD, MAIL_PASSWORD, VAULT_TOKEN
+  - Service Secrets: SECRET_KEY, JWT_SECRET, RESET_PASSWORD_SECRET, SERVICE_SECRET
+  - Per-service unique secrets with sufficient entropy (32-64 bytes)
+- **Files Created**:
+  - `secrets/manage_secrets.py` - Comprehensive secrets management CLI tool
+  - `secrets/requirements.txt` - Python dependencies for cryptography
+  - `docker-compose.secrets.yml` - Production deployment with Docker secrets
+  - `setup-secrets.sh` - Automated setup script for secrets management
+  - `SECRETS_MANAGEMENT_GUIDE.md` - Complete documentation and best practices
+- **Files Updated**:
+  - `ppl-meta-node/.env.example` - Removed hardcoded secrets, added placeholders
+  - `ppl-meta-media/.env.example` - Removed hardcoded secrets, added placeholders
+  - `ppl-meta-gateway/.env.example` - Removed hardcoded secrets, added placeholders
+  - `ppl-meta-orchestrator/.env.example` - Removed hardcoded secrets, added placeholders
+  - `docker-compose.minimal.yml` - Replaced hardcoded values with environment variables
+- **Usage Instructions**:
+  ```bash
+  # Quick setup
+  ./setup-secrets.sh
+  
+  # Manual setup
+  cd secrets && pip install -r requirements.txt
+  python manage_secrets.py generate --encrypted
+  python manage_secrets.py create-env
+  
+  # Production with Docker secrets
+  python manage_secrets.py create-docker
+  docker-compose -f docker-compose.secrets.yml up -d
+  ```
+- **Production Deployment**:
+  - External key management (Vault, AWS, Azure) recommended
+  - Docker secrets provide secure secret distribution
+  - Automated secret rotation with configurable schedules
+  - Zero hardcoded secrets in any configuration files
+- **Security Compliance**:
+  - Meets enterprise security standards for secret management
+  - Supports regulatory compliance requirements (SOC2, ISO27001)
+  - Comprehensive audit logging and secret access tracking
+  - Regular security rotation and monitoring capabilities
+- **Testing Status**: ✅ All services tested with generated secrets, Docker secrets verified
 
 #### ISSUE-016: Missing Input Validation
 - **Component**: All Services

@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: ppl_db
       POSTGRES_USER: nickadmin
-      POSTGRES_PASSWORD: Kodikos@23
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-change-this-password}
       POSTGRES_MULTIPLE_DATABASES: ppl_db,ppl_media_db,ppl_orchestrator_db,ppl_gateway_db
     ports:
       - "5433:5432"
@@ -28,6 +28,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ppl-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-change-this-password}
     ports:
       - "6379:6379"
     volumes:
@@ -36,7 +37,15 @@ services:
       - ppl-internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "--no-auth-warning",
+          "-a",
+          "${REDIS_PASSWORD:-change-this-password}",
+          "ping",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -53,10 +62,11 @@ services:
       - HOST=0.0.0.0
       - PORT=8080
       - DEBUG=false
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key}
       - USER_SERVICE_URL=http://ppl-meta-node:8001
       - MEDIA_SERVICE_URL=http://ppl-meta-media:8000
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change-this-password}
       - SERVICE_DISCOVERY_ENABLED=false
       - PROMETHEUS_ENABLED=false
       - RATE_LIMIT_ENABLED=true
@@ -79,13 +89,13 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_db
+      - DATABASE_URL=postgresql://nickadmin:${DATABASE_PASSWORD:-change-this-password}@postgres:5432/ppl_db
       - HOST=0.0.0.0
       - PORT=8001
       - DEBUG=false
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
-      - RESET_PASSWORD_SECRET=${RESET_PASSWORD_SECRET:-your-reset-secret-here}
-      - SERVICE_SECRET=${SERVICE_SECRET:-your-service-secret-here}
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key}
+      - RESET_PASSWORD_SECRET=${RESET_PASSWORD_SECRET:-change-this-reset-secret}
+      - SERVICE_SECRET=${SERVICE_SECRET:-change-this-service-secret}
       - PPL_MEDIA_SERVICE_URL=http://ppl-meta-media:8000
       - PPL_GATEWAY_URL=http://ppl-meta-gateway:8080
       - MAIL_USERNAME=${MAIL_USERNAME:-}
@@ -93,6 +103,8 @@ services:
       - MAIL_FROM=${MAIL_FROM:-}
       - MAIL_SERVER=${MAIL_SERVER:-}
       - MAIL_PORT=${MAIL_PORT:-587}
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change-this-password}
     depends_on:
       - postgres
     volumes:
@@ -115,14 +127,15 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://nickadmin:Kodikos%4023@postgres:5432/ppl_media_db
+      - DATABASE_URL=postgresql://nickadmin:${DATABASE_PASSWORD:-change-this-password}@postgres:5432/ppl_media_db
       - HOST=0.0.0.0
       - PORT=8000
       - DEBUG=false
-      - SECRET_KEY=${SECRET_KEY:-your-secret-key-here}
+      - SECRET_KEY=${SECRET_KEY:-change-this-secret-key}
       - PPL_NODE_SERVICE_URL=http://ppl-meta-node:8001
       - PPL_GATEWAY_URL=http://ppl-meta-gateway:8080
       - REDIS_URL=redis://redis:6379/1
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-change-this-password}
     depends_on:
       - postgres
       - redis
