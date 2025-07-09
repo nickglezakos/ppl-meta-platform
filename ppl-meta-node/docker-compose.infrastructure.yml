@@ -51,6 +51,15 @@ services:
       # - CONSUL_PORT=8500
       - PROMETHEUS_ENABLED=false
       - RATE_LIMIT_ENABLED=true
+      # Distributed Tracing Configuration
+      - TRACING_ENABLED=true
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+      - TRACING_SAMPLING_RATE=1.0
+      - TRACING_SERVICE_NAME=ppl-meta-gateway
+    depends_on:
+      - jaeger
     # depends_on:
     #   - consul
     #   - prometheus
@@ -262,6 +271,28 @@ services:
       - ppl-internal
     restart: unless-stopped
 
+  # Jaeger - Distributed Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: ppl-jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "14268:14268" # Jaeger HTTP collector
+      - "6831:6831/udp" # Jaeger UDP agent
+      - "6832:6832/udp" # Jaeger UDP agent
+      - "5778:5778" # Jaeger HTTP agent
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - QUERY_BASE_PATH=/jaeger
+    networks:
+      - ppl-internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:16686/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # WireGuard VPN Server - For Mesh VPN functionality
   wireguard:
     image: linuxserver/wireguard:latest
@@ -295,6 +326,7 @@ volumes:
   consul_data:
   prometheus_data:
   grafana_data:
+  jaeger_data:
   wireguard_config:
   media-storage:
   user-data:

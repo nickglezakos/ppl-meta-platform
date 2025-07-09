@@ -2,58 +2,54 @@
 PPL Meta Gateway Main Application
 """
 
-import os
-import sys
-
-# Add shared modules to path
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "shared"))
-
 from contextlib import asynccontextmanager
 
-import structlog
 import uvicorn
 from api.v1.router import api_router
 from config import CORS_SETTINGS, settings
+from core.advanced_middleware import (
+    AdvancedRateLimitMiddleware,
+    CircuitBreakerMiddleware,
+    RequestTracingMiddleware,
+    RequestTransformationMiddleware,
+    add_api_version_header,
+    normalize_user_data,
+)
 from core.health import health_router
 from core.middleware import LoggingMiddleware, RateLimitMiddleware
+
+# Import distributed tracing
+from core.tracing import setup_tracing, shutdown_tracing
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# Import shared metrics
-from metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
-from utils.logger import setup_logging
+# Import shared modules (local stubs)
+from shared.logging import get_logger, setup_logging
+from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+from shared.service_discovery import (
+    cleanup_service_discovery,
+    deregister_service,
+    register_service,
+    start_health_monitoring,
+)
 
-# Import shared service discovery
-try:
-    from service_discovery import (
-        cleanup_service_discovery,
-        deregister_service,
-        register_service,
-        start_health_monitoring,
-    )
+# Setup logging
+setup_logging(
+    service_name="ppl-meta-gateway",
+    log_level=settings.LOG_LEVEL.upper(),
+    log_format=settings.LOG_FORMAT.lower(),
+)
+logger = get_logger(__name__)
 
-    SERVICE_DISCOVERY_AVAILABLE = True
-except ImportError:
-    logger.info("Shared service discovery module not available, using legacy")
-    SERVICE_DISCOVERY_AVAILABLE = False
+# Initialize metrics
+init_metrics("ppl-meta-gateway", "1.0.0")
 
-    async def register_service(*args, **kwargs):
-        return True
+# Set availability flags
+SERVICE_DISCOVERY_AVAILABLE = True  # Since we have local stubs
 
-    async def deregister_service(*args, **kwargs):
-        return True
+logger.info("Starting PPL Meta Gateway with distributed tracing enabled")
 
-    async def start_health_monitoring():
-        pass
-
-    async def cleanup_service_discovery():
-        pass
-
-
-# Setup structured logging
-setup_logging()
-logger = structlog.get_logger()
 
 # Add validation error handlers
 try:
@@ -96,10 +92,12 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management."""
-    # Initialize metrics first
-    init_metrics(
-        service_name=settings.service_name, service_version=settings.service_version
-    )
+    # Setup distributed tracing
+    tracing_enabled = setup_tracing(app, settings)
+    if tracing_enabled:
+        logger.info("Distributed tracing enabled")
+    else:
+        logger.info("Distributed tracing disabled or failed to initialize")
 
     logger.info("Starting PPL Meta Gateway", version=settings.service_version)
 
@@ -132,6 +130,9 @@ async def lifespan(app: FastAPI):
     # Cleanup
     logger.info("Shutting down PPL Meta Gateway")
 
+    # Shutdown tracing
+    shutdown_tracing()
+
     if SERVICE_DISCOVERY_AVAILABLE:
         await deregister_service(
             service_name="ppl-meta-gateway", host=settings.host, port=settings.port
@@ -156,14 +157,40 @@ def create_app() -> FastAPI:
     app.add_middleware(CORSMiddleware, **CORS_SETTINGS)
 
     # Initialize metrics and add metrics middleware
-    metrics_collector = init_metrics(
-        service_name=settings.service_name, service_version=settings.service_version
-    )
+    metrics_collector = init_metrics(settings.service_name, settings.service_version)
     app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
 
-    # Add other middleware
+    # Add advanced middleware (order matters - inner middleware runs first)
+    app.add_middleware(RequestTracingMiddleware)  # Tracing for all requests
+    app.add_middleware(
+        RequestTransformationMiddleware,
+        request_transformations={
+            "/api/v1/users": normalize_user_data,
+        },
+        response_transformations={
+            "/api/v1": add_api_version_header,
+        },
+    )
+    app.add_middleware(CircuitBreakerMiddleware)  # Circuit breaker for service calls
+    app.add_middleware(
+        AdvancedRateLimitMiddleware,
+        redis_url=(
+            settings.redis_url
+            if hasattr(settings, "redis_url")
+            else "redis://redis:6379"
+        ),
+        default_rate="100/minute",
+        strategies={
+            "/api/v1/auth": "10/minute",
+            "/api/v1/register": "5/minute",
+            "/api/v1/password": "3/minute",
+            "/api/v1/users": "50/minute",
+        },
+    )
+
+    # Add basic middleware
     app.add_middleware(LoggingMiddleware)
-    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RateLimitMiddleware)  # Fallback rate limiting
 
     # Include routers
     app.include_router(health_router, tags=["Health"])

@@ -126,6 +126,36 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     prometheus_port: int = 9090
 
+    # Advanced Gateway Features
+    # Rate Limiting Configuration
+    rate_limiting_enabled: bool = True
+    default_rate_limit: str = "100/minute"
+    redis_rate_limiting: bool = True
+
+    # Circuit Breaker Configuration
+    circuit_breaker_enabled: bool = True
+    circuit_breaker_failure_threshold: int = 5
+    circuit_breaker_recovery_timeout: int = 30
+
+    # Request Tracing Configuration
+    request_tracing_enabled: bool = True
+    trace_header: str = "X-Trace-ID"
+    span_header: str = "X-Span-ID"
+    parent_span_header: str = "X-Parent-Span-ID"
+
+    # Request/Response Transformation
+    request_transformation_enabled: bool = True
+    response_transformation_enabled: bool = True
+
+    # OpenTelemetry Distributed Tracing Configuration
+    tracing_enabled: bool = True
+    jaeger_endpoint: str = "http://localhost:14268/api/traces"
+    jaeger_agent_host: str = "localhost"
+    jaeger_agent_port: int = 6831
+    tracing_sampling_rate: float = 1.0
+    tracing_service_name: str = "ppl-meta-gateway"
+    tracing_excluded_urls: str = "health,metrics,docs,redoc"
+
     # Mesh VPN
     mesh_vpn_enabled: bool = False
     mesh_vpn_interface: str = "wg0"
