@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Security Settings
     SECRET_KEY: str = ""
     JWT_SECRET: str = ""
+    ALGORITHM: str = "HS256"  # For JWT compatibility
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
     ALGORITHM: str = "HS256"

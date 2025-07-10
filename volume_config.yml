@@ -1,0 +1,63 @@
+{
+  "backup_directory": "./backups",
+  "retention_days": 30,
+  "compression": true,
+  "volumes": {
+    "postgres_data": {
+      "service": "postgres",
+      "critical": true,
+      "backup_frequency": "daily",
+      "retention_days": 90
+    },
+    "redis_data": {
+      "service": "redis",
+      "critical": true,
+      "backup_frequency": "daily",
+      "retention_days": 30
+    },
+    "media-storage": {
+      "service": "ppl-meta-media",
+      "critical": true,
+      "backup_frequency": "daily",
+      "retention_days": 60
+    },
+    "user-data": {
+      "service": "ppl-meta-node",
+      "critical": true,
+      "backup_frequency": "daily",
+      "retention_days": 60
+    },
+    "orchestrator-data": {
+      "service": "ppl-meta-orchestrator",
+      "critical": true,
+      "backup_frequency": "daily",
+      "retention_days": 60
+    },
+    "consul_data": {
+      "service": "consul",
+      "critical": false,
+      "backup_frequency": "weekly",
+      "retention_days": 30
+    },
+    "prometheus_data": {
+      "service": "prometheus",
+      "critical": false,
+      "backup_frequency": "weekly",
+      "retention_days": 14
+    },
+    "grafana_data": {
+      "service": "grafana",
+      "critical": false,
+      "backup_frequency": "weekly",
+      "retention_days": 30
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "check_interval": 300,
+    "alert_thresholds": {
+      "disk_usage_percent": 85,
+      "growth_rate_mb_per_day": 1000
+    }
+  }
+}

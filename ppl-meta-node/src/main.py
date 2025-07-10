@@ -20,9 +20,15 @@ from starlette.responses import Response
 # Add the parent directory to Python path to import shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from shared.logging import setup_logging
-from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
-from shared.validation import handle_validation_error
+# Temporarily disable shared modules for quick testing
+# from shared.logging import setup_logging
+# from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
+# from shared.validation import handle_validation_error
+import logging
+
+# Basic logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("ppl-meta-node")
 
 try:
     from src.config import settings
@@ -50,14 +56,6 @@ from src.models.role import Capability, Role, RoleCapability, UserRole
 from src.models.user import User, UserAction
 from src.schemas.user import UserCreate
 from src.services.role_service import ensure_admin_role
-
-# Setup standardized logging
-logger = setup_logging(
-    service_name="ppl-meta-node",
-    log_level=settings.LOG_LEVEL.upper(),
-    log_format=settings.LOG_FORMAT.lower(),
-    log_file="/app/logs/node-service.log" if os.path.exists("/app") else None,
-)
 
 # Try to import the shared service discovery module
 try:
@@ -112,30 +110,30 @@ async def lifespan(_app: FastAPI):
     global service_discovery_client
     logger.info("Starting PPL Meta Node service...")
 
-    # Initialize service discovery if available
-    if service_discovery_available and CONSUL_CONFIG["enabled"]:
-        try:
-            service_discovery_client = ServiceDiscoveryClient(
-                consul_host=CONSUL_CONFIG["host"], consul_port=CONSUL_CONFIG["port"]
-            )
-            await service_discovery_client.register_service(
-                service_name="ppl-meta-node",
-                service_host=settings.HOST,
-                service_port=settings.PORT,
-                health_check_path="/api/v1/health",
-                tags=["user-management", "authentication", "microservice"],
-            )
-            logger.info("Service registered with Consul")
+    # Initialize service discovery if available - disabled for testing
+    # if service_discovery_available and CONSUL_CONFIG["enabled"]:
+    #     try:
+    #         service_discovery_client = ServiceDiscoveryClient(
+    #             consul_host=CONSUL_CONFIG["host"], consul_port=CONSUL_CONFIG["port"]
+    #         )
+    #         await service_discovery_client.register_service(
+    #             service_name="ppl-meta-node",
+    #             service_host=settings.HOST,
+    #             service_port=settings.PORT,
+    #             health_check_path="/api/v1/health",
+    #             tags=["user-management", "authentication", "microservice"],
+    #         )
+    #         logger.info("Service registered with Consul")
 
-            # Start health monitoring
-            await service_discovery_client.start_health_monitoring(
-                "ppl-meta-node", settings.HOST, settings.PORT
-            )
-            logger.info("Health monitoring started")
-        except Exception as e:
-            logger.error(f"Failed to initialize service discovery: {e}")
-            logger.info("Continuing without service discovery")
-            service_discovery_client = None
+    #         # Start health monitoring
+    #         await service_discovery_client.start_health_monitoring(
+    #             "ppl-meta-node", settings.HOST, settings.PORT
+    #         )
+    #         logger.info("Health monitoring started")
+    #     except Exception as e:
+    #         logger.error(f"Failed to initialize service discovery: {e}")
+    #         logger.info("Continuing without service discovery")
+    #         service_discovery_client = None
 
     try:
         clear_log_file()
@@ -198,13 +196,13 @@ async def lifespan(_app: FastAPI):
 
     logger.info("Service shutting down...")
 
-    # Deregister from service discovery
-    if service_discovery_client:
-        try:
-            await service_discovery_client.deregister_service("ppl-meta-node")
-            logger.info("Service deregistered from Consul")
-        except Exception as e:
-            logger.error(f"Failed to deregister service: {e}")
+    # Deregister from service discovery - disabled for testing
+    # if service_discovery_client:
+    #     try:
+    #         await service_discovery_client.deregister_service("ppl-meta-node")
+    #         logger.info("Service deregistered from Consul")
+    #     except Exception as e:
+    #         logger.error(f"Failed to deregister service: {e}")
 
 
 # FastAPI application with metadata
@@ -227,25 +225,33 @@ from fastapi.responses import JSONResponse
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     """Handle Pydantic validation errors."""
-    return handle_validation_error(exc)
+    logger.error(f"Validation error: {exc}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body},
+    )
 
 
 @app.exception_handler(ValueError)
 async def value_error_handler(request, exc):
     """Handle value errors from custom validation."""
-    return handle_validation_error(exc)
+    logger.error(f"Value error: {exc}")
+    return JSONResponse(
+        status_code=400,
+        content={"detail": str(exc)},
+    )
 
 
-# Initialize metrics
-metrics_collector = init_metrics(
-    service_name=settings.APP_NAME, service_version=settings.APP_VERSION
-)
+# Initialize metrics - disabled for testing
+# metrics_collector = init_metrics(
+#     service_name=settings.APP_NAME, service_version=settings.APP_VERSION
+# )
 
 # Middleware
 app.add_middleware(TimingMiddleware)
 
-# Add metrics middleware
-app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
+# Add metrics middleware - disabled for testing
+# app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
 
 # CORS middleware
 app.add_middleware(
@@ -269,9 +275,9 @@ app.add_middleware(
 # Include API routers
 app.include_router(v1_router)  # API v1 routes
 
-# Add metrics endpoint
-metrics_router = create_metrics_endpoint()
-app.include_router(metrics_router, tags=["Metrics"])
+# Add metrics endpoint - disabled for testing
+# metrics_router = create_metrics_endpoint()
+# app.include_router(metrics_router, tags=["Metrics"])
 
 # Legacy routes for backward compatibility
 app.include_router(roles.router)
@@ -281,12 +287,12 @@ app.include_router(backup.router)
 app.include_router(app_settings.router)
 app.include_router(capabilities.router)
 
-# Initialize metrics
-init_metrics()
+# Initialize metrics - disabled for testing
+# init_metrics()
 
-# Add Prometheus middleware for metrics endpoint
-app.add_middleware(PrometheusMiddleware)
-create_metrics_endpoint(app)
+# Add Prometheus middleware for metrics endpoint - disabled for testing
+# app.add_middleware(PrometheusMiddleware)
+# create_metrics_endpoint(app)
 
 
 # Root endpoint
