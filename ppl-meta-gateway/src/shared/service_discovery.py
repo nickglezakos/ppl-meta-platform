@@ -10,20 +10,26 @@ logger = logging.getLogger(__name__)
 
 async def register_service(
     service_name: str,
-    service_id: str,
-    address: str,
+    host: str,
     port: int,
-    health_check_url: Optional[str] = None,
+    health_endpoint: Optional[str] = None,
+    tags: Optional[list] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """Register service with service discovery (stub implementation)."""
-    logger.info(f"Service registration stub: {service_name} at {address}:{port}")
+    logger.info("Service registration stub: %s at %s:%s", service_name, host, port)
+    if health_endpoint:
+        logger.info("Health endpoint: %s", health_endpoint)
+    if tags:
+        logger.info("Tags: %s", tags)
+    if metadata:
+        logger.info("Metadata: %s", metadata)
     return True
 
 
-async def deregister_service(service_id: str) -> bool:
+async def deregister_service(service_name: str, host: str, port: int) -> bool:
     """Deregister service from service discovery (stub implementation)."""
-    logger.info(f"Service deregistration stub: {service_id}")
+    logger.info("Service deregistration stub: %s at %s:%s", service_name, host, port)
     return True
 
 

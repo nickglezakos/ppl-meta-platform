@@ -9,23 +9,26 @@ from typing import Any, Dict, Optional
 class PrometheusMiddleware:
     """Stub metrics middleware for the gateway service."""
 
-    def __init__(self, app_name: str, *_args, **_kwargs):
+    def __init__(self, app, *_args, app_name: str = "gateway", **_kwargs):
+        self.app = app
         self.app_name = app_name
         self.request_count = 0
         self.start_time = time.time()
 
-    async def __call__(self, request, call_next):
-        """Process request and track basic metrics."""
+    async def __call__(self, scope, receive, send):
+        """Process request and track basic metrics using ASGI interface."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         start_time = time.time()
         self.request_count += 1
 
         try:
-            response = await call_next(request)
-            return response
+            await self.app(scope, receive, send)
         finally:
-            duration = time.time() - start_time
-            # In a real implementation, this would export to Prometheus
-            pass
+            # Track duration for future metrics implementation
+            _ = time.time() - start_time
 
 
 def create_metrics_endpoint(*_args, **_kwargs):
@@ -41,7 +44,7 @@ def create_metrics_endpoint(*_args, **_kwargs):
             "status": "metrics endpoint",
             "service": "ppl-meta-gateway",
             "uptime": time.time()
-            - getattr(create_metrics_endpoint, "_start_time", time.time()),
+            - getattr(create_metrics_endpoint, "start_time", time.time()),
         }
 
     print(f"DEBUG: returning router of type {type(router)}")
@@ -50,8 +53,8 @@ def create_metrics_endpoint(*_args, **_kwargs):
 
 def init_metrics(service_name: str = "unknown", service_version: str = "1.0.0"):
     """Initialize metrics collection (stub implementation)."""
-    if not hasattr(create_metrics_endpoint, "_start_time"):
-        create_metrics_endpoint._start_time = time.time()
+    if not hasattr(create_metrics_endpoint, "start_time"):
+        create_metrics_endpoint.start_time = time.time()
 
     # Return a stub metrics collector
     class StubMetricsCollector:

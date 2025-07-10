@@ -156,9 +156,11 @@ def create_app() -> FastAPI:
     # Add CORS middleware
     app.add_middleware(CORSMiddleware, **CORS_SETTINGS)
 
-    # Initialize metrics and add metrics middleware
-    metrics_collector = init_metrics(settings.service_name, settings.service_version)
-    app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
+    # Initialize metrics
+    _ = init_metrics(settings.service_name, settings.service_version)
+
+    # Add metrics middleware
+    app.add_middleware(PrometheusMiddleware, app_name=settings.service_name)
 
     # Add advanced middleware (order matters - inner middleware runs first)
     app.add_middleware(RequestTracingMiddleware)  # Tracing for all requests
