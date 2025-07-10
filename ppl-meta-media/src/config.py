@@ -167,7 +167,9 @@ class Settings(BaseSettings):
         except Exception:
             return {"error": "Failed to parse database URL"}
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(
+        env_file=".env", case_sensitive=True, extra="allow"
+    )
 
 
 # Create global settings instance

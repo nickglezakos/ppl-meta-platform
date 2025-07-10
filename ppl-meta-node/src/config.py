@@ -63,6 +63,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "allow"  # Allow extra fields from environment
 
     def model_post_init(self, __context=None):
         """Validate critical settings after initialization."""
