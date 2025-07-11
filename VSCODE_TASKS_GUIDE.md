@@ -31,6 +31,18 @@ Start, stop, and monitor microservices running locally in Python (non-Docker) mo
 - **🏥 Gateway Service Health Check (Local)** - Individual health check for Gateway service
 - **🏥 Orchestrator Service Health Check (Local)** - Individual health check for Orchestrator service
 
+### 🌐 Nginx Proxy Tasks (Local Development)
+
+Use nginx as a reverse proxy for local development, providing a single entry point and load balancing.
+
+- **🌐 Start Nginx Proxy (Local Dev)** - Starts nginx with local development configuration
+- **🌐 Stop Nginx Proxy (Local Dev)** - Stops nginx proxy
+- **🌐 Reload Nginx Configuration** - Reloads nginx configuration without stopping
+- **🌐 Test Nginx Configuration** - Tests nginx configuration for syntax errors
+- **🚀 Start All Services + Nginx (Local Python)** - Starts all services and nginx proxy together
+- **🛑 Stop All Services + Nginx (Local Python)** - Stops all services and nginx proxy
+- **🏥 Health Check via Nginx Proxy** - Tests all services through nginx proxy (http://localhost)
+
 ### 🏗️ Docker Build Tasks
 
 Build Docker images for individual services or all services at once.
@@ -224,6 +236,80 @@ ps aux | grep 'python.*main.py\|uvicorn.*main:app' | grep -v grep
 - Lists all running Python service processes
 - Shows process IDs and resource usage
 - Helps identify which services are running
+
+### Nginx Proxy for Local Development
+
+#### 🌐 Using Nginx as Reverse Proxy
+
+The nginx configuration (`nginx-local-dev.conf`) provides:
+
+```bash
+# Single entry point for all services
+http://localhost/          # Routes to Gateway (main entry)
+http://localhost/api/      # API Gateway routes
+http://localhost/api/v1/users/     # Direct to Node Service
+http://localhost/api/v1/auth/      # Direct to Node Service  
+http://localhost/api/v1/media/     # Direct to Media Service
+http://localhost/api/v1/orchestrate/  # Direct to Orchestrator
+
+# Individual health checks
+http://localhost/health/node       # Node service health
+http://localhost/health/media      # Media service health
+http://localhost/health/gateway    # Gateway service health
+http://localhost/health/orchestrator  # Orchestrator health
+```
+
+**Benefits of using nginx proxy:**
+- Single entry point (`http://localhost` instead of multiple ports)
+- Load balancing and rate limiting
+- CORS handling for frontend development
+- Request routing and path rewriting
+- Security headers and SSL termination (if configured)
+- Centralized logging and monitoring
+
+#### 🚀 Start All Services + Nginx
+
+```bash
+# Starts all Python services + nginx proxy
+echo 'Starting all services...' && \
+(start each service in background) & \
+sleep 5 && sudo nginx -c nginx-local-dev.conf
+```
+
+- Starts all four microservices in background
+- Waits for services to initialize
+- Starts nginx proxy with local development configuration
+- Provides single entry point at `http://localhost`
+
+#### 🛑 Stop All Services + Nginx
+
+```bash
+sudo nginx -s quit && pkill -f 'python.*main.py' && pkill -f 'uvicorn.*main:app'
+```
+
+- Gracefully stops nginx proxy
+- Stops all Python services
+- Cleans up background processes
+
+#### 🌐 Nginx Management Tasks
+
+```bash
+# Test configuration
+sudo nginx -t -c nginx-local-dev.conf
+
+# Start nginx  
+sudo nginx -c nginx-local-dev.conf
+
+# Reload configuration (zero downtime)
+sudo nginx -s reload
+
+# Stop nginx
+sudo nginx -s quit
+```
+
+- Configuration testing before starting
+- Graceful configuration reloading
+- Proper shutdown procedures
 
 ### Docker Build Tasks
 

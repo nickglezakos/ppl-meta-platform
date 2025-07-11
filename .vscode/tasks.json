@@ -142,6 +142,62 @@
 			"group": "test",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "🌐 Start Nginx Proxy (Local Dev)",
+			"type": "shell",
+			"command": "sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/nginx-local-dev.conf",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🌐 Stop Nginx Proxy (Local Dev)",
+			"type": "shell",
+			"command": "sudo nginx -s quit",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🌐 Reload Nginx Configuration",
+			"type": "shell",
+			"command": "sudo nginx -s reload",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🌐 Test Nginx Configuration",
+			"type": "shell",
+			"command": "sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/nginx-local-dev.conf",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🚀 Start All Services + Nginx (Local Python)",
+			"type": "shell",
+			"command": "echo '🚀 Starting all PPL Meta services + Nginx in local Python mode...' && echo 'Starting Node Service...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Nginx Proxy...' && sleep 5 && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/nginx-local-dev.conf && echo '✅ All services and nginx started!' && wait",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop All Services + Nginx (Local Python)",
+			"type": "shell",
+			"command": "echo '🛑 Stopping all local Python services and Nginx...' && sudo nginx -s quit 2>/dev/null || true && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && echo 'All services and nginx stopped.'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Health Check via Nginx Proxy",
+			"type": "shell",
+			"command": "echo '🏥 PPL Meta Platform - Health Check via Nginx Proxy' && echo '========================================================' && echo && echo '📋 Service Status via Nginx (http://localhost):' && echo '• All Services Health:' && curl -L -s http://localhost/health | python3 -m json.tool 2>/dev/null || echo 'Nginx or services not responding' && echo && echo '• Node Service:' && curl -L -s http://localhost/health/node | python3 -m json.tool 2>/dev/null || echo 'Node service not responding' && echo && echo '• Media Service:' && curl -L -s http://localhost/health/media | python3 -m json.tool 2>/dev/null || echo 'Media service not responding' && echo && echo '• Gateway Service:' && curl -L -s http://localhost/health/gateway | python3 -m json.tool 2>/dev/null || echo 'Gateway service not responding' && echo && echo '• Orchestrator Service:' && curl -L -s http://localhost/health/orchestrator | python3 -m json.tool 2>/dev/null || echo 'Orchestrator service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }
