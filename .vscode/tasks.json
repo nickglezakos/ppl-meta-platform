@@ -1,0 +1,147 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "🐍 Start Node Service (Local Python)",
+			"type": "shell",
+			"command": "cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🎨 Start Media Service (Local Python)",
+			"type": "shell",
+			"command": "cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🌐 Start Gateway Service (Local Python)",
+			"type": "shell",
+			"command": "cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🎼 Start Orchestrator Service (Local Python)",
+			"type": "shell",
+			"command": "cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🚀 Start All Local Python Services",
+			"type": "shell",
+			"command": "echo '🚀 Starting all PPL Meta services in local Python mode...' && echo 'Starting Node Service...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & wait",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop All Local Python Services",
+			"type": "shell",
+			"command": "echo '🛑 Stopping all local Python services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && echo 'All local Python services stopped.'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Local Python Health Check - All Services",
+			"type": "shell",
+			"command": "echo '🏥 PPL Meta Platform - Local Python Development Health Check' && echo '========================================================' && echo && echo '📋 Service Status:' && echo '• ppl-meta-node (8001):' && curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-media (8000):' && curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-gateway (8080):' && curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-orchestrator (8002):' && curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🔍 Show Local Python Services Status",
+			"type": "shell",
+			"command": "echo '🔍 Local Python Services Status:' && echo '========================================' && ps aux | grep 'python.*main.py\\|uvicorn.*main:app' | grep -v grep || echo 'No local Python services found running.'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Node Service Health Check (Local)",
+			"type": "shell",
+			"command": "curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Node service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Media Service Health Check (Local)",
+			"type": "shell",
+			"command": "curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Media service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Gateway Service Health Check (Local)",
+			"type": "shell",
+			"command": "curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Gateway service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Orchestrator Service Health Check (Local)",
+			"type": "shell",
+			"command": "curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Orchestrator service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏗️ Build All Docker Images",
+			"type": "shell",
+			"command": "docker-compose",
+			"args": ["-f", "docker-compose.minimal.yml", "build"],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🚀 Start All Services (Docker)",
+			"type": "shell",
+			"command": "docker-compose",
+			"args": ["-f", "docker-compose.minimal.yml", "up", "-d"],
+			"group": "build",
+			"dependsOn": ["🏗️ Build All Docker Images"],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop All Services (Docker)",
+			"type": "shell",
+			"command": "docker-compose",
+			"args": ["-f", "docker-compose.minimal.yml", "down"],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Health Check - All Services (Docker)",
+			"type": "shell",
+			"command": "python",
+			"args": ["-c", "import requests; import sys; services = [('Gateway', 'http://localhost:8080/health'), ('Node', 'http://localhost:8001/health'), ('Media', 'http://localhost:8000/health'), ('Orchestrator', 'http://localhost:8002/health')]; results = []; [results.append(f'✅ {name}: {requests.get(url, timeout=5).status_code}' if (lambda: requests.get(url, timeout=5).status_code == 200)() else f'❌ {name}: Failed') for name, url in services]; [print(r) for r in results]"],
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "📋 View Logs - All Services (Docker)",
+			"type": "shell",
+			"command": "docker-compose",
+			"args": ["-f", "docker-compose.minimal.yml", "logs", "-f"],
+			"group": "test",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

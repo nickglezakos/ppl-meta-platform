@@ -14,6 +14,23 @@ This guide documents the comprehensive VS Code tasks implemented to resolve ISSU
 
 ## Task Categories
 
+### 🐍 Python Local Development Tasks
+
+Start, stop, and monitor microservices running locally in Python (non-Docker) mode for development and debugging.
+
+- **🐍 Start Node Service (Local Python)** - Starts ppl-meta-node locally with virtual environment
+- **🎨 Start Media Service (Local Python)** - Starts ppl-meta-media locally with virtual environment  
+- **🌐 Start Gateway Service (Local Python)** - Starts ppl-meta-gateway locally with uvicorn
+- **🎼 Start Orchestrator Service (Local Python)** - Starts ppl-meta-orchestrator locally with uvicorn
+- **🚀 Start All Local Python Services** - Starts all services simultaneously in local Python mode
+- **🛑 Stop All Local Python Services** - Stops all local Python services
+- **🏥 Local Python Health Check - All Services** - Comprehensive health check for local Python services
+- **🔍 Show Local Python Services Status** - Shows running local Python service processes
+- **🏥 Node Service Health Check (Local)** - Individual health check for Node service
+- **🏥 Media Service Health Check (Local)** - Individual health check for Media service
+- **🏥 Gateway Service Health Check (Local)** - Individual health check for Gateway service
+- **🏥 Orchestrator Service Health Check (Local)** - Individual health check for Orchestrator service
+
 ### 🏗️ Docker Build Tasks
 
 Build Docker images for individual services or all services at once.
@@ -134,7 +151,81 @@ You can assign keyboard shortcuts to frequently used tasks:
 
 ## Task Details
 
-### Build Tasks
+### Python Local Development Tasks
+
+#### 🐍 Individual Service Tasks (Local Python)
+
+Start individual services in local Python development mode:
+
+```bash
+# Node Service
+cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py
+
+# Media Service  
+cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py
+
+# Gateway Service
+cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+
+# Orchestrator Service
+cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload
+```
+
+- Activates the service's virtual environment
+- Sets proper PYTHONPATH for imports
+- Runs services with hot reload for development
+- Connects to local PostgreSQL databases
+- Uses localhost URLs for inter-service communication
+
+#### 🚀 Start All Local Python Services
+
+```bash
+# Starts all services in background processes
+echo 'Starting all PPL Meta services in local Python mode...' && \
+(start each service in background) & wait
+```
+
+- Starts all four microservices simultaneously
+- Runs in background mode with proper process management
+- Each service runs in its own virtual environment
+- Services auto-restart on code changes (gateway and orchestrator)
+
+#### 🛑 Stop All Local Python Services
+
+```bash
+pkill -f 'python.*main.py' && pkill -f 'uvicorn.*main:app'
+```
+
+- Gracefully stops all local Python services
+- Kills processes matching service patterns
+- Cleans up background processes
+
+#### 🏥 Local Python Health Checks
+
+```bash
+# All Services Health Check
+curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool
+curl -L -s http://localhost:8000/health | python3 -m json.tool  
+curl -L -s http://localhost:8080/health | python3 -m json.tool
+curl -L -s http://localhost:8002/health | python3 -m json.tool
+```
+
+- Tests health endpoints for all services
+- Formats JSON responses for readability
+- Reports individual service status
+- Follows redirects automatically
+
+#### 🔍 Show Local Python Services Status
+
+```bash
+ps aux | grep 'python.*main.py\|uvicorn.*main:app' | grep -v grep
+```
+
+- Lists all running Python service processes
+- Shows process IDs and resource usage
+- Helps identify which services are running
+
+### Docker Build Tasks
 
 #### 🏗️ Build All Docker Images
 ```bash
@@ -218,6 +309,47 @@ docker-compose -f docker-compose.minimal.yml logs -f [service-name]
 ## Troubleshooting
 
 ### Common Issues
+
+#### Python Local Development Issues
+
+**Problem**: Service fails to start with "No module named 'src'" error.
+**Solution**:
+1. Ensure the virtual environment is activated
+2. Set PYTHONPATH correctly for the service
+3. Run from the correct directory (src/ for gateway/orchestrator)
+4. Check that all dependencies are installed in the virtual environment
+
+**Problem**: Database connection errors in local Python mode.
+**Solution**:
+1. Ensure PostgreSQL is running locally (`brew services start postgresql`)
+2. Verify databases exist: `createdb ppl_db`, `createdb ppl_media_db`, etc.
+3. Check `.env` files have correct local database URLs
+4. Verify database credentials match your local PostgreSQL setup
+
+**Problem**: Port already in use errors.
+**Solution**:
+1. Stop existing services: Use `🛑 Stop All Local Python Services` task
+2. Check what's using ports: `lsof -i :8000 -i :8001 -i :8080 -i :8002`
+3. Kill specific processes if needed: `kill <PID>`
+
+**Problem**: Services start but health checks fail.
+**Solution**:
+1. Wait for services to fully start (especially on first run)
+2. Check service logs in the terminal output
+3. Verify services are binding to correct ports
+4. Use individual health check tasks to isolate issues
+
+**Problem**: Virtual environment not found.
+**Solution**:
+1. Create virtual environments: `python -m venv venv` in each service directory
+2. Install dependencies: `pip install -r requirements.txt`
+3. Ensure virtual environment path is correct in tasks
+
+**Problem**: Import errors for shared modules.
+**Solution**:
+1. Ensure shared modules are in the correct location
+2. Install shared dependencies in each virtual environment
+3. Check PYTHONPATH includes the service root directory
 
 #### Task Not Found
 **Problem**: "Task not found" error when trying to run a task.
