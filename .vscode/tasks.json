@@ -282,10 +282,4 @@
 		{
 			"label": "🚀 Start Full Stack (Backend + Frontend)",
 			"type": "shell",
-			"command": "echo '🚀 Starting Full PPL Meta Platform (Backend + Frontend)...' && echo 'Starting Backend Services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Frontend...' && sleep 3 && (cd ppl-meta-frontend && flutter run -d chrome --web-port 3000) & wait",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		}
-	]
-}
+			"command": "echo '🚀 Starting Full PPL Meta Platform (Backend + Frontend)...' && echo 'Starting Backend Services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin

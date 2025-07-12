@@ -1,0 +1,17 @@
+{
+  "app_name": "PPL Meta Platform",
+  "version": "1.0.0",
+  "environment": "development",
+  "api_base_url": "http://localhost:8080",
+  "services": {
+    "gateway": "http://localhost:8080",
+    "node": "http://localhost:8001",
+    "media": "http://localhost:8000",
+    "orchestrator": "http://localhost:8002"
+  },
+  "features": {
+    "authentication": true,
+    "media_processing": true,
+    "node_management": true
+  }
+}
