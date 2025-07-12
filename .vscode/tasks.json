@@ -198,6 +198,94 @@
 			"group": "test",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "📱 Install Flutter Dependencies",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter pub get",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Start Frontend (Web)",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter run -d chrome --web-port 3000",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Start Frontend (Desktop)",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter run -d macos",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Build Frontend (Web)",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter build web --release",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Build Frontend (Desktop)",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter build macos --release",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Generate Code (Frontend)",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter packages pub run build_runner build --delete-conflicting-outputs",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Watch Code Generation (Frontend)",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter packages pub run build_runner watch --delete-conflicting-outputs",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Test Frontend",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter test",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Clean Frontend",
+			"type": "shell",
+			"command": "cd ppl-meta-frontend && flutter clean && flutter pub get",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "📱 Check Flutter Doctor",
+			"type": "shell",
+			"command": "flutter doctor -v",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🚀 Start Full Stack (Backend + Frontend)",
+			"type": "shell",
+			"command": "echo '🚀 Starting Full PPL Meta Platform (Backend + Frontend)...' && echo 'Starting Backend Services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Frontend...' && sleep 3 && (cd ppl-meta-frontend && flutter run -d chrome --web-port 3000) & wait",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
 		}
 	]
 }

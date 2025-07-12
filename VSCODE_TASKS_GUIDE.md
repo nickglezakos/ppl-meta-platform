@@ -43,6 +43,22 @@ Use nginx as a reverse proxy for local development, providing a single entry poi
 - **🛑 Stop All Services + Nginx (Local Python)** - Stops all services and nginx proxy
 - **🏥 Health Check via Nginx Proxy** - Tests all services through nginx proxy (http://localhost)
 
+### 📱 Frontend Development Tasks
+
+Manage the Flutter frontend application for cross-platform development.
+
+- **📱 Install Flutter Dependencies** - Install/update Flutter packages
+- **📱 Start Frontend (Web)** - Run Flutter app in Chrome (localhost:3000)
+- **📱 Start Frontend (Desktop)** - Run Flutter app on macOS desktop
+- **📱 Build Frontend (Web)** - Build Flutter web app for production
+- **📱 Build Frontend (Desktop)** - Build Flutter desktop app for production
+- **📱 Generate Code (Frontend)** - Generate models and serialization code
+- **📱 Watch Code Generation (Frontend)** - Auto-generate code on file changes
+- **📱 Test Frontend** - Run Flutter unit tests
+- **📱 Clean Frontend** - Clean and reinstall Flutter dependencies
+- **📱 Check Flutter Doctor** - Check Flutter installation and configuration
+- **🚀 Start Full Stack (Backend + Frontend)** - Start all backend services and frontend together
+
 ### 🏗️ Docker Build Tasks
 
 Build Docker images for individual services or all services at once.
@@ -565,6 +581,83 @@ These tasks can be adapted for CI/CD pipelines:
 2. **File Permissions**: Ensure proper file permissions on scripts
 3. **Network Security**: Use appropriate network configurations for development
 4. **Container Security**: Follow Docker security best practices
+
+## Frontend Development Workflows
+
+### Setup Flutter Development Environment
+
+Before using frontend tasks, ensure Flutter is installed:
+
+```bash
+# Check if Flutter is installed
+flutter --version
+
+# If not installed, run the setup script
+./setup-flutter.sh
+
+# Or install manually via Homebrew
+brew install --cask flutter
+```
+
+### Frontend Development Workflow
+
+1. **Initial Setup**
+   - Task: `📱 Install Flutter Dependencies`
+   - Installs all required Flutter packages
+
+2. **Code Generation**
+   - Task: `📱 Generate Code (Frontend)` (one-time)
+   - Task: `📱 Watch Code Generation (Frontend)` (development)
+   - Generates models and serialization code
+
+3. **Development**
+   - Task: `📱 Start Frontend (Web)` - Web development (recommended)
+   - Task: `📱 Start Frontend (Desktop)` - Desktop development
+   - Frontend runs on http://localhost:3000
+
+4. **Testing**
+   - Task: `📱 Test Frontend`
+   - Runs unit and widget tests
+
+5. **Building**
+   - Task: `📱 Build Frontend (Web)` - Production web build
+   - Task: `📱 Build Frontend (Desktop)` - Production desktop build
+
+### Full Stack Development
+
+For complete local development with frontend and backend:
+
+1. **Start All Services**
+   - Task: `🚀 Start Full Stack (Backend + Frontend)`
+   - Starts all backend services + frontend web app
+
+2. **Alternative: Individual Control**
+   - Task: `🚀 Start All Local Python Services` (backend only)
+   - Task: `📱 Start Frontend (Web)` (frontend only)
+
+3. **With Nginx Proxy**
+   - Task: `🚀 Start All Services + Nginx (Local Python)`
+   - Frontend available at http://localhost/ (port 80)
+   - API available at http://localhost/api/
+
+### Frontend-Specific Troubleshooting
+
+1. **Dependencies Issues**
+   - Run: `📱 Clean Frontend`
+   - This cleans and reinstalls all dependencies
+
+2. **Code Generation Errors**
+   - Stop watch task if running
+   - Run: `📱 Generate Code (Frontend)`
+   - Restart watch task if needed
+
+3. **Flutter Doctor Issues**
+   - Run: `📱 Check Flutter Doctor`
+   - Follow the recommendations provided
+
+4. **Hot Reload Not Working**
+   - Stop and restart the frontend task
+   - Ensure you're running in debug mode
 
 ---
 
