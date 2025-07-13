@@ -22,6 +22,16 @@ from src.config import get_config
 from src.database import Base, engine, test_connection
 from src.microservice_config import CONSUL_CONFIG
 
+# Import all models for table creation
+from src.models.media import (
+    Media,
+    MediaCollection,
+    MediaCollectionItem,
+    MediaDetails,
+    MediaShare,
+    MediaVariant,
+)
+
 from shared.logging import setup_logging
 from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
 

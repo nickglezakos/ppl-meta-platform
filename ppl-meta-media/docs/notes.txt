@@ -1,0 +1,2 @@
+General prompt to resume a AI chat:
+Please provide a brief summary of what we've implemented so far and what the next logical steps would be
