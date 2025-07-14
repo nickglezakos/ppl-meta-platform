@@ -4,6 +4,7 @@ Media API routes for PPL Meta Platform Media Service - API v1.
 
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
 from src.database import get_db
+from src.models.media import Media
 from src.schemas.media import (
     MediaCollectionResponse,
     MediaResponse,
@@ -577,3 +579,249 @@ async def get_thumbnail(
             "Content-Length": str(len(thumbnail_bytes)),
         },
     )
+
+
+@router.get("/exif/{media_id}")
+async def get_exif_metadata(
+    media_id: str,
+    user_id: Optional[str] = None,
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Get EXIF metadata for a specific media file.
+
+    Args:
+        media_id: UUID of the media to get EXIF data for
+        user_id: Optional user ID for access control
+        share_token: Optional share token for public access
+
+    Returns:
+        EXIF metadata dictionary
+    """
+    # Check access permissions
+    access_info = get_media_access_check(media_id, user_id, share_token, db)
+
+    media_record = db.query(Media).filter(Media.id == media_id).first()
+    if not media_record:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    # Get EXIF data from technical_metadata
+    technical_metadata = media_record.technical_metadata or {}
+    exif_data = technical_metadata.get("exif")
+
+    if exif_data is None:
+        # Try to extract EXIF data if not already done
+        from src.services.exif_extractor import ExifExtractor
+
+        extractor = ExifExtractor(privacy_mode=False)
+        file_path = Path(access_info["file_path"])
+
+        if file_path.exists():
+            exif_data = extractor.extract_exif_data(str(file_path))
+            if exif_data:
+                return {
+                    "media_id": media_id,
+                    "exif_data": exif_data,
+                    "extracted_on_demand": True,
+                }
+
+        raise HTTPException(
+            status_code=404, detail="No EXIF data available for this media file"
+        )
+
+    return {"media_id": media_id, "exif_data": exif_data, "extracted_on_demand": False}
+
+
+@router.post("/exif/extract/{media_id}")
+async def extract_exif_metadata(
+    media_id: str,
+    privacy_mode: bool = False,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Extract or re-extract EXIF metadata for a specific media file.
+
+    Args:
+        media_id: UUID of the media to extract EXIF data for
+        privacy_mode: If True, removes GPS and sensitive metadata
+        user_id: User ID for access control
+
+    Returns:
+        Extracted EXIF metadata
+    """
+    # Verify media exists and user has access
+    media_record = db.query(Media).filter(Media.id == media_id).first()
+    if not media_record:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    # Check user permission (only owner can extract EXIF)
+    if user_id and str(media_record.uploaded_by) != user_id:
+        raise HTTPException(
+            status_code=403, detail="Only the media owner can extract EXIF data"
+        )
+
+    # Only extract from image files
+    if media_record.media_type != MediaType.PICTURE:
+        raise HTTPException(
+            status_code=422, detail="EXIF extraction is only supported for image files"
+        )
+
+    try:
+        from src.services.exif_extractor import ExifExtractor
+
+        extractor = ExifExtractor(privacy_mode=privacy_mode)
+        exif_data = extractor.extract_exif_data(str(media_record.file_path))
+
+        if not exif_data:
+            raise HTTPException(
+                status_code=404, detail="No EXIF data found in this image file"
+            )
+
+        # Update media record with extracted EXIF data
+        if not media_record.technical_metadata:
+            media_record.technical_metadata = {}
+
+        media_record.technical_metadata["exif"] = exif_data
+        media_record.technical_metadata["exif_summary"] = extractor.get_summary_stats(
+            exif_data
+        )
+        media_record.technical_metadata["exif_extraction_date"] = (
+            datetime.utcnow().isoformat()
+        )
+        media_record.technical_metadata["privacy_mode"] = privacy_mode
+
+        db.commit()
+
+        return {
+            "media_id": media_id,
+            "exif_data": exif_data,
+            "privacy_mode": privacy_mode,
+            "extraction_timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error extracting EXIF data: {str(e)}"
+        )
+
+
+@router.post("/exif/bulk-extract")
+async def bulk_extract_exif(
+    user_id: str,
+    privacy_mode: bool = False,
+    media_type_filter: Optional[str] = "picture",
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """
+    Bulk extract EXIF metadata for user's media files.
+
+    Args:
+        user_id: User ID to extract EXIF data for
+        privacy_mode: If True, removes GPS and sensitive metadata
+        media_type_filter: Filter by media type (default: "picture")
+        limit: Maximum number of files to process
+
+    Returns:
+        Summary of bulk extraction results
+    """
+    try:
+        from src.services.exif_extractor import ExifExtractor
+
+        # Query user's image files without EXIF data
+        query = db.query(Media).filter(Media.uploaded_by == user_id)
+
+        if media_type_filter == "picture":
+            query = query.filter(Media.media_type == MediaType.PICTURE)
+
+        # Get files that don't have EXIF data yet
+        media_files = query.limit(limit).all()
+
+        extractor = ExifExtractor(privacy_mode=privacy_mode)
+
+        results = {
+            "processed": 0,
+            "extracted": 0,
+            "skipped": 0,
+            "errors": 0,
+            "details": [],
+        }
+
+        for media_record in media_files:
+            try:
+                results["processed"] += 1
+
+                # Check if EXIF already exists
+                technical_metadata = media_record.technical_metadata or {}
+                if technical_metadata.get("exif"):
+                    results["skipped"] += 1
+                    results["details"].append(
+                        {
+                            "media_id": str(media_record.id),
+                            "status": "skipped",
+                            "reason": "EXIF data already exists",
+                        }
+                    )
+                    continue
+
+                # Extract EXIF data
+                exif_data = extractor.extract_exif_data(str(media_record.file_path))
+
+                if exif_data:
+                    # Update media record
+                    if not media_record.technical_metadata:
+                        media_record.technical_metadata = {}
+
+                    media_record.technical_metadata["exif"] = exif_data
+                    media_record.technical_metadata["exif_summary"] = (
+                        extractor.get_summary_stats(exif_data)
+                    )
+                    media_record.technical_metadata["exif_extraction_date"] = (
+                        datetime.utcnow().isoformat()
+                    )
+                    media_record.technical_metadata["privacy_mode"] = privacy_mode
+
+                    results["extracted"] += 1
+                    results["details"].append(
+                        {
+                            "media_id": str(media_record.id),
+                            "status": "extracted",
+                            "exif_summary": extractor.get_summary_stats(exif_data),
+                        }
+                    )
+                else:
+                    results["skipped"] += 1
+                    results["details"].append(
+                        {
+                            "media_id": str(media_record.id),
+                            "status": "no_exif",
+                            "reason": "No EXIF data found in file",
+                        }
+                    )
+
+            except Exception as e:
+                results["errors"] += 1
+                results["details"].append(
+                    {
+                        "media_id": str(media_record.id),
+                        "status": "error",
+                        "error": str(e),
+                    }
+                )
+
+        # Commit all changes
+        db.commit()
+
+        return {
+            "user_id": user_id,
+            "privacy_mode": privacy_mode,
+            "bulk_extraction_summary": results,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error during bulk EXIF extraction: {str(e)}"
+        )

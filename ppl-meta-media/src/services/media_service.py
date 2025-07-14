@@ -25,13 +25,15 @@ from ..models.media import (
     ProcessingStatus,
 )
 from ..schemas.media import MediaSearchRequest, MediaUploadRequest
+from .exif_extractor import ExifExtractor
 
 
 class MediaService:
     """Service for media operations."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, privacy_mode: bool = False):
         self.db = db
+        self.exif_extractor = ExifExtractor(privacy_mode=privacy_mode)
 
     async def upload_media(
         self, file: UploadFile, upload_request: MediaUploadRequest
@@ -452,7 +454,9 @@ class MediaService:
             # Generate thumbnails for images and videos
             await self._generate_thumbnails(media)
 
-            # TODO: Extract metadata (EXIF, video info, etc.)
+            # Extract EXIF metadata for images
+            await self._extract_exif_metadata(media)
+
             # TODO: Create different quality variants
 
             # Mark processing as completed
@@ -501,3 +505,78 @@ class MediaService:
             if not media.technical_metadata:
                 media.technical_metadata = {}
             media.technical_metadata["thumbnail_error"] = str(e)
+
+    async def _extract_exif_metadata(self, media: Media):
+        """Extract EXIF metadata from uploaded image files."""
+
+        # Only extract EXIF from image files
+        if media.media_type != MediaType.PICTURE:
+            return
+
+        try:
+            # Extract EXIF data
+            exif_data = self.exif_extractor.extract_exif_data(str(media.file_path))
+
+            if exif_data:
+                # Initialize technical_metadata if it doesn't exist
+                if not media.technical_metadata:
+                    media.technical_metadata = {}
+
+                # Store EXIF data
+                media.technical_metadata["exif"] = exif_data
+
+                # Extract summary stats for quick access
+                summary_stats = self.exif_extractor.get_summary_stats(exif_data)
+                media.technical_metadata["exif_summary"] = summary_stats
+
+                # Update media with EXIF datetime if available and not already set
+                exif_datetime = exif_data.get("datetime_info", {}).get(
+                    "DateTimeOriginal"
+                )
+                if exif_datetime and not media.capture_timestamp:
+                    try:
+                        from datetime import datetime
+
+                        # Parse EXIF datetime format: "YYYY:MM:DD HH:MM:SS"
+                        dt = datetime.strptime(exif_datetime, "%Y:%m:%d %H:%M:%S")
+                        media.capture_timestamp = dt
+                    except ValueError:
+                        pass  # Invalid datetime format, keep original
+
+                # Update GPS coordinates if available and not already set
+                gps_info = exif_data.get("gps_info", {})
+                if gps_info.get("latitude") and gps_info.get("longitude"):
+                    if not media.location_data:
+                        media.location_data = {
+                            "latitude": gps_info["latitude"],
+                            "longitude": gps_info["longitude"],
+                            "source": "exif_gps",
+                            "coordinate_system": gps_info.get(
+                                "coordinate_system", "WGS84"
+                            ),
+                        }
+
+                # Update device info from EXIF if available
+                camera_info = exif_data.get("camera_info", {})
+                if camera_info.get("Make") and not media.device_manufacturer:
+                    media.device_manufacturer = camera_info["Make"]
+                if camera_info.get("Model") and not media.device_model:
+                    media.device_model = camera_info["Model"]
+
+            else:
+                # No EXIF data found
+                if not media.technical_metadata:
+                    media.technical_metadata = {}
+                media.technical_metadata["exif"] = None
+                media.technical_metadata["exif_summary"] = {
+                    "has_camera_info": False,
+                    "has_gps_data": False,
+                    "has_datetime": False,
+                    "total_tags": 0,
+                }
+
+        except Exception as e:
+            # Store error information
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+            media.technical_metadata["exif_error"] = str(e)
