@@ -32,6 +32,11 @@ Pillow>=10.0.0  # Image processing and thumbnail generation
 python-ffmpeg>=2.0.12  # Video thumbnail extraction (alternative to ffmpeg-python)
 python-magic>=0.4.27  # File type detection
 
+# Security dependencies (Issue #009)
+PyJWT>=2.8.0  # JWT token handling
+passlib[bcrypt]>=1.7.4  # Password hashing with bcrypt
+python-multipart>=0.0.6  # Form data parsing for file uploads
+
 # Development dependencies (optional)
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
