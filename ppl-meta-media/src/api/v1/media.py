@@ -4,10 +4,21 @@ Media API routes for PPL Meta Platform Media Service - API v1.
 
 import os
 import sys
+from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 # Add shared modules to path
@@ -23,6 +34,7 @@ from src.schemas.media import (
     MediaUploadRequest,
 )
 from src.services.media_service import MediaService
+from src.services.thumbnail_service import ThumbnailService
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -305,3 +317,252 @@ async def create_share_link(
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# ============================================================================
+# FILE SERVING ENDPOINTS - Issue #006 Implementation
+# ============================================================================
+
+
+# Initialize thumbnail service with storage path
+def get_thumbnail_service() -> ThumbnailService:
+    """Get thumbnail service instance."""
+    from src.config import get_config
+
+    settings = get_config()
+    return ThumbnailService(settings.STORAGE_PATH)
+
+
+def get_storage_root() -> str:
+    """Get the storage root path."""
+    from src.config import get_config
+
+    settings = get_config()
+    return settings.STORAGE_PATH
+
+
+def get_media_access_check(
+    media_id: str,
+    user_id: Optional[str] = None,
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Check if user has access to media file.
+    Returns media info if access is granted, raises HTTPException otherwise.
+    """
+    try:
+        media_service = MediaService(db)
+
+        # Get media information
+        media = media_service.get_media_by_id(media_id)
+        if not media:
+            raise HTTPException(status_code=404, detail="Media not found")
+
+        # Check access permissions
+        has_access = False
+
+        # Option 1: User owns the media
+        if user_id and str(media.uploaded_by) == user_id:
+            has_access = True
+
+        # Option 2: Media is public
+        elif media.is_public:
+            has_access = True
+
+        # Option 3: Valid share token provided
+        elif share_token:
+            share = media_service.get_share_by_token(share_token)
+            if share and str(share.media_id) == media_id:
+                has_access = True
+
+        if not has_access:
+            raise HTTPException(status_code=403, detail="Access denied to this media")
+
+        return {
+            "media": media,
+            "file_path": os.path.join("./storage", str(media.file_path)),
+            "mime_type": str(media.mime_type),
+            "filename": str(media.original_filename or media.filename),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/download/{media_id}")
+async def download_media(
+    media_id: str,
+    user_id: Optional[str] = None,
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Download media file directly with proper access control.
+
+    Args:
+        media_id: UUID of the media to download
+        user_id: Optional user ID for access control
+        share_token: Optional share token for public access
+
+    Returns:
+        FileResponse with the media file
+    """
+    # Check access permissions
+    access_info = get_media_access_check(media_id, user_id, share_token, db)
+
+    file_path = Path(access_info["file_path"])
+
+    # Verify file exists on disk
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    # Return file with proper headers
+    return FileResponse(
+        path=str(file_path),
+        media_type=access_info["mime_type"],
+        filename=access_info["filename"],
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{access_info["filename"]}"'
+            ),
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+@router.get("/stream/{media_id}")
+async def stream_media(
+    media_id: str,
+    request: Request,
+    user_id: Optional[str] = None,
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Stream media file with range request support for video/audio content.
+
+    Args:
+        media_id: UUID of the media to stream
+        request: FastAPI request object for range headers
+        user_id: Optional user ID for access control
+        share_token: Optional share token for public access
+
+    Returns:
+        StreamingResponse with range request support
+    """
+    # Check access permissions
+    access_info = get_media_access_check(media_id, user_id, share_token, db)
+
+    file_path = Path(access_info["file_path"])
+
+    # Verify file exists on disk
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    file_size = file_path.stat().st_size
+    range_header = request.headers.get("Range")
+
+    def generate_chunks(start: int, end: int):
+        """Generate file chunks for streaming."""
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = end - start + 1
+            while remaining > 0:
+                chunk_size = min(8192, remaining)  # 8KB chunks
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    # Handle range requests
+    if range_header:
+        try:
+            # Parse range header (e.g., "bytes=0-1023")
+            range_match = range_header.replace("bytes=", "").split("-")
+            start = int(range_match[0]) if range_match[0] else 0
+            end = int(range_match[1]) if range_match[1] else file_size - 1
+
+            # Validate range
+            if start >= file_size or end >= file_size or start > end:
+                raise HTTPException(status_code=416, detail="Range not satisfiable")
+
+            content_length = end - start + 1
+
+            return StreamingResponse(
+                generate_chunks(start, end),
+                status_code=206,  # Partial Content
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Content-Length": str(content_length),
+                    "Content-Type": access_info["mime_type"],
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "private, max-age=3600",
+                },
+            )
+        except (ValueError, IndexError):
+            # Invalid range header, fall back to full file
+            pass
+
+    # Return full file if no range request or invalid range
+    return StreamingResponse(
+        generate_chunks(0, file_size - 1),
+        media_type=access_info["mime_type"],
+        headers={
+            "Content-Length": str(file_size),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+@router.get("/thumbnail/{media_id}")
+async def get_thumbnail(
+    media_id: str,
+    size: str = "medium",
+    user_id: Optional[str] = None,
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+    thumbnail_service: ThumbnailService = Depends(get_thumbnail_service),
+):
+    """
+    Generate and serve thumbnail for media file.
+
+    Args:
+        media_id: UUID of the media to generate thumbnail for
+        size: Thumbnail size (small, medium, large)
+        user_id: Optional user ID for access control
+        share_token: Optional share token for public access
+
+    Returns:
+        Response with thumbnail image bytes
+    """
+    # Check access permissions
+    access_info = get_media_access_check(media_id, user_id, share_token, db)
+
+    file_path = Path(access_info["file_path"])
+
+    # Verify file exists on disk
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    # Generate thumbnail
+    thumbnail_bytes = thumbnail_service.generate_thumbnail(str(file_path), size=size)
+
+    if not thumbnail_bytes:
+        raise HTTPException(
+            status_code=422, detail="Unable to generate thumbnail for this media type"
+        )
+
+    # Return thumbnail with proper headers
+    return Response(
+        content=thumbnail_bytes,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=86400",  # Cache for 24 hours
+            "Content-Length": str(len(thumbnail_bytes)),
+        },
+    )

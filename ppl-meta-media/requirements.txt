@@ -27,6 +27,11 @@ prometheus-client>=0.19.0
 # Python compiler for executable creation
 nuitka>=2.7.0
 
+# Media processing dependencies
+Pillow>=10.0.0  # Image processing and thumbnail generation
+python-ffmpeg>=2.0.12  # Video thumbnail extraction (alternative to ffmpeg-python)
+python-magic>=0.4.27  # File type detection
+
 # Development dependencies (optional)
 pytest>=7.4.0
 pytest-asyncio>=0.21.0

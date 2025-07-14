@@ -195,6 +195,33 @@ class MediaService:
 
         return media
 
+    def get_media_by_id(self, media_id: str) -> Optional[Media]:
+        """Get media by ID without access control (for internal use)."""
+        query = self.db.query(Media)
+
+        # Try to find by UUID first, then by ID
+        try:
+            uuid_val = UUID(media_id)
+            query = query.filter(Media.uuid == uuid_val)
+        except ValueError:
+            query = query.filter(Media.id == int(media_id))
+
+        return query.first()
+
+    def get_share_by_token(self, share_token: str) -> Optional[MediaShare]:
+        """Get share record by token."""
+        return (
+            self.db.query(MediaShare)
+            .filter(MediaShare.share_token == share_token)
+            .filter(
+                or_(
+                    MediaShare.expires_at.is_(None),
+                    MediaShare.expires_at > datetime.now(),
+                )
+            )
+            .first()
+        )
+
     async def delete_media(self, media_id: str, user_id: UUID) -> bool:
         """Delete media (soft delete)."""
 
