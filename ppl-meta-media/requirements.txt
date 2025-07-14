@@ -43,3 +43,6 @@ python-consul>=1.1.0
 httpx>=0.25.0
 tenacity>=8.2.0
 requests>=2.31.0
+
+# Optional Redis caching support
+redis>=5.0.0

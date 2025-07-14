@@ -330,7 +330,8 @@ def get_thumbnail_service() -> ThumbnailService:
     from src.config import get_config
 
     settings = get_config()
-    return ThumbnailService(settings.STORAGE_PATH)
+    redis_url = getattr(settings, "REDIS_URL", None)
+    return ThumbnailService(settings.STORAGE_PATH, redis_url=redis_url)
 
 
 def get_storage_root() -> str:
@@ -523,6 +524,8 @@ async def stream_media(
 async def get_thumbnail(
     media_id: str,
     size: str = "medium",
+    video_position: str = "start",
+    video_timestamp: Optional[str] = None,
     user_id: Optional[str] = None,
     share_token: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -534,6 +537,9 @@ async def get_thumbnail(
     Args:
         media_id: UUID of the media to generate thumbnail for
         size: Thumbnail size (small, medium, large)
+        video_position: Video position for thumbnail ("start", "middle", "end")
+        video_timestamp: Custom timestamp for video thumbnails (e.g.,
+                        "00:02:30")
         user_id: Optional user ID for access control
         share_token: Optional share token for public access
 
@@ -549,8 +555,13 @@ async def get_thumbnail(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Media file not found")
 
-    # Generate thumbnail
-    thumbnail_bytes = thumbnail_service.generate_thumbnail(str(file_path), size=size)
+    # Generate thumbnail with enhanced options
+    thumbnail_bytes = thumbnail_service.generate_thumbnail(
+        str(file_path),
+        size=size,
+        video_timestamp=video_timestamp,
+        video_position=video_position,
+    )
 
     if not thumbnail_bytes:
         raise HTTPException(

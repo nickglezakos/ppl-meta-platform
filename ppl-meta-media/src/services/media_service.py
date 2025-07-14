@@ -448,12 +448,56 @@ class MediaService:
     async def _process_media_async(self, media: Media):
         """Process media asynchronously (thumbnails, metadata extraction, etc.)."""
 
-        # TODO: Implement async processing
-        # - Generate thumbnails for images/videos
-        # - Extract metadata (EXIF, video info, etc.)
-        # - Create different quality variants
-        # - Update processing status
+        try:
+            # Generate thumbnails for images and videos
+            await self._generate_thumbnails(media)
 
-        # For now, just mark as completed
-        media.processing_status = ProcessingStatus.COMPLETED
-        self.db.commit()
+            # TODO: Extract metadata (EXIF, video info, etc.)
+            # TODO: Create different quality variants
+
+            # Mark processing as completed
+            media.processing_status = ProcessingStatus.COMPLETED
+
+        except Exception as e:
+            # Mark processing as failed and store error
+            media.processing_status = ProcessingStatus.FAILED
+            media.processing_error = str(e)
+
+        finally:
+            self.db.commit()
+
+    async def _generate_thumbnails(self, media: Media):
+        """Generate thumbnails for uploaded media."""
+        from src.config import get_config
+        from src.services.thumbnail_service import ThumbnailService
+
+        # Only generate thumbnails for images and videos
+        if media.media_type not in [MediaType.PICTURE, MediaType.VIDEO]:
+            return
+
+        try:
+            settings = get_config()
+            redis_url = getattr(settings, "REDIS_URL", None)
+            thumbnail_service = ThumbnailService(
+                settings.STORAGE_PATH, redis_url=redis_url
+            )
+
+            # Get full file path
+            full_file_path = Path(settings.STORAGE_PATH) / media.file_path
+
+            # Generate all thumbnail sizes
+            results = thumbnail_service.generate_thumbnails_on_upload(
+                str(full_file_path)
+            )
+
+            # Store thumbnail generation results in technical_metadata
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+
+            media.technical_metadata["thumbnails"] = results
+
+        except Exception as e:
+            # Don't fail the entire upload if thumbnail generation fails
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+            media.technical_metadata["thumbnail_error"] = str(e)

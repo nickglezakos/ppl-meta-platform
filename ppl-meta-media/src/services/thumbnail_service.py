@@ -14,6 +14,14 @@ try:
 except ImportError:
     magic = None
 
+try:
+    import redis
+
+    REDIS_AVAILABLE = True
+except ImportError:
+    redis = None
+    REDIS_AVAILABLE = False
+
 
 class ThumbnailService:
     """Service for generating thumbnails for media files."""
@@ -25,14 +33,29 @@ class ThumbnailService:
         "large": (600, 600),
     }
 
-    def __init__(self, storage_root: str):
-        """Initialize thumbnail service with storage root path."""
+    def __init__(self, storage_root: str, redis_url: Optional[str] = None):
+        """Initialize thumbnail service with storage root path and Redis."""
         self.storage_root = Path(storage_root)
         self.thumbnail_cache_dir = self.storage_root / "thumbnails"
         self.thumbnail_cache_dir.mkdir(parents=True, exist_ok=True)
 
+        # Initialize Redis cache if available and URL provided
+        self.redis_client = None
+        if REDIS_AVAILABLE and redis_url:
+            try:
+                self.redis_client = redis.from_url(redis_url)  # type: ignore
+                # Test connection
+                self.redis_client.ping()
+            except Exception:
+                self.redis_client = None
+
     def generate_thumbnail(
-        self, file_path: str, size: str = "medium", force_regenerate: bool = False
+        self,
+        file_path: str,
+        size: str = "medium",
+        force_regenerate: bool = False,
+        video_timestamp: Optional[str] = None,
+        video_position: str = "start",
     ) -> Optional[bytes]:
         """
         Generate thumbnail for media file.
@@ -41,6 +64,8 @@ class ThumbnailService:
             file_path: Path to the original media file
             size: Thumbnail size (small, medium, large)
             force_regenerate: Force regeneration even if cached exists
+            video_timestamp: Custom timestamp for video thumbnails (e.g., "00:02:30")
+            video_position: Video position for thumbnail ("start", "middle", "end")
 
         Returns:
             Thumbnail image bytes or None if generation failed
@@ -55,15 +80,41 @@ class ThumbnailService:
         if not file_path_obj.exists():
             return None
 
-        # Generate cache filename
-        cache_filename = f"{file_path_obj.stem}_{size}.jpg"
+        # Generate cache filename with position/timestamp info for videos
+        cache_suffix = ""
+        if video_timestamp:
+            cache_suffix = f"_{video_timestamp.replace(':', '')}"
+        elif video_position != "start":
+            cache_suffix = f"_{video_position}"
+
+        cache_filename = f"{file_path_obj.stem}_{size}{cache_suffix}.jpg"
         cache_path = self.thumbnail_cache_dir / cache_filename
+
+        # Check Redis cache first if available
+        redis_key = None
+        if self.redis_client:
+            redis_key = f"thumbnail:{file_path}:{size}:{video_position}:{video_timestamp or 'none'}"
+            if not force_regenerate:
+                try:
+                    cached_data = self.redis_client.get(redis_key)
+                    if cached_data:
+                        return cached_data
+                except Exception:
+                    pass  # Continue with file generation if Redis fails
 
         # Return cached thumbnail if exists and not forcing regeneration
         if cache_path.exists() and not force_regenerate:
             try:
                 with open(cache_path, "rb") as f:
-                    return f.read()
+                    thumbnail_data = f.read()
+                    # Also cache in Redis if available
+                    if self.redis_client and redis_key:
+                        try:
+                            # Cache for 24 hours
+                            self.redis_client.setex(redis_key, 86400, thumbnail_data)
+                        except Exception:
+                            pass
+                    return thumbnail_data
             except Exception:
                 pass  # Continue to regenerate
 
@@ -85,16 +136,26 @@ class ThumbnailService:
             )
         elif mime_type.startswith("video/"):
             thumbnail_bytes = self._generate_video_thumbnail(
-                file_path_obj, thumbnail_size
+                file_path_obj, thumbnail_size, video_timestamp, video_position
             )
 
-        # Cache the generated thumbnail
+        # Cache the generated thumbnail (both file and Redis)
         if thumbnail_bytes:
             try:
+                # File-based caching
                 with open(cache_path, "wb") as f:
                     f.write(thumbnail_bytes)
+
+                # Redis caching if available
+                if self.redis_client and redis_key:
+                    try:
+                        # Cache for 24 hours
+                        self.redis_client.setex(redis_key, 86400, thumbnail_bytes)
+                    except Exception:
+                        pass  # Continue even if Redis caching fails
+
             except (OSError, IOError):
-                pass  # Continue even if caching fails
+                pass  # Continue even if file caching fails
 
         return thumbnail_bytes
 
@@ -133,14 +194,54 @@ class ThumbnailService:
             return None
 
     def _generate_video_thumbnail(
-        self, file_path: Path, size: Tuple[int, int]
+        self,
+        file_path: Path,
+        size: Tuple[int, int],
+        video_timestamp: Optional[str] = None,
+        video_position: str = "start",
     ) -> Optional[bytes]:
         """Generate thumbnail for video files using ffmpeg."""
         try:
             # Create temporary output file
             temp_output = self.thumbnail_cache_dir / (f"temp_{file_path.stem}.jpg")
 
-            # Use ffmpeg to extract first frame
+            # Determine timestamp for thumbnail extraction
+            seek_time = "00:00:01"  # Default: 1 second from start
+
+            if video_timestamp:
+                # Use custom timestamp if provided
+                seek_time = video_timestamp
+            elif video_position == "middle":
+                # For middle position, we need to get video duration first
+                duration_cmd = [
+                    "ffprobe",
+                    "-v",
+                    "quiet",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "csv=p=0",
+                    str(file_path),
+                ]
+                try:
+                    duration_result = subprocess.run(
+                        duration_cmd, capture_output=True, text=True, timeout=10
+                    )
+                    if duration_result.returncode == 0:
+                        duration = float(duration_result.stdout.strip())
+                        middle_seconds = duration / 2
+                        hours = int(middle_seconds // 3600)
+                        minutes = int((middle_seconds % 3600) // 60)
+                        seconds = int(middle_seconds % 60)
+                        seek_time = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                except (subprocess.TimeoutExpired, ValueError):
+                    # Fall back to default if duration detection fails
+                    seek_time = "00:00:05"
+            elif video_position == "end":
+                # For end position, seek to 10 seconds before end (or 30 seconds)
+                seek_time = "00:00:30"
+
+            # Use ffmpeg to extract frame at specified time
             scale_filter = (
                 f"scale={size[0]}:{size[1]}:" "force_original_aspect_ratio=decrease"
             )
@@ -149,7 +250,7 @@ class ThumbnailService:
                 "-i",
                 str(file_path),
                 "-ss",
-                "00:00:01",  # Seek to 1 second
+                seek_time,
                 "-vframes",
                 "1",  # Extract 1 frame
                 "-vf",
@@ -235,3 +336,62 @@ class ThumbnailService:
             pass
 
         return total_size
+
+    def generate_thumbnails_on_upload(self, file_path: str) -> dict:
+        """
+        Generate all thumbnail sizes automatically on file upload.
+
+        Args:
+            file_path: Path to the uploaded media file
+
+        Returns:
+            Dictionary with generation results for each size
+        """
+        results = {}
+
+        for size_name in self.THUMBNAIL_SIZES.keys():
+            try:
+                thumbnail_bytes = self.generate_thumbnail(file_path, size=size_name)
+                results[size_name] = {
+                    "success": thumbnail_bytes is not None,
+                    "size_bytes": len(thumbnail_bytes) if thumbnail_bytes else 0,
+                }
+            except Exception as e:
+                results[size_name] = {"success": False, "error": str(e)}
+
+        return results
+
+    def clear_cache_for_file(self, file_path: str) -> int:
+        """
+        Clear all cached thumbnails for a specific file.
+
+        Args:
+            file_path: Path to the media file
+
+        Returns:
+            Number of cache entries cleared
+        """
+        cleared_count = 0
+        file_stem = Path(file_path).stem
+
+        # Clear file-based cache
+        try:
+            for thumbnail_file in self.thumbnail_cache_dir.glob(f"{file_stem}_*.jpg"):
+                thumbnail_file.unlink()
+                cleared_count += 1
+        except Exception:
+            pass
+
+        # Clear Redis cache if available
+        if self.redis_client:
+            try:
+                # Get all keys for this file
+                pattern = f"thumbnail:{file_path}:*"
+                keys = self.redis_client.keys(pattern)
+                if keys:
+                    self.redis_client.delete(*keys)
+                    cleared_count += len(keys)
+            except Exception:
+                pass
+
+        return cleared_count
