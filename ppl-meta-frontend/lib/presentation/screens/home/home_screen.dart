@@ -187,7 +187,6 @@ class HomeScreen extends ConsumerWidget {
                       context.go('/analytics');
                     },
                   ),
-                  ),
                 ],
               ),
             ),

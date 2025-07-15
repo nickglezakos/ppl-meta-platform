@@ -2,6 +2,88 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'media_models.g.dart';
 
+/// Media type enumeration
+enum MediaType {
+  @JsonValue('image')
+  image,
+  @JsonValue('video')
+  video,
+  @JsonValue('audio')
+  audio,
+  @JsonValue('document')
+  document,
+  @JsonValue('pdf')
+  pdf,
+  @JsonValue('text')
+  text,
+  @JsonValue('archive')
+  archive,
+  @JsonValue('other')
+  other;
+
+  String get displayName {
+    switch (this) {
+      case MediaType.image:
+        return 'Image';
+      case MediaType.video:
+        return 'Video';
+      case MediaType.audio:
+        return 'Audio';
+      case MediaType.document:
+        return 'Document';
+      case MediaType.pdf:
+        return 'PDF';
+      case MediaType.text:
+        return 'Text';
+      case MediaType.archive:
+        return 'Archive';
+      case MediaType.other:
+        return 'Other';
+    }
+  }
+}
+
+/// Share permission enumeration
+enum SharePermission {
+  @JsonValue('private')
+  private,
+  @JsonValue('public')
+  public,
+  @JsonValue('shared')
+  shared,
+  @JsonValue('restricted')
+  restricted,
+  @JsonValue('organization')
+  organization,
+  @JsonValue('view')
+  view,
+  @JsonValue('comment')
+  comment,
+  @JsonValue('edit')
+  edit;
+
+  String get displayName {
+    switch (this) {
+      case SharePermission.private:
+        return 'Private';
+      case SharePermission.public:
+        return 'Public';
+      case SharePermission.shared:
+        return 'Shared';
+      case SharePermission.restricted:
+        return 'Restricted';
+      case SharePermission.organization:
+        return 'Organization';
+      case SharePermission.view:
+        return 'View Only';
+      case SharePermission.comment:
+        return 'View & Comment';
+      case SharePermission.edit:
+        return 'Edit';
+    }
+  }
+}
+
 /// Media item model
 @JsonSerializable()
 class MediaItem {
@@ -12,7 +94,7 @@ class MediaItem {
   final String originalFilename;
   
   @JsonKey(name: 'media_type')
-  final String mediaType;
+  final MediaType mediaType;
   
   @JsonKey(name: 'file_size')
   final int fileSize;
@@ -53,6 +135,22 @@ class MediaItem {
   @JsonKey(name: 'technical_metadata')
   final Map<String, dynamic>? technicalMetadata;
   
+  // Additional properties expected by comprehensive frontend
+  @JsonKey(name: 'thumbnail_url')
+  final String? thumbnailUrl;
+  
+  @JsonKey(name: 'url')
+  final String? url; // Media access URL
+  
+  @JsonKey(name: 'duration')
+  final int? duration; // Duration in seconds for video/audio files
+  
+  // Convenience getters for compatibility
+  String get id => mediaId;
+  String get filename => originalFilename;
+  Map<String, dynamic>? get metadata => technicalMetadata;
+  DateTime get createdAt => uploadedAt; // Alias for uploadedAt
+  
   const MediaItem({
     required this.mediaId,
     required this.originalFilename,
@@ -71,6 +169,9 @@ class MediaItem {
     this.tags = const [],
     this.description,
     this.technicalMetadata,
+    this.thumbnailUrl,
+    this.url,
+    this.duration,
   });
   
   factory MediaItem.fromJson(Map<String, dynamic> json) => _$MediaItemFromJson(json);
@@ -83,17 +184,17 @@ class MediaItem {
   
   /// Check if media is an image
   bool get isImage {
-    return mediaType.startsWith('image/');
+    return mediaType == MediaType.image;
   }
   
   /// Check if media is a video
   bool get isVideo {
-    return mediaType.startsWith('video/');
+    return mediaType == MediaType.video;
   }
   
   /// Check if media is audio
   bool get isAudio {
-    return mediaType.startsWith('audio/');
+    return mediaType == MediaType.audio;
   }
   
   /// Get formatted file size
@@ -122,6 +223,8 @@ class MediaUploadResponse {
   @JsonKey(name: 'file_path')
   final String filePath;
   
+  final String filename;
+  
   @JsonKey(name: 'thumbnail_generated')
   final bool thumbnailGenerated;
   
@@ -131,6 +234,7 @@ class MediaUploadResponse {
   const MediaUploadResponse({
     required this.mediaId,
     required this.filePath,
+    required this.filename,
     required this.thumbnailGenerated,
     required this.status,
     required this.message,
@@ -167,11 +271,119 @@ class MediaSearchResponse {
   Map<String, dynamic> toJson() => _$MediaSearchResponseToJson(this);
 }
 
+/// Media search filters for filtering and searching media items
+@JsonSerializable()
+class MediaSearchFilters {
+  @JsonKey(name: 'query')
+  final String? query;
+  
+  @JsonKey(name: 'media_type')
+  final MediaType? mediaType;
+  
+  @JsonKey(name: 'start_date')
+  final DateTime? startDate;
+  
+  @JsonKey(name: 'end_date')
+  final DateTime? endDate;
+  
+  @JsonKey(name: 'tags')
+  final List<String>? tags;
+  
+  @JsonKey(name: 'collection_id')
+  final String? collectionId;
+  
+  @JsonKey(name: 'sort_by')
+  final String? sortBy;
+  
+  @JsonKey(name: 'sort_order')
+  final String? sortOrder;
+  
+  @JsonKey(name: 'min_file_size')
+  final int? minFileSize;
+  
+  @JsonKey(name: 'max_file_size')
+  final int? maxFileSize;
+  
+  @JsonKey(name: 'has_thumbnail')
+  final bool? hasThumbnail;
+
+  const MediaSearchFilters({
+    this.query,
+    this.mediaType,
+    this.startDate,
+    this.endDate,
+    this.tags,
+    this.collectionId,
+    this.sortBy,
+    this.sortOrder,
+    this.minFileSize,
+    this.maxFileSize,
+    this.hasThumbnail,
+  });
+
+  factory MediaSearchFilters.fromJson(Map<String, dynamic> json) => _$MediaSearchFiltersFromJson(json);
+  Map<String, dynamic> toJson() => _$MediaSearchFiltersToJson(this);
+
+  /// Create a copy with updated properties
+  MediaSearchFilters copyWith({
+    String? query,
+    MediaType? mediaType,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<String>? tags,
+    String? collectionId,
+    String? sortBy,
+    String? sortOrder,
+    int? minFileSize,
+    int? maxFileSize,
+    bool? hasThumbnail,
+  }) {
+    return MediaSearchFilters(
+      query: query ?? this.query,
+      mediaType: mediaType ?? this.mediaType,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      tags: tags ?? this.tags,
+      collectionId: collectionId ?? this.collectionId,
+      sortBy: sortBy ?? this.sortBy,
+      sortOrder: sortOrder ?? this.sortOrder,
+      minFileSize: minFileSize ?? this.minFileSize,
+      maxFileSize: maxFileSize ?? this.maxFileSize,
+      hasThumbnail: hasThumbnail ?? this.hasThumbnail,
+    );
+  }
+
+  /// Check if any filters are applied
+  bool get hasFilters {
+    return query != null && query!.isNotEmpty ||
+           mediaType != null ||
+           startDate != null ||
+           endDate != null ||
+           tags != null && tags!.isNotEmpty ||
+           collectionId != null ||
+           minFileSize != null ||
+           maxFileSize != null ||
+           hasThumbnail != null;
+  }
+
+  /// Clear all filters
+  static MediaSearchFilters empty() => const MediaSearchFilters();
+}
+
 /// Device analytics model
 @JsonSerializable()
 class DeviceAnalytics {
   @JsonKey(name: 'total_media_count')
   final int totalMediaCount;
+  
+  @JsonKey(name: 'total_files')
+  final int totalFiles;
+  
+  @JsonKey(name: 'total_storage_bytes')
+  final int totalStorageBytes;
+  
+  @JsonKey(name: 'uploads_today')
+  final int uploadsToday;
   
   @JsonKey(name: 'device_breakdown')
   final Map<String, int> deviceBreakdown;
@@ -185,15 +397,26 @@ class DeviceAnalytics {
   @JsonKey(name: 'upload_trends')
   final Map<String, int> uploadTrends;
   
+  @JsonKey(name: 'uploads_by_day')
+  final Map<String, int> uploadsByDay;
+  
+  @JsonKey(name: 'storage_usage_by_day')
+  final Map<String, int> storageUsageByDay;
+  
   @JsonKey(name: 'top_devices')
   final List<DeviceStats> topDevices;
   
   const DeviceAnalytics({
     required this.totalMediaCount,
+    required this.totalFiles,
+    required this.totalStorageBytes,
+    required this.uploadsToday,
     required this.deviceBreakdown,
     required this.manufacturerBreakdown,
     required this.mediaTypeBreakdown,
     required this.uploadTrends,
+    required this.uploadsByDay,
+    required this.storageUsageByDay,
     required this.topDevices,
   });
   
@@ -241,6 +464,7 @@ class DeviceStats {
 
 /// Media collection model
 @JsonSerializable()
+@JsonSerializable()
 class MediaCollection {
   @JsonKey(name: 'collection_id')
   final String collectionId;
@@ -250,6 +474,9 @@ class MediaCollection {
   
   @JsonKey(name: 'created_at')
   final DateTime createdAt;
+  
+  @JsonKey(name: 'updated_at')
+  final DateTime? updatedAt;
   
   @JsonKey(name: 'created_by')
   final String? createdBy;
@@ -264,6 +491,7 @@ class MediaCollection {
     required this.name,
     this.description,
     required this.createdAt,
+    this.updatedAt,
     this.createdBy,
     required this.mediaCount,
     this.media = const [],
@@ -271,6 +499,33 @@ class MediaCollection {
   
   factory MediaCollection.fromJson(Map<String, dynamic> json) => _$MediaCollectionFromJson(json);
   Map<String, dynamic> toJson() => _$MediaCollectionToJson(this);
+  
+  // Getter aliases for compatibility
+  String get id => collectionId;
+  int get itemCount => mediaCount;
+  
+  /// Create a copy with updated properties
+  MediaCollection copyWith({
+    String? collectionId,
+    String? name,
+    String? description,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? createdBy,
+    int? mediaCount,
+    List<MediaItem>? media,
+  }) {
+    return MediaCollection(
+      collectionId: collectionId ?? this.collectionId,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      createdBy: createdBy ?? this.createdBy,
+      mediaCount: mediaCount ?? this.mediaCount,
+      media: media ?? this.media,
+    );
+  }
 }
 
 /// Share response model
@@ -310,6 +565,95 @@ class ShareResponse {
   Map<String, dynamic> toJson() => _$ShareResponseToJson(this);
   
   /// Check if share has expired
+  bool get isExpired {
+    if (expiresAt == null) return false;
+    return DateTime.now().isAfter(expiresAt!);
+  }
+}
+
+/// Response model for paginated media list
+@JsonSerializable()
+class MediaListResponse {
+  final List<MediaItem> items;
+  final int totalCount;
+  final int page;
+  final int limit;
+  final bool hasMore;
+  
+  const MediaListResponse({
+    required this.items,
+    required this.totalCount,
+    required this.page,
+    required this.limit,
+    required this.hasMore,
+  });
+  
+  factory MediaListResponse.fromJson(Map<String, dynamic> json) =>
+      _$MediaListResponseFromJson(json);
+  
+  Map<String, dynamic> toJson() => _$MediaListResponseToJson(this);
+}
+
+/// Media analytics data model
+@JsonSerializable()
+class MediaAnalytics {
+  final int totalItems;
+  final int totalSize;
+  final Map<MediaType, int> itemsByType;
+  final Map<String, int> uploadsByDay;
+  final Map<String, int> accessesByDay;
+  final double averageFileSize;
+  final MediaItem? mostAccessedItem;
+  final List<String> popularTags;
+  
+  const MediaAnalytics({
+    required this.totalItems,
+    required this.totalSize,
+    required this.itemsByType,
+    required this.uploadsByDay,
+    required this.accessesByDay,
+    required this.averageFileSize,
+    this.mostAccessedItem,
+    required this.popularTags,
+  });
+  
+  factory MediaAnalytics.fromJson(Map<String, dynamic> json) =>
+      _$MediaAnalyticsFromJson(json);
+  
+  Map<String, dynamic> toJson() => _$MediaAnalyticsToJson(this);
+}
+
+/// Share link model for sharing media items
+@JsonSerializable()
+class ShareLink {
+  final String id;
+  final String url;
+  final List<String> itemIds;
+  final DateTime createdAt;
+  final DateTime? expiresAt;
+  final bool allowDownload;
+  final bool hasPassword;
+  final int accessCount;
+  final bool isActive;
+  
+  const ShareLink({
+    required this.id,
+    required this.url,
+    required this.itemIds,
+    required this.createdAt,
+    this.expiresAt,
+    required this.allowDownload,
+    required this.hasPassword,
+    required this.accessCount,
+    required this.isActive,
+  });
+  
+  factory ShareLink.fromJson(Map<String, dynamic> json) =>
+      _$ShareLinkFromJson(json);
+  
+  Map<String, dynamic> toJson() => _$ShareLinkToJson(this);
+  
+  /// Check if the share link is expired
   bool get isExpired {
     if (expiresAt == null) return false;
     return DateTime.now().isAfter(expiresAt!);

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/app_config.dart';
 import 'core/theme/app_theme.dart';
@@ -25,7 +25,7 @@ class PPLMetaApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     
     return MaterialApp.router(
-      title: 'PPL Meta Platform',
+      title: 'PPL Meta Platform v2.0.0',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,

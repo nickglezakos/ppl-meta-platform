@@ -54,7 +54,7 @@ class _DeviceAwareUploadWidgetState extends State<DeviceAwareUploadWidget>
   void initState() {
     super.initState();
     _apiClient = context.read<MediaApiClient>();
-    _deviceInfo = DeviceInfo.current;
+    _deviceInfo = DeviceInfo.current();
     
     _dragAnimationController = AnimationController(
       duration: AppDurations.fast,
@@ -220,19 +220,35 @@ class _DeviceAwareUploadWidgetState extends State<DeviceAwareUploadWidget>
         fileName: file.name,
         mimeType: _getMimeType(file.name),
         deviceInfo: _deviceInfo,
-        onProgress: (progress) {
+        onProgressPercent: (progress) {
           setState(() {
             _uploadProgress[fileId] = progress;
           });
         },
       );
 
-      setState(() {
-        _uploadStatus[fileId] = UploadStatus.completed;
-        _uploadProgress[fileId] = 1.0;
-      });
+      if (result.success && result.data != null) {
+        setState(() {
+          _uploadStatus[fileId] = UploadStatus.completed;
+          _uploadProgress[fileId] = 1.0;
+        });
 
-      widget.onUploadComplete?.call(result);
+        // Convert MediaItem to MediaUploadResponse for compatibility
+        final uploadResponse = MediaUploadResponse(
+          mediaId: result.data!.id,
+          filePath: result.data!.filePath,
+          filename: result.data!.filename,
+          thumbnailGenerated: result.data!.thumbnailUrl != null,
+          status: 'success',
+          message: 'Upload completed successfully',
+        );
+        widget.onUploadComplete?.call(uploadResponse);
+      } else {
+        setState(() {
+          _uploadStatus[fileId] = UploadStatus.failed;
+        });
+        widget.onUploadError?.call('Upload failed: ${result.error}');
+      }
       
     } catch (e) {
       setState(() {

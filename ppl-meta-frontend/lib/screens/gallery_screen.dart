@@ -350,14 +350,14 @@ class _MediaDetailsDialog extends StatelessWidget {
                         label: 'Duration',
                         value: _formatDuration(item.duration!),
                       ),
-                    if (item.metadata.isNotEmpty) ...[
+                    if (item.metadata?.isNotEmpty == true) ...[
                       const SizedBox(height: AppSpacing.md),
                       Text(
                         'Metadata',
                         style: AppTextStyles.labelLarge,
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      ...item.metadata.entries.map((entry) {
+                      ...item.metadata!.entries.map((entry) {
                         return _DetailItem(
                           label: entry.key,
                           value: entry.value.toString(),
@@ -414,6 +414,14 @@ class _MediaDetailsDialog extends StatelessWidget {
         return Icons.audiotrack;
       case MediaType.document:
         return Icons.description;
+      case MediaType.pdf:
+        return Icons.picture_as_pdf;
+      case MediaType.text:
+        return Icons.text_snippet;
+      case MediaType.archive:
+        return Icons.archive;
+      case MediaType.other:
+        return Icons.insert_drive_file;
     }
   }
 
@@ -428,6 +436,14 @@ class _MediaDetailsDialog extends StatelessWidget {
         return AppColors.audioColor;
       case MediaType.document:
         return AppColors.documentColor;
+      case MediaType.pdf:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.text:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.archive:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.other:
+        return AppColors.documentColor; // Use same color as document
     }
   }
 

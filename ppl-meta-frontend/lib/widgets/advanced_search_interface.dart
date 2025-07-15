@@ -707,6 +707,14 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
         return Icons.audiotrack;
       case MediaType.document:
         return Icons.description;
+      case MediaType.pdf:
+        return Icons.picture_as_pdf;
+      case MediaType.text:
+        return Icons.text_snippet;
+      case MediaType.archive:
+        return Icons.archive;
+      case MediaType.other:
+        return Icons.insert_drive_file;
     }
   }
 
@@ -721,6 +729,14 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
         return AppColors.audioColor;
       case MediaType.document:
         return AppColors.documentColor;
+      case MediaType.pdf:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.text:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.archive:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.other:
+        return AppColors.documentColor; // Use same color as document
     }
   }
 }

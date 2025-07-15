@@ -14,6 +14,16 @@ class User {
   final DateTime? createdAt;
   @JsonKey(name: 'updated_at')
   final DateTime? updatedAt;
+  
+  // Additional properties expected by comprehensive frontend
+  @JsonKey(name: 'profile_image_url')
+  final String? profileImageUrl;
+  
+  @JsonKey(name: 'last_login_at')
+  final DateTime? lastLoginAt;
+  
+  @JsonKey(name: 'preferences')
+  final Map<String, dynamic>? preferences;
 
   const User({
     required this.id,
@@ -22,6 +32,9 @@ class User {
     this.emailVerified = false,
     this.createdAt,
     this.updatedAt,
+    this.profileImageUrl,
+    this.lastLoginAt,
+    this.preferences,
   });
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
@@ -34,6 +47,9 @@ class User {
     bool? emailVerified,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? profileImageUrl,
+    DateTime? lastLoginAt,
+    Map<String, dynamic>? preferences,
   }) {
     return User(
       id: id ?? this.id,
@@ -42,6 +58,9 @@ class User {
       emailVerified: emailVerified ?? this.emailVerified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      profileImageUrl: profileImageUrl ?? this.profileImageUrl,
+      lastLoginAt: lastLoginAt ?? this.lastLoginAt,
+      preferences: preferences ?? this.preferences,
     );
   }
 

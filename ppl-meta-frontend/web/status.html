@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPL Meta Platform - Status Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #333;
+            margin-top: 0;
+        }
+        .status-online {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .status-offline {
+            color: #F44336;
+            font-weight: bold;
+        }
+        .service-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .service-row:last-child {
+            border-bottom: none;
+        }
+        .btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        .btn:hover {
+            background: #1976D2;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        .feature-list li {
+            padding: 8px 0;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 PPL Meta Platform v2.0.0</h1>
+        
+        <div class="card">
+            <h2>📋 Connection Status</h2>
+            <div id="connectionStatus">Checking services...</div>
+        </div>
+
+        <div class="card">
+            <h2>🔧 Service Status</h2>
+            <div id="serviceStatus">
+                <div class="service-row">
+                    <span>Gateway Service (8080)</span>
+                    <span id="gateway-status">Checking...</span>
+                </div>
+                <div class="service-row">
+                    <span>Node Service (8001)</span>
+                    <span id="node-status">Checking...</span>
+                </div>
+                <div class="service-row">
+                    <span>Media Service (8000)</span>
+                    <span id="media-status">Checking...</span>
+                </div>
+                <div class="service-row">
+                    <span>Orchestrator Service (8002)</span>
+                    <span id="orchestrator-status">Checking...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>✨ Platform Features</h2>
+            <ul class="feature-list">
+                <li>🎉 Complete CRUD Operations</li>
+                <li>📊 55+ API Endpoints</li>
+                <li>🔧 65+ Schemas</li>
+                <li>🚀 Production Ready</li>
+                <li>🌐 Microservices Architecture</li>
+                <li>💾 Robust Data Management</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <button class="btn" onclick="checkServices()">🔄 Refresh Status</button>
+        </div>
+    </div>
+
+    <script>
+        async function checkService(name, url, elementId) {
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    document.getElementById(elementId).innerHTML = '<span class="status-online">✅ Online</span>';
+                    return true;
+                } else {
+                    document.getElementById(elementId).innerHTML = '<span class="status-offline">❌ Error (' + response.status + ')</span>';
+                    return false;
+                }
+            } catch (error) {
+                document.getElementById(elementId).innerHTML = '<span class="status-offline">❌ Offline</span>';
+                return false;
+            }
+        }
+
+        async function checkServices() {
+            document.getElementById('connectionStatus').textContent = 'Checking services...';
+            
+            const services = [
+                { name: 'Gateway', url: 'http://localhost:8080/health', elementId: 'gateway-status' },
+                { name: 'Node', url: 'http://localhost:8001/api/v1/health', elementId: 'node-status' },
+                { name: 'Media', url: 'http://localhost:8000/health', elementId: 'media-status' },
+                { name: 'Orchestrator', url: 'http://localhost:8002/health', elementId: 'orchestrator-status' }
+            ];
+
+            const results = await Promise.all(
+                services.map(service => checkService(service.name, service.url, service.elementId))
+            );
+
+            const allOnline = results.every(result => result);
+            
+            if (allOnline) {
+                document.getElementById('connectionStatus').innerHTML = '<span class="status-online">🎉 All services are online!</span>';
+            } else {
+                document.getElementById('connectionStatus').innerHTML = '<span class="status-offline">⚠️ Some services are offline</span>';
+            }
+        }
+
+        // Check services when page loads
+        window.onload = function() {
+            checkServices();
+            // Auto-refresh every 30 seconds
+            setInterval(checkServices, 30000);
+        };
+    </script>
+</body>
+</html>

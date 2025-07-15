@@ -110,12 +110,19 @@ class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
         limit: widget.itemsPerPage,
       );
 
-      setState(() {
-        _items.addAll(result.items);
-        _currentPage++;
-        _hasMoreItems = result.items.length == widget.itemsPerPage;
-        _isLoading = false;
-      });
+      if (result.success && result.data != null) {
+        setState(() {
+          _items.addAll(result.data!.items);
+          _currentPage++;
+          _hasMoreItems = result.data!.items.length == widget.itemsPerPage;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _error = result.error ?? 'Failed to load media';
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -485,7 +492,7 @@ class _MediaGridItem extends StatelessWidget {
     return AspectRatio(
       aspectRatio: 1.0,
       child: CachedNetworkImage(
-        imageUrl: item.thumbnailUrl ?? item.url,
+        imageUrl: item.thumbnailUrl ?? item.url ?? '',
         fit: BoxFit.cover,
         placeholder: (context, url) => Container(
           color: AppColors.gray200,
@@ -620,6 +627,14 @@ class _MediaGridItem extends StatelessWidget {
         return Icons.music_note;
       case MediaType.document:
         return Icons.description;
+      case MediaType.pdf:
+        return Icons.picture_as_pdf;
+      case MediaType.text:
+        return Icons.text_snippet;
+      case MediaType.archive:
+        return Icons.archive;
+      case MediaType.other:
+        return Icons.insert_drive_file;
     }
   }
 
@@ -634,6 +649,14 @@ class _MediaGridItem extends StatelessWidget {
         return AppColors.audioColor;
       case MediaType.document:
         return AppColors.documentColor;
+      case MediaType.pdf:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.text:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.archive:
+        return AppColors.documentColor; // Use same color as document
+      case MediaType.other:
+        return AppColors.documentColor; // Use same color as document
     }
   }
 }

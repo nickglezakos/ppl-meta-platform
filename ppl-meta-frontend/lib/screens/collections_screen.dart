@@ -202,7 +202,7 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
               _CollectionStat(
                 icon: Icons.update,
                 label: 'Updated',
-                value: _formatDate(_selectedCollection!.updatedAt),
+                value: _formatDate(_selectedCollection!.updatedAt ?? _selectedCollection!.createdAt),
               ),
             ],
           ),

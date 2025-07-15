@@ -82,19 +82,16 @@ class _ShareDialogState extends State<ShareDialog>
     });
 
     try {
-      final link = await _apiClient.createShareLink(
+      final response = await _apiClient.createShareLink(
         itemIds: widget.items.map((item) => item.id).toList(),
-        collectionId: widget.collection?.id,
-        permission: _permission,
-        expiryDate: _expiryDate,
-        requirePassword: _requirePassword,
-        password: _password,
+        password: _requirePassword ? _password : null,
+        expiresAt: _expiryDate,
         allowDownload: _allowDownload,
-        allowComments: _allowComments,
       );
       
       setState(() {
-        _shareLink = link;
+        _shareLink = response.success ? response.data?.url : null;
+        _error = response.success ? null : response.error;
         _isGeneratingLink = false;
       });
       
@@ -126,17 +123,20 @@ class _ShareDialogState extends State<ShareDialog>
     });
 
     try {
-      await _apiClient.shareByEmail(
-        itemIds: widget.items.map((item) => item.id).toList(),
-        collectionId: widget.collection?.id,
-        emails: emails,
-        message: _messageController.text.trim(),
-        permission: _permission,
-        expiryDate: _expiryDate,
-        allowDownload: _allowDownload,
-        allowComments: _allowComments,
-        notifyByEmail: _notifyByEmail,
-      );
+      // Share with each email individually since API takes single email
+      for (String email in emails) {
+        final response = await _apiClient.shareByEmail(
+          itemIds: widget.items.map((item) => item.id).toList(),
+          email: email,
+          message: _messageController.text.trim().isNotEmpty 
+            ? _messageController.text.trim() 
+            : null,
+        );
+        
+        if (!response.success) {
+          throw Exception(response.error ?? 'Failed to share with $email');
+        }
+      }
       
       setState(() {
         _isSharingByEmail = false;
@@ -740,6 +740,16 @@ class _ShareDialogState extends State<ShareDialog>
   /// Get permission title
   String _getPermissionTitle(SharePermission permission) {
     switch (permission) {
+      case SharePermission.private:
+        return 'Private';
+      case SharePermission.public:
+        return 'Public';
+      case SharePermission.shared:
+        return 'Shared';
+      case SharePermission.restricted:
+        return 'Restricted';
+      case SharePermission.organization:
+        return 'Organization';
       case SharePermission.view:
         return 'View only';
       case SharePermission.comment:
@@ -752,6 +762,16 @@ class _ShareDialogState extends State<ShareDialog>
   /// Get permission description
   String _getPermissionDescription(SharePermission permission) {
     switch (permission) {
+      case SharePermission.private:
+        return 'Content is private and not shared';
+      case SharePermission.public:
+        return 'Content is publicly accessible';
+      case SharePermission.shared:
+        return 'Content is shared with specific users';
+      case SharePermission.restricted:
+        return 'Content has restricted access';
+      case SharePermission.organization:
+        return 'Content is shared within the organization';
       case SharePermission.view:
         return 'Recipients can only view the shared content';
       case SharePermission.comment:

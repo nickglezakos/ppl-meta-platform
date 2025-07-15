@@ -1,4 +1,5 @@
 import 'package:json_annotation/json_annotation.dart';
+import 'package:flutter/material.dart';
 import 'dart:io';
 
 part 'device_info.g.dart';
@@ -103,5 +104,25 @@ class DeviceInfo {
     if (deviceOs.toLowerCase().contains('windows')) return 'Windows';
     if (deviceOs.toLowerCase().contains('linux')) return 'Linux';
     return 'Unknown';
+  }
+  
+  /// Check if device is mobile (Android or iOS)
+  bool get isMobile {
+    return Platform.isAndroid || Platform.isIOS;
+  }
+  
+  /// Check if device supports drag and drop
+  bool get supportsDragDrop {
+    return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  }
+  
+  /// Get platform-specific icon
+  IconData get platformIcon {
+    if (Platform.isAndroid) return Icons.android;
+    if (Platform.isIOS) return Icons.phone_iphone;
+    if (Platform.isMacOS) return Icons.laptop_mac;
+    if (Platform.isWindows) return Icons.desktop_windows;
+    if (Platform.isLinux) return Icons.computer;
+    return Icons.device_unknown;
   }
 }

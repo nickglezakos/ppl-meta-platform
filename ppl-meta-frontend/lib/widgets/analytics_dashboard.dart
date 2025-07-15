@@ -72,18 +72,23 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
     });
 
     try {
-      final analytics = await _apiClient.getDeviceAnalytics(
-        userId: widget.userId,
-        collectionId: widget.collectionId,
+      final response = await _apiClient.getDeviceAnalytics(
         startDate: widget.startDate,
         endDate: widget.endDate,
       );
 
-      setState(() {
-        _analytics = analytics;
-        _isLoading = false;
-        _prepareChartData();
-      });
+      if (response.success) {
+        setState(() {
+          _analytics = response.data;
+          _isLoading = false;
+          _prepareChartData();
+        });
+      } else {
+        setState(() {
+          _error = response.error ?? 'Failed to load analytics';
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -99,7 +104,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
     // Upload trend data (last 30 days)
     _uploadTrendData = _analytics!.uploadsByDay.entries
         .map((entry) => FlSpot(
-              entry.key.millisecondsSinceEpoch.toDouble(),
+              DateTime.parse(entry.key).millisecondsSinceEpoch.toDouble(),
               entry.value.toDouble(),
             ))
         .toList();
@@ -120,6 +125,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
 
     // Device usage data
     _deviceUsageData = _analytics!.deviceBreakdown.entries
+        .toList()
         .asMap()
         .entries
         .map((entry) => BarChartGroupData(
@@ -138,7 +144,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
     // Storage usage trend
     _storageUsageData = _analytics!.storageUsageByDay.entries
         .map((entry) => FlSpot(
-              entry.key.millisecondsSinceEpoch.toDouble(),
+              DateTime.parse(entry.key).millisecondsSinceEpoch.toDouble(),
               entry.value.toDouble() / (1024 * 1024 * 1024), // Convert to GB
             ))
         .toList();

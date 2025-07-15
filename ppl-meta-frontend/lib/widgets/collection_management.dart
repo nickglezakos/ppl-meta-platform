@@ -76,12 +76,19 @@ class _CollectionManagementState extends State<CollectionManagement>
     });
 
     try {
-      final collections = await _apiClient.getCollections();
+      final response = await _apiClient.getCollections();
       
-      setState(() {
-        _collections = collections;
-        _isLoading = false;
-      });
+      if (response.success) {
+        setState(() {
+          _collections = response.data!;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _error = response.error;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -108,13 +115,23 @@ class _CollectionManagementState extends State<CollectionManagement>
     });
 
     try {
-      final collection = await _apiClient.createCollection(name: name);
+      final response = await _apiClient.createCollection(name: name);
       
-      setState(() {
-        _collections.insert(0, collection);
-        _createController.clear();
-        _isCreating = false;
-      });
+      if (response.success) {
+        setState(() {
+          _collections.insert(0, response.data!);
+          _createController.clear();
+          _isCreating = false;
+        });
+      } else {
+        setState(() {
+          _isCreating = false;
+        });
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create collection: ${response.error}')),
+        );
+      }
       
       _createAnimationController.reverse();
       
@@ -155,23 +172,27 @@ class _CollectionManagementState extends State<CollectionManagement>
     if (newName == null || newName.trim().isEmpty) return;
 
     try {
-      final updatedCollection = await _apiClient.updateCollection(
+      final response = await _apiClient.updateCollection(
         collectionId: collection.id,
         name: newName.trim(),
       );
       
-      setState(() {
-        final index = _collections.indexWhere((c) => c.id == collection.id);
-        if (index != -1) {
-          _collections[index] = updatedCollection;
-        }
+      if (response.success) {
+        setState(() {
+          final index = _collections.indexWhere((c) => c.id == collection.id);
+          if (index != -1) {
+            _collections[index] = response.data!;
+          }
+          
+          if (_selectedCollection?.id == collection.id) {
+            _selectedCollection = response.data!;
+          }
+        });
         
-        if (_selectedCollection?.id == collection.id) {
-          _selectedCollection = updatedCollection;
-        }
-      });
-      
-      _showSuccessMessage('Collection renamed to "$newName"');
+        _showSuccessMessage('Collection renamed to "$newName"');
+      } else {
+        _showErrorMessage('Failed to rename collection: ${response.error}');
+      }
     } catch (e) {
       _showErrorMessage('Failed to rename collection: $e');
     }
@@ -193,7 +214,7 @@ class _CollectionManagementState extends State<CollectionManagement>
         final index = _collections.indexWhere((c) => c.id == collection.id);
         if (index != -1) {
           _collections[index] = _collections[index].copyWith(
-            itemCount: _collections[index].itemCount + items.length,
+            mediaCount: _collections[index].mediaCount + items.length,
           );
         }
       });

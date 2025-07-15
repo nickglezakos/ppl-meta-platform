@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart' as http_parser;
 import '../models/api_response.dart';
 import '../models/media_models.dart';
+import '../models/device_info.dart';
 import '../core/config/app_config.dart';
 
 /// API client for media operations
@@ -29,23 +31,51 @@ class MediaApiClient {
 
   /// Upload media file
   Future<ApiResponse<MediaItem>> uploadMedia({
-    required String filePath,
-    required String filename,
+    String? filePath,
+    String? filename,
+    List<int>? fileBytes,
+    String? fileName,
+    String? mimeType,
     Map<String, dynamic>? metadata,
     String? collectionId,
+    DeviceInfo? deviceInfo,
     Function(int, int)? onProgress,
+    Function(double)? onProgressPercent,
   }) async {
     try {
+      MultipartFile file;
+      String finalFilename = filename ?? fileName ?? 'upload';
+      
+      if (fileBytes != null) {
+        // Upload from bytes (web/mobile)
+        file = MultipartFile.fromBytes(
+          fileBytes,
+          filename: finalFilename,
+          contentType: mimeType != null ? http_parser.MediaType.parse(mimeType) : null,
+        );
+      } else if (filePath != null) {
+        // Upload from file path (desktop)
+        file = await MultipartFile.fromFile(filePath, filename: finalFilename);
+      } else {
+        throw Exception('Either filePath or fileBytes must be provided');
+      }
+      
       final formData = FormData.fromMap({
-        'file': await MultipartFile.fromFile(filePath, filename: filename),
+        'file': file,
         if (metadata != null) 'metadata': metadata,
         if (collectionId != null) 'collection_id': collectionId,
+        if (deviceInfo != null) 'device_info': deviceInfo.toJson(),
       });
 
       final response = await _dio.post(
         '/upload',
         data: formData,
-        onSendProgress: onProgress,
+        onSendProgress: (sent, total) {
+          if (onProgress != null) onProgress(sent, total);
+          if (onProgressPercent != null && total > 0) {
+            onProgressPercent(sent / total);
+          }
+        },
       );
 
       return ApiResponse.success(MediaItem.fromJson(response.data));
@@ -182,16 +212,30 @@ class MediaApiClient {
 
   /// Search media with suggestions
   Future<ApiResponse<MediaSearchResponse>> searchMedia({
-    required String query,
+    String? query,
+    MediaType? mediaType,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<String>? tags,
+    String? collectionId,
+    String? sortBy,
+    String? sortOrder,
     MediaSearchFilters? filters,
     int page = 1,
     int limit = 20,
   }) async {
     try {
       final requestData = <String, dynamic>{
-        'query': query,
         'page': page,
         'limit': limit,
+        if (query != null && query.isNotEmpty) 'query': query,
+        if (mediaType != null) 'media_type': mediaType.name,
+        if (startDate != null) 'start_date': startDate.toIso8601String(),
+        if (endDate != null) 'end_date': endDate.toIso8601String(),
+        if (tags != null && tags.isNotEmpty) 'tags': tags,
+        if (collectionId != null) 'collection_id': collectionId,
+        if (sortBy != null) 'sort_by': sortBy,
+        if (sortOrder != null) 'sort_order': sortOrder,
         if (filters != null) ...filters.toJson(),
       };
 
@@ -233,6 +277,77 @@ class MediaApiClient {
         'allow_download': allowDownload,
       });
       return ApiResponse.success(ShareLink.fromJson(response.data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get device analytics
+  Future<ApiResponse<DeviceAnalytics>> getDeviceAnalytics({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        if (startDate != null) 'start_date': startDate.toIso8601String(),
+        if (endDate != null) 'end_date': endDate.toIso8601String(),
+      };
+
+      final response = await _dio.get('/device-analytics', queryParameters: queryParams);
+      return ApiResponse.success(DeviceAnalytics.fromJson(response.data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Delete collection
+  Future<ApiResponse<void>> deleteCollection(String collectionId) async {
+    try {
+      await _dio.delete('/collections/$collectionId');
+      return ApiResponse.success(null);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Update collection
+  Future<ApiResponse<MediaCollection>> updateCollection({
+    required String collectionId,
+    String? name,
+    String? description,
+  }) async {
+    try {
+      final response = await _dio.put('/collections/$collectionId', data: {
+        if (name != null) 'name': name,
+        if (description != null) 'description': description,
+      });
+      return ApiResponse.success(MediaCollection.fromJson(response.data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Share media by email
+  Future<ApiResponse<void>> shareByEmail({
+    required List<String> itemIds,
+    required String email,
+    String? message,
+  }) async {
+    try {
+      await _dio.post('/share/email', data: {
+        'item_ids': itemIds,
+        'email': email,
+        if (message != null) 'message': message,
+      });
+      return ApiResponse.success(null);
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
