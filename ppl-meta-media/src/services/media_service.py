@@ -7,7 +7,7 @@ import json
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import UploadFile
@@ -26,6 +26,10 @@ from ..models.media import (
 )
 from ..schemas.media import MediaSearchRequest, MediaUploadRequest
 from .exif_extractor import ExifExtractor
+
+if TYPE_CHECKING:
+    # Avoiding circular imports for now
+    pass
 
 
 class MediaService:
@@ -379,39 +383,327 @@ class MediaService:
 
         return True
 
-    # Sharing methods
-    async def create_share_link(
+    async def get_collections(
         self,
-        media_id: str,
         user_id: UUID,
-        can_download: bool = False,
-        expires_hours: Optional[int] = None,
-    ) -> MediaShare:
-        """Create a share link for media."""
+        skip: int = 0,
+        limit: int = 100,
+        include_public: bool = False,
+    ) -> List[MediaCollection]:
+        """Get collections for a user with pagination."""
+        query = self.db.query(MediaCollection)
 
-        media = await self.get_media(media_id, user_id)
-        if not media or media.uploaded_by != user_id:
-            raise ValueError("Media not found or access denied")
+        if include_public:
+            query = query.filter(
+                or_(
+                    MediaCollection.created_by == user_id,
+                    MediaCollection.is_public == True,
+                )
+            )
+        else:
+            query = query.filter(MediaCollection.created_by == user_id)
 
-        # Calculate expiration
-        expires_at = None
-        if expires_hours:
-            expires_at = datetime.utcnow() + timedelta(hours=expires_hours)
+        return query.offset(skip).limit(limit).all()
 
-        # Create share
-        share = MediaShare(
-            media_id=media.id,
-            shared_by=user_id,
-            share_token=secrets.token_urlsafe(32),
-            can_download=can_download,
-            expires_at=expires_at,
+    async def get_collection(
+        self, collection_id: str, user_id: UUID
+    ) -> Optional[MediaCollection]:
+        """Get a specific collection by ID."""
+        collection = (
+            self.db.query(MediaCollection)
+            .filter(MediaCollection.uuid == UUID(collection_id))
+            .first()
         )
 
-        self.db.add(share)
-        self.db.commit()
-        self.db.refresh(share)
+        # Check access permissions
+        if not collection:
+            return None
 
-        return share
+        if collection.created_by != user_id and not collection.is_public:
+            return None
+
+        return collection
+
+    async def get_collection_items(
+        self, collection_id: str, user_id: UUID, skip: int = 0, limit: int = 100
+    ) -> List[Media]:
+        """Get media items in a collection with pagination."""
+        collection = await self.get_collection(collection_id, user_id)
+        if not collection:
+            return []
+
+        items = (
+            self.db.query(Media)
+            .join(MediaCollectionItem, Media.id == MediaCollectionItem.media_id)
+            .filter(MediaCollectionItem.collection_id == collection.id)
+            .order_by(MediaCollectionItem.sort_order, MediaCollectionItem.created_at)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+        return items
+
+    async def get_collection_stats(self, collection_id: str, user_id: UUID) -> dict:
+        """Get statistics for a collection."""
+        collection = await self.get_collection(collection_id, user_id)
+        if not collection:
+            return {}
+
+        # Count items
+        item_count = (
+            self.db.query(MediaCollectionItem)
+            .filter(MediaCollectionItem.collection_id == collection.id)
+            .count()
+        )
+
+        # Calculate total size
+        total_size = (
+            self.db.query(func.sum(Media.file_size))
+            .join(MediaCollectionItem, Media.id == MediaCollectionItem.media_id)
+            .filter(MediaCollectionItem.collection_id == collection.id)
+            .scalar()
+            or 0
+        )
+
+        # Get media type breakdown
+        type_stats = (
+            self.db.query(Media.media_type, func.count(Media.id))
+            .join(MediaCollectionItem, Media.id == MediaCollectionItem.media_id)
+            .filter(MediaCollectionItem.collection_id == collection.id)
+            .group_by(Media.media_type)
+            .all()
+        )
+
+        return {
+            "item_count": item_count,
+            "total_size": total_size,
+            "size_formatted": self._format_file_size(total_size),
+            "by_type": {media_type.value: count for media_type, count in type_stats},
+            "created_at": collection.created_at,
+            "updated_at": collection.updated_at,
+        }
+
+    async def search_collections(
+        self, user_id: UUID, query: str, skip: int = 0, limit: int = 100
+    ) -> List[MediaCollection]:
+        """Search collections by name, description, or tags."""
+        search_filter = or_(
+            MediaCollection.name.ilike(f"%{query}%"),
+            MediaCollection.description.ilike(f"%{query}%"),
+        )
+
+        collections = (
+            self.db.query(MediaCollection)
+            .filter(
+                and_(
+                    or_(
+                        MediaCollection.created_by == user_id,
+                        MediaCollection.is_public == True,
+                    ),
+                    search_filter,
+                )
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+        return collections
+
+    async def update_collection(
+        self, collection_id: str, user_id: UUID, update_data: dict
+    ) -> Optional[MediaCollection]:
+        """Update a collection."""
+        collection = (
+            self.db.query(MediaCollection)
+            .filter(
+                and_(
+                    MediaCollection.uuid == UUID(collection_id),
+                    MediaCollection.created_by == user_id,
+                )
+            )
+            .first()
+        )
+
+        if not collection:
+            return None
+
+        # Update fields
+        for field, value in update_data.items():
+            if hasattr(collection, field) and value is not None:
+                setattr(collection, field, value)
+
+        collection.updated_at = func.now()
+        self.db.commit()
+        self.db.refresh(collection)
+
+        return collection
+
+    async def delete_collection(self, collection_id: str, user_id: UUID) -> bool:
+        """Delete a collection (and optionally its items)."""
+        collection = (
+            self.db.query(MediaCollection)
+            .filter(
+                and_(
+                    MediaCollection.uuid == UUID(collection_id),
+                    MediaCollection.created_by == user_id,
+                )
+            )
+            .first()
+        )
+
+        if not collection:
+            return False
+
+        # Delete collection items first
+        self.db.query(MediaCollectionItem).filter(
+            MediaCollectionItem.collection_id == collection.id
+        ).delete()
+
+        # Delete collection
+        self.db.delete(collection)
+        self.db.commit()
+
+        return True
+
+    async def remove_media_from_collection(
+        self, collection_id: str, media_id: str, user_id: UUID
+    ) -> bool:
+        """Remove media from a collection."""
+        collection = await self.get_collection(collection_id, user_id)
+        if not collection or collection.created_by != user_id:
+            return False
+
+        media = await self.get_media(media_id, user_id)
+        if not media:
+            return False
+
+        # Remove the item
+        item = (
+            self.db.query(MediaCollectionItem)
+            .filter(
+                and_(
+                    MediaCollectionItem.collection_id == collection.id,
+                    MediaCollectionItem.media_id == media.id,
+                )
+            )
+            .first()
+        )
+
+        if item:
+            self.db.delete(item)
+            self.db.commit()
+            return True
+
+        return False
+
+    async def bulk_add_to_collection(
+        self, collection_id: str, media_ids: List[str], user_id: UUID
+    ) -> dict:
+        """Bulk add media items to a collection."""
+        collection = await self.get_collection(collection_id, user_id)
+        if not collection or collection.created_by != user_id:
+            return {
+                "success": False,
+                "added": 0,
+                "errors": ["Collection not found or access denied"],
+            }
+
+        added_count = 0
+        errors = []
+
+        for media_id in media_ids:
+            try:
+                success = await self.add_media_to_collection(
+                    collection_id, media_id, user_id
+                )
+                if success:
+                    added_count += 1
+                else:
+                    errors.append(f"Failed to add media {media_id}")
+            except Exception as e:
+                errors.append(f"Error adding media {media_id}: {str(e)}")
+
+        return {
+            "success": True,
+            "added": added_count,
+            "total": len(media_ids),
+            "errors": errors,
+        }
+
+    async def bulk_remove_from_collection(
+        self, collection_id: str, media_ids: List[str], user_id: UUID
+    ) -> dict:
+        """Bulk remove media items from a collection."""
+        collection = await self.get_collection(collection_id, user_id)
+        if not collection or collection.created_by != user_id:
+            return {
+                "success": False,
+                "removed": 0,
+                "errors": ["Collection not found or access denied"],
+            }
+
+        removed_count = 0
+        errors = []
+
+        for media_id in media_ids:
+            try:
+                success = await self.remove_media_from_collection(
+                    collection_id, media_id, user_id
+                )
+                if success:
+                    removed_count += 1
+                else:
+                    errors.append(f"Failed to remove media {media_id}")
+            except Exception as e:
+                errors.append(f"Error removing media {media_id}: {str(e)}")
+
+        return {
+            "success": True,
+            "removed": removed_count,
+            "total": len(media_ids),
+            "errors": errors,
+        }
+
+    async def reorder_collection_items(
+        self, collection_id: str, user_id: UUID, item_orders: List[dict]
+    ) -> bool:
+        """Reorder items in a collection."""
+        collection = await self.get_collection(collection_id, user_id)
+        if not collection or collection.created_by != user_id:
+            return False
+
+        try:
+            for item_order in item_orders:
+                media_id = item_order.get("media_id")
+                sort_order = item_order.get("sort_order")
+
+                if media_id is not None and sort_order is not None:
+                    # Find the media record
+                    media = await self.get_media(str(media_id), user_id)
+                    if media:
+                        # Update sort order
+                        item = (
+                            self.db.query(MediaCollectionItem)
+                            .filter(
+                                and_(
+                                    MediaCollectionItem.collection_id == collection.id,
+                                    MediaCollectionItem.media_id == media.id,
+                                )
+                            )
+                            .first()
+                        )
+
+                        if item:
+                            item.sort_order = sort_order
+
+            self.db.commit()
+            return True
+
+        except Exception:
+            self.db.rollback()
+            return False
 
     # Private helper methods
     def _determine_media_type(self, mime_type: str) -> MediaType:
@@ -580,3 +872,1033 @@ class MediaService:
             if not media.technical_metadata:
                 media.technical_metadata = {}
             media.technical_metadata["exif_error"] = str(e)
+
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human readable format."""
+        if size_bytes == 0:
+            return "0 B"
+
+        size_names = ["B", "KB", "MB", "GB", "TB"]
+        size_index = 0
+        size = float(size_bytes)
+
+        while size >= 1024.0 and size_index < len(size_names) - 1:
+            size /= 1024.0
+            size_index += 1
+
+        return f"{size:.1f} {size_names[size_index]}"
+
+    # ========================================================================
+    # MEDIA VARIANTS MANAGEMENT - Issue #015 Implementation
+    # ========================================================================
+
+    async def get_media_variants(
+        self, media_id: int, user_id: UUID, variant_type: Optional[str] = None
+    ) -> List[MediaVariant]:
+        """Get all variants for a media file or specific variant type."""
+        # First check if user has access to the media
+        media = self.db.query(Media).filter(Media.id == media_id).first()
+        if not media:
+            raise ValueError("Media not found")
+
+        if not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        query = self.db.query(MediaVariant).filter(MediaVariant.media_id == media_id)
+
+        if variant_type:
+            query = query.filter(MediaVariant.variant_type == variant_type)
+
+        return query.order_by(MediaVariant.created_at.desc()).all()
+
+    async def create_media_variant(
+        self,
+        media_id: int,
+        user_id: UUID,
+        variant_type: str,
+        file_path: str,
+        filename: str,
+        file_size: int,
+        mime_type: str,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        quality: Optional[str] = None,
+    ) -> MediaVariant:
+        """Create a new variant for a media file."""
+        # Check access to the original media
+        media = self.db.query(Media).filter(Media.id == media_id).first()
+        if not media:
+            raise ValueError("Media not found")
+
+        if not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        # Check if variant type already exists
+        existing_variant = (
+            self.db.query(MediaVariant)
+            .filter(
+                and_(
+                    MediaVariant.media_id == media_id,
+                    MediaVariant.variant_type == variant_type,
+                )
+            )
+            .first()
+        )
+
+        if existing_variant:
+            raise ValueError(f"Variant type '{variant_type}' already exists")
+
+        # Create new variant
+        variant = MediaVariant(
+            media_id=media_id,
+            variant_type=variant_type,
+            filename=filename,
+            file_path=file_path,
+            file_size=file_size,
+            mime_type=mime_type,
+            width=width,
+            height=height,
+            quality=quality,
+        )
+
+        self.db.add(variant)
+        self.db.commit()
+        self.db.refresh(variant)
+
+        return variant
+
+    async def update_variant(
+        self,
+        variant_id: int,
+        user_id: UUID,
+        update_data: Dict[str, Any],
+    ) -> Optional[MediaVariant]:
+        """Update a media variant."""
+        variant = (
+            self.db.query(MediaVariant).filter(MediaVariant.id == variant_id).first()
+        )
+
+        if not variant:
+            return None
+
+        # Check access to the parent media
+        media = self.db.query(Media).filter(Media.id == variant.media_id).first()
+        if not media or not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        # Update allowed fields
+        for field, value in update_data.items():
+            if hasattr(variant, field) and field in ["quality", "width", "height"]:
+                setattr(variant, field, value)
+
+        self.db.commit()
+        self.db.refresh(variant)
+        return variant
+
+    async def delete_variant(self, variant_id: int, user_id: UUID) -> bool:
+        """Delete a specific media variant."""
+        variant = (
+            self.db.query(MediaVariant).filter(MediaVariant.id == variant_id).first()
+        )
+
+        if not variant:
+            return False
+
+        # Check access to the parent media
+        media = self.db.query(Media).filter(Media.id == variant.media_id).first()
+        if not media or not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        self.db.delete(variant)
+        self.db.commit()
+        return True
+
+    async def delete_all_variants(self, media_id: int, user_id: UUID) -> int:
+        """Delete all variants for a media file."""
+        media = self.db.query(Media).filter(Media.id == media_id).first()
+        if not media:
+            return 0
+
+        if not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        deleted_count = (
+            self.db.query(MediaVariant)
+            .filter(MediaVariant.media_id == media_id)
+            .delete()
+        )
+
+        self.db.commit()
+        return deleted_count
+
+    def get_variant_types(self) -> List[str]:
+        """Get available variant types."""
+        return [
+            "thumbnail_small",
+            "thumbnail_medium",
+            "thumbnail_large",
+            "compressed_low",
+            "compressed_medium",
+            "compressed_high",
+            "format_webp",
+            "format_avif",
+            "format_jpeg",
+            "format_png",
+            "video_preview",
+            "video_low_res",
+            "video_high_res",
+            "audio_preview",
+            "audio_compressed",
+        ]
+
+    async def generate_standard_variants(
+        self,
+        media_id: int,
+        user_id: UUID,
+        variant_types: List[str],
+        quality_levels: List[str],
+        background: bool = True,
+    ) -> Dict[str, Any]:
+        """Generate standard variants for a media file."""
+        media = self.db.query(Media).filter(Media.id == media_id).first()
+        if not media:
+            raise ValueError("Media not found")
+
+        if not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        results = {
+            "media_id": media_id,
+            "requested_variants": len(variant_types),
+            "success_count": 0,
+            "failed_count": 0,
+            "errors": [],
+            "background_tasks": [],
+        }
+
+        # For now, we'll simulate variant generation
+        # In a real implementation, this would integrate with image/video
+        # processing libraries like Pillow, FFmpeg, etc.
+
+        for variant_type in variant_types:
+            try:
+                # Check if variant already exists
+                existing = (
+                    self.db.query(MediaVariant)
+                    .filter(
+                        and_(
+                            MediaVariant.media_id == media_id,
+                            MediaVariant.variant_type == variant_type,
+                        )
+                    )
+                    .first()
+                )
+
+                if existing:
+                    results["errors"].append(
+                        {
+                            "variant_type": variant_type,
+                            "error": "Variant already exists",
+                        }
+                    )
+                    results["failed_count"] += 1
+                    continue
+
+                # Simulate variant creation
+                if background:
+                    # In real implementation, would queue background task
+                    task_id = (
+                        f"variant_{media_id}_{variant_type}_" f"{secrets.token_hex(8)}"
+                    )
+                    results["background_tasks"].append(task_id)
+                else:
+                    # Create variant immediately (simplified)
+                    variant_filename = f"{media.filename}_{variant_type}"
+                    variant_path = f"variants/{variant_filename}"
+
+                    variant = MediaVariant(
+                        media_id=media_id,
+                        variant_type=variant_type,
+                        filename=variant_filename,
+                        file_path=variant_path,
+                        file_size=media.file_size // 2,  # Simulated size
+                        mime_type=media.mime_type,
+                        quality=(quality_levels[0] if quality_levels else "medium"),
+                    )
+
+                    self.db.add(variant)
+                    results["success_count"] += 1
+
+            except Exception as e:
+                results["errors"].append(
+                    {"variant_type": variant_type, "error": str(e)}
+                )
+                results["failed_count"] += 1
+
+        if not background:
+            self.db.commit()
+
+        return results
+
+    async def get_variant_statistics(
+        self, media_id: int, user_id: UUID
+    ) -> Dict[str, Any]:
+        """Get statistics about variants for a media file."""
+        media = self.db.query(Media).filter(Media.id == media_id).first()
+        if not media:
+            raise ValueError("Media not found")
+
+        if not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        variants = (
+            self.db.query(MediaVariant).filter(MediaVariant.media_id == media_id).all()
+        )
+
+        total_size = sum(v.file_size for v in variants)
+        variants_by_type = {}
+
+        for variant in variants:
+            variant_type = variant.variant_type
+            if variant_type not in variants_by_type:
+                variants_by_type[variant_type] = {
+                    "count": 0,
+                    "total_size": 0,
+                    "avg_size": 0,
+                }
+
+            variants_by_type[variant_type]["count"] += 1
+            variants_by_type[variant_type]["total_size"] += variant.file_size
+
+        # Calculate averages
+        for vtype_data in variants_by_type.values():
+            if vtype_data["count"] > 0:
+                vtype_data["avg_size"] = vtype_data["total_size"] // vtype_data["count"]
+
+        return {
+            "media_id": media_id,
+            "original_size": media.file_size,
+            "total_variants": len(variants),
+            "variants_total_size": total_size,
+            "size_formatted": self._format_file_size(total_size),
+            "storage_efficiency": (
+                round((total_size / media.file_size) * 100, 2)
+                if media.file_size > 0
+                else 0
+            ),
+            "variants_by_type": variants_by_type,
+        }
+
+    async def get_variant_by_id(
+        self, variant_id: int, user_id: UUID
+    ) -> Optional[MediaVariant]:
+        """Get a variant by its ID if user has access."""
+        try:
+            # Get the variant
+            variant = (
+                self.db.query(MediaVariant)
+                .filter(MediaVariant.id == variant_id)
+                .first()
+            )
+
+            if not variant:
+                return None
+
+            # Get the associated media to check access
+            media = self.db.query(Media).filter(Media.id == variant.media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            return variant
+
+        except Exception as e:
+            print(f"Error getting variant by ID {variant_id}: {e}")
+            return None
+
+    # ========================================================================
+    # ISSUE #016: Advanced Media Details and Metadata Management
+    # ========================================================================
+
+    async def get_media_details(
+        self, media_id: str, user_id: UUID
+    ) -> Optional[MediaDetails]:
+        """Get complete media details for a media file."""
+        try:
+            media = self._get_media_with_access_check(media_id, user_id)
+            if not media:
+                return None
+
+            details = (
+                self.db.query(MediaDetails)
+                .filter(MediaDetails.media_id == media.id)
+                .first()
+            )
+
+            return details
+
+        except Exception as e:
+            print(f"Error getting media details for {media_id}: {e}")
+            return None
+
+    async def create_media_details(
+        self, media_id: str, details_data: dict, user_id: UUID
+    ) -> Optional[MediaDetails]:
+        """Create comprehensive media details for a media file."""
+        try:
+            media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            # Check if details already exist
+            existing_details = (
+                self.db.query(MediaDetails)
+                .filter(MediaDetails.media_id == media.id)
+                .first()
+            )
+
+            if existing_details:
+                raise ValueError(f"Details already exist for media {media_id}")
+
+            # Create new details
+            details = MediaDetails(media_id=media.id, **details_data)
+
+            self.db.add(details)
+            self.db.commit()
+            self.db.refresh(details)
+
+            return details
+
+        except Exception as e:
+            print(f"Error creating media details for {media_id}: {e}")
+            self.db.rollback()
+            return None
+
+    async def update_media_details_complete(
+        self, media_id: str, updates: dict, user_id: UUID
+    ) -> Optional[MediaDetails]:
+        """Update complete media details."""
+        try:
+            media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            details = (
+                self.db.query(MediaDetails)
+                .filter(MediaDetails.media_id == media.id)
+                .first()
+            )
+
+            if not details:
+                # Create details if they don't exist
+                details = MediaDetails(media_id=media.id)
+                self.db.add(details)
+
+            # Update fields
+            for field, value in updates.items():
+                if hasattr(details, field) and value is not None:
+                    setattr(details, field, value)
+
+            # Update technical and user metadata in Media table
+            if "technical_metadata" in updates:
+                if not media.technical_metadata:
+                    media.technical_metadata = {}
+
+                technical_data = updates["technical_metadata"]
+                merge_strategy = updates.get("merge_strategy", "merge")
+
+                if merge_strategy == "replace":
+                    media.technical_metadata = technical_data
+                else:  # merge
+                    media.technical_metadata.update(technical_data)
+
+            self.db.commit()
+            self.db.refresh(details)
+
+            return details
+
+        except Exception as e:
+            print(f"Error updating complete media details for {media_id}: {e}")
+            self.db.rollback()
+            return None
+
+    async def update_technical_metadata_only(
+        self,
+        media_id: str,
+        technical_metadata: dict,
+        merge_strategy: str,
+        user_id: UUID,
+    ) -> Optional[Media]:
+        """Update technical metadata only."""
+        try:
+            media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+
+            if merge_strategy == "replace":
+                media.technical_metadata = technical_metadata
+            else:  # merge
+                media.technical_metadata.update(technical_metadata)
+
+            self.db.commit()
+            self.db.refresh(media)
+
+            return media
+
+        except Exception as e:
+            print(f"Error updating technical metadata for {media_id}: {e}")
+            self.db.rollback()
+            return None
+
+    async def update_user_metadata_only(
+        self, media_id: str, user_metadata: dict, merge_strategy: str, user_id: UUID
+    ) -> Optional[Media]:
+        """Update user metadata only."""
+        try:
+            media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            # Store user metadata in a special field or in technical_metadata
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+
+            if "user_metadata" not in media.technical_metadata:
+                media.technical_metadata["user_metadata"] = {}
+
+            if merge_strategy == "replace":
+                media.technical_metadata["user_metadata"] = user_metadata
+            else:  # merge
+                media.technical_metadata["user_metadata"].update(user_metadata)
+
+            self.db.commit()
+            self.db.refresh(media)
+
+            return media
+
+        except Exception as e:
+            print(f"Error updating user metadata for {media_id}: {e}")
+            self.db.rollback()
+            return None
+
+    async def get_custom_metadata_fields(
+        self, media_id: str, user_id: UUID
+    ) -> Optional[dict]:
+        """Get custom user-defined metadata fields."""
+        try:
+            # Try to find by UUID first, then by ID
+            query = self.db.query(Media)
+            try:
+                uuid_val = UUID(media_id)
+                media = query.filter(Media.uuid == uuid_val).first()
+            except ValueError:
+                media = query.filter(Media.id == int(media_id)).first()
+
+            if not media or media.uploaded_by != user_id:
+                return None
+
+            if not media.technical_metadata:
+                return {}
+
+            return media.technical_metadata.get("user_metadata", {})
+
+        except Exception as e:
+            print(f"Error getting custom metadata for {media_id}: {e}")
+            return None
+
+    async def add_custom_metadata_field(
+        self,
+        media_id: str,
+        field_name: str,
+        field_value: any,
+        field_type: str,
+        user_id: UUID,
+    ) -> Optional[Media]:
+        """Add custom metadata field."""
+        try:
+            media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+
+            if "user_metadata" not in media.technical_metadata:
+                media.technical_metadata["user_metadata"] = {}
+
+            # Add the custom field with metadata
+            media.technical_metadata["user_metadata"][field_name] = {
+                "value": field_value,
+                "type": field_type,
+                "updated_at": datetime.utcnow().isoformat(),
+                "updated_by": str(user_id),
+            }
+
+            self.db.commit()
+            self.db.refresh(media)
+
+            return media
+
+        except Exception as e:
+            print(f"Error adding custom metadata field for {media_id}: {e}")
+            self.db.rollback()
+            return None
+
+    async def update_custom_metadata_field(
+        self, media_id: str, field_name: str, field_value: any, user_id: UUID
+    ) -> Optional[Media]:
+        """Update custom metadata field."""
+        try:
+            media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            if (
+                not media.technical_metadata
+                or "user_metadata" not in media.technical_metadata
+                or field_name not in media.technical_metadata["user_metadata"]
+            ):
+                raise ValueError(f"Custom field '{field_name}' not found")
+
+            # Update the field
+            field_data = media.technical_metadata["user_metadata"][field_name]
+            field_data["value"] = field_value
+            field_data["updated_at"] = datetime.utcnow().isoformat()
+            field_data["updated_by"] = str(user_id)
+
+            self.db.commit()
+            self.db.refresh(media)
+
+            return media
+
+        except Exception as e:
+            print(f"Error updating custom metadata field for {media_id}: {e}")
+            self.db.rollback()
+            return None
+
+    async def delete_custom_metadata_field(
+        self, media_id: str, field_name: str, user_id: UUID
+    ) -> Optional[Media]:
+        """Delete custom metadata field."""
+        try:
+            media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+            if not media or not self._user_can_access_media(media, user_id):
+                return None
+
+            if (
+                not media.technical_metadata
+                or "user_metadata" not in media.technical_metadata
+                or field_name not in media.technical_metadata["user_metadata"]
+            ):
+                raise ValueError(f"Custom field '{field_name}' not found")
+
+            # Delete the field
+            del media.technical_metadata["user_metadata"][field_name]
+
+            self.db.commit()
+            self.db.refresh(media)
+
+            return media
+
+        except Exception as e:
+            print(f"Error deleting custom metadata field for {media_id}: {e}")
+            self.db.rollback()
+            return None
+
+    async def bulk_update_metadata(
+        self,
+        media_ids: List[str],
+        metadata_updates: dict,
+        update_type: str,
+        merge_strategy: str,
+        user_id: UUID,
+    ) -> dict:
+        """Bulk update metadata for multiple media files."""
+        results = {
+            "total_requested": len(media_ids),
+            "successful": 0,
+            "failed": 0,
+            "errors": [],
+            "processed_media_ids": [],
+        }
+
+        try:
+            for media_id in media_ids:
+                try:
+                    if update_type in ["technical", "both"]:
+                        await self.update_technical_metadata_only(
+                            media_id, metadata_updates, merge_strategy, user_id
+                        )
+
+                    if update_type in ["user", "both"]:
+                        await self.update_user_metadata_only(
+                            media_id, metadata_updates, merge_strategy, user_id
+                        )
+
+                    results["successful"] += 1
+                    results["processed_media_ids"].append(media_id)
+
+                except Exception as e:
+                    results["failed"] += 1
+                    results["errors"].append({"media_id": media_id, "error": str(e)})
+
+            return results
+
+        except Exception as e:
+            print(f"Error in bulk metadata update: {e}")
+            return results
+
+    async def export_metadata(
+        self,
+        media_ids: List[str],
+        export_format: str,
+        include_technical: bool,
+        include_user: bool,
+        include_system: bool,
+        user_id: UUID,
+    ) -> dict:
+        """Export metadata for multiple media files."""
+        try:
+            export_data = []
+
+            for media_id in media_ids:
+                media = self.db.query(Media).filter(Media.uuid == media_id).first()
+
+                if not media or not self._user_can_access_media(media, user_id):
+                    continue
+
+                media_data = {
+                    "media_id": str(media.uuid),
+                    "filename": media.filename,
+                    "media_type": media.media_type.value,
+                    "file_size": media.file_size,
+                }
+
+                if include_technical and media.technical_metadata:
+                    media_data["technical_metadata"] = media.technical_metadata
+
+                if include_user and media.technical_metadata:
+                    user_meta = media.technical_metadata.get("user_metadata", {})
+                    media_data["user_metadata"] = user_meta
+
+                if include_system:
+                    media_data["system_metadata"] = {
+                        "created_at": media.created_at.isoformat(),
+                        "uploaded_by": str(media.uploaded_by),
+                        "processing_status": media.processing_status.value,
+                        "is_public": media.is_public,
+                    }
+
+                export_data.append(media_data)
+
+            return {
+                "export_format": export_format,
+                "total_records": len(export_data),
+                "export_data": export_data,
+                "generated_at": datetime.utcnow().isoformat(),
+            }
+
+        except Exception as e:
+            print(f"Error exporting metadata: {e}")
+            return {"error": str(e)}
+
+    async def search_by_metadata(
+        self,
+        search_criteria: dict,
+        search_type: str,
+        media_types: Optional[List[str]],
+        user_id: UUID,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> dict:
+        """Search media by metadata values."""
+        try:
+            query = self.db.query(Media).filter(
+                or_(Media.uploaded_by == user_id, Media.is_public == True)
+            )
+
+            if media_types:
+                query = query.filter(Media.media_type.in_(media_types))
+
+            # Apply metadata search criteria
+            for field, value in search_criteria.items():
+                if search_type == "exact":
+                    # Exact match in JSON fields
+                    query = query.filter(
+                        Media.technical_metadata[field].astext == str(value)
+                    )
+                elif search_type == "contains":
+                    # Contains search
+                    query = query.filter(
+                        Media.technical_metadata[field].astext.contains(str(value))
+                    )
+                elif search_type == "exists":
+                    # Field exists
+                    query = query.filter(Media.technical_metadata.has_key(field))
+
+            total = query.count()
+            results = query.offset(skip).limit(limit).all()
+
+            return {
+                "items": results,
+                "total": total,
+                "matching_criteria": search_criteria,
+                "skip": skip,
+                "limit": limit,
+                "has_next": skip + limit < total,
+            }
+
+        except Exception as e:
+            print(f"Error searching by metadata: {e}")
+            return {"items": [], "total": 0, "error": str(e)}
+
+    async def get_metadata_analytics(
+        self, analysis_type: str, media_types: Optional[List[str]], user_id: UUID
+    ) -> dict:
+        """Get metadata usage analytics."""
+        try:
+            query = self.db.query(Media).filter(
+                or_(Media.uploaded_by == user_id, Media.is_public == True)
+            )
+
+            if media_types:
+                query = query.filter(Media.media_type.in_(media_types))
+
+            media_list = query.all()
+
+            if analysis_type == "summary":
+                return self._generate_summary_analytics(media_list)
+            elif analysis_type == "field_usage":
+                return self._generate_field_usage_analytics(media_list)
+            elif analysis_type == "value_distribution":
+                return self._generate_value_distribution_analytics(media_list)
+            else:
+                return {"error": f"Unknown analysis type: {analysis_type}"}
+
+        except Exception as e:
+            print(f"Error generating metadata analytics: {e}")
+            return {"error": str(e)}
+
+    def _generate_summary_analytics(self, media_list: List[Media]) -> dict:
+        """Generate summary analytics for metadata."""
+        total_files = len(media_list)
+        files_with_technical = sum(1 for m in media_list if m.technical_metadata)
+        files_with_user_meta = sum(
+            1
+            for m in media_list
+            if m.technical_metadata and "user_metadata" in m.technical_metadata
+        )
+
+        return {
+            "summary_stats": {
+                "total_files": total_files,
+                "files_with_technical_metadata": files_with_technical,
+                "files_with_user_metadata": files_with_user_meta,
+                "technical_metadata_coverage": (
+                    files_with_technical / total_files * 100 if total_files > 0 else 0
+                ),
+                "user_metadata_coverage": (
+                    files_with_user_meta / total_files * 100 if total_files > 0 else 0
+                ),
+            }
+        }
+
+    def _generate_field_usage_analytics(self, media_list: List[Media]) -> dict:
+        """Generate field usage analytics."""
+        field_counts = {}
+
+        for media in media_list:
+            if media.technical_metadata:
+                for field in media.technical_metadata.keys():
+                    field_counts[field] = field_counts.get(field, 0) + 1
+
+        return {
+            "field_statistics": field_counts,
+            "most_used_fields": sorted(
+                field_counts.items(), key=lambda x: x[1], reverse=True
+            )[:10],
+        }
+
+    def _generate_value_distribution_analytics(self, media_list: List[Media]) -> dict:
+        """Generate value distribution analytics."""
+        value_distributions = {}
+
+        for media in media_list:
+            if media.technical_metadata:
+                for field, value in media.technical_metadata.items():
+                    if field not in value_distributions:
+                        value_distributions[field] = {}
+
+                    value_str = str(value)
+                    value_distributions[field][value_str] = (
+                        value_distributions[field].get(value_str, 0) + 1
+                    )
+
+        return {"value_distributions": value_distributions}
+
+    async def validate_metadata(
+        self, metadata: dict, media_type: Optional[str], validation_level: str
+    ) -> dict:
+        """Validate metadata against schemas and rules."""
+        try:
+            validation_results = {
+                "is_valid": True,
+                "validation_errors": [],
+                "validation_warnings": [],
+                "field_validations": {},
+            }
+
+            # Basic validation rules
+            for field, value in metadata.items():
+                field_valid = True
+                field_errors = []
+
+                # Type validation
+                if isinstance(value, str) and len(value) > 1000:
+                    field_valid = False
+                    field_errors.append("String value too long (max 1000 characters)")
+
+                # Required field validation for media types
+                if media_type == "video" and field in ["duration", "codec"]:
+                    if value is None or value == "":
+                        field_valid = False
+                        field_errors.append(
+                            f"Field '{field}' is required for video files"
+                        )
+
+                validation_results["field_validations"][field] = field_valid
+                if field_errors:
+                    validation_results["validation_errors"].extend(
+                        [{"field": field, "errors": field_errors}]
+                    )
+
+            validation_results["is_valid"] = (
+                len(validation_results["validation_errors"]) == 0
+            )
+
+            return validation_results
+
+        except Exception as e:
+            return {
+                "is_valid": False,
+                "validation_errors": [{"error": str(e)}],
+                "validation_warnings": [],
+                "field_validations": {},
+            }
+
+    async def get_metadata_schema_for_media_type(self, media_type: str) -> dict:
+        """Get metadata schema for a specific media type."""
+        schemas = {
+            "video": {
+                "technical_fields": [
+                    {
+                        "field_name": "duration",
+                        "field_type": "float",
+                        "category": "technical",
+                        "display_name": "Duration (seconds)",
+                        "description": "Video duration in seconds",
+                    },
+                    {
+                        "field_name": "codec",
+                        "field_type": "string",
+                        "category": "technical",
+                        "display_name": "Video Codec",
+                        "description": "Video encoding codec",
+                    },
+                    {
+                        "field_name": "resolution",
+                        "field_type": "string",
+                        "category": "technical",
+                        "display_name": "Resolution",
+                        "description": "Video resolution (e.g., 1920x1080)",
+                    },
+                ],
+                "required_fields": ["duration", "codec"],
+                "optional_fields": ["resolution", "bitrate", "frame_rate"],
+            },
+            "picture": {
+                "technical_fields": [
+                    {
+                        "field_name": "width",
+                        "field_type": "integer",
+                        "category": "technical",
+                        "display_name": "Width",
+                        "description": "Image width in pixels",
+                    },
+                    {
+                        "field_name": "height",
+                        "field_type": "integer",
+                        "category": "technical",
+                        "display_name": "Height",
+                        "description": "Image height in pixels",
+                    },
+                ],
+                "required_fields": ["width", "height"],
+                "optional_fields": ["dpi", "color_space", "compression"],
+            },
+            "sound": {
+                "technical_fields": [
+                    {
+                        "field_name": "duration",
+                        "field_type": "float",
+                        "category": "technical",
+                        "display_name": "Duration (seconds)",
+                        "description": "Audio duration in seconds",
+                    },
+                    {
+                        "field_name": "sample_rate",
+                        "field_type": "integer",
+                        "category": "technical",
+                        "display_name": "Sample Rate",
+                        "description": "Audio sample rate in Hz",
+                    },
+                ],
+                "required_fields": ["duration", "sample_rate"],
+                "optional_fields": ["bitrate", "channels", "codec"],
+            },
+        }
+
+        return {
+            "media_type": media_type,
+            "custom_field_support": True,
+            "validation_rules": {},
+            **schemas.get(
+                media_type,
+                {"technical_fields": [], "required_fields": [], "optional_fields": []},
+            ),
+        }
+
+    # ========================================================================
+    # END ISSUE #016: Advanced Media Details and Metadata Management
+    # ========================================================================
+
+    def _get_media_with_access_check(
+        self, media_id: str, user_id: UUID
+    ) -> Optional[Media]:
+        """Get media by ID (UUID or integer) with access control."""
+        # Try to find by UUID first, then by ID
+        query = self.db.query(Media)
+        try:
+            uuid_val = UUID(media_id)
+            media = query.filter(Media.uuid == uuid_val).first()
+        except ValueError:
+            media = query.filter(Media.id == int(media_id)).first()
+
+        if not media:
+            return None
+
+        # Check access permissions
+        if not media.is_public and user_id != media.uploaded_by:
+            return None
+
+        return media

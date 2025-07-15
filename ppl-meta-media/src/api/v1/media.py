@@ -4,9 +4,10 @@ Media API routes for PPL Meta Platform Media Service - API v1.
 
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import (
@@ -27,13 +28,44 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
 from src.database import get_db
 from src.models.media import Media
-from src.schemas.media import (
+from src.schemas.media import (  # Variant schemas; Issue #016 - Advanced Metadata Management
+    BulkCollectionItemRequest,
+    BulkMetadataOperationResponse,
+    BulkMetadataUpdateRequest,
+    CollectionReorderRequest,
+    CollectionSearchRequest,
+    CollectionStatsResponse,
+    CustomMetadataFieldRequest,
     MediaCollectionResponse,
+    MediaCollectionUpdateRequest,
+    MediaDetailsCompleteUpdateRequest,
+    MediaDetailsDetailedResponse,
+    MediaMetadataUpdateRequest,
     MediaResponse,
     MediaSearchRequest,
     MediaShareResponse,
     MediaType,
+    MediaUpdateRequest,
     MediaUploadRequest,
+    MetadataAnalyticsRequest,
+    MetadataAnalyticsResponse,
+    MetadataExportRequest,
+    MetadataExportResponse,
+    MetadataImportRequest,
+    MetadataImportResponse,
+    MetadataSchemaResponse,
+    MetadataSearchRequest,
+    MetadataSearchResponse,
+    MetadataValidationRequest,
+    MetadataValidationResponse,
+    TechnicalMetadataUpdateRequest,
+    UserMetadataUpdateRequest,
+    VariantCreateRequest,
+    VariantGenerateRequest,
+    VariantResponse,
+    VariantResponseDetailed,
+    VariantTypeEnum,
+    VariantUpdateRequest,
 )
 from src.services.media_service import MediaService
 from src.services.thumbnail_service import ThumbnailService
@@ -161,6 +193,286 @@ async def search_media(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+# ============================================================================
+# COLLECTION CRUD ENDPOINTS - Issue #014 Implementation
+# ============================================================================
+
+
+@router.get("/collections", response_model=List[MediaCollectionResponse])
+async def list_collections(
+    user_id: str,
+    skip: int = 0,
+    limit: int = 100,
+    include_public: bool = False,
+    db: Session = Depends(get_db),
+):
+    """List all user collections with pagination."""
+    try:
+        media_service = MediaService(db)
+        collections = await media_service.get_collections(
+            user_id=UUID(user_id), skip=skip, limit=limit, include_public=include_public
+        )
+
+        return [MediaCollectionResponse.model_validate(col) for col in collections]
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/collections/search", response_model=List[MediaCollectionResponse])
+async def search_collections(
+    query: str,
+    user_id: str,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """Search collections by name, description, or tags."""
+    try:
+        media_service = MediaService(db)
+        collections = await media_service.search_collections(
+            UUID(user_id), query, skip, limit
+        )
+
+        return [MediaCollectionResponse.model_validate(col) for col in collections]
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/collections/{collection_id}", response_model=MediaCollectionResponse)
+async def get_collection(
+    collection_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get a specific collection by ID."""
+    try:
+        media_service = MediaService(db)
+        collection = await media_service.get_collection(collection_id, UUID(user_id))
+
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        return MediaCollectionResponse.model_validate(collection)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/collections/{collection_id}/items", response_model=List[MediaResponse])
+async def get_collection_items(
+    collection_id: str,
+    user_id: str,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    """Get media items in a collection with pagination."""
+    try:
+        media_service = MediaService(db)
+        items = await media_service.get_collection_items(
+            collection_id, UUID(user_id), skip, limit
+        )
+
+        return [MediaResponse.model_validate(item) for item in items]
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get(
+    "/collections/{collection_id}/stats", response_model=CollectionStatsResponse
+)
+async def get_collection_stats(
+    collection_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get statistics for a collection."""
+    try:
+        media_service = MediaService(db)
+        stats = await media_service.get_collection_stats(collection_id, UUID(user_id))
+
+        if not stats:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        return CollectionStatsResponse.model_validate(stats)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.put("/collections/{collection_id}", response_model=MediaCollectionResponse)
+async def update_collection(
+    collection_id: str,
+    update_data: MediaCollectionUpdateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Update a collection completely."""
+    try:
+        media_service = MediaService(db)
+        collection = await media_service.update_collection(
+            collection_id, UUID(user_id), update_data.model_dump()
+        )
+
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        return MediaCollectionResponse.model_validate(collection)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.patch("/collections/{collection_id}", response_model=MediaCollectionResponse)
+async def partial_update_collection(
+    collection_id: str,
+    update_data: MediaCollectionUpdateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Partially update a collection with only provided fields."""
+    try:
+        media_service = MediaService(db)
+        # Only include non-None values for partial update
+        update_dict = {
+            k: v for k, v in update_data.model_dump().items() if v is not None
+        }
+
+        collection = await media_service.update_collection(
+            collection_id, UUID(user_id), update_dict
+        )
+
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        return MediaCollectionResponse.model_validate(collection)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.delete("/collections/{collection_id}")
+async def delete_collection(
+    collection_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Delete a collection."""
+    try:
+        media_service = MediaService(db)
+        success = await media_service.delete_collection(collection_id, UUID(user_id))
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
+        return {"message": "Collection deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.delete("/collections/{collection_id}/remove/{media_id}")
+async def remove_media_from_collection(
+    collection_id: str,
+    media_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Remove media from a collection."""
+    try:
+        media_service = MediaService(db)
+        success = await media_service.remove_media_from_collection(
+            collection_id, media_id, UUID(user_id)
+        )
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Collection or media not found")
+
+        return {"message": "Media removed from collection successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/collections/{collection_id}/bulk-add")
+async def bulk_add_to_collection(
+    collection_id: str,
+    request: BulkCollectionItemRequest,
+    db: Session = Depends(get_db),
+):
+    """Bulk add media items to a collection."""
+    try:
+        media_service = MediaService(db)
+        result = await media_service.bulk_add_to_collection(
+            collection_id, request.media_ids, request.user_id
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/collections/{collection_id}/bulk-remove")
+async def bulk_remove_from_collection(
+    collection_id: str,
+    request: BulkCollectionItemRequest,
+    db: Session = Depends(get_db),
+):
+    """Bulk remove media items from a collection."""
+    try:
+        media_service = MediaService(db)
+        result = await media_service.bulk_remove_from_collection(
+            collection_id, request.media_ids, request.user_id
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.patch("/collections/{collection_id}/reorder")
+async def reorder_collection_items(
+    collection_id: str,
+    request: CollectionReorderRequest,
+    db: Session = Depends(get_db),
+):
+    """Reorder items in a collection."""
+    try:
+        media_service = MediaService(db)
+        success = await media_service.reorder_collection_items(
+            collection_id, request.user_id, request.item_orders
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=404, detail="Collection not found or access denied"
+            )
+
+        return {"message": "Collection items reordered successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.get("/{media_id}", response_model=MediaResponse)
 async def get_media(
     media_id: str,
@@ -202,6 +514,79 @@ async def delete_media(
             )
 
         return {"message": "Media deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.put("/{media_id}", response_model=MediaResponse)
+async def update_media(
+    media_id: str,
+    update_data: MediaUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """Update media with full replacement."""
+    try:
+        media_service = MediaService(db)
+        media = await media_service.update_media(media_id, update_data.model_dump())
+
+        if not media:
+            raise HTTPException(status_code=404, detail="Media not found")
+
+        return MediaResponse.model_validate(media)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.patch("/{media_id}", response_model=MediaResponse)
+async def partial_update_media(
+    media_id: str,
+    update_data: MediaUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """Partially update media with only provided fields."""
+    try:
+        media_service = MediaService(db)
+        # Only include non-None values for partial update
+        update_dict = {
+            k: v for k, v in update_data.model_dump().items() if v is not None
+        }
+
+        media = await media_service.update_media(media_id, update_dict)
+
+        if not media:
+            raise HTTPException(status_code=404, detail="Media not found")
+
+        return MediaResponse.model_validate(media)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.patch("/{media_id}/metadata", response_model=MediaResponse)
+async def update_media_metadata(
+    media_id: str,
+    metadata_update: MediaMetadataUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """Update only the metadata fields of a media item."""
+    try:
+        media_service = MediaService(db)
+        media = await media_service.update_media_metadata(
+            media_id, metadata_update.model_dump()
+        )
+
+        if not media:
+            raise HTTPException(status_code=404, detail="Media not found")
+
+        return MediaResponse.model_validate(media)
 
     except HTTPException:
         raise
@@ -825,3 +1210,798 @@ async def bulk_extract_exif(
         raise HTTPException(
             status_code=500, detail=f"Error during bulk EXIF extraction: {str(e)}"
         )
+
+
+# ============================================================================
+# MEDIA VARIANTS ENDPOINTS - Issue #015 Implementation
+# ============================================================================
+
+
+@router.get("/{media_id}/variants", response_model=List[VariantResponse])
+async def get_media_variants(
+    media_id: str,
+    user_id: str,
+    variant_type: Optional[VariantTypeEnum] = None,
+    db: Session = Depends(get_db),
+):
+    """Get all variants for a media file."""
+    try:
+        media_service = MediaService(db)
+
+        # Convert string IDs to integers
+        media_id_int = int(media_id)
+
+        variants = await media_service.get_media_variants(
+            media_id_int, UUID(user_id), variant_type
+        )
+
+        return [VariantResponse.model_validate(variant) for variant in variants]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{media_id}/variants", response_model=VariantResponseDetailed)
+async def create_media_variant(
+    media_id: str,
+    variant_data: VariantCreateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Create a new variant for a media file."""
+    try:
+        media_service = MediaService(db)
+
+        # Convert string ID to integer
+        media_id_int = int(media_id)
+
+        variant = await media_service.create_media_variant(
+            media_id_int,
+            UUID(user_id),
+            variant_data.variant_type,
+            variant_data.file_path,
+            variant_data.filename,
+            variant_data.file_size,
+            variant_data.mime_type,
+        )
+
+        if not variant:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return VariantResponseDetailed.model_validate(variant)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{media_id}/variants/generate", response_model=Dict[str, Any])
+async def generate_media_variants(
+    media_id: str,
+    generate_request: VariantGenerateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Generate standard variants for a media file."""
+    try:
+        media_service = MediaService(db)
+
+        # Convert string ID to integer
+        media_id_int = int(media_id)
+
+        result = await media_service.generate_standard_variants(
+            media_id_int,
+            UUID(user_id),
+            generate_request.variant_types,
+            generate_request.quality_levels,
+        )
+
+        if not result:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/{media_id}/variants/statistics", response_model=Dict[str, Any])
+async def get_variant_statistics(
+    media_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get statistics about media variants."""
+    try:
+        media_service = MediaService(db)
+
+        # Convert string ID to integer
+        media_id_int = int(media_id)
+
+        stats = await media_service.get_variant_statistics(media_id_int, UUID(user_id))
+
+        if not stats:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return stats
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/{media_id}/variants/{variant_id}", response_model=VariantResponseDetailed)
+async def get_variant_details(
+    media_id: str,  # Keep for REST API consistency
+    variant_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get detailed information about a specific variant."""
+    try:
+        media_service = MediaService(db)
+
+        # Convert string ID to integer
+        variant_id_int = int(variant_id)
+
+        variant = await media_service.get_variant_by_id(variant_id_int, UUID(user_id))
+
+        if not variant:
+            raise HTTPException(
+                status_code=404, detail="Variant not found or access denied"
+            )
+
+        return VariantResponseDetailed.model_validate(variant)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.put("/{media_id}/variants/{variant_id}", response_model=VariantResponseDetailed)
+async def update_media_variant(
+    media_id: str,  # Keep for REST API consistency
+    variant_id: str,
+    variant_data: VariantUpdateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Update a media variant."""
+    try:
+        media_service = MediaService(db)
+
+        # Convert string ID to integer
+        variant_id_int = int(variant_id)
+
+        # Convert Pydantic model to dict
+        update_dict = variant_data.model_dump(exclude_unset=True)
+
+        variant = await media_service.update_variant(
+            variant_id_int, UUID(user_id), update_dict
+        )
+
+        if not variant:
+            raise HTTPException(
+                status_code=404, detail="Variant not found or access denied"
+            )
+
+        # Refresh to get updated values and use from_attributes
+        db.refresh(variant)
+        return VariantResponseDetailed.model_validate(variant)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.delete("/{media_id}/variants/{variant_id}")
+async def delete_media_variant(
+    media_id: str,  # Keep for REST API consistency
+    variant_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Delete a media variant."""
+    try:
+        media_service = MediaService(db)
+
+        # Convert string ID to integer
+        variant_id_int = int(variant_id)
+
+        success = await media_service.delete_variant(variant_id_int, UUID(user_id))
+
+        if not success:
+            raise HTTPException(
+                status_code=404, detail="Variant not found or access denied"
+            )
+
+        return {"message": "Variant deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/variants/types", response_model=List[str])
+async def get_variant_types(db: Session = Depends(get_db)):
+    """Get available variant types."""
+    try:
+        media_service = MediaService(db)
+        return media_service.get_variant_types()
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# ============================================================================
+# ISSUE #016: Advanced Media Details and Metadata Management API Endpoints
+# ============================================================================
+
+
+@router.get("/{media_id}/details", response_model=MediaDetailsDetailedResponse)
+async def get_media_details(
+    media_id: str,
+    user_id: Optional[str] = None,
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Get complete media details including technical and user metadata."""
+    try:
+        if not user_id and not share_token:
+            raise HTTPException(
+                status_code=400, detail="Either user_id or share_token required"
+            )
+
+        media_service = MediaService(db)
+
+        # Convert user_id string to UUID if provided
+        user_uuid = UUID(user_id) if user_id else None
+
+        details = await media_service.get_media_details(media_id, user_uuid)
+
+        if not details:
+            raise HTTPException(status_code=404, detail="Media details not found")
+
+        return details
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.put("/{media_id}/details", response_model=MediaDetailsDetailedResponse)
+async def update_media_details_complete(
+    media_id: str,
+    details_update: MediaDetailsCompleteUpdateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Update complete media details."""
+    try:
+        media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        updated_details = await media_service.update_media_details_complete(
+            media_id, details_update.model_dump(exclude_unset=True), user_uuid
+        )
+
+        if not updated_details:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return updated_details
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.patch("/{media_id}/details/technical", response_model=MediaResponse)
+async def update_technical_metadata_only(
+    media_id: str,
+    technical_update: TechnicalMetadataUpdateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Update technical metadata only."""
+    try:
+        media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        updated_media = await media_service.update_technical_metadata_only(
+            media_id,
+            technical_update.technical_metadata,
+            technical_update.merge_strategy,
+            user_uuid,
+        )
+
+        if not updated_media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return updated_media
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.patch("/{media_id}/details/user", response_model=MediaResponse)
+async def update_user_metadata_only(
+    media_id: str,
+    user_metadata_update: UserMetadataUpdateRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Update user metadata only."""
+    try:
+        media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        updated_media = await media_service.update_user_metadata_only(
+            media_id,
+            user_metadata_update.user_metadata,
+            user_metadata_update.merge_strategy,
+            user_uuid,
+        )
+
+        if not updated_media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return updated_media
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/{media_id}/metadata/custom", response_model=Dict[str, Any])
+async def get_custom_metadata_fields(
+    media_id: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get custom user-defined metadata fields."""
+    try:
+        media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        custom_metadata = await media_service.get_custom_metadata_fields(
+            media_id, user_uuid
+        )
+
+        if custom_metadata is None:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return custom_metadata
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/{media_id}/metadata/custom", response_model=MediaResponse)
+async def add_custom_metadata_field(
+    media_id: str,
+    field_request: CustomMetadataFieldRequest,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Add custom metadata field."""
+    try:
+        media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        updated_media = await media_service.add_custom_metadata_field(
+            media_id,
+            field_request.field_name,
+            field_request.field_value,
+            field_request.field_type.value if field_request.field_type else "string",
+            user_uuid,
+        )
+
+        if not updated_media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return updated_media
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.put("/{media_id}/metadata/custom/{field_name}", response_model=MediaResponse)
+async def update_custom_metadata_field(
+    media_id: str,
+    field_name: str,
+    field_value: Any,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Update custom metadata field."""
+    try:
+        media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        updated_media = await media_service.update_custom_metadata_field(
+            media_id, field_name, field_value, user_uuid
+        )
+
+        if not updated_media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return updated_media
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.delete("/{media_id}/metadata/custom/{field_name}", response_model=MediaResponse)
+async def delete_custom_metadata_field(
+    media_id: str,
+    field_name: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Delete custom metadata field."""
+    try:
+        media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        updated_media = await media_service.delete_custom_metadata_field(
+            media_id, field_name, user_uuid
+        )
+
+        if not updated_media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return updated_media
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/metadata/bulk-update", response_model=BulkMetadataOperationResponse)
+async def bulk_update_metadata(
+    bulk_request: BulkMetadataUpdateRequest,
+    db: Session = Depends(get_db),
+):
+    """Bulk update metadata for multiple media files."""
+    try:
+        media_service = MediaService(db)
+
+        results = await media_service.bulk_update_metadata(
+            bulk_request.media_ids,
+            bulk_request.metadata_updates,
+            bulk_request.update_type,
+            bulk_request.merge_strategy,
+            bulk_request.user_id,
+        )
+
+        return results
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/metadata/bulk-export", response_model=MetadataExportResponse)
+async def bulk_export_metadata(
+    export_request: MetadataExportRequest,
+    db: Session = Depends(get_db),
+):
+    """Export metadata for multiple files."""
+    try:
+        media_service = MediaService(db)
+
+        export_data = await media_service.export_metadata(
+            export_request.media_ids,
+            export_request.export_format,
+            export_request.include_technical,
+            export_request.include_user,
+            export_request.include_system,
+            export_request.user_id,
+        )
+
+        return export_data
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/metadata/bulk-import", response_model=MetadataImportResponse)
+async def bulk_import_metadata(
+    import_request: MetadataImportRequest,
+    db: Session = Depends(get_db),
+):
+    """Import metadata from file."""
+    try:
+        # This would need more complex implementation for actual file import
+        # For now, return a placeholder response
+        return {
+            "total_records": 0,
+            "imported": 0,
+            "updated": 0,
+            "skipped": 0,
+            "failed": 0,
+            "import_errors": [],
+            "import_summary": {"message": "Import functionality not yet implemented"},
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/metadata/search", response_model=MetadataSearchResponse)
+async def search_by_metadata(
+    search_request: MetadataSearchRequest,
+    db: Session = Depends(get_db),
+):
+    """Search media by metadata values."""
+    try:
+        media_service = MediaService(db)
+
+        results = await media_service.search_by_metadata(
+            search_request.search_criteria,
+            search_request.search_type,
+            (
+                [mt.value for mt in search_request.media_types]
+                if search_request.media_types
+                else None
+            ),
+            search_request.user_id,
+            search_request.skip,
+            search_request.limit,
+        )
+
+        return results
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/metadata/analytics", response_model=MetadataAnalyticsResponse)
+async def get_metadata_analytics(
+    analytics_request: MetadataAnalyticsRequest,
+    db: Session = Depends(get_db),
+):
+    """Get metadata usage analytics."""
+    try:
+        media_service = MediaService(db)
+
+        analytics = await media_service.get_metadata_analytics(
+            analytics_request.analysis_type,
+            (
+                [mt.value for mt in analytics_request.media_types]
+                if analytics_request.media_types
+                else None
+            ),
+            analytics_request.user_id,
+        )
+
+        # Add the analysis_type to the response
+        analytics["analysis_type"] = analytics_request.analysis_type
+
+        return analytics
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/metadata/validation", response_model=MetadataValidationResponse)
+async def validate_metadata(
+    validation_request: MetadataValidationRequest,
+    db: Session = Depends(get_db),
+):
+    """Validate metadata against schemas and rules."""
+    try:
+        media_service = MediaService(db)
+
+        validation_results = await media_service.validate_metadata(
+            validation_request.metadata,
+            (
+                validation_request.media_type.value
+                if validation_request.media_type
+                else None
+            ),
+            validation_request.validation_level,
+        )
+
+        return validation_results
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/metadata/schemas/{media_type}", response_model=MetadataSchemaResponse)
+async def get_metadata_schema_for_media_type(
+    media_type: str,
+    db: Session = Depends(get_db),
+):
+    """Get metadata schema for a specific media type."""
+    try:
+        media_service = MediaService(db)
+
+        schema_data = await media_service.get_metadata_schema_for_media_type(media_type)
+
+        return schema_data
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ============================================================================
+# METADATA TEMPLATES SYSTEM
+# ============================================================================
+
+
+@router.get("/metadata/templates", response_model=List[Dict[str, Any]])
+async def list_metadata_templates(
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """List metadata templates."""
+    try:
+        # Return mock template system for now -
+        # would be implemented with database
+        templates = [
+            {
+                "id": "photography_standard",
+                "name": "Standard Photography Metadata",
+                "description": ("Standard metadata fields for " "photography projects"),
+                "category": "photography",
+                "fields": [
+                    {"name": "photographer", "type": "string", "required": True},
+                    {"name": "location", "type": "string", "required": False},
+                    {"name": "shoot_date", "type": "date", "required": True},
+                    {"name": "equipment", "type": "string", "required": False},
+                ],
+                "created_by": user_id,
+                "created_at": "2025-07-15T00:00:00Z",
+            },
+            {
+                "id": "video_production",
+                "name": "Video Production Metadata",
+                "description": "Metadata template for video production " "workflows",
+                "category": "video",
+                "fields": [
+                    {"name": "director", "type": "string", "required": True},
+                    {"name": "project_name", "type": "string", "required": True},
+                    {"name": "scene_number", "type": "integer", "required": False},
+                    {"name": "take_number", "type": "integer", "required": False},
+                ],
+                "created_by": user_id,
+                "created_at": "2025-07-15T00:00:00Z",
+            },
+        ]
+
+        return templates
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/metadata/templates", response_model=Dict[str, Any])
+async def create_metadata_template(
+    template_request: Dict[str, Any],
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Create metadata template."""
+    try:
+        # Mock template creation - would be implemented with database
+        template_id = f"template_{int(time.time())}"
+
+        created_template = {
+            "id": template_id,
+            "name": template_request.get("name", "Untitled Template"),
+            "description": template_request.get("description", ""),
+            "category": template_request.get("category", "general"),
+            "fields": template_request.get("fields", []),
+            "created_by": user_id,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "status": "created",
+        }
+
+        return created_template
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/{media_id}/metadata/apply-template", response_model=MediaResponse)
+async def apply_metadata_template(
+    media_id: str,
+    template_request: Dict[str, Any],
+    user_id: str,
+    db: Session = Depends(get_db),
+):
+    """Apply metadata template to media."""
+    try:
+        media_service = MediaService(db)
+
+        # Get media
+        media = await media_service.get_media(media_id, UUID(user_id))
+        if not media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        # Mock template application - would apply template fields to media
+        template_id = template_request.get("template_id")
+        field_values = template_request.get("field_values", {})
+
+        # For now, just add the template application info
+        # to technical_metadata - mock implementation
+        applied_info = {
+            "template_id": template_id,
+            "applied_at": datetime.utcnow().isoformat(),
+            "applied_by": user_id,
+            "field_values": field_values,
+            "status": "applied",
+        }
+
+        # Mock template application - would update database
+        # For now just return success status
+        db.commit()
+
+        return MediaResponse.model_validate(media)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ============================================================================
+# END ISSUE #016: Advanced Media Details and Metadata Management
