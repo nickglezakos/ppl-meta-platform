@@ -4,12 +4,14 @@ import '../models/api_response.dart';
 import '../models/media_models.dart';
 import '../models/device_info.dart';
 import '../core/config/app_config.dart';
+import '../core/api/api_client.dart';
 
 /// API client for media operations
 class MediaApiClient {
   late final Dio _dio;
+  final ApiClient? _apiClient;
   
-  MediaApiClient() {
+  MediaApiClient({ApiClient? apiClient}) : _apiClient = apiClient {
     _dio = Dio(BaseOptions(
       baseUrl: AppConfig.instance.mediaEndpoint,
       connectTimeout: const Duration(seconds: 30),
@@ -60,8 +62,19 @@ class MediaApiClient {
         throw Exception('Either filePath or fileBytes must be provided');
       }
       
+      // Determine media type from file extension
+      final mediaType = _getMediaTypeFromFilename(finalFilename);
+      
+      // Get current user ID from authentication
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        throw Exception('User not authenticated - please login first');
+      }
+      
       final formData = FormData.fromMap({
         'file': file,
+        'media_type': mediaType,  // Required field
+        'user_id': userId,        // Required field
         if (metadata != null) 'metadata': metadata,
         if (collectionId != null) 'collection_id': collectionId,
         if (deviceInfo != null) 'device_info': deviceInfo.toJson(),
@@ -78,7 +91,27 @@ class MediaApiClient {
         },
       );
 
-      return ApiResponse.success(MediaItem.fromJson(response.data));
+      // Create a MediaItem from the response data, mapping backend fields to frontend model
+      final responseData = response.data as Map<String, dynamic>;
+      final mediaItem = MediaItem(
+        mediaId: responseData['id']?.toString() ?? responseData['uuid']?.toString() ?? '',
+        originalFilename: responseData['original_filename'] ?? responseData['filename'] ?? finalFilename,
+        mediaType: _parseMediaType(responseData['media_type'] ?? 'document'),
+        fileSize: responseData['file_size'] ?? 0,
+        filePath: responseData['file_path'] ?? '',
+        uploadedAt: responseData['created_at'] != null 
+            ? DateTime.parse(responseData['created_at']) 
+            : DateTime.now(),
+        uploadedBy: responseData['uploaded_by'],
+        isPublic: responseData['is_public'] ?? false,
+        thumbnailUrl: responseData['thumbnail_url'],
+        url: responseData['url'],
+        tags: (responseData['tags'] as List?)?.cast<String>() ?? [],
+        description: responseData['description'],
+        technicalMetadata: responseData['technical_metadata'],
+      );
+
+      return ApiResponse.success(mediaItem);
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
@@ -389,5 +422,122 @@ class MediaApiClient {
       default:
         return 'An unexpected error occurred.';
     }
+  }
+  
+  /// Get MediaType from filename extension
+  String _getMediaTypeFromFilename(String filename) {
+    final extension = filename.split('.').last.toLowerCase();
+    
+    switch (extension) {
+      // Video formats
+      case 'mp4':
+      case 'mov':
+      case 'avi':
+      case 'mkv':
+      case 'webm':
+      case 'flv':
+        return 'video';
+      
+      // Picture/Image formats  
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'webp':
+      case 'tiff':
+      case 'svg':
+        return 'picture';
+      
+      // Sound/Audio formats
+      case 'mp3':
+      case 'wav':
+      case 'aac':
+      case 'flac':
+      case 'ogg':
+      case 'm4a':
+        return 'sound';
+      
+      // Document formats
+      case 'pdf':
+      case 'doc':
+      case 'docx':
+      case 'txt':
+      case 'rtf':
+      case 'xls':
+      case 'xlsx':
+      case 'ppt':
+      case 'pptx':
+        return 'document';
+      
+      // Default to document for unknown extensions
+      default:
+        return 'document';
+    }
+  }
+  
+  /// Parse MediaType from backend string to frontend enum
+  MediaType _parseMediaType(String mediaTypeString) {
+    switch (mediaTypeString.toLowerCase()) {
+      case 'picture':
+      case 'image':
+        return MediaType.image;
+      case 'video':
+        return MediaType.video;
+      case 'sound':
+      case 'audio':
+        return MediaType.audio;
+      case 'document':
+        return MediaType.document;
+      case 'pdf':
+        return MediaType.pdf;
+      case 'text':
+        return MediaType.text;
+      case 'archive':
+        return MediaType.archive;
+      default:
+        return MediaType.other;
+    }
+  }
+  
+  /// Get current user ID from authentication context
+  Future<String?> _getCurrentUserId() async {
+    try {
+      // Use ApiClient if available (has authentication) or fallback to direct call
+      if (_apiClient != null) {
+        final response = await _apiClient!.get('/api/v1/user/profile');
+        if (response.data != null) {
+          // Extract user_id from profile response - use 'guid' (UUID) instead of 'id' (integer)
+          return response.data['guid']?.toString();
+        }
+      } else {
+        // Fallback: create a temporary dio client that uses Gateway service 
+        final userDio = Dio(BaseOptions(
+          baseUrl: 'http://localhost:8080/api/v1',
+          connectTimeout: const Duration(seconds: 10),
+          receiveTimeout: const Duration(seconds: 10),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        ));
+        
+        // Copy authentication headers from main client
+        final authHeader = _dio.options.headers['Authorization'];
+        if (authHeader != null) {
+          userDio.options.headers['Authorization'] = authHeader;
+        }
+        
+        // Get user profile to extract user ID
+        final response = await userDio.get('/users/profile');
+        if (response.data != null) {
+          // Extract user_id from profile response - use 'guid' (UUID) instead of 'id' (integer)
+          return response.data['guid']?.toString();
+        }
+      }
+    } catch (e) {
+      print('Failed to get current user ID: $e');
+    }
+    return null;
   }
 }

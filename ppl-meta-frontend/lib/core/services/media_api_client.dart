@@ -43,18 +43,28 @@ class MediaApiClient {
     try {
       _logger.i('Uploading media file: ${file.path}');
       
+      // Determine media type from file extension
+      final mediaType = _getMediaTypeFromFilename(file.path);
+      
+      // Get current user ID from authentication if not provided
+      final currentUserId = userId ?? await _getCurrentUserId();
+      if (currentUserId == null) {
+        throw Exception('User not authenticated - please login first');
+      }
+      
       final formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(
           file.path,
           filename: file.path.split('/').last,
         ),
+        'media_type': mediaType,     // Required field for backend validation
+        'user_id': currentUserId,    // Required field for backend validation
         'device_name': deviceInfo.deviceName,
         'device_manufacturer': deviceInfo.deviceManufacturer,
         'device_model': deviceInfo.deviceModel,
         'device_os': deviceInfo.deviceOs,
         'app_name': deviceInfo.appName,
         'app_version': deviceInfo.appVersion,
-        if (userId != null) 'user_id': userId,
         if (tags != null) 'tags': tags.join(','),
         'is_public': isPublic.toString(),
         if (description != null) 'description': description,
@@ -318,5 +328,72 @@ class MediaApiClient {
           statusCode: 0,
         );
     }
+  }
+  
+  /// Get MediaType from filename extension
+  String _getMediaTypeFromFilename(String filename) {
+    final extension = filename.split('.').last.toLowerCase();
+    
+    switch (extension) {
+      // Video formats
+      case 'mp4':
+      case 'mov':
+      case 'avi':
+      case 'mkv':
+      case 'webm':
+      case 'flv':
+        return 'video';
+      
+      // Picture/Image formats  
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'webp':
+      case 'tiff':
+      case 'svg':
+        return 'picture';
+      
+      // Sound/Audio formats
+      case 'mp3':
+      case 'wav':
+      case 'aac':
+      case 'flac':
+      case 'ogg':
+      case 'm4a':
+        return 'sound';
+      
+      // Document formats
+      case 'pdf':
+      case 'doc':
+      case 'docx':
+      case 'txt':
+      case 'rtf':
+      case 'xls':
+      case 'xlsx':
+      case 'ppt':
+      case 'pptx':
+        return 'document';
+      
+      // Default to document for unknown extensions
+      default:
+        return 'document';
+    }
+  }
+  
+  /// Get current user ID from authentication context
+  Future<String?> _getCurrentUserId() async {
+    try {
+      // Get user profile to extract user ID
+      final response = await _dio.get('/api/v1/user/profile');
+      if (response.data != null) {
+        // Extract user_id from profile response
+        return response.data['user_id']?.toString();
+      }
+    } catch (e) {
+      _logger.w('Failed to get current user ID: $e');
+    }
+    return null;
   }
 }

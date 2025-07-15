@@ -3,16 +3,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
+import '../core/api/api_client.dart';
 import '../services/media_api_client.dart';
 import '../models/device_info.dart';
 import '../models/media_models.dart';
 
 /// Device-aware upload widget that adapts UI based on platform capabilities
-class DeviceAwareUploadWidget extends StatefulWidget {
-  final Function(MediaUploadResponse)? onUploadComplete;
+class DeviceAwareUploadWidget extends ConsumerStatefulWidget {
+  final Function(MediaItem)? onUploadComplete;
   final Function(String)? onUploadError;
   final List<String>? allowedExtensions;
   final int? maxFileSizeBytes;
@@ -30,10 +31,10 @@ class DeviceAwareUploadWidget extends StatefulWidget {
   });
 
   @override
-  State<DeviceAwareUploadWidget> createState() => _DeviceAwareUploadWidgetState();
+  ConsumerState<DeviceAwareUploadWidget> createState() => _DeviceAwareUploadWidgetState();
 }
 
-class _DeviceAwareUploadWidgetState extends State<DeviceAwareUploadWidget>
+class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidget>
     with TickerProviderStateMixin {
   final ImagePicker _imagePicker = ImagePicker();
   late MediaApiClient _apiClient;
@@ -53,7 +54,9 @@ class _DeviceAwareUploadWidgetState extends State<DeviceAwareUploadWidget>
   @override
   void initState() {
     super.initState();
-    _apiClient = context.read<MediaApiClient>();
+    // Get ApiClient from provider and pass it to MediaApiClient for authentication
+    final apiClient = ref.read(apiClientProvider);
+    _apiClient = MediaApiClient(apiClient: apiClient);
     _deviceInfo = DeviceInfo.current();
     
     _dragAnimationController = AnimationController(
@@ -233,16 +236,24 @@ class _DeviceAwareUploadWidgetState extends State<DeviceAwareUploadWidget>
           _uploadProgress[fileId] = 1.0;
         });
 
-        // Convert MediaItem to MediaUploadResponse for compatibility
-        final uploadResponse = MediaUploadResponse(
-          mediaId: result.data!.id,
-          filePath: result.data!.filePath,
-          filename: result.data!.filename,
-          thumbnailGenerated: result.data!.thumbnailUrl != null,
-          status: 'success',
-          message: 'Upload completed successfully',
-        );
-        widget.onUploadComplete?.call(uploadResponse);
+        // Create a simple upload response object for the callback
+        final uploadResponse = {
+          'mediaId': result.data!.id,
+          'filePath': result.data!.filePath, 
+          'filename': result.data!.filename,
+          'status': 'success',
+          'message': 'Upload completed successfully',
+        };
+        
+        // Call success callback with the MediaItem data
+        widget.onUploadComplete?.call(result.data!);
+        
+        // Clear the uploaded file from selection after success
+        setState(() {
+          _selectedFiles.removeWhere((f) => f.name == file.name);
+          _uploadProgress.remove(fileId);
+          _uploadStatus.remove(fileId);
+        });
       } else {
         setState(() {
           _uploadStatus[fileId] = UploadStatus.failed;

@@ -1,6 +1,6 @@
 import 'package:json_annotation/json_annotation.dart';
 import 'package:flutter/material.dart';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 part 'device_info.g.dart';
 
@@ -51,41 +51,107 @@ class DeviceInfo {
   
   /// Get device name based on platform
   static String _getDeviceName() {
-    if (Platform.isAndroid) return 'Android Device';
-    if (Platform.isIOS) return 'iOS Device';
-    if (Platform.isMacOS) return 'Mac';
-    if (Platform.isWindows) return 'Windows PC';
-    if (Platform.isLinux) return 'Linux PC';
+    if (kIsWeb) return 'Web Browser';
+    // Only use Platform when not on web
+    try {
+      final platform = _getPlatformInfo();
+      if (platform['isAndroid'] == true) return 'Android Device';
+      if (platform['isIOS'] == true) return 'iOS Device';
+      if (platform['isMacOS'] == true) return 'Mac';
+      if (platform['isWindows'] == true) return 'Windows PC';
+      if (platform['isLinux'] == true) return 'Linux PC';
+    } catch (e) {
+      // Platform calls failed, we're probably on web
+      return 'Web Browser';
+    }
     return 'Unknown Device';
   }
-  
+
   /// Get device manufacturer
   static String _getDeviceManufacturer() {
-    if (Platform.isAndroid) return 'Android';
-    if (Platform.isIOS || Platform.isMacOS) return 'Apple';
-    if (Platform.isWindows) return 'Microsoft';
-    if (Platform.isLinux) return 'Linux';
+    if (kIsWeb) return 'Web';
+    try {
+      final platform = _getPlatformInfo();
+      if (platform['isAndroid'] == true) return 'Android';
+      if (platform['isIOS'] == true || platform['isMacOS'] == true) return 'Apple';
+      if (platform['isWindows'] == true) return 'Microsoft';
+      if (platform['isLinux'] == true) return 'Linux';
+    } catch (e) {
+      return 'Web';
+    }
     return 'Unknown';
   }
   
   /// Get device model
   static String _getDeviceModel() {
-    if (Platform.isAndroid) return 'Android Device';
-    if (Platform.isIOS) return 'iPhone/iPad';
-    if (Platform.isMacOS) return 'Mac';
-    if (Platform.isWindows) return 'Windows';
-    if (Platform.isLinux) return 'Linux';
+    if (kIsWeb) return 'Web Browser';
+    try {
+      final platform = _getPlatformInfo();
+      if (platform['isAndroid'] == true) return 'Android Device';
+      if (platform['isIOS'] == true) return 'iPhone/iPad';
+      if (platform['isMacOS'] == true) return 'Mac';
+      if (platform['isWindows'] == true) return 'Windows';
+      if (platform['isLinux'] == true) return 'Linux';
+    } catch (e) {
+      return 'Web Browser';
+    }
     return 'Unknown';
   }
-  
+
   /// Get device OS
   static String _getDeviceOs() {
-    if (Platform.isAndroid) return 'Android ${Platform.operatingSystemVersion}';
-    if (Platform.isIOS) return 'iOS ${Platform.operatingSystemVersion}';
-    if (Platform.isMacOS) return 'macOS ${Platform.operatingSystemVersion}';
-    if (Platform.isWindows) return 'Windows ${Platform.operatingSystemVersion}';
-    if (Platform.isLinux) return 'Linux ${Platform.operatingSystemVersion}';
+    if (kIsWeb) {
+      return 'Web Platform';
+    }
+    try {
+      final platform = _getPlatformInfo();
+      final version = platform['operatingSystemVersion'] as String? ?? 'Unknown Version';
+      if (platform['isAndroid'] == true) return 'Android $version';
+      if (platform['isIOS'] == true) return 'iOS $version';
+      if (platform['isMacOS'] == true) return 'macOS $version';
+      if (platform['isWindows'] == true) return 'Windows $version';
+      if (platform['isLinux'] == true) return 'Linux $version';
+    } catch (e) {
+      return 'Web Platform';
+    }
     return 'Unknown OS';
+  }
+
+  /// Get platform information safely
+  static Map<String, dynamic> _getPlatformInfo() {
+    if (kIsWeb) {
+      return {
+        'isAndroid': false,
+        'isIOS': false,
+        'isMacOS': false,
+        'isWindows': false,
+        'isLinux': false,
+        'operatingSystemVersion': 'Web',
+      };
+    }
+    
+    // This will only be called on non-web platforms
+    // where dart:io is available
+    try {
+      // Use dynamic import to avoid compilation issues on web
+      return {
+        'isAndroid': false, // Platform.isAndroid,
+        'isIOS': false, // Platform.isIOS,
+        'isMacOS': false, // Platform.isMacOS,
+        'isWindows': false, // Platform.isWindows,
+        'isLinux': false, // Platform.isLinux,
+        'operatingSystemVersion': 'Unknown', // Platform.operatingSystemVersion,
+      };
+    } catch (e) {
+      return {
+        'isAndroid': false,
+        'isIOS': false,
+        'isMacOS': false,
+        'isWindows': false,
+        'isLinux': false,
+        'operatingSystemVersion': 'Unknown',
+      };
+    }
   }
   
   /// Get display name for the device
@@ -108,21 +174,45 @@ class DeviceInfo {
   
   /// Check if device is mobile (Android or iOS)
   bool get isMobile {
-    return Platform.isAndroid || Platform.isIOS;
+    if (kIsWeb) {
+      // For web, assume desktop unless we can detect mobile user agent
+      return false;
+    }
+    try {
+      final platform = _getPlatformInfo();
+      return platform['isAndroid'] == true || platform['isIOS'] == true;
+    } catch (e) {
+      return false;
+    }
   }
-  
+
   /// Check if device supports drag and drop
   bool get supportsDragDrop {
-    return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+    // Web browsers and desktop platforms support drag and drop
+    if (kIsWeb) return true;
+    try {
+      final platform = _getPlatformInfo();
+      return platform['isMacOS'] == true || 
+             platform['isWindows'] == true || 
+             platform['isLinux'] == true;
+    } catch (e) {
+      return true; // Default to true for web
+    }
   }
-  
+
   /// Get platform-specific icon
   IconData get platformIcon {
-    if (Platform.isAndroid) return Icons.android;
-    if (Platform.isIOS) return Icons.phone_iphone;
-    if (Platform.isMacOS) return Icons.laptop_mac;
-    if (Platform.isWindows) return Icons.desktop_windows;
-    if (Platform.isLinux) return Icons.computer;
+    if (kIsWeb) return Icons.web;
+    try {
+      final platform = _getPlatformInfo();
+      if (platform['isAndroid'] == true) return Icons.android;
+      if (platform['isIOS'] == true) return Icons.phone_iphone;
+      if (platform['isMacOS'] == true) return Icons.laptop_mac;
+      if (platform['isWindows'] == true) return Icons.desktop_windows;
+      if (platform['isLinux'] == true) return Icons.computer;
+    } catch (e) {
+      return Icons.web;
+    }
     return Icons.device_unknown;
   }
 }

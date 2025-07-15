@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/device_aware_upload_widget.dart';
+import '../models/media_models.dart';
 
 /// Upload screen with device-aware upload interface
 class UploadScreen extends StatefulWidget {
@@ -47,19 +48,21 @@ class _UploadScreenState extends State<UploadScreen> {
               enableBatchUpload: true,
               showPreview: true,
               maxFileSizeBytes: 100 * 1024 * 1024, // 100MB
-              onUploadComplete: (response) {
+              onUploadComplete: (mediaItem) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Upload completed: ${response.filename}'),
+                    content: Text('✅ Upload completed: ${mediaItem.filename}'),
                     backgroundColor: AppColors.success,
+                    duration: const Duration(seconds: 4),
                   ),
                 );
               },
               onUploadError: (error) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Upload failed: $error'),
+                    content: Text('❌ Upload failed: $error'),
                     backgroundColor: AppColors.error,
+                    duration: const Duration(seconds: 6),
                   ),
                 );
               },

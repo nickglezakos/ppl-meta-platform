@@ -108,11 +108,17 @@ def get_current_user(
         )
         logger.info("JWT payload decoded: %s", payload)
 
-        user_id = payload.get("sub")
-        logger.info("User ID from token: %s", user_id)
+        user_id_str = payload.get("sub")
+        logger.info("User ID from token: %s", user_id_str)
 
-        if user_id is None:
+        if user_id_str is None:
             logger.error("No user ID found in token payload")
+            raise credentials_exception
+
+        try:
+            user_id = int(user_id_str)
+        except (ValueError, TypeError):
+            logger.error("Invalid user ID format in token: %s", user_id_str)
             raise credentials_exception
     except JWTError as e:
         logger.error("JWT decode error: %s", e)
@@ -242,7 +248,7 @@ async def login(
     user = get_user_by_email(db, form_data.username)
     if not user or not pwd_context.verify(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
-    access_token = create_access_token(data={"sub": user.id})
+    access_token = create_access_token(data={"sub": str(user.id)})
     log_user_action(db, user.username, user.email, "login")
     return {"access_token": access_token, "token_type": "bearer"}
 
