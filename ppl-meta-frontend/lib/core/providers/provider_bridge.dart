@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart' as provider;
-import '../services/media_api_client.dart';
-import '../core/theme/app_theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../services/media_api_client.dart';
+import '../theme/app_theme.dart';
+import '../api/api_client.dart';
 
 /// Provider setup for our custom components that use Provider instead of Riverpod
-class ProviderBridge extends StatelessWidget {
+class ProviderBridge extends ConsumerWidget {
   final Widget child;
 
   const ProviderBridge({
@@ -13,11 +15,14 @@ class ProviderBridge extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Get the authenticated ApiClient from Riverpod
+    final apiClient = ref.watch(apiClientProvider);
+    
     return provider.MultiProvider(
       providers: [
         provider.Provider<MediaApiClient>(
-          create: (_) => MediaApiClient(),
+          create: (_) => MediaApiClient(apiClient),
         ),
       ],
       child: child,

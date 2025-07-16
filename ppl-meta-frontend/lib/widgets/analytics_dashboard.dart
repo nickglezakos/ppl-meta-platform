@@ -29,7 +29,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
   final MediaApiClient _apiClient = MediaApiClient();
   
   late TabController _tabController;
-  DeviceAnalytics? _analytics;
+  MediaAnalytics? _analytics;
   bool _isLoading = false;
   String? _error;
   
@@ -72,7 +72,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
     });
 
     try {
-      final response = await _apiClient.getDeviceAnalytics(
+      final response = await _apiClient.getAnalytics(
         startDate: widget.startDate,
         endDate: widget.endDate,
       );
@@ -109,8 +109,8 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
             ))
         .toList();
 
-    // Media type distribution
-    _mediaTypeData = _analytics!.mediaTypeBreakdown.entries
+    // Media type distribution - handle string keys from JSON
+    _mediaTypeData = _analytics!.itemsByType.entries
         .map((entry) => PieChartSectionData(
               color: _getMediaTypeColor(entry.key),
               value: entry.value.toDouble(),
@@ -123,8 +123,9 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
             ))
         .toList();
 
-    // Device usage data
-    _deviceUsageData = _analytics!.deviceBreakdown.entries
+    // Device usage data - use access data as placeholder since device breakdown not available
+    _deviceUsageData = _analytics!.accessesByDay.entries
+        .take(10) // Limit to 10 entries for readability
         .toList()
         .asMap()
         .entries
@@ -141,11 +142,14 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
             ))
         .toList();
 
-    // Storage usage trend
-    _storageUsageData = _analytics!.storageUsageByDay.entries
+    // Storage usage trend - use total size distributed over upload days as approximation
+    final totalSizeGB = _analytics!.totalSize.toDouble() / (1024 * 1024 * 1024);
+    _storageUsageData = _analytics!.uploadsByDay.entries
         .map((entry) => FlSpot(
               DateTime.parse(entry.key).millisecondsSinceEpoch.toDouble(),
-              entry.value.toDouble() / (1024 * 1024 * 1024), // Convert to GB
+              _analytics!.totalItems > 0 
+                  ? totalSizeGB * (entry.value.toDouble() / _analytics!.totalItems.toDouble()) // Proportional size
+                  : 0.0, // Avoid division by zero when no items
             ))
         .toList();
   }
@@ -154,13 +158,13 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
   Color _getMediaTypeColor(String mediaType) {
     switch (mediaType.toLowerCase()) {
       case 'image':
-        return AppColors.imageColor;
+        return AppColors.primary;
       case 'video':
-        return AppColors.videoColor;
+        return AppColors.secondary;
       case 'audio':
-        return AppColors.audioColor;
+        return AppColors.accent;
       case 'document':
-        return AppColors.documentColor;
+        return AppColors.success;
       default:
         return AppColors.gray500;
     }
@@ -235,7 +239,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
           tabs: const [
             Tab(text: 'Overview'),
             Tab(text: 'Media Types'),
-            Tab(text: 'Devices'),
+            Tab(text: 'Access Activity'),
             Tab(text: 'Storage'),
           ],
         ),
@@ -270,29 +274,29 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
             children: [
               _SummaryCard(
                 title: 'Total Files',
-                value: _analytics!.totalFiles.toString(),
+                value: _analytics!.totalItems.toString(),
                 icon: Icons.inventory,
                 color: AppColors.primary,
                 width: isWide ? (constraints.maxWidth - AppSpacing.md) / 2 : null,
               ),
               _SummaryCard(
                 title: 'Storage Used',
-                value: '${(_analytics!.totalStorageBytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB',
+                value: '${(_analytics!.totalSize / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB',
                 icon: Icons.storage,
                 color: AppColors.secondary,
                 width: isWide ? (constraints.maxWidth - AppSpacing.md) / 2 : null,
               ),
               _SummaryCard(
-                title: 'Uploads Today',
-                value: _analytics!.uploadsToday.toString(),
+                title: 'Avg File Size',
+                value: '${(_analytics!.averageFileSize / (1024 * 1024)).toStringAsFixed(1)} MB',
                 icon: Icons.upload,
                 color: AppColors.success,
                 width: isWide ? (constraints.maxWidth - AppSpacing.md) / 2 : null,
               ),
               _SummaryCard(
-                title: 'Active Devices',
-                value: _analytics!.deviceBreakdown.length.toString(),
-                icon: Icons.devices,
+                title: 'Popular Tags',
+                value: _analytics!.popularTags.length.toString(),
+                icon: Icons.tag,
                 color: AppColors.accent,
                 width: isWide ? (constraints.maxWidth - AppSpacing.md) / 2 : null,
               ),
@@ -431,7 +435,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: _analytics!.mediaTypeBreakdown.entries
+                        children: _analytics!.itemsByType.entries
                             .map((entry) => _LegendItem(
                                   color: _getMediaTypeColor(entry.key),
                                   label: entry.key.toUpperCase(),
@@ -461,7 +465,7 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Device Usage',
+                'Access Activity by Day',
                 style: AppTextStyles.h6,
               ),
               const SizedBox(height: AppSpacing.md),
@@ -469,9 +473,11 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
                 child: BarChart(
                   BarChartData(
                     alignment: BarChartAlignment.spaceAround,
-                    maxY: _analytics!.deviceBreakdown.values
-                        .map((e) => e.toDouble())
-                        .reduce((a, b) => a > b ? a : b) * 1.2,
+                    maxY: _analytics!.accessesByDay.values.isNotEmpty
+                        ? _analytics!.accessesByDay.values
+                            .map((e) => e.toDouble())
+                            .reduce((a, b) => a > b ? a : b) * 1.2
+                        : 10.0, // Default maxY when no data
                     barTouchData: BarTouchData(enabled: true),
                     titlesData: FlTitlesData(
                       leftTitles: AxisTitles(
@@ -491,12 +497,12 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
                           showTitles: true,
                           reservedSize: 40,
                           getTitlesWidget: (value, meta) {
-                            final devices = _analytics!.deviceBreakdown.keys.toList();
-                            if (value.toInt() < devices.length) {
+                            final accessDays = _analytics!.accessesByDay.keys.toList();
+                            if (value.toInt() < accessDays.length) {
                               return Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: Text(
-                                  devices[value.toInt()],
+                                  accessDays[value.toInt()].substring(5), // Show MM-DD format
                                   style: AppTextStyles.caption,
                                   maxLines: 2,
                                   textAlign: TextAlign.center,
@@ -745,6 +751,29 @@ class _SummaryCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Get color for media type based on string key
+  Color _getMediaTypeColor(String mediaType) {
+    switch (mediaType.toLowerCase()) {
+      case 'image':
+        return AppColors.primary;
+      case 'video':
+        return AppColors.secondary;
+      case 'audio':
+        return AppColors.accent;
+      case 'document':
+        return AppColors.success;
+      case 'pdf':
+        return AppColors.warning;
+      case 'text':
+        return AppColors.info;
+      case 'archive':
+        return AppColors.gray600;
+      case 'other':
+      default:
+        return AppColors.gray400;
+    }
   }
 }
 

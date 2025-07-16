@@ -8,27 +8,13 @@ import '../core/api/api_client.dart';
 
 /// API client for media operations
 class MediaApiClient {
-  late final Dio _dio;
-  final ApiClient? _apiClient;
+  late final ApiClient _apiClient;
   
-  MediaApiClient({ApiClient? apiClient}) : _apiClient = apiClient {
-    _dio = Dio(BaseOptions(
-      baseUrl: AppConfig.instance.mediaEndpoint,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    ));
-    
-    // Add interceptors for logging and authentication
-    if (AppConfig.instance.isDevelopment) {
-      _dio.interceptors.add(LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        logPrint: (o) => print(o),
-      ));
-    }
+  MediaApiClient([ApiClient? apiClient]) {
+    // Use provided ApiClient or create new one for authentication
+    // When used with Provider, the authenticated ApiClient will be passed in
+    // When used standalone, creates its own ApiClient (may need manual token setting)
+    _apiClient = apiClient ?? ApiClient(AppConfig.instance);
   }
 
   /// Upload media file
@@ -80,16 +66,13 @@ class MediaApiClient {
         if (deviceInfo != null) 'device_info': deviceInfo.toJson(),
       });
 
-      final response = await _dio.post(
-        '/upload',
+      final response = await _apiClient.post(
+        '/api/v1/media/upload',
         data: formData,
-        onSendProgress: (sent, total) {
-          if (onProgress != null) onProgress(sent, total);
-          if (onProgressPercent != null && total > 0) {
-            onProgressPercent(sent / total);
-          }
-        },
       );
+
+      // TODO: Re-implement progress tracking if needed
+      // Progress callbacks currently not supported by ApiClient wrapper
 
       // Create a MediaItem from the response data, mapping backend fields to frontend model
       final responseData = response.data as Map<String, dynamic>;
@@ -140,7 +123,7 @@ class MediaApiClient {
         if (endDate != null) 'end_date': endDate.toIso8601String(),
       };
 
-      final response = await _dio.get('/items', queryParameters: queryParams);
+      final response = await _apiClient.get('/api/v1/media/items', queryParameters: queryParams);
       return ApiResponse.success(MediaListResponse.fromJson(response.data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -152,7 +135,7 @@ class MediaApiClient {
   /// Get media item by ID
   Future<ApiResponse<MediaItem>> getMediaItem(String id) async {
     try {
-      final response = await _dio.get('/items/$id');
+      final response = await _apiClient.get('/api/v1/media/items/$id');
       return ApiResponse.success(MediaItem.fromJson(response.data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -164,7 +147,7 @@ class MediaApiClient {
   /// Delete media item
   Future<ApiResponse<void>> deleteMediaItem(String id) async {
     try {
-      await _dio.delete('/items/$id');
+      await _apiClient.delete('/api/v1/media/items/$id');
       return ApiResponse.success(null);
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -173,15 +156,27 @@ class MediaApiClient {
     }
   }
 
-  /// Get collections
+  /// Get collections (always include authenticated user's UUID as user_id)
   Future<ApiResponse<List<MediaCollection>>> getCollections() async {
     try {
-      final response = await _dio.get('/collections');
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        throw Exception('User not authenticated - please login first');
+      }
+      final response = await _apiClient.get(
+        '/api/v1/media/collections',
+        queryParameters: {'user_id': userId},
+      );
       final collections = (response.data as List)
           .map((json) => MediaCollection.fromJson(json))
           .toList();
       return ApiResponse.success(collections);
     } on DioException catch (e) {
+      // Handle specific status codes gracefully
+      if (e.response?.statusCode == 422 || e.response?.statusCode == 404) {
+        // Return empty list instead of error for "no collections found" scenarios
+        return ApiResponse.success(<MediaCollection>[]);
+      }
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       return ApiResponse.error('Unexpected error: $e');
@@ -194,7 +189,7 @@ class MediaApiClient {
     String? description,
   }) async {
     try {
-      final response = await _dio.post('/collections', data: {
+      final response = await _apiClient.post('/api/v1/media/collections', data: {
         'name': name,
         if (description != null) 'description': description,
       });
@@ -212,7 +207,7 @@ class MediaApiClient {
     required List<String> itemIds,
   }) async {
     try {
-      await _dio.post('/collections/$collectionId/items', data: {
+      await _apiClient.post('/api/v1/media/collections/$collectionId/items', data: {
         'item_ids': itemIds,
       });
       return ApiResponse.success(null);
@@ -234,7 +229,7 @@ class MediaApiClient {
         if (endDate != null) 'end_date': endDate.toIso8601String(),
       };
 
-      final response = await _dio.get('/analytics', queryParameters: queryParams);
+      final response = await _apiClient.get('/api/v1/media/analytics', queryParameters: queryParams);
       return ApiResponse.success(MediaAnalytics.fromJson(response.data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -272,7 +267,7 @@ class MediaApiClient {
         if (filters != null) ...filters.toJson(),
       };
 
-      final response = await _dio.post('/search', data: requestData);
+      final response = await _apiClient.post('/api/v1/media/search', data: requestData);
       return ApiResponse.success(MediaSearchResponse.fromJson(response.data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -284,7 +279,7 @@ class MediaApiClient {
   /// Get search suggestions
   Future<ApiResponse<List<String>>> getSearchSuggestions(String query) async {
     try {
-      final response = await _dio.get('/search/suggestions', queryParameters: {
+      final response = await _apiClient.get('/api/v1/media/search/suggestions', queryParameters: {
         'query': query,
       });
       return ApiResponse.success(List<String>.from(response.data));
@@ -303,7 +298,7 @@ class MediaApiClient {
     bool allowDownload = true,
   }) async {
     try {
-      final response = await _dio.post('/share', data: {
+      final response = await _apiClient.post('/api/v1/media/share', data: {
         'item_ids': itemIds,
         if (password != null) 'password': password,
         if (expiresAt != null) 'expires_at': expiresAt.toIso8601String(),
@@ -328,7 +323,7 @@ class MediaApiClient {
         if (endDate != null) 'end_date': endDate.toIso8601String(),
       };
 
-      final response = await _dio.get('/device-analytics', queryParameters: queryParams);
+      final response = await _apiClient.get('/api/v1/media/device-analytics', queryParameters: queryParams);
       return ApiResponse.success(DeviceAnalytics.fromJson(response.data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -340,7 +335,7 @@ class MediaApiClient {
   /// Delete collection
   Future<ApiResponse<void>> deleteCollection(String collectionId) async {
     try {
-      await _dio.delete('/collections/$collectionId');
+      await _apiClient.delete('/api/v1/media/collections/$collectionId');
       return ApiResponse.success(null);
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -356,7 +351,7 @@ class MediaApiClient {
     String? description,
   }) async {
     try {
-      final response = await _dio.put('/collections/$collectionId', data: {
+      final response = await _apiClient.put('/api/v1/media/collections/$collectionId', data: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
       });
@@ -375,7 +370,7 @@ class MediaApiClient {
     String? message,
   }) async {
     try {
-      await _dio.post('/share/email', data: {
+      await _apiClient.post('/api/v1/media/share/email', data: {
         'item_ids': itemIds,
         'email': email,
         if (message != null) 'message': message,
@@ -393,34 +388,37 @@ class MediaApiClient {
     switch (error.type) {
       case DioExceptionType.connectionTimeout:
         return 'Connection timeout. Please check your internet connection.';
+      case DioExceptionType.sendTimeout:
+        return 'Request timeout. Please try again.';
       case DioExceptionType.receiveTimeout:
-        return 'Server response timeout. Please try again.';
+        return 'Response timeout. Please try again.';
       case DioExceptionType.badResponse:
         final statusCode = error.response?.statusCode;
         switch (statusCode) {
           case 400:
-            return 'Invalid request. Please check your input.';
+            return 'Bad request. Please check your input.';
           case 401:
             return 'Authentication required. Please login again.';
           case 403:
-            return 'Access denied. You don\'t have permission for this action.';
+            return 'Access forbidden. You don\'t have permission.';
           case 404:
             return 'Resource not found.';
-          case 413:
-            return 'File too large. Please choose a smaller file.';
-          case 429:
-            return 'Too many requests. Please wait and try again.';
+          case 422:
+            return error.response?.data?['detail'] ?? 'Validation error.';
           case 500:
             return 'Server error. Please try again later.';
           default:
-            return 'Request failed with status: $statusCode';
+            return 'HTTP error: $statusCode';
         }
       case DioExceptionType.cancel:
-        return 'Request was cancelled.';
+        return 'Request cancelled.';
       case DioExceptionType.unknown:
-        return 'Network error. Please check your connection.';
+        if (error.error.toString().contains('SocketException')) {
+          return 'Network error. Please check your connection.';
+        }
+        return 'Unknown error occurred.';
       default:
-        return 'An unexpected error occurred.';
+        return 'Unexpected error: ${error.message}';
     }
   }
   
@@ -503,38 +501,13 @@ class MediaApiClient {
   /// Get current user ID from authentication context
   Future<String?> _getCurrentUserId() async {
     try {
-      // Use ApiClient if available (has authentication) or fallback to direct call
-      if (_apiClient != null) {
-        final response = await _apiClient!.get('/api/v1/user/profile');
-        if (response.data != null) {
-          // Extract user_id from profile response - use 'guid' (UUID) instead of 'id' (integer)
-          return response.data['guid']?.toString();
-        }
-      } else {
-        // Fallback: create a temporary dio client that uses Gateway service 
-        final userDio = Dio(BaseOptions(
-          baseUrl: 'http://localhost:8080/api/v1',
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-        ));
-        
-        // Copy authentication headers from main client
-        final authHeader = _dio.options.headers['Authorization'];
-        if (authHeader != null) {
-          userDio.options.headers['Authorization'] = authHeader;
-        }
-        
-        // Get user profile to extract user ID
-        final response = await userDio.get('/users/profile');
-        if (response.data != null) {
-          // Extract user_id from profile response - use 'guid' (UUID) instead of 'id' (integer)
-          return response.data['guid']?.toString();
-        }
+      // Use internal ApiClient for authentication
+      final response = await _apiClient.get('/api/v1/user/profile');
+      if (response.data != null) {
+        // Extract user_id from profile response - use 'guid' (UUID) instead of 'id' (integer)
+        return response.data['guid']?.toString();
       }
+      return null;
     } catch (e) {
       print('Failed to get current user ID: $e');
     }

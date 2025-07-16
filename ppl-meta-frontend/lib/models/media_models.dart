@@ -599,7 +599,7 @@ class MediaListResponse {
 class MediaAnalytics {
   final int totalItems;
   final int totalSize;
-  final Map<MediaType, int> itemsByType;
+  final Map<String, int> itemsByType;  // Changed from Map<MediaType, int> to Map<String, int>
   final Map<String, int> uploadsByDay;
   final Map<String, int> accessesByDay;
   final double averageFileSize;
@@ -677,3 +677,5 @@ class ApiError implements Exception {
     return 'ApiError(code: $code, message: $message, statusCode: $statusCode)';
   }
 }
+
+

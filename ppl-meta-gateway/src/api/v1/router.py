@@ -301,6 +301,24 @@ async def search_media(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.get("/media/analytics")
+async def get_media_analytics(request: Request):
+    """Return basic analytics data for the frontend."""
+    # Return a mock response in the expected MediaAnalytics format
+    # Use correct data types to match Flutter MediaAnalytics model
+    mock_analytics = {
+        "totalItems": 0,
+        "totalSize": 0,
+        "averageFileSize": 0.0,
+        "itemsByType": {"image": 0, "video": 0, "audio": 0, "document": 0},
+        "uploadsByDay": {},  # Map<String, int> - required field
+        "accessesByDay": {},  # Map<String, int> - not List
+        "popularTags": [],
+        "mostAccessedItem": None,  # Optional MediaItem
+    }
+    return mock_analytics
+
+
 @api_router.get("/media/{media_id}")
 async def get_media(request: Request):
     """Proxy get media to Media service."""

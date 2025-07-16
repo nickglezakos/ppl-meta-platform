@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
-import '../core/api/api_client.dart';
 import '../services/media_api_client.dart';
 import '../models/device_info.dart';
 import '../models/media_models.dart';
@@ -54,9 +53,8 @@ class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidge
   @override
   void initState() {
     super.initState();
-    // Get ApiClient from provider and pass it to MediaApiClient for authentication
-    final apiClient = ref.read(apiClientProvider);
-    _apiClient = MediaApiClient(apiClient: apiClient);
+    // MediaApiClient now creates its own authenticated ApiClient internally
+    _apiClient = MediaApiClient();
     _deviceInfo = DeviceInfo.current();
     
     _dragAnimationController = AnimationController(

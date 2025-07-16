@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
 import '../models/media_models.dart';
@@ -24,7 +25,6 @@ class CollectionManagement extends StatefulWidget {
 
 class _CollectionManagementState extends State<CollectionManagement>
     with TickerProviderStateMixin {
-  final MediaApiClient _apiClient = MediaApiClient();
   final TextEditingController _createController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   
@@ -76,7 +76,9 @@ class _CollectionManagementState extends State<CollectionManagement>
     });
 
     try {
-      final response = await _apiClient.getCollections();
+      // Get MediaApiClient from Provider context
+      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
+      final response = await apiClient.getCollections();
       
       if (response.success) {
         setState(() {
@@ -115,7 +117,9 @@ class _CollectionManagementState extends State<CollectionManagement>
     });
 
     try {
-      final response = await _apiClient.createCollection(name: name);
+      // Get MediaApiClient from Provider context
+      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
+      final response = await apiClient.createCollection(name: name);
       
       if (response.success) {
         setState(() {
@@ -151,7 +155,9 @@ class _CollectionManagementState extends State<CollectionManagement>
     if (!confirmed) return;
 
     try {
-      await _apiClient.deleteCollection(collection.id);
+      // Get MediaApiClient from Provider context
+      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
+      await apiClient.deleteCollection(collection.id);
       
       setState(() {
         _collections.removeWhere((c) => c.id == collection.id);
@@ -172,7 +178,9 @@ class _CollectionManagementState extends State<CollectionManagement>
     if (newName == null || newName.trim().isEmpty) return;
 
     try {
-      final response = await _apiClient.updateCollection(
+      // Get MediaApiClient from Provider context
+      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
+      final response = await apiClient.updateCollection(
         collectionId: collection.id,
         name: newName.trim(),
       );
@@ -204,7 +212,9 @@ class _CollectionManagementState extends State<CollectionManagement>
     MediaCollection collection,
   ) async {
     try {
-      await _apiClient.addItemsToCollection(
+      // Get MediaApiClient from Provider context  
+      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
+      await apiClient.addItemsToCollection(
         collectionId: collection.id,
         itemIds: items.map((item) => item.id).toList(),
       );
@@ -663,7 +673,7 @@ class _CollectionListItem extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   'Created ${_formatDate(collection.createdAt)}',
-                  style: AppTextStyles.overline,
+                  style: AppTextStyles.caption,
                 ),
               ],
             ),
@@ -674,6 +684,8 @@ class _CollectionListItem extends StatelessWidget {
       },
     );
   }
+
+
 
   /// Build trailing actions menu
   Widget _buildTrailingActions() {
