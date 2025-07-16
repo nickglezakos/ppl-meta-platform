@@ -56,6 +56,9 @@ class ApiClient {
     _authToken = token;
   }
 
+  /// Get current authentication token
+  String? get authToken => _authToken;
+
   /// Clear authentication token
   void clearAuthToken() {
     _authToken = null;

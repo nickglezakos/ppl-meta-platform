@@ -9,6 +9,7 @@ import '../core/models/api_response.dart';
 import '../services/media_api_client.dart';
 import '../models/device_info.dart';
 import '../models/media_models.dart';
+import '../core/api/api_client.dart';
 
 /// Device-aware upload widget that adapts UI based on platform capabilities
 class DeviceAwareUploadWidget extends ConsumerStatefulWidget {
@@ -53,8 +54,6 @@ class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidge
   @override
   void initState() {
     super.initState();
-    // MediaApiClient now creates its own authenticated ApiClient internally
-    _apiClient = MediaApiClient();
     _deviceInfo = DeviceInfo.current();
     
     _dragAnimationController = AnimationController(
@@ -358,6 +357,10 @@ class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidge
 
   @override
   Widget build(BuildContext context) {
+    // Initialize MediaApiClient with authenticated ApiClient from Riverpod
+    final apiClient = ref.watch(apiClientProvider);
+    _apiClient = MediaApiClient(apiClient);
+    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),

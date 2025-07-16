@@ -1,26 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
+import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../widgets/responsive_media_gallery.dart';
 import '../widgets/advanced_search_interface.dart';
 import '../widgets/share_dialog.dart';
 
 /// Gallery screen with search and responsive media display
-class GalleryScreen extends StatefulWidget {
+class GalleryScreen extends ConsumerStatefulWidget {
   const GalleryScreen({super.key});
 
   @override
-  State<GalleryScreen> createState() => _GalleryScreenState();
+  ConsumerState<GalleryScreen> createState() => _GalleryScreenState();
 }
 
-class _GalleryScreenState extends State<GalleryScreen> {
+class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   MediaSearchFilters _currentFilters = MediaSearchFilters();
   List<MediaItem> _selectedItems = [];
   bool _isSelectionMode = false;
   bool _showSearch = false;
 
   @override
+  void initState() {
+    super.initState();
+    print('DEBUG: GalleryScreen initState called');
+  }
+
+  @override
   Widget build(BuildContext context) {
+    print('DEBUG: GalleryScreen build called');
+    final apiClient = ref.watch(apiClientProvider);
+    print('DEBUG: ApiClient from provider: $apiClient, token: ${apiClient.authToken}');
     return Scaffold(
       appBar: AppBar(
         title: _isSelectionMode
@@ -92,6 +103,7 @@ class _GalleryScreenState extends State<GalleryScreen> {
               filters: _currentFilters,
               enableSelection: _isSelectionMode,
               enableInfiniteScroll: true,
+              apiClient: apiClient,
               onItemTap: _handleItemTap,
               onItemLongPress: _handleItemLongPress,
               onSelectionChanged: _handleSelectionChanged,

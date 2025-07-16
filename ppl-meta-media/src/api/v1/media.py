@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 # Add shared modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
+from src.auth import AuthUser, get_current_user
 from src.database import get_db
 from src.models.media import Media
 from src.schemas.media import (  # Variant schemas; Issue #016 - Advanced Metadata Management
@@ -139,7 +140,14 @@ async def upload_media(
         )
 
         media = await media_service.upload_media(file, upload_request)
-        return MediaResponse.model_validate(media)
+
+        # Generate URLs for the uploaded media
+        media_response = MediaResponse.model_validate(media)
+        urls = media_service.generate_media_urls(media)
+        media_response.thumbnail_url = urls["thumbnail_url"]
+        media_response.url = urls["url"]
+
+        return media_response
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -185,7 +193,17 @@ async def search_media(
         )
 
         media_list = await media_service.search_media(search_request)
-        return [MediaResponse.model_validate(media) for media in media_list]
+
+        # Generate URLs for each media item
+        result = []
+        for media in media_list:
+            media_response = MediaResponse.model_validate(media)
+            urls = media_service.generate_media_urls(media)
+            media_response.thumbnail_url = urls["thumbnail_url"]
+            media_response.url = urls["url"]
+            result.append(media_response)
+
+        return result
 
     except HTTPException:
         raise
@@ -277,7 +295,16 @@ async def get_collection_items(
             collection_id, UUID(user_id), skip, limit
         )
 
-        return [MediaResponse.model_validate(item) for item in items]
+        # Generate URLs for each media item
+        result = []
+        for item in items:
+            media_response = MediaResponse.model_validate(item)
+            urls = media_service.generate_media_urls(item)
+            media_response.thumbnail_url = urls["thumbnail_url"]
+            media_response.url = urls["url"]
+            result.append(media_response)
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -489,7 +516,13 @@ async def get_media(
         if not media:
             raise HTTPException(status_code=404, detail="Media not found")
 
-        return MediaResponse.model_validate(media)
+        # Generate URLs for the media item
+        media_response = MediaResponse.model_validate(media)
+        urls = media_service.generate_media_urls(media)
+        media_response.thumbnail_url = urls["thumbnail_url"]
+        media_response.url = urls["url"]
+
+        return media_response
 
     except HTTPException:
         raise
@@ -535,7 +568,13 @@ async def update_media(
         if not media:
             raise HTTPException(status_code=404, detail="Media not found")
 
-        return MediaResponse.model_validate(media)
+        # Generate URLs for the updated media item
+        media_response = MediaResponse.model_validate(media)
+        urls = media_service.generate_media_urls(media)
+        media_response.thumbnail_url = urls["thumbnail_url"]
+        media_response.url = urls["url"]
+
+        return media_response
 
     except HTTPException:
         raise
@@ -562,7 +601,13 @@ async def partial_update_media(
         if not media:
             raise HTTPException(status_code=404, detail="Media not found")
 
-        return MediaResponse.model_validate(media)
+        # Generate URLs for the updated media item
+        media_response = MediaResponse.model_validate(media)
+        urls = media_service.generate_media_urls(media)
+        media_response.thumbnail_url = urls["thumbnail_url"]
+        media_response.url = urls["url"]
+
+        return media_response
 
     except HTTPException:
         raise
@@ -586,7 +631,13 @@ async def update_media_metadata(
         if not media:
             raise HTTPException(status_code=404, detail="Media not found")
 
-        return MediaResponse.model_validate(media)
+        # Generate URLs for the updated media item
+        media_response = MediaResponse.model_validate(media)
+        urls = media_service.generate_media_urls(media)
+        media_response.thumbnail_url = urls["thumbnail_url"]
+        media_response.url = urls["url"]
+
+        return media_response
 
     except HTTPException:
         raise
@@ -913,8 +964,8 @@ async def get_thumbnail(
     size: str = "medium",
     video_position: str = "start",
     video_timestamp: Optional[str] = None,
-    user_id: Optional[str] = None,
     share_token: Optional[str] = None,
+    user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
     thumbnail_service: ThumbnailService = Depends(get_thumbnail_service),
 ):
@@ -927,14 +978,13 @@ async def get_thumbnail(
         video_position: Video position for thumbnail ("start", "middle", "end")
         video_timestamp: Custom timestamp for video thumbnails (e.g.,
                         "00:02:30")
-        user_id: Optional user ID for access control
         share_token: Optional share token for public access
 
     Returns:
         Response with thumbnail image bytes
     """
-    # Check access permissions
-    access_info = get_media_access_check(media_id, user_id, share_token, db)
+    # Check access permissions using authenticated user
+    access_info = get_media_access_check(media_id, user.user_id, share_token, db)
 
     file_path = Path(access_info["file_path"])
 

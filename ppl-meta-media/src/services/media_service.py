@@ -1902,3 +1902,21 @@ class MediaService:
             return None
 
         return media
+
+    def generate_media_urls(
+        self, media: Media, base_url: str = "/api/v1/media"
+    ) -> Dict[str, Optional[str]]:
+        """Generate thumbnail and media URLs for a media item."""
+        try:
+            # Generate thumbnail URL for images and videos
+            thumbnail_url = None
+            if media.media_type in [MediaType.PICTURE, MediaType.VIDEO]:
+                thumbnail_url = f"{base_url}/thumbnail/{media.uuid}?size=medium"
+
+            # Generate media access URL
+            media_url = f"{base_url}/stream/{media.uuid}"
+
+            return {"thumbnail_url": thumbnail_url, "url": media_url}
+        except Exception:
+            # Return None URLs if generation fails
+            return {"thumbnail_url": None, "url": None}

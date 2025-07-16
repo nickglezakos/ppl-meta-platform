@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     response_transformation_enabled: bool = True
 
     # OpenTelemetry Distributed Tracing Configuration
-    tracing_enabled: bool = True
+    tracing_enabled: bool = False  # Disabled - Jaeger not running
     jaeger_endpoint: str = "http://localhost:14268/api/traces"
     jaeger_agent_host: str = "localhost"
     jaeger_agent_port: int = 6831

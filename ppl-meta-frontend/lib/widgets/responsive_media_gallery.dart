@@ -5,6 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
+import '../core/api/api_client.dart';
 
 /// Responsive media gallery with thumbnail views and infinite scroll
 class ResponsiveMediaGallery extends StatefulWidget {
@@ -16,8 +17,9 @@ class ResponsiveMediaGallery extends StatefulWidget {
   final bool enableSelection;
   final bool enableInfiniteScroll;
   final int itemsPerPage;
+  final ApiClient? apiClient;
 
-  const ResponsiveMediaGallery({
+  ResponsiveMediaGallery({
     super.key,
     this.collectionId,
     this.filters,
@@ -27,7 +29,10 @@ class ResponsiveMediaGallery extends StatefulWidget {
     this.enableSelection = false,
     this.enableInfiniteScroll = true,
     this.itemsPerPage = 20,
-  });
+    this.apiClient,
+  }) {
+    print('🔥 GALLERY WIDGET CREATED 🔥');
+  }
 
   @override
   State<ResponsiveMediaGallery> createState() => _ResponsiveMediaGalleryState();
@@ -35,7 +40,7 @@ class ResponsiveMediaGallery extends StatefulWidget {
 
 class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
   final ScrollController _scrollController = ScrollController();
-  final MediaApiClient _apiClient = MediaApiClient();
+  late final MediaApiClient _apiClient;
   
   List<MediaItem> _items = [];
   Set<String> _selectedItems = {};
@@ -52,7 +57,10 @@ class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
   @override
   void initState() {
     super.initState();
+    print('DEBUG: ResponsiveMediaGallery initState called');
+    _apiClient = MediaApiClient(widget.apiClient);
     _scrollController.addListener(_onScroll);
+    print('DEBUG: About to call _loadInitialItems');
     _loadInitialItems();
   }
 
@@ -76,12 +84,12 @@ class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
   /// Load initial items
   Future<void> _loadInitialItems() async {
     setState(() {
-      _isLoading = true;
       _error = null;
       _items.clear();
       _selectedItems.clear();
       _currentPage = 1;
       _hasMoreItems = true;
+      // Don't set _isLoading = true here, let _loadMoreItems handle it
     });
 
     await _loadMoreItems();
@@ -89,7 +97,9 @@ class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
 
   /// Load more items for pagination
   Future<void> _loadMoreItems() async {
-    if (_isLoading || !_hasMoreItems) return;
+    if (_isLoading || !_hasMoreItems) {
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -308,6 +318,7 @@ class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
                 item: item,
                 isSelected: _selectedItems.contains(item.id),
                 enableSelection: widget.enableSelection,
+                apiClient: widget.apiClient,
                 onTap: () => widget.onItemTap?.call(item),
                 onLongPress: () {
                   if (widget.enableSelection) {
@@ -437,6 +448,7 @@ class _MediaGridItem extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onSelectionToggle;
+  final ApiClient? apiClient;
 
   const _MediaGridItem({
     required this.item,
@@ -445,6 +457,7 @@ class _MediaGridItem extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onSelectionToggle,
+    this.apiClient,
   });
 
   @override
@@ -489,40 +502,76 @@ class _MediaGridItem extends StatelessWidget {
 
   /// Build media content (thumbnail/preview)
   Widget _buildMediaContent() {
+    // Get authentication headers from ApiClient if available
+    Map<String, String> headers = {};
+    if (apiClient != null && apiClient!.authToken != null) {
+      headers['Authorization'] = 'Bearer ${apiClient!.authToken}';
+    }
+
+    // Convert relative URLs to absolute URLs
+    String? imageUrl = item.thumbnailUrl ?? item.url;
+    if (imageUrl != null && imageUrl.startsWith('/')) {
+      // Convert relative URL to absolute URL using the backend base URL
+      imageUrl = 'http://localhost:8080$imageUrl';
+    }
+
+    // Debug logging (can be removed in production)
+    // print('DEBUG: MediaItem ${item.id} - thumbnailUrl: ${item.thumbnailUrl}, url: ${item.url}');
+    // print('DEBUG: Final imageUrl: $imageUrl');
+    // print('DEBUG: Headers: $headers');
+
     return AspectRatio(
       aspectRatio: 1.0,
-      child: CachedNetworkImage(
-        imageUrl: item.thumbnailUrl ?? item.url ?? '',
+      child: Image.network(
+        imageUrl ?? '',
+        headers: headers,
         fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: AppColors.gray200,
-          child: const Center(
-            child: CircularProgressIndicator(),
-          ),
-        ),
-        errorWidget: (context, url, error) => Container(
-          color: AppColors.gray200,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                _getMediaTypeIcon(),
-                size: 32,
-                color: AppColors.textTertiary,
-              ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                item.filename,
-                style: AppTextStyles.caption.copyWith(
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) {
+            return child;
+          }
+          return Container(
+            color: AppColors.gray200,
+            child: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          // Show appropriate error handling for non-image files or access denied
+          return Container(
+            color: AppColors.gray200,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  _getMediaTypeIcon(),
+                  size: 32,
                   color: AppColors.textTertiary,
                 ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  item.originalFilename,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textTertiary,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (item.mediaType != MediaType.picture)
+                  Text(
+                    '${item.mediaType.name.toUpperCase()} FILE',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 10,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

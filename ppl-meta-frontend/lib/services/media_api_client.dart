@@ -239,7 +239,7 @@ class MediaApiClient {
   }
 
   /// Search media with suggestions
-  Future<ApiResponse<MediaSearchResponse>> searchMedia({
+  Future<ApiResponse<MediaListResponse>> searchMedia({
     String? query,
     MediaType? mediaType,
     DateTime? startDate,
@@ -253,25 +253,44 @@ class MediaApiClient {
     int limit = 20,
   }) async {
     try {
-      final requestData = <String, dynamic>{
+      final queryParams = <String, dynamic>{
         'page': page,
         'limit': limit,
         if (query != null && query.isNotEmpty) 'query': query,
         if (mediaType != null) 'media_type': mediaType.name,
         if (startDate != null) 'start_date': startDate.toIso8601String(),
         if (endDate != null) 'end_date': endDate.toIso8601String(),
-        if (tags != null && tags.isNotEmpty) 'tags': tags,
+        if (tags != null && tags.isNotEmpty) 'tags': tags.join(','),
         if (collectionId != null) 'collection_id': collectionId,
         if (sortBy != null) 'sort_by': sortBy,
         if (sortOrder != null) 'sort_order': sortOrder,
-        if (filters != null) ...filters.toJson(),
+        // Note: filters parameter not used for now, using individual parameters
       };
 
-      final response = await _apiClient.post('/api/v1/media/search', data: requestData);
-      return ApiResponse.success(MediaSearchResponse.fromJson(response.data));
+      print('DEBUG: MediaApiClient searchMedia - queryParams: $queryParams');
+      final response = await _apiClient.get('/api/v1/media/search', queryParameters: queryParams);
+      print('DEBUG: MediaApiClient searchMedia - response received, status: ${response.statusCode}');
+      
+      // The backend returns a list directly, not wrapped in a response object
+      final items = (response.data as List)
+          .map((json) => MediaItem.fromJson(json))
+          .toList();
+      
+      // Create MediaListResponse with the items
+      final searchResponse = MediaListResponse(
+        items: items,
+        totalCount: items.length,
+        page: page,
+        limit: limit,
+        hasMore: items.length == limit,
+      );
+      
+      return ApiResponse.success(searchResponse);
     } on DioException catch (e) {
+      print('DEBUG: MediaApiClient searchMedia - DioException: $e');
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
+      print('DEBUG: MediaApiClient searchMedia - Exception: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }

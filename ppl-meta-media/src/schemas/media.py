@@ -207,6 +207,8 @@ class MediaResponse(MediaBase):
     is_archived: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
+    thumbnail_url: Optional[str] = None
+    url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

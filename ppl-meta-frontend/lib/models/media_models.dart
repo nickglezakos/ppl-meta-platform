@@ -2,9 +2,16 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'media_models.g.dart';
 
+// Helper function to convert int to String for JSON deserialization
+String _intToString(dynamic value) {
+  if (value is int) return value.toString();
+  if (value is String) return value;
+  return value?.toString() ?? '';
+}
+
 /// Media type enumeration
 enum MediaType {
-  @JsonValue('image')
+  @JsonValue('picture')  // Backend uses 'picture' instead of 'image'
   image,
   @JsonValue('video')
   video,
@@ -87,7 +94,7 @@ enum SharePermission {
 /// Media item model
 @JsonSerializable()
 class MediaItem {
-  @JsonKey(name: 'media_id')
+  @JsonKey(name: 'id', fromJson: _intToString)  // Backend sends integer, convert to string
   final String mediaId;
   
   @JsonKey(name: 'original_filename')
@@ -102,7 +109,7 @@ class MediaItem {
   @JsonKey(name: 'file_path')
   final String filePath;
   
-  @JsonKey(name: 'uploaded_at')
+  @JsonKey(name: 'created_at')  // Backend sends 'created_at' not 'uploaded_at'
   final DateTime uploadedAt;
   
   @JsonKey(name: 'uploaded_by')
