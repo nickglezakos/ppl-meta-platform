@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
+import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
 
 /// Analytics dashboard showing usage metrics and insights
-class AnalyticsDashboard extends StatefulWidget {
+class AnalyticsDashboard extends ConsumerStatefulWidget {
   final String? userId;
   final String? collectionId;
   final DateTime? startDate;
@@ -21,12 +23,11 @@ class AnalyticsDashboard extends StatefulWidget {
   });
 
   @override
-  State<AnalyticsDashboard> createState() => _AnalyticsDashboardState();
+  ConsumerState<AnalyticsDashboard> createState() => _AnalyticsDashboardState();
 }
 
-class _AnalyticsDashboardState extends State<AnalyticsDashboard>
+class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
     with TickerProviderStateMixin {
-  final MediaApiClient _apiClient = MediaApiClient();
   
   late TabController _tabController;
   MediaAnalytics? _analytics;
@@ -72,7 +73,11 @@ class _AnalyticsDashboardState extends State<AnalyticsDashboard>
     });
 
     try {
-      final response = await _apiClient.getAnalytics(
+      // Get authenticated ApiClient from Riverpod
+      final apiClient = ref.read(apiClientProvider);
+      final mediaApiClient = MediaApiClient(apiClient);
+      
+      final response = await mediaApiClient.getAnalytics(
         startDate: widget.startDate,
         endDate: widget.endDate,
       );

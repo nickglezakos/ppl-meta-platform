@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../core/theme/app_theme.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
@@ -72,7 +73,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
             ],
           ],
           IconButton(
-            onPressed: () => Navigator.pushNamed(context, '/upload'),
+            onPressed: () => context.push('/upload'),
             icon: const Icon(Icons.add_photo_alternate),
             tooltip: 'Upload',
           ),
@@ -113,7 +114,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
       ),
       floatingActionButton: !_isSelectionMode
           ? FloatingActionButton(
-              onPressed: () => Navigator.pushNamed(context, '/upload'),
+              onPressed: () => context.push('/upload'),
               child: const Icon(Icons.add),
               tooltip: 'Upload media',
             )
@@ -521,9 +522,7 @@ class _MediaDetailsDialog extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Implement download
-                      },
+                      onPressed: () => _downloadMedia(context, ref, item),
                       icon: const Icon(Icons.download),
                       label: const Text('Download'),
                     ),
@@ -549,6 +548,70 @@ class _MediaDetailsDialog extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Download media file
+  static Future<void> _downloadMedia(BuildContext context, WidgetRef ref, MediaItem item) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Downloading...'),
+            ],
+          ),
+        ),
+      );
+
+      // Get MediaApiClient and download the file
+      final apiClient = ref.read(apiClientProvider);
+      final mediaApiClient = MediaApiClient(apiClient);
+      
+      final result = await mediaApiClient.downloadMedia(
+        item.id, 
+        item.originalFilename,
+      );
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      if (result.success) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Downloaded: ${item.originalFilename}'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Download failed: ${result.error}'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      Navigator.of(context).pop();
+      
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Download failed: $e'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   /// Convert relative URL to absolute URL

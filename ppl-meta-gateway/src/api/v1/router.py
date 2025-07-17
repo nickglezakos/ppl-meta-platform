@@ -9,12 +9,45 @@ from typing import Any, Dict
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from jose import JWTError, jwt
 
 # Add shared modules to path
 parent_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 sys.path.append(parent_dir)
 
 api_router = APIRouter()
+
+# JWT Configuration (should match Node service config)
+JWT_SECRET_KEY = "default-secret-key-change-in-production"
+JWT_ALGORITHM = "HS256"
+
+
+def extract_user_from_token(request: Request) -> Dict[str, Any]:
+    """Extract user information from JWT token in Authorization header."""
+    try:
+        # Get Authorization header
+        auth_header = request.headers.get("authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401, detail="Missing or invalid authorization header"
+            )
+
+        # Extract token
+        token = auth_header.split(" ")[1]
+
+        # Decode JWT token
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+
+        return {
+            "user_id": payload.get("sub"),
+            "username": payload.get("username"),
+            "email": payload.get("email"),
+        }
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Token validation error: {str(e)}")
+
 
 # Service endpoints configuration
 SERVICES = {
@@ -303,20 +336,84 @@ async def search_media(request: Request):
 
 @api_router.get("/media/analytics")
 async def get_media_analytics(request: Request):
-    """Return basic analytics data for the frontend."""
-    # Return a mock response in the expected MediaAnalytics format
-    # Use correct data types to match Flutter MediaAnalytics model
-    mock_analytics = {
-        "totalItems": 0,
-        "totalSize": 0,
-        "averageFileSize": 0.0,
-        "itemsByType": {"image": 0, "video": 0, "audio": 0, "document": 0},
-        "uploadsByDay": {},  # Map<String, int> - required field
-        "accessesByDay": {},  # Map<String, int> - not List
-        "popularTags": [],
-        "mostAccessedItem": None,  # Optional MediaItem
-    }
-    return mock_analytics
+    """Return analytics data for the authenticated user."""
+    try:
+        # First, get user profile to get the UUID (this also validates the JWT)
+        profile_url = f"{SERVICES['node']}/api/v1/users/profile"
+        headers = dict(request.headers)
+        headers.pop("host", None)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            profile_response = await client.get(profile_url, headers=headers)
+
+            if profile_response.status_code != 200:
+                raise HTTPException(
+                    status_code=profile_response.status_code,
+                    detail="Authentication failed",
+                )
+
+            profile_data = profile_response.json()
+            user_guid = profile_data.get("guid")
+
+            if not user_guid:
+                raise HTTPException(status_code=400, detail="User GUID not found")
+
+            # Now get user media stats from media service
+            stats_url = f"{SERVICES['media']}/api/v1/media/user/{user_guid}/stats"
+
+            stats_response = await client.get(stats_url, headers=headers)
+
+            if stats_response.status_code == 200:
+                backend_stats = stats_response.json()
+
+                # Transform backend stats to match frontend MediaAnalytics format
+                analytics_data = {
+                    "totalItems": backend_stats.get("total_count", 0),
+                    "totalSize": backend_stats.get("total_size_bytes", 0),
+                    "averageFileSize": float(
+                        backend_stats.get("total_size_bytes", 0)
+                        / max(backend_stats.get("total_count", 1), 1)
+                    ),
+                    "itemsByType": {
+                        "image": backend_stats.get("by_type", {}).get("picture", 0),
+                        "video": backend_stats.get("by_type", {}).get("video", 0),
+                        "audio": backend_stats.get("by_type", {}).get("audio", 0),
+                        "document": backend_stats.get("by_type", {}).get("document", 0),
+                    },
+                    "uploadsByDay": {},  # TODO: Implement day-by-day uploads
+                    "accessesByDay": {},  # TODO: Implement day-by-day access tracking
+                    "popularTags": [],  # TODO: Implement tag analytics
+                    "mostAccessedItem": None,  # TODO: Implement access tracking
+                }
+
+                return analytics_data
+            else:
+                # Fallback to empty analytics if backend fails
+                return {
+                    "totalItems": 0,
+                    "totalSize": 0,
+                    "averageFileSize": 0.0,
+                    "itemsByType": {"image": 0, "video": 0, "audio": 0, "document": 0},
+                    "uploadsByDay": {},
+                    "accessesByDay": {},
+                    "popularTags": [],
+                    "mostAccessedItem": None,
+                }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Return empty analytics on any error to prevent frontend crashes
+        return {
+            "totalItems": 0,
+            "totalSize": 0,
+            "averageFileSize": 0.0,
+            "itemsByType": {"image": 0, "video": 0, "audio": 0, "document": 0},
+            "uploadsByDay": {},
+            "accessesByDay": {},
+            "popularTags": [],
+            "mostAccessedItem": None,
+        }
 
 
 @api_router.get("/media/{media_id}")

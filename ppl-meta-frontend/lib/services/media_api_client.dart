@@ -1,10 +1,15 @@
+import 'dart:io';
+import 'package:dio/dio.dart' as dio;
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http_parser/http_parser.dart' as http_parser;
+import 'package:path_provider/path_provider.dart';
 import '../models/api_response.dart';
 import '../models/media_models.dart';
 import '../models/device_info.dart';
 import '../core/config/app_config.dart';
 import '../core/api/api_client.dart';
+import '../utils/download_helper_web.dart' if (dart.library.io) '../utils/download_helper_stub.dart';
 
 /// API client for media operations
 class MediaApiClient {
@@ -159,6 +164,53 @@ class MediaApiClient {
       });
 
       return ApiResponse.success(null);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Download media file
+  Future<ApiResponse<void>> downloadMedia(String mediaId, String filename) async {
+    try {
+      // Get current user ID for authentication
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      // Download the file data using authenticated request
+      final response = await _apiClient.get('/api/v1/media/download/$mediaId', 
+        queryParameters: {
+          'user_id': userId,
+        },
+        options: dio.Options(
+          responseType: dio.ResponseType.bytes,
+        ),
+      );
+
+      if (kIsWeb) {
+        // For web: Use web download helper
+        final bytes = response.data as List<int>;
+        downloadFileWeb(bytes, filename);
+        return ApiResponse.success(null);
+      } else {
+        // For desktop/mobile, save to Downloads folder
+        if (!kIsWeb) {
+          final directory = await getDownloadsDirectory();
+          if (directory != null) {
+            final file = File('${directory.path}/$filename');
+            await file.writeAsBytes(response.data);
+          } else {
+            return ApiResponse.error('Could not access downloads directory');
+          }
+        } else {
+          return ApiResponse.error('Platform not supported for file downloads');
+        }
+        
+        return ApiResponse.success(null);
+      }
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {

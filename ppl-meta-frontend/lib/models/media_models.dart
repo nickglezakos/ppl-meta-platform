@@ -605,34 +605,7 @@ class MediaListResponse {
   Map<String, dynamic> toJson() => _$MediaListResponseToJson(this);
 }
 
-/// Media analytics data model
-@JsonSerializable()
-class MediaAnalytics {
-  final int totalItems;
-  final int totalSize;
-  final Map<String, int> itemsByType;  // Changed from Map<MediaType, int> to Map<String, int>
-  final Map<String, int> uploadsByDay;
-  final Map<String, int> accessesByDay;
-  final double averageFileSize;
-  final MediaItem? mostAccessedItem;
-  final List<String> popularTags;
-  
-  const MediaAnalytics({
-    required this.totalItems,
-    required this.totalSize,
-    required this.itemsByType,
-    required this.uploadsByDay,
-    required this.accessesByDay,
-    required this.averageFileSize,
-    this.mostAccessedItem,
-    required this.popularTags,
-  });
-  
-  factory MediaAnalytics.fromJson(Map<String, dynamic> json) =>
-      _$MediaAnalyticsFromJson(json);
-  
-  Map<String, dynamic> toJson() => _$MediaAnalyticsToJson(this);
-}
+
 
 /// Share link model for sharing media items
 @JsonSerializable()
@@ -686,6 +659,63 @@ class ApiError implements Exception {
   @override
   String toString() {
     return 'ApiError(code: $code, message: $message, statusCode: $statusCode)';
+  }
+}
+
+/// Analytics data for media usage statistics
+@JsonSerializable()
+class MediaAnalytics {
+  final int totalItems;
+  final int totalSize;
+  final double averageFileSize;
+  final Map<String, int> itemsByType;
+  final Map<String, int> uploadsByDay;
+  final Map<String, int> accessesByDay;
+  final List<String> popularTags;
+  final MediaItem? mostAccessedItem;
+
+  const MediaAnalytics({
+    required this.totalItems,
+    required this.totalSize,
+    required this.averageFileSize,
+    required this.itemsByType,
+    required this.uploadsByDay,
+    required this.accessesByDay,
+    required this.popularTags,
+    this.mostAccessedItem,
+  });
+
+  factory MediaAnalytics.fromJson(Map<String, dynamic> json) =>
+      _$MediaAnalyticsFromJson(json);
+
+  Map<String, dynamic> toJson() => _$MediaAnalyticsToJson(this);
+
+  /// Get total size in MB
+  double get totalSizeMB => totalSize / (1024 * 1024);
+
+  /// Get total size in GB
+  double get totalSizeGB => totalSize / (1024 * 1024 * 1024);
+
+  /// Get formatted file size
+  String get formattedTotalSize {
+    if (totalSizeGB >= 1) {
+      return '${totalSizeGB.toStringAsFixed(2)} GB';
+    } else if (totalSizeMB >= 1) {
+      return '${totalSizeMB.toStringAsFixed(2)} MB';
+    } else {
+      return '${(totalSize / 1024).toStringAsFixed(2)} KB';
+    }
+  }
+
+  /// Get formatted average file size
+  String get formattedAverageSize {
+    if (averageFileSize >= 1024 * 1024 * 1024) {
+      return '${(averageFileSize / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+    } else if (averageFileSize >= 1024 * 1024) {
+      return '${(averageFileSize / (1024 * 1024)).toStringAsFixed(2)} MB';
+    } else {
+      return '${(averageFileSize / 1024).toStringAsFixed(2)} KB';
+    }
   }
 }
 
