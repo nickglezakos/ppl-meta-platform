@@ -88,6 +88,10 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
           _isLoading = false;
           _prepareChartData();
         });
+        // Debug output to check the data
+        // print('✅ Analytics loaded successfully!');
+        // print('📊 Items by type: ${_analytics!.itemsByType}');
+        // print('🎯 Filtered entries: ${_analytics!.itemsByType.entries.where((entry) => entry.value > 0).map((e) => '${e.key}: ${e.value}').toList()}');
       } else {
         setState(() {
           _error = response.error ?? 'Failed to load analytics';
@@ -116,6 +120,7 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
 
     // Media type distribution - handle string keys from JSON
     _mediaTypeData = _analytics!.itemsByType.entries
+        .where((entry) => entry.value > 0) // Only include types with data
         .map((entry) => PieChartSectionData(
               color: _getMediaTypeColor(entry.key),
               value: entry.value.toDouble(),
@@ -147,16 +152,46 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
             ))
         .toList();
 
-    // Storage usage trend - use total size distributed over upload days as approximation
-    final totalSizeGB = _analytics!.totalSize.toDouble() / (1024 * 1024 * 1024);
-    _storageUsageData = _analytics!.uploadsByDay.entries
-        .map((entry) => FlSpot(
-              DateTime.parse(entry.key).millisecondsSinceEpoch.toDouble(),
-              _analytics!.totalItems > 0 
-                  ? totalSizeGB * (entry.value.toDouble() / _analytics!.totalItems.toDouble()) // Proportional size
-                  : 0.0, // Avoid division by zero when no items
-            ))
-        .toList();
+    // Storage usage trend - cumulative storage growth over time
+    _storageUsageData = [];
+    if (_analytics!.uploadsByDay.isNotEmpty) {
+      // Sort upload days chronologically
+      final sortedEntries = _analytics!.uploadsByDay.entries.toList()
+        ..sort((a, b) => DateTime.parse(a.key).compareTo(DateTime.parse(b.key)));
+      
+      // Calculate cumulative storage growth
+      double cumulativeStorageBytes = 0.0;
+      final avgFileSize = _analytics!.totalItems > 0 
+          ? _analytics!.totalSize.toDouble() / _analytics!.totalItems.toDouble()
+          : 0.0;
+      
+      for (final entry in sortedEntries) {
+        // Add storage for files uploaded on this day
+        final dailyStorageAdded = entry.value.toDouble() * avgFileSize;
+        cumulativeStorageBytes += dailyStorageAdded;
+        
+        // Convert to MB for better readability (most users have files in MB range)
+        final cumulativeStorageMB = cumulativeStorageBytes / (1024 * 1024);
+        
+        _storageUsageData.add(FlSpot(
+          DateTime.parse(entry.key).millisecondsSinceEpoch.toDouble(),
+          cumulativeStorageMB,
+        ));
+      }
+    }
+  }
+
+  /// Format file size in human readable format
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) {
+      return '$bytes B';
+    } else if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    } else if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    } else {
+      return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+    }
   }
 
   /// Get color for media type
@@ -170,8 +205,15 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
         return AppColors.accent;
       case 'document':
         return AppColors.success;
+      case 'pdf':
+        return AppColors.warning;
+      case 'text':
+        return AppColors.info;
+      case 'archive':
+        return AppColors.gray600;
+      case 'other':
       default:
-        return AppColors.gray500;
+        return AppColors.gray400;
     }
   }
 
@@ -286,14 +328,14 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
               ),
               _SummaryCard(
                 title: 'Storage Used',
-                value: '${(_analytics!.totalSize / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB',
+                value: _analytics!.formattedTotalSize,
                 icon: Icons.storage,
                 color: AppColors.secondary,
                 width: isWide ? (constraints.maxWidth - AppSpacing.md) / 2 : null,
               ),
               _SummaryCard(
                 title: 'Avg File Size',
-                value: '${(_analytics!.averageFileSize / (1024 * 1024)).toStringAsFixed(1)} MB',
+                value: _analytics!.formattedAverageSize,
                 icon: Icons.upload,
                 color: AppColors.success,
                 width: isWide ? (constraints.maxWidth - AppSpacing.md) / 2 : null,
@@ -332,22 +374,49 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
                     ),
                     const SizedBox(height: AppSpacing.md),
                     Expanded(
-                      child: LineChart(
-                        LineChartData(
-                          gridData: const FlGridData(show: true),
-                          titlesData: FlTitlesData(
-                            leftTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: true,
-                                reservedSize: 40,
-                                getTitlesWidget: (value, meta) {
-                                  return Text(
-                                    value.toInt().toString(),
-                                    style: AppTextStyles.caption,
-                                  );
-                                },
+                      child: _uploadTrendData.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.timeline,
+                                    size: 64,
+                                    color: AppColors.gray400,
+                                  ),
+                                  const SizedBox(height: AppSpacing.md),
+                                  Text(
+                                    'No upload trend data available',
+                                    style: AppTextStyles.bodyMedium.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AppSpacing.sm),
+                                  Text(
+                                    'Upload more files to see trends over time',
+                                    style: AppTextStyles.caption.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                            )
+                          : LineChart(
+                              LineChartData(
+                                gridData: const FlGridData(show: true),
+                                titlesData: FlTitlesData(
+                                  leftTitles: AxisTitles(
+                                    sideTitles: SideTitles(
+                                      showTitles: true,
+                                      reservedSize: 40,
+                                      getTitlesWidget: (value, meta) {
+                                        return Text(
+                                          value.toInt().toString(),
+                                          style: AppTextStyles.caption,
+                                        );
+                                      },
+                                    ),
+                                  ),
                             bottomTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
@@ -437,16 +506,42 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
                     
                     // Legend
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: _analytics!.itemsByType.entries
-                            .map((entry) => _LegendItem(
-                                  color: _getMediaTypeColor(entry.key),
-                                  label: entry.key.toUpperCase(),
-                                  count: entry.value,
-                                ))
-                            .toList(),
+                      child: Container(
+                        padding: const EdgeInsets.all(AppSpacing.sm),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: AppColors.border),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Legend',
+                              style: AppTextStyles.labelMedium.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            ...() {
+                              final legendItems = _analytics!.itemsByType.entries
+                                  .where((entry) => entry.value > 0) // Only show types with data
+                                  .map((entry) {
+                                    // print('🏷️ Creating legend item: ${entry.key.toUpperCase()} = ${entry.value}');
+                                    return _LegendItem(
+                                      color: _getMediaTypeColor(entry.key),
+                                      label: entry.key.toUpperCase(),
+                                      count: entry.value,
+                                    );
+                                  })
+                                  .toList();
+                              // print('📝 Total legend items created: ${legendItems.length}');
+                              return legendItems;
+                            }(),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -475,28 +570,55 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
               ),
               const SizedBox(height: AppSpacing.md),
               Expanded(
-                child: BarChart(
-                  BarChartData(
-                    alignment: BarChartAlignment.spaceAround,
-                    maxY: _analytics!.accessesByDay.values.isNotEmpty
-                        ? _analytics!.accessesByDay.values
-                            .map((e) => e.toDouble())
-                            .reduce((a, b) => a > b ? a : b) * 1.2
-                        : 10.0, // Default maxY when no data
-                    barTouchData: BarTouchData(enabled: true),
-                    titlesData: FlTitlesData(
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 40,
-                          getTitlesWidget: (value, meta) {
-                            return Text(
-                              value.toInt().toString(),
-                              style: AppTextStyles.caption,
-                            );
-                          },
+                child: _analytics!.accessesByDay.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.bar_chart,
+                              size: 64,
+                              color: AppColors.gray400,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              'No access activity data available',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              'Activity tracking will show here as you use the platform',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
+                      )
+                    : BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: _analytics!.accessesByDay.values.isNotEmpty
+                              ? _analytics!.accessesByDay.values
+                                  .map((e) => e.toDouble())
+                                  .reduce((a, b) => a > b ? a : b) * 1.2
+                              : 10.0, // Default maxY when no data
+                          barTouchData: BarTouchData(enabled: true),
+                          titlesData: FlTitlesData(
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 40,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    value.toInt().toString(),
+                                    style: AppTextStyles.caption,
+                                  );
+                                },
+                              ),
+                            ),
                       bottomTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
@@ -554,27 +676,69 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Storage Usage (GB)',
+                'Cumulative Storage Growth',
                 style: AppTextStyles.h6,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Shows how your storage usage has grown over time',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: AppSpacing.md),
               Expanded(
-                child: LineChart(
-                  LineChartData(
-                    gridData: const FlGridData(show: true),
-                    titlesData: FlTitlesData(
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 50,
-                          getTitlesWidget: (value, meta) {
-                            return Text(
-                              '${value.toStringAsFixed(1)} GB',
-                              style: AppTextStyles.caption,
-                            );
-                          },
+                child: _storageUsageData.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.storage,
+                              size: 64,
+                              color: AppColors.gray400,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            Text(
+                              'No storage growth data available',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              'Upload some files to see your storage growth over time',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: AppSpacing.sm),
+                            Text(
+                              'Total storage used: ${_analytics!.formattedTotalSize}',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
+                      )
+                    : LineChart(
+                        LineChartData(
+                          gridData: const FlGridData(show: true),
+                          titlesData: FlTitlesData(
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 50,
+                                getTitlesWidget: (value, meta) {
+                                  return Text(
+                                    '${value.toStringAsFixed(1)} GB',
+                                    style: AppTextStyles.caption,
+                                  );
+                                },
+                              ),
+                            ),
                       bottomTitles: AxisTitles(
                         sideTitles: SideTitles(
                           showTitles: true,
@@ -757,29 +921,6 @@ class _SummaryCard extends StatelessWidget {
       ),
     );
   }
-
-  /// Get color for media type based on string key
-  Color _getMediaTypeColor(String mediaType) {
-    switch (mediaType.toLowerCase()) {
-      case 'image':
-        return AppColors.primary;
-      case 'video':
-        return AppColors.secondary;
-      case 'audio':
-        return AppColors.accent;
-      case 'document':
-        return AppColors.success;
-      case 'pdf':
-        return AppColors.warning;
-      case 'text':
-        return AppColors.info;
-      case 'archive':
-        return AppColors.gray600;
-      case 'other':
-      default:
-        return AppColors.gray400;
-    }
-  }
 }
 
 /// Legend item for pie chart
@@ -796,29 +937,50 @@ class _LegendItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.xs),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.border.withOpacity(0.5)),
+      ),
       child: Row(
+        mainAxisSize: MainAxisSize.max,
         children: [
           Container(
-            width: 16,
-            height: 16,
+            width: 20,
+            height: 20,
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(AppRadius.xs),
+              border: Border.all(color: AppColors.border),
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               label,
-              style: AppTextStyles.bodyMedium,
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w500,
+                color: AppColors.textPrimary,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          Text(
-            count.toString(),
-            style: AppTextStyles.labelMedium.copyWith(
-              fontWeight: FontWeight.bold,
+          const SizedBox(width: AppSpacing.xs),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+            ),
+            child: Text(
+              count.toString(),
+              style: AppTextStyles.labelMedium.copyWith(
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
             ),
           ),
         ],

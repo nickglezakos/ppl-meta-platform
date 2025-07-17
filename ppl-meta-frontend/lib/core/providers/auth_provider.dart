@@ -157,6 +157,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(error: null);
   }
 
+  /// Change user password
+  Future<bool> changePassword(String currentPassword, String newPassword) async {
+    try {
+      await _authService.changePassword(currentPassword, newPassword);
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+      return false;
+    }
+  }
+
   /// Refresh user data
   Future<void> refreshUser() async {
     if (!state.isAuthenticated) return;

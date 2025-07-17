@@ -20,10 +20,7 @@ class HomeScreen extends ConsumerWidget {
             onSelected: (value) async {
               switch (value) {
                 case 'profile':
-                  // TODO: Navigate to profile screen
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Profile feature coming soon')),
-                  );
+                  context.go('/profile');
                   break;
                 case 'logout':
                   await authNotifier.logout();

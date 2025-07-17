@@ -10,6 +10,7 @@ import '../../screens/upload_screen.dart';
 import '../../screens/gallery_screen.dart';
 import '../../screens/analytics_screen.dart';
 import '../../screens/collections_screen.dart';
+import '../../screens/profile_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authNotifierProvider);
@@ -76,6 +77,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProviderScreenWrapper(
           child: CollectionsScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/profile',
+        name: 'profile',
+        builder: (context, state) => const ProfileScreen(),
       ),
       // Root route redirects based on auth status
       GoRoute(

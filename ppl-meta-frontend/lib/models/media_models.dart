@@ -662,6 +662,46 @@ class ApiError implements Exception {
   }
 }
 
+/// Most accessed item simplified model for analytics
+@JsonSerializable()
+class MostAccessedItem {
+  @JsonKey(name: 'id')
+  final int id;
+  
+  @JsonKey(name: 'uuid')
+  final String uuid;
+  
+  @JsonKey(name: 'original_filename')
+  final String originalFilename;
+  
+  @JsonKey(name: 'media_type')
+  final String mediaType;
+  
+  @JsonKey(name: 'file_size')
+  final int fileSize;
+  
+  @JsonKey(name: 'created_at')
+  final String createdAt;
+  
+  @JsonKey(name: 'access_count')
+  final int accessCount;
+
+  const MostAccessedItem({
+    required this.id,
+    required this.uuid,
+    required this.originalFilename,
+    required this.mediaType,
+    required this.fileSize,
+    required this.createdAt,
+    required this.accessCount,
+  });
+
+  factory MostAccessedItem.fromJson(Map<String, dynamic> json) =>
+      _$MostAccessedItemFromJson(json);
+
+  Map<String, dynamic> toJson() => _$MostAccessedItemToJson(this);
+}
+
 /// Analytics data for media usage statistics
 @JsonSerializable()
 class MediaAnalytics {
@@ -672,7 +712,7 @@ class MediaAnalytics {
   final Map<String, int> uploadsByDay;
   final Map<String, int> accessesByDay;
   final List<String> popularTags;
-  final MediaItem? mostAccessedItem;
+  final MostAccessedItem? mostAccessedItem;
 
   const MediaAnalytics({
     required this.totalItems,

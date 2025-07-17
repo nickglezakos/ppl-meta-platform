@@ -219,6 +219,12 @@ async def change_password(request: Request):
     return await _proxy_to_node_service(request)
 
 
+@api_router.post("/users/update-password")
+async def update_password(request: Request):
+    """Proxy password update to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 @api_router.get("/users/profile")
 async def get_user_profile(request: Request):
     """Proxy get user profile to Node service."""
@@ -380,10 +386,10 @@ async def get_media_analytics(request: Request):
                         "audio": backend_stats.get("by_type", {}).get("audio", 0),
                         "document": backend_stats.get("by_type", {}).get("document", 0),
                     },
-                    "uploadsByDay": {},  # TODO: Implement day-by-day uploads
-                    "accessesByDay": {},  # TODO: Implement day-by-day access tracking
-                    "popularTags": [],  # TODO: Implement tag analytics
-                    "mostAccessedItem": None,  # TODO: Implement access tracking
+                    "uploadsByDay": backend_stats.get("uploads_by_day", {}),
+                    "accessesByDay": backend_stats.get("access_by_day", {}),
+                    "popularTags": backend_stats.get("popular_tags", []),
+                    "mostAccessedItem": backend_stats.get("most_accessed_item"),
                 }
 
                 return analytics_data

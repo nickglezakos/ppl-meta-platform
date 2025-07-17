@@ -487,7 +487,6 @@ async def update_password(
     try:
         # Apply enhanced validation to password update data
         password_data = password_update.dict()
-        password_data["old_password"] = password_data.pop("current_password", "")
         validated_data = validate_password_update_data(password_data)
 
         # Business logic validation
@@ -497,7 +496,12 @@ async def update_password(
         ):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
 
-        update_user_password(db, current_user.id, validated_data["new_password"])
+        update_user_password(
+            db,
+            current_user.id,
+            validated_data["old_password"],
+            validated_data["new_password"],
+        )
         log_user_action(
             db, current_user.username, current_user.email, "password_update"
         )

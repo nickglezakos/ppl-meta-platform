@@ -125,6 +125,25 @@ class AuthService {
     return token != null && !JwtDecoder.isExpired(token);
   }
 
+  /// Change user password
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    try {
+      final response = await _apiClient.post<Map<String, dynamic>>(
+        '/api/v1/users/update-password',
+        data: {
+          'old_password': currentPassword,
+          'new_password': newPassword,
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw const AuthenticationException('Failed to change password');
+      }
+    } on DioException catch (e) {
+      throw _handleApiError(e);
+    }
+  }
+
   /// Fetch user profile from backend
   Future<User> _fetchUserProfile() async {
     try {
