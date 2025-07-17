@@ -136,6 +136,9 @@ class MediaItem {
   @JsonKey(name: 'is_public')
   final bool isPublic;
   
+  @JsonKey(name: 'is_archived')
+  final bool isArchived;
+  
   final List<String> tags;
   final String? description;
   
@@ -173,6 +176,7 @@ class MediaItem {
     this.appName,
     this.appVersion,
     required this.isPublic,
+    this.isArchived = false,
     this.tags = const [],
     this.description,
     this.technicalMetadata,

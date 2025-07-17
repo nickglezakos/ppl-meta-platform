@@ -325,6 +325,12 @@ async def get_media(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.delete("/media/{media_id}")
+async def delete_media(request: Request):
+    """Proxy delete media to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/media/download/{media_id}")
 async def download_media(request: Request):
     """Proxy media download to Media service."""

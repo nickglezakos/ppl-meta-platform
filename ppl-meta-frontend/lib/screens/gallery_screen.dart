@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
+import '../services/media_api_client.dart';
 import '../widgets/responsive_media_gallery.dart';
 import '../widgets/advanced_search_interface.dart';
 import '../widgets/share_dialog.dart';
@@ -20,6 +21,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   List<MediaItem> _selectedItems = [];
   bool _isSelectionMode = false;
   bool _showSearch = false;
+  final GlobalKey<ResponsiveMediaGalleryState> _galleryKey = GlobalKey();
 
   @override
   void initState() {
@@ -97,6 +99,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
           // Media gallery
           Expanded(
             child: ResponsiveMediaGallery(
+              key: _galleryKey,
               filters: _currentFilters,
               enableSelection: _isSelectionMode,
               enableInfiniteScroll: true,
@@ -215,15 +218,38 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
     final confirmed = await _showDeleteConfirmation();
     if (!confirmed) return;
     
-    // TODO: Implement delete functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${_selectedItems.length} items deleted'),
-        backgroundColor: AppColors.success,
-      ),
-    );
-    
-    _exitSelectionMode();
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final mediaApiClient = MediaApiClient(apiClient);
+      final itemCount = _selectedItems.length;
+      
+      // Delete each selected item
+      for (final item in _selectedItems) {
+        await mediaApiClient.deleteMedia(item.id);
+      }
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$itemCount item${itemCount == 1 ? '' : 's'} deleted successfully'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      
+      // Refresh the gallery to reflect changes
+      await _galleryKey.currentState?.refresh();
+      
+    } catch (e) {
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete items: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      _exitSelectionMode();
+    }
   }
 
   /// Show delete confirmation dialog

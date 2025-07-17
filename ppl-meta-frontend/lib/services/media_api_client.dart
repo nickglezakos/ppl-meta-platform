@@ -145,9 +145,19 @@ class MediaApiClient {
   }
 
   /// Delete media item
-  Future<ApiResponse<void>> deleteMediaItem(String id) async {
+  Future<ApiResponse<void>> deleteMedia(String mediaId) async {
     try {
-      await _apiClient.delete('/api/v1/media/items/$id');
+      // Get current user ID for authentication
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      // Make DELETE request to backend
+      await _apiClient.delete('/api/v1/media/$mediaId', queryParameters: {
+        'user_id': userId,
+      });
+
       return ApiResponse.success(null);
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -279,6 +289,7 @@ class MediaApiClient {
             print('DEBUG: Parsing MediaItem from: ${json['original_filename']} - deviceName: ${json['device_name']}');
             return MediaItem.fromJson(json);
           })
+          .where((item) => !item.isArchived) // Filter out archived (deleted) items
           .toList();
       
       print('DEBUG: MediaApiClient searchMedia - parsed ${items.length} items');

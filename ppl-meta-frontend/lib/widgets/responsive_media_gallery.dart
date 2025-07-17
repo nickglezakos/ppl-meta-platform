@@ -35,10 +35,10 @@ class ResponsiveMediaGallery extends StatefulWidget {
   }
 
   @override
-  State<ResponsiveMediaGallery> createState() => _ResponsiveMediaGalleryState();
+  State<ResponsiveMediaGallery> createState() => ResponsiveMediaGalleryState();
 }
 
-class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
+class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
   final ScrollController _scrollController = ScrollController();
   late final MediaApiClient _apiClient;
   
@@ -148,6 +148,11 @@ class _ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
     _items.clear();
     _selectedItems.clear();
     await _loadMoreItems();
+  }
+
+  /// Public method to refresh items from parent widgets
+  Future<void> refresh() async {
+    await _refreshItems();
   }
 
   /// Handle scroll for infinite loading
