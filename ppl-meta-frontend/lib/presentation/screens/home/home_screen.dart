@@ -22,6 +22,9 @@ class HomeScreen extends ConsumerWidget {
                 case 'profile':
                   context.go('/profile');
                   break;
+                case 'users':
+                  context.go('/users');
+                  break;
                 case 'logout':
                   await authNotifier.logout();
                   if (context.mounted) {
@@ -36,6 +39,14 @@ class HomeScreen extends ConsumerWidget {
                 child: ListTile(
                   leading: Icon(Icons.person),
                   title: Text('Profile'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'users',
+                child: ListTile(
+                  leading: Icon(Icons.people),
+                  title: Text('Users'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),

@@ -231,6 +231,12 @@ async def get_user_profile(request: Request):
     return await _proxy_to_node_service(request)
 
 
+@api_router.get("/users/")
+async def list_users(request: Request):
+    """Proxy list users to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 @api_router.get("/test-profile")
 async def test_profile_endpoint():
     """Test endpoint to verify routing is working."""

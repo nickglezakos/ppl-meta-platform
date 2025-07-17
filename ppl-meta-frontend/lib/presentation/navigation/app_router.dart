@@ -6,6 +6,7 @@ import '../../core/providers/provider_bridge.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
 import '../screens/home/home_screen.dart';
+import '../screens/users/users_screen.dart';
 import '../../screens/upload_screen.dart';
 import '../../screens/gallery_screen.dart';
 import '../../screens/analytics_screen.dart';
@@ -82,6 +83,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/users',
+        name: 'users',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: UsersScreen(),
+        ),
       ),
       // Root route redirects based on auth status
       GoRoute(
