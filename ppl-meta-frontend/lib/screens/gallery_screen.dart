@@ -24,14 +24,11 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   @override
   void initState() {
     super.initState();
-    print('DEBUG: GalleryScreen initState called');
   }
 
   @override
   Widget build(BuildContext context) {
-    print('DEBUG: GalleryScreen build called');
     final apiClient = ref.watch(apiClientProvider);
-    print('DEBUG: ApiClient from provider: $apiClient, token: ${apiClient.authToken}');
     return Scaffold(
       appBar: AppBar(
         title: _isSelectionMode
@@ -257,98 +254,168 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
 }
 
 /// Media details dialog
-class _MediaDetailsDialog extends StatelessWidget {
+class _MediaDetailsDialog extends ConsumerWidget {
   final MediaItem item;
 
   const _MediaDetailsDialog({required this.item});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final apiClient = ref.watch(apiClientProvider);
+    
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
       child: Container(
-        width: 500,
-        height: 600,
+        width: 600, // Increased width to give more space
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9, // Increased to 90% of screen height
+          minHeight: 500, // Increased minimum height
+        ),
         padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Icon(
-                  _getMediaTypeIcon(item.mediaType),
-                  color: _getMediaTypeColor(item.mediaType),
-                  size: 28,
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.filename,
-                        style: AppTextStyles.h6,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        item.mediaType.name.toUpperCase(),
-                        style: AppTextStyles.overline.copyWith(
-                          color: _getMediaTypeColor(item.mediaType),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min, // Allow column to size itself
+            children: [
+              // Header
+              Row(
+                children: [
+                  Icon(
+                    _getMediaTypeIcon(item.mediaType),
+                    color: _getMediaTypeColor(item.mediaType),
+                    size: 28,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.originalFilename,
+                          style: AppTextStyles.h6,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          item.mediaType.name.toUpperCase(),
+                          style: AppTextStyles.overline.copyWith(
+                            color: _getMediaTypeColor(item.mediaType),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: AppSpacing.lg),
+              
+              // DEBUG: Quick check - COMMENTED OUT FOR PRODUCTION
+              // Container(
+              //   color: Colors.blue.withOpacity(0.2),
+              //   padding: const EdgeInsets.all(8),
+              //   child: Column(
+              //     crossAxisAlignment: CrossAxisAlignment.start,
+              //     children: [
+              //       Text('DEBUG: mediaType=${item.mediaType}'),
+              //       Text('DEBUG: mediaType.toString()=${item.mediaType.toString()}'),
+              //       Text('DEBUG: url=${item.url}'),
+              //       Text('DEBUG: thumbnailUrl=${item.thumbnailUrl}'),
+              //       Text('DEBUG: deviceName=${item.deviceName}'),
+              //       Text('DEBUG: Should show image: ${item.mediaType == MediaType.image}'),
+              //       Text('DEBUG: MediaType.image = ${MediaType.image}'),
+              //       Text('DEBUG: Final image URL: ${_getAbsoluteUrl(item.url ?? item.thumbnailUrl ?? '')}'),
+              //     ],
+              //   ),
+              // ),
+              
+              // Preview (if available) - Responsive layout
+              if (item.mediaType == MediaType.image || item.mediaType.toString().contains('image') || item.mediaType.toString().contains('picture'))
+                Container(
+                  width: double.infinity,
+                  // Removed maxHeight constraint to make image fully responsive to container width
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: Image.network(
+                      // Use original image URL if thumbnail fails, fallback to thumbnail URL
+                      _getAbsoluteUrl(item.url ?? item.thumbnailUrl ?? ''),
+                      width: double.infinity,
+                      fit: BoxFit.contain, // Contain to maintain aspect ratio and responsiveness
+                      headers: apiClient.authToken != null 
+                          ? {'Authorization': 'Bearer ${apiClient.authToken}'}
+                          : null,
+                      errorBuilder: (context, error, stackTrace) {
+                        // DEBUG: Print statements commented out for production
+                        // print('IMAGE LOAD ERROR: $error');
+                        // print('IMAGE URL: ${_getAbsoluteUrl(item.url ?? item.thumbnailUrl ?? '')}');
+                        // print('AUTH TOKEN: ${apiClient.authToken != null ? 'Present' : 'Missing'}');
+                        return Container(
+                          height: 200,
+                          color: AppColors.gray200,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _getMediaTypeIcon(item.mediaType),
+                                size: 64,
+                                color: _getMediaTypeColor(item.mediaType),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                'Image unavailable',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Error: ${error.toString().substring(0, 50)}...',
+                                style: AppTextStyles.caption.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
-                ),
-              ],
-            ),
-            
-            const SizedBox(height: AppSpacing.lg),
-            
-            // Preview (if available)
-            if (item.thumbnailUrl != null)
+              
+              const SizedBox(height: AppSpacing.lg),
+              
+              // Details Section
               Container(
-                height: 200,
-                width: double.infinity,
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(AppRadius.md),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                  child: Image.network(
-                    item.thumbnailUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        color: AppColors.gray200,
-                        child: Icon(
-                          _getMediaTypeIcon(item.mediaType),
-                          size: 64,
-                          color: _getMediaTypeColor(item.mediaType),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            
-            const SizedBox(height: AppSpacing.lg),
-            
-            // Details
-            Expanded(
-              child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Details',
+                      style: AppTextStyles.labelLarge,
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    _DetailItem(
+                      label: 'Original Filename',
+                      value: item.originalFilename,
+                    ),
                     _DetailItem(
                       label: 'File Size',
                       value: '${(item.fileSize / 1024 / 1024).toStringAsFixed(1)} MB',
@@ -357,62 +424,113 @@ class _MediaDetailsDialog extends StatelessWidget {
                       label: 'Upload Date',
                       value: _formatDate(item.createdAt),
                     ),
+                    _DetailItem(
+                      label: 'Media Type',
+                      value: item.mediaType.displayName,
+                    ),
                     if (item.duration != null)
                       _DetailItem(
                         label: 'Duration',
                         value: _formatDuration(item.duration!),
                       ),
+                    if (item.deviceName != null && item.deviceName!.isNotEmpty && item.deviceName != 'null')
+                      _DetailItem(
+                        label: 'Device Name',
+                        value: item.deviceName!,
+                      ),
+                    if (item.deviceManufacturer != null && item.deviceManufacturer!.isNotEmpty && item.deviceManufacturer != 'null')
+                      _DetailItem(
+                        label: 'Device Manufacturer',
+                        value: item.deviceManufacturer!,
+                      ),
+                    if (item.deviceModel != null && item.deviceModel!.isNotEmpty && item.deviceModel != 'null')
+                      _DetailItem(
+                        label: 'Device Model',
+                        value: item.deviceModel!,
+                      ),
+                    if (item.deviceOs != null && item.deviceOs!.isNotEmpty && item.deviceOs != 'null')
+                      _DetailItem(
+                        label: 'Device OS',
+                        value: item.deviceOs!,
+                      ),
+                    if (item.appName != null && item.appName!.isNotEmpty && item.appName != 'null')
+                      _DetailItem(
+                        label: 'App Name',
+                        value: item.appName!,
+                      ),
+                    if (item.appVersion != null && item.appVersion!.isNotEmpty && item.appVersion != 'null')
+                      _DetailItem(
+                        label: 'App Version',
+                        value: item.appVersion!,
+                      ),
+                    if (item.description != null && item.description!.isNotEmpty && item.description != 'null')
+                      _DetailItem(
+                        label: 'Description',
+                        value: item.description!,
+                      ),
+                    if (item.tags.isNotEmpty)
+                      _DetailItem(
+                        label: 'Tags',
+                        value: item.tags.join(', '),
+                      ),
                     if (item.metadata?.isNotEmpty == true) ...[
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        'Metadata',
+                        'Technical Metadata',
                         style: AppTextStyles.labelLarge,
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      ...item.metadata!.entries.map((entry) {
-                        return _DetailItem(
-                          label: entry.key,
-                          value: entry.value.toString(),
-                        );
-                      }),
+                      ..._formatTechnicalMetadata(item.metadata!),
                     ],
+                    // New: Technical metadata formatting
+                    if (item.metadata?.isNotEmpty == true) ..._formatTechnicalMetadata(item.metadata!),
                   ],
                 ),
               ),
-            ),
-            
-            // Actions
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      // TODO: Implement download
-                    },
-                    icon: const Icon(Icons.download),
-                    label: const Text('Download'),
+              
+              const SizedBox(height: AppSpacing.lg),
+              
+              // Actions
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        // TODO: Implement download
+                      },
+                      icon: const Icon(Icons.download),
+                      label: const Text('Download'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      showDialog(
-                        context: context,
-                        builder: (context) => ShareDialog(items: [item]),
-                      );
-                    },
-                    icon: const Icon(Icons.share),
-                    label: const Text('Share'),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        showDialog(
+                          context: context,
+                          builder: (context) => ShareDialog(items: [item]),
+                        );
+                      },
+                      icon: const Icon(Icons.share),
+                      label: const Text('Share'),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ], // Fixed: Added missing closing bracket for the main children list
+          ),
         ),
       ),
     );
+  }
+
+  /// Convert relative URL to absolute URL
+  String _getAbsoluteUrl(String relativeUrl) {
+    if (relativeUrl.startsWith('http')) {
+      return relativeUrl; // Already absolute
+    }
+    return 'http://localhost:8080$relativeUrl'; // Use Gateway service directly
   }
 
   /// Get media type icon
@@ -475,6 +593,108 @@ class _MediaDetailsDialog extends StatelessWidget {
     } else {
       return '${minutes}:${secs.toString().padLeft(2, '0')}';
     }
+  }
+
+  /// Format technical metadata for user-friendly display
+  List<Widget> _formatTechnicalMetadata(Map<String, dynamic> metadata) {
+    List<Widget> widgets = [];
+    
+    metadata.forEach((key, value) {
+      if (key == 'technical_metadata' && value is Map<String, dynamic>) {
+        // Handle technical_metadata object
+        final techData = value;
+        
+        // Handle thumbnails
+        if (techData['thumbnails'] is Map<String, dynamic>) {
+          final thumbnails = techData['thumbnails'] as Map<String, dynamic>;
+          final List<String> thumbStatus = [];
+          
+          thumbnails.forEach((size, data) {
+            if (data is Map<String, dynamic>) {
+              final success = data['success'] ?? false;
+              final bytes = data['size_bytes'] ?? 0;
+              if (success && bytes > 0) {
+                thumbStatus.add('$size (${(bytes / 1024).toStringAsFixed(1)} KB)');
+              } else {
+                thumbStatus.add('$size (failed)');
+              }
+            }
+          });
+          
+          if (thumbStatus.isNotEmpty) {
+            widgets.add(_DetailItem(
+              label: 'Thumbnails',
+              value: thumbStatus.join(', '),
+            ));
+          }
+        }
+        
+        // Handle EXIF summary
+        if (techData['exif_summary'] is Map<String, dynamic>) {
+          final exifSummary = techData['exif_summary'] as Map<String, dynamic>;
+          final hasCameraInfo = exifSummary['has_camera_info'] ?? false;
+          final hasGpsData = exifSummary['has_gps_data'] ?? false;
+          final hasDatetime = exifSummary['has_datetime'] ?? false;
+          final totalTags = exifSummary['total_tags'] ?? 0;
+          
+          if (totalTags > 0) {
+            final List<String> exifFeatures = [];
+            if (hasCameraInfo) exifFeatures.add('Camera Info');
+            if (hasGpsData) exifFeatures.add('GPS Data');
+            if (hasDatetime) exifFeatures.add('Date/Time');
+            
+            widgets.add(_DetailItem(
+              label: 'EXIF Data',
+              value: exifFeatures.isNotEmpty 
+                  ? '${exifFeatures.join(', ')} ($totalTags tags)'
+                  : '$totalTags metadata tags',
+            ));
+          } else {
+            widgets.add(_DetailItem(
+              label: 'EXIF Data',
+              value: 'No EXIF data available',
+            ));
+          }
+        }
+        
+        // Handle other technical metadata
+        techData.forEach((techKey, techValue) {
+          if (techKey != 'thumbnails' && techKey != 'exif_summary' && techKey != 'exif') {
+            widgets.add(_DetailItem(
+              label: _formatMetadataKey(techKey),
+              value: _formatMetadataValue(techValue),
+            ));
+          }
+        });
+      } else {
+        // Handle other metadata entries
+        widgets.add(_DetailItem(
+          label: _formatMetadataKey(key),
+          value: _formatMetadataValue(value),
+        ));
+      }
+    });
+    
+    return widgets;
+  }
+  
+  /// Format metadata key for display
+  String _formatMetadataKey(String key) {
+    return key
+        .split('_')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
+  }
+  
+  /// Format metadata value for display
+  String _formatMetadataValue(dynamic value) {
+    if (value == null) return 'Not available';
+    if (value is bool) return value ? 'Yes' : 'No';
+    if (value is num) return value.toString();
+    if (value is String) return value;
+    if (value is List) return value.join(', ');
+    if (value is Map) return 'Complex data (${value.length} fields)';
+    return value.toString();
   }
 }
 

@@ -21,16 +21,28 @@ class AppConfig {
   });
   
   static Future<void> initialize() async {
-    final configString = await rootBundle.loadString('assets/config/env.development.json');
-    final config = json.decode(configString);
-    
-    _instance = AppConfig._(
-      apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost:8080',
-      environment: config['ENVIRONMENT'] ?? 'development',
-      logLevel: config['LOG_LEVEL'] ?? 'debug',
-      cacheEnabled: config['CACHE_ENABLED'] ?? true,
-      analyticsEnabled: config['ANALYTICS_ENABLED'] ?? false,
-    );
+    try {
+      final configString = await rootBundle.loadString('assets/config/env.development.json');
+      final config = json.decode(configString);
+      
+      _instance = AppConfig._(
+        apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost:8080',
+        environment: config['ENVIRONMENT'] ?? 'development',
+        logLevel: config['LOG_LEVEL'] ?? 'debug',
+        cacheEnabled: config['CACHE_ENABLED'] ?? true,
+        analyticsEnabled: config['ANALYTICS_ENABLED'] ?? false,
+      );
+    } catch (e) {
+      // Fallback configuration if asset loading fails
+      print('Warning: Could not load config file, using defaults: $e');
+      _instance = AppConfig._(
+        apiBaseUrl: 'http://localhost:8080',
+        environment: 'development',
+        logLevel: 'debug',
+        cacheEnabled: true,
+        analyticsEnabled: false,
+      );
+    }
   }
   
   // API Endpoints

@@ -155,7 +155,6 @@ async def upload_media(
 
 @router.get("/search", response_model=List[MediaResponse])
 async def search_media(
-    user_id: Optional[str] = None,
     media_types: Optional[str] = None,  # Comma-separated MediaType values
     tags: Optional[str] = None,  # Comma-separated
     categories: Optional[str] = None,  # Comma-separated
@@ -164,9 +163,10 @@ async def search_media(
     is_public: Optional[bool] = None,
     page: int = 1,
     page_size: int = 20,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Search media with various filters including device information."""
+    """Search authenticated user's media with various filters."""
     try:
         media_service = MediaService(db)
 
@@ -183,7 +183,7 @@ async def search_media(
                 ) from e
 
         search_request = MediaSearchRequest(
-            uploaded_by=UUID(user_id) if user_id else None,
+            uploaded_by=UUID(current_user.user_id),  # Filter by user
             media_types=parsed_media_types,
             tags=tags.split(",") if tags else None,
             categories=categories.split(",") if categories else None,
@@ -218,17 +218,20 @@ async def search_media(
 
 @router.get("/collections", response_model=List[MediaCollectionResponse])
 async def list_collections(
-    user_id: str,
     skip: int = 0,
     limit: int = 100,
     include_public: bool = False,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all user collections with pagination."""
+    """List authenticated user's collections with pagination."""
     try:
         media_service = MediaService(db)
         collections = await media_service.get_collections(
-            user_id=UUID(user_id), skip=skip, limit=limit, include_public=include_public
+            user_id=UUID(current_user.user_id),
+            skip=skip,
+            limit=limit,
+            include_public=include_public,
         )
 
         return [MediaCollectionResponse.model_validate(col) for col in collections]
@@ -834,7 +837,7 @@ def get_media_access_check(
 @router.get("/download/{media_id}")
 async def download_media(
     media_id: str,
-    user_id: Optional[str] = None,
+    current_user: AuthUser = Depends(get_current_user),
     share_token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
@@ -843,14 +846,16 @@ async def download_media(
 
     Args:
         media_id: UUID of the media to download
-        user_id: Optional user ID for access control
+        current_user: Authenticated user
         share_token: Optional share token for public access
 
     Returns:
         FileResponse with the media file
     """
-    # Check access permissions
-    access_info = get_media_access_check(media_id, user_id, share_token, db)
+    # Check access permissions using authenticated user's UUID
+    access_info = get_media_access_check(
+        media_id, current_user.user_id, share_token, db
+    )
 
     file_path = Path(access_info["file_path"])
 
@@ -876,7 +881,7 @@ async def download_media(
 async def stream_media(
     media_id: str,
     request: Request,
-    user_id: Optional[str] = None,
+    current_user: AuthUser = Depends(get_current_user),
     share_token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
@@ -886,14 +891,16 @@ async def stream_media(
     Args:
         media_id: UUID of the media to stream
         request: FastAPI request object for range headers
-        user_id: Optional user ID for access control
+        current_user: Authenticated user
         share_token: Optional share token for public access
 
     Returns:
         StreamingResponse with range request support
     """
-    # Check access permissions
-    access_info = get_media_access_check(media_id, user_id, share_token, db)
+    # Check access permissions using the authenticated user's UUID
+    access_info = get_media_access_check(
+        media_id, current_user.user_id, share_token, db
+    )
 
     file_path = Path(access_info["file_path"])
 

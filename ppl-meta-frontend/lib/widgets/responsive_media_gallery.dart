@@ -559,7 +559,7 @@ class _MediaGridItem extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (item.mediaType != MediaType.picture)
+                if (item.mediaType != MediaType.image)
                   Text(
                     '${item.mediaType.name.toUpperCase()} FILE',
                     style: AppTextStyles.caption.copyWith(

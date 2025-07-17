@@ -270,13 +270,23 @@ class MediaApiClient {
       print('DEBUG: MediaApiClient searchMedia - queryParams: $queryParams');
       final response = await _apiClient.get('/api/v1/media/search', queryParameters: queryParams);
       print('DEBUG: MediaApiClient searchMedia - response received, status: ${response.statusCode}');
+      print('DEBUG: MediaApiClient searchMedia - response data type: ${response.data.runtimeType}');
+      print('DEBUG: MediaApiClient searchMedia - first item sample: ${(response.data as List).isNotEmpty ? (response.data as List)[0] : 'empty'}');
       
       // The backend returns a list directly, not wrapped in a response object
       final items = (response.data as List)
-          .map((json) => MediaItem.fromJson(json))
+          .map((json) {
+            print('DEBUG: Parsing MediaItem from: ${json['original_filename']} - deviceName: ${json['device_name']}');
+            return MediaItem.fromJson(json);
+          })
           .toList();
       
-      // Create MediaListResponse with the items
+      print('DEBUG: MediaApiClient searchMedia - parsed ${items.length} items');
+      if (items.isNotEmpty) {
+        print('DEBUG: First item after parsing - originalFilename: ${items[0].originalFilename}, deviceName: ${items[0].deviceName}');
+      }
+      
+      // Create MediaListResponse with the items (simplified without JSON serialization)
       final searchResponse = MediaListResponse(
         items: items,
         totalCount: items.length,
