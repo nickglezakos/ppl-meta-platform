@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../core/theme/app_theme.dart';
-import '../core/models/api_response.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
 import '../core/api/api_client.dart';
-import 'media_details_dialog.dart';
 
 /// Responsive media gallery with thumbnail views and infinite scroll
 class ResponsiveMediaGallery extends StatefulWidget {
@@ -471,15 +468,7 @@ class _MediaGridItem extends StatelessWidget {
     return GestureDetector(
       onTap: enableSelection && isSelected 
           ? onSelectionToggle 
-          : () {
-              // Open MediaDetailsDialog when tapping on a media item
-              showDialog(
-                context: context,
-                builder: (context) => MediaDetailsDialog(item: item),
-              );
-              // Also call the provided onTap callback if any
-              onTap?.call();
-            },
+          : onTap,
       onLongPress: onLongPress,
       child: AnimatedContainer(
         duration: AppDurations.fast,
@@ -498,6 +487,10 @@ class _MediaGridItem extends StatelessWidget {
             children: [
               // Media content
               _buildMediaContent(),
+              
+              // Video play button overlay
+              if (item.mediaType == MediaType.video)
+                _buildVideoPlayOverlay(),
               
               // Selection overlay
               if (enableSelection)
@@ -588,6 +581,31 @@ class _MediaGridItem extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// Build video play button overlay
+  Widget _buildVideoPlayOverlay() {
+    return Positioned.fill(
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.black.withOpacity(0.3),
+        ),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: AppColors.black.withOpacity(0.7),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.play_arrow,
+              color: AppColors.white,
+              size: 32,
+            ),
+          ),
+        ),
       ),
     );
   }

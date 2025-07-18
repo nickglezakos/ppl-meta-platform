@@ -83,6 +83,7 @@ class MediaApiClient {
       final responseData = response.data as Map<String, dynamic>;
       final mediaItem = MediaItem(
         mediaId: responseData['id']?.toString() ?? responseData['uuid']?.toString() ?? '',
+        uuid: responseData['uuid']?.toString() ?? responseData['id']?.toString() ?? '',
         originalFilename: responseData['original_filename'] ?? responseData['filename'] ?? finalFilename,
         mediaType: _parseMediaType(responseData['media_type'] ?? 'document'),
         fileSize: responseData['file_size'] ?? 0,

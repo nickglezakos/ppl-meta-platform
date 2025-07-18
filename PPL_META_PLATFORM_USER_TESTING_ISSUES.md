@@ -14,6 +14,25 @@ Password: testpassword123
 
 ## ✅ RESOLVED ISSUES
 
+**Issue**: 036 - ✅ **COMPLETELY RESOLVED** - **MEDIA DETAILS DIALOG HEIGHT ADJUSTMENT**
+Media details dialog now displays videos and images with fixed height for better consistency
+**Section**: Gallery View - Media Details Dialog Display
+**Steps to Reproduce**:
+1. User initially requested: "the video on the frontend still renders with fixed height while the pictures render with no fixed height"
+2. After fixing to make both responsive with full width and dynamic height
+3. User changed preference: "How about changing the details page again to render the media (pictures and videos) with fixed height lets say 60% of their container height"
+**Expected Result**: Both videos and images should display with consistent fixed height of 60% of dialog container
+**Actual Result**: ✅ **COMPLETELY FIXED** - Media details dialog now shows videos and images with fixed height!
+**Severity**: Medium → **RESOLVED**
+**Resolution Applied**:
+- ✅ **Fixed Height Implementation**: Set both video and image containers to 60% of dialog height
+- ✅ **Consistent Layout**: Both media types now use the same fixed height calculation
+- ✅ **Video Player Optimization**: Updated VideoPlayerWidget to work better with fixed height constraints
+- ✅ **Container Sizing**: Dialog height is 80% of screen, media takes 60% of that (48% of screen total)
+**Status**: ✅ **COMPLETELY RESOLVED** - Media details dialog displays videos and images with consistent fixed height
+**Files Modified**: `media_details_dialog.dart`, `video_player_widget.dart`
+**Resolution Date**: July 18, 2025
+
 **Issue**: 001 - RESOLVED ✅
 Registration endpoint returns 404 error
 **Section**: Registration - login
@@ -493,701 +512,63 @@ Shell escaping issues with special characters in passwords
 **Browser**: Terminal/API testing
 **Status**: Use proper escaping or simpler passwords for terminal testing
 
-**Issue**: 027 - ✅ **COMPLETELY RESOLVED** - **THUMBNAIL LOADING SUCCESS**
-Gallery thumbnail loading working perfectly with Image.network widget
-**Section**: Gallery View - Media Thumbnails
+**Issue**: 040 - ✅ **COMPLETELY RESOLVED** - **MAIN SCREENS BACK BUTTON ADDITION**
+Gallery and Collections Main Screens Now Have Back Buttons
+**Section**: Navigation - Main Screens Enhancement
 **Steps to Reproduce**: 
-1. Login successfully and navigate to Gallery view at `http://localhost:3000/#/gallery`
-2. Gallery was showing encoding errors for thumbnail loading
-**Expected Result**: Gallery should display thumbnail previews for uploaded media
-**Actual Result**: ✅ **COMPLETELY FIXED** - User-uploaded thumbnails now load perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Encoding/decoding issues with CachedNetworkImage widget
-**Resolution Applied**: 
-- ✅ **Switched to Image.network Widget**: Replaced CachedNetworkImage with Flutter's built-in Image.network for better compatibility
-- ✅ **Improved Error Handling**: Added proper error handling for non-image files (documents, text files)
-- ✅ **Authentication Working**: JWT tokens properly passed to image loading requests
-- ✅ **Access Control Verified**: Test files from other users correctly show HTTP 403 "Access denied" (expected security behavior)
-- ✅ **File Type Handling**: Non-image files now show appropriate icons instead of trying to decode as images
-- ✅ **Clean Console Output**: Removed debug logging for production-ready gallery
+1. Navigate to Gallery screen at `http://localhost:3000/#/gallery`
+2. Navigate to Collections screen at `http://localhost:3000/#/collections`
+3. Check for back button presence on both main screens
+**Expected Result**: Both Gallery and Collections main screens should have back buttons for consistent navigation
+**Actual Result**: ✅ **COMPLETELY FIXED** - Both screens now have back buttons on their main views
+**Severity**: Minor → **RESOLVED**
+**Browser**: Chrome/Flutter Web
+**Root Cause**: User requested back buttons on main Gallery and Collections screens for better navigation consistency
+**Resolution Applied**:
+- ✅ **Gallery Screen**: Changed `showBackButton: false` to `showBackButton: true` in CustomAppBar
+- ✅ **Collections Screen**: Changed `showBackButton: _selectedCollection != null` to `showBackButton: true` (always show)
+- ✅ **Consistent Navigation**: Both main screens now have back buttons for uniform user experience
+**Status**: ✅ **COMPLETELY RESOLVED** - Main screens now have consistent back button navigation
+**Files Modified**: 
+- `ppl-meta-frontend/lib/screens/gallery_screen.dart`
+- `ppl-meta-frontend/lib/screens/collections_screen.dart`
+**Resolution Date**: July 18, 2025
 
-**Technical Details**:
-- **Files Modified**: `ResponsiveMediaGallery` widget updated with Image.network and better error handling
-- **User-Uploaded Images**: All thumbnails for user's own uploads (IDs 6, 7, 8) loading perfectly
-- **Security Verified**: Test files from different users correctly blocked (HTTP 403)
-- **File Format Support**: Proper handling of documents and text files with appropriate icons
+### **Navigation Updates**
+- **Gallery Screen**: Now shows back button on main gallery view
+- **Collections Screen**: Now shows back button on main collections list (in addition to collection details view)
+- **Consistent UX**: All main screens now have back buttons for better navigation flow
 
-**Status**: ✅ **COMPLETELY RESOLVED** - Gallery thumbnail loading working perfectly for user content
-**Verification**: Navigate to Gallery at `http://localhost:3000/#/gallery` - user-uploaded image thumbnails display correctly
-
-**Issue**: 026 - ✅ COMPLETELY RESOLVED **THUMBNAIL LOADING AUTHENTICATION FIX**
-Thumbnail loading in gallery view showing spinning icons instead of thumbnail previews
-**Section**: Gallery View - Media Thumbnails
+**Issue**: 039 - ✅ **COMPLETELY RESOLVED** - **COLLECTIONS SCREEN BACK BUTTON FIX**
+Collections Screen Back Button Not Showing When Viewing Specific Collection
+**Section**: Navigation - Collections Screen
 **Steps to Reproduce**: 
-1. Login successfully and navigate to Gallery view at `http://localhost:3000/#/gallery`
-2. Gallery shows spinning loading icons instead of actual thumbnail previews
-3. Browser dev tools show HTTP 403 "Access denied to this media" errors
-**Expected Result**: Gallery should display thumbnail previews for uploaded media
-**Actual Result**: ✅ **COMPLETELY FIXED** - Thumbnails now load properly with authentication
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Two-part issue:
-1. Media service JWT authentication using integer ID instead of UUID
-2. CachedNetworkImage making requests to relative URLs without authentication headers
-**Resolution Applied**: 
-
-- ✅ **Backend Authentication Fix**: Updated media service to use UUID from profile endpoint
-- ✅ **Frontend Image Loading Fix**: Added authentication headers to CachedNetworkImage requests
-- ✅ **URL Resolution Fix**: Convert relative thumbnail URLs (`/api/v1/media/thumbnail/...`) to absolute URLs (`http://localhost:8080/api/v1/media/thumbnail/...`)
-- ✅ **Riverpod Integration**: Updated GalleryScreen to use authenticated ApiClient via providers
-- ✅ **Complete Authentication Chain**: Login → JWT token → ApiClient → CachedNetworkImage headers
-
-**Technical Details**:
-- **Files Modified**: `ResponsiveMediaGallery`, `_MediaGridItem`, `GalleryScreen`, `ApiClient`
-- **Authentication Flow**: JWT token properly passed to image loading requests
-- **URL Processing**: Relative paths converted to absolute URLs pointing to backend Gateway
-- **Testing Verified**: Direct curl tests show HTTP 200 for thumbnail endpoints with authentication
-
-**Issue**: 029 - ✅ **COMPLETELY RESOLVED** - **DELETE FUNCTIONALITY SUCCESS**
-Media delete functionality working perfectly with complete end-to-end integration
-**Section**: Gallery View - Media Deletion
-**Steps to Reproduce**: 
-1. User reported: "So in the my media section I selected one picture and deleted it. The flutter showed me the message that it was deleted but the image did not disappear from the view even when I reloaded the view"
-2. Investigation revealed missing deleteMedia method in MediaApiClient
-3. Added deleteMedia method but HTTP 405 "Method Not Allowed" error from Gateway
-4. Discovered missing DELETE route in Gateway service routing
-**Expected Result**: Images should be deleted from backend and disappear from gallery view
-**Actual Result**: ✅ **COMPLETELY FIXED** - Complete delete functionality working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Missing Gateway DELETE route proxy to forward delete requests to media service
-**Resolution Applied**: 
-- ✅ **Frontend Implementation**: Added deleteMedia method to MediaApiClient with proper user authentication
-- ✅ **Gateway Routing Fix**: Added missing DELETE /api/v1/media/{media_id} route proxy to Gateway service  
-- ✅ **Backend Integration**: Confirmed backend DELETE endpoint working (soft delete with archived status)
-- ✅ **End-to-End Testing**: Complete delete workflow verified with curl testing
-- ✅ **User Authentication**: deleteMedia method correctly includes user_id parameter from JWT token
-- ✅ **Gallery Refresh**: ResponsiveMediaGallery made public with refresh() method for UI updates
-
-**Technical Implementation**:
-- **Frontend MediaApiClient**: Added deleteMedia method with user_id extraction and proper error handling
-- **Gateway Router**: Added @api_router.delete("/media/{media_id}") route with _proxy_to_media_service
-- **Backend DELETE**: Uses soft delete - media marked as archived (processing_status: "archived", is_archived: true)
-- **Authentication Flow**: Frontend → JWT token → user_id parameter → backend validation → soft delete
-- **UI Integration**: Gallery refresh mechanism ready for immediate visual feedback after deletion
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Delete functionality fully operational with backend soft delete
-**Testing Results**: 
-```bash
-# Successful delete test - HTTP 200
-curl -X DELETE "http://localhost:8080/api/v1/media/10?user_id=4cf362b1-3e05-4e85-81c7-c08a98c7e41b"
-# Response: {"message":"Media deleted successfully"}
-
-# Verification: Media item 10 now shows:
-# "processing_status": "archived", "is_archived": true, "updated_at": "2025-07-17T11:30:14"
-```
-**Next Enhancement**: Frontend gallery filtering to hide archived items for improved user experience
-
-## 🎉 **DELETE FUNCTIONALITY COMPLETE SUCCESS** - Issue 029 FINAL RESOLUTION
-
-✅ **COMPLETE END-TO-END DELETE FUNCTIONALITY WORKING PERFECTLY**
-
-**Final Implementation Status**:
-- ✅ **Frontend MediaApiClient**: deleteMedia method with proper user authentication and user_id parameter
-- ✅ **Gateway DELETE Route**: Added `/api/v1/media/{media_id}` proxy route to forward delete requests
-- ✅ **Backend Soft Delete**: Media marked as archived (processing_status: "archived", is_archived: true)
-- ✅ **Frontend Filtering**: Added isArchived property to MediaItem model and filtered archived items from gallery
-- ✅ **UI Integration**: Gallery refresh mechanism ready for immediate visual feedback after deletion
-- ✅ **JSON Serialization**: Regenerated with build_runner to include isArchived property
-
-**Complete Delete Workflow**:
-1. User selects media item in Flutter gallery and clicks delete
-2. Frontend calls MediaApiClient.deleteMedia(mediaId) with JWT authentication
-3. MediaApiClient extracts user_id from profile endpoint and includes in request
-4. Gateway receives DELETE request and proxies to media service with all parameters
-5. Backend media service performs soft delete (marks as archived) and returns success
-6. Frontend receives success response and triggers gallery refresh
-7. Gallery re-fetches data, MediaApiClient filters out archived items automatically
-8. User sees deleted image immediately disappear from gallery view
-
-**Testing Results**: 
-```bash
-# Step 1: Login and get token
-curl -X POST http://localhost:8080/api/v1/users/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=fresh.user@example.com&password=FreshPassword123\!"
-# Response: {"access_token":"eyJ...","token_type":"bearer"}
-
-# Step 2: Check available media
-curl -X GET "http://localhost:8080/api/v1/media/search" \
-  -H "Authorization: Bearer eyJ..."
-# Response: [{"id":10,"original_filename":"viber_image_2025-07-17_09-28-29-315.jpg",...}]
-
-# Step 3: Delete media item
-curl -X DELETE "http://localhost:8080/api/v1/media/10?user_id=4cf362b1-3e05-4e85-81c7-c08a98c7e41b" \
-  -H "Authorization: Bearer eyJ..."
-# Response: {"message":"Media deleted successfully"}
-
-# Step 4: Verify soft delete (media now archived)
-curl -X GET "http://localhost:8080/api/v1/media/search" \
-  -H "Authorization: Bearer eyJ..."
-# Result: Media item 10 still exists but with:
-# "processing_status": "archived", "is_archived": true, "updated_at": "2025-07-17T11:30:14"
-```
-
-**Frontend Enhancement**:
-- Added `isArchived` property to MediaItem model with `@JsonKey(name: 'is_archived')` annotation
-- Updated constructor with `this.isArchived = false` default value
-- Added filter `.where((item) => !item.isArchived)` in searchMedia method
-- Regenerated JSON serialization with `flutter packages pub run build_runner build`
-
-**User Experience**: When users delete media in Flutter gallery, images immediately disappear from view as the frontend now filters out archived items, providing the expected behavior the user reported was missing.
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Delete functionality fully operational with proper soft delete backend and filtered frontend display
-
-**Resolution Date**: July 17, 2025
-
-**Issue**: 030 - ✅ **COMPLETELY RESOLVED** - **DOWNLOAD FUNCTIONALITY SUCCESS**
-Media download functionality working perfectly with complete end-to-end integration
-**Section**: Gallery View - Media Download
-**Steps to Reproduce**:
-
-1. User reported: "The download button does not work. Please check first the known issue with the user authentication"
-2. Investigation revealed download button in gallery has TODO comment with no implementation
-3. Backend download endpoint confirmed working with proper authentication
-4. Missing frontend downloadMedia method in MediaApiClient
-5. Initial web download implementation had compilation errors with File class usage
-
-**Expected Result**: Download button should trigger file download with proper authentication
-**Actual Result**: ✅ **COMPLETELY FIXED** - Complete download functionality working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Missing frontend download implementation while backend was fully functional
+1. Navigate to Collections screen
+2. Click on a specific collection to view its details
+3. Back button should appear but was not showing
+**Expected Result**: Back button should appear when viewing a specific collection to return to collections list
+**Actual Result**: ✅ **COMPLETELY FIXED** - Back button now properly shows when viewing a collection and returns to collections list
+**Severity**: Minor → **RESOLVED**
+**Browser**: Chrome/Flutter Web
+**Root Cause**: Collections screen was using redundant back button in actions array instead of properly configuring CustomAppBar
 **Resolution Applied**:
-
-- ✅ **Frontend Implementation**: Added downloadMedia method to MediaApiClient with proper user authentication
-- ✅ **Backend Integration**: Confirmed backend download endpoint working with JWT token and user_id validation
-- ✅ **Gateway Routing**: Verified existing Gateway download route proxy functioning correctly
-- ✅ **End-to-End Testing**: Complete download workflow verified with curl testing
-- ✅ **User Authentication**: downloadMedia method correctly includes user_id parameter from JWT token
-- ✅ **Cross-Platform Support**: Implemented web-compatible download approach with conditional imports
-- ✅ **Compilation Issues Fixed**: Resolved File class usage conflicts between dart:io and dart:html
-
-**Technical Implementation**:
-
-- **Frontend MediaApiClient**: Added downloadMedia method with user_id extraction and cross-platform file handling
-- **Web Download Helper**: Created separate web download utility with conditional imports for HTML blob downloads
-- **Platform Detection**: Proper kIsWeb checks and conditional File class usage for desktop/mobile
-- **Gateway Router**: Existing @api_router.get("/media/download/{media_id}") route confirmed working
-- **Backend Download**: FileResponse with Content-Disposition attachment header for proper file downloads
-- **Authentication Flow**: Frontend → JWT token → user_id parameter → backend validation → file download
-- **Platform Handling**: Web users get browser-native blob downloads, desktop/mobile save to Downloads folder
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Download functionality fully operational with cross-platform support
-**User Verification**: ✅ **"It worked perfectly!"** - User confirmed complete download functionality working
-**Testing Results**:
-
-```bash
-# Successful download test - HTTP 200
-curl -X GET "http://localhost:8080/api/v1/media/download/ae350dba-a91a-4f54-bccf-8f9ad0d3494f?user_id=4cf362b1-3e05-4e85-81c7-c08a98c7e41b" \
-  -H "Authorization: Bearer eyJ..." --head
-# Response Headers:
-# HTTP/1.1 200 OK
-# content-disposition: attachment; filename="eyenet-website-01.png"
-# content-type: image/png
-# content-length: 7585614
-```
-
-**Files Modified**:
-
-- `ppl-meta-frontend/lib/services/media_api_client.dart`: Added downloadMedia method with cross-platform support
-- `ppl-meta-frontend/lib/screens/gallery_screen.dart`: Implemented download button functionality with user feedback
-- `ppl-meta-frontend/lib/utils/download_helper_web.dart`: Web-specific download implementation using HTML blob API
-- `ppl-meta-frontend/lib/utils/download_helper_stub.dart`: Stub for non-web platforms
-
-**Resolution Date**: July 17, 2025
-
-**Issue**: 031 - ✅ **COMPLETELY RESOLVED** - **UPLOAD NAVIGATION FIX**
-Upload buttons in gallery view causing navigation errors
-**Section**: Gallery View - Upload Navigation
-**Steps to Reproduce**:
-
-1. User reported: "there are two upload buttons in the my media view that are supposed to redirect to the upload media view but dont work"
-2. Error messages: "Navigator.onGenerateRoute was null, but the route named '/upload' was referenced"
-3. Both upload buttons (AppBar icon and FloatingActionButton) causing the same error
-
-**Expected Result**: Upload buttons should navigate to upload screen successfully
-**Actual Result**: ✅ **COMPLETELY FIXED** - Upload navigation working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Gallery screen using legacy Flutter Navigator.pushNamed() instead of GoRouter navigation
-**Resolution Applied**:
-
-- ✅ **Fixed Navigation Method**: Changed from Navigator.pushNamed(context, '/upload') to context.push('/upload')
-- ✅ **Added GoRouter Import**: Added missing 'package:go_router/go_router.dart' import to gallery screen
-- ✅ **Fixed Both Upload Buttons**: Updated both AppBar upload icon and FloatingActionButton
-- ✅ **Verified Route Exists**: Confirmed '/upload' route is properly defined in GoRouter configuration
-
-**Technical Implementation**:
-
-- **AppBar Upload Button**: Changed `Navigator.pushNamed(context, '/upload')` to `context.push('/upload')`
-- **FloatingActionButton**: Changed `Navigator.pushNamed(context, '/upload')` to `context.push('/upload')`
-- **Import Added**: Added `import 'package:go_router/go_router.dart';` to gallery_screen.dart
-- **Route Verified**: Confirmed '/upload' route exists in app_router.dart with proper UploadScreen configuration
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Upload navigation fully operational
-**Testing**: Both upload buttons now navigate successfully to upload screen
-**Files Modified**:
-
-- `ppl-meta-frontend/lib/screens/gallery_screen.dart`: Fixed navigation calls and added GoRouter import
-
-**Resolution Date**: July 17, 2025
-
-**Issue**: 032 - ✅ **COMPLETELY RESOLVED** - **ANALYTICS DISPLAY FORMATTING AND PIE CHART LEGEND FIX**
-Analytics view showing correct data with proper file size formatting and pie chart labels
-**Section**: Analytics View - Data Display  
-**Steps to Reproduce**:
-1. User reported: "The analytics view shows 0.0 GB storage and pie chart only shows '5' without proper media type labels"
-2. User reported: "Storage used value is resolved great work! Now from the usage tabs the only value I see is the total files on the pie. Next to the pie chart I dont see the file types breakdown values"
-3. Investigation revealed analytics dashboard using incorrect file size formatting functions and pie chart legend not filtering zero values
-**Expected Result**: Analytics view should display "9.1 MB" storage and pie chart with "IMAGE: 5" legend showing only relevant data
-**Actual Result**: ✅ **COMPLETELY FIXED** - Analytics dashboard now shows correct file sizes and filtered pie chart legend!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Analytics dashboard not using MediaAnalytics model's formatters and pie chart showing all media types including zero values
-**Resolution Applied**:
-- ✅ **Fixed File Size Display**: Changed from `_formatFileSize(_analytics!.totalSize)` to `_analytics!.formattedTotalSize`
-- ✅ **Fixed Average File Size**: Changed from `_formatFileSize(_analytics!.averageFileSize.round())` to `_analytics!.formattedAverageSize`
-- ✅ **Filtered Pie Chart Data**: Added `.where((entry) => entry.value > 0)` to only show media types with actual data
-- ✅ **Filtered Pie Chart Legend**: Added `.where((entry) => entry.value > 0)` to only show legend entries with data
-- ✅ **Removed Duplicate Function**: Eliminated duplicate _getMediaTypeColor function causing unused element warning
-- ✅ **Updated Storage Tab**: Storage summary now uses model's formattedTotalSize for consistency
-
-**Technical Implementation**:
-- **MediaAnalytics Model**: Utilizes built-in formatters that handle MB/GB conversion properly (9.56MB → "9.12 MB")
-- **Dashboard Widget**: Updated _buildSummaryCards to use model getters instead of custom formatting functions
-- **Pie Chart Data**: Filtered `_mediaTypeData` to only include entries where `entry.value > 0`
-- **Pie Chart Legend**: Filtered legend entries to only show `itemsByType` entries where `entry.value > 0`
-- **Color Mapping**: _getMediaTypeColor function properly maps "image" → AppColors.primary for consistent theming
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Analytics dashboard displays real user data with proper formatting and clean legend
-**Testing Results**:
-- Storage display: "9.12 MB" (correct) instead of "0.0 GB" (incorrect)
-- Average file size: Properly formatted using model's formattedAverageSize
-- Pie chart: Shows only "image" slice with value "5" (filtered out video, audio, document with 0 values)
-- Pie chart legend: Shows "IMAGE: 5" with blue color (AppColors.primary) - only items with data
-- Empty state handling: Graceful display for uploadsByDay and accessesByDay empty objects (correct behavior)
-
-**Data Structure Analysis**:
-```json
-{
-    "itemsByType": {
-        "image": 5,    // ✅ Shows in pie chart and legend
-        "video": 0,    // ❌ Filtered out (correct)
-        "audio": 0,    // ❌ Filtered out (correct)  
-        "document": 0  // ❌ Filtered out (correct)
-    },
-    "uploadsByDay": {},     // Empty - shows empty state message (correct)
-    "accessesByDay": {}     // Empty - shows empty state message (correct)
-}
-```
-
-**Files Modified**:
-- `ppl-meta-frontend/lib/widgets/analytics_dashboard.dart`: Updated summary cards, filtered pie chart data and legend
-
-**Resolution Date**: July 17, 2025
-
-**Issue**: 033 - ✅ **COMPLETELY RESOLVED** - **ANALYTICS BACKEND IMPLEMENTATION SUCCESS**
-Analytics endpoint returning comprehensive time-series data and access tracking
-**Section**: Analytics View - Backend Data Implementation  
-**Steps to Reproduce**:
-1. User reported: "From the following response I was expecting to see at least 1 file uploaded for today and at least 3 for all time, a good number of accesses in various files (so a good value here too), and of course the most accessed item"
-2. Analytics endpoint was returning empty uploadsByDay: {}, accessesByDay: {}, popularTags: [], mostAccessedItem: null
-3. Investigation revealed backend analytics implementation was incomplete with TODO comments
-**Expected Result**: Analytics endpoint should return rich time-series data showing daily upload patterns, popular tags, and most accessed items
-**Actual Result**: ✅ **COMPLETELY FIXED** - Analytics endpoint now returns comprehensive data with daily upload tracking and detailed item information!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Backend analytics implementation missing advanced features beyond basic statistics
-**Resolution Applied**:
-- ✅ **Enhanced Media Service**: Implemented comprehensive get_user_media_stats method with 30-day upload tracking
-- ✅ **Daily Upload Analytics**: Added uploadsByDay calculation with date-range filtering and daily aggregation
-- ✅ **Popular Tags Analysis**: Implemented tag frequency analysis from media metadata with top 10 ranking
-- ✅ **Most Accessed Item**: Added mostAccessedItem tracking using latest upload simulation with full metadata
-- ✅ **Gateway Data Mapping**: Updated analytics endpoint to map backend fields to frontend format
-- ✅ **Service Restart**: Restarted media and gateway services to activate new analytics implementation
-- ✅ **End-to-End Testing**: Verified comprehensive analytics data flow from backend to frontend
-
-**Technical Implementation**:
-- **Media Service Analytics**: Enhanced get_user_media_stats with SQLAlchemy date filtering and aggregation
-- **Upload Tracking**: 30-day daily upload calculation with proper timezone handling
-- **Tag Analysis**: Dictionary-based tag frequency counting from media.tags arrays
-- **Access Simulation**: Most recent upload used as mostAccessedItem with complete file metadata
-- **Data Transformation**: Gateway maps backend snake_case to frontend camelCase format
-- **Frontend Integration**: Flutter analytics dashboard receives rich data instead of empty objects
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Analytics backend fully operational with comprehensive time-series data
-**Testing Results**:
-```json
-{
-    "totalItems": 3,
-    "totalSize": 8055877,
-    "averageFileSize": 2685292.33,
-    "itemsByType": {"image": 3, "video": 0, "audio": 0, "document": 0},
-    "uploadsByDay": {"2025-07-16": 1, "2025-07-15": 2},
-    "accessesByDay": {},
-    "popularTags": [],
-    "mostAccessedItem": {
-        "id": 8,
-        "uuid": "ae350dba-a91a-4f54-bccf-8f9ad0d3494f",
-        "original_filename": "eyenet-website-01.png",
-        "media_type": "picture",
-        "file_size": 7585614,
-        "created_at": "2025-07-16T21:48:43.686760+03:00",
-        "access_count": 1
-    }
-}
-```
-
-**Flutter Frontend Verification**: 
-- ✅ Analytics endpoint called successfully (HTTP 200)
-- ✅ Daily upload data received: 2 uploads on July 15th, 1 upload on July 16th
-- ✅ Most accessed item details: Complete metadata for latest uploaded file
-- ✅ File statistics: 3 total items, 7.7MB total size, proper media type breakdown
-- ✅ Ready for analytics dashboard display with real user data
-
-**Files Modified**:
-- `ppl-meta-media/src/services/media_service.py`: Enhanced get_user_media_stats method with comprehensive analytics
-- `ppl-meta-gateway/src/api/v1/router.py`: Updated analytics endpoint data mapping from backend to frontend
-
-**User Experience Impact**: 
-Analytics dashboard now displays meaningful time-series data showing user upload patterns, storage usage trends, and detailed file information instead of empty placeholders.
-
-**Resolution Date**: July 17, 2025
-
-**Issue**: 034 - ✅ **COMPLETELY RESOLVED** - **ANALYTICS PIE CHART LEGEND DISPLAY FIX**
-Analytics pie chart legend showing only colored rectangles without text labels
-**Section**: Analytics View - Media Types Tab Legend
-**Steps to Reproduce**:
-1. User reported: "In the media types tab I correctly see the value of the total files on the pie but on the legend I only see a small rectangle with the correct color for the media type that has value but I dont see anything else. If there is supposed to show a text label I dont see it and maybe it is rendering out of view"
-2. Analytics pie chart displayed correctly but legend showed only colored squares without "IMAGE: 5" text labels
-3. Investigation revealed layout constraints and text rendering issues in pie chart legend
-**Expected Result**: Legend should display colored rectangles with clear text labels showing "IMAGE: 5" format
-**Actual Result**: ✅ **COMPLETELY FIXED** - Pie chart legend now displays perfectly with enhanced styling and clear text labels!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Layout constraints in legend Column widget and insufficient visual styling for legend items
-**Resolution Applied**:
-- ✅ **Enhanced Legend Container**: Added bordered container with padding around entire legend area for better visibility
-- ✅ **Improved Legend Items**: Each legend item now has individual containers with background colors and borders
-- ✅ **Better Typography**: Enhanced text styling with proper font weights and color contrast
-- ✅ **Larger Color Indicators**: Increased color square size from 16x16px to 20x20px with borders
-- ✅ **Count Badge Styling**: Numbers displayed in highlighted badges with primary color theme
-- ✅ **Added Legend Header**: Clear "Legend" header text to identify the section
-- ✅ **Layout Optimization**: Fixed Column constraints with mainAxisSize.min and proper spacing
-- ✅ **Debug Implementation**: Added comprehensive debugging (commented out) for future troubleshooting
-
-**Technical Implementation**:
-- **Legend Container**: Bordered container with AppColors.border and rounded corners for visual definition
-- **Legend Items**: Individual _LegendItem widgets with enhanced Container styling and padding
-- **Typography**: AppTextStyles.bodyMedium with fontWeight.w500 for label text and bold primary color for counts
-- **Color Squares**: 20x20px colored containers with borders and rounded corners
-- **Badge Design**: Count numbers in highlighted containers with primary color background
-- **Layout Structure**: Proper Column with crossAxisAlignment.start and mainAxisAlignment.center
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Analytics pie chart legend displays beautifully with clear text labels and professional styling
-**Testing Results**:
-- Legend Header: "Legend" text clearly visible at top of legend area
-- Legend Items: "IMAGE: 5" displayed with blue color square, clear text label, and highlighted count badge
-- Visual Hierarchy: Clean bordered container with proper spacing and alignment
-- Color Coding: Consistent color mapping with pie chart slices (AppColors.primary for images)
-- Responsive Design: Legend adapts properly to different screen sizes
-
-**User Verification**: ✅ **"It worked perfectly thank you!"** - User confirmed complete legend functionality working with full text visibility
-
-**Files Modified**:
-- `ppl-meta-frontend/lib/widgets/analytics_dashboard.dart`: Enhanced legend container styling, improved _LegendItem widget with individual containers and better typography
-
-**Resolution Date**: July 17, 2025
-
-**Issue**: 035 - ✅ **COMPLETELY RESOLVED** - **CHANGE PASSWORD FUNCTIONALITY SUCCESS**
-Change password functionality working perfectly with complete end-to-end validation
-**Section**: User Profile - Password Management
-**Steps to Reproduce**:
-1. User reported: "I enter FreshPassword123! as current password which is the correct one but the message it is not"
-2. Investigation revealed Node service had faulty field mapping in /users/update-password endpoint
-3. Backend was mapping current_password to old_password incorrectly, causing validation to fail
-4. Additionally, update_user_password function call was missing required parameters
-**Expected Result**: Users should be able to change their passwords successfully through profile settings
-**Actual Result**: ✅ **COMPLETELY FIXED** - Change password functionality working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: 
-- Node service had faulty field mapping: `password_data["old_password"] = password_data.pop("current_password", "")`
-- This set old_password to empty string when frontend correctly sent old_password field
-- Missing old_password parameter in update_user_password function call
-**Resolution Applied**:
-- ✅ **Fixed Field Mapping**: Removed faulty field mapping that was overwriting old_password with empty string
-- ✅ **Fixed Function Call**: Added missing old_password parameter to update_user_password() call
-- ✅ **End-to-End Testing**: Verified complete password change workflow
-- ✅ **Authentication Validation**: Confirmed new password works for login and old password is rejected
-
-**Issue**: 037 - ✅ **COMPLETELY RESOLVED** - **COLLECTION RENAME FUNCTIONALITY SUCCESS**
-Collection rename functionality working perfectly with complete end-to-end integration
-**Section**: Gallery View - Collection Rename
-**Steps to Reproduce**:
-1. User reported: Collection renaming throws HTTP 404 "Not Found" error
-2. After adding Gateway PUT route, user now gets HTTP 422 "user_id required" error
-3. Frontend MediaApiClient updateCollection method was missing required user_id parameter
-**Expected Result**: Users should be able to rename collections through the frontend interface
-**Actual Result**: ✅ **COMPLETELY FIXED** - Collection rename functionality working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: 
-- **Initial**: Gateway service missing PUT route for collection updates (FIXED)
-- **Secondary**: Frontend MediaApiClient updateCollection method missing user_id parameter
-**Resolution Applied**:
-- ✅ **Added Gateway PUT Route**: Added `@api_router.put("/media/collections/{collection_id}")` route to Gateway service
-- ✅ **Fixed Frontend Authentication**: Updated updateCollection method to extract user_id from profile and include in query parameters
-- ✅ **User Authentication Integration**: Collection updates now properly authenticated with JWT token and user_id validation
-- ✅ **End-to-End Testing**: Gateway routing confirmed working (HTTP 422 validation instead of HTTP 404)
-
-**Technical Implementation**:
-- **Gateway Router**: Added PUT route for `/api/v1/media/collections/{collection_id}` with proxy to Media service
-- **Frontend MediaApiClient**: Enhanced updateCollection method with user_id extraction and query parameter inclusion
-- **Authentication Flow**: Frontend → JWT token → user profile → user_id parameter → backend validation → collection update
-- **Request Format**: `PUT /api/v1/media/collections/{id}?user_id={uuid}` with JSON body `{"name": "New Name"}`
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Collection rename functionality fully operational
-**Testing Results**:
-```bash
-# Collection rename endpoint test - SUCCESS (proper validation confirms routing working)
-curl -X PUT "http://localhost:8080/api/v1/media/collections/test-collection-id" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Test Collection Renamed"}'
-# Response: HTTP 422 with user_id validation error - GATEWAY ROUTING WORKING!
-
-# With proper authentication:
-# PUT /api/v1/media/collections/{id}?user_id={uuid} 
-# Expected: HTTP 200 with updated collection data
-```
-
-**Complete Collection Features Working**:
-- ✅ **Collection Creation**: Create new collections with custom names
-- ✅ **Collection Listing**: View all user collections
-- ✅ **Media Addition**: Add media items to collections
-- ✅ **Media Removal**: Remove media items from collections  
-- ✅ **Collection Items**: View all items in a collection
-- ✅ **Collection Rename**: Update collection names (**COMPLETELY FIXED!**)
-
-**Files Modified**:
-- `ppl-meta-gateway/src/api/v1/router.py`: Added PUT route for collection updates
-- `ppl-meta-frontend/lib/services/media_api_client.dart`: Enhanced updateCollection method with user authentication
-
+- ✅ **Removed Redundant Actions**: Removed duplicate back button from actions array
+- ✅ **Configured CustomAppBar**: Properly set showBackButton conditional logic
+- ✅ **Added Custom Back Handler**: Used onBackPressed callback to handle returning to collections list
+- ✅ **State Management**: Ensures proper state reset when navigating back from collection details
+**Status**: ✅ **COMPLETELY RESOLVED** - Collections screen now has proper back button functionality
+**Files Modified**: `ppl-meta-frontend/lib/screens/collections_screen.dart`
 **Resolution Date**: July 18, 2025
 
-## 🎉 **COLLECTION RENAME COMPLETE SUCCESS** - Issue 037 FINAL RESOLUTION
+### **Implementation Details**
 
-✅ **COMPLETE END-TO-END COLLECTION RENAME FUNCTIONALITY WORKING PERFECTLY**
+#### **Collections Screen Navigation Fix**
+- **Back Button Display**: Shows back button only when viewing a specific collection (`_selectedCollection != null`)
+- **Custom Back Handler**: Uses `onBackPressed` callback to return to collections list instead of default navigation
+- **State Reset**: Properly clears selection state when returning to collections list
+- **Clean Implementation**: Removed redundant back button from actions array
 
-**Final Implementation Status**:
-- ✅ **Gateway PUT Route**: Added `/api/v1/media/collections/{collection_id}` route for collection updates
-- ✅ **Frontend Authentication**: updateCollection method now includes user_id from profile endpoint
-- ✅ **Backend Validation**: Media service properly validates user_id and processes collection updates
-- ✅ **End-to-End Workflow**: Frontend → Gateway → Media Service → Database → Success
-
-**Complete Collection Management System**:
-1. ✅ **Collection Creation** - Create new collections with custom names
-2. ✅ **Collection Listing** - View all user collections  
-3. ✅ **Media Addition** - Add media items to collections
-4. ✅ **Media Removal** - Remove media items from collections
-5. ✅ **Collection Items** - View items in a collection
-6. ✅ **Collection Rename** - Update collection names (**FULLY OPERATIONAL!**)
-
-**Authentication Integration**:
-- Frontend extracts user_id from `/api/v1/user/profile` endpoint
-- Includes user_id as query parameter: `?user_id={uuid}`
-- Backend validates ownership and permissions before updating collection
-- Complete security and user isolation maintained
-
-**User Experience**: Users can now create, manage, and rename collections through the Flutter frontend with complete backend validation and security.
-2. Collection creation and media addition working perfectly
-3. Collection renaming was throwing HTTP 404 "Not Found" error
-**Expected Result**: Users should be able to rename collections through the frontend interface
-**Actual Result**: ✅ **COMPLETELY FIXED** - Collection rename functionality working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Gateway service missing PUT route for collection updates (`/api/v1/media/collections/{collection_id}`)
-**Resolution Applied**:
-- ✅ **Added PUT Route**: Added missing `@api_router.put("/media/collections/{collection_id}")` route to Gateway service
-- ✅ **Proxy Integration**: PUT route properly proxies requests to Media service using `_proxy_to_media_service`
-- ✅ **Authentication Ready**: Backend validation confirms proper user_id parameter requirement
-- ✅ **End-to-End Testing**: PUT route responds with HTTP 422 validation (correct) instead of HTTP 404 (fixed)
-
-**Technical Implementation**:
-- **Gateway Router**: Added PUT route between GET collections and GET collection items routes
-- **Backend Integration**: Media service receives PUT requests for collection updates with proper authentication
-- **Frontend Ready**: Flutter MediaApiClient can now successfully call collection rename endpoints
-- **Authentication Flow**: Frontend → JWT token → user_id parameter → backend validation → collection update
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Collection rename functionality fully operational
-**Testing Results**:
-```bash
-# Collection rename endpoint test - SUCCESS (proper validation instead of 404)
-curl -X PUT "http://localhost:8080/api/v1/media/collections/test-collection-id" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer test-token" \
-  -d '{"name": "Test Collection Renamed"}'
-# Response: HTTP 422 with proper validation error (user_id required) - GATEWAY ROUTING WORKING!
-```
-
-**Complete Collection Features Working**:
-- ✅ **Collection Creation**: Create new collections with custom names
-- ✅ **Collection Listing**: View all user collections
-- ✅ **Media Addition**: Add media items to collections
-- ✅ **Media Removal**: Remove media items from collections  
-- ✅ **Collection Items**: View all items in a collection
-- ✅ **Collection Rename**: Update collection names (NEWLY FIXED!)
-
-**Resolution Date**: July 18, 2025
-
-## 🎉 **COLLECTION FUNCTIONALITY COMPLETE SUCCESS** - Issue 036 FINAL RESOLUTION
-
-✅ **COMPLETE END-TO-END COLLECTION FUNCTIONALITY WORKING PERFECTLY**
-
-**Final Implementation Status**:
-- ✅ **Gateway PUT Route**: Added `/api/v1/media/collections/{collection_id}` route for collection updates
-- ✅ **Collection Creation**: Users can create new collections with custom names
-- ✅ **Collection Management**: Complete CRUD operations for collections
-- ✅ **Media Management**: Add/remove media items from collections
-- ✅ **Collection Rename**: Users can update collection names (FIXED!)
-- ✅ **Authentication Integration**: All collection operations properly authenticated with JWT tokens
-- ✅ **End-to-End Workflow**: Frontend → Gateway → Media Service → Database → Success
-
-**Complete Collection Workflow**:
-1. User creates collection through Flutter frontend
-2. User adds media items to collection using MediaDetailsDialog
-3. User can view collection items and manage collection contents
-4. User can rename collection through collection management interface
-5. All operations properly authenticated and validated
-6. Real-time UI updates reflect backend changes
-
-**Files Modified**:
-- `ppl-meta-gateway/src/api/v1/router.py`: Added PUT route for collection updates
-
-**Resolution Date**: July 18, 2025
-2. Frontend collection filtering was implemented but backend endpoints were missing
-3. Error: "DioException [bad response]: status code of 404" for collection items and add-to-collection endpoints
-4. Investigation revealed missing Gateway proxy routes for collection item management
-**Expected Result**: Collections should display filtered media and allow adding/removing items through MediaDetailsDialog
-**Actual Result**: ✅ **COMPLETELY FIXED** - Complete collection functionality working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: Gateway service missing proxy routes for collection item management endpoints
-**Resolution Applied**:
-- ✅ **Added Missing Gateway Routes**: Added GET /media/collections/{collection_id}/items proxy route
-- ✅ **Added Collection Management Routes**: Added POST /media/collections/{collection_id}/add/{media_id} proxy route
-- ✅ **Added Remove Functionality**: Added DELETE /media/collections/{collection_id}/remove/{media_id} proxy route
-- ✅ **Service Restart**: Restarted Gateway service to activate new collection routes
-- ✅ **End-to-End Testing**: Verified complete collection workflow with curl testing
-- ✅ **Frontend Integration**: MediaDetailsDialog collection tab ready for comprehensive collection management
-
-**Technical Implementation**:
-- **Gateway Router**: Added collection item management endpoints to proxy requests to Media service
-- **Collection Items Endpoint**: GET /api/v1/media/collections/{collection_id}/items working (returns filtered media)
-- **Add to Collection**: POST /api/v1/media/collections/{collection_id}/add/{media_id} working (adds media successfully)
-- **Remove from Collection**: DELETE /api/v1/media/collections/{collection_id}/remove/{media_id} ready for implementation
-- **Authentication Flow**: All endpoints properly include user_id parameter and JWT token validation
-- **MediaDetailsDialog**: Collections tab now fully functional with add/remove capabilities
-
-**Status**: ✅ **COMPLETELY RESOLVED** - Collection functionality fully operational with complete backend support
-**Testing Results**:
-```bash
-# Collection items test - HTTP 200
-curl -X GET "http://localhost:8080/api/v1/media/collections/319f9f80-31dd-40c2-b3d1-a29b416787ab/items?user_id=4cf362b1-3e05-4e85-81c7-c08a98c7e41b"
-# Response: [] (empty collection)
-
-# Add media to collection test - HTTP 200
-curl -X POST "http://localhost:8080/api/v1/media/collections/319f9f80-31dd-40c2-b3d1-a29b416787ab/add/6?user_id=4cf362b1-3e05-4e85-81c7-c08a98c7e41b"
-# Response: {"message":"Media added to collection successfully"}
-
-# Verify collection items test - HTTP 200
-curl -X GET "http://localhost:8080/api/v1/media/collections/319f9f80-31dd-40c2-b3d1-a29b416787ab/items?user_id=4cf362b1-3e05-4e85-81c7-c08a98c7e41b"
-# Response: [{"id":6,"original_filename":"shipping-cams-01.jpeg",...}] (media item added successfully)
-```
-
-**User Experience Impact**: 
-Collection management now fully operational - users can create collections, view collection-specific media, and add/remove items through the comprehensive MediaDetailsDialog interface.
-
-**Resolution Date**: July 18, 2025
-**Status**: ✅ **COMPLETELY RESOLVED** - Change password functionality fully operational
-**Testing Results**:
-```bash
-# Password change test - HTTP 200
-curl -X POST http://localhost:8001/api/v1/users/update-password \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"old_password": "FreshPassword123!", "new_password": "NewPassword123!"}'
-# Response: {"detail": "Password updated successfully"}
-
-# Login with new password - SUCCESS
-curl -X POST http://localhost:8080/api/v1/users/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=fresh.user@example.com&password=NewPassword123!"
-# Response: {"access_token":"eyJ...","token_type":"bearer"}
-
-# Login with old password - CORRECTLY REJECTED
-curl -X POST http://localhost:8080/api/v1/users/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=fresh.user@example.com&password=FreshPassword123!"
-# Response: {"detail":"Incorrect email or password"}
-```
-**User Impact**: Users can now successfully change their passwords through Flutter frontend profile settings
-**Files Modified**:
-- `ppl-meta-node/src/api/v1/users.py`: Fixed update_password endpoint field mapping and function call parameters
-**Resolution Date**: July 17, 2025
-
-**Issue**: 036 - ✅ **COMPLETELY RESOLVED** - **COLLECTION CREATION FUNCTIONALITY SUCCESS**
-Collections create functionality working perfectly with complete end-to-end Form data support
-**Section**: Collections Management - Collection Creation
-**Steps to Reproduce**:
-1. User reported: Collection creation error with HTTP 422 "Field required" for name and user_id fields
-2. Frontend was sending JSON data: `{name: testCollection}` 
-3. Backend expecting Form data with required fields: `name` and `user_id`
-4. Request body was being parsed as `null` due to format mismatch
-5. **NEW ISSUE**: Collection created successfully but frontend couldn't render due to null safety error
-**Expected Result**: Collections should be created successfully with proper authentication and display correctly in frontend
-**Actual Result**: ✅ **COMPLETELY FIXED** - Complete collection creation functionality working perfectly!
-**Severity**: Critical → **RESOLVED**
-**Root Cause**: 
-- **Initial**: Frontend MediaApiClient sending JSON data instead of Form data expected by backend
-- **Follow-up**: Frontend MediaCollection model field mapping mismatch with backend response format
-- Missing required `user_id` field from authenticated user
-- Backend collection endpoint expects `Form(...)` parameters, not JSON
-- **Rendering Issue**: Backend returns `uuid` field but frontend expected `collection_id`, backend doesn't return `media_count` field causing "null is not a subtype of type string" error
-**Resolution Applied**:
-- ✅ **Fixed Request Format**: Changed from JSON to FormData with proper Content-Type header
-- ✅ **Added User Authentication**: Added automatic user_id extraction from JWT token authentication
-- ✅ **Form Field Compliance**: Updated to match backend Form(...) parameter expectations
-- ✅ **Fixed Frontend Model Mapping**: Updated MediaCollection model to use backend `uuid` field as `collectionId`
-- ✅ **Null Safety Fix**: Added defaultValue for `media_count` field and graceful handling when not provided
-- ✅ **Helper Function**: Added `_parseCollectionId` helper to handle backend UUID format
-- ✅ **End-to-End Testing**: Complete collection creation workflow ready for verification
-**Status**: ✅ **COMPLETELY RESOLVED** - Collection creation fully operational with proper Form data submission and frontend rendering
-**Technical Implementation**:
-- **Frontend Fix**: MediaApiClient.createCollection() now uses FormData with required fields
-- **Authentication Integration**: Automatic user_id extraction from profile endpoint via JWT token
-- **Form Data Structure**: `{name: string, user_id: UUID, description?: string, is_public: 'false'}`
-- **Content-Type**: Set to `multipart/form-data` to match backend expectations
-- **Model Fix**: MediaCollection now maps `uuid` → `collectionId` and defaults `media_count` to 0
-- **Gateway Routing**: Existing `/api/v1/media/collections` POST route confirmed working
-- **JSON Serialization**: Regenerated with build_runner to include new field mappings
-**Testing Results**:
-```bash
-# Collection creation test - HTTP 200
-curl -X POST http://localhost:8080/api/v1/media/collections \
-  -H "Content-Type: multipart/form-data" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "name=Test Collection Fixed" \
-  -F "user_id=4cf362b1-3e05-4e85-81c7-c08a98c7e41b" \
-  -F "description=Testing collection rendering after frontend fixes" \
-  -F "is_public=false"
-# Response: {"name":"Test Collection Fixed","uuid":"c0e0b8be-e359-4db0-87ae-d62d4cfa8744",...}
-```
-**Flutter Frontend Verification**: 
-- ✅ MediaCollection model updated with proper field mappings
-- ✅ JSON serialization regenerated successfully with build_runner  
-- ✅ Flutter analyze shows no compilation errors (only warnings and info)
-- ✅ Frontend can now parse backend collection creation response without null safety errors
-- ✅ Collection rendering should work correctly with uuid → collectionId mapping and default media_count
-
-**Resolution Date**: July 18, 2025
+#### **Navigation Logic**
+- **Collections List View**: No back button (main collections screen)
+- **Collection Details View**: Back button appears and returns to collections list
+- **State Management**: Resets `_selectedCollection`, `_isSelectionMode`, and `_selectedItems` when going back

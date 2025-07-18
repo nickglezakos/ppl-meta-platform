@@ -5,6 +5,7 @@ import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../widgets/collection_management.dart';
 import '../widgets/responsive_media_gallery.dart';
+import '../widgets/custom_app_bar.dart';
 
 /// Collections screen with management and media display
 class CollectionsScreen extends ConsumerStatefulWidget {
@@ -23,46 +24,20 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   Widget build(BuildContext context) {
     final apiClient = ref.watch(apiClientProvider);
     return Scaffold(
-      appBar: AppBar(
+      appBar: CustomAppBar(
         title: _selectedCollection != null
-            ? Text(_selectedCollection!.name)
-            : const Text('Collections'),
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
-        elevation: 0,
-        leading: _selectedCollection != null
-            ? IconButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedCollection = null;
-                    _isSelectionMode = false;
-                    _selectedItems.clear();
-                  });
-                },
-                icon: const Icon(Icons.arrow_back),
-              )
+            ? _selectedCollection!.name
+            : 'Collections',
+        showBackButton: true, // Always show back button on collections screen
+        onBackPressed: _selectedCollection != null 
+            ? () {
+                setState(() {
+                  _selectedCollection = null;
+                  _isSelectionMode = false;
+                  _selectedItems.clear();
+                });
+              }
             : null,
-        actions: [
-          if (_selectedCollection != null) ...[
-            if (!_isSelectionMode)
-              IconButton(
-                onPressed: _enterSelectionMode,
-                icon: const Icon(Icons.checklist),
-                tooltip: 'Select items',
-              )
-            else
-              IconButton(
-                onPressed: _exitSelectionMode,
-                icon: const Icon(Icons.close),
-                tooltip: 'Cancel selection',
-              ),
-            IconButton(
-              onPressed: _showCollectionMenu,
-              icon: const Icon(Icons.more_vert),
-              tooltip: 'Collection options',
-            ),
-          ],
-        ],
       ),
       body: _selectedCollection == null
           ? _buildCollectionsList()

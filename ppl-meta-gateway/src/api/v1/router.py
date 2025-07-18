@@ -452,6 +452,12 @@ async def stream_media(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.get("/media/stream-token/{media_id}")
+async def stream_media_with_token(request: Request):
+    """Proxy media streaming with token to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/media/thumbnail/{media_id}")
 async def get_media_thumbnail(request: Request):
     """Proxy media thumbnail to Media service."""

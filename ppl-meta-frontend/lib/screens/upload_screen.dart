@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/device_aware_upload_widget.dart';
 import '../models/media_models.dart';
+import '../widgets/custom_app_bar.dart';
 
 /// Upload screen with device-aware upload interface
 class UploadScreen extends StatefulWidget {
@@ -15,11 +16,8 @@ class _UploadScreenState extends State<UploadScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Upload Media'),
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
-        elevation: 0,
+      appBar: const CustomAppBar(
+        title: 'Upload Media',
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.lg),

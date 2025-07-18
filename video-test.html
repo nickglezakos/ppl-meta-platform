@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Video Streaming Test</title>
+</head>
+<body>
+    <h1>PPL Meta Video Streaming Test</h1>
+    
+    <h2>Test 1: Token-Based Video Stream (should work!)</h2>
+    <video id="testVideo1" width="640" height="480" controls>
+        <source src="http://localhost:8080/api/v1/media/stream-token/170d0c97-8fa3-4895-a4d1-7c5aaa1d0b8e?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0Y2YzNjJiMS0zZTA1LTRlODUtODFjNy1jMDhhOThjN2U0MWIiLCJlbWFpbCI6ImZyZXNoLnVzZXJAZXhhbXBsZS5jb20iLCJleHAiOjE3MjEyOTQ5MDYsImlhdCI6MTcyMTI5MTMwNiwiaXNzIjoicHBsLW1ldGEiLCJhdWQiOiJwcGwtbWV0YS11c2VycyJ9.7v0Bb4HjTN6u9iUMsQQi_TlwXSHm6OqxXNqwEJDMvf0" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    
+    <h2>Test 2: Via Nginx Proxy (with token)</h2>
+    <video id="testVideo2" width="640" height="480" controls>
+        <source src="http://localhost/api/v1/media/stream-token/170d0c97-8fa3-4895-a4d1-7c5aaa1d0b8e?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0Y2YzNjJiMS0zZTA1LTRlODUtODFjNy1jMDhhOThjN2U0MWIiLCJlbWFpbCI6ImZyZXNoLnVzZXJAZXhhbXBsZS5jb20iLCJleHAiOjE3MjEyOTQ5MDYsImlhdCI6MTcyMTI5MTMwNiwiaXNzIjoicHBsLW1ldGEiLCJhdWQiOiJwcGwtbWV0YS11c2VycyJ9.7v0Bb4HjTN6u9iUMsQQi_TlwXSHm6OqxXNqwEJDMvf0" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    
+    <h2>Debug Info</h2>
+    <div id="debug"></div>
+    
+    <script>
+        const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0Y2YzNjJiMS0zZTA1LTRlODUtODFjNy1jMDhhOThjN2U0MWIiLCJlbWFpbCI6ImZyZXNoLnVzZXJAZXhhbXBsZS5jb20iLCJleHAiOjE3MjEyOTQ5MDYsImlhdCI6MTcyMTI5MTMwNiwiaXNzIjoicHBsLW1ldGEiLCJhdWQiOiJwcGwtbWV0YS11c2VycyJ9.7v0Bb4HjTN6u9iUMsQQi_TlwXSHm6OqxXNqwEJDMvf0';
+        
+        function testWithAuth() {
+            fetch('http://localhost:8080/api/v1/media/stream/170d0c97-8fa3-4895-a4d1-7c5aaa1d0b8e', {
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'Range': 'bytes=0-1023'
+                }
+            })
+            .then(response => {
+                document.getElementById('debug').innerHTML += '<p>Fetch test response: ' + response.status + ' ' + response.statusText + '</p>';
+                return response.blob();
+            })
+            .then(blob => {
+                document.getElementById('debug').innerHTML += '<p>Blob received: ' + blob.size + ' bytes, type: ' + blob.type + '</p>';
+                
+                // Try to create object URL and test it
+                const url = URL.createObjectURL(blob);
+                const testVideo = document.createElement('video');
+                testVideo.src = url;
+                testVideo.controls = true;
+                testVideo.width = 320;
+                testVideo.height = 240;
+                
+                const container = document.createElement('div');
+                container.innerHTML = '<h3>Test 3: Object URL from authenticated fetch</h3>';
+                container.appendChild(testVideo);
+                document.body.appendChild(container);
+            })
+            .catch(error => {
+                document.getElementById('debug').innerHTML += '<p>Fetch error: ' + error + '</p>';
+            });
+        }
+        
+        // Test video events
+        document.getElementById('testVideo1').addEventListener('error', function(e) {
+            document.getElementById('debug').innerHTML += '<p>Video 1 error: ' + e.target.error.message + '</p>';
+        });
+        
+        document.getElementById('testVideo1').addEventListener('loadstart', function(e) {
+            document.getElementById('debug').innerHTML += '<p>Video 1 load started</p>';
+        });
+        
+        document.getElementById('testVideo2').addEventListener('error', function(e) {
+            document.getElementById('debug').innerHTML += '<p>Video 2 error: ' + e.target.error.message + '</p>';
+        });
+        
+        document.getElementById('testVideo2').addEventListener('loadstart', function(e) {
+            document.getElementById('debug').innerHTML += '<p>Video 2 load started</p>';
+        });
+        
+        // Run authenticated test
+        testWithAuth();
+    </script>
+</body>
+</html>

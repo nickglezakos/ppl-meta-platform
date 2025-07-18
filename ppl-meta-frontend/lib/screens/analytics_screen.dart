@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/analytics_dashboard.dart';
+import '../widgets/custom_app_bar.dart';
 
 /// Analytics screen showing usage metrics and insights
 class AnalyticsScreen extends StatefulWidget {
@@ -19,11 +20,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Analytics'),
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
-        elevation: 0,
+      appBar: CustomAppBar(
+        title: 'Analytics',
         actions: [
           IconButton(
             onPressed: _showFilterDialog,

@@ -122,6 +122,44 @@ def require_permission(resource: str, action: str):
     return permission_dependency
 
 
+async def get_user_from_token(token: str) -> AuthUser:
+    """
+    Get user from JWT token string (used for query parameter authentication).
+    """
+    try:
+        # Call user profile endpoint through gateway to get user data
+        import httpx
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            headers = {"Authorization": f"Bearer {token}"}
+            response = await client.get(
+                "http://localhost:8080/api/v1/user/profile", headers=headers
+            )
+
+            if response.status_code == 200:
+                user_data = response.json()
+                # Use UUID (guid) as user_id for media access control
+                return AuthUser(
+                    user_id=user_data.get("guid"),  # Use UUID
+                    username=user_data.get("username"),
+                    email=user_data.get("email"),
+                    roles=[],  # Default empty roles
+                    permissions=[],  # Default empty permissions
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Failed to validate token",
+        ) from exc
+
+
 def require_role(required_role: str):
     """
     Dependency factory for role-based authorization.
@@ -134,7 +172,9 @@ def require_role(required_role: str):
         return {"message": "Admin access granted"}
     """
 
-    async def role_dependency(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    async def role_dependency(
+        user: AuthUser = Depends(get_current_user),
+    ) -> AuthUser:
         if required_role not in user.roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

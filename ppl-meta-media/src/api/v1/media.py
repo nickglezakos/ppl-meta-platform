@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 # Add shared modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
-from src.auth import AuthUser, get_current_user
+from src.auth import AuthUser, get_current_user, get_user_from_token
 from src.database import get_db
 from src.models.media import Media
 from src.schemas.media import (  # Variant schemas; Issue #016 - Advanced Metadata Management
@@ -897,6 +897,98 @@ async def stream_media(
     Returns:
         StreamingResponse with range request support
     """
+    # Check access permissions using the authenticated user's UUID
+    access_info = get_media_access_check(
+        media_id, current_user.user_id, share_token, db
+    )
+
+    file_path = Path(access_info["file_path"])
+
+    # Verify file exists on disk
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    file_size = file_path.stat().st_size
+    range_header = request.headers.get("Range")
+
+    def generate_chunks(start: int, end: int):
+        """Generate file chunks for streaming."""
+        with open(file_path, "rb") as f:
+            f.seek(start)
+            remaining = end - start + 1
+            while remaining > 0:
+                chunk_size = min(8192, remaining)  # 8KB chunks
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    # Handle range requests
+    if range_header:
+        try:
+            # Parse range header (e.g., "bytes=0-1023")
+            range_match = range_header.replace("bytes=", "").split("-")
+            start = int(range_match[0]) if range_match[0] else 0
+            end = int(range_match[1]) if range_match[1] else file_size - 1
+
+            # Validate range
+            if start >= file_size or end >= file_size or start > end:
+                raise HTTPException(status_code=416, detail="Range not satisfiable")
+
+            content_length = end - start + 1
+
+            return StreamingResponse(
+                generate_chunks(start, end),
+                status_code=206,  # Partial Content
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Content-Length": str(content_length),
+                    "Content-Type": access_info["mime_type"],
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "private, max-age=3600",
+                },
+            )
+        except (ValueError, IndexError):
+            # Invalid range header, fall back to full file
+            pass
+
+    # Return full file if no range request or invalid range
+    return StreamingResponse(
+        generate_chunks(0, file_size - 1),
+        media_type=access_info["mime_type"],
+        headers={
+            "Content-Length": str(file_size),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+@router.get("/stream-token/{media_id}")
+async def stream_media_with_token(
+    media_id: str,
+    token: str,  # JWT token as query parameter
+    request: Request,
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Stream media file with JWT token as query parameter.
+    This endpoint is designed for Flutter video player web compatibility.
+
+    Args:
+        media_id: UUID of the media to stream
+        token: JWT authentication token as query parameter
+        request: FastAPI request object for range headers
+        share_token: Optional share token for public access
+
+    Returns:
+        StreamingResponse with range request support
+    """
+    # Authenticate user from token query parameter
+    current_user = await get_user_from_token(token)
+
     # Check access permissions using the authenticated user's UUID
     access_info = get_media_access_check(
         media_id, current_user.user_id, share_token, db

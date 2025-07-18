@@ -104,6 +104,9 @@ class MediaItem {
   @JsonKey(name: 'id', fromJson: _intToString)  // Backend sends integer, convert to string
   final String mediaId;
   
+  @JsonKey(name: 'uuid')  // Backend UUID field needed for streaming
+  final String uuid;
+  
   @JsonKey(name: 'original_filename')
   final String originalFilename;
   
@@ -170,6 +173,7 @@ class MediaItem {
   
   const MediaItem({
     required this.mediaId,
+    required this.uuid,
     required this.originalFilename,
     required this.mediaType,
     required this.fileSize,

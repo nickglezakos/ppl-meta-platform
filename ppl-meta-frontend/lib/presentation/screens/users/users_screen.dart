@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/users_provider.dart';
 import '../../../core/models/user.dart';
+import '../../../widgets/custom_app_bar.dart';
 
 class UsersScreen extends ConsumerStatefulWidget {
   const UsersScreen({super.key});
@@ -26,19 +27,8 @@ class _UsersScreenState extends ConsumerState<UsersScreen> {
     final usersState = ref.watch(usersNotifierProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Users'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/home'),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => ref.read(usersNotifierProvider.notifier).loadUsers(),
-            tooltip: 'Refresh users',
-          ),
-        ],
+      appBar: const CustomAppBar(
+        title: 'Users',
       ),
       body: _buildBody(usersState),
     );

@@ -9,6 +9,7 @@ import '../widgets/responsive_media_gallery.dart';
 import '../widgets/advanced_search_interface.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/media_details_dialog.dart';
+import '../widgets/custom_app_bar.dart';
 
 /// Gallery screen with search and responsive media display
 class GalleryScreen extends ConsumerStatefulWidget {
@@ -34,52 +35,52 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   Widget build(BuildContext context) {
     final apiClient = ref.watch(apiClientProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: _isSelectionMode
-            ? Text('${_selectedItems.length} selected')
-            : const Text('Media Gallery'),
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
-        elevation: 0,
-        leading: _isSelectionMode
-            ? IconButton(
+      appBar: _isSelectionMode
+          ? AppBar(
+              title: Text('${_selectedItems.length} selected'),
+              backgroundColor: AppColors.surface,
+              foregroundColor: AppColors.textPrimary,
+              elevation: 0,
+              leading: IconButton(
                 onPressed: _exitSelectionMode,
                 icon: const Icon(Icons.close),
-              )
-            : null,
-        actions: [
-          if (!_isSelectionMode) ...[
-            IconButton(
-              onPressed: _toggleSearch,
-              icon: Icon(_showSearch ? Icons.search_off : Icons.search),
-              tooltip: 'Search',
-            ),
-            IconButton(
-              onPressed: _enterSelectionMode,
-              icon: const Icon(Icons.checklist),
-              tooltip: 'Select items',
-            ),
-          ] else ...[
-            if (_selectedItems.isNotEmpty) ...[
-              IconButton(
-                onPressed: _shareSelectedItems,
-                icon: const Icon(Icons.share),
-                tooltip: 'Share',
               ),
-              IconButton(
-                onPressed: _deleteSelectedItems,
-                icon: const Icon(Icons.delete),
-                tooltip: 'Delete',
-              ),
-            ],
-          ],
-          IconButton(
-            onPressed: () => context.push('/upload'),
-            icon: const Icon(Icons.add_photo_alternate),
-            tooltip: 'Upload',
-          ),
-        ],
-      ),
+              actions: [
+                if (_selectedItems.isNotEmpty) ...[
+                  IconButton(
+                    onPressed: _shareSelectedItems,
+                    icon: const Icon(Icons.share),
+                    tooltip: 'Share',
+                  ),
+                  IconButton(
+                    onPressed: _deleteSelectedItems,
+                    icon: const Icon(Icons.delete),
+                    tooltip: 'Delete',
+                  ),
+                ],
+              ],
+            )
+          : CustomAppBar(
+              title: 'Media Gallery',
+              showBackButton: true, // Show back button on main gallery screen
+              actions: [
+                IconButton(
+                  onPressed: _toggleSearch,
+                  icon: Icon(_showSearch ? Icons.search_off : Icons.search),
+                  tooltip: 'Search',
+                ),
+                IconButton(
+                  onPressed: _enterSelectionMode,
+                  icon: const Icon(Icons.checklist),
+                  tooltip: 'Select items',
+                ),
+                IconButton(
+                  onPressed: () => context.push('/upload'),
+                  icon: const Icon(Icons.add_photo_alternate),
+                  tooltip: 'Upload',
+                ),
+              ],
+            ),
       body: Column(
         children: [
           // Search interface

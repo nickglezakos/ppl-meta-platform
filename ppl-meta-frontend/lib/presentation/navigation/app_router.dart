@@ -12,6 +12,8 @@ import '../../screens/gallery_screen.dart';
 import '../../screens/analytics_screen.dart';
 import '../../screens/collections_screen.dart';
 import '../../screens/profile_screen.dart';
+import '../../screens/media_preview_screen.dart';
+import '../../models/media_models.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authNotifierProvider);
@@ -90,6 +92,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProviderScreenWrapper(
           child: UsersScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/media-preview',
+        name: 'media-preview',
+        builder: (context, state) {
+          final mediaItem = state.extra as MediaItem?;
+          if (mediaItem == null) {
+            return const Scaffold(
+              body: Center(
+                child: Text('Media item not found'),
+              ),
+            );
+          }
+          return ProviderScreenWrapper(
+            child: MediaPreviewScreen(mediaItem: mediaItem),
+          );
+        },
       ),
       // Root route redirects based on auth status
       GoRoute(
