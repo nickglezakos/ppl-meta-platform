@@ -8,6 +8,7 @@ import '../services/media_api_client.dart';
 import '../widgets/responsive_media_gallery.dart';
 import '../widgets/advanced_search_interface.dart';
 import '../widgets/share_dialog.dart';
+import '../widgets/media_details_dialog.dart';
 
 /// Gallery screen with search and responsive media display
 class GalleryScreen extends ConsumerStatefulWidget {
@@ -198,7 +199,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   void _openItemDetails(MediaItem item) {
     showDialog(
       context: context,
-      builder: (context) => _MediaDetailsDialog(item: item),
+      builder: (context) => MediaDetailsDialog(item: item),
     );
   }
 

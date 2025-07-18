@@ -470,6 +470,30 @@ async def get_media_collections(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.put("/media/collections/{collection_id}")
+async def update_media_collection(request: Request):
+    """Proxy update media collection to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/media/collections/{collection_id}/items")
+async def get_collection_items(request: Request):
+    """Proxy get collection items to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/media/collections/{collection_id}/add/{media_id}")
+async def add_media_to_collection(request: Request):
+    """Proxy add media to collection to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.delete("/media/collections/{collection_id}/remove/{media_id}")
+async def remove_media_from_collection(request: Request):
+    """Proxy remove media from collection to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/debug-user-profile")
 async def debug_user_profile():
     """Debug route for user profile testing."""

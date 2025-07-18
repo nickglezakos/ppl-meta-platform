@@ -6,6 +6,7 @@ import '../core/models/api_response.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
 import '../core/api/api_client.dart';
+import 'media_details_dialog.dart';
 
 /// Responsive media gallery with thumbnail views and infinite scroll
 class ResponsiveMediaGallery extends StatefulWidget {
@@ -468,7 +469,17 @@ class _MediaGridItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: enableSelection && isSelected ? onSelectionToggle : onTap,
+      onTap: enableSelection && isSelected 
+          ? onSelectionToggle 
+          : () {
+              // Open MediaDetailsDialog when tapping on a media item
+              showDialog(
+                context: context,
+                builder: (context) => MediaDetailsDialog(item: item),
+              );
+              // Also call the provided onTap callback if any
+              onTap?.call();
+            },
       onLongPress: onLongPress,
       child: AnimatedContainer(
         duration: AppDurations.fast,
@@ -669,6 +680,8 @@ class _MediaGridItem extends StatelessWidget {
       ),
     );
   }
+
+
 
   /// Get media type icon
   IconData _getMediaTypeIcon() {

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
+import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
 
@@ -11,12 +11,14 @@ class CollectionManagement extends StatefulWidget {
   final Function(MediaCollection)? onCollectionSelected;
   final Function(List<MediaItem>, MediaCollection)? onItemsAddedToCollection;
   final List<MediaItem>? selectedItems;
+  final ApiClient? apiClient;
 
   const CollectionManagement({
     super.key,
     this.onCollectionSelected,
     this.onItemsAddedToCollection,
     this.selectedItems,
+    this.apiClient,
   });
 
   @override
@@ -27,6 +29,8 @@ class _CollectionManagementState extends State<CollectionManagement>
     with TickerProviderStateMixin {
   final TextEditingController _createController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
+  
+  late final MediaApiClient _apiClient;
   
   List<MediaCollection> _collections = [];
   MediaCollection? _selectedCollection;
@@ -45,6 +49,8 @@ class _CollectionManagementState extends State<CollectionManagement>
   @override
   void initState() {
     super.initState();
+    
+    _apiClient = MediaApiClient(widget.apiClient);
     
     _createAnimationController = AnimationController(
       duration: AppDurations.normal,
@@ -76,9 +82,8 @@ class _CollectionManagementState extends State<CollectionManagement>
     });
 
     try {
-      // Get MediaApiClient from Provider context
-      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
-      final response = await apiClient.getCollections();
+      // Use the initialized MediaApiClient instance
+      final response = await _apiClient.getCollections();
       
       if (response.success) {
         setState(() {
@@ -117,9 +122,8 @@ class _CollectionManagementState extends State<CollectionManagement>
     });
 
     try {
-      // Get MediaApiClient from Provider context
-      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
-      final response = await apiClient.createCollection(name: name);
+      // Use the initialized MediaApiClient instance
+      final response = await _apiClient.createCollection(name: name);
       
       if (response.success) {
         setState(() {
@@ -155,9 +159,8 @@ class _CollectionManagementState extends State<CollectionManagement>
     if (!confirmed) return;
 
     try {
-      // Get MediaApiClient from Provider context
-      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
-      await apiClient.deleteCollection(collection.id);
+      // Use the initialized MediaApiClient instance
+      await _apiClient.deleteCollection(collection.id);
       
       setState(() {
         _collections.removeWhere((c) => c.id == collection.id);
@@ -178,9 +181,8 @@ class _CollectionManagementState extends State<CollectionManagement>
     if (newName == null || newName.trim().isEmpty) return;
 
     try {
-      // Get MediaApiClient from Provider context
-      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
-      final response = await apiClient.updateCollection(
+      // Use the initialized MediaApiClient instance
+      final response = await _apiClient.updateCollection(
         collectionId: collection.id,
         name: newName.trim(),
       );
@@ -212,9 +214,8 @@ class _CollectionManagementState extends State<CollectionManagement>
     MediaCollection collection,
   ) async {
     try {
-      // Get MediaApiClient from Provider context  
-      final apiClient = Provider.of<MediaApiClient>(context, listen: false);
-      await apiClient.addItemsToCollection(
+      // Use the initialized MediaApiClient instance
+      await _apiClient.addItemsToCollection(
         collectionId: collection.id,
         itemIds: items.map((item) => item.id).toList(),
       );

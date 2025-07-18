@@ -280,7 +280,34 @@ class MediaApiClient {
     }
   }
 
-  /// Add items to collection
+  /// Add single media item to collection
+  Future<ApiResponse<void>> addMediaToCollection({
+    required String collectionId,
+    required String mediaId,
+  }) async {
+    try {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      final response = await _apiClient.post(
+        '/api/v1/media/collections/$collectionId/add/$mediaId',
+        queryParameters: {'user_id': userId},
+      );
+      
+      print('DEBUG: MediaApiClient addMediaToCollection - success: ${response.data}');
+      return ApiResponse.success(null);
+    } on DioException catch (e) {
+      print('DEBUG: MediaApiClient addMediaToCollection - DioException: $e');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('DEBUG: MediaApiClient addMediaToCollection - Exception: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Add multiple items to collection (bulk operation)
   Future<ApiResponse<void>> addItemsToCollection({
     required String collectionId,
     required List<String> itemIds,
@@ -332,21 +359,30 @@ class MediaApiClient {
     int limit = 20,
   }) async {
     try {
+      // If searching within a specific collection, use the collection items endpoint
+      if (collectionId != null && collectionId.isNotEmpty) {
+        return await _getCollectionItems(
+          collectionId: collectionId,
+          page: page,
+          limit: limit,
+        );
+      }
+
+      // Otherwise use the general search endpoint
       final queryParams = <String, dynamic>{
         'page': page,
-        'limit': limit,
+        'page_size': limit, // Backend uses page_size instead of limit
         if (query != null && query.isNotEmpty) 'query': query,
-        if (mediaType != null) 'media_type': mediaType.name,
+        if (mediaType != null) 'media_types': mediaType.name,
         if (startDate != null) 'start_date': startDate.toIso8601String(),
         if (endDate != null) 'end_date': endDate.toIso8601String(),
         if (tags != null && tags.isNotEmpty) 'tags': tags.join(','),
-        if (collectionId != null) 'collection_id': collectionId,
         if (sortBy != null) 'sort_by': sortBy,
         if (sortOrder != null) 'sort_order': sortOrder,
         // Note: filters parameter not used for now, using individual parameters
       };
 
-      print('DEBUG: MediaApiClient searchMedia - queryParams: $queryParams');
+      print('DEBUG: MediaApiClient searchMedia - general search queryParams: $queryParams');
       final response = await _apiClient.get('/api/v1/media/search', queryParameters: queryParams);
       print('DEBUG: MediaApiClient searchMedia - response received, status: ${response.statusCode}');
       print('DEBUG: MediaApiClient searchMedia - response data type: ${response.data.runtimeType}');
@@ -381,6 +417,59 @@ class MediaApiClient {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       print('DEBUG: MediaApiClient searchMedia - Exception: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get media items in a specific collection
+  Future<ApiResponse<MediaListResponse>> _getCollectionItems({
+    required String collectionId,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      final queryParams = <String, dynamic>{
+        'user_id': userId,
+        'skip': (page - 1) * limit,
+        'limit': limit,
+      };
+
+      print('DEBUG: MediaApiClient _getCollectionItems - collectionId: $collectionId, queryParams: $queryParams');
+      final response = await _apiClient.get('/api/v1/media/collections/$collectionId/items', queryParameters: queryParams);
+      print('DEBUG: MediaApiClient _getCollectionItems - response received, status: ${response.statusCode}');
+      print('DEBUG: MediaApiClient _getCollectionItems - response data type: ${response.data.runtimeType}');
+      
+      // The backend returns a list directly, not wrapped in a response object
+      final items = (response.data as List)
+          .map((json) {
+            print('DEBUG: Parsing collection MediaItem from: ${json['original_filename']}');
+            return MediaItem.fromJson(json);
+          })
+          .where((item) => !item.isArchived) // Filter out archived (deleted) items
+          .toList();
+      
+      print('DEBUG: MediaApiClient _getCollectionItems - parsed ${items.length} items for collection $collectionId');
+      
+      // Create MediaListResponse with the items
+      final collectionResponse = MediaListResponse(
+        items: items,
+        totalCount: items.length,
+        page: page,
+        limit: limit,
+        hasMore: items.length == limit,
+      );
+      
+      return ApiResponse.success(collectionResponse);
+    } on DioException catch (e) {
+      print('DEBUG: MediaApiClient _getCollectionItems - DioException: $e');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('DEBUG: MediaApiClient _getCollectionItems - Exception: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }
@@ -460,7 +549,11 @@ class MediaApiClient {
     String? description,
   }) async {
     try {
-      final response = await _apiClient.put('/api/v1/media/collections/$collectionId', data: {
+      // Get user profile to extract user_id
+      final profileResponse = await _apiClient.get('/api/v1/user/profile');
+      final userId = profileResponse.data['guid'] as String;
+      
+      final response = await _apiClient.put('/api/v1/media/collections/$collectionId?user_id=$userId', data: {
         if (name != null) 'name': name,
         if (description != null) 'description': description,
       });

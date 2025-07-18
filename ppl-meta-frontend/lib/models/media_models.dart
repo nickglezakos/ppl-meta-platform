@@ -9,6 +9,13 @@ String _intToString(dynamic value) {
   return value?.toString() ?? '';
 }
 
+// Helper function to parse collection ID from backend UUID field
+String _parseCollectionId(dynamic value) {
+  if (value is String) return value;
+  if (value is int) return value.toString();
+  return value?.toString() ?? '';
+}
+
 /// Media type enumeration
 enum MediaType {
   @JsonValue('picture')  // Backend uses 'picture' instead of 'image'
@@ -475,9 +482,9 @@ class DeviceStats {
 
 /// Media collection model
 @JsonSerializable()
-@JsonSerializable()
 class MediaCollection {
-  @JsonKey(name: 'collection_id')
+  // Backend returns both 'id' (integer) and 'uuid' (string) - we use uuid as collectionId
+  @JsonKey(name: 'uuid', fromJson: _parseCollectionId)
   final String collectionId;
   
   final String name;
@@ -492,7 +499,8 @@ class MediaCollection {
   @JsonKey(name: 'created_by')
   final String? createdBy;
   
-  @JsonKey(name: 'media_count')
+  // Backend doesn't return media_count, so we default to 0 and calculate from media list
+  @JsonKey(name: 'media_count', defaultValue: 0)
   final int mediaCount;
   
   final List<MediaItem> media;
@@ -504,7 +512,7 @@ class MediaCollection {
     required this.createdAt,
     this.updatedAt,
     this.createdBy,
-    required this.mediaCount,
+    this.mediaCount = 0,  // Default to 0 if not provided
     this.media = const [],
   });
   
@@ -513,7 +521,7 @@ class MediaCollection {
   
   // Getter aliases for compatibility
   String get id => collectionId;
-  int get itemCount => mediaCount;
+  int get itemCount => mediaCount > 0 ? mediaCount : media.length;  // Calculate from media list if count is 0
   
   /// Create a copy with updated properties
   MediaCollection copyWith({

@@ -1,24 +1,27 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
+import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../widgets/collection_management.dart';
 import '../widgets/responsive_media_gallery.dart';
 
 /// Collections screen with management and media display
-class CollectionsScreen extends StatefulWidget {
+class CollectionsScreen extends ConsumerStatefulWidget {
   const CollectionsScreen({super.key});
 
   @override
-  State<CollectionsScreen> createState() => _CollectionsScreenState();
+  ConsumerState<CollectionsScreen> createState() => _CollectionsScreenState();
 }
 
-class _CollectionsScreenState extends State<CollectionsScreen> {
+class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   MediaCollection? _selectedCollection;
   List<MediaItem> _selectedItems = [];
   bool _isSelectionMode = false;
 
   @override
   Widget build(BuildContext context) {
+    final apiClient = ref.watch(apiClientProvider);
     return Scaffold(
       appBar: AppBar(
         title: _selectedCollection != null
@@ -63,13 +66,15 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
       ),
       body: _selectedCollection == null
           ? _buildCollectionsList()
-          : _buildCollectionDetails(),
+          : _buildCollectionDetails(apiClient),
     );
   }
 
   /// Build collections list view
   Widget _buildCollectionsList() {
+    final apiClient = ref.watch(apiClientProvider);
     return CollectionManagement(
+      apiClient: apiClient,
       onCollectionSelected: (collection) {
         setState(() {
           _selectedCollection = collection;
@@ -90,7 +95,7 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
   }
 
   /// Build collection details view
-  Widget _buildCollectionDetails() {
+  Widget _buildCollectionDetails(ApiClient apiClient) {
     return Column(
       children: [
         // Collection header
@@ -102,6 +107,7 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
             collectionId: _selectedCollection!.id,
             enableSelection: _isSelectionMode,
             enableInfiniteScroll: true,
+            apiClient: apiClient,
             onItemTap: _handleItemTap,
             onItemLongPress: _handleItemLongPress,
             onSelectionChanged: _handleSelectionChanged,
