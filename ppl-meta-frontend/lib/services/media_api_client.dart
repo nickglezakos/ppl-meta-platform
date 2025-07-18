@@ -251,10 +251,27 @@ class MediaApiClient {
     String? description,
   }) async {
     try {
-      final response = await _apiClient.post('/api/v1/media/collections', data: {
+      // Get current user ID for authentication
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      // Use FormData as backend expects Form fields, not JSON
+      final formData = FormData.fromMap({
         'name': name,
-        if (description != null) 'description': description,
+        'user_id': userId,
+        if (description != null && description.isNotEmpty) 'description': description,
+        'is_public': 'false',  // Form fields should be strings
       });
+
+      final response = await _apiClient.post(
+        '/api/v1/media/collections', 
+        data: formData,
+        options: Options(
+          headers: {'Content-Type': 'multipart/form-data'},
+        ),
+      );
       return ApiResponse.success(MediaCollection.fromJson(response.data));
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
