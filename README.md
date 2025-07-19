@@ -168,10 +168,14 @@ docker-compose up --build
 
 ## 📚 Documentation
 
-- [API Documentation](./docs/api/)
-- [Architecture Guide](./docs/architecture/)
-- [Deployment Guide](./docs/deployment/)
-- [Development Setup](./docs/development/)
+**📖 Complete Documentation**: [docs/README.md](./docs/README.md)
+
+### Quick Links
+- **[Current Development Issues](./docs/current/)** - Active development and issues
+- **[User Testing Issues](./docs/current/user-testing/PPL_META_PLATFORM_USER_TESTING_ISSUES.md)** - Bug reports and user feedback
+- **[Vision Service Development](./docs/current/vision-service/PPL_META_VISION_SERVICE_ISSUES.md)** - New microservice planning
+- **[Technical Documentation](./docs/technical/)** - API specs, database design, infrastructure
+- **[User Guides](./docs/guides/)** - Setup and usage guides
 
 ## 🤝 Contributing
 
