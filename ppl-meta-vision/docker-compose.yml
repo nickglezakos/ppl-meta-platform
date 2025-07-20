@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  ppl-meta-vision:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - PPL_META_ENV=development
+      - LOG_LEVEL=info
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - ppl-meta-network
+
+networks:
+  ppl-meta-network:
+    external: true

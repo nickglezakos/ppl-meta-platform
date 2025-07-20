@@ -333,6 +333,25 @@ async def _proxy_to_media_service(request: Request) -> Response:
         )
 
 
+# Capabilities Service Routes
+@api_router.get("/capabilities/my-capabilities")
+async def get_my_capabilities(request: Request):
+    """Proxy get my capabilities to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.get("/capabilities/by-role/{role_id}")
+async def get_capabilities_by_role(request: Request):
+    """Proxy get capabilities by role to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.get("/capabilities/by-user/{user_id}")
+async def get_capabilities_by_user(request: Request):
+    """Proxy get capabilities by user to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 # Media Service Routes
 @api_router.post("/media/upload")
 async def upload_media(request: Request):

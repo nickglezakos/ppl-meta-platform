@@ -1,0 +1,844 @@
+{
+  "file_path": "/Users/nickgklezakos/ppl-meta-alpha-staging/ppl-meta/face_detector.py",
+  "file_size_bytes": 23666,
+  "total_lines": 513,
+  "class_definitions": [
+    {
+      "name": "Face",
+      "line": 15,
+      "definition": "class Face:"
+    }
+  ],
+  "method_definitions": [
+    {
+      "name": "__init__",
+      "line": 18,
+      "definition": "def __init__(self, logger, conn=None):"
+    },
+    {
+      "name": "db_connection",
+      "line": 27,
+      "definition": "def db_connection(self):"
+    },
+    {
+      "name": "__enter__",
+      "line": 30,
+      "definition": "def __enter__(self):"
+    },
+    {
+      "name": "__exit__",
+      "line": 38,
+      "definition": "def __exit__(self, exc_type, exc_val, exc_tb):"
+    },
+    {
+      "name": "face_detection",
+      "line": 53,
+      "definition": "def face_detection(self, media, logger, threshold=50):"
+    },
+    {
+      "name": "select_close_and_group3",
+      "line": 318,
+      "definition": "def select_close_and_group3(self, logger, next_frame_proximity, conn):"
+    },
+    {
+      "name": "is_close",
+      "line": 471,
+      "definition": "def is_close(self, rect1, rect2, next_frame_proximity):"
+    }
+  ],
+  "imports": [
+    "import cv2",
+    "import uuid",
+    "import time",
+    "import sqlite3",
+    "import os",
+    "import shutil",
+    "import json",
+    "import pandas as pd",
+    "import dlib",
+    "import settings",
+    "from collections import defaultdict",
+    "import logging"
+  ],
+  "model_references": [
+    {
+      "line": 9,
+      "content": "import dlib"
+    },
+    {
+      "line": 16,
+      "content": "body_model = None  # Assuming body_model is a class attribute for simplicity"
+    },
+    {
+      "line": 57,
+      "content": "# Initialize the Dlib face detector"
+    },
+    {
+      "line": 58,
+      "content": "detector = dlib.get_frontal_face_detector()"
+    },
+    {
+      "line": 72,
+      "content": "# Dynamically construct the path to the 'models' directory"
+    },
+    {
+      "line": 74,
+      "content": "model_path = os.path.join(base_dir, 'models', 'haarcascade_frontalface_default.xml')"
+    },
+    {
+      "line": 77,
+      "content": "face_cascade = cv2.CascadeClassifier(model_path)"
+    },
+    {
+      "line": 80,
+      "content": "#body_cascade = cv2.CascadeClassifier('ppl-meta/models/haarcascade_fullbody.xml')"
+    },
+    {
+      "line": 246,
+      "content": "# Second face detection with Dlib  **************************************************"
+    },
+    {
+      "line": 253,
+      "content": "# Second loop to perform the second face detection with Dlib"
+    },
+    {
+      "line": 261,
+      "content": "# Perform face detection with Dlib **************************************************"
+    },
+    {
+      "line": 263,
+      "content": "dlib_faces = detector(gray_face, 1)"
+    },
+    {
+      "line": 266,
+      "content": "if len(dlib_faces) == 0:"
+    }
+  ],
+  "database_operations": [
+    {
+      "line": 4,
+      "content": "import sqlite3"
+    },
+    {
+      "line": 21,
+      "content": "self.db_file = os.path.join(os.path.dirname(__file__), 'ppl_meta.db')"
+    },
+    {
+      "line": 24,
+      "content": "self.c = None if conn is None else conn.cursor()"
+    },
+    {
+      "line": 27,
+      "content": "def db_connection(self):"
+    },
+    {
+      "line": 32,
+      "content": "self.conn = sqlite3.connect(self.db_file)"
+    },
+    {
+      "line": 33,
+      "content": "self.c = self.conn.cursor()"
+    },
+    {
+      "line": 34,
+      "content": "self.logger.info(f\"Connected to database at {self.db_file} from FaceDetector\")"
+    },
+    {
+      "line": 41,
+      "content": "self.conn.commit()"
+    },
+    {
+      "line": 42,
+      "content": "self.logger.info(\"Changes committed to the database.\")"
+    },
+    {
+      "line": 83,
+      "content": "cursor = face.db_connection()"
+    },
+    {
+      "line": 84,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS RawDetectionData\")"
+    },
+    {
+      "line": 85,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS FaceRects\")"
+    },
+    {
+      "line": 86,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS FacePics\")"
+    },
+    {
+      "line": 87,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS FaceUids\")"
+    },
+    {
+      "line": 88,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS MatchedFaces\")"
+    },
+    {
+      "line": 89,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS RawBodyDetectionData\")"
+    },
+    {
+      "line": 90,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS BodyRects\")"
+    },
+    {
+      "line": 91,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS BodyPics\")"
+    },
+    {
+      "line": 92,
+      "content": "cursor.execute(\"DROP TABLE IF EXISTS BodyUids\")"
+    },
+    {
+      "line": 95,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 103,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 116,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 127,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 136,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 146,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 154,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 167,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 175,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 288,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 292,
+      "content": "raw_detection_data_id = cursor.lastrowid"
+    },
+    {
+      "line": 295,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 301,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 307,
+      "content": "cursor.execute('''"
+    },
+    {
+      "line": 313,
+      "content": "cursor.connection.commit()"
+    },
+    {
+      "line": 320,
+      "content": "self.conn = sqlite3.connect(self.db_file)"
+    },
+    {
+      "line": 321,
+      "content": "cursor = conn.cursor()"
+    },
+    {
+      "line": 415,
+      "content": "with self as db:"
+    },
+    {
+      "line": 416,
+      "content": "cursor = db.conn.cursor()"
+    },
+    {
+      "line": 439,
+      "content": "# Execute the select statement to find the matching RawDetectionDataId"
+    },
+    {
+      "line": 440,
+      "content": "cursor.execute(select_sql, (rect_x, rect_y, rect_width, rect_height))"
+    },
+    {
+      "line": 441,
+      "content": "result = cursor.fetchone()"
+    },
+    {
+      "line": 445,
+      "content": "# Execute the update statement with the found RawDetectionDataId and the current item's grouptags"
+    },
+    {
+      "line": 446,
+      "content": "cursor.execute(update_sql, (grouptags, raw_detection_data_id))"
+    },
+    {
+      "line": 449,
+      "content": "# Commit the changes"
+    },
+    {
+      "line": 450,
+      "content": "db.conn.commit()"
+    },
+    {
+      "line": 452,
+      "content": "logging.info(f\"Number of face rects updates executed with grouptags: {update_count}\")"
+    },
+    {
+      "line": 453,
+      "content": "print(f\"Number of face rects updates executed with grouptags: {update_count}\")"
+    },
+    {
+      "line": 455,
+      "content": "cursor.close()"
+    }
+  ],
+  "key_methods": {
+    "__init__": {
+      "lines": [
+        "    def __init__(self, logger, conn=None):",
+        "            self.logger = logger if logger else logging.getLogger(__name__)",
+        "            self.conn = conn",
+        "            self.db_file = os.path.join(os.path.dirname(__file__), 'ppl_meta.db')",
+        "            self.previous_faces = {}",
+        "            self.last_printed_progress = -1",
+        "            self.c = None if conn is None else conn.cursor()",
+        "            self.internal_conn = conn is None  # Track if the connection was created internally",
+        ""
+      ],
+      "total_lines": 9
+    },
+    "db_connection": {
+      "lines": [
+        "    def db_connection(self):",
+        "        return self.c",
+        ""
+      ],
+      "total_lines": 3
+    },
+    "__enter__": {
+      "lines": [
+        "    def __enter__(self):",
+        "        if self.conn is None:",
+        "            self.conn = sqlite3.connect(self.db_file)",
+        "            self.c = self.conn.cursor()",
+        "            self.logger.info(f\"Connected to database at {self.db_file} from FaceDetector\")",
+        "            self.internal_conn = True  # Mark that the connection was created internally",
+        "        return self",
+        ""
+      ],
+      "total_lines": 8
+    },
+    "__exit__": {
+      "lines": [
+        "    def __exit__(self, exc_type, exc_val, exc_tb):",
+        "        if self.conn:",
+        "            if exc_type is None:  # No exceptions were raised within the block",
+        "                self.conn.commit()",
+        "                self.logger.info(\"Changes committed to the database.\")",
+        "            else:",
+        "                self.conn.rollback()  # Rollback in case of exception",
+        "                self.logger.error(f\"Database transaction rolled back due to an exception from FaceDetector: {exc_val}\")",
+        "            if self.c:",
+        "                self.c.close()",
+        "            if self.internal_conn:  # Only close if we opened the connection",
+        "                self.conn.close()",
+        "                self.logger.info(\"Database connection closed.\")",
+        "",
+        ""
+      ],
+      "total_lines": 15
+    },
+    "face_detection": {
+      "lines": [
+        "    def face_detection(self, media, logger, threshold=50):",
+        "        uid_generator = uuid.uuid4",
+        "        self.last_printed_progress = -1",
+        "",
+        "        # Initialize the Dlib face detector",
+        "        detector = dlib.get_frontal_face_detector()",
+        "",
+        "        settings_instance = settings.Settings()",
+        "        image_dir = settings_instance.image_dir",
+        "        face_pic_enlargement = settings_instance.face_pic_enlargement",
+        "",
+        "        # Empty the 'face_pics' directory if it exists, otherwise create it",
+        "        if os.path.exists(image_dir):",
+        "            shutil.rmtree(image_dir)",
+        "        os.makedirs(image_dir)",
+        "",
+        "        # Get the frames and total_frames from the media object",
+        "        frames, total_frames = media.get_data()",
+        "",
+        "        # Dynamically construct the path to the 'models' directory",
+        "        base_dir = os.path.dirname(__file__)",
+        "        model_path = os.path.join(base_dir, 'models', 'haarcascade_frontalface_default.xml')",
+        "",
+        "        # Load the Haar Cascade file using the absolute path",
+        "        face_cascade = cv2.CascadeClassifier(model_path)",
+        "",
+        "        # Create the body cascade object",
+        "        #body_cascade = cv2.CascadeClassifier('ppl-meta/models/haarcascade_fullbody.xml')",
+        "",
+        "        with Face(logger) as face:",
+        "            cursor = face.db_connection()",
+        "            cursor.execute(\"DROP TABLE IF EXISTS RawDetectionData\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS FaceRects\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS FacePics\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS FaceUids\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS MatchedFaces\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS RawBodyDetectionData\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS BodyRects\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS BodyPics\")",
+        "            cursor.execute(\"DROP TABLE IF EXISTS BodyUids\")",
+        "",
+        "            # Create new tables",
+        "            cursor.execute('''",
+        "                CREATE TABLE RawDetectionData (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    frame BLOB,",
+        "                    timestamp REAL,",
+        "                    frame_path TEXT",
+        "                )",
+        "            ''')",
+        "            cursor.execute('''",
+        "                CREATE TABLE FaceRects (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    RawDetectionDataId INTEGER,",
+        "                    rect_x INTEGER,",
+        "                    rect_y INTEGER,",
+        "                    rect_width INTEGER,",
+        "                    rect_height INTEGER,",
+        "                    grouptags REAL,",
+        "                    persontabs REAL,",
+        "                    FOREIGN KEY (RawDetectionDataId) REFERENCES RawDetectionData (Id)",
+        "                )",
+        "            ''')",
+        "            cursor.execute('''",
+        "                CREATE TABLE FacePics (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    RawDetectionDataId INTEGER,",
+        "                    face_pic TEXT,",
+        "                    FaceDetectionFilter INTEGER,",
+        "                    age INTEGER,",
+        "                    gender TEXT,",
+        "                    FOREIGN KEY (RawDetectionDataId) REFERENCES RawDetectionData (Id)",
+        "                )",
+        "            ''')",
+        "            cursor.execute('''",
+        "                CREATE TABLE FaceUids (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    RawDetectionDataId INTEGER,",
+        "                    face_uid TEXT,",
+        "                    age INTEGER,",
+        "                    FOREIGN KEY (RawDetectionDataId) REFERENCES RawDetectionData (Id)",
+        "                )",
+        "            ''')",
+        "            cursor.execute('''",
+        "                CREATE TABLE MatchedFaces (",
+        "                    id INTEGER PRIMARY KEY AUTOINCREMENT,",
+        "                    uid1 TEXT NOT NULL,",
+        "                    uid2 TEXT NOT NULL,",
+        "                    grouplabel TEXT",
+        "                )",
+        "            ''')",
+        "",
+        "            # Create new tables for body detection data",
+        "            cursor.execute('''",
+        "                CREATE TABLE RawBodyDetectionData (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    frame BLOB,",
+        "                    timestamp REAL,",
+        "                    frame_path TEXT",
+        "                )",
+        "            ''')",
+        "            cursor.execute('''",
+        "                CREATE TABLE BodyRects (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    RawBodyDetectionDataId INTEGER,",
+        "                    rect_x INTEGER,",
+        "                    rect_y INTEGER,",
+        "                    rect_width INTEGER,",
+        "                    rect_height INTEGER,",
+        "                    grouptags REAL,",
+        "                    personstabs REAL,",
+        "                    FOREIGN KEY (RawBodyDetectionDataId) REFERENCES RawBodyDetectionData (Id)",
+        "                )",
+        "            ''')",
+        "            cursor.execute('''",
+        "                CREATE TABLE BodyPics (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    RawBodyDetectionDataId INTEGER,",
+        "                    body_pic TEXT,",
+        "                    FOREIGN KEY (RawBodyDetectionDataId) REFERENCES RawBodyDetectionData (Id)",
+        "                )",
+        "            ''')",
+        "            cursor.execute('''",
+        "                CREATE TABLE BodyUids (",
+        "                    Id INTEGER PRIMARY KEY,",
+        "                    RawBodyDetectionDataId INTEGER,",
+        "                    body_uid TEXT,",
+        "                    FOREIGN KEY (RawBodyDetectionDataId) REFERENCES RawBodyDetectionData (Id)",
+        "                )",
+        "            ''')",
+        "",
+        "            # First face detection with Open CV  **************************************************",
+        "",
+        "            # Define frame detection rate",
+        "            frame_detection_rate = settings_instance.face_detection_rate",
+        "",
+        "            # Calculate the interval for frame detection",
+        "            detection_interval = settings_instance.video_frame_rate // frame_detection_rate",
+        "",
+        "            # Iterate over the frames",
+        "            for frame_number, frame_path in enumerate(frames):",
+        "                # Load the frame from the file",
+        "                frame = cv2.imread(frame_path)",
+        "                    ",
+        "                # Get the current timestamp",
+        "                timestamp = time.time()",
+        "",
+        "                # Frame processing",
+        "                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)",
+        "",
+        "                # Perform face detection only on frames that match the interval",
+        "                if frame_number % detection_interval == 0:",
+        "                    # Use Haar cascade for face detection",
+        "                    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))",
+        "                ",
+        "                    face_pics = []",
+        "                    face_uids = []",
+        "                    face_rects = []",
+        "",
+        "                    for (x, y, w, h) in faces:",
+        "                        # Calculate the additional face pic enlargement of width and height",
+        "                        w_increase = int(face_pic_enlargement * w)",
+        "                        h_increase = int(face_pic_enlargement * h)",
+        "",
+        "                        # Adjust x, y, w, h to include the additional 20%",
+        "                        x_new = max(0, x - w_increase // 2)",
+        "                        y_new = max(0, y - h_increase // 2)",
+        "                        w_new = min(frame.shape[1] - x_new, w + w_increase)",
+        "                        h_new = min(frame.shape[0] - y_new, h + h_increase)",
+        "",
+        "                        face_rect = (x_new, y_new, x_new + w_new, y_new + h_new)",
+        "                        face_rects.append(face_rect)",
+        "",
+        "                        # Crop the face from the frame",
+        "                        face_pic = frame[y_new:y_new + h_new, x_new:x_new + w_new]",
+        "",
+        "                        # Generate a unique ID for each face",
+        "                        uid = uid_generator()",
+        "",
+        "                        # Save the face as an image file in the 'face_pics' directory",
+        "                        face_path = f'{image_dir}/face_{frame_number}_{x}_{y}.jpg'",
+        "                        cv2.imwrite(face_path, face_pic)",
+        "                        face_pics.append(face_path)",
+        "                        face_uids.append(uid)",
+        "",
+        "                        # Add the face rectangle to face_rects",
+        "                        face_rects.append([x, y, w, h])",
+        "",
+        "                        # Convert numpy.int64 values in face_rects to regular ints",
+        "                        #self.logger.debug(f'Before conversion, face_rects: {face_rects}')",
+        "                        face_rects = [[int(i) for i in inner] for inner in face_rects]",
+        "                        #self.logger.debug(f'After conversion, face_rects: {face_rects}')",
+        "",
+        "                    # Second face detection with Dlib  **************************************************",
+        "                    ",
+        "                    # Create new lists",
+        "                    filtered_face_pics = []",
+        "                    filtered_face_uids = []",
+        "                    filtered_face_rects = []",
+        "",
+        "                    # Second loop to perform the second face detection with Dlib",
+        "                    for i, face_pic_path in enumerate(face_pics):",
+        "                        # Load the face picture",
+        "                        face_pic = cv2.imread(face_pic_path)",
+        "",
+        "                        # Convert the face to grayscale",
+        "                        gray_face = cv2.cvtColor(face_pic, cv2.COLOR_BGR2GRAY)",
+        "",
+        "                    # Perform face detection with Dlib **************************************************",
+        "",
+        "                        dlib_faces = detector(gray_face, 1)",
+        "",
+        "                        # If no faces are detected, then it's a false positive",
+        "                        if len(dlib_faces) == 0:",
+        "                            continue",
+        "",
+        "                        # Add the items to the new lists",
+        "                        filtered_face_pics.append(face_pic_path)",
+        "                        filtered_face_uids.append(face_uids[i])",
+        "                        filtered_face_rects.append(face_rects[i])",
+        "",
+        "                    # Replace the original lists with the filtered lists",
+        "                    face_pics = filtered_face_pics",
+        "                    face_uids = filtered_face_uids",
+        "                    face_rects = filtered_face_rects        ",
+        "                    ",
+        "                    # Only insert into the database if faces were detected",
+        "                    if face_pics:",
+        "                        for i in range(len(face_rects)):",
+        "                            # Convert the face rectangle and face image file path to JSON strings",
+        "                            face_rect_str = json.dumps([int(num) for num in face_rects[i]])",
+        "                            face_pic_str = json.dumps(face_pics[i])",
+        "                            face_uid_str = json.dumps([str(uid) for uid in face_uids])  # Convert each face ID to a string and then convert the list to a JSON string",
+        "",
+        "                            # Insert the raw detection data into the RawDetectionData table",
+        "                            cursor.execute('''",
+        "                                INSERT INTO RawDetectionData (frame, frame_path, timestamp)",
+        "                                VALUES (?, ?, ?)",
+        "                            ''', (str(face_uids[i]), frame_path, timestamp))",
+        "                            raw_detection_data_id = cursor.lastrowid",
+        "",
+        "                            # Insert the face rectangle into the FaceRects table",
+        "                            cursor.execute('''",
+        "                                INSERT INTO FaceRects (RawDetectionDataId, rect_x, rect_y, rect_width, rect_height)",
+        "                                VALUES (?, ?, ?, ?, ?)",
+        "                            ''', (raw_detection_data_id, face_rects[i][0], face_rects[i][1], face_rects[i][2] - face_rects[i][0], face_rects[i][3] - face_rects[i][1]))",
+        "",
+        "                            # Insert the face image file path into the FacePics table",
+        "                            cursor.execute('''",
+        "                                INSERT INTO FacePics (RawDetectionDataId, face_pic)",
+        "                                VALUES (?, ?)",
+        "                            ''', (raw_detection_data_id, face_pics[i]))",
+        "",
+        "                            # Insert the face ID into the FaceUids table",
+        "                            cursor.execute('''",
+        "                                INSERT INTO FaceUids (RawDetectionDataId, face_uid)",
+        "                                VALUES (?, ?)",
+        "                            ''', (raw_detection_data_id, str(face_uids[i])))",
+        "",
+        "                        # After all the frames have been processed and data has been inserted into the tables",
+        "                        cursor.connection.commit()",
+        "                        # Log the number of updates made",
+        "                        logger.info(f\"Number of face rects updates made: {len(face_rects)} from {total_frames} frames for {media} in face detection\")",
+        "",
+        ""
+      ],
+      "total_lines": 265
+    },
+    "select_close_and_group3": {
+      "lines": [
+        "    def select_close_and_group3(self, logger, next_frame_proximity, conn):",
+        "        if self.conn is None:",
+        "            self.conn = sqlite3.connect(self.db_file)",
+        "        cursor = conn.cursor()",
+        "        ",
+        "        with self.conn as conn:",
+        "            # Create an instance of the Settings class",
+        "            settings_instance = settings.Settings()",
+        "            focus_proximity = settings_instance.focus_proximity",
+        "            reverse_depth_frames_ratio = settings_instance.reverse_depth_rects_ratio_close_frames",
+        "            number_rects_devision_to_get_total_close_rects = settings_instance.number_rects_devision_to_get_total_close_rects",
+        "            minimum_items_per_group = settings_instance.minimum_items_per_group",
+        "            pd.set_option('display.max_columns', None)",
+        "",
+        "            # Query the database to get the data from the FaceRects, RawDetectionData, and FacePics tables",
+        "            query = f\"\"\"",
+        "                        SELECT FaceRects.*, RawDetectionData.frame_path, FacePics.face_pic",
+        "                        FROM FaceRects",
+        "                        JOIN RawDetectionData ON FaceRects.RawDetectionDataId = RawDetectionData.Id",
+        "                        JOIN FacePics ON FaceRects.RawDetectionDataId = FacePics.RawDetectionDataId",
+        "                        WHERE FaceRects.rect_width > {focus_proximity}",
+        "                    \"\"\"",
+        "            df = pd.read_sql_query(query, conn)",
+        "",
+        "            # Print the total number of rectangles before they are loaded into the DataFrame",
+        "            print(\"Select Close and Group3\")",
+        "            print(f\"Total number of face rectangles before loading into DataFrame: {len(df)}\")",
+        "",
+        "            # Extract the frame number from the frame_path and add it to the DataFrame",
+        "            df['frame_number'] = df['frame_path'].str.extract(r'frame_(\\d+)\\.jpg').astype(int)",
+        "",
+        "            # Sort the DataFrame by the frame number",
+        "            df = df.sort_values('frame_number')",
+        "",
+        "            num_frames = max(1, round(len(df) / reverse_depth_frames_ratio))",
+        "            if num_frames < settings_instance.num_frames:",
+        "                num_frames = settings_instance.num_frames",
+        "            print(f\"Number of face frames after the current frame to compare: {num_frames}\")",
+        "",
+        "            total_close_rects = max(1, num_frames / number_rects_devision_to_get_total_close_rects)",
+        "            if total_close_rects < settings_instance.num_face_rects:",
+        "                total_close_rects = settings_instance.num_face_rects",
+        "            print(f\"Number of face rects to match in next frames: {total_close_rects}\")",
+        "",
+        "            selected_close = set()",
+        "            tags_to_group = 0",
+        "            ungrouped_rects = df.copy()",
+        "",
+        "            while not ungrouped_rects.empty:",
+        "                # Select the first rect from the first available frame",
+        "                first_rect = ungrouped_rects.iloc[0]",
+        "                group_tag = tags_to_group",
+        "                tags_to_group += 1",
+        "",
+        "                # Initialize the group with the first rect",
+        "                current_rect = first_rect",
+        "                df.at[current_rect.name, 'grouptags'] = group_tag",
+        "                ungrouped_rects = ungrouped_rects.drop(current_rect.name)",
+        "",
+        "                while True:",
+        "                    match_found = False",
+        "                    for i in range(current_rect['frame_number'] + 1, current_rect['frame_number'] + num_frames + 1):",
+        "                        next_frame = df[df['frame_number'] == i]",
+        "                        if next_frame.empty:",
+        "                            continue",
+        "",
+        "                        closest_match = None",
+        "                        closest_distance = float('inf')",
+        "",
+        "                        for _, next_rect in next_frame.iterrows():",
+        "                            other_rect = (next_rect['rect_x'], next_rect['rect_y'], next_rect['rect_width'], next_rect['rect_height'])",
+        "                            close, _, distance = self.is_close((current_rect['rect_x'], current_rect['rect_y'], current_rect['rect_width'], current_rect['rect_height']), other_rect, next_frame_proximity)",
+        "                            if close and distance < closest_distance:",
+        "                                closest_match = next_rect",
+        "                                closest_distance = distance",
+        "",
+        "                        if closest_match is not None:",
+        "                            df.at[closest_match.name, 'grouptags'] = group_tag",
+        "                            if closest_match.name in ungrouped_rects.index:",
+        "                                ungrouped_rects = ungrouped_rects.drop(closest_match.name)",
+        "                            current_rect = closest_match",
+        "                            match_found = True",
+        "                            break",
+        "",
+        "                    if not match_found:",
+        "                        break",
+        "",
+        "            selected_close = df[df['grouptags'].notnull()]",
+        "",
+        "            # Remove groups that contain items below a threshold *****************************************",
+        "",
+        "            group_counts = selected_close['grouptags'].value_counts()",
+        "            valid_groups = group_counts[group_counts > minimum_items_per_group].index",
+        "            selected_close = selected_close[selected_close['grouptags'].isin(valid_groups)]",
+        "",
+        "            # ************************************************************************************",
+        "",
+        "            with self as db:",
+        "                cursor = db.conn.cursor()",
+        "                try:",
+        "                    # Prepare the SQL select statement to find matching RawDetectionDataId",
+        "                    select_sql = \"\"\"",
+        "                    SELECT RawDetectionDataId",
+        "                    FROM FaceRects",
+        "                    WHERE rect_x = ? AND rect_y = ? AND rect_width = ? AND rect_height = ?",
+        "                    \"\"\"",
+        "",
+        "                    # Prepare the SQL update statement",
+        "                    update_sql = \"\"\"",
+        "                    UPDATE FaceRects",
+        "                    SET grouptags = ?",
+        "                    WHERE RawDetectionDataId = ?",
+        "                    \"\"\"",
+        "",
+        "                    # Initialize update counter",
+        "                    update_count = 0",
+        "",
+        "                    # Iterate over the selected_close list",
+        "                    for _, row in selected_close.iterrows():",
+        "                        rect_x, rect_y, rect_width, rect_height, grouptags = row['rect_x'], row['rect_y'], row['rect_width'], row['rect_height'], row['grouptags']",
+        "",
+        "                        # Execute the select statement to find the matching RawDetectionDataId",
+        "                        cursor.execute(select_sql, (rect_x, rect_y, rect_width, rect_height))",
+        "                        result = cursor.fetchone()",
+        "",
+        "                        if result:",
+        "                            raw_detection_data_id = result[0]",
+        "                            # Execute the update statement with the found RawDetectionDataId and the current item's grouptags",
+        "                            cursor.execute(update_sql, (grouptags, raw_detection_data_id))",
+        "                            update_count += 1",
+        "",
+        "                    # Commit the changes",
+        "                    db.conn.commit()",
+        "                    # Log the number of updates",
+        "                    logging.info(f\"Number of face rects updates executed with grouptags: {update_count}\")",
+        "                    print(f\"Number of face rects updates executed with grouptags: {update_count}\")",
+        "                finally:",
+        "                    cursor.close()",
+        "",
+        "            close_grouped = defaultdict(list)",
+        "            for _, row in selected_close.iterrows():",
+        "                close_grouped[row['grouptags']].append((row['rect_x'], row['rect_y'], row['rect_width'], row['rect_height'], row['frame_number'], row['face_pic'], row['grouptags']))",
+        "",
+        "            # Print the total number of groups in close_grouped",
+        "            logging.info(f\"Total number of face groups in close_grouped: {len(close_grouped)}\")",
+        "            print(f\"Total number of face groups in close_grouped: {len(close_grouped)}\")",
+        "",
+        "            # Assuming body_close_grouped is not used, return an empty dictionary for it",
+        "            body_close_grouped = {}",
+        "",
+        "            return close_grouped, body_close_grouped",
+        "",
+        ""
+      ],
+      "total_lines": 153
+    },
+    "is_close": {
+      "lines": [
+        "    def is_close(self, rect1, rect2, next_frame_proximity):",
+        "        settings_instance = settings.Settings()",
+        "        mode = settings_instance.is_close_mode",
+        "",
+        "        # Only consider the first four elements of rect1 and rect2",
+        "        rect1 = rect1[:4]",
+        "        rect2 = rect2[:4]",
+        "",
+        "        # rect1 and rect2 have at least 4 elements",
+        "        assert len(rect1) >= 4, f\"rect1 tuple has less than 4 elements: {rect1}\"",
+        "        assert len(rect2) >= 4, f\"rect2 tuple has less than 4 elements: {rect2}\"",
+        "",
+        "        # Calculate the areas of rect1 and rect2",
+        "        area1 = rect1[2] * rect1[3]",
+        "        area2 = rect2[2] * rect2[3]",
+        "",
+        "        # Check if the area of rect1 is bigger or smaller by more than 15% than the area of rect2",
+        "        if not (0.85 * area2 <= area1 <= 1.15 * area2):",
+        "            return False, None, None",
+        "",
+        "        # center1 and center2",
+        "        center1 = (rect1[0] + rect1[2] / 2, rect1[1] + rect1[3] / 2)",
+        "        center2 = (rect2[0] + rect2[2] / 2, rect2[1] + rect2[3] / 2)",
+        "",
+        "        if mode == 1:",
+        "            # Compare only the X coordinates",
+        "            distance = abs(center1[0] - center2[0])",
+        "        elif mode == 2:",
+        "            # Compare only the Y coordinates",
+        "            distance = abs(center1[1] - center2[1])",
+        "        else:",
+        "            # Calculate the Euclidean distance between the centers",
+        "            distance = ((center1[0] - center2[0]) ** 2 + (center1[1] - center2[1]) ** 2) ** 0.5",
+        "",
+        "        # If the distance is less than the next_frame_proximity, return True",
+        "        if distance < next_frame_proximity:",
+        "            return True, None, distance",
+        "",
+        "        # If no pair of rectangles is close, return False and None for both indices",
+        "        return False, None, distance",
+        "    ",
+        "    ",
+        ""
+      ],
+      "total_lines": 43
+    }
+  }
+}

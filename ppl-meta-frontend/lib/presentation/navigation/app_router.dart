@@ -12,6 +12,7 @@ import '../../screens/gallery_screen.dart';
 import '../../screens/analytics_screen.dart';
 import '../../screens/collections_screen.dart';
 import '../../screens/profile_screen.dart';
+import '../../screens/features_screen.dart';
 import '../../screens/media_preview_screen.dart';
 import '../../models/media_models.dart';
 
@@ -85,6 +86,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/profile',
         name: 'profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/features',
+        name: 'features',
+        builder: (context, state) => const FeaturesScreen(),
       ),
       GoRoute(
         path: '/users',

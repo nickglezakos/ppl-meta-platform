@@ -2,40 +2,55 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from src.database import get_db
 from src.auth_utils import get_current_user
+from src.database import get_db
 from src.schemas.user import UserRead
-from src.services.capabilites_service import get_capabilities_by_role, get_roles_and_capabilities_by_user
+from src.services.capabilites_service import (
+    get_capabilities_by_role,
+    get_roles_and_capabilities_by_user,
+)
 
 router = APIRouter(prefix="/capabilities", tags=["capabilities"])
+
 
 @router.get("/by-role/{role_id}", response_model=list[str])
 def capabilities_by_role(
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user)
+    current_user: UserRead = Depends(get_current_user),
 ):
     """
     Get a list of capability names for a given role. Only accessible to logged-in users.
     """
     capabilities = get_capabilities_by_role(db, role_id)
     if not capabilities:
-        raise HTTPException(
-            status_code=404,
-            detail="Role not found or no capabilities"
-        )
+        raise HTTPException(status_code=404, detail="Role not found or no capabilities")
     return [cap.name for cap in capabilities]
+
 
 @router.get("/by-user/{user_id}")
 def roles_and_capabilities_by_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user)
+    current_user: UserRead = Depends(get_current_user),
 ):
     """
     Returns the roles and capabilities of a given user. Only accessible to logged-in users.
     """
     result = get_roles_and_capabilities_by_user(db, user_id)
     if not result["roles"] and not result["capabilities"]:
-        raise HTTPException(status_code=404, detail="User not found or no roles/capabilities")
+        raise HTTPException(
+            status_code=404, detail="User not found or no roles/capabilities"
+        )
     return result
+
+
+@router.get("/my-capabilities")
+def get_my_capabilities(
+    db: Session = Depends(get_db), current_user: UserRead = Depends(get_current_user)
+):
+    """
+    Returns the capabilities of the current logged-in user.
+    """
+    result = get_roles_and_capabilities_by_user(db, current_user.id)
+    return {"user_id": current_user.id, "capabilities": result["capabilities"]}
