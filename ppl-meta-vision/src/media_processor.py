@@ -210,7 +210,7 @@ class MediaProcessingService:
             }
 
             # Process frames (sample every N frames for performance)
-            frame_interval = max(1, int(fps / 2)) if fps > 0 else 10  # 2 FPS sampling
+            frame_interval = 1  # Process every frame for efficiency testing
             frame_number = 0
 
             logger.info(
@@ -282,7 +282,6 @@ class MediaProcessingService:
             detections = vision_db.get_face_detections(
                 media_id=request.media_id,
                 frame_number=request.frame_number,
-                timestamp=request.timestamp,
                 confidence_threshold=request.confidence_threshold or 0.5,
             )
 

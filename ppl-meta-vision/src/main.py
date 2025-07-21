@@ -63,6 +63,10 @@ from models import (
 from PIL import Image
 from pydantic import BaseModel, Field
 
+# Configure logging and logger
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger("ppl-meta-vision")
+
 # PPL Meta Platform Configuration
 PPL_META_CONFIG = {
     "vision_service": {
@@ -648,7 +652,7 @@ async def get_all_media_faces(
     try:
         # Get stored face detections from database
         stored_faces = vision_db.get_face_detections(
-            media_id=media_id, confidence_threshold=confidence_threshold
+            media_id, confidence_threshold=confidence_threshold
         )
 
         if stored_faces:
@@ -658,14 +662,14 @@ async def get_all_media_faces(
                 frame_num = face.get("frame_number", 0)
                 if frame_num not in faces_by_frame:
                     faces_by_frame[frame_num] = []
+
+                # Debug: Log the face structure
+                logger.debug(f"API processing face: {face}")
+                logger.debug(f"Face keys: {list(face.keys())}")
+
                 faces_by_frame[frame_num].append(
                     {
-                        "bbox": [
-                            face["bbox_x1"],
-                            face["bbox_y1"],
-                            face["bbox_x2"],
-                            face["bbox_y2"],
-                        ],
+                        "bbox": face["bbox"],  # bbox is already an array from database
                         "confidence": face["confidence"],
                         "method": face["method"],
                         "timestamp": face.get("timestamp"),
@@ -769,7 +773,7 @@ async def get_video_frame_faces(
 
         # First check if we have stored detections for this frame
         stored_faces = vision_db.get_face_detections(
-            media_id=media_id,
+            media_id,
             frame_number=frame_number,
             confidence_threshold=confidence_threshold,
         )
@@ -780,12 +784,7 @@ async def get_video_frame_faces(
             for face in stored_faces:
                 faces.append(
                     {
-                        "bbox": [
-                            face["bbox_x1"],
-                            face["bbox_y1"],
-                            face["bbox_x2"],
-                            face["bbox_y2"],
-                        ],
+                        "bbox": face["bbox"],  # bbox is already an array
                         "confidence": face["confidence"],
                         "method": face["method"],
                     }
@@ -994,13 +993,10 @@ def _faces_overlap(bbox1: List[int], bbox2: List[int], threshold: float = 0.3) -
 async def bulk_process_video_faces(
     media_id: str,
     authorization: str = Header(None, alias="Authorization"),
-    confidence_threshold: float = Query(
-        0.5, description="Confidence threshold for detections"
-    ),
     frame_interval: int = Query(
-        30, description="Process every Nth frame (30 = ~1 second intervals)"
+        1, description="Process every frame (1 = maximum efficiency)"
     ),
-    max_frames: int = Query(50, description="Maximum number of frames to process"),
+    max_frames: int = Query(1000, description="Max frames to process"),
 ):
     """
     Bulk process entire video for face detection in memory.
@@ -1008,12 +1004,18 @@ async def bulk_process_video_faces(
     Downloads video once, extracts frames in memory, and processes all frames
     with face detection in a single operation. Much more efficient than
     frame-by-frame processing.
+
+    ALWAYS uses two_stage method with 0.5 confidence threshold for consistency.
     """
     try:
         if not face_detector_instance:
             raise HTTPException(status_code=503, detail="Face detector not initialized")
 
         start_time = time.time()
+
+        # Force consistent detection parameters
+        confidence_threshold = 0.5  # Always use 0.5 confidence
+        detection_method = "two_stage"  # Always use two_stage method
 
         # Get user authentication
         user_uuid = get_user_uuid_from_profile(authorization) if authorization else None
@@ -1037,6 +1039,20 @@ async def bulk_process_video_faces(
             raise HTTPException(
                 status_code=400, detail="Only video files supported for bulk processing"
             )
+
+        # Store media record in database for reference
+        from models import FaceDetectionResult, MediaRecord
+
+        media_record = MediaRecord(
+            media_id=media_id,
+            media_type="video",
+            media_url=f"{media_service_url}/api/v1/media/stream/{media_id}",
+            processing_status="processing",
+        )
+        try:
+            vision_db.store_media_record(media_record)
+        except Exception as media_error:
+            print(f"Warning: Failed to store media record: {media_error}")
 
         # Download video stream once
         stream_url = f"{media_service_url}/api/v1/media/stream/{media_id}"
@@ -1105,6 +1121,24 @@ async def bulk_process_video_faces(
                                 "method": face["method"],
                             }
                         )
+
+                        # Store face detection in database
+                        face_detection = FaceDetectionResult(
+                            id=str(uuid.uuid4()),
+                            media_id=media_id,
+                            media_type="video",
+                            frame_number=frame_number,
+                            timestamp=frame_number / fps if fps > 0 else 0,
+                            bbox=bbox,
+                            confidence=float(confidence),
+                            method=face["method"],
+                        )
+
+                        # Store in database
+                        try:
+                            vision_db.store_face_detection(face_detection)
+                        except Exception as db_error:
+                            print(f"Warning: Store failed: {db_error}")
 
                 # Store detections for this frame
                 all_detections[str(frame_number)] = frame_detections
@@ -1237,6 +1271,17 @@ async def not_found_handler(request, exc):
 
 
 if __name__ == "__main__":
+    # Configure debug logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler()],
+    )
+
+    # Set specific logger levels
+    logging.getLogger("ppl-meta-vision").setLevel(logging.DEBUG)
+    logging.getLogger("database").setLevel(logging.DEBUG)
+
     print(
         f"🚀 Starting PPL Meta Vision Service on port {PPL_META_CONFIG['vision_service']['port']}"
     )
@@ -1249,5 +1294,5 @@ if __name__ == "__main__":
         host=PPL_META_CONFIG["vision_service"]["host"],
         port=PPL_META_CONFIG["vision_service"]["port"],
         reload=False,
-        log_level="info",
+        log_level="debug",
     )

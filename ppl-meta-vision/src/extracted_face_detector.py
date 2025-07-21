@@ -29,8 +29,8 @@ class ExtractedFaceDetector:
             "confidence_thresholds": {
                 "haar": 0.5,  # Default confidence for Haar cascade detections
                 "dlib": 0.5,  # Default confidence for Dlib detections
-                "mtcnn": 0.5,  # Default confidence threshold for MTCNN (actual confidence from model)
-                "two_stage": 0.8,  # Higher confidence for two-stage validated faces
+                "mtcnn": 0.5,  # Default confidence threshold for MTCNN
+                "two_stage": 0.5,  # Default confidence for two-stage faces
             }
         }
 

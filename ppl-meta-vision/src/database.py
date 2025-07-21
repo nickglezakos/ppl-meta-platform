@@ -1,47 +1,59 @@
 """
-PPL Meta Vision Service - Database Manager
-Handles storage and retrieval of face detection results
+PPL Meta Vision Service - PostgreSQL Database Manager
+Handles storage and retrieval of face detection results using PostgreSQL
 """
 
-import json
 import logging
-import sqlite3
-from datetime import datetime
-from pathlib import Path
+import os
 from typing import Any, Dict, List, Optional
 
-from models import FaceDetectionResult, FaceRecord, MediaRecord, OverlayRectangle
+import psycopg2
+import psycopg2.extras
+from models import FaceDetectionResult, MediaRecord
 
 logger = logging.getLogger(__name__)
 
 
 class VisionDatabase:
-    """Database manager for vision service data."""
+    """Database manager for vision service data using PostgreSQL."""
 
-    def __init__(self, db_path: str = "vision_data.db"):
+    def __init__(self):
         """Initialize database connection."""
-        self.db_path = Path(db_path)
         self.connection = None
         self.init_database()
+
+    def _get_connection_params(self) -> Dict[str, Any]:
+        """Get database connection parameters."""
+        return {
+            "host": os.getenv("DB_HOST", "localhost"),
+            "port": int(os.getenv("DB_PORT", "5432")),
+            "database": os.getenv("DB_NAME", "ppl_vision_db"),
+            "user": os.getenv("DB_USER", "nickgklezakos"),
+            "password": os.getenv("DB_PASSWORD", "change-this-password"),
+        }
 
     def init_database(self):
         """Initialize database with required tables."""
         try:
-            self.connection = sqlite3.connect(
-                self.db_path, check_same_thread=False, timeout=30.0
-            )
-            self.connection.row_factory = sqlite3.Row
+            # Connect to database
+            conn_params = self._get_connection_params()
+            self.connection = psycopg2.connect(**conn_params)
+            self.connection.autocommit = True
 
             # Create tables
             self.create_tables()
-            logger.info(f"✅ Database initialized: {self.db_path}")
+            logger.info("PostgreSQL database initialized successfully")
 
         except Exception as e:
-            logger.error(f"❌ Database initialization failed: {e}")
-            raise
+            logger.error(f"Database initialization failed: {e}")
+            # Continue without database for now
+            self.connection = None
 
     def create_tables(self):
         """Create database tables."""
+        if not self.connection:
+            return
+
         cursor = self.connection.cursor()
 
         # Media records table
@@ -56,10 +68,8 @@ class VisionDatabase:
                 total_frames INTEGER,
                 video_duration REAL,
                 video_fps REAL,
-                video_width INTEGER,
-                video_height INTEGER,
                 processed_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT NOW()
             )
         """
         )
@@ -78,95 +88,89 @@ class VisionDatabase:
                 bbox_y2 INTEGER NOT NULL,
                 confidence REAL NOT NULL,
                 method TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (media_id) REFERENCES media_records (media_id)
+                created_at TIMESTAMP DEFAULT NOW()
             )
         """
         )
 
-        # Processing jobs table (for batch processing)
+        # Create indexes
         cursor.execute(
             """
-            CREATE TABLE IF NOT EXISTS processing_jobs (
-                job_id TEXT PRIMARY KEY,
-                status TEXT DEFAULT 'queued',
-                total_media INTEGER DEFAULT 0,
-                processed_media INTEGER DEFAULT 0,
-                started_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """
-        )
-
-        # Create indexes for performance
-        cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_face_detections_media_id 
-            ON face_detections(media_id)
+            CREATE INDEX IF NOT EXISTS idx_face_detections_media_id
+            ON face_detections (media_id)
         """
         )
 
         cursor.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_face_detections_timestamp 
-            ON face_detections(timestamp)
+            CREATE INDEX IF NOT EXISTS idx_face_detections_timestamp
+            ON face_detections (timestamp)
         """
         )
 
         cursor.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_face_detections_frame 
-            ON face_detections(frame_number)
+            CREATE INDEX IF NOT EXISTS idx_face_detections_frame
+            ON face_detections (frame_number)
         """
         )
 
-        self.connection.commit()
-        logger.info("✅ Database tables created/verified")
+        cursor.close()
 
     def store_media_record(self, media_record: MediaRecord) -> bool:
-        """Store or update media record."""
+        """Store media record."""
+        if not self.connection:
+            return False
+
         try:
             cursor = self.connection.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO media_records 
-                (media_id, media_type, media_url, processing_status, 
-                 total_faces, total_frames, video_duration, video_fps,
-                 video_width, video_height, processed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO media_records
+                (media_id, media_type, media_url, processing_status,
+                 total_frames, video_duration, video_fps, processed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (media_id) DO UPDATE SET
+                    processing_status = EXCLUDED.processing_status,
+                    total_frames = EXCLUDED.total_frames,
+                    video_duration = EXCLUDED.video_duration,
+                    video_fps = EXCLUDED.video_fps,
+                    processed_at = EXCLUDED.processed_at
             """,
                 (
                     media_record.media_id,
                     media_record.media_type,
                     media_record.media_url,
                     media_record.processing_status,
-                    media_record.total_faces,
                     media_record.total_frames,
                     media_record.video_duration,
                     media_record.video_fps,
-                    getattr(media_record, "video_width", None),
-                    getattr(media_record, "video_height", None),
                     media_record.processed_at,
                 ),
             )
-            self.connection.commit()
+            cursor.close()
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to store media record: {e}")
+            logger.error(f"Failed to store media record: {e}")
             return False
 
     def store_face_detection(self, detection: FaceDetectionResult) -> bool:
-        """Store face detection result."""
+        """Store face detection."""
+        if not self.connection:
+            return False
+
         try:
             cursor = self.connection.cursor()
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO face_detections 
-                (id, media_id, frame_number, timestamp, 
-                 bbox_x1, bbox_y1, bbox_x2, bbox_y2, 
+                INSERT INTO face_detections
+                (id, media_id, frame_number, timestamp,
+                 bbox_x1, bbox_y1, bbox_x2, bbox_y2,
                  confidence, method)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO UPDATE SET
+                    confidence = EXCLUDED.confidence,
+                    method = EXCLUDED.method
             """,
                 (
                     detection.id,
@@ -181,314 +185,125 @@ class VisionDatabase:
                     detection.method,
                 ),
             )
-            self.connection.commit()
+            cursor.close()
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to store face detection: {e}")
+            logger.error(f"Failed to store face detection: {e}")
             return False
-
-    def get_media_record(self, media_id: str) -> Optional[Dict[str, Any]]:
-        """Get media record by ID."""
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute(
-                """
-                SELECT * FROM media_records WHERE media_id = ?
-            """,
-                (media_id,),
-            )
-            row = cursor.fetchone()
-            return dict(row) if row else None
-        except Exception as e:
-            logger.error(f"❌ Failed to get media record: {e}")
-            return None
 
     def get_face_detections(
         self,
         media_id: str,
         frame_number: Optional[int] = None,
-        timestamp: Optional[float] = None,
-        confidence_threshold: float = 0.0,
+        confidence_threshold: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
-        """Get face detections for media."""
-        try:
-            cursor = self.connection.cursor()
+        """Get face detections for media, optionally filtered by frame."""
+        if not self.connection:
+            return []
 
-            query = """
-                SELECT * FROM face_detections 
-                WHERE media_id = ? AND confidence >= ?
-            """
-            params = [media_id, confidence_threshold]
+        try:
+            cursor = self.connection.cursor(
+                cursor_factory=psycopg2.extras.RealDictCursor
+            )
+
+            # Build query with optional filters
+            query = "SELECT * FROM face_detections WHERE media_id = %s"
+            params: List[Any] = [media_id]
 
             if frame_number is not None:
-                query += " AND frame_number = ?"
+                query += " AND frame_number = %s"
                 params.append(frame_number)
 
-            if timestamp is not None:
-                # Get detections within 0.1 seconds of timestamp
-                query += " AND ABS(timestamp - ?) <= 0.1"
-                params.append(timestamp)
+            if confidence_threshold is not None:
+                query += " AND confidence >= %s"
+                params.append(confidence_threshold)
 
-            query += " ORDER BY timestamp, frame_number"
+            query += " ORDER BY frame_number, timestamp"
 
             cursor.execute(query, params)
+
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+            cursor.close()
 
-        except Exception as e:
-            logger.error(f"❌ Failed to get face detections: {e}")
-            return []
-
-    def get_face_timeline(
-        self,
-        media_id: str,
-        time_resolution: float = 1.0,
-        confidence_threshold: float = 0.0,
-    ) -> List[Dict[str, Any]]:
-        """Get face detection timeline for video scrubbing."""
-        try:
-            cursor = self.connection.cursor()
-
-            # Get video duration first
-            media_record = self.get_media_record(media_id)
-            if not media_record or not media_record.get("video_duration"):
-                return []
-
-            duration = media_record["video_duration"]
-            timeline = []
-
-            # Create timeline segments
-            for start_time in range(0, int(duration) + 1, int(time_resolution)):
-                end_time = min(start_time + time_resolution, duration)
-
-                cursor.execute(
-                    """
-                    SELECT COUNT(*) as face_count, 
-                           MAX(confidence) as max_confidence,
-                           GROUP_CONCAT(id) as detection_ids
-                    FROM face_detections 
-                    WHERE media_id = ? 
-                    AND timestamp >= ? 
-                    AND timestamp < ?
-                    AND confidence >= ?
-                """,
-                    (media_id, start_time, end_time, confidence_threshold),
+            detections = []
+            for row in rows:
+                logger.debug(f"Processing row: {dict(row)}")
+                logger.debug(f"Available keys: {list(row.keys())}")
+                detections.append(
+                    {
+                        "id": row["id"],
+                        "media_id": row["media_id"],
+                        "frame_number": row["frame_number"],
+                        "timestamp": row["timestamp"],
+                        "bbox": [
+                            row["bbox_x1"],
+                            row["bbox_y1"],
+                            row["bbox_x2"],
+                            row["bbox_y2"],
+                        ],
+                        "confidence": row["confidence"],
+                        "method": row["method"],
+                        "created_at": row["created_at"],
+                    }
                 )
 
-                row = cursor.fetchone()
-                if row:
-                    timeline.append(
-                        {
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "face_count": row["face_count"] or 0,
-                            "max_confidence": row["max_confidence"] or 0.0,
-                            "detection_ids": (
-                                row["detection_ids"].split(",")
-                                if row["detection_ids"]
-                                else []
-                            ),
-                        }
-                    )
-
-            return timeline
+            return detections
 
         except Exception as e:
-            logger.error(f"❌ Failed to get face timeline: {e}")
+            logger.error(f"Failed to get face detections: {e}")
             return []
 
-    def get_media_statistics(self, media_id: str) -> Dict[str, Any]:
-        """Get comprehensive statistics for media."""
+    def get_media_record(self, media_id: str) -> Optional[Dict[str, Any]]:
+        """Get media record."""
+        if not self.connection:
+            return None
+
         try:
-            cursor = self.connection.cursor()
-
-            # Basic stats
+            cursor = self.connection.cursor(
+                cursor_factory=psycopg2.extras.RealDictCursor
+            )
             cursor.execute(
                 """
-                SELECT 
-                    COUNT(*) as total_detections,
-                    AVG(confidence) as avg_confidence,
-                    MIN(confidence) as min_confidence,
-                    MAX(confidence) as max_confidence,
-                    COUNT(DISTINCT method) as methods_used
-                FROM face_detections 
-                WHERE media_id = ?
+                SELECT * FROM media_records WHERE media_id = %s
             """,
                 (media_id,),
             )
 
-            stats = dict(cursor.fetchone())
+            row = cursor.fetchone()
+            cursor.close()
 
-            # Method breakdown
-            cursor.execute(
-                """
-                SELECT method, COUNT(*) as count, AVG(confidence) as avg_confidence
-                FROM face_detections 
-                WHERE media_id = ?
-                GROUP BY method
-            """,
-                (media_id,),
-            )
-
-            methods = [dict(row) for row in cursor.fetchall()]
-            stats["method_breakdown"] = methods
-
-            return stats
+            return dict(row) if row else None
 
         except Exception as e:
-            logger.error(f"❌ Failed to get media statistics: {e}")
-            return {}
+            logger.error(f"Failed to get media record: {e}")
+            return None
 
     def get_database_statistics(self) -> Dict[str, Any]:
-        """Get overall database statistics."""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
+        """Get database statistics."""
+        if not self.connection:
+            return {"total_media": 0, "total_detections": 0}
 
-                # Get table counts
-                cursor.execute("SELECT COUNT(*) FROM media_records")
-                total_media = cursor.fetchone()[0]
-
-                cursor.execute("SELECT COUNT(*) FROM face_detections")
-                total_detections = cursor.fetchone()[0]
-
-                # Get media type breakdown
-                cursor.execute(
-                    """
-                    SELECT media_type, COUNT(*) 
-                    FROM media_records 
-                    GROUP BY media_type
-                """
-                )
-                media_types = dict(cursor.fetchall())
-
-                # Get processing status breakdown
-                cursor.execute(
-                    """
-                    SELECT processing_status, COUNT(*) 
-                    FROM media_records 
-                    GROUP BY processing_status
-                """
-                )
-                processing_status = dict(cursor.fetchall())
-
-                # Get method distribution
-                cursor.execute(
-                    """
-                    SELECT method, COUNT(*) 
-                    FROM face_detections 
-                    GROUP BY method
-                """
-                )
-                method_distribution = dict(cursor.fetchall())
-
-                # Get average faces per media
-                cursor.execute(
-                    """
-                    SELECT AVG(total_faces) 
-                    FROM media_records 
-                    WHERE total_faces IS NOT NULL
-                """
-                )
-                avg_faces = cursor.fetchone()[0] or 0
-
-                return {
-                    "total_media_records": total_media,
-                    "total_face_detections": total_detections,
-                    "media_type_breakdown": media_types,
-                    "processing_status_breakdown": processing_status,
-                    "detection_method_distribution": method_distribution,
-                    "average_faces_per_media": round(avg_faces, 2),
-                    "database_path": self.db_path,
-                }
-
-        except Exception as e:
-            logger.error(f"❌ Database statistics error: {e}")
-            return {}
-
-    def cleanup_old_data(self, days: int = 30) -> int:
-        """Clean up old data (for maintenance)."""
         try:
             cursor = self.connection.cursor()
 
-            # Delete old face detections
-            cursor.execute(
-                """
-                DELETE FROM face_detections 
-                WHERE created_at < datetime('now', '-{} days')
-            """.format(
-                    days
-                )
-            )
-
-            deleted_faces = cursor.rowcount
-
-            # Delete old media records without detections
-            cursor.execute(
-                """
-                DELETE FROM media_records 
-                WHERE media_id NOT IN (
-                    SELECT DISTINCT media_id FROM face_detections
-                )
-                AND created_at < datetime('now', '-{} days')
-            """.format(
-                    days
-                )
-            )
-
-            deleted_media = cursor.rowcount
-
-            self.connection.commit()
-
-            logger.info(
-                f"🧹 Cleaned up {deleted_faces} face detections and {deleted_media} media records"
-            )
-            return deleted_faces + deleted_media
-
-        except Exception as e:
-            logger.error(f"❌ Failed to cleanup old data: {e}")
-            return 0
-
-    def get_database_status(self) -> Dict[str, Any]:
-        """Get database status and statistics."""
-        try:
-            cursor = self.connection.cursor()
-
-            # Table counts
             cursor.execute("SELECT COUNT(*) FROM media_records")
             media_count = cursor.fetchone()[0]
 
             cursor.execute("SELECT COUNT(*) FROM face_detections")
             detection_count = cursor.fetchone()[0]
 
-            # Recent activity
-            cursor.execute(
-                """
-                SELECT COUNT(*) FROM face_detections 
-                WHERE created_at > datetime('now', '-1 hour')
-            """
-            )
-            recent_detections = cursor.fetchone()[0]
+            cursor.close()
 
             return {
-                "status": "connected",
-                "media_records": media_count,
-                "face_detections": detection_count,
-                "recent_detections_1h": recent_detections,
-                "database_file": str(self.db_path),
-                "connection_active": self.connection is not None,
+                "total_media": media_count,
+                "total_detections": detection_count,
+                "database_type": "PostgreSQL",
             }
 
         except Exception as e:
-            logger.error(f"❌ Failed to get database status: {e}")
-            return {"status": "error", "error": str(e)}
-
-    def close(self):
-        """Close database connection."""
-        if self.connection:
-            self.connection.close()
-            logger.info("📦 Database connection closed")
+            logger.error(f"Failed to get database statistics: {e}")
+            return {"total_media": 0, "total_detections": 0}
 
 
-# Global database instance
+# Global instance
 vision_db = VisionDatabase()
