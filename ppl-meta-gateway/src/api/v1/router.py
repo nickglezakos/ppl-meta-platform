@@ -54,6 +54,7 @@ SERVICES = {
     "node": "http://localhost:8001",
     "media": "http://localhost:8000",
     "orchestrator": "http://localhost:8002",
+    "vision": "http://localhost:8003",
 }
 
 # Add validation support
@@ -523,3 +524,67 @@ async def remove_media_from_collection(request: Request):
 async def debug_user_profile():
     """Debug route for user profile testing."""
     return {"message": "Debug user profile route working", "endpoint": "/user/profile"}
+
+
+async def _proxy_to_vision_service(request: Request) -> Response:
+    """Helper function to proxy requests to the Vision service."""
+    try:
+        # Build target URL
+        path = request.url.path.replace("/api/v1/vision", "")
+        target_url = f"{SERVICES['vision']}{path}"
+
+        # Forward query parameters
+        if request.url.query:
+            target_url += f"?{request.url.query}"
+
+        # Prepare headers (forward authorization and other important headers)
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() not in ["host", "content-length"]
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=await request.body(),
+                timeout=30.0,
+            )
+
+            # Return the raw response for vision content
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get("content-type", "application/json"),
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Vision service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal vision proxy error: {str(e)}"
+        )
+
+
+# Vision Service Routes
+@api_router.get("/vision/health")
+async def get_vision_health(request: Request):
+    """Proxy vision health to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.post("/vision/detect")
+async def detect_faces(request: Request):
+    """Proxy face detection to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/vision/faces/media/{media_id}/frame/{frame_number}")
+async def get_video_frame_faces(request: Request):
+    """Proxy video frame face detection to Vision service."""
+    return await _proxy_to_vision_service(request)

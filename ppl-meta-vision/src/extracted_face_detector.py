@@ -24,6 +24,16 @@ class ExtractedFaceDetector:
         self.models_loaded = False
         self.available_methods = []
 
+        # Configuration settings for face detection
+        self.config = {
+            "confidence_thresholds": {
+                "haar": 0.5,  # Default confidence for Haar cascade detections
+                "dlib": 0.5,  # Default confidence for Dlib detections
+                "mtcnn": 0.5,  # Default confidence threshold for MTCNN (actual confidence from model)
+                "two_stage": 0.8,  # Higher confidence for two-stage validated faces
+            }
+        }
+
         # Model paths based on monolithic app structure
         self.model_paths = {
             "haar_cascade": "/Users/nickgklezakos/ppl-meta-alpha-staging/ppl-meta/models/haarcascade_frontalface_default.xml",
@@ -47,6 +57,18 @@ class ExtractedFaceDetector:
             logger.addHandler(handler)
             logger.setLevel(logging.INFO)
         return logger
+
+    def update_confidence_threshold(self, method, confidence):
+        """Update confidence threshold for a specific detection method."""
+        if method in self.config["confidence_thresholds"]:
+            self.config["confidence_thresholds"][method] = confidence
+            self.logger.info(f"Updated {method} confidence threshold to {confidence}")
+        else:
+            self.logger.warning(f"Unknown method: {method}")
+
+    def get_confidence_threshold(self, method):
+        """Get confidence threshold for a specific detection method."""
+        return self.config["confidence_thresholds"].get(method, 0.5)
 
     def _initialize_detection_methods(self):
         """Initialize available face detection methods based on real monolithic app."""
@@ -125,6 +147,11 @@ class ExtractedFaceDetector:
         except Exception as e:
             self.logger.error(f"❌ Error initializing MTCNN: {e}")
 
+        # 4. Two-Stage Detection (Haar + Dlib validation - proven method)
+        if "haar" in self.available_methods and "dlib" in self.available_methods:
+            self.available_methods.append("two_stage")
+            self.logger.info("✅ Two-stage detection enabled (Haar + Dlib validation)")
+
         self.models_loaded = len(self.available_methods) > 0
         self.logger.info(
             f"🎯 Initialized {len(self.available_methods)} detection methods: {self.available_methods}"
@@ -157,7 +184,11 @@ class ExtractedFaceDetector:
             detections = []
             for x, y, w, h in faces:
                 detections.append(
-                    {"bbox": [x, y, x + w, y + h], "confidence": 1.0, "method": "haar"}
+                    {
+                        "bbox": [x, y, x + w, y + h],
+                        "confidence": self.config["confidence_thresholds"]["haar"],
+                        "method": "haar",
+                    }
                 )
 
             return {
@@ -186,9 +217,13 @@ class ExtractedFaceDetector:
 
             detections = []
             for face in faces:
-                x, y, w, h = face.left(), face.top(), face.width(), face.height()
+                x, y, w, h = (face.left(), face.top(), face.width(), face.height())
                 detections.append(
-                    {"bbox": [x, y, x + w, y + h], "confidence": 1.0, "method": "dlib"}
+                    {
+                        "bbox": [x, y, x + w, y + h],
+                        "confidence": self.config["confidence_thresholds"]["dlib"],
+                        "method": "dlib",
+                    }
                 )
 
             return {
@@ -238,6 +273,95 @@ class ExtractedFaceDetector:
             self.logger.error(f"MTCNN detection error: {e}")
             return {"success": False, "error": str(e), "detections": []}
 
+    def detect_faces_two_stage(self, image, confidence_threshold=0.5):
+        """
+        Two-stage face detection method proven in monolithic app.
+        Stage 1: Haar cascade detection
+        Stage 2: Dlib validation to filter false positives
+        """
+        try:
+            # Ensure we have the required methods
+            if (
+                "haar" not in self.available_methods
+                or "dlib" not in self.available_methods
+            ):
+                return {
+                    "success": False,
+                    "error": "Required methods (haar, dlib) not available",
+                    "detections": [],
+                }
+
+            start_time = time.time()
+
+            # Convert to grayscale if needed
+            if len(image.shape) == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = image
+
+            # Stage 1: Haar cascade for initial detection
+            # Using same parameters as proven monolithic app
+            faces = self.haar_cascade.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
+            )
+
+            # Initial face rectangles from Haar cascade
+            face_rects = []
+            for x, y, w, h in faces:
+                face_rects.append([x, y, w, h])
+
+            # Stage 2: Dlib validation (filter false positives)
+            filtered_face_rects = []
+
+            for i, face_rect in enumerate(face_rects):
+                x, y, w, h = face_rect
+
+                # Crop the face region for Dlib validation
+                face_region = gray[y : y + h, x : x + w]
+
+                # Skip if face region is too small
+                if face_region.size == 0:
+                    continue
+
+                # Perform Dlib face detection on the cropped face region
+                dlib_faces = self.dlib_detector(face_region, 1)
+
+                # If Dlib detects faces in this region, it's a valid face
+                if len(dlib_faces) > 0:
+                    filtered_face_rects.append(face_rect)
+
+            # Convert to the expected output format
+            detections = []
+            for face_rect in filtered_face_rects:
+                x, y, w, h = face_rect
+                detections.append(
+                    {
+                        "bbox": [x, y, x + w, y + h],
+                        "confidence": self.config["confidence_thresholds"]["two_stage"],
+                        "method": "two_stage_haar_dlib",
+                    }
+                )
+
+            processing_time = time.time() - start_time
+
+            self.logger.info(
+                f"Two-stage detection: {len(faces)} initial Haar detections → "
+                f"{len(filtered_face_rects)} Dlib-validated faces in {processing_time:.3f}s"
+            )
+
+            return {
+                "success": True,
+                "detections": detections,
+                "method": "two_stage_haar_dlib",
+                "processing_time": processing_time,
+                "initial_detections": len(faces),
+                "validated_detections": len(filtered_face_rects),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Two-stage detection error: {e}")
+            return {"success": False, "error": str(e), "detections": []}
+
     def detect_faces_multi_method(self, image, methods=None):
         """Run face detection using multiple methods for comparison."""
         if methods is None:
@@ -258,6 +382,8 @@ class ExtractedFaceDetector:
                 result = self.detect_faces_dlib(image)
             elif method == "mtcnn":
                 result = self.detect_faces_mtcnn(image)
+            elif method == "two_stage":
+                result = self.detect_faces_two_stage(image)
             else:
                 result = {"success": False, "error": f"Unknown method: {method}"}
 
