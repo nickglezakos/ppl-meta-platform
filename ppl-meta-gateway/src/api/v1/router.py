@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from jose import JWTError, jwt
 
 # Add shared modules to path
@@ -16,6 +16,39 @@ parent_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 sys.path.append(parent_dir)
 
 api_router = APIRouter()
+
+
+async def _stream_proxy_response(target_url: str, headers: dict, query_params):
+    """Stream proxy response for MJPEG video streaming."""
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream(
+                "GET", target_url, headers=headers, params=dict(query_params)
+            ) as response:
+                # Forward the response headers
+                response_headers = dict(response.headers)
+
+                async def generate():
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        yield chunk
+
+                return StreamingResponse(
+                    generate(),
+                    status_code=response.status_code,
+                    headers=response_headers,
+                    media_type=response.headers.get(
+                        "content-type", "multipart/x-mixed-replace"
+                    ),
+                )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Media streaming service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal streaming proxy error: {str(e)}"
+        )
+
 
 # JWT Configuration (should match Node service config)
 JWT_SECRET_KEY = "default-secret-key-change-in-production"
@@ -304,25 +337,34 @@ async def _proxy_to_media_service(request: Request) -> Response:
         headers = dict(request.headers)
         headers.pop("host", None)
 
-        # Make the proxy request
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.request(
-                method=method,
-                url=target_url,
-                headers=headers,
-                content=body,
-                params=dict(request.query_params),
-            )
+        # Check if this is a streaming endpoint
+        is_streaming = "/stream/video/" in path
 
-            # Return the raw response for media content
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=dict(response.headers),
-                media_type=response.headers.get(
-                    "content-type", "application/octet-stream"
-                ),
+        if is_streaming:
+            # Handle streaming responses with proper streaming proxy
+            return await _stream_proxy_response(
+                target_url, headers, request.query_params
             )
+        else:
+            # Handle regular media responses
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.request(
+                    method=method,
+                    url=target_url,
+                    headers=headers,
+                    content=body,
+                    params=dict(request.query_params),
+                )
+
+                # Return the raw response for media content
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.headers.get(
+                        "content-type", "application/octet-stream"
+                    ),
+                )
 
     except httpx.RequestError as e:
         raise HTTPException(
@@ -475,6 +517,19 @@ async def stream_media(request: Request):
 @api_router.get("/media/stream-token/{media_id}")
 async def stream_media_with_token(request: Request):
     """Proxy media streaming with token to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+# NEW: Embedded face detection streaming endpoints
+@api_router.get("/stream/video/{media_id}")
+async def stream_video_with_embedded_faces(request: Request):
+    """Proxy embedded face detection video streaming to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/stream/info/{media_id}/faces")
+async def get_embedded_face_detection_info(request: Request):
+    """Proxy embedded face detection info to Media service."""
     return await _proxy_to_media_service(request)
 
 

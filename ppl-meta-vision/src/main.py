@@ -64,7 +64,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 # Configure logging and logger
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ppl-meta-vision")
 
 # PPL Meta Platform Configuration
@@ -663,10 +663,6 @@ async def get_all_media_faces(
                 if frame_num not in faces_by_frame:
                     faces_by_frame[frame_num] = []
 
-                # Debug: Log the face structure
-                logger.debug(f"API processing face: {face}")
-                logger.debug(f"Face keys: {list(face.keys())}")
-
                 faces_by_frame[frame_num].append(
                     {
                         "bbox": face["bbox"],  # bbox is already an array from database
@@ -914,7 +910,7 @@ async def extract_video_frame(
             os.unlink(temp_video_path)
 
     except Exception as e:
-        print(f"Frame extraction error: {e}")  # Use print instead of logger
+        logger.warning(f"Frame extraction error: {e}")
         return None
 
 
@@ -1052,7 +1048,7 @@ async def bulk_process_video_faces(
         try:
             vision_db.store_media_record(media_record)
         except Exception as media_error:
-            print(f"Warning: Failed to store media record: {media_error}")
+            logger.warning(f"Failed to store media record: {media_error}")
 
         # Download video stream once
         stream_url = f"{media_service_url}/api/v1/media/stream/{media_id}"
@@ -1138,7 +1134,7 @@ async def bulk_process_video_faces(
                         try:
                             vision_db.store_face_detection(face_detection)
                         except Exception as db_error:
-                            print(f"Warning: Store failed: {db_error}")
+                            logger.warning(f"Store failed: {db_error}")
 
                 # Store detections for this frame
                 all_detections[str(frame_number)] = frame_detections
@@ -1271,16 +1267,16 @@ async def not_found_handler(request, exc):
 
 
 if __name__ == "__main__":
-    # Configure debug logging
+    # Configure info logging to reduce debug flood
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler()],
     )
 
-    # Set specific logger levels
-    logging.getLogger("ppl-meta-vision").setLevel(logging.DEBUG)
-    logging.getLogger("database").setLevel(logging.DEBUG)
+    # Set specific logger levels to INFO to reduce debug messages
+    logging.getLogger("ppl-meta-vision").setLevel(logging.INFO)
+    logging.getLogger("database").setLevel(logging.INFO)
 
     print(
         f"🚀 Starting PPL Meta Vision Service on port {PPL_META_CONFIG['vision_service']['port']}"
