@@ -533,9 +533,21 @@ async def get_embedded_face_detection_info(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.get("/stream/faces/{media_id}/frame/{frame_number}")
+async def get_faces_at_frame(request: Request):
+    """Proxy real-time frame face detection to Media service (Issue 052)."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/media/thumbnail/{media_id}")
 async def get_media_thumbnail(request: Request):
     """Proxy media thumbnail to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/media/{media_id}/video-properties")
+async def get_video_properties(request: Request):
+    """Proxy video properties to Media service (Issue 044)."""
     return await _proxy_to_media_service(request)
 
 

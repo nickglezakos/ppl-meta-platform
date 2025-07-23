@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import cv2
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -145,6 +147,115 @@ async def test_stream_video_no_auth(
     except Exception as e:
         logger.error(f"Test video streaming error: {e}")
         raise HTTPException(status_code=500, detail="Test streaming failed")
+
+
+@router.get("/faces/{media_id}/frame/{frame_number}")
+async def detect_faces_at_frame(
+    media_id: str,
+    frame_number: int,
+    confidence_threshold: float = Query(
+        0.5, description="Face detection confidence threshold"
+    ),
+    current_user: AuthUser = Depends(get_current_user),
+    share_token: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Real-time face detection for single frame during streaming.
+
+    Phase 1 of Hybrid Face Detection Architecture (Issue 052).
+    Provides immediate face detection during video playback without
+    requiring complete video processing.
+
+    Args:
+        media_id: UUID of the media to analyze
+        frame_number: Specific frame number to extract and analyze
+        confidence_threshold: Minimum confidence for face detection (0.0-1.0)
+        current_user: Authenticated user
+        share_token: Optional share token for public access
+        db: Database session
+
+    Returns:
+        JSON response with detected faces for the specific frame
+    """
+    try:
+        # Check access permissions
+        access_info = get_media_access_check(
+            media_id, current_user.user_id, share_token, db
+        )
+
+        file_path = Path(access_info["file_path"])
+
+        # Verify file exists on disk
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Media file not found")
+
+        # Check if face detection is available
+        detection_info = media_face_detection.get_face_detection_info()
+        if not detection_info["enabled"]:
+            return {
+                "faces": [],
+                "frame_number": frame_number,
+                "detection_time": 0.0,
+                "method": "face_detection_disabled",
+                "error": "Face detection not available",
+            }
+
+        # Extract single frame efficiently
+        cap = cv2.VideoCapture(str(file_path))
+        try:
+            # Set frame position
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = cap.read()
+
+            if not ret:
+                return {
+                    "faces": [],
+                    "frame_number": frame_number,
+                    "detection_time": 0.0,
+                    "method": "frame_extraction_failed",
+                    "error": f"Could not extract frame {frame_number}",
+                }
+
+            # Perform Vision service compatible face detection
+            # for progressive pre-loading
+            import time
+
+            start_time = time.time()
+
+            # Use vision-compatible detection to match Issue 054 results
+            faces = media_face_detection.detect_faces_vision_compatible(
+                frame, confidence_threshold
+            )
+
+            detection_time = time.time() - start_time
+
+            # Determine the actual method used based on face results
+            actual_method = "two_stage_haar_dlib"  # Vision compatible method
+            if faces and len(faces) > 0:
+                # Use the method from the first detected face
+                actual_method = faces[0].get("method", "two_stage_haar_dlib")
+
+            return {
+                "faces": faces,
+                "frame_number": frame_number,
+                "detection_time": detection_time,
+                "method": actual_method,
+                "total_faces": len(faces),
+            }
+
+        finally:
+            cap.release()
+
+    except Exception as e:
+        logger.error(f"Real-time face detection error: {e}")
+        return {
+            "faces": [],
+            "frame_number": frame_number,
+            "detection_time": 0.0,
+            "method": "error",
+            "error": str(e),
+        }
 
 
 @router.get("/info/{media_id}/faces")

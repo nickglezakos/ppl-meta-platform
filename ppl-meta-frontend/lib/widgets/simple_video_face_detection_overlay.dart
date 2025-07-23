@@ -41,10 +41,29 @@ class SimpleFaceDetectionOverlay extends ConsumerStatefulWidget {
   ConsumerState<SimpleFaceDetectionOverlay> createState() => _SimpleFaceDetectionOverlayState();
 }
 
+/// Time-based face with automatic disappearance
+class TimedFaceDetection {
+  final FaceDetection face;
+  final DateTime appearanceTime;
+  final Timer disappearanceTimer;
+  final String id; // Unique identifier for this timed face
+
+  TimedFaceDetection({
+    required this.face,
+    required this.appearanceTime,
+    required this.disappearanceTimer,
+    required this.id,
+  });
+}
+
 class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetectionOverlay> {
   // Current state
   List<FaceDetection> _currentFaceDetections = [];
   String? _mediaId;
+  
+  // 🎯 NEW: Time-based face tracking for 0.5-second automatic disappearance
+  Map<String, TimedFaceDetection> _timedFaces = {};
+  int _faceIdCounter = 0;
   
   // Processing states
   bool _isProcessingVideo = false;
@@ -83,12 +102,83 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
   void dispose() {
     _playbackTimer?.cancel();
     
+    // 🎯 Clean up all timed faces and their timers
+    _cleanupAllTimedFaces();
+    
     // Remove video controller listener
     if (widget.videoController != null) {
       widget.videoController!.removeListener(_onVideoPositionChanged);
     }
     
     super.dispose();
+  }
+
+  /// 🎯 NEW: Clean up all timed faces and cancel their timers
+  void _cleanupAllTimedFaces() {
+    for (final timedFace in _timedFaces.values) {
+      timedFace.disappearanceTimer.cancel();
+    }
+    _timedFaces.clear();
+  }
+
+  /// 🎯 NEW: Add faces with 0.5-second auto-disappearance timers
+  void _addTimedFaces(List<FaceDetection> faces) {
+    if (faces.isEmpty) return;
+    
+    final currentTime = DateTime.now();
+    
+    for (final face in faces) {
+      // Create unique ID for this face
+      final faceId = 'face_${_faceIdCounter++}_${currentTime.millisecondsSinceEpoch}';
+      
+      // Create timer that will remove this face after 0.5 seconds
+      final timer = Timer(const Duration(milliseconds: 500), () {
+        _removeTimedFace(faceId);
+      });
+      
+      // Create timed face object
+      final timedFace = TimedFaceDetection(
+        face: face,
+        appearanceTime: currentTime,
+        disappearanceTimer: timer,
+        id: faceId,
+      );
+      
+      // Add to timed faces map
+      _timedFaces[faceId] = timedFace;
+      
+      debugPrint('🟡 ADDED TIMED FACE: $faceId at ${currentTime.millisecondsSinceEpoch} (will disappear in 0.5s)');
+    }
+    
+    // Update the current display list
+    _updateCurrentFaceDisplay();
+  }
+
+  /// 🎯 NEW: Remove a specific timed face when its timer expires
+  void _removeTimedFace(String faceId) {
+    if (_timedFaces.containsKey(faceId)) {
+      _timedFaces[faceId]!.disappearanceTimer.cancel();
+      _timedFaces.remove(faceId);
+      
+      debugPrint('🔴 REMOVED TIMED FACE: $faceId after 0.5 seconds');
+      
+      // Update the current display list
+      _updateCurrentFaceDisplay();
+    }
+  }
+
+  /// 🎯 NEW: Update current face display from active timed faces
+  void _updateCurrentFaceDisplay() {
+    if (!mounted) return;
+    
+    // Extract all faces from active timed faces
+    final activeFaces = _timedFaces.values.map((timedFace) => timedFace.face).toList();
+    
+    setState(() {
+      _currentFaceDetections = activeFaces;
+    });
+    
+    debugPrint('👤 FACE DISPLAY UPDATED: ${activeFaces.length} active faces');
   }
 
   /// Initialize face detection system
@@ -272,8 +362,8 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       // Get user's face detection preferences
       final features = ref.read(featuresNotifierProvider).value;
       final selectedMethod = features?.selectedDetectionMethod ?? 'two_stage';
-      final confidenceThreshold = features?.confidenceThreshold ?? 0.8;
-      final frameInterval = features?.frameInterval ?? 1;
+      final confidenceThreshold = features?.confidenceThreshold ?? 0.5;
+      final frameInterval = features?.frameInterval ?? 15;
       
       final bulkResult = await _visionApi!.bulkProcessVideo(
         mediaId: _mediaId!,
@@ -378,6 +468,9 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     widget.videoController!.addListener(_onVideoPositionChanged);
     debugPrint('🎯 Video position listener added');
     
+    // Start backup timer for face overlay updates (in case position listener doesn't fire)
+    _startBackupOverlayTimer();
+    
     // If video is initialized, immediately trigger face update
     if (widget.videoController!.value.isInitialized) {
       debugPrint('🎯 Video is initialized, triggering immediate face update');
@@ -391,6 +484,39 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     debugPrint('🎯 Video face display setup complete');
   }
 
+  /// Start backup timer to ensure faces are displayed even if position listener fails
+  void _startBackupOverlayTimer() {
+    // Cancel any existing timer
+    _playbackTimer?.cancel();
+    
+    debugPrint('🔄 Starting backup overlay timer for face display');
+    
+    // Update overlay every 100ms for smooth face clearing/showing
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted || widget.videoController == null || !widget.videoController!.value.isInitialized) {
+        timer.cancel();
+        return;
+      }
+      
+      // Update if video is playing - regardless of cache status to allow clearing
+      if (widget.videoController!.value.isPlaying) {
+        final position = widget.videoController!.value.position;
+        final fps = 30.0;
+        final currentFrameNumber = (position.inMilliseconds / 1000.0 * fps).round();
+        
+        // Use the same update logic as position changed handler
+        if (_memoryCache.isNotEmpty) {
+          _updateFacesFromMemoryCache(position);
+        } else if (_hasStoredFaces && _allStoredFaces.isNotEmpty) {
+          _updateFacesFromStoredData(position);
+        } else {
+          // Clear faces if no data available - using timed approach
+          _cleanupAllTimedFaces();
+        }
+      }
+    });
+  }
+
   /// Handle video position changes - frame-based synchronization
   void _onVideoPositionChanged() {
     if (!mounted || widget.videoController == null || !widget.videoController!.value.isInitialized) {
@@ -399,16 +525,22 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     
     try {
       final position = widget.videoController!.value.position;
+      final fps = 30.0;
+      final currentFrameNumber = (position.inMilliseconds / 1000.0 * fps).round();
       
-      // 🔧 CRITICAL FIX: Always check memory cache first, then stored faces
-      if (_memoryCache.isNotEmpty) {
-        debugPrint('🎯 Using memory cache for face display');
-        _updateFacesFromMemoryCache(position);
-      } else if (_hasStoredFaces && _allStoredFaces.isNotEmpty) {
-        debugPrint('🎯 Using stored faces for face display');
-        _updateFacesFromStoredData(position);
-      } else {
-        debugPrint('🎯 No faces available for display');
+      // 🎯 ENHANCED DEBUG: Only log when playing and show current face count
+      if (widget.videoController!.value.isPlaying) {
+        debugPrint('🎬 PLAYING at ${position.inSeconds.toStringAsFixed(1)}s (frame $currentFrameNumber) - Current faces: ${_currentFaceDetections.length}');
+        
+        // 🔧 CRITICAL FIX: Always check memory cache first, then stored faces
+        if (_memoryCache.isNotEmpty) {
+          _updateFacesFromMemoryCache(position);
+        } else if (_hasStoredFaces && _allStoredFaces.isNotEmpty) {
+          _updateFacesFromStoredData(position);
+        } else {
+          // Clear faces if no data available - using timed approach
+          _cleanupAllTimedFaces();
+        }
       }
     } catch (e) {
       debugPrint('❌ Error in video position changed: $e');
@@ -452,19 +584,12 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       
       if (frameFaces.length != _currentFaceDetections.length || 
           !_areFaceListsEqual(frameFaces, _currentFaceDetections)) {
-        debugPrint('🔄 Updating face detections: ${frameFaces.length} faces');
-        setState(() {
-          _currentFaceDetections = frameFaces;
-        });
+        debugPrint('Adding timed faces: ${frameFaces.length} faces');
+        _addTimedFaces(frameFaces);
       }
     } else {
-      // Clear faces if no close match
-      if (_currentFaceDetections.isNotEmpty) {
-        debugPrint('🧹 Clearing faces (no close match, distance: $minDistance)');
-        setState(() {
-          _currentFaceDetections = [];
-        });
-      }
+      // Clear faces if no close match - using timed approach
+      _cleanupAllTimedFaces();
     }
   }
 
@@ -489,7 +614,12 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
   /// Update faces display from memory cache
   void _updateFacesFromMemoryCache(Duration position) {
     if (_memoryCache.isEmpty) {
-      debugPrint('🎯 Memory cache is empty, cannot update faces');
+      if (_currentFaceDetections.isNotEmpty) {
+        debugPrint('🧹 CLEARING FACES: Memory cache is empty');
+        setState(() {
+          _currentFaceDetections = [];
+        });
+      }
       return;
     }
     
@@ -512,27 +642,32 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       }
     }
     
-    // Update faces if we found a close match (within 10 frames tolerance for better coverage)
-    if (closestFrame != null && minDistance <= 10) {
+    // 🎯 TIGHTER TOLERANCE: Use much tighter frame tolerance (3 frames = 0.1 seconds)
+    // This ensures faces disappear when they should instead of staying visible
+    const int frameToleranceThreshold = 3;
+    
+    if (closestFrame != null && minDistance <= frameToleranceThreshold) {
       final frameFaces = _memoryCache[closestFrame] ?? [];
       
-      debugPrint('🎯 Frame $currentFrameNumber: Found ${frameFaces.length} faces from cached frame $closestFrame (distance: $minDistance)');
+      // Only log significant changes to reduce noise
+      if (frameFaces.length != _currentFaceDetections.length) {
+        debugPrint('🎯 FRAME $currentFrameNumber → CACHED FRAME $closestFrame (distance: $minDistance)');
+        debugPrint('👤 FACE UPDATE: ${_currentFaceDetections.length} → ${frameFaces.length} faces');
+      }
       
       if (frameFaces.length != _currentFaceDetections.length ||
           !_areFaceListsEqual(frameFaces, _currentFaceDetections)) {
-        debugPrint('🔄 Updating face detections to ${frameFaces.length} faces');
-        setState(() {
-          _currentFaceDetections = frameFaces;
-        });
+        _addTimedFaces(frameFaces);
+        
+        if (frameFaces.isEmpty) {
+          debugPrint('� FACES CLEARED: No faces in cached frame $closestFrame');
+        } else {
+          debugPrint('🟡 FACES DISPLAYED: ${frameFaces.length} faces shown for frame $closestFrame');
+        }
       }
     } else {
-      // Clear faces if no close match
-      if (_currentFaceDetections.isNotEmpty) {
-        debugPrint('🧹 No close cached frame found, clearing faces (distance: $minDistance)');
-        setState(() {
-          _currentFaceDetections = [];
-        });
-      }
+      // Clear faces if no close match - using timed approach
+      _cleanupAllTimedFaces();
     }
   }
 
@@ -630,7 +765,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       children: [
         widget.child,
         
-        // Face detection rectangles overlay (only when video is ready)
+        // 🎯 DEDICATED FACE RECTANGLES OVERLAY - Only for yellow rectangles
         if (_isVideoReady)
           Positioned.fill(
             child: IgnorePointer(
@@ -643,47 +778,63 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
             ),
           ),
 
-        // 🔧 PROGRESS BAR REMOVED: Commenting out progress bar to eliminate complexity
-        // Processing overlay with progress indicator
-        // if (_isProcessingVideo)
-        //   Positioned.fill(
-        //     child: Container(
-        //       color: Colors.black54,
-        //       child: Center(
-        //         child: Card(
-        //           child: Padding(
-        //             padding: const EdgeInsets.all(24.0),
-        //             child: Column(
-        //               mainAxisSize: MainAxisSize.min,
-        //               children: [
-        //                 const CircularProgressIndicator(
-        //                   strokeWidth: 3,
-        //                 ),
-        //                 const SizedBox(height: 16),
-        //                 Text(
-        //                   'Processing Video for Face Detection',
-        //                   style: Theme.of(context).textTheme.titleMedium,
-        //                   textAlign: TextAlign.center,
-        //                 ),
-        //                 const SizedBox(height: 8),
-        //                 Text(
-        //                   'Analyzing frames...',
-        //                   style: Theme.of(context).textTheme.bodyMedium,
-        //                   textAlign: TextAlign.center,
-        //                 ),
-        //                 const SizedBox(height: 16),
-        //                 LinearProgressIndicator(
-        //                   value: _processingProgress,
-        //                   backgroundColor: Colors.grey[300],
-        //                 ),
-        //                 const SizedBox(height: 8),
-        //                 Text(
-        //                   '${(_processingProgress * 100).toInt()}% Complete',
-        //                   style: Theme.of(context).textTheme.bodySmall,
-        //                 ),
-        //               ],
-        //             ),
-        //           ),
+        // 🎯 DEDICATED INFORMATION OVERLAY - Separate from face rectangles
+        if (_isVideoReady)
+          Positioned(
+            top: 10,
+            left: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.face,
+                    color: Colors.yellow,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_currentFaceDetections.length} faces (${_getTotalCachedFaces()} total)',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // 🎯 DEDICATED DEBUG OVERLAY - Shows current frame and cached frame status
+        if (_isVideoReady && _memoryCache.isNotEmpty)
+          Positioned(
+            top: 40,
+            left: 10,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Cache: ${_memoryCache.length} frames',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
         //         ),
         //       ),
         //     ),

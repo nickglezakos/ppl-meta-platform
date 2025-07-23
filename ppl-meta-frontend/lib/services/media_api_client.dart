@@ -150,6 +150,20 @@ class MediaApiClient {
     }
   }
 
+  /// Get video properties including metadata (fps, frame count, etc.)
+  Future<Map<String, dynamic>?> getVideoProperties(String mediaId) async {
+    try {
+      final response = await _apiClient.get('/api/v1/media/$mediaId/video-properties');
+      return response.data as Map<String, dynamic>?;
+    } on DioException catch (e) {
+      print('❌ Failed to get video properties: ${_handleDioError(e)}');
+      return null;
+    } catch (e) {
+      print('❌ Unexpected error getting video properties: $e');
+      return null;
+    }
+  }
+
   /// Delete media item
   Future<ApiResponse<void>> deleteMedia(String mediaId) async {
     try {
@@ -700,6 +714,27 @@ class MediaApiClient {
         return MediaType.other;
     }
   }
+
+  /// Real-time face detection for single frame during video playback
+  /// Phase 1 of Hybrid Face Detection Architecture (Issue 052)
+  Future<SingleFrameFaceDetectionResult> detectFacesAtFrame({
+    required String mediaId,
+    required int frameNumber,
+    double confidenceThreshold = 0.5, // FIXED: Default to 0.5 for better face detection
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/stream/faces/$mediaId/frame/$frameNumber',
+        queryParameters: {
+          'confidence_threshold': confidenceThreshold,
+        },
+      );
+
+      return SingleFrameFaceDetectionResult.fromJson(response.data);
+    } on DioException catch (e) {
+      throw Exception('Real-time face detection failed: ${_handleDioError(e)}');
+    }
+  }
   
   /// Get current user ID from authentication context
   Future<String?> _getCurrentUserId() async {
@@ -715,5 +750,85 @@ class MediaApiClient {
       print('Failed to get current user ID: $e');
     }
     return null;
+  }
+}
+
+/// Single frame face detection result model for real-time detection
+class SingleFrameFaceDetectionResult {
+  final int frameNumber;
+  final List<FaceDetection> faces;
+  final double detectionTime;
+  final String method;
+
+  SingleFrameFaceDetectionResult({
+    required this.frameNumber,
+    required this.faces,
+    required this.detectionTime,
+    required this.method,
+  });
+
+  factory SingleFrameFaceDetectionResult.fromJson(Map<String, dynamic> json) {
+    return SingleFrameFaceDetectionResult(
+      frameNumber: json['frame_number'] ?? 0,
+      faces: (json['faces'] as List<dynamic>?)
+          ?.map((faceJson) => FaceDetection.fromJson(faceJson))
+          .toList() ?? [],
+      detectionTime: (json['detection_time'] ?? 0.0).toDouble(),
+      method: json['method'] ?? 'real_time_detection',
+    );
+  }
+}
+
+/// Face detection model for single face result
+class FaceDetection {
+  final FaceBoundingBox boundingBox;
+  final double confidence;
+  final String method;
+
+  FaceDetection({
+    required this.boundingBox,
+    required this.confidence,
+    required this.method,
+  });
+
+  factory FaceDetection.fromJson(Map<String, dynamic> json) {
+    return FaceDetection(
+      boundingBox: FaceBoundingBox.fromJson(json['bbox'] ?? [0, 0, 0, 0]),
+      confidence: (json['confidence'] ?? 0.0).toDouble(),
+      method: json['method'] ?? 'unknown',
+    );
+  }
+}
+
+/// Bounding box for face detection
+class FaceBoundingBox {
+  final double left;
+  final double top;
+  final double width;
+  final double height;
+
+  FaceBoundingBox({
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+  });
+
+  factory FaceBoundingBox.fromJson(List<dynamic> bbox) {
+    if (bbox.length >= 4) {
+      // ✅ FIX ISSUE 2: bbox format is [left, top, right, bottom] not [left, top, width, height]
+      final left = (bbox[0] ?? 0.0).toDouble();
+      final top = (bbox[1] ?? 0.0).toDouble();
+      final right = (bbox[2] ?? 0.0).toDouble();
+      final bottom = (bbox[3] ?? 0.0).toDouble();
+      
+      return FaceBoundingBox(
+        left: left,
+        top: top,
+        width: right - left,  // Calculate width from right - left
+        height: bottom - top, // Calculate height from bottom - top
+      );
+    }
+    return FaceBoundingBox(left: 0, top: 0, width: 0, height: 0);
   }
 }

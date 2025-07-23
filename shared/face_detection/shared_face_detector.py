@@ -198,18 +198,18 @@ class SharedFaceDetector:
 
         faces = []
         for x, y, w, h in face_rects:
-            # Haar cascade doesn't provide confidence, so we use a fixed high value
-            # for faces that pass the minNeighbors threshold
-            confidence = 0.8  # High confidence for detected faces
+            # Haar cascade doesn't provide confidence scores, estimate based
+            # on detection parameters and use the requested threshold
+            # Use threshold value as confidence if face passes detection
+            confidence = max(confidence_threshold, 0.6)
 
-            if confidence >= confidence_threshold:
-                faces.append(
-                    {
-                        "bbox": [int(x), int(y), int(x + w), int(y + h)],
-                        "confidence": float(confidence),
-                        "method": "haar_realtime",
-                    }
-                )
+            faces.append(
+                {
+                    "bbox": [int(x), int(y), int(x + w), int(y + h)],
+                    "confidence": float(confidence),
+                    "method": "haar",
+                }
+            )
 
         return faces
 
@@ -309,16 +309,17 @@ class SharedFaceDetector:
 
             # If dlib confirms face, it's validated
             if len(dlib_faces) > 0:
-                confidence = self.config["confidence_thresholds"]["two_stage"]
+                # Use the actual confidence threshold without forcing minimum
+                # Two-stage detection provides its own validation confidence
+                confidence = confidence_threshold
 
-                if confidence >= confidence_threshold:
-                    validated_faces.append(
-                        {
-                            "bbox": [int(x), int(y), int(x + w), int(y + h)],
-                            "confidence": float(confidence),
-                            "method": "two_stage_haar_dlib",
-                        }
-                    )
+                validated_faces.append(
+                    {
+                        "bbox": [int(x), int(y), int(x + w), int(y + h)],
+                        "confidence": float(confidence),
+                        "method": "two_stage",
+                    }
+                )
 
         return validated_faces
 
@@ -393,3 +394,101 @@ class SharedFaceDetector:
             if key in self.config:
                 self.config[key] = value
                 self.logger.info(f"Updated config {key} = {value}")
+
+    def detect_faces_two_stage(
+        self, frame: np.ndarray, confidence_threshold: float = 0.5
+    ) -> Dict[str, Any]:
+        """
+        Public two-stage face detection method matching Vision service.
+
+        Stage 1: Haar cascade for initial detection
+        Stage 2: Dlib validation to filter false positives
+
+        Args:
+            frame: Input video frame (numpy array)
+            confidence_threshold: Minimum confidence for detection
+
+        Returns:
+            Dict with success flag, detections list, and metadata
+        """
+        if not self.models_loaded:
+            return {
+                "success": False,
+                "error": "Face detection models not loaded",
+                "detections": [],
+            }
+
+        try:
+            # Ensure we have the required methods
+            if (
+                "haar" not in self.available_methods
+                or "dlib" not in self.available_methods
+            ):
+                return {
+                    "success": False,
+                    "error": "Required methods (haar, dlib) not available",
+                    "detections": [],
+                }
+
+            import time
+
+            start_time = time.time()
+
+            # Convert to grayscale if needed
+            if len(frame.shape) == 3:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = frame
+
+            # Stage 1: Haar cascade for initial detection
+            faces = self.haar_cascade.detectMultiScale(
+                gray,
+                scaleFactor=self.config["scale_factor"],
+                minNeighbors=self.config["min_neighbors"],
+                minSize=self.config["min_size"],
+                maxSize=self.config["max_size"],
+            )
+
+            # Stage 2: Dlib validation
+            validated_faces = []
+            for x, y, w, h in faces:
+                # Crop face region for dlib validation
+                face_region = gray[y : y + h, x : x + w]
+
+                # Skip if face region is too small
+                if face_region.size == 0:
+                    continue
+
+                # Dlib validation on cropped region
+                dlib_faces = self.dlib_detector(face_region, 1)
+
+                # If dlib confirms face, it's validated
+                if len(dlib_faces) > 0:
+                    validated_faces.append(
+                        {
+                            "bbox": [int(x), int(y), int(x + w), int(y + h)],
+                            "confidence": float(confidence_threshold),
+                            "method": "two_stage",
+                        }
+                    )
+
+            processing_time = time.time() - start_time
+
+            self.logger.info(
+                f"Two-stage detection: {len(faces)} initial Haar "
+                f"detections → {len(validated_faces)} Dlib-validated "
+                f"faces in {processing_time:.3f}s"
+            )
+
+            return {
+                "success": True,
+                "detections": validated_faces,
+                "method": "two_stage",
+                "processing_time": processing_time,
+                "initial_detections": len(faces),
+                "validated_detections": len(validated_faces),
+            }
+
+        except Exception as e:
+            self.logger.error(f"Two-stage detection error: {e}")
+            return {"success": False, "error": str(e), "detections": []}

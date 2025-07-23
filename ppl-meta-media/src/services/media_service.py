@@ -26,6 +26,7 @@ from ..models.media import (
 )
 from ..schemas.media import MediaSearchRequest, MediaUploadRequest
 from .exif_extractor import ExifExtractor
+from .video_metadata_extractor import VideoMetadataExtractor
 
 if TYPE_CHECKING:
     # Avoiding circular imports for now
@@ -851,6 +852,9 @@ class MediaService:
             # Extract EXIF metadata for images
             await self._extract_exif_metadata(media)
 
+            # Extract video metadata for videos (including exact frame count)
+            await self._extract_video_metadata(media)
+
             # TODO: Create different quality variants
 
             # Mark processing as completed
@@ -974,6 +978,120 @@ class MediaService:
             if not media.technical_metadata:
                 media.technical_metadata = {}
             media.technical_metadata["exif_error"] = str(e)
+
+    async def _extract_video_metadata(self, media: Media):
+        """Extract comprehensive video metadata including exact frame count."""
+
+        # Only process video files
+        if media.media_type != MediaType.VIDEO:
+            return
+
+        try:
+            from src.config import get_config
+
+            settings = get_config()
+            full_file_path = Path(settings.STORAGE_PATH) / media.file_path
+
+            # Read video file content
+            with open(full_file_path, "rb") as f:
+                video_content = f.read()
+
+            # Extract video metadata using our new extractor
+            video_extractor = VideoMetadataExtractor()
+            video_metadata = await video_extractor.extract_video_metadata(
+                video_content, media.original_filename
+            )
+
+            # Initialize technical_metadata if it doesn't exist
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+
+            # Store video metadata in technical_metadata
+            media.technical_metadata["video"] = video_metadata
+
+            # Log successful extraction for debugging
+            total_frames = video_metadata.get("total_frames")
+            if total_frames:
+                print(
+                    f"✅ Video metadata extracted for {media.original_filename}: "
+                    f"{total_frames} frames, "
+                    f"source: {video_metadata.get('frame_count_source', 'unknown')}"
+                )
+            else:
+                print(
+                    f"⚠️ Video metadata extracted but no frame count found for "
+                    f"{media.original_filename}"
+                )
+
+        except FileNotFoundError:
+            # Video file not found
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+            media.technical_metadata["video_error"] = "Video file not found"
+            print(f"❌ Video file not found: {media.file_path}")
+
+        except Exception as e:
+            # Don't fail the entire upload if video metadata extraction fails
+            if not media.technical_metadata:
+                media.technical_metadata = {}
+            media.technical_metadata["video_error"] = str(e)
+            print(
+                f"❌ Video metadata extraction error for "
+                f"{media.original_filename}: {e}"
+            )
+
+    def get_video_properties(
+        self, media_id: str, user_id: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get video properties from stored metadata.
+
+        This method provides video properties for face detection
+        without re-processing the video.
+        """
+        print(
+            f"DEBUG: get_video_properties called with media_id={media_id}, user_id={user_id}"
+        )
+
+        query = self.db.query(Media).filter(Media.uuid == media_id)
+
+        # Add user ownership check if user_id provided
+        if user_id:
+            query = query.filter(Media.uploaded_by == user_id)
+
+        media = query.first()
+
+        if (
+            not media
+            or media.media_type != MediaType.VIDEO
+            or not media.technical_metadata
+            or "video_properties" not in media.technical_metadata
+        ):
+            return None
+
+        video_metadata = media.technical_metadata["video_properties"]
+
+        # Extract key properties
+        total_frames = video_metadata.get("total_frames")
+        fps = video_metadata.get("fps", 30.0)  # Default to 30fps
+        width = video_metadata.get("width")
+        height = video_metadata.get("height")
+        duration_seconds = video_metadata.get("duration_seconds")
+
+        # Calculate duration from frames if not available
+        if not duration_seconds and total_frames and fps > 0:
+            duration_seconds = total_frames / fps
+
+        return {
+            "total_frames": total_frames,
+            "fps": fps,
+            "width": width,
+            "height": height,
+            "duration_seconds": duration_seconds,
+            "frame_count_source": video_metadata.get("frame_count_source"),
+            "frame_count_confidence": video_metadata.get("frame_count_confidence"),
+            "extraction_methods": video_metadata.get("extraction_methods_used", []),
+        }
 
     def _format_file_size(self, size_bytes: int) -> str:
         """Format file size in human readable format."""

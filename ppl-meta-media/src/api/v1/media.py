@@ -2154,3 +2154,39 @@ async def apply_metadata_template(
 
 # ============================================================================
 # END ISSUE #016: Advanced Media Details and Metadata Management
+
+
+@router.get("/{media_id}/video-properties")
+async def get_video_properties(
+    media_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get video properties including exact frame count from stored metadata.
+
+    This endpoint provides video metadata that was extracted during upload,
+    eliminating the need for preprocessing during face detection.
+    """
+    try:
+        media_service = MediaService(db)
+
+        # Get video properties from stored metadata
+        properties = media_service.get_video_properties(media_id, current_user.user_id)
+
+        if not properties:
+            raise HTTPException(
+                status_code=404, detail="Video not found or metadata not available"
+            )
+
+        return {
+            "media_id": media_id,
+            "video_properties": properties,
+            "metadata_available": True,
+            "preprocessing_required": False,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e

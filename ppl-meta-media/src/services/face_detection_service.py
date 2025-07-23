@@ -165,6 +165,48 @@ class MediaFaceDetectionService:
             logger.warning(f"Face detection error: {e}")
             return []
 
+    def detect_faces_fast(
+        self,
+        frame: np.ndarray,
+        confidence_threshold: float = 0.5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fast face detection optimized for real-time processing.
+
+        Used in Phase 1 of Hybrid Face Detection Architecture (Issue 052).
+        Optimized for speed over accuracy to provide immediate feedback
+        during video playbook.
+
+        Args:
+            frame: OpenCV frame as numpy array
+            confidence_threshold: Minimum confidence for face detection
+
+        Returns:
+            List of face detections with bbox, confidence, and method
+        """
+        if not self.is_face_detection_enabled():
+            return []
+
+        try:
+            # Check if detector is available
+            if not self.detector:
+                return []
+
+            # Use the same two_stage method as Vision service bulk processing
+            detection_result = self.detector.detect_faces_two_stage(
+                frame, confidence_threshold=confidence_threshold
+            )
+
+            # Extract faces from the structured result
+            if detection_result.get("success", False):
+                return detection_result.get("detections", [])
+            else:
+                return []
+
+        except Exception as e:
+            logger.warning(f"Fast face detection error: {e}")
+            return []
+
     def _convert_to_frame(
         self, frame_data: Union[np.ndarray, bytes, str]
     ) -> Optional[np.ndarray]:
@@ -249,3 +291,118 @@ class MediaFaceDetectionService:
         }
 
         return status
+
+    def detect_faces_vision_compatible(
+        self, frame: np.ndarray, confidence_threshold: float = 0.5
+    ) -> List[Dict]:
+        """
+        Vision service compatible two-stage face detection.
+        This is an exact copy of the Vision service's
+        detect_faces_two_stage implementation to ensure identical results
+        for progressive pre-loading.
+
+        Stage 1: Haar cascade detection
+        Stage 2: Dlib validation to filter false positives
+        """
+        try:
+            # Check if detector is available
+            if not self.detector:
+                return []
+
+            # Get available methods from shared detector
+            available_methods = getattr(self.detector, "available_methods", [])
+
+            # Ensure we have the required methods
+            if "haar" not in available_methods or "dlib" not in available_methods:
+                logger.warning(
+                    "Required methods (haar, dlib) not available for "
+                    "vision-compatible detection"
+                )
+                return []
+
+            import time
+
+            start_time = time.time()
+
+            # Convert to grayscale if needed
+            if len(frame.shape) == 3:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = frame
+
+            # Stage 1: Haar cascade for initial detection
+            # Using same parameters as Vision service
+            haar_cascade = getattr(self.detector, "haar_cascade", None)
+            if not haar_cascade:
+                logger.warning("Haar cascade not available in shared detector")
+                return []
+
+            faces = haar_cascade.detectMultiScale(
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
+            )
+
+            # Initial face rectangles from Haar cascade
+            face_rects = []
+            for face in faces:
+                x = int(face[0])
+                y = int(face[1])
+                w = int(face[2])
+                h = int(face[3])
+                face_rects.append([x, y, w, h])
+
+            # Stage 2: Dlib validation (filter false positives)
+            filtered_face_rects = []
+
+            dlib_detector = getattr(self.detector, "dlib_detector", None)
+            if not dlib_detector:
+                logger.warning("Dlib detector not available in shared detector")
+                return []
+
+            for face_rect in face_rects:
+                x, y, w, h = face_rect
+
+                # Crop the face region for Dlib validation
+                face_region = gray[y : y + h, x : x + w]
+
+                # Skip if face region is too small
+                if face_region.size == 0:
+                    continue
+
+                # Perform Dlib face detection on the cropped face region
+                try:
+                    dlib_faces = dlib_detector(face_region, 1)
+                    # If Dlib detects faces in this region, it's a valid face
+                    if len(dlib_faces) > 0:
+                        filtered_face_rects.append(face_rect)
+                except Exception:
+                    # Skip this face if dlib detection fails
+                    continue
+
+            # Convert to the expected output format
+            # (matching Vision service exactly)
+            detections = []
+            for face_rect in filtered_face_rects:
+                x, y, w, h = face_rect
+                detections.append(
+                    {
+                        "bbox": [x, y, x + w, y + h],
+                        "confidence": 0.5,  # Fixed confidence
+                        "method": "two_stage_haar_dlib",
+                    }
+                )
+
+            processing_time = time.time() - start_time
+
+            logger.info(
+                "Vision-compatible detection: %d initial Haar detections → "
+                "%d Dlib-validated faces in %.3fs",
+                len(faces),
+                len(filtered_face_rects),
+                processing_time,
+            )
+
+            return detections
+
+        except Exception as e:
+            logger.warning("Vision-compatible face detection error: %s", str(e))
+            return []
