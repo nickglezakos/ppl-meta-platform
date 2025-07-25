@@ -1,5 +1,10 @@
 # PPL Meta Platform - Comprehensive User Testing Issues
 
+# Primary user test account
+Email: fresh.user@example.com
+Password: NewPassword234!
+Username: freshuser
+
 ## 🚀 **MAJOR ARCHITECTURAL BREAKTHROUGH - EMBEDDED FACE DETECTION** ✅ 
 
 **Issue**: 050 - ✅ **COMPLETELY RESOLVED** - **EMBEDDED FACE DETECTION ARCHITECTURE BREAKTHROUGH**
