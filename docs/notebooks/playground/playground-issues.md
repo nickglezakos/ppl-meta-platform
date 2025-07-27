@@ -655,3 +655,217 @@ json_string = classification_json
 **Implementation Location**: Cell 15 in `person_trails.ipynb`  
 **Global Variables**: `classification_json`, `classification_results_dict`  
 **Resolution Date**: January 27, 2025
+
+---
+
+## Issue #016: Face Detection Overlay Implementation with Interactive Gallery
+
+### Overview
+Implement face detection overlay functionality in the person trails notebook to display high-quality PNG frames with yellow bounding boxes around detected faces, providing visual validation of face detection results.
+
+### Requirements
+
+#### 1. **High-Quality Frame Extraction**
+- **Requirement**: Extract specific frames as high-quality PNG images
+- **Source**: Video frames containing detected faces from `frames_with_faces` data
+- **Quality**: Use PNG format for lossless frame extraction
+- **Implementation**: Authenticate and extract frames via media service API
+
+#### 2. **Yellow Bounding Box Overlay**
+- **Requirement**: Draw yellow bounding boxes around detected faces
+- **Visual Style**: 
+  - Yellow color (#FFFF00) for high visibility
+  - 3-pixel line width for clear visibility
+  - Rectangular boxes around face coordinates
+- **Data Source**: Face detection coordinates from `frames_with_faces`
+- **Implementation**: PIL/Pillow image processing with draw operations
+
+#### 3. **Interactive Gallery Display**
+- **Requirement**: Create HTML-based interactive gallery for face detection results
+- **Features**:
+  - Thumbnail grid layout showing all frames with faces
+  - Click-to-download functionality for individual frames
+  - Frame number and face count display
+  - Responsive layout for notebook viewing
+- **Implementation**: HTML generation with embedded base64 images
+
+#### 4. **Coordinate System Handling**
+- **Requirement**: Properly handle face detection coordinate formats
+- **Coordinate Types**: Support both normalized (0-1) and absolute pixel coordinates
+- **Frame Dimensions**: Use actual frame dimensions for accurate positioning
+- **Validation**: Detect coordinate format automatically and apply appropriate scaling
+
+### Technical Specifications
+
+#### Frame Extraction Function
+```python
+def extract_and_annotate_frame(frame_number: int, auth_token: str, video_uuid: str) -> PIL.Image:
+    """Extract frame and overlay yellow bounding boxes for detected faces."""
+    
+    # 1. Extract high-quality PNG frame via authenticated API
+    frame_url = f"{NGINX_BASE_URL}/api/v1/media/{video_uuid}/frame/{frame_number}?format=png&quality=high"
+    frame_image = get_authenticated_image(frame_url, auth_token)
+    
+    # 2. Get face detection data for this frame
+    faces_in_frame = get_faces_for_frame(frame_number)
+    
+    # 3. Draw yellow bounding boxes
+    draw = ImageDraw.Draw(frame_image)
+    for face in faces_in_frame:
+        x, y, width, height = face['coordinates']
+        draw.rectangle([x, y, x + width, y + height], outline='yellow', width=3)
+    
+    return frame_image
+
+
+def create_face_detection_gallery(frames_with_faces: dict, auth_token: str, video_uuid: str) -> str:
+    """Generate HTML gallery with face detection overlays and download functionality."""
+    
+    html_parts = ['<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">']
+    
+    for frame_num in sorted(frames_with_faces.keys()):
+        # Extract and annotate frame
+        annotated_frame = extract_and_annotate_frame(frame_num, auth_token, video_uuid)
+        
+        # Convert to base64 for HTML embedding
+        img_base64 = image_to_base64(annotated_frame)
+        
+        # Create interactive frame element
+        frame_html = f'''
+        <div style="border: 2px solid #ddd; padding: 10px; text-align: center;">
+            <h4>Frame {frame_num}</h4>
+            <img src="data:image/png;base64,{img_base64}" style="max-width: 100%; cursor: pointer;" 
+                 onclick="downloadImage('{img_base64}', 'frame_{frame_num}_faces.png')">
+            <p>Faces: {len(frames_with_faces[frame_num])} | Click to Download</p>
+        </div>
+        '''
+        html_parts.append(frame_html)
+    
+    return ''.join(html_parts) + '</div>'
+
+
+Issue #017: Face Detection Bounding Box Scaling Accuracy
+Overview
+Refine the bounding box scaling algorithm in the face detection overlay system to ensure pixel-perfect accuracy when displaying yellow bounding boxes around detected faces, matching the scaling behavior from the Flutter application.
+
+Problem Statement
+The current face detection overlay implementation (Issue #016) successfully displays yellow bounding boxes around detected faces, but the scaling algorithm does not perfectly match the coordinate transformation used in the Flutter application, resulting in:
+
+Vertical Scaling Issues: Bounding boxes may not align perfectly with face positions in some frames
+Coordinate System Mismatch: Different scaling behavior between Python overlay and Flutter app display
+Aspect Ratio Handling: Inconsistent aspect ratio preservation during coordinate transformation
+Visual Accuracy: While functional for validation purposes, lacks pixel-perfect precision
+Current Implementation Status
+The existing overlay system in Cell 20/21 provides:
+
+✅ Basic Functionality: Yellow bounding boxes are displayed and provide visual validation
+✅ Coordinate Detection: Automatic detection of normalized vs. absolute coordinates
+✅ Interactive Gallery: Working download functionality and responsive display
+⚠️ Scaling Accuracy: Scaling algorithm needs refinement for perfect alignment
+Technical Requirements
+1. Flutter-Style Uniform Scaling
+Reference Implementation: FaceDetectionPainter class in media_preview_screen.dart
+Scaling Algorithm:
+
+double scale_x = container_width / video_width;
+double scale_y = container_height / video_height;
+double scale = min(scale_x, scale_y);  // Uniform scaling
+
+
+Offset Calculation: Proper centering with offset calculation for aspect ratio preservation
+2. Coordinate Transformation Pipeline
+Step 1: Detect coordinate format (normalized 0-1 vs. absolute pixels)
+Step 2: Convert to absolute coordinates if needed
+Step 3: Apply uniform scaling with min(scale_x, scale_y)
+Step 4: Calculate centering offsets
+Step 5: Transform final coordinates with offsets
+3. Aspect Ratio Preservation
+Container Dimensions: Use actual display container size for scaling calculations
+Video Dimensions: Original video frame dimensions from metadata
+Uniform Scale Factor: Single scale value applied to both X and Y coordinates
+Centering Logic: Calculate X and Y offsets to center video within container
+Flutter Reference Implementation  
+
+Key Scaling Logic from Flutter App:
+
+// From FaceDetectionPainter class
+double scale_x = container_width / video_width;
+double scale_y = container_height / video_height;
+double scale = min(scale_x, scale_y);
+
+// Offset calculation for centering
+double offset_x = (container_width - (video_width * scale)) / 2;
+double offset_y = (container_height - (video_height * scale)) / 2;
+
+// Final coordinate transformation
+double final_x = (original_x * scale) + offset_x;
+double final_y = (original_y * scale) + offset_y;
+
+Proposed Python Implementation
+Enhanced Scaling Function:
+
+def apply_flutter_style_scaling(x, y, width, height, video_width, video_height, 
+                               container_width=800, container_height=600):
+    """Apply Flutter-style uniform scaling with proper aspect ratio preservation."""
+    
+    # Calculate scale factors
+    scale_x = container_width / video_width
+    scale_y = container_height / video_height
+    
+    # Use minimum scale for uniform scaling (preserves aspect ratio)
+    uniform_scale = min(scale_x, scale_y)
+    
+    # Calculate centering offsets
+    offset_x = (container_width - (video_width * uniform_scale)) / 2
+    offset_y = (container_height - (video_height * uniform_scale)) / 2
+    
+    # Apply transformation
+    scaled_x = (x * uniform_scale) + offset_x
+    scaled_y = (y * uniform_scale) + offset_y
+    scaled_width = width * uniform_scale
+    scaled_height = height * uniform_scale
+    
+    return scaled_x, scaled_y, scaled_width, scaled_height
+
+Implementation Plan
+Phase 1: Algorithm Enhancement
+Update Cell 20/21: Implement Flutter-style scaling algorithm
+Coordinate Detection: Maintain automatic coordinate format detection
+Uniform Scaling: Apply min(scale_x, scale_y) approach
+Offset Calculation: Add proper centering logic
+Phase 2: Validation and Testing
+Visual Comparison: Compare scaling results with Flutter app display
+Edge Case Testing: Test with various video aspect ratios and face positions
+Coordinate Accuracy: Validate pixel-perfect alignment
+Phase 3: Documentation and Integration
+Function Documentation: Document the enhanced scaling algorithm
+Integration Testing: Ensure compatibility with existing gallery functionality
+Performance Validation: Confirm no performance degradation
+Success Criteria
+✅ Scaling Accuracy
+<input disabled="" type="checkbox"> Implement Flutter-style uniform scaling with min(scale_x, scale_y)
+<input disabled="" type="checkbox"> Add proper centering offset calculations
+<input disabled="" type="checkbox"> Achieve pixel-perfect bounding box alignment
+✅ Aspect Ratio Preservation
+<input disabled="" type="checkbox"> Maintain consistent aspect ratios across different video dimensions
+<input disabled="" type="checkbox"> Handle various container sizes correctly
+<input disabled="" type="checkbox"> Preserve visual proportions matching Flutter app
+✅ Integration Quality
+<input disabled="" type="checkbox"> Maintain compatibility with existing overlay functionality
+<input disabled="" type="checkbox"> Preserve interactive gallery features
+<input disabled="" type="checkbox"> Ensure no performance degradation
+✅ Validation
+<input disabled="" type="checkbox"> Visual comparison with Flutter app scaling behavior
+<input disabled="" type="checkbox"> Test with multiple video aspect ratios
+<input disabled="" type="checkbox"> Verify accuracy across different face positions
+Priority Level
+Medium: The current implementation provides sufficient visual validation for development purposes. This enhancement is focused on achieving pixel-perfect accuracy for production-quality output.
+
+Implementation Timeline
+Target: When pixel-perfect scaling accuracy is required
+Dependencies: Existing overlay system (Issue #016) must be functional
+Effort: Low-medium (algorithm refinement in existing functions)
+Issue Status: 🔄 PENDING
+This issue is identified and documented for future implementation when pixel-perfect bounding box scaling accuracy is required. The current overlay system provides sufficient functionality for immediate development needs
+
+

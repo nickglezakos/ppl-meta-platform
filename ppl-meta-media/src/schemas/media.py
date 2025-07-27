@@ -236,6 +236,24 @@ class MediaListResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class VideoFrameResponse(BaseModel):
+    """Schema for video frame extraction responses."""
+
+    media_id: UUID4
+    frame_number: int
+    frame_timestamp: float = Field(..., description="Timestamp in seconds")
+    format: str = Field(default="jpeg", description="Output image format")
+    width: int = Field(..., description="Frame width in pixels")
+    height: int = Field(..., description="Frame height in pixels")
+    file_size: int = Field(..., description="Size of extracted frame in bytes")
+    total_frames: Optional[int] = Field(None, description="Total frames in video")
+    video_duration: Optional[float] = Field(
+        None, description="Video duration in seconds"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Collection schemas
 class MediaCollectionBase(BaseModel):
     """Base media collection schema."""

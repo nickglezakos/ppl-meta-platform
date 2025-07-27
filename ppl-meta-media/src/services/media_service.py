@@ -1108,6 +1108,183 @@ class MediaService:
 
         return f"{size:.1f} {size_names[size_index]}"
 
+    async def extract_video_frame(
+        self,
+        media_id: str,
+        frame_number: int,
+        user_id: UUID,
+        output_format: str = "jpeg",
+        quality: int = 85,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Extract a specific frame from a video file.
+
+        Args:
+            media_id: UUID of the media file
+            frame_number: Frame number to extract (0-based)
+            user_id: User requesting the frame
+            output_format: Output format (jpeg, png, webp)
+            quality: JPEG quality (1-100)
+            width: Optional width for resizing
+            height: Optional height for resizing
+
+        Returns:
+            Dict containing frame data and metadata
+        """
+        from io import BytesIO
+
+        import cv2
+        from PIL import Image
+
+        # Get media by UUID
+        media = self.db.query(Media).filter(Media.uuid == media_id).first()
+        if not media:
+            raise ValueError("Media not found")
+
+        # Check if it's a video
+        if media.media_type != MediaType.VIDEO:
+            raise ValueError("Media is not a video file")
+
+        # Check access permissions
+        if not self._user_can_access_media(media, user_id):
+            raise ValueError("Access denied to this media")
+
+        # Get video file path (use absolute path construction)
+        import os
+
+        # Try multiple path formats to find the file
+        base_storage = os.path.join(os.getcwd(), "storage")
+
+        # Path options to try
+        path_options = [
+            Path(os.path.join("./storage", str(media.file_path))),  # Original
+            Path(os.path.join(base_storage, str(media.file_path))),  # Absolute
+            Path(str(media.file_path)),  # Direct path
+        ]
+
+        # Find existing file
+        file_path = None
+        for path_option in path_options:
+            if path_option.exists():
+                file_path = path_option
+                break
+
+        if not file_path:
+            # Search for the file in storage directory
+            import glob
+
+            search_pattern = os.path.join(base_storage, "**", "*.mp4")
+            mp4_files = glob.glob(search_pattern, recursive=True)
+
+            # Look for file with matching UUID
+            media_uuid = str(media.uuid)
+            for mp4_file in mp4_files:
+                if media_uuid in mp4_file:
+                    file_path = Path(mp4_file)
+                    break
+
+        if not file_path or not file_path.exists():
+            raise ValueError("Video file not found on disk")
+
+        # Extract frame using OpenCV
+        cap = cv2.VideoCapture(str(file_path))
+        if not cap.isOpened():
+            raise ValueError("Could not open video file")
+
+        try:
+            # Get video properties
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            duration = total_frames / fps if fps > 0 else 0
+
+            # Validate frame number
+            if frame_number < 0 or frame_number >= total_frames:
+                raise ValueError(
+                    f"Frame number {frame_number} out of range. "
+                    f"Video has {total_frames} frames (0-{total_frames-1})"
+                )
+
+            # Seek to the specific frame
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+
+            # Read the frame
+            ret, frame = cap.read()
+            if not ret:
+                raise ValueError(f"Could not read frame {frame_number}")
+
+            # Convert BGR to RGB (OpenCV uses BGR)
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # Convert to PIL Image for processing
+            pil_image = Image.fromarray(frame_rgb)
+
+            # Resize if requested
+            if width or height:
+                original_size = pil_image.size
+                if width and height:
+                    pil_image = pil_image.resize(
+                        (width, height), Image.Resampling.LANCZOS
+                    )
+                elif width:
+                    # Maintain aspect ratio
+                    aspect_ratio = original_size[1] / original_size[0]
+                    height = int(width * aspect_ratio)
+                    pil_image = pil_image.resize(
+                        (width, height), Image.Resampling.LANCZOS
+                    )
+                elif height:
+                    # Maintain aspect ratio
+                    aspect_ratio = original_size[0] / original_size[1]
+                    width = int(height * aspect_ratio)
+                    pil_image = pil_image.resize(
+                        (width, height), Image.Resampling.LANCZOS
+                    )
+            else:
+                width, height = pil_image.size
+
+            # Convert to bytes
+            img_buffer = BytesIO()
+
+            if output_format.lower() == "png":
+                pil_image.save(img_buffer, format="PNG")
+                mime_type = "image/png"
+            elif output_format.lower() == "webp":
+                pil_image.save(img_buffer, format="WEBP", quality=quality)
+                mime_type = "image/webp"
+            else:  # Default to JPEG
+                pil_image.save(img_buffer, format="JPEG", quality=quality)
+                mime_type = "image/jpeg"
+                output_format = "jpeg"
+
+            img_buffer.seek(0)
+            frame_bytes = img_buffer.getvalue()
+
+            # Calculate timestamp
+            frame_timestamp = frame_number / fps if fps > 0 else 0
+
+            return {
+                "frame_data": frame_bytes,
+                "mime_type": mime_type,
+                "media_id": media.uuid,
+                "frame_number": frame_number,
+                "frame_timestamp": frame_timestamp,
+                "format": output_format,
+                "width": width,
+                "height": height,
+                "file_size": len(frame_bytes),
+                "total_frames": total_frames,
+                "video_duration": duration,
+            }
+
+        finally:
+            cap.release()
+
+    def _user_can_access_media(self, media: Media, user_id: UUID) -> bool:
+        """Check if user can access media (owns it or it's public)."""
+        return media.is_public or media.uploaded_by == user_id
+
     # ========================================================================
     # MEDIA VARIANTS MANAGEMENT - Issue #015 Implementation
     # ========================================================================

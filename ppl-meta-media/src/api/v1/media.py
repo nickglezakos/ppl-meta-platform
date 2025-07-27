@@ -2,6 +2,8 @@
 Media API routes for PPL Meta Platform Media Service - API v1.
 """
 
+import io
+import json
 import os
 import sys
 import time
@@ -67,6 +69,7 @@ from src.schemas.media import (  # Variant schemas; Issue #016 - Advanced Metada
     VariantResponseDetailed,
     VariantTypeEnum,
     VariantUpdateRequest,
+    VideoFrameResponse,
 )
 from src.services.media_service import MediaService
 from src.services.thumbnail_service import ThumbnailService
@@ -103,8 +106,6 @@ async def upload_media(
         parsed_location_data = None
         if location_data:
             try:
-                import json
-
                 parsed_location_data = json.loads(location_data)
             except json.JSONDecodeError:
                 pass
@@ -1113,6 +1114,127 @@ async def get_thumbnail(
             "Content-Length": str(len(thumbnail_bytes)),
         },
     )
+
+
+@router.get("/{media_id}/frame/{frame_number}")
+async def extract_video_frame(
+    media_id: str,
+    frame_number: int,
+    format: str = "jpeg",
+    quality: int = 85,
+    size: Optional[str] = None,
+    share_token: Optional[str] = None,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Extract a specific frame from a video file and return as image.
+
+    Args:
+        media_id: UUID of the video file
+        frame_number: Frame number to extract (0-based indexing)
+        format: Output format (jpeg, png, webp) - default: jpeg
+        quality: JPEG quality (1-100) - default: 85
+        size: Optional resize parameter (small, medium, large, or WxH format)
+        share_token: Optional share token for public access
+        current_user: Authenticated user
+
+    Returns:
+        Response with frame image bytes and metadata headers
+    """
+    try:
+        # Validate format
+        if format.lower() not in ["jpeg", "png", "webp"]:
+            raise HTTPException(
+                status_code=400, detail="Invalid format. Supported: jpeg, png, webp"
+            )
+
+        # Validate quality
+        if not 1 <= quality <= 100:
+            raise HTTPException(
+                status_code=400, detail="Quality must be between 1 and 100"
+            )
+
+        # Validate frame number
+        if frame_number < 0:
+            raise HTTPException(
+                status_code=400, detail="Frame number must be non-negative"
+            )
+
+        # Parse size parameter if provided
+        width, height = None, None
+        if size:
+            if size.lower() == "small":
+                width, height = 320, 240
+            elif size.lower() == "medium":
+                width, height = 640, 480
+            elif size.lower() == "large":
+                width, height = 1280, 720
+            elif "x" in size.lower():
+                try:
+                    w_str, h_str = size.lower().split("x")
+                    width, height = int(w_str), int(h_str)
+                    if width <= 0 or height <= 0 or width > 7680 or height > 4320:
+                        raise ValueError("Invalid dimensions")
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "Invalid size format. Use: small, medium, large, "
+                            "or WxH (e.g., 1920x1080)"
+                        ),
+                    )
+
+        # Check access permissions using the authenticated user's UUID
+        get_media_access_check(media_id, current_user.user_id, share_token, db)
+
+        media_service = MediaService(db)
+
+        # Extract frame
+        frame_data = await media_service.extract_video_frame(
+            media_id=media_id,
+            frame_number=frame_number,
+            user_id=UUID(current_user.user_id),
+            output_format=format,
+            quality=quality,
+            width=width,
+            height=height,
+        )
+
+        # Create frame info header
+        frame_info = {
+            "frame_number": frame_data["frame_number"],
+            "frame_timestamp": frame_data["frame_timestamp"],
+            "total_frames": frame_data["total_frames"],
+            "video_duration": frame_data["video_duration"],
+            "format": frame_data["format"],
+            "width": frame_data["width"],
+            "height": frame_data["height"],
+        }
+
+        return Response(
+            content=frame_data["frame_data"],
+            media_type=frame_data["mime_type"],
+            headers={
+                "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
+                "Content-Length": str(frame_data["file_size"]),
+                "X-Frame-Info": json.dumps(frame_info),
+            },
+        )
+
+    except ValueError as e:
+        if "out of range" in str(e):
+            raise HTTPException(status_code=404, detail=str(e))
+        elif "not a video" in str(e):
+            raise HTTPException(status_code=415, detail=str(e))
+        elif "Access denied" in str(e):
+            raise HTTPException(status_code=403, detail=str(e))
+        else:
+            raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Frame extraction failed: {str(e)}"
+        )
 
 
 @router.get("/exif/{media_id}")
