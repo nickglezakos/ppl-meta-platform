@@ -546,3 +546,112 @@ This issue has been successfully implemented with complete distance calculation 
 **Implementation Location**: Cell 13 in `person_trails.ipynb`  
 **Result Variable**: `enhanced_distance_results`  
 **Resolution Date**: January 26, 2025
+
+---
+
+## Issue #015: Classification Results Dictionary Output and Global Accessibility
+
+### Overview
+Enhanced the face classification and tracking system (Cell 15) to print the complete classification results dictionary and store it globally for access in subsequent cells, enabling comprehensive data inspection and cross-cell analysis.
+
+### Problem Statement
+The face classification system in Cell 15 (`classify_and_track_faces()` function) was generating comprehensive tracking data but:
+- **Limited Output Visibility**: Classification results dictionary was returned but not displayed for inspection
+- **Isolated Data**: Results were only available within the cell execution scope
+- **No Cross-Cell Access**: Other cells couldn't access the detailed classification data for table creation or further analysis
+- **Debugging Challenges**: Difficult to inspect the complete data structure and validate classification accuracy
+
+### ✅ **Solution Implemented**
+
+#### ✅ **Dictionary Output Enhancement:**
+- **Complete JSON Display**: Added pretty-printed JSON output of the entire `classification_results` dictionary
+- **Structured Output**: 80-character separator lines and clear section headers for readability
+- **Statistics Summary**: Display of key metrics (total faces, unique individuals, dictionary structure)
+- **Error Handling**: Graceful fallback with structure information if JSON printing fails
+
+#### ✅ **Global Data Storage:**
+- **`classification_json`**: JSON string representation stored globally for export and string operations
+- **`classification_results_dict`**: Original Python dictionary stored globally for programmatic access
+- **Persistent Access**: Data remains available across all subsequent notebook cells
+- **Dual Format Support**: Both string and dictionary formats available for different use cases
+
+#### ✅ **Dictionary Structure Printed:**
+```json
+{
+  "classified_faces": [
+    {
+      "classification_id": 100,
+      "frame_number": 110,
+      "original_face": { /* complete face data */ },
+      "position": {"x": 418, "y": 1384, "distance": 2842},
+      "match_type": "new" || "tracked",
+      "match_confidence": 1.0,
+      "match_details": { /* tracking accuracy metrics */ }
+    }
+  ],
+  "unique_track_ids": [100, 101, 102, ...],
+  "total_faces": 12,
+  "unique_individuals": 12,
+  "tracked_instances": 0,
+  "new_instances": 12,
+  "frames_processed": 11,
+  "tolerance_percent": 30,
+  "classification_metadata": {
+    "id_range": {"min": 100, "max": 111},
+    "processing_timestamp": 1643234567.123
+  }
+}
+```
+
+#### ✅ **Cross-Cell Data Access:**
+```python
+# Access summary statistics
+print(f"Total faces: {classification_results_dict['total_faces']}")
+print(f"Unique individuals: {classification_results_dict['unique_individuals']}")
+
+# Access individual face data
+faces = classification_results_dict['classified_faces']
+for face in faces:
+    print(f"ID: {face['classification_id']}, Frame: {face['frame_number']}")
+
+# Access JSON string for export
+json_string = classification_json
+```
+
+#### ✅ **Enhanced Output Format:**
+- **Section Headers**: Clear visual separation with emoji indicators (📋, 📊, 💾)
+- **Progress Indicators**: Status confirmations for successful storage operations
+- **Multiple Access Methods**: Instructions for both dictionary and JSON string usage
+- **Validation Messages**: Confirmation of global variable creation and accessibility
+
+#### ✅ **Technical Implementation:**
+- **Location**: Cell 15 `classify_and_track_faces()` function
+- **Trigger**: Executes automatically during classification completion
+- **Storage Method**: `globals()` function for universal notebook access
+- **Fallback Protection**: Ensures data storage even if JSON conversion fails
+- **Import Handling**: Automatic JSON module import within the function scope
+
+#### ✅ **Benefits Achieved:**
+- **Complete Transparency**: Full visibility into classification algorithm results
+- **Data Validation**: Easy inspection of face tracking accuracy and classification assignments
+- **Table Creation Ready**: Direct access to frame numbers, face IDs, and classification numbers
+- **Export Capability**: JSON string format ready for external file export
+- **Debugging Enhanced**: Immediate access to all classification metadata and tracking details
+- **Development Workflow**: Seamless data flow between analysis cells
+
+#### ✅ **Global Variables Created:**
+- **`classification_json`** (str): Complete JSON string representation of results
+- **`classification_results_dict`** (dict): Original Python dictionary with full data structure
+- **Access Status**: ✅ Available in notebook kernel variables
+- **Data Integrity**: ✅ Complete face tracking data preserved with all metadata
+
+#### ✅ **Use Cases Enabled:**
+1. **Table Generation**: Create comprehensive tables with frame numbers, face IDs, and classification numbers
+2. **Data Export**: Save classification results to external JSON files
+3. **Statistical Analysis**: Perform cross-cell analysis of tracking performance
+4. **Visualization Enhancement**: Access detailed data for custom plotting and analysis
+5. **Debugging Support**: Inspect specific face tracking decisions and match confidence scores
+
+**Implementation Location**: Cell 15 in `person_trails.ipynb`  
+**Global Variables**: `classification_json`, `classification_results_dict`  
+**Resolution Date**: January 27, 2025

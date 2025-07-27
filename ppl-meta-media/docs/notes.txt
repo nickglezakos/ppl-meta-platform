@@ -1,2 +1,13 @@
-General prompt to resume a AI chat:
-Please provide a brief summary of what we've implemented so far and what the next logical steps would be
+
+
+I need a classification function for the faces that should work like this:
+
+The function should loop over the frame numbers that contain at least one face.
+For the first frame the function will assign a unique 3 digit classification number to each face.
+For each frame after the first the function will try to find which is the closest face to the ones
+that have been already assigned a clasification number.
+The conditions for the close match should be all three coordinates: X, Y and Distance.
+Their vectors should be close by a margin of lets say 15% for now.
+For each face that no match was made by the close condition a new classification numbe should be assigned.
+After the matchings the coordinates should be colored based on their classification numbers
+based on a discrete scale and not their size.
