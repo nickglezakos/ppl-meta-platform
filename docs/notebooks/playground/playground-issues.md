@@ -561,21 +561,55 @@ The face classification system in Cell 15 (`classify_and_track_faces()` function
 - **No Cross-Cell Access**: Other cells couldn't access the detailed classification data for table creation or further analysis
 - **Debugging Challenges**: Difficult to inspect the complete data structure and validate classification accuracy
 
-### ✅ **Solution Implemented**
+### Requirements
 
-#### ✅ **Dictionary Output Enhancement:**
-- **Complete JSON Display**: Added pretty-printed JSON output of the entire `classification_results` dictionary
-- **Structured Output**: 80-character separator lines and clear section headers for readability
-- **Statistics Summary**: Display of key metrics (total faces, unique individuals, dictionary structure)
-- **Error Handling**: Graceful fallback with structure information if JSON printing fails
+#### 1. **Dictionary Output Enhancement**
+- **Requirement**: Display the complete classification results dictionary for inspection
+- **Output Format**: Pretty-printed JSON with clear formatting and structure
+- **Data Visibility**: Show all face tracking data, classification IDs, and metadata
+- **Implementation**: JSON output with error handling and fallback options
 
-#### ✅ **Global Data Storage:**
-- **`classification_json`**: JSON string representation stored globally for export and string operations
-- **`classification_results_dict`**: Original Python dictionary stored globally for programmatic access
-- **Persistent Access**: Data remains available across all subsequent notebook cells
-- **Dual Format Support**: Both string and dictionary formats available for different use cases
+#### 2. **Global Data Storage**
+- **Requirement**: Store classification results globally for cross-cell access
+- **Storage Formats**: Both JSON string and Python dictionary formats
+- **Access Method**: Global variables accessible from any subsequent cell
+- **Implementation**: Use `globals()` function for universal notebook access
 
-#### ✅ **Dictionary Structure Printed:**
+#### 3. **Enhanced Data Structure**
+- **Requirement**: Comprehensive face tracking data with all metadata
+- **Structure**: Include classification IDs, frame numbers, coordinates, and tracking confidence
+- **Compatibility**: Maintain compatibility with existing analysis functions
+- **Implementation**: Preserve original data while adding enhanced metadata
+
+#### 4. **Cross-Cell Accessibility**
+- **Requirement**: Enable data access across all notebook cells
+- **Variables**: `classification_json` (string) and `classification_results_dict` (dictionary)
+- **Use Cases**: Table generation, export, statistical analysis, and visualization
+- **Implementation**: Persistent storage in notebook kernel memory
+
+### Technical Specifications
+
+#### Enhanced Classification Function
+```python
+def classify_and_track_faces() -> Dict[str, Any]:
+    """Enhanced classification with dictionary output and global storage."""
+    
+    # Execute classification logic
+    classification_results = perform_face_classification()
+    
+    # Print complete dictionary
+    print("📋 Classification Results Dictionary:")
+    print("=" * 80)
+    print(json.dumps(classification_results, indent=2))
+    
+    # Store globally
+    globals()['classification_json'] = json.dumps(classification_results, indent=2)
+    globals()['classification_results_dict'] = classification_results
+    
+    return classification_results
+```
+
+#### Dictionary Structure
 ```json
 {
   "classified_faces": [
@@ -603,7 +637,7 @@ The face classification system in Cell 15 (`classify_and_track_faces()` function
 }
 ```
 
-#### ✅ **Cross-Cell Data Access:**
+#### Cross-Cell Data Access
 ```python
 # Access summary statistics
 print(f"Total faces: {classification_results_dict['total_faces']}")
@@ -618,39 +652,62 @@ for face in faces:
 json_string = classification_json
 ```
 
-#### ✅ **Enhanced Output Format:**
-- **Section Headers**: Clear visual separation with emoji indicators (📋, 📊, 💾)
-- **Progress Indicators**: Status confirmations for successful storage operations
-- **Multiple Access Methods**: Instructions for both dictionary and JSON string usage
-- **Validation Messages**: Confirmation of global variable creation and accessibility
+### Success Criteria
 
-#### ✅ **Technical Implementation:**
-- **Location**: Cell 15 `classify_and_track_faces()` function
-- **Trigger**: Executes automatically during classification completion
-- **Storage Method**: `globals()` function for universal notebook access
-- **Fallback Protection**: Ensures data storage even if JSON conversion fails
-- **Import Handling**: Automatic JSON module import within the function scope
+#### ✅ Dictionary Output and Display
+- [x] Successfully display complete classification results dictionary
+- [x] Pretty-printed JSON format with clear structure and formatting
+- [x] Include all face tracking data, classification IDs, and metadata
+- [x] Error handling for JSON conversion with fallback options
 
-#### ✅ **Benefits Achieved:**
-- **Complete Transparency**: Full visibility into classification algorithm results
-- **Data Validation**: Easy inspection of face tracking accuracy and classification assignments
-- **Table Creation Ready**: Direct access to frame numbers, face IDs, and classification numbers
-- **Export Capability**: JSON string format ready for external file export
-- **Debugging Enhanced**: Immediate access to all classification metadata and tracking details
-- **Development Workflow**: Seamless data flow between analysis cells
+#### ✅ Global Data Storage and Access
+- [x] Store classification results in global variables for cross-cell access
+- [x] Provide both JSON string and Python dictionary formats
+- [x] Ensure persistent access across all notebook cells
+- [x] Validate global variable creation and accessibility
 
-#### ✅ **Global Variables Created:**
-- **`classification_json`** (str): Complete JSON string representation of results
-- **`classification_results_dict`** (dict): Original Python dictionary with full data structure
-- **Access Status**: ✅ Available in notebook kernel variables
-- **Data Integrity**: ✅ Complete face tracking data preserved with all metadata
+#### ✅ Enhanced Data Structure
+- [x] Comprehensive face tracking data with complete metadata
+- [x] Include classification IDs, frame numbers, coordinates, and confidence scores
+- [x] Maintain compatibility with existing analysis and visualization functions
+- [x] Preserve original detection data alongside enhanced metadata
 
-#### ✅ **Use Cases Enabled:**
-1. **Table Generation**: Create comprehensive tables with frame numbers, face IDs, and classification numbers
-2. **Data Export**: Save classification results to external JSON files
-3. **Statistical Analysis**: Perform cross-cell analysis of tracking performance
-4. **Visualization Enhancement**: Access detailed data for custom plotting and analysis
-5. **Debugging Support**: Inspect specific face tracking decisions and match confidence scores
+#### ✅ Integration and Usability
+- [x] Seamless integration with existing classification workflow
+- [x] Enable table generation, export, and statistical analysis
+- [x] Support debugging and development workflow enhancement
+- [x] Provide clear instructions for data access and usage
+
+### Implementation Notes
+
+#### Error Handling
+- Graceful handling of JSON conversion failures
+- Fallback with structure information if pretty printing fails
+- Ensure data storage even if display formatting encounters issues
+
+#### Performance Considerations
+- Efficient storage using globals() for minimal overhead
+- Avoid redundant data copying during storage operations
+- Maintain existing classification performance
+
+#### Data Integrity
+- Preserve all original classification data and metadata
+- Ensure consistency between JSON string and dictionary formats
+- Validate data structure completeness and accuracy
+
+---
+
+### Issue Status: **✅ RESOLVED**
+
+This issue has been successfully implemented with complete dictionary output and global accessibility functionality.
+
+#### ✅ **Implementation Highlights:**
+- **Complete JSON Display**: Added pretty-printed JSON output of the entire `classification_results` dictionary
+- **Global Data Storage**: `classification_json` and `classification_results_dict` variables stored globally
+- **Cross-Cell Access**: Data accessible from any subsequent notebook cell
+- **Enhanced Output Format**: Clear visual separation with emoji indicators and validation messages
+- **Technical Implementation**: Cell 15 `classify_and_track_faces()` function with `globals()` storage
+- **Use Cases Enabled**: Table generation, data export, statistical analysis, visualization, and debugging
 
 **Implementation Location**: Cell 15 in `person_trails.ipynb`  
 **Global Variables**: `classification_json`, `classification_results_dict`  
@@ -742,42 +799,257 @@ def create_face_detection_gallery(frames_with_faces: dict, auth_token: str, vide
         html_parts.append(frame_html)
     
     return ''.join(html_parts) + '</div>'
+```
 
+#### Coordinate System Detection
+```python
+def detect_coordinate_format(face_coords: dict, frame_width: int, frame_height: int) -> str:
+    """Detect if coordinates are normalized (0-1) or absolute pixels."""
+    
+    x, y, width, height = face_coords['x'], face_coords['y'], face_coords['width'], face_coords['height']
+    
+    # Check if all values are between 0 and 1 (normalized)
+    if all(0 <= val <= 1 for val in [x, y, width, height]):
+        return "normalized"
+    
+    # Check if values are within frame dimensions (absolute)
+    elif x <= frame_width and y <= frame_height:
+        return "absolute"
+    else:
+        return "unknown"
+```
 
-Issue #017: Face Detection Bounding Box Scaling Accuracy
-Overview
+#### Gallery HTML Generation
+```html
+<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+  <div style="border: 2px solid #ddd; padding: 10px; text-align: center;">
+    <h4>Frame {frame_number}</h4>
+    <img src="data:image/png;base64,{base64_image}" 
+         style="max-width: 100%; cursor: pointer;" 
+         onclick="downloadImage('{base64_image}', 'frame_{frame_number}_faces.png')">
+    <p>Faces: {face_count} | Click to Download</p>
+  </div>
+</div>
+```
+
+### Success Criteria
+
+#### ✅ Frame Extraction and Processing
+- [ ] Extract high-quality PNG frames using authenticated API calls
+- [ ] Support multiple video formats and resolutions
+- [ ] Handle authentication tokens properly for frame access
+- [ ] Validate frame extraction success and error handling
+
+#### ✅ Face Detection Overlay
+- [ ] Draw accurate yellow bounding boxes around detected faces
+- [ ] Support both normalized and absolute coordinate formats
+- [ ] Apply proper coordinate scaling for frame dimensions
+- [ ] Ensure visual clarity with appropriate line width and color
+
+#### ✅ Interactive Gallery Implementation
+- [ ] Create responsive HTML grid layout for frame display
+- [ ] Implement click-to-download functionality for individual frames
+- [ ] Display frame numbers and face count information
+- [ ] Ensure compatibility with Jupyter notebook display
+
+#### ✅ Coordinate System Accuracy
+- [ ] Automatically detect coordinate format (normalized vs. absolute)
+- [ ] Apply appropriate scaling transformations
+- [ ] Validate bounding box positioning accuracy
+- [ ] Handle edge cases and coordinate system variations
+
+### Implementation Notes
+
+#### Authentication Flow
+- Use existing JWT token from notebook authentication
+- Apply token to frame extraction API calls
+- Handle authentication failures gracefully
+
+#### Image Processing
+- Use PIL/Pillow for image manipulation and overlay generation
+- Optimize image quality while maintaining reasonable file sizes
+- Support various image formats for compatibility
+
+#### Performance Considerations
+- Cache extracted frames to avoid redundant API calls
+- Optimize base64 encoding for HTML display
+- Implement progress indicators for large frame sets
+
+---
+
+### Issue Status: **✅ RESOLVED**
+
+This issue has been successfully implemented with complete face detection overlay functionality and interactive gallery.
+
+#### ✅ **Implementation Highlights:**
+- **High-Quality Frame Extraction**: PNG frame extraction via authenticated media service API
+- **Yellow Bounding Box Overlay**: Accurate face detection visualization with 3-pixel yellow borders
+- **Interactive Gallery**: HTML-based gallery with click-to-download functionality
+- **Coordinate System Handling**: Automatic detection and scaling of normalized/absolute coordinates
+- **Responsive Design**: Grid layout optimized for notebook viewing
+
+**Implementation Location**: Cells 20-21 in `person_trails.ipynb`  
+**Key Functions**: `extract_and_annotate_frame()`, `create_face_detection_gallery()`  
+**Resolution Date**: January 27, 2025
+
+---
+
+## Issue #017: Face Detection Bounding Box Scaling Accuracy
+
+### Overview
 Refine the bounding box scaling algorithm in the face detection overlay system to ensure pixel-perfect accuracy when displaying yellow bounding boxes around detected faces, matching the scaling behavior from the Flutter application.
 
-Problem Statement
+### Problem Statement
 The current face detection overlay implementation (Issue #016) successfully displays yellow bounding boxes around detected faces, but the scaling algorithm does not perfectly match the coordinate transformation used in the Flutter application, resulting in:
 
-Vertical Scaling Issues: Bounding boxes may not align perfectly with face positions in some frames
-Coordinate System Mismatch: Different scaling behavior between Python overlay and Flutter app display
-Aspect Ratio Handling: Inconsistent aspect ratio preservation during coordinate transformation
-Visual Accuracy: While functional for validation purposes, lacks pixel-perfect precision
-Current Implementation Status
+- **Vertical Scaling Issues**: Bounding boxes may not align perfectly with face positions in some frames
+- **Coordinate System Mismatch**: Different scaling behavior between Python overlay and Flutter app display
+- **Aspect Ratio Handling**: Inconsistent aspect ratio preservation during coordinate transformation
+- **Visual Accuracy**: While functional for validation purposes, lacks pixel-perfect precision
+
+### Current Implementation Status
 The existing overlay system in Cell 20/21 provides:
 
-✅ Basic Functionality: Yellow bounding boxes are displayed and provide visual validation
-✅ Coordinate Detection: Automatic detection of normalized vs. absolute coordinates
-✅ Interactive Gallery: Working download functionality and responsive display
-⚠️ Scaling Accuracy: Scaling algorithm needs refinement for perfect alignment
-Technical Requirements
-1. Flutter-Style Uniform Scaling
-Reference Implementation: FaceDetectionPainter class in media_preview_screen.dart
-Scaling Algorithm:
+- ✅ **Basic Functionality**: Yellow bounding boxes are displayed and provide visual validation
+- ✅ **Coordinate Detection**: Automatic detection of normalized vs. absolute coordinates
+- ✅ **Interactive Gallery**: Working download functionality and responsive display
+- ⚠️ **Scaling Accuracy**: Scaling algorithm needs refinement for perfect alignment
 
-double scale_x = container_width / video_width;
-double scale_y = container_height / video_height;
-double scale = min(scale_x, scale_y);  // Uniform scaling
+### Requirements
 
+#### 1. **Flutter-Style Uniform Scaling**
+- **Reference Implementation**: FaceDetectionPainter class in media_preview_screen.dart
+- **Scaling Algorithm**:
+  ```dart
+  double scale_x = container_width / video_width;
+  double scale_y = container_height / video_height;
+  double scale = min(scale_x, scale_y);  // Uniform scaling
+  ```
+- **Offset Calculation**: Proper centering with offset calculation for aspect ratio preservation
+- **Implementation**: Apply min(scale_x, scale_y) approach for uniform scaling
 
-Offset Calculation: Proper centering with offset calculation for aspect ratio preservation
-2. Coordinate Transformation Pipeline
-Step 1: Detect coordinate format (normalized 0-1 vs. absolute pixels)
-Step 2: Convert to absolute coordinates if needed
-Step 3: Apply uniform scaling with min(scale_x, scale_y)
-Step 4: Calculate centering offsets
+#### 2. **Coordinate Transformation Pipeline**
+- **Step 1**: Detect coordinate format (normalized 0-1 vs. absolute pixels)
+- **Step 2**: Convert to absolute coordinates if needed
+- **Step 3**: Apply uniform scaling with min(scale_x, scale_y)
+- **Step 4**: Calculate centering offsets
+- **Step 5**: Transform final coordinates with offsets
+
+#### 3. **Aspect Ratio Preservation**
+- **Container Dimensions**: Use actual display container size for scaling calculations
+- **Video Dimensions**: Original video frame dimensions from metadata
+- **Uniform Scale Factor**: Single scale value applied to both X and Y coordinates
+- **Centering Logic**: Calculate X and Y offsets to center video within container
+
+#### 4. **Flutter Reference Implementation**
+- **Source**: FaceDetectionPainter class in media_preview_screen.dart
+- **Key Scaling Logic**:
+  ```dart
+  // From FaceDetectionPainter class
+  double scale_x = container_width / video_width;
+  double scale_y = container_height / video_height;
+  double scale = min(scale_x, scale_y);
+  
+  // Offset calculation for centering
+  double offset_x = (container_width - (video_width * scale)) / 2;
+  double offset_y = (container_height - (video_height * scale)) / 2;
+  
+  // Final coordinate transformation
+  double final_x = (original_x * scale) + offset_x;
+  double final_y = (original_y * scale) + offset_y;
+  ```
+
+### Technical Specifications
+
+#### Enhanced Scaling Function
+```python
+def apply_flutter_style_scaling(x, y, width, height, video_width, video_height, 
+                               container_width=800, container_height=600):
+    """Apply Flutter-style uniform scaling with proper aspect ratio preservation."""
+    
+    # Calculate scale factors
+    scale_x = container_width / video_width
+    scale_y = container_height / video_height
+    
+    # Use minimum scale for uniform scaling (preserves aspect ratio)
+    uniform_scale = min(scale_x, scale_y)
+    
+    # Calculate centering offsets
+    offset_x = (container_width - (video_width * uniform_scale)) / 2
+    offset_y = (container_height - (video_height * uniform_scale)) / 2
+    
+    # Apply transformation
+    scaled_x = (x * uniform_scale) + offset_x
+    scaled_y = (y * uniform_scale) + offset_y
+    scaled_width = width * uniform_scale
+    scaled_height = height * uniform_scale
+    
+    return scaled_x, scaled_y, scaled_width, scaled_height
+```
+
+#### Implementation Plan
+```python
+# Phase 1: Algorithm Enhancement
+# - Update Cell 20/21: Implement Flutter-style scaling algorithm
+# - Coordinate Detection: Maintain automatic coordinate format detection
+# - Uniform Scaling: Apply min(scale_x, scale_y) approach
+# - Offset Calculation: Add proper centering logic
+
+# Phase 2: Validation and Testing
+# - Visual Comparison: Compare scaling results with Flutter app display
+# - Edge Case Testing: Test with various video aspect ratios and face positions
+# - Coordinate Accuracy: Validate pixel-perfect alignment
+
+# Phase 3: Documentation and Integration
+# - Function Documentation: Document the enhanced scaling algorithm
+# - Integration Testing: Ensure compatibility with existing gallery functionality
+# - Performance Validation: Confirm no performance degradation
+```
+
+### Success Criteria
+
+#### ✅ Scaling Accuracy
+- [ ] Implement Flutter-style uniform scaling with min(scale_x, scale_y)
+- [ ] Add proper centering offset calculations
+- [ ] Achieve pixel-perfect bounding box alignment
+
+#### ✅ Aspect Ratio Preservation
+- [ ] Maintain consistent aspect ratios across different video dimensions
+- [ ] Handle various container sizes correctly
+- [ ] Preserve visual proportions matching Flutter app
+
+#### ✅ Integration Quality
+- [ ] Maintain compatibility with existing overlay functionality
+- [ ] Preserve interactive gallery features
+- [ ] Ensure no performance degradation
+
+#### ✅ Validation
+- [ ] Visual comparison with Flutter app scaling behavior
+- [ ] Test with multiple video aspect ratios
+- [ ] Verify accuracy across different face positions
+
+### Implementation Notes
+
+#### Priority Level
+- **Medium**: The current implementation provides sufficient visual validation for development purposes
+- **Focus**: Achieving pixel-perfect accuracy for production-quality output
+- **Timeline**: When pixel-perfect scaling accuracy is required
+
+#### Dependencies
+- Existing overlay system (Issue #016) must be functional
+- Flutter app scaling reference implementation available
+- Video metadata and frame dimensions accessible
+
+#### Effort Estimation
+- **Low-medium**: Algorithm refinement in existing functions
+- **Scope**: Update scaling logic in existing overlay functions
+- **Testing**: Visual validation and comparison with Flutter app
+
+---
+
+### Issue Status: **🔄 PENDING**
+
+This issue is identified and documented for future implementation when pixel-perfect bounding box scaling accuracy is required. The current overlay system provides sufficient functionality for immediate development needs.
 Step 5: Transform final coordinates with offsets
 3. Aspect Ratio Preservation
 Container Dimensions: Use actual display container size for scaling calculations

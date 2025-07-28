@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from api.v1.router import api_router
-from config import CORS_SETTINGS, settings
 from core.advanced_middleware import (
     AdvancedRateLimitMiddleware,
     CircuitBreakerMiddleware,
@@ -23,6 +22,8 @@ from core.tracing import setup_tracing, shutdown_tracing
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+from config import CORS_SETTINGS, settings
 
 # Import shared modules (local stubs)
 from shared.logging import get_logger, setup_logging
@@ -164,10 +165,13 @@ def create_app() -> FastAPI:
 
     # Add advanced middleware (order matters - inner middleware runs first)
     app.add_middleware(RequestTracingMiddleware)  # Tracing for all requests
+    # Re-enable RequestTransformationMiddleware to test
     app.add_middleware(
         RequestTransformationMiddleware,
         request_transformations={
-            "/api/v1/users": normalize_user_data,
+            "/api/v1/users/register": normalize_user_data,
+            "/api/v1/users/me": normalize_user_data,
+            # Exclude login endpoint from transformation to avoid timeout
         },
         response_transformations={
             "/api/v1": add_api_version_header,

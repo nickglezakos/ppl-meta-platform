@@ -347,15 +347,54 @@ class RequestTransformationMiddleware(BaseHTTPMiddleware):
                     if request.method in ["POST", "PUT", "PATCH"]:
                         body = await request.body()
                         if body:
-                            request_data = json.loads(body)
-                            transformed_data = transformer(request_data)
-                            # Note: FastAPI doesn't allow modifying request body easily
-                            # This would need custom implementation
-                            logger.info(
-                                "Request transformed",
-                                path=path,
-                                transformer=transformer.__name__,
-                            )
+                            content_type = request.headers.get("content-type", "")
+
+                            # Handle JSON data
+                            if "application/json" in content_type:
+                                request_data = json.loads(body)
+                                transformed_data = transformer(request_data)
+
+                                # Create new body with transformed data
+                                new_body = json.dumps(transformed_data).encode()
+
+                                # Replace the request body
+                                request._body = new_body
+
+                                logger.info(
+                                    "Request transformed (JSON)",
+                                    path=path,
+                                    transformer=transformer.__name__,
+                                )
+                            # Handle form data
+                            elif "application/x-www-form-urlencoded" in content_type:
+                                # Parse form data
+                                import urllib.parse
+
+                                form_data = urllib.parse.parse_qs(body.decode())
+                                # Convert to dict with single values
+                                request_data = {
+                                    k: v[0] if v else "" for k, v in form_data.items()
+                                }
+                                transformed_data = transformer(request_data)
+
+                                # Convert back to form data
+                                new_form_data = urllib.parse.urlencode(transformed_data)
+                                new_body = new_form_data.encode()
+
+                                # Replace the request body
+                                request._body = new_body
+
+                                logger.info(
+                                    "Request transformed (Form)",
+                                    path=path,
+                                    transformer=transformer.__name__,
+                                )
+                            else:
+                                # Skip transformation for other content types
+                                logger.debug(
+                                    f"Skipping transformation for content-type: {content_type}"
+                                )
+
                 except Exception as e:
                     logger.error(f"Request transformation failed: {e}")
 
