@@ -1,97 +1,114 @@
 """
 Face Detection Service for PPL Meta Mini Service
-Exact copy of MediaFaceDetectionService implementation for consistent results.
+Completely autonomous implementation with hardcoded parameters matching media service.
 """
 
 import logging
 import os
-import sys
 import time
 from typing import Any, Dict, List
 
 import cv2
 import numpy as np
 
-# Add shared modules to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-
-# Import shared face detector
+# Try to import dlib for second stage validation
 try:
-    from shared.face_detection.shared_face_detector import SharedFaceDetector
+    import dlib
+
+    DLIB_AVAILABLE = True
 except ImportError:
-    SharedFaceDetector = None
+    DLIB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 
 class MiniFaceDetectionService:
     """
-    Face detection service for Mini service.
-    Uses the exact same implementation as MediaFaceDetectionService
-    for consistent face detection results.
+    Completely autonomous face detection service for Mini service.
+    Uses hardcoded parameters matching the media service for consistent results.
+    No dependency on shared modules.
     """
 
     def __init__(self):
-        """Initialize the face detection service."""
-        self.detector = None
+        """Initialize the autonomous face detection service."""
+        self.haar_cascade = None
+        self.dlib_detector = None
+        self._initialize_detectors()
+
+    def _initialize_detectors(self):
+        """Initialize Haar cascade and Dlib detectors autonomously."""
         try:
-            if SharedFaceDetector:
-                self.detector = SharedFaceDetector()
-                logger.info("✅ Mini Face Detection Service initialized")
+            # Load Haar cascade for face detection
+            haar_cascade_path = (
+                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            )
+            if os.path.exists(haar_cascade_path):
+                self.haar_cascade = cv2.CascadeClassifier(haar_cascade_path)
+                logger.info("✅ Autonomous Haar cascade loaded successfully")
+            else:
+                logger.error(f"❌ Haar cascade not found at {haar_cascade_path}")
+                return
+
+            # Initialize Dlib face detector if available
+            if DLIB_AVAILABLE:
+                try:
+                    self.dlib_detector = dlib.get_frontal_face_detector()
+                    logger.info("✅ Autonomous Dlib face detector loaded successfully")
+                except Exception as e:
+                    logger.warning(f"⚠️ Dlib detector initialization failed: {e}")
+                    self.dlib_detector = None
+            else:
+                logger.warning("⚠️ Dlib not available, using Haar only")
+                self.dlib_detector = None
+
+            logger.info("✅ Autonomous Mini Face Detection Service initialized")
+
         except Exception as e:
-            logger.error(f"❌ Failed to initialize face detection: {e}")
-            self.detector = None
+            logger.error(f"❌ Failed to initialize autonomous face detection: {e}")
+            self.haar_cascade = None
+            self.dlib_detector = None
 
     def is_ready(self) -> bool:
         """Check if the face detection service is ready."""
-        return self.detector is not None and self.detector.is_ready()
+        return self.haar_cascade is not None
 
     def is_face_detection_enabled(self) -> bool:
         """Check if face detection is available and ready."""
         return self.is_ready()
 
     def get_face_detection_info(self) -> Dict[str, Any]:
-        """Get information about face detection capabilities."""
-        if not self.detector:
+        """Get information about the face detection service."""
+        if not self.is_ready():
             return {
                 "enabled": False,
-                "available_methods": [],
-                "ready": False,
                 "error": "Face detection not initialized",
             }
 
+        available_methods = ["haar"]
+        if self.dlib_detector is not None:
+            available_methods.extend(["dlib", "two_stage"])
+
         return {
             "enabled": True,
-            "available_methods": self.detector.available_methods,
-            "ready": self.detector.is_ready(),
+            "available_methods": available_methods,
+            "ready": True,
+            "autonomous": True,
         }
 
     def detect_faces_vision_compatible(
         self, frame: np.ndarray, confidence_threshold: float = 0.5
     ) -> List[Dict]:
         """
-        Vision service compatible two-stage face detection.
-        This is an exact copy of the Vision service's
-        detect_faces_two_stage implementation to ensure identical results
-        for progressive pre-loading.
+        Autonomous two-stage face detection matching media service exactly.
 
-        Stage 1: Haar cascade detection
-        Stage 2: Dlib validation to filter false positives
+        Stage 1: Haar cascade detection with hardcoded parameters
+        Stage 2: Dlib validation to filter false positives (if available)
+
+        Parameters match shared detector: scaleFactor=1.1, minNeighbors=4
         """
         try:
-            # Check if detector is available
-            if not self.detector:
-                return []
-
-            # Get available methods from shared detector
-            available_methods = getattr(self.detector, "available_methods", [])
-
-            # Ensure we have the required methods
-            if "haar" not in available_methods or "dlib" not in available_methods:
-                logger.warning(
-                    "Required methods (haar, dlib) not available for "
-                    "vision-compatible detection"
-                )
+            if not self.is_ready():
+                logger.warning("Face detection not ready")
                 return []
 
             start_time = time.time()
@@ -102,81 +119,63 @@ class MiniFaceDetectionService:
             else:
                 gray = frame
 
-            # Stage 1: Haar cascade for initial detection
-            # Using same parameters as Vision service
-            haar_cascade = getattr(self.detector, "haar_cascade", None)
-            if not haar_cascade:
-                logger.warning("Haar cascade not available in shared detector")
-                return []
-
-            faces = haar_cascade.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
+            # Stage 1: Haar cascade detection - EXACT MEDIA SERVICE parameters
+            faces = self.haar_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,  # Exact Media Service match
+                minNeighbors=5,  # Exact Media Service match (was 4)
+                minSize=(30, 30),  # Exact Media Service match
             )
 
-            # Initial face rectangles from Haar cascade
+            logger.debug(f"Haar cascade found {len(faces)} initial faces")
+
+            # Convert Haar results to list format
             face_rects = []
-            for face in faces:
-                x = int(face[0])
-                y = int(face[1])
-                w = int(face[2])
-                h = int(face[3])
-                face_rects.append([x, y, w, h])
+            for x, y, w, h in faces:
+                face_rects.append([int(x), int(y), int(w), int(h)])
 
-            # Stage 2: Dlib validation (filter false positives)
-            filtered_face_rects = []
+            # Stage 2: Dlib validation (if available) - Media Service approach
+            if self.dlib_detector is not None:
+                validated_faces = []
+                for x, y, w, h in face_rects:
+                    # Extract face region for Dlib validation
+                    face_region = gray[y : y + h, x : x + w]
+                    dlib_faces = self.dlib_detector(face_region, 1)
 
-            dlib_detector = getattr(self.detector, "dlib_detector", None)
-            if not dlib_detector:
-                logger.warning("Dlib detector not available in shared detector")
-                return []
-
-            for face_rect in face_rects:
-                x, y, w, h = face_rect
-
-                # Crop the face region for Dlib validation
-                face_region = gray[y : y + h, x : x + w]
-
-                # Skip if face region is too small
-                if face_region.size == 0:
-                    continue
-
-                # Perform Dlib face detection on the cropped face region
-                try:
-                    dlib_faces = dlib_detector(face_region, 1)
-                    # If Dlib detects faces in this region, it's a valid face
                     if len(dlib_faces) > 0:
-                        filtered_face_rects.append(face_rect)
-                except Exception:
-                    # Skip this face if dlib detection fails
-                    continue
+                        # Face validated by Dlib
+                        validated_faces.append([x, y, w, h])
 
-            # Convert to the expected output format
-            # (matching Vision service exactly)
-            detections = []
-            for face_rect in filtered_face_rects:
-                x, y, w, h = face_rect
-                detections.append(
+                face_rects = validated_faces
+                method = "autonomous_two_stage"
+                logger.debug(f"Two-stage detection: {len(face_rects)} validated faces")
+            else:
+                method = "autonomous_haar_only"
+                logger.debug(f"Haar-only detection: {len(face_rects)} faces")
+
+            # Format results to match media service response format
+            detection_results = []
+            for i, (x, y, w, h) in enumerate(face_rects):
+                detection_results.append(
                     {
-                        "bbox": [x, y, x + w, y + h],
-                        "confidence": 0.5,  # Fixed confidence
-                        "method": "two_stage_haar_dlib",
+                        "face_id": i + 1,
+                        "confidence": confidence_threshold,  # Use threshold
+                        "bbox": [x, y, x + w, y + h],  # [x1, y1, x2, y2]
+                        "method": method,
                     }
                 )
 
-            processing_time = time.time() - start_time
+            detection_time = time.time() - start_time
 
             logger.info(
-                "Vision-compatible detection: %d initial Haar detections → "
-                "%d Dlib-validated faces in %.3fs",
-                len(faces),
-                len(filtered_face_rects),
-                processing_time,
+                f"Autonomous detection: {len(detection_results)} faces "
+                f"in {detection_time:.3f}s"
             )
 
-            return detections
+            return detection_results
 
         except Exception as e:
-            logger.warning("Vision-compatible face detection error: %s", str(e))
+            logger.error(f"Autonomous face detection error: {e}")
             return []
 
     def get_video_info(self, video_path: str) -> Dict[str, Any]:

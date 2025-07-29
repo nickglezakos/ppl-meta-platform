@@ -54,6 +54,101 @@ async def get_face_detection_info():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/faces/frame/{frame_number}")
+async def detect_faces_at_frame(
+    frame_number: int,
+    video_path: str = Query(..., description="Path to video file"),
+    confidence_threshold: float = Query(
+        0.5, description="Face detection confidence threshold"
+    ),
+):
+    """
+    Autonomous frame-by-frame face detection endpoint.
+    Compatible with media service format for direct comparison.
+
+    Args:
+        frame_number: Specific frame number to extract and analyze
+        video_path: Path to the video file
+        confidence_threshold: Minimum confidence for face detection (0.0-1.0)
+
+    Returns:
+        JSON response with detected faces for the specific frame
+    """
+    try:
+        # Verify file exists
+        if not os.path.exists(video_path):
+            return {
+                "faces": [],
+                "frame_number": frame_number,
+                "detection_time": 0.0,
+                "method": "file_not_found",
+                "error": "Video file not found",
+            }
+
+        # Check if face detection is available
+        if not face_detection_service.is_face_detection_enabled():
+            return {
+                "faces": [],
+                "frame_number": frame_number,
+                "detection_time": 0.0,
+                "method": "face_detection_disabled",
+                "error": "Face detection not available",
+            }
+
+        # Extract single frame efficiently
+        cap = cv2.VideoCapture(video_path)
+        try:
+            # Set frame position
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = cap.read()
+
+            if not ret:
+                return {
+                    "faces": [],
+                    "frame_number": frame_number,
+                    "detection_time": 0.0,
+                    "method": "frame_extraction_failed",
+                    "error": f"Could not extract frame {frame_number}",
+                }
+
+            # Perform autonomous face detection with hardcoded parameters
+            import time
+
+            start_time = time.time()
+
+            faces = face_detection_service.detect_faces_vision_compatible(
+                frame, confidence_threshold
+            )
+
+            detection_time = time.time() - start_time
+
+            # Determine the actual method used
+            actual_method = "autonomous_two_stage_haar_dlib"
+            if faces and len(faces) > 0:
+                actual_method = faces[0].get("method", "autonomous_two_stage_haar_dlib")
+
+            return {
+                "faces": faces,
+                "frame_number": frame_number,
+                "detection_time": detection_time,
+                "method": actual_method,
+                "total_faces": len(faces),
+            }
+
+        finally:
+            cap.release()
+
+    except Exception as e:
+        logger.error(f"Autonomous frame detection error: {e}")
+        return {
+            "faces": [],
+            "frame_number": frame_number,
+            "detection_time": 0.0,
+            "method": "error",
+            "error": str(e),
+        }
+
+
 @router.post("/analyze-video")
 async def analyze_video_faces(file: UploadFile = File(...)):
     """
@@ -201,6 +296,7 @@ async def upload_and_analyze_video(
     confidence_threshold: float = Query(
         0.5, description="Face detection confidence threshold"
     ),
+    frame_interval: int = Query(15, description="Frame sampling interval"),
 ):
     """
     Upload video file first, then analyze from stored location.
@@ -261,6 +357,7 @@ async def upload_and_analyze_video(
             max_faces_per_frame,
             proximity_threshold,
             confidence_threshold,
+            frame_interval,
         )
 
     except Exception as e:
@@ -273,6 +370,7 @@ async def analyze_video_from_path(
     max_faces_per_frame: int = 10,
     proximity_threshold: float = 50.0,
     confidence_threshold: float = 0.5,
+    frame_interval: int = 15,
 ):
     """
     Analyze video from a file path (like our successful curl test).
@@ -323,21 +421,12 @@ async def analyze_video_from_path(
         all_face_data = []
         total_faces = 0
 
-        # Smart frame sampling strategy (same as before)
-        frame_interval = 15
+        # Simple frame sampling strategy
         frames_to_analyze = list(range(0, total_frames, frame_interval))
 
-        # Also include key frames from the working range (105+)
-        if total_frames > 105:
-            strategic_frames = list(range(105, min(total_frames, 400), 15))
-            frames_to_analyze.extend(strategic_frames)
-
-        # Remove duplicates and sort
-        frames_to_analyze = sorted(list(set(frames_to_analyze)))
-
         logger.info(
-            f"Analyzing {len(frames_to_analyze)} strategically "
-            f"sampled frames out of {total_frames} total frames"
+            f"Analyzing {len(frames_to_analyze)} frames "
+            f"out of {total_frames} total frames (interval: {frame_interval})"
         )
         logger.info(
             f"Frames to analyze: {frames_to_analyze[:10]}..."
@@ -355,6 +444,8 @@ async def analyze_video_from_path(
             faces = face_detection_service.detect_faces_vision_compatible(
                 frame, confidence_threshold
             )
+            logger.info(f"Raw face detections before filtering: {len(faces)} faces")
+            logger.info(f"Face details: {faces}")
             total_faces += len(faces)
 
             if faces:
@@ -417,11 +508,12 @@ async def analyze_video_from_path(
                 "max_faces_per_frame": max_faces_per_frame,
                 "proximity_threshold": proximity_threshold,
                 "confidence_threshold": confidence_threshold,
+                "frame_interval": frame_interval,
             },
             "pipeline_steps": [
                 "✅ Video uploaded and stored permanently",
-                f"✅ Processed {frames_processed} strategic frames "
-                f"out of {total_frames}",
+                f"✅ Processed {frames_processed} frames "
+                f"out of {total_frames} (interval: {frame_interval})",
                 f"✅ Detected {total_faces} faces total",
                 f"✅ Grouped faces into "
                 f"{grouping_result.get('summary', {}).get('total_groups', 0)} "
