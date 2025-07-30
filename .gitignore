@@ -189,6 +189,11 @@ $RECYCLE.BIN/
 # Docker volumes
 docker-volumes/
 
+# Docker image tar files
+*.tar
+ppl-meta-mini-beta*.tar
+PPL-Meta-Mini-*.tar
+
 # =============================================
 # CERTIFICATES & KEYS
 # =============================================
