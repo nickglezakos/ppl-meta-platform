@@ -1,0 +1,3017 @@
+{
+  "test_config": {
+    "video_uuid": "170d0c97-8fa3-4895-a4d1-7c5aaa1d0b8e",
+    "video_path": "/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media/storage/media/4cf362b1-3e05-4e85-81c7-c08a98c7e41b/video/2025/07/54c4666b56ff8b9dbb55abcafbb3c23f.mp4",
+    "confidence_threshold": 0.5,
+    "total_frames": 381,
+    "frames_tested": 127,
+    "sampling_strategy": "every_3_frames_from_3",
+    "expected_notebook_results": {
+      "105": 1,
+      "108": 1,
+      "111": 1,
+      "114": 1,
+      "117": 1,
+      "120": 1,
+      "123": 1,
+      "126": 1,
+      "132": 1,
+      "135": 1,
+      "138": 1,
+      "141": 2,
+      "144": 1,
+      "147": 1,
+      "150": 2,
+      "153": 2,
+      "156": 1,
+      "159": 1,
+      "162": 1,
+      "165": 1,
+      "171": 1,
+      "177": 1,
+      "180": 1,
+      "201": 1,
+      "252": 1,
+      "255": 1,
+      "258": 1
+    }
+  },
+  "validation": {
+    "discrepancies": [
+      "Frame 105: Mini=0, Expected=1",
+      "Frame 120: Mini=0, Expected=1",
+      "Frame 135: Mini=0, Expected=1",
+      "Frame 141: Mini=0, Expected=2",
+      "Frame 150: Mini=0, Expected=2",
+      "Frame 180: Mini=0, Expected=1",
+      "Frame 255: Mini=0, Expected=1",
+      "Frame 108: Mini=0, Expected=1",
+      "Frame 111: Mini=0, Expected=1",
+      "Frame 114: Mini=0, Expected=1",
+      "Frame 117: Mini=0, Expected=1",
+      "Frame 123: Mini=0, Expected=1",
+      "Frame 126: Mini=0, Expected=1",
+      "Frame 132: Mini=0, Expected=1",
+      "Frame 138: Mini=0, Expected=1",
+      "Frame 144: Mini=0, Expected=1",
+      "Frame 153: Mini=1, Expected=2",
+      "Frame 156: Mini=0, Expected=1",
+      "Frame 159: Mini=0, Expected=1",
+      "Frame 162: Mini=0, Expected=1",
+      "Frame 165: Mini=0, Expected=1",
+      "Frame 171: Mini=0, Expected=1",
+      "Frame 177: Mini=0, Expected=1",
+      "Frame 201: Mini=0, Expected=1",
+      "Frame 252: Mini=0, Expected=1",
+      "Frame 258: Mini=0, Expected=1"
+    ],
+    "test_passed": false
+  },
+  "results": [
+    {
+      "frame": 105,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03380298614501953,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 105,
+          "detection_time": 0.03380298614501953,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 120,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03653597831726074,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 120,
+          "detection_time": 0.03653597831726074,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 135,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.0393521785736084,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 135,
+          "detection_time": 0.0393521785736084,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 141,
+      "expected": 2,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04088592529296875,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 141,
+          "detection_time": 0.04088592529296875,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 150,
+      "expected": 2,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.041686058044433594,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 150,
+          "detection_time": 0.041686058044433594,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 180,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.033625125885009766,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 180,
+          "detection_time": 0.033625125885009766,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 255,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04886507987976074,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 255,
+          "detection_time": 0.04886507987976074,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 3,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.036125898361206055,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 3,
+          "detection_time": 0.036125898361206055,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 6,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03399801254272461,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 6,
+          "detection_time": 0.03399801254272461,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 9,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.034151315689086914,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 9,
+          "detection_time": 0.034151315689086914,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 12,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.026996850967407227,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 12,
+          "detection_time": 0.026996850967407227,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 15,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02441883087158203,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 15,
+          "detection_time": 0.02441883087158203,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 18,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.023695945739746094,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 18,
+          "detection_time": 0.023695945739746094,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 21,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.022255897521972656,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 21,
+          "detection_time": 0.022255897521972656,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 24,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.022412776947021484,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 24,
+          "detection_time": 0.022412776947021484,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 27,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.021454811096191406,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 27,
+          "detection_time": 0.021454811096191406,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 30,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.021826744079589844,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 30,
+          "detection_time": 0.021826744079589844,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 33,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02207207679748535,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 33,
+          "detection_time": 0.02207207679748535,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 36,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.022225141525268555,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 36,
+          "detection_time": 0.022225141525268555,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 39,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.021863222122192383,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 39,
+          "detection_time": 0.021863222122192383,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 42,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.022715091705322266,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 42,
+          "detection_time": 0.022715091705322266,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 45,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02352118492126465,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 45,
+          "detection_time": 0.02352118492126465,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 48,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.024562835693359375,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 48,
+          "detection_time": 0.024562835693359375,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 51,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02472209930419922,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 51,
+          "detection_time": 0.02472209930419922,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 54,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02554607391357422,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 54,
+          "detection_time": 0.02554607391357422,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 57,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.025598764419555664,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 57,
+          "detection_time": 0.025598764419555664,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 60,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.024673938751220703,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 60,
+          "detection_time": 0.024673938751220703,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 63,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.024774789810180664,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 63,
+          "detection_time": 0.024774789810180664,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 66,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02462625503540039,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 66,
+          "detection_time": 0.02462625503540039,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 69,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.025270938873291016,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 69,
+          "detection_time": 0.025270938873291016,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 72,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02589106559753418,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 72,
+          "detection_time": 0.02589106559753418,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 75,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.025367021560668945,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 75,
+          "detection_time": 0.025367021560668945,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 78,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.02995920181274414,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 78,
+          "detection_time": 0.02995920181274414,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 81,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03086400032043457,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 81,
+          "detection_time": 0.03086400032043457,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 84,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03179001808166504,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 84,
+          "detection_time": 0.03179001808166504,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 87,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03323483467102051,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 87,
+          "detection_time": 0.03323483467102051,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 90,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03234696388244629,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 90,
+          "detection_time": 0.03234696388244629,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 93,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03383231163024902,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 93,
+          "detection_time": 0.03383231163024902,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 96,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03388690948486328,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 96,
+          "detection_time": 0.03388690948486328,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 99,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03422403335571289,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 99,
+          "detection_time": 0.03422403335571289,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 102,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.035474300384521484,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 102,
+          "detection_time": 0.035474300384521484,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 108,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03558015823364258,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 108,
+          "detection_time": 0.03558015823364258,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 111,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03529095649719238,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 111,
+          "detection_time": 0.03529095649719238,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 114,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.0356450080871582,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 114,
+          "detection_time": 0.0356450080871582,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 117,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03507685661315918,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 117,
+          "detection_time": 0.03507685661315918,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 123,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03556203842163086,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 123,
+          "detection_time": 0.03556203842163086,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 126,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03969383239746094,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 126,
+          "detection_time": 0.03969383239746094,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 129,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03772687911987305,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 129,
+          "detection_time": 0.03772687911987305,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 132,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03724193572998047,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 132,
+          "detection_time": 0.03724193572998047,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 138,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.040135860443115234,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 138,
+          "detection_time": 0.040135860443115234,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 144,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04210805892944336,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 144,
+          "detection_time": 0.04210805892944336,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 147,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 1,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04852485656738281,
+        "raw_response": {
+          "faces": [
+            {
+              "face_id": 1,
+              "confidence": 0.5,
+              "bbox": [
+                140,
+                1086,
+                286,
+                1232
+              ],
+              "method": "autonomous_two_stage_haar_dlib"
+            }
+          ],
+          "frame_number": 147,
+          "detection_time": 0.04852485656738281,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 1
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 153,
+      "expected": 2,
+      "mini": {
+        "success": true,
+        "face_count": 1,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03907895088195801,
+        "raw_response": {
+          "faces": [
+            {
+              "face_id": 1,
+              "confidence": 0.5,
+              "bbox": [
+                99,
+                1082,
+                252,
+                1235
+              ],
+              "method": "autonomous_two_stage_haar_dlib"
+            }
+          ],
+          "frame_number": 153,
+          "detection_time": 0.03907895088195801,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 1
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 156,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03885078430175781,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 156,
+          "detection_time": 0.03885078430175781,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 159,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.038290977478027344,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 159,
+          "detection_time": 0.038290977478027344,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 162,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03676915168762207,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 162,
+          "detection_time": 0.03676915168762207,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 165,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03626704216003418,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 165,
+          "detection_time": 0.03626704216003418,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 168,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03764200210571289,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 168,
+          "detection_time": 0.03764200210571289,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 171,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03611588478088379,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 171,
+          "detection_time": 0.03611588478088379,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 174,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.035590171813964844,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 174,
+          "detection_time": 0.035590171813964844,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 177,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.036615848541259766,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 177,
+          "detection_time": 0.036615848541259766,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 183,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03137803077697754,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 183,
+          "detection_time": 0.03137803077697754,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 186,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.029619932174682617,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 186,
+          "detection_time": 0.029619932174682617,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 189,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.028728246688842773,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 189,
+          "detection_time": 0.028728246688842773,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 192,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.032312870025634766,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 192,
+          "detection_time": 0.032312870025634766,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 195,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03537774085998535,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 195,
+          "detection_time": 0.03537774085998535,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 198,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.036704063415527344,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 198,
+          "detection_time": 0.036704063415527344,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 201,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.037268877029418945,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 201,
+          "detection_time": 0.037268877029418945,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 204,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03803586959838867,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 204,
+          "detection_time": 0.03803586959838867,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 207,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03468728065490723,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 207,
+          "detection_time": 0.03468728065490723,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 210,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03362417221069336,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 210,
+          "detection_time": 0.03362417221069336,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 213,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.033212900161743164,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 213,
+          "detection_time": 0.033212900161743164,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 216,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03394794464111328,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 216,
+          "detection_time": 0.03394794464111328,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 219,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03510713577270508,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 219,
+          "detection_time": 0.03510713577270508,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 222,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03729677200317383,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 222,
+          "detection_time": 0.03729677200317383,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 225,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.0382237434387207,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 225,
+          "detection_time": 0.0382237434387207,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 228,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03815507888793945,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 228,
+          "detection_time": 0.03815507888793945,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 231,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03936195373535156,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 231,
+          "detection_time": 0.03936195373535156,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 234,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03986835479736328,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 234,
+          "detection_time": 0.03986835479736328,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 237,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.041571855545043945,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 237,
+          "detection_time": 0.041571855545043945,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 240,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04101085662841797,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 240,
+          "detection_time": 0.04101085662841797,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 243,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.043730974197387695,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 243,
+          "detection_time": 0.043730974197387695,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 246,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04239511489868164,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 246,
+          "detection_time": 0.04239511489868164,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 249,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.043108224868774414,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 249,
+          "detection_time": 0.043108224868774414,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 252,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.05000805854797363,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 252,
+          "detection_time": 0.05000805854797363,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 258,
+      "expected": 1,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.044283151626586914,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 258,
+          "detection_time": 0.044283151626586914,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 261,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04333972930908203,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 261,
+          "detection_time": 0.04333972930908203,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 264,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04105687141418457,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 264,
+          "detection_time": 0.04105687141418457,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 267,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.044532060623168945,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 267,
+          "detection_time": 0.044532060623168945,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 270,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.044696807861328125,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 270,
+          "detection_time": 0.044696807861328125,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 273,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04303407669067383,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 273,
+          "detection_time": 0.04303407669067383,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 276,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.042912960052490234,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 276,
+          "detection_time": 0.042912960052490234,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 279,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04373526573181152,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 279,
+          "detection_time": 0.04373526573181152,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 282,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04614996910095215,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 282,
+          "detection_time": 0.04614996910095215,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 285,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04411959648132324,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 285,
+          "detection_time": 0.04411959648132324,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 288,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04456925392150879,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 288,
+          "detection_time": 0.04456925392150879,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 291,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04372382164001465,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 291,
+          "detection_time": 0.04372382164001465,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 294,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03917503356933594,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 294,
+          "detection_time": 0.03917503356933594,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 297,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.037448883056640625,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 297,
+          "detection_time": 0.037448883056640625,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 300,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03461480140686035,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 300,
+          "detection_time": 0.03461480140686035,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 303,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.033368825912475586,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 303,
+          "detection_time": 0.033368825912475586,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 306,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03277707099914551,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 306,
+          "detection_time": 0.03277707099914551,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 309,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.030973196029663086,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 309,
+          "detection_time": 0.030973196029663086,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 312,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.032080888748168945,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 312,
+          "detection_time": 0.032080888748168945,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 315,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.0333251953125,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 315,
+          "detection_time": 0.0333251953125,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 318,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03536105155944824,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 318,
+          "detection_time": 0.03536105155944824,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 321,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.036782026290893555,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 321,
+          "detection_time": 0.036782026290893555,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 324,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03418922424316406,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 324,
+          "detection_time": 0.03418922424316406,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 327,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.036128997802734375,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 327,
+          "detection_time": 0.036128997802734375,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 330,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04048895835876465,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 330,
+          "detection_time": 0.04048895835876465,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 333,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03929710388183594,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 333,
+          "detection_time": 0.03929710388183594,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 336,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.035614967346191406,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 336,
+          "detection_time": 0.035614967346191406,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 339,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03926897048950195,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 339,
+          "detection_time": 0.03926897048950195,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 342,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.0376591682434082,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 342,
+          "detection_time": 0.0376591682434082,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 345,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03999519348144531,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 345,
+          "detection_time": 0.03999519348144531,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 348,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.03665590286254883,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 348,
+          "detection_time": 0.03665590286254883,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 351,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.037470102310180664,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 351,
+          "detection_time": 0.037470102310180664,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 354,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.04400205612182617,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 354,
+          "detection_time": 0.04400205612182617,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 357,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.049118995666503906,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 357,
+          "detection_time": 0.049118995666503906,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 360,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.056246042251586914,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 360,
+          "detection_time": 0.056246042251586914,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 363,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.05217170715332031,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 363,
+          "detection_time": 0.05217170715332031,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 366,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.05952811241149902,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 366,
+          "detection_time": 0.05952811241149902,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 369,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.0659799575805664,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 369,
+          "detection_time": 0.0659799575805664,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 372,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.0636899471282959,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 372,
+          "detection_time": 0.0636899471282959,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 375,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.06838035583496094,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 375,
+          "detection_time": 0.06838035583496094,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 378,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "autonomous_two_stage_haar_dlib",
+        "detection_time": 0.06843113899230957,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 378,
+          "detection_time": 0.06843113899230957,
+          "method": "autonomous_two_stage_haar_dlib",
+          "total_faces": 0
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    },
+    {
+      "frame": 381,
+      "expected": 0,
+      "mini": {
+        "success": true,
+        "face_count": 0,
+        "method": "frame_extraction_failed",
+        "detection_time": 0.0,
+        "raw_response": {
+          "faces": [],
+          "frame_number": 381,
+          "detection_time": 0.0,
+          "method": "frame_extraction_failed",
+          "error": "Could not extract frame 381"
+        },
+        "via": "nginx"
+      },
+      "media": {
+        "success": false,
+        "faces": 0,
+        "error": "Frame detection failed: HTTP 404"
+      }
+    }
+  ]
+}

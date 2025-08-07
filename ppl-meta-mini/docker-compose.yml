@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  ppl-meta-mini:
+    build:
+      context: .
+      dockerfile: Dockerfile.tensorflow
+    image: nickglezakos/ppl-meta-mini-beta085:latest
+    container_name: ppl-meta-mini-beta085
+    ports:
+      - "8004:8004"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./storage:/app/storage
+      - ./temp:/app/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ppl-meta-network
+
+networks:
+  ppl-meta-network:
+    driver: bridge

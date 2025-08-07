@@ -1,15 +1,5 @@
 """
-PPL Meta Mini - Standalone Face Analyt        "endpoints": {
-            "health": "/health",
-            "docs": "/docs",
-            "face_grouping": "/api/v1/group-faces",
-            "coordinate_analysis": "/api/v1/analyze-coordinates",
-            "face_detection_info": "/api/v1/face-detection/info",
-            "video_analysis": "/api/v1/analyze-video",
-            "video_streaming": "/api/v1/stream-faces",
-            "complete_analysis": "/api/v1/complete-video-analysis",
-            "demo_data": "/api/v1/demo-data"
-        }ervice
+PPL Meta Mini - Standalone Face Analytics Service
 """
 
 import logging
@@ -53,12 +43,7 @@ async def root():
         "endpoints": {
             "health": "/health",
             "docs": "/docs",
-            "face_grouping": "/api/v1/group-faces",
-            "coordinate_analysis": "/api/v1/analyze-coordinates",
-            "face_detection_info": "/api/v1/face-detection/info",
-            "video_analysis": "/api/v1/analyze-video",
-            "video_streaming": "/api/v1/stream-faces",
-            "demo_data": "/api/v1/demo-data",
+            "upload_and_analyze": "/api/v1/upload-and-analyze",
         },
     }
 
@@ -70,4 +55,5 @@ async def health():
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8004, reload=True)
+    # Production configuration for Nuitka compilation
+    uvicorn.run("main:app", host="0.0.0.0", port=8004, reload=False)

@@ -1,13 +1,22 @@
 # PPL Meta Mini - Standalone Face Analytics Microservice
 
-A lightweight, self-contained microservice for advanced face detection analysis and trajectory visualization.
+A lightweight, self-contained microservice for advanced face detection analysis and age estimation with complete TensorFlow + DeepFace integration.
+
+## Current Production Build: Beta085
+
+This is the **production-ready beta085** build with complete age detection capabilities using:
+- **TensorFlow 2.12.0** + **DeepFace 0.0.75** for age estimation
+- **Cython compilation** for performance optimization
+- **Multi-stage Docker build** for minimal runtime footprint
+- **Linux AMD64** platform with Windows Docker Desktop compatibility
 
 ## Features
 
-- **Advanced Face Grouping**: Merge face groups when unique face IDs exceed frame capacity
-- **3D Trajectory Visualization**: Interactive 3D plotting of face movements
-- **Coordinate Analysis**: Statistical analysis of face detection coordinates
-- **Standalone Operation**: No authentication or proxy dependencies required
+- **Age Detection**: Complete DeepFace integration for adult/underaged classification
+- **Advanced Face Grouping**: Sophisticated percentage-based tolerance matching (20% tolerance)
+- **Video Preprocessing**: Aggressive compression for optimal face detection accuracy
+- **Cython Performance**: Compiled core modules for native C speed
+- **Standalone Operation**: No external service dependencies required
 
 ## Quick Start
 
@@ -25,17 +34,38 @@ python src/main.py
 
 The service will start on `http://localhost:8004`
 
+## Production Files (Beta085)
+
+The current production build uses these files at the root level:
+
+- **`Dockerfile.tensorflow`** - Multi-stage Docker build with TensorFlow + DeepFace
+- **`requirements.tensorflow.txt`** - Complete dependencies (TensorFlow 2.12.0, DeepFace 0.0.75)
+- **`requirements.runtime.txt`** - Minimal runtime dependencies
+- **`setup_cython_dlib.py`** - Cython compilation setup for performance optimization
+- **`build.sh`** - Official build script for beta085
+- **`docker-compose.yml`** - Production docker-compose configuration
+- **`ppl-meta-mini-beta085.tar`** - Production Docker image (1.5GB)
+
+### Legacy Files Archive
+
+All legacy/experimental files have been moved to `./archive/`:
+- `./archive/docker-legacy/` - Legacy Dockerfiles and docker-compose files
+- `./archive/requirements-legacy/` - Legacy dependency files
+- `./archive/build-scripts-legacy/` - Legacy build scripts
+- `./archive/docker-tar-files/` - Legacy Docker images (beta081, beta083)
+
+See `./archive/README.md` for detailed archive documentation.
+
 ### Docker Deployment
 
 1. **Build Image**:
 ```bash
-docker build -t ppl-meta-mini .
+./build.sh
 ```
 
 2. **Run Container**:
 ```bash
-docker run -p 8004:8004 ppl-meta-mini
-```
+docker run -d --name ppl-meta-mini -p 8004:8004 nickglezakos/ppl-meta-mini-beta085:latest
 
 ## API Endpoints
 

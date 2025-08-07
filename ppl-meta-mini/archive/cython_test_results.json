@@ -1,0 +1,116 @@
+{
+  "processing_time": 5.71661901473999,
+  "results": {
+    "persons": {
+      "6": {
+        "face_id": "frame_360_face_1",
+        "frame_number": 360,
+        "quality_score": 0.634,
+        "bbox": [
+          298,
+          56,
+          1007,
+          765
+        ],
+        "age_detection": {
+          "estimated_age": "Unknown"
+        },
+        "distance": 1.99
+      },
+      "5": {
+        "face_id": "frame_330_face_1",
+        "frame_number": 330,
+        "quality_score": 0.617,
+        "bbox": [
+          71,
+          729,
+          754,
+          1412
+        ],
+        "age_detection": {
+          "estimated_age": "Unknown"
+        },
+        "distance": 2.14
+      },
+      "3": {
+        "face_id": "frame_165_face_1",
+        "frame_number": 165,
+        "quality_score": 0.637,
+        "bbox": [
+          63,
+          722,
+          692,
+          1351
+        ],
+        "age_detection": {
+          "estimated_age": "Unknown"
+        },
+        "distance": 2.53
+      },
+      "1": {
+        "face_id": "frame_120_face_1",
+        "frame_number": 120,
+        "quality_score": 0.887,
+        "bbox": [
+          156,
+          727,
+          730,
+          1301
+        ],
+        "age_detection": {
+          "estimated_age": "Unknown"
+        },
+        "distance": 3.04
+      },
+      "2": {
+        "face_id": "frame_150_face_2",
+        "frame_number": 150,
+        "quality_score": 0.575,
+        "bbox": [
+          122,
+          1080,
+          277,
+          1235
+        ],
+        "age_detection": {
+          "estimated_age": "Unknown"
+        },
+        "distance": 41.62
+      },
+      "4": {
+        "face_id": "frame_300_face_1",
+        "frame_number": 300,
+        "quality_score": 0.798,
+        "bbox": [
+          136,
+          792,
+          190,
+          846
+        ],
+        "age_detection": {
+          "estimated_age": "Unknown"
+        },
+        "distance": 342.94
+      },
+      "7": {
+        "face_id": "frame_375_face_1",
+        "frame_number": 375,
+        "quality_score": 0.554,
+        "bbox": [
+          547,
+          840,
+          584,
+          877
+        ],
+        "age_detection": {
+          "estimated_age": "Unknown"
+        },
+        "distance": 730.46
+      }
+    },
+    "file_info": {
+      "storage_path": "/tmp/ppl-mini-storage/1753855940_test_video.mp4"
+    }
+  },
+  "timestamp": 1753855946.2638972
+}

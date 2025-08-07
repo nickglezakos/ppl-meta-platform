@@ -1,0 +1,41 @@
+# PPL Meta Cameras Microservice Dependencies
+
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+
+# Authentication & Security
+pyjwt[crypto]==2.8.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# Camera & Video Processing
+opencv-python==4.8.1.78
+numpy==1.24.3
+
+# System Monitoring
+psutil==5.9.6
+
+# Logging & Monitoring
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# HTTP Client
+httpx==0.25.2
+requests==2.31.0
+
+# Development & Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+
+# Shared modules (if available locally)
+# These would be installed from the shared directory in a real deployment

@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  ppl-meta-cameras:
+    build: .
+    image: ppl-meta-cameras:latest
+    container_name: ppl-meta-cameras
+    ports:
+      - "8005:8005"
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - DATABASE_URL=postgresql://postgres:password@db:5432/ppl_meta_cameras
+      - JWT_SECRET_KEY=development-secret-key-change-in-production
+      - CONSUL_ENABLED=false
+    volumes:
+      - ./src:/app/src
+      - camera_logs:/app/logs
+      - camera_storage:/app/storage
+      - camera_temp:/app/temp
+    devices:
+      - /dev/video0:/dev/video0 # Mount camera device
+    depends_on:
+      - db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: postgres:15-alpine
+    container_name: ppl-meta-cameras-db
+    environment:
+      - POSTGRES_DB=ppl_meta_cameras
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  camera_logs:
+  camera_storage:
+  camera_temp:
+
+networks:
+  default:
+    name: ppl-meta-cameras-network
+    driver: bridge

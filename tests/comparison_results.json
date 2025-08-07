@@ -1,0 +1,189 @@
+[
+  {
+    "frame": 105,
+    "mini": {
+      "success": true,
+      "face_count": 0,
+      "method": "autonomous_two_stage_haar_dlib",
+      "detection_time": 0.11387515068054199,
+      "raw_response": {
+        "faces": [],
+        "frame_number": 105,
+        "detection_time": 0.11387515068054199,
+        "method": "autonomous_two_stage_haar_dlib",
+        "total_faces": 0
+      },
+      "via": "nginx"
+    },
+    "media": {
+      "success": false,
+      "faces": 0,
+      "error": "Video list failed: HTTP 400"
+    }
+  },
+  {
+    "frame": 120,
+    "mini": {
+      "success": true,
+      "face_count": 0,
+      "method": "autonomous_two_stage_haar_dlib",
+      "detection_time": 0.03796505928039551,
+      "raw_response": {
+        "faces": [],
+        "frame_number": 120,
+        "detection_time": 0.03796505928039551,
+        "method": "autonomous_two_stage_haar_dlib",
+        "total_faces": 0
+      },
+      "via": "nginx"
+    },
+    "media": {
+      "success": false,
+      "faces": 0,
+      "error": "Video list failed: HTTP 400"
+    }
+  },
+  {
+    "frame": 135,
+    "mini": {
+      "success": true,
+      "face_count": 0,
+      "method": "autonomous_two_stage_haar_dlib",
+      "detection_time": 0.03799176216125488,
+      "raw_response": {
+        "faces": [],
+        "frame_number": 135,
+        "detection_time": 0.03799176216125488,
+        "method": "autonomous_two_stage_haar_dlib",
+        "total_faces": 0
+      },
+      "via": "nginx"
+    },
+    "media": {
+      "success": false,
+      "faces": 0,
+      "error": "Video list failed: HTTP 400"
+    }
+  },
+  {
+    "frame": 141,
+    "mini": {
+      "success": true,
+      "face_count": 1,
+      "method": "two_stage_haar_dlib",
+      "detection_time": 0.043502092361450195,
+      "raw_response": {
+        "faces": [
+          {
+            "bbox": [
+              189,
+              1108,
+              317,
+              1236
+            ],
+            "confidence": 0.5,
+            "method": "two_stage_haar_dlib"
+          }
+        ],
+        "frame_number": 141,
+        "detection_time": 0.043502092361450195,
+        "method": "two_stage_haar_dlib",
+        "total_faces": 1
+      },
+      "via": "nginx"
+    },
+    "media": {
+      "success": false,
+      "faces": 0,
+      "error": "Video list failed: HTTP 400"
+    }
+  },
+  {
+    "frame": 150,
+    "mini": {
+      "success": true,
+      "face_count": 1,
+      "method": "two_stage_haar_dlib",
+      "detection_time": 0.044843196868896484,
+      "raw_response": {
+        "faces": [
+          {
+            "bbox": [
+              121,
+              1093,
+              262,
+              1234
+            ],
+            "confidence": 0.5,
+            "method": "two_stage_haar_dlib"
+          }
+        ],
+        "frame_number": 150,
+        "detection_time": 0.044843196868896484,
+        "method": "two_stage_haar_dlib",
+        "total_faces": 1
+      },
+      "via": "nginx"
+    },
+    "media": {
+      "success": false,
+      "faces": 0,
+      "error": "Video list failed: HTTP 400"
+    }
+  },
+  {
+    "frame": 180,
+    "mini": {
+      "success": true,
+      "face_count": 0,
+      "method": "autonomous_two_stage_haar_dlib",
+      "detection_time": 0.03371906280517578,
+      "raw_response": {
+        "faces": [],
+        "frame_number": 180,
+        "detection_time": 0.03371906280517578,
+        "method": "autonomous_two_stage_haar_dlib",
+        "total_faces": 0
+      },
+      "via": "nginx"
+    },
+    "media": {
+      "success": false,
+      "faces": 0,
+      "error": "Video list failed: HTTP 400"
+    }
+  },
+  {
+    "frame": 255,
+    "mini": {
+      "success": true,
+      "face_count": 1,
+      "method": "two_stage_haar_dlib",
+      "detection_time": 0.06576204299926758,
+      "raw_response": {
+        "faces": [
+          {
+            "bbox": [
+              413,
+              993,
+              590,
+              1170
+            ],
+            "confidence": 0.5,
+            "method": "two_stage_haar_dlib"
+          }
+        ],
+        "frame_number": 255,
+        "detection_time": 0.06576204299926758,
+        "method": "two_stage_haar_dlib",
+        "total_faces": 1
+      },
+      "via": "nginx"
+    },
+    "media": {
+      "success": false,
+      "faces": 0,
+      "error": "Video list failed: HTTP 400"
+    }
+  }
+]
