@@ -149,8 +149,12 @@ class AuthenticationService:
             pass  # Try with Node service secret
 
         try:
-            # Try with Node service secret (default production secret)
-            node_secret = "default-secret-key-change-in-production"
+            # Try with Node service secret (get from environment or use default)
+            import os
+
+            node_secret = os.getenv(
+                "NODE_SERVICE_SECRET", "default-secret-key-change-in-production"
+            )
             payload = jwt.decode(token, node_secret, algorithms=[self.algorithm])
             payload_dict = dict(payload)
 
@@ -160,10 +164,8 @@ class AuthenticationService:
                 payload_dict["service"] = "node"
                 # Grant admin access to Node users
                 payload_dict["permissions"] = list(CameraRole.ADMINISTRATOR)
-                logger.info(
-                    f"Accepted Node service token for user "
-                    f"{payload_dict.get('sub')}"
-                )
+                user_sub = payload_dict.get("sub")
+                logger.info(f"Accepted Node service token for user {user_sub}")
                 return payload_dict
 
         except jwt.ExpiredSignatureError:
@@ -199,9 +201,8 @@ class AuthenticationService:
 
             # For Node service tokens, grant administrator permissions
             if payload.get("service") == "node" and payload.get("sub"):
-                logger.info(
-                    f"Granting admin permissions to Node user {payload.get('sub')}"
-                )
+                user_sub = payload.get("sub")
+                logger.info(f"Granting admin permissions to Node user {user_sub}")
                 # Node service users get full administrator permissions
                 admin_permissions = set(CameraRole.ADMINISTRATOR)
                 return required_permission in admin_permissions

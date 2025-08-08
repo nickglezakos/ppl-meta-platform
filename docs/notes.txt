@@ -18,6 +18,13 @@ Chat with models: Use: ollama run llama3.1 or ollama run codellama:7b in termina
 List models: ollama list
 Remove models: ollama rm <model_name> if you need to free up space
 
+NAME                       ID              SIZE      MODIFIED   
+nomic-embed-text:latest    0a109f422b47    274 MB    3 days ago    
+qwen2.5-coder:1.5b-base    02e0f2817a89    986 MB    3 days ago    
+llama3.1:8b                46e0c10c039e    4.9 GB    3 days ago    
+codellama:7b               8fdf8f752f6e    3.8 GB    3 days ago    
+llama3.1:latest            46e0c10c039e    4.9 GB    3 days ago    
+
 
 
 

@@ -438,6 +438,378 @@ Response: HTTP 200 ✅
 
 **Test Status**: ✅ **PASSED** - Cross-service authentication successfully implemented and tested
 
+---
+
+### **Test**: CAM-TEST-002 - 🧪 **READY FOR EXECUTION** - **COMPREHENSIVE CAMERA LIFECYCLE MANAGEMENT AND CONNECTION TESTING**
+
+**Test Scenario**: Complete camera detection, connection management, and deactivation workflow using authenticated camera service APIs
+
+**Section**: Integration Testing - Camera Lifecycle Management and Connection Control  
+**Priority**: 🔍 **HIGH** - Validates complete camera management workflow  
+**Test Type**: End-to-End Camera Management Testing - **READY**  
+
+**Test Prerequisites**: 
+- ✅ CAM-TEST-001 successfully completed (cross-service authentication working)
+- ✅ All 6 services operational (Node, Media, Gateway, Orchestrator, Vision, Cameras)
+- ✅ Valid JWT token available from Node service authentication
+
+**Test Objectives**:
+1. **Detection Testing**: Validate camera detection methods and results
+2. **Connection Management**: Test camera connection and session tracking
+3. **Active Monitoring**: Verify active camera listing and status reporting
+4. **Deactivation Control**: Test camera disconnection and cleanup
+5. **State Validation**: Confirm proper state transitions and persistence
+
+**Test Flow**:
+```
+Authentication → Detection → Connection → Active List → Deactivation → Final State
+```
+
+**Test Steps**:
+
+**Step 1: Authentication Setup (Reuse CAM-TEST-001 Results)**
+```bash
+# Authenticate user and obtain JWT token
+curl -X POST 'http://localhost:8001/api/v1/users/login' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'username=fresh.user@example.com&password=NewPassword234!'
+
+# Expected: JWT token for subsequent camera operations
+```
+
+**Step 2: Camera Detection Methods Testing**
+```bash
+# Test camera detection endpoint
+curl -X POST 'http://localhost:8005/api/v1/cameras/detect' \
+  -H "Authorization: Bearer <jwt_token>" \
+  -H 'Content-Type: application/json'
+
+# Expected Response Structure:
+{
+  "status": "success",
+  "message": "Camera detection completed",
+  "cameras_detected": [
+    {
+      "device_id": "usb_camera_0",
+      "name": "USB Camera 0",
+      "camera_type": "USB",
+      "status": "AVAILABLE",
+      "resolution_width": 1920,
+      "resolution_height": 1080,
+      "max_fps": 30,
+      "connection_string": "0",
+      "supports_streaming": true,
+      "supports_recording": true
+    }
+  ],
+  "total_cameras": 1,
+  "detection_timestamp": "2025-08-08T...",
+  "detection_method": "OpenCV_USB_Scan"
+}
+```
+
+**Step 3: List All Available Cameras**
+```bash
+# Retrieve all detected cameras from database
+curl -X GET 'http://localhost:8005/api/v1/cameras/' \
+  -H "Authorization: Bearer <jwt_token>"
+
+# Expected: List of all detected cameras with their current status
+{
+  "status": "success",
+  "cameras": [...],
+  "total_cameras": N,
+  "active_cameras": 0,
+  "available_cameras": N
+}
+```
+
+**Step 4: Connect to Detected Cameras**
+```bash
+# Connect to first detected camera
+curl -X POST 'http://localhost:8005/api/v1/cameras/usb_camera_0/connect' \
+  -H "Authorization: Bearer <jwt_token>" \
+  -H 'Content-Type: application/json'
+
+# Expected Response:
+{
+  "status": "success",
+  "message": "Camera connected successfully",
+  "device_id": "usb_camera_0",
+  "connection_status": "CONNECTED",
+  "session_id": "session_uuid",
+  "connected_at": "2025-08-08T..."
+}
+
+# If multiple cameras detected, connect to additional cameras
+# curl -X POST 'http://localhost:8005/api/v1/cameras/usb_camera_1/connect' ...
+```
+
+**Step 5: List Active Camera Connections**
+```bash
+# Check active camera connections
+curl -X GET 'http://localhost:8005/api/v1/cameras/active' \
+  -H "Authorization: Bearer <jwt_token>"
+
+# Expected Response:
+{
+  "status": "success",
+  "active_connections": [
+    {
+      "device_id": "usb_camera_0",
+      "name": "USB Camera 0",
+      "status": "CONNECTED",
+      "session_id": "session_uuid",
+      "connected_at": "2025-08-08T...",
+      "connection_duration_seconds": 45
+    }
+  ],
+  "total_active": 1,
+  "connection_summary": {
+    "usb_cameras": 1,
+    "ip_cameras": 0,
+    "total_sessions": 1
+  }
+}
+```
+
+**Step 6: Test Camera Information Retrieval**
+```bash
+# Get detailed camera information
+curl -X GET 'http://localhost:8005/api/v1/cameras/usb_camera_0/info' \
+  -H "Authorization: Bearer <jwt_token>"
+
+# Expected: Comprehensive camera specifications and current state
+{
+  "device_id": "usb_camera_0",
+  "name": "USB Camera 0",
+  "status": "CONNECTED",
+  "camera_type": "USB",
+  "capabilities": {
+    "resolution_width": 1920,
+    "resolution_height": 1080,
+    "max_fps": 30,
+    "formats": ["MJPEG", "YUYV"]
+  },
+  "current_session": {
+    "session_id": "session_uuid",
+    "started_at": "2025-08-08T...",
+    "duration_seconds": 60
+  }
+}
+```
+
+**Step 7: Disconnect Individual Cameras**
+```bash
+# Disconnect specific camera
+curl -X POST 'http://localhost:8005/api/v1/cameras/usb_camera_0/disconnect' \
+  -H "Authorization: Bearer <jwt_token>" \
+  -H 'Content-Type: application/json'
+
+# Expected Response:
+{
+  "status": "success",
+  "message": "Camera disconnected successfully",
+  "device_id": "usb_camera_0",
+  "connection_status": "DISCONNECTED",
+  "session_ended": true,
+  "session_duration_seconds": 120,
+  "disconnected_at": "2025-08-08T..."
+}
+```
+
+**Step 8: Verify Active Connections After Individual Disconnect**
+```bash
+# Check active connections after individual disconnect
+curl -X GET 'http://localhost:8005/api/v1/cameras/active' \
+  -H "Authorization: Bearer <jwt_token>"
+
+# Expected: Reduced active connection count
+{
+  "status": "success",
+  "active_connections": [],
+  "total_active": 0,
+  "connection_summary": {
+    "usb_cameras": 0,
+    "ip_cameras": 0,
+    "total_sessions": 0
+  }
+}
+```
+
+**Step 9: Test Bulk Camera Connection (If Multiple Cameras)**
+```bash
+# Connect to multiple cameras for bulk testing
+# (Repeat Step 4 for each detected camera)
+
+# Then test bulk disconnect
+curl -X POST 'http://localhost:8005/api/v1/cameras/disconnect-all' \
+  -H "Authorization: Bearer <jwt_token>" \
+  -H 'Content-Type: application/json'
+
+# Expected Response:
+{
+  "status": "success",
+  "message": "All cameras disconnected successfully",
+  "disconnected_cameras": [
+    {
+      "device_id": "usb_camera_0",
+      "session_duration_seconds": 90
+    }
+  ],
+  "total_disconnected": 1,
+  "disconnected_at": "2025-08-08T..."
+}
+```
+
+**Step 10: Final State Verification**
+```bash
+# Verify final state - no active connections
+curl -X GET 'http://localhost:8005/api/v1/cameras/active' \
+  -H "Authorization: Bearer <jwt_token>"
+
+# Expected: Empty active connections
+{
+  "status": "success",
+  "active_connections": [],
+  "total_active": 0
+}
+
+# Verify cameras are still available for future connections
+curl -X GET 'http://localhost:8005/api/v1/cameras/' \
+  -H "Authorization: Bearer <jwt_token>"
+
+# Expected: Cameras listed as AVAILABLE status
+{
+  "status": "success",
+  "cameras": [
+    {
+      "device_id": "usb_camera_0",
+      "status": "AVAILABLE",
+      "last_connected": "2025-08-08T...",
+      "total_sessions": 2
+    }
+  ]
+}
+```
+
+**Validation Criteria**:
+
+✅ **Detection Validation**:
+- Camera detection successfully identifies available hardware
+- Detection results include comprehensive camera specifications
+- Camera metadata properly stored in database
+
+✅ **Connection Management**:
+- Individual camera connection succeeds
+- Session tracking properly initiated
+- Connection status accurately reported
+
+✅ **Active Monitoring**:
+- Active camera list accurately reflects connected cameras
+- Connection duration tracking working
+- Session information properly maintained
+
+✅ **Deactivation Control**:
+- Individual camera disconnection works correctly
+- Bulk disconnection handles multiple cameras
+- Session cleanup properly executed
+
+✅ **State Persistence**:
+- Camera states properly persist through connection cycles
+- Database accurately reflects current camera status
+- Session history maintained for tracking
+
+**Success Metrics**:
+- ✅ Detection success rate: 100%
+- ✅ Connection success rate: 100%
+- ✅ Disconnection success rate: 100%
+- ✅ State consistency: 100%
+- ✅ Response time: < 3 seconds per operation
+
+**Error Scenarios to Test**:
+
+🔴 **Invalid Camera Connection**:
+```bash
+# Test connecting to non-existent camera
+curl -X POST 'http://localhost:8005/api/v1/cameras/invalid_camera/connect' \
+  -H "Authorization: Bearer <jwt_token>"
+# Expected: 404 Camera not found
+```
+
+🔴 **Double Connection Attempt**:
+```bash
+# Test connecting to already connected camera
+# Expected: 409 Camera already connected or graceful handling
+```
+
+🔴 **Unauthorized Access**:
+```bash
+# Test without authorization
+curl -X GET 'http://localhost:8005/api/v1/cameras/active'
+# Expected: 401 Unauthorized
+```
+
+**Test Automation Script**:
+```bash
+#!/bin/bash
+# CAM-TEST-002: Comprehensive Camera Lifecycle Testing
+echo "🧪 Starting Camera Lifecycle Management Test..."
+
+# Authentication
+echo "Step 1: Authenticating user..."
+AUTH_RESPONSE=$(curl -s -X POST "http://localhost:8001/api/v1/users/login" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=fresh.user@example.com&password=NewPassword234!")
+JWT_TOKEN=$(echo $AUTH_RESPONSE | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# Detection
+echo "Step 2: Detecting cameras..."
+DETECTION_RESPONSE=$(curl -s -X POST "http://localhost:8005/api/v1/cameras/detect" \
+  -H "Authorization: Bearer $JWT_TOKEN")
+echo "Detection Result: $DETECTION_RESPONSE"
+
+# List available
+echo "Step 3: Listing available cameras..."
+AVAILABLE_CAMERAS=$(curl -s -X GET "http://localhost:8005/api/v1/cameras/" \
+  -H "Authorization: Bearer $JWT_TOKEN")
+echo "Available Cameras: $AVAILABLE_CAMERAS"
+
+# Connect first camera
+echo "Step 4: Connecting to first camera..."
+CONNECT_RESPONSE=$(curl -s -X POST "http://localhost:8005/api/v1/cameras/usb_camera_0/connect" \
+  -H "Authorization: Bearer $JWT_TOKEN")
+echo "Connection Result: $CONNECT_RESPONSE"
+
+# List active
+echo "Step 5: Listing active connections..."
+ACTIVE_CAMERAS=$(curl -s -X GET "http://localhost:8005/api/v1/cameras/active" \
+  -H "Authorization: Bearer $JWT_TOKEN")
+echo "Active Cameras: $ACTIVE_CAMERAS"
+
+# Disconnect
+echo "Step 6: Disconnecting camera..."
+DISCONNECT_RESPONSE=$(curl -s -X POST "http://localhost:8005/api/v1/cameras/usb_camera_0/disconnect" \
+  -H "Authorization: Bearer $JWT_TOKEN")
+echo "Disconnect Result: $DISCONNECT_RESPONSE"
+
+# Final state
+echo "Step 7: Final state verification..."
+FINAL_ACTIVE=$(curl -s -X GET "http://localhost:8005/api/v1/cameras/active" \
+  -H "Authorization: Bearer $JWT_TOKEN")
+echo "Final Active Cameras: $FINAL_ACTIVE"
+
+echo "🎉 Camera Lifecycle Test completed!"
+```
+
+**Expected Test Duration**: 5-10 minutes for complete workflow
+**Test Dependencies**: CAM-TEST-001 (Authentication), Available USB cameras
+**Test Environment**: All 6 services operational, cameras service on port 8005
+
+**Status**: 🧪 **READY FOR EXECUTION** - Comprehensive camera lifecycle testing ready
+**Priority**: High - Validates complete camera management capabilities
+**Next Steps**: Execute after confirming all services operational and cameras available
+
 **Test Setup**:
 
 1. **Prerequisites**:
