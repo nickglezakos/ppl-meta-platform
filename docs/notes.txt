@@ -6,8 +6,18 @@
 fresh.user@example.com
 NewPassword234!
 
+curl -X POST 'http://localhost:8001/api/v1/users/login' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'username=fresh.user@example.com&password=NewPassword234!'
+
+
+
 Start Ollama: brew services start ollama
 Stop Ollama: brew services stop ollama
 Chat with models: Use: ollama run llama3.1 or ollama run codellama:7b in terminal
 List models: ollama list
 Remove models: ollama rm <model_name> if you need to free up space
+
+
+
+

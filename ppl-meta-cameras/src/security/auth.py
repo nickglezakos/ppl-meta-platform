@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Set
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from passlib.context import CryptContext
 from src.config import get_config
 
@@ -128,20 +129,42 @@ class AuthenticationService:
         return token
 
     def verify_token(self, token: str) -> Dict:
-        """Verify and decode JWT token."""
+        """Verify JWT token from Node service or Cameras service."""
 
         try:
+            # First try with camera service secret
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            payload_dict = dict(payload)
 
-            # Verify token is for this service
-            if payload.get("service") != "ppl-meta-cameras":
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Token not valid for cameras service",
-                    headers={"WWW-Authenticate": "Bearer"},
+            # Check if token is for cameras service
+            if payload_dict.get("service") == "cameras":
+                return payload_dict
+
+            # If no service specified, assume it's from cameras service
+            if "service" not in payload_dict:
+                payload_dict["service"] = "cameras"
+                return payload_dict
+
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+            pass  # Try with Node service secret
+
+        try:
+            # Try with Node service secret (default production secret)
+            node_secret = "default-secret-key-change-in-production"
+            payload = jwt.decode(token, node_secret, algorithms=[self.algorithm])
+            payload_dict = dict(payload)
+
+            # Accept Node service tokens and add cameras permissions
+            if payload_dict.get("sub"):  # Node service uses 'sub' for user_id
+                # Convert Node user to cameras permissions
+                payload_dict["service"] = "node"
+                # Grant admin access to Node users
+                payload_dict["permissions"] = list(CameraRole.ADMINISTRATOR)
+                logger.info(
+                    f"Accepted Node service token for user "
+                    f"{payload_dict.get('sub')}"
                 )
-
-            return payload
+                return payload_dict
 
         except jwt.ExpiredSignatureError:
             raise HTTPException(
@@ -149,13 +172,20 @@ class AuthenticationService:
                 detail="Token has expired",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except jwt.JWTError as e:
+        except jwt.InvalidTokenError as e:
             logger.error(f"JWT verification failed: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+        # If we get here, both attempts failed
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     def get_user_permissions(self, token: str) -> Set[str]:
         """Extract user permissions from token."""
@@ -165,8 +195,21 @@ class AuthenticationService:
     def has_permission(self, token: str, required_permission: str) -> bool:
         """Check if user has specific permission."""
         try:
-            user_permissions = self.get_user_permissions(token)
+            payload = self.verify_token(token)
+
+            # For Node service tokens, grant administrator permissions
+            if payload.get("service") == "node" and payload.get("sub"):
+                logger.info(
+                    f"Granting admin permissions to Node user {payload.get('sub')}"
+                )
+                # Node service users get full administrator permissions
+                admin_permissions = set(CameraRole.ADMINISTRATOR)
+                return required_permission in admin_permissions
+
+            # For camera service tokens, check permissions normally
+            user_permissions = set(payload.get("permissions", []))
             return required_permission in user_permissions
+
         except HTTPException:
             return False
 

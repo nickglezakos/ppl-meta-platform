@@ -17,6 +17,9 @@ from fastapi.responses import JSONResponse
 # Add the parent directory to Python path to import shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
+# Local logging implementation
+import logging
+
 from src.api.health import router as health_router
 from src.api.v1.routes import v1_router
 from src.config import get_config
@@ -24,14 +27,6 @@ from src.database import Base, engine, test_connection
 
 # Import all models for table creation
 from src.models.camera import Camera, CameraCapability, CameraSession
-
-from shared.logging import setup_logging
-from shared.metrics import (
-    MetricsCollector,
-    PrometheusMiddleware,
-    create_metrics_endpoint,
-    init_metrics,
-)
 
 # Try to import the shared service discovery module
 try:
@@ -44,18 +39,12 @@ except ImportError:
 # Initialize configuration
 config = get_config()
 
-# Setup standardized logging
-logger = setup_logging(
-    service_name="ppl-meta-cameras",
-    log_level=config.LOG_LEVEL.upper(),
-    log_format=config.LOG_FORMAT.lower(),
-    log_file="/app/logs/cameras-service.log" if os.path.exists("/app") else None,
+# Setup basic logging
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-
-# Initialize metrics collector
-metrics_collector = MetricsCollector(
-    service_name="ppl-meta-cameras", service_version="1.0.0"
-)
+logger = logging.getLogger("ppl-meta-cameras")
 
 # Global service discovery client
 service_discovery_client = None
@@ -89,8 +78,8 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
 
-    # Initialize metrics
-    init_metrics("ppl-meta-cameras")
+    # Skip metrics initialization for now
+    logger.info("Metrics initialization skipped")
 
     # Initialize service discovery if available
     if (
@@ -104,10 +93,9 @@ async def lifespan(_app: FastAPI):
                 consul_port=getattr(config, "CONSUL_PORT", 8500),
             )
             await service_discovery_client.register_service(
-                service_name="ppl-meta-cameras",
-                service_host="0.0.0.0",
-                service_port=config.PORT,
-                health_check_url=f"http://0.0.0.0:{config.PORT}/health",
+                "ppl-meta-cameras",
+                host="0.0.0.0",
+                port=config.PORT,
                 tags=["cameras", "video", "detection"],
             )
             logger.info("Service registered with Consul successfully")
@@ -154,11 +142,11 @@ app.add_middleware(
 
 # Add trusted host middleware for security
 app.add_middleware(
-    TrustedHostMiddleware, allowed_hosts=["*"]  # Configure appropriately for production
+    TrustedHostMiddleware, allowed_hosts=["*"]  # Configure appropriately
 )
 
-# Add metrics middleware
-app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)
+# Skip metrics middleware for now
+logger.info("Metrics middleware skipped")
 
 
 # Add exception handling middleware
@@ -190,8 +178,8 @@ async def exception_handling_middleware(request: Request, call_next):
 app.include_router(health_router, prefix="/health", tags=["Health"])
 app.include_router(v1_router, prefix="/api/v1", tags=["API v1"])
 
-# Add metrics endpoint
-app.mount("/metrics", create_metrics_endpoint())
+# Skip metrics endpoint for now
+logger.info("Metrics endpoint skipped")
 
 
 # Root endpoint
