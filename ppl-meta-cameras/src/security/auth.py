@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from passlib.context import CryptContext
@@ -233,6 +233,66 @@ async def get_current_user(
     return auth_service.verify_token(credentials.credentials)
 
 
+async def get_current_user_flexible(
+    request: Request,
+) -> Dict:
+    """Get current authenticated user - supports header and query param auth."""
+
+    auth_token = None
+
+    # Try to get token from Authorization header first
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        auth_token = auth_header[7:]  # Remove "Bearer " prefix
+
+    # Fall back to query parameter
+    if not auth_token:
+        auth_token = request.query_params.get("token")
+
+    if not auth_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return auth_service.verify_token(auth_token)
+
+
+def require_permission_flexible(permission: str):
+    """Permission factory supporting both header and query param auth."""
+
+    async def permission_checker(request: Request) -> Dict:
+
+        auth_token = None
+
+        # Try to get token from Authorization header first
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            auth_token = auth_header[7:]  # Remove "Bearer " prefix
+
+        # Fall back to query parameter
+        if not auth_token:
+            auth_token = request.query_params.get("token")
+
+        if not auth_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication credentials required",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if not auth_service.has_permission(auth_token, permission):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Permission '{permission}' required",
+            )
+
+        return auth_service.verify_token(auth_token)
+
+    return permission_checker
+
+
 def require_permission(permission: str):
     """Dependency factory to require specific permission."""
 
@@ -265,6 +325,9 @@ require_start_stream = require_permission(CameraPermission.START_STREAM)
 require_view_stream = require_permission(CameraPermission.VIEW_STREAM)
 require_start_recording = require_permission(CameraPermission.START_RECORDING)
 require_admin_cameras = require_permission(CameraPermission.ADMIN_CAMERAS)
+
+# Flexible permission dependencies (support query params for browser compatibility)
+require_view_stream_flexible = require_permission_flexible(CameraPermission.VIEW_STREAM)
 
 
 def create_demo_token(role: str = "administrator") -> str:

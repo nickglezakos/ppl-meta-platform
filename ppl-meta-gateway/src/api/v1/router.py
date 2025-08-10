@@ -51,7 +51,7 @@ async def _stream_proxy_response(target_url: str, headers: dict, query_params):
 
 
 # JWT Configuration (should match Node service config)
-JWT_SECRET_KEY = "default-secret-key-change-in-production"
+JWT_SECRET_KEY = "RA6XfYJZqhz-_MAbGMhGCoQz1KGIKecLTb3RkLVOUr4"
 JWT_ALGORITHM = "HS256"
 
 
@@ -88,6 +88,7 @@ SERVICES = {
     "media": "http://localhost:8000",
     "orchestrator": "http://localhost:8002",
     "vision": "http://localhost:8003",
+    "cameras": "http://localhost:8005",
 }
 
 # Add validation support
@@ -661,3 +662,166 @@ async def detect_faces(request: Request):
 async def get_video_frame_faces(request: Request):
     """Proxy video frame face detection to Vision service."""
     return await _proxy_to_vision_service(request)
+
+
+async def _proxy_to_cameras_service(request: Request) -> Response:
+    """Helper function to proxy requests to the Cameras service."""
+    try:
+        # Get the original path and method
+        path = str(request.url.path)
+        method = request.method
+
+        # Construct the target URL
+        target_url = f"{SERVICES['cameras']}{path}"
+
+        # Get request body if present
+        body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
+            body = await request.body()
+
+        # Get headers (exclude host to avoid conflicts)
+        headers = dict(request.headers)
+        headers.pop("host", None)
+
+        # Make the proxy request
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.request(
+                method=method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                params=dict(request.query_params),
+            )
+
+            # Return the raw response for cameras content
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get("content-type", "application/json"),
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Cameras service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal cameras proxy error: {str(e)}"
+        )
+
+
+# Cameras Service Routes
+@api_router.get("/cameras")
+async def get_cameras(request: Request):
+    """Proxy get cameras to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/")
+async def get_cameras_with_slash(request: Request):
+    """Proxy get cameras to Cameras service (with trailing slash)."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/detect")
+async def detect_cameras_post(request: Request):
+    """Proxy camera detection to Cameras service (POST method)."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/detect")
+async def detect_cameras(request: Request):
+    """Proxy camera detection to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/{camera_id}")
+async def get_camera(request: Request):
+    """Proxy get camera by ID to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.put("/cameras/{camera_id}")
+async def update_camera(request: Request):
+    """Proxy update camera to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.delete("/cameras/{camera_id}")
+async def delete_camera(request: Request):
+    """Proxy delete camera to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/{camera_id}/snapshot")
+async def capture_snapshot(request: Request):
+    """Proxy capture camera snapshot to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/{camera_id}/connect")
+async def connect_camera(request: Request):
+    """Proxy camera connection to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/{camera_id}/disconnect")
+async def disconnect_camera(request: Request):
+    """Proxy camera disconnection to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/active")
+async def get_active_cameras(request: Request):
+    """Proxy get active cameras to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/disconnect-all")
+async def disconnect_all_cameras(request: Request):
+    """Proxy disconnect all cameras to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+# Streaming Service Routes
+@api_router.post("/streaming/{device_id}/start")
+async def start_streaming(request: Request):
+    """Proxy start streaming to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/streaming/{device_id}/stop")
+async def stop_streaming(request: Request):
+    """Proxy stop streaming to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/streaming/{device_id}/status")
+async def get_streaming_status(request: Request):
+    """Proxy get streaming status to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/streaming/{device_id}/snapshot")
+async def get_streaming_snapshot(request: Request):
+    """Proxy get streaming snapshot to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/streaming/{device_id}/video")
+async def get_streaming_video(request: Request):
+    """Proxy get streaming video to Cameras service."""
+    return await _proxy_to_cameras_service(request)

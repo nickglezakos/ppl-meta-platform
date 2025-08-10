@@ -59,6 +59,9 @@ class ApiClient {
   /// Get current authentication token
   String? get authToken => _authToken;
 
+  /// Get base URL
+  String get baseUrl => _dio.options.baseUrl;
+
   /// Clear authentication token
   void clearAuthToken() {
     _authToken = null;

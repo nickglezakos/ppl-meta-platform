@@ -180,6 +180,14 @@ class HomeScreen extends ConsumerWidget {
                     },
                   ),
                   _ActionCard(
+                    icon: Icons.videocam,
+                    title: 'Cameras',
+                    subtitle: 'Manage live cameras',
+                    onTap: () {
+                      context.go('/cameras');
+                    },
+                  ),
+                  _ActionCard(
                     icon: Icons.collections,
                     title: 'Collections',
                     subtitle: 'Organize your media',

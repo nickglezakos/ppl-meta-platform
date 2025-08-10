@@ -7,6 +7,7 @@ class AppConfig {
   static AppConfig get instance => _instance!;
   
   final String apiBaseUrl;
+  final String cameraServiceUrl;
   final String environment;
   final String logLevel;
   final bool cacheEnabled;
@@ -14,6 +15,7 @@ class AppConfig {
   
   AppConfig._({
     required this.apiBaseUrl,
+    required this.cameraServiceUrl,
     required this.environment,
     required this.logLevel,
     required this.cacheEnabled,
@@ -27,6 +29,7 @@ class AppConfig {
       
       _instance = AppConfig._(
         apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost:8080',
+        cameraServiceUrl: config['CAMERA_SERVICE_URL'] ?? 'http://localhost:8005',
         environment: config['ENVIRONMENT'] ?? 'development',
         logLevel: config['LOG_LEVEL'] ?? 'debug',
         cacheEnabled: config['CACHE_ENABLED'] ?? true,
@@ -37,6 +40,7 @@ class AppConfig {
       print('Warning: Could not load config file, using defaults: $e');
       _instance = AppConfig._(
         apiBaseUrl: 'http://localhost:8080',
+        cameraServiceUrl: 'http://localhost:8005',
         environment: 'development',
         logLevel: 'debug',
         cacheEnabled: true,
@@ -50,6 +54,10 @@ class AppConfig {
   String get usersEndpoint => '$apiBaseUrl/api/v1/users';
   String get mediaEndpoint => '$apiBaseUrl/api/v1/media';
   String get healthEndpoint => '$apiBaseUrl/api/v1/health';
+  
+  // Camera Service Endpoints  
+  String get cameraStreamEndpoint => '$cameraServiceUrl/api/v1/streaming';
+  String get cameraSnapshotEndpoint => '$cameraServiceUrl/api/v1/streaming';
   
   bool get isDevelopment => environment == 'development';
   bool get isStaging => environment == 'staging';

@@ -10,12 +10,13 @@ from typing import Dict
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from src.security.auth import (
     get_current_user,
+    get_current_user_flexible,
     require_start_stream,
-    require_view_stream,
+    require_view_stream_flexible,
 )
 from src.services.camera_detection import camera_service
 
@@ -61,11 +62,11 @@ async def start_stream(
         )
 
 
-@router.get("/{device_id}/video", dependencies=[Depends(require_view_stream)])
+@router.get("/{device_id}/video")
 async def video_stream(
     device_id: str,
     quality: str = "medium",
-    current_user: Dict = Depends(get_current_user),
+    current_user: Dict = Depends(require_view_stream_flexible),
 ):
     """Stream video from camera."""
 
@@ -149,19 +150,24 @@ async def video_stream(
         )
 
 
-@router.get("/{device_id}/snapshot", dependencies=[Depends(require_view_stream)])
-async def capture_snapshot(
-    device_id: str, current_user: Dict = Depends(get_current_user)
-) -> Dict:
+@router.get(
+    "/{device_id}/snapshot", dependencies=[Depends(require_view_stream_flexible)]
+)
+async def capture_snapshot(request: Request, device_id: str) -> Dict:
     """Capture a single snapshot from camera."""
 
     try:
+        # Get current user from request
+        current_user = await get_current_user_flexible(request)
+
         # Capture frame
         result = await camera_service.capture_frame(device_id)
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Camera {device_id} not connected or failed to capture frame",
+                detail=(
+                    f"Camera {device_id} not connected or " "failed to capture frame"
+                ),
             )
 
         ret, frame = result
@@ -173,10 +179,11 @@ async def capture_snapshot(
 
         # Encode frame as base64 JPEG
         _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        frame_base64 = base64.b64encode(buffer).decode("utf-8")
+        frame_base64 = base64.b64encode(buffer.tobytes()).decode("utf-8")
 
         logger.info(
-            f"User {current_user.get('sub')} captured snapshot from camera {device_id}"
+            f"User {current_user.get('sub')} captured snapshot "
+            f"from camera {device_id}"
         )
 
         return {

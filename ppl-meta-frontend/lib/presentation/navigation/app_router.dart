@@ -7,6 +7,8 @@ import '../screens/auth/login_screen.dart';
 import '../screens/auth/register_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/users/users_screen.dart';
+import '../screens/cameras/cameras_screen.dart';
+import '../screens/cameras/camera_detail_screen.dart';
 import '../../screens/upload_screen.dart';
 import '../../screens/gallery_screen.dart';
 import '../../screens/analytics_screen.dart';
@@ -98,6 +100,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProviderScreenWrapper(
           child: UsersScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/cameras',
+        name: 'cameras',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: CamerasScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/cameras/:cameraId',
+        name: 'camera-detail',
+        builder: (context, state) {
+          final cameraId = state.pathParameters['cameraId']!;
+          return ProviderScreenWrapper(
+            child: CameraDetailScreen(cameraId: cameraId),
+          );
+        },
       ),
       GoRoute(
         path: '/media-preview',
