@@ -56,8 +56,8 @@ class AppConfig {
   String get healthEndpoint => '$apiBaseUrl/api/v1/health';
   
   // Camera Service Endpoints  
-  String get cameraStreamEndpoint => '$cameraServiceUrl/cameras/api/v1/streaming';
-  String get cameraSnapshotEndpoint => '$cameraServiceUrl/cameras/api/v1/streaming';
+  String get cameraStreamEndpoint => '$cameraServiceUrl/api/v1/streaming';
+  String get cameraSnapshotEndpoint => '$cameraServiceUrl/api/v1/streaming';
   
   bool get isDevelopment => environment == 'development';
   bool get isStaging => environment == 'staging';
