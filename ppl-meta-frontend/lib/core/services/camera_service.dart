@@ -38,6 +38,7 @@ class CameraService {
 
   CameraService(this._apiClient) {
     // Create dedicated camera service API client
+    print('Camera service baseUrl: ${AppConfig.instance.cameraServiceUrl}');
     _cameraApiClient = Dio(BaseOptions(
       baseUrl: AppConfig.instance.cameraServiceUrl,
       connectTimeout: const Duration(seconds: 10),
@@ -166,6 +167,24 @@ class CameraService {
   String getVideoStreamUrl(String cameraId) {
     // This follows the pattern from the API guide: /api/v1/streaming/{device_id}/video
     return '${AppConfig.instance.cameraServiceUrl}/api/v1/streaming/$cameraId/video';
+  }
+
+  /// Create a streaming session for browser-compatible authentication
+  Future<Map<String, dynamic>?> createStreamingSession(String cameraId) async {
+    try {
+      final response = await _cameraApiClient.post<Map<String, dynamic>>(
+        '/api/v1/auth/streaming-session/$cameraId',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data!;
+      } else {
+        throw CameraException('Failed to create streaming session: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error creating streaming session: $e');
+      return null;
+    }
   }
 
   /// Stop streaming for a camera
@@ -358,6 +377,9 @@ class CameraService {
   /// Get camera capabilities including supported resolutions
   Future<CameraCapabilities> getCameraCapabilities(String cameraId) async {
     try {
+      final fullUrl = '${AppConfig.instance.cameraServiceUrl}/api/v1/streaming/$cameraId/capabilities';
+      print('Requesting capabilities from: $fullUrl');
+      
       final response = await _cameraApiClient.get<Map<String, dynamic>>(
         '/api/v1/streaming/$cameraId/capabilities', // Direct to cameras service
       );
@@ -368,8 +390,11 @@ class CameraService {
 
       return CameraCapabilities.fromJson(response.data!);
     } on DioException catch (e) {
+      print('DioException in getCameraCapabilities: ${e.message}');
+      print('Request URL: ${e.requestOptions.uri}');
       throw _handleDioError(e);
     } catch (e) {
+      print('Error in getCameraCapabilities: $e');
       throw CameraException('Failed to get camera capabilities: $e');
     }
   }

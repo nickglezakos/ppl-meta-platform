@@ -246,8 +246,16 @@ class CameraDetectionService:
 
         camera_info = self.detected_cameras.get(device_id)
         if not camera_info:
-            logger.error(f"Camera {device_id} not found in detected cameras")
-            return None
+            logger.warning(
+                f"Camera {device_id} not found in detected cameras, attempting to detect..."
+            )
+            # Try to detect cameras first
+            await self.detect_available_cameras()
+            camera_info = self.detected_cameras.get(device_id)
+
+            if not camera_info:
+                logger.error(f"Camera {device_id} still not found after detection")
+                return None
 
         try:
             import cv2

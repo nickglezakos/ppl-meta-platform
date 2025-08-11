@@ -19,6 +19,7 @@ from src.security.auth import (
     require_view_stream_flexible,
 )
 from src.services.camera_detection import camera_service
+from src.services.session_auth import session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -201,6 +202,103 @@ async def video_stream(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to setup video stream",
+        )
+
+
+@router.get("/{device_id}/video-session/{session_id}")
+async def video_stream_session(
+    device_id: str, session_id: str, quality: str = "medium"
+):
+    """Stream video from camera using session-based authentication (browser-compatible)."""
+
+    # Validate session
+    session = session_manager.validate_session(session_id, device_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired streaming session",
+        )
+
+    async def generate_frames():
+        """Generate video frames for streaming."""
+        try:
+            cap = await camera_service.get_camera_stream(device_id)
+            if not cap:
+                logger.error("Camera %s not connected for streaming", device_id)
+                return
+
+            # Set quality parameters
+            quality_settings = {
+                "low": (320, 240, 15),
+                "medium": (640, 480, 30),
+                "high": (1280, 720, 30),
+                "ultra": (1920, 1080, 30),
+            }
+
+            width, height, fps = quality_settings.get(
+                quality, quality_settings["medium"]
+            )
+
+            # Set camera properties
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            cap.set(cv2.CAP_PROP_FPS, fps)
+
+            logger.info(
+                "Session %s accessing video stream for camera %s with quality %s",
+                session_id[:16] + "...",
+                device_id,
+                quality,
+            )
+
+            while True:
+                # Validate session is still active (check every few frames)
+                if not session_manager.validate_session(session_id, device_id):
+                    logger.warning(
+                        "Session %s expired during streaming", session_id[:16] + "..."
+                    )
+                    break
+
+                ret, frame = cap.read()
+                if not ret:
+                    logger.warning("Failed to read frame from camera %s", device_id)
+                    await asyncio.sleep(0.1)
+                    continue
+
+                # Encode frame as JPEG
+                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                frame_bytes = buffer.tobytes()
+
+                # Yield frame in multipart format
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+
+                # Control frame rate
+                await asyncio.sleep(1.0 / fps)
+
+        except Exception as e:
+            logger.error(
+                "Error in session video stream for camera %s: %s", device_id, str(e)
+            )
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: text/plain\r\n\r\n"
+                b"Stream error occurred\r\n"
+            )
+
+    try:
+        return StreamingResponse(
+            generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame"
+        )
+    except Exception as e:
+        logger.error(
+            "Error setting up session video stream for camera %s: %s", device_id, str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error setting up session video stream for camera {device_id}: {e}",
         )
 
 

@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import 'dart:async';
-import '../../../core/api/api_client.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/camera_providers.dart';
+import '../../../core/services/camera_service.dart' show cameraServiceProvider;
 
 class CameraStreamPlayer extends ConsumerStatefulWidget {
   final String cameraId;
@@ -108,20 +108,29 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
 
   Future<String?> _prepareAuthenticatedUrl() async {
     try {
-      final apiClient = ref.read(apiClientProvider);
-      final token = apiClient.authToken;
+      final cameraService = ref.read(cameraServiceProvider);
       
-      if (token == null) {
-        print('No auth token available');
+      // Create a streaming session with the camera service
+      print('Creating streaming session for camera ${widget.cameraId}...');
+      
+      final sessionData = await cameraService.createStreamingSession(widget.cameraId);
+      
+      if (sessionData != null) {
+        final streamingUrl = sessionData['streaming_url'];
+        
+        print('Streaming session created successfully');
+        print('Session URL: $streamingUrl');
+        
+        // Return the full URL with the camera service base
+        final baseUrl = AppConfig.instance.cameraServiceUrl;
+        final fullStreamingUrl = '$baseUrl$streamingUrl';
+        
+        print('Full streaming URL: $fullStreamingUrl');
+        return fullStreamingUrl;
+      } else {
+        print('Failed to create streaming session');
         return null;
       }
-      
-      // Use direct camera service endpoint with query parameter authentication
-      final baseUrl = AppConfig.instance.cameraStreamEndpoint;
-      final authenticatedUrl = '$baseUrl/${widget.cameraId}/video?token=$token';
-      
-      print('Prepared authenticated camera stream URL: $authenticatedUrl');
-      return authenticatedUrl;
     } catch (e) {
       print('Error preparing authenticated URL: $e');
       return null;
@@ -264,7 +273,6 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
               
               // Create the HTML img element optimized for MJPEG streams
               final imgElement = html.ImageElement()
-                ..src = streamUrl
                 ..style.width = '100%'
                 ..style.height = '100%'
                 ..style.objectFit = 'contain'
@@ -282,6 +290,11 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
               imgElement.setAttribute('cache-control', 'no-cache');
               imgElement.setAttribute('pragma', 'no-cache');
               imgElement.setAttribute('expires', '0');
+              
+              // Since we're using session-based URLs, we can directly set the src
+              // The URL already contains the session ID for authentication
+              print('Setting stream URL directly (session-based): $streamUrl');
+              imgElement.src = streamUrl;
               
               // Append img to container
               containerDiv.append(imgElement);

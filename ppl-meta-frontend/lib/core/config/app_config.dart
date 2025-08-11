@@ -40,7 +40,7 @@ class AppConfig {
       print('Warning: Could not load config file, using defaults: $e');
       _instance = AppConfig._(
         apiBaseUrl: 'http://localhost',
-        cameraServiceUrl: 'http://localhost',
+        cameraServiceUrl: 'http://localhost:8005',
         environment: 'development',
         logLevel: 'debug',
         cacheEnabled: true,
