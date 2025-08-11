@@ -288,6 +288,96 @@ final cameraStreamProvider = StateNotifierProvider<CameraStreamNotifier, CameraS
 
 **🚀 STREAMING READY**: ✅ COMPLETED - Live video streaming is fully functional with professional-grade controls!
 
+#### **🔮 CAM-FLUTTER-003.1: Enhanced Snapshot Resolution Control** 
+**Priority**: 🟡 HIGH  
+**Status**: 📋 DOCUMENTED REQUIREMENT  
+**Target Completion**: August 15, 2025  
+**Dependencies**: Completed CAM-FLUTTER-003 Live Streaming
+
+**Description**: Implement independent snapshot resolution control allowing high-resolution snapshots even when streaming at lower resolutions.
+
+**Business Case**: Professional camera systems commonly stream at lower resolutions for bandwidth efficiency (e.g., 1MP streaming) while capturing high-resolution snapshots (e.g., 12MP photos) for archival and documentation purposes.
+
+**Technical Requirements**:
+- **Dual-Resolution Architecture**: Separate camera connections for streaming vs. snapshots
+- **Camera Native Resolution Detection**: Detect maximum supported resolutions for each camera
+- **Custom Resolution API**: Enhanced POST `/api/v1/streaming/{device_id}/snapshot` endpoint
+- **Quality Control**: Custom JPEG quality settings (70-100%)
+- **Format Support**: JPEG, PNG format options
+
+**Implementation Scope**:
+
+1. **Backend Camera Service Enhancement**:
+```python
+# Enhanced snapshot endpoint with custom settings
+@router.post("/{device_id}/snapshot")
+async def capture_custom_snapshot(
+    device_id: str,
+    settings: SnapshotSettings,
+    current_user: Dict = Depends(get_current_user)
+) -> Dict:
+    """Capture snapshot with custom resolution and quality."""
+    
+    # Key features:
+    # - Independent resolution from streaming (e.g., 12MP snapshot from 1MP stream)
+    # - Custom quality settings (70-100%)
+    # - Multiple format support (JPEG, PNG)
+    # - Camera capability detection and validation
+```
+
+2. **Camera Capability Detection**:
+```python
+async def get_camera_native_capabilities(device_id: str) -> Dict:
+    """Detect camera's maximum supported resolutions."""
+    # Test resolutions: 4K (3840x2160), Full HD (1920x1080), HD (1280x720)
+    # Return maximum supported resolution for snapshot capture
+```
+
+3. **Frontend Snapshot Settings UI**:
+```dart
+class SnapshotSettings {
+  final String resolution;  // "max", "1920x1080", "1280x720", etc.
+  final int quality;        // 70-100 (JPEG quality)
+  final String format;      // "JPEG", "PNG"
+}
+
+class SnapshotSettingsDialog extends StatefulWidget {
+  // Resolution dropdown: Auto-detect available resolutions
+  // Quality slider: 70-100% with bandwidth impact indicators
+  // Format selection: JPEG (smaller) vs PNG (lossless)
+}
+```
+
+**Expected User Workflow**:
+1. **Stream Setup**: User starts camera streaming at 640x480 for real-time monitoring
+2. **Snapshot Trigger**: User taps snapshot button during streaming
+3. **Settings Dialog**: Optional custom settings dialog appears
+4. **High-Res Capture**: System temporarily switches to maximum resolution for snapshot
+5. **Result**: 12MP snapshot saved while streaming continues at 640x480
+
+**Technical Benefits**:
+- **Bandwidth Efficiency**: Low-resolution streaming for real-time viewing
+- **Archive Quality**: High-resolution snapshots for documentation
+- **Professional Use**: Meets surveillance and documentation industry standards
+- **User Choice**: Flexible quality vs. file size trade-offs
+
+**API Integration Points**:
+- Enhanced `/api/v1/streaming/{device_id}/snapshot` POST endpoint
+- Camera capabilities detection endpoint
+- Frontend snapshot settings persistence
+- Gallery integration with resolution metadata
+
+**Acceptance Criteria**:
+- [ ] Snapshot resolution independent of streaming resolution
+- [ ] Camera maximum resolution auto-detection
+- [ ] Custom quality settings (70-100%)
+- [ ] Format selection (JPEG/PNG)
+- [ ] Settings persistence across sessions
+- [ ] Performance optimization (minimal streaming interruption)
+- [ ] UI indicators showing snapshot resolution vs. stream resolution
+
+**Priority Justification**: HIGH priority as this is a fundamental professional camera feature that distinguishes our platform from basic webcam applications.
+
 ---
 
 ## 🟡 **HIGH PRIORITY ISSUES**

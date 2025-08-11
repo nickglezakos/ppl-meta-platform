@@ -49,7 +49,7 @@ async def start_stream(
             "device_id": device_id,
             "status": "streaming",
             "message": f"Stream started for camera {device_id}",
-            "stream_url": f"/api/v1/streaming/{device_id}/video",
+            "stream_url": f"/cameras/api/v1/streaming/{device_id}/video",
         }
 
     except HTTPException:
@@ -59,6 +59,60 @@ async def start_stream(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start stream",
+        )
+
+
+@router.get("/{device_id}/status")
+async def get_streaming_status(
+    device_id: str,
+    current_user: Dict = Depends(require_view_stream_flexible),
+) -> Dict:
+    """Get streaming status for a specific camera."""
+
+    try:
+        # Check if camera is connected and streaming
+        cap = await camera_service.get_camera_stream(device_id)
+        is_streaming = cap is not None and cap.isOpened()
+
+        # Get camera info from detected cameras
+        camera_info = camera_service.detected_cameras.get(device_id)
+
+        status_data = {
+            "device_id": device_id,
+            "is_streaming": is_streaming,
+            "status": "streaming" if is_streaming else "stopped",
+        }
+
+        if is_streaming and cap:
+            # Get current stream properties
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+            status_data.update(
+                {
+                    "stream_url": f"/cameras/api/v1/streaming/" f"{device_id}/video",
+                    "resolution": f"{width}x{height}",
+                    "fps": fps,
+                }
+            )
+
+        if camera_info:
+            status_data.update(
+                {
+                    "camera_name": camera_info.get("name", device_id),
+                    "camera_type": camera_info.get("type", "Unknown"),
+                }
+            )
+
+        logger.debug(f"Streaming status for {device_id}: {status_data}")
+        return status_data
+
+    except Exception as e:
+        logger.error(f"Error getting streaming status for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get streaming status for {device_id}",
         )
 
 
@@ -147,6 +201,190 @@ async def video_stream(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to setup video stream",
+        )
+
+
+@router.post("/{device_id}/snapshot")
+async def capture_custom_snapshot(
+    request: Request, device_id: str, settings: Dict = None
+) -> Dict:
+    """Capture snapshot with custom resolution and quality settings."""
+
+    try:
+        # Get current user from request
+        current_user = await get_current_user_flexible(request)
+
+        # Parse request body for settings
+        if settings is None:
+            try:
+                body = await request.body()
+                if body:
+                    import json
+
+                    settings = json.loads(body.decode())
+                else:
+                    settings = {}
+            except Exception:
+                settings = {}
+
+        # Default settings
+        default_settings = {
+            "resolution": "max",
+            "quality": 95,
+            "format": "JPEG",
+            "save_to_file": True,
+            "filename": None,
+        }
+
+        # Merge with provided settings
+        final_settings = {**default_settings, **settings}
+
+        # Validate settings
+        from src.models.snapshot_settings import SnapshotSettings
+
+        try:
+            validated_settings = SnapshotSettings(**final_settings)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid snapshot settings: {e}",
+            )
+
+        # Capture high-resolution frame
+        result = await camera_service.capture_high_res_snapshot(
+            device_id, validated_settings.dict()
+        )
+
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not connected or failed to capture",
+            )
+
+        ret, frame, metadata = result
+        if not ret or frame is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to capture high-resolution frame",
+            )
+
+        # Encode frame with custom quality and format
+        if validated_settings.format.upper() == "JPEG":
+            encode_params = [cv2.IMWRITE_JPEG_QUALITY, validated_settings.quality]
+            extension = ".jpg"
+            mime_type = "image/jpeg"
+        elif validated_settings.format.upper() == "PNG":
+            # PNG compression level (0-9, where 9 is max compression)
+            png_compression = max(0, min(9, (100 - validated_settings.quality) // 10))
+            encode_params = [cv2.IMWRITE_PNG_COMPRESSION, png_compression]
+            extension = ".png"
+            mime_type = "image/png"
+        else:  # BMP
+            encode_params = []
+            extension = ".bmp"
+            mime_type = "image/bmp"
+
+        _, buffer = cv2.imencode(extension, frame, encode_params)
+        frame_base64 = base64.b64encode(buffer.tobytes()).decode("utf-8")
+
+        # Generate filename
+        import time
+
+        if validated_settings.filename:
+            filename = validated_settings.filename
+            if not filename.endswith(extension):
+                filename += extension
+        else:
+            timestamp = int(time.time())
+            filename = f"snapshot_{device_id}_{timestamp}{extension}"
+
+        # Save to file if requested
+        file_path = None
+        if validated_settings.save_to_file:
+            import os
+
+            snapshots_dir = "snapshots"
+            os.makedirs(snapshots_dir, exist_ok=True)
+            file_path = os.path.join(snapshots_dir, filename)
+
+            with open(file_path, "wb") as f:
+                f.write(buffer.tobytes())
+
+        # Get actual resolution from frame
+        actual_height, actual_width = frame.shape[:2]
+
+        logger.info(
+            f"User {current_user.get('sub')} captured enhanced snapshot "
+            f"from camera {device_id} at {actual_width}x{actual_height}"
+        )
+
+        return {
+            "status": "success",
+            "message": "Enhanced snapshot captured successfully",
+            "device_id": device_id,
+            "snapshot_data": {
+                "filename": filename,
+                "file_size_bytes": len(buffer.tobytes()),
+                "resolution": {"width": actual_width, "height": actual_height},
+                "format": validated_settings.format.upper(),
+                "quality": validated_settings.quality,
+                "captured_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "settings": validated_settings.dict(),
+                "metadata": metadata,
+            },
+            "base64_image": f"data:{mime_type};base64,{frame_base64}",
+            "download_url": (
+                f"/api/v1/streaming/{device_id}/snapshot/{filename}"
+                if file_path
+                else None
+            ),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error capturing enhanced snapshot from camera {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to capture enhanced snapshot",
+        )
+
+
+@router.get("/{device_id}/capabilities")
+async def get_camera_capabilities(request: Request, device_id: str) -> Dict:
+    """Get camera capabilities including supported resolutions."""
+
+    try:
+        # Get current user from request
+        current_user = await get_current_user_flexible(request)
+
+        # Get camera capabilities
+        capabilities = await camera_service.get_camera_capabilities(device_id)
+
+        if not capabilities:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found or capabilities unavailable",
+            )
+
+        logger.info(
+            f"User {current_user.get('sub')} requested capabilities "
+            f"for camera {device_id}"
+        )
+
+        return {
+            "status": "success",
+            "device_id": device_id,
+            "capabilities": capabilities,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting capabilities for camera {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get camera capabilities",
         )
 
 

@@ -56,7 +56,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
 
   AuthNotifier(this._authService) : super(const AuthState()) {
-    _checkAuthStatus();
+    _initializeAuth();
+  }
+
+  /// Initialize authentication service and check current status
+  Future<void> _initializeAuth() async {
+    await _authService.initialize();
+    await _checkAuthStatus();
   }
 
   /// Check current authentication status

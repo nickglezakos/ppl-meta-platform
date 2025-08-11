@@ -28,8 +28,8 @@ class AppConfig {
       final config = json.decode(configString);
       
       _instance = AppConfig._(
-        apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost:8080',
-        cameraServiceUrl: config['CAMERA_SERVICE_URL'] ?? 'http://localhost:8005',
+        apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost',
+        cameraServiceUrl: config['CAMERA_SERVICE_URL'] ?? 'http://localhost',
         environment: config['ENVIRONMENT'] ?? 'development',
         logLevel: config['LOG_LEVEL'] ?? 'debug',
         cacheEnabled: config['CACHE_ENABLED'] ?? true,
@@ -39,8 +39,8 @@ class AppConfig {
       // Fallback configuration if asset loading fails
       print('Warning: Could not load config file, using defaults: $e');
       _instance = AppConfig._(
-        apiBaseUrl: 'http://localhost:8080',
-        cameraServiceUrl: 'http://localhost:8005',
+        apiBaseUrl: 'http://localhost',
+        cameraServiceUrl: 'http://localhost',
         environment: 'development',
         logLevel: 'debug',
         cacheEnabled: true,
@@ -56,8 +56,8 @@ class AppConfig {
   String get healthEndpoint => '$apiBaseUrl/api/v1/health';
   
   // Camera Service Endpoints  
-  String get cameraStreamEndpoint => '$cameraServiceUrl/api/v1/streaming';
-  String get cameraSnapshotEndpoint => '$cameraServiceUrl/api/v1/streaming';
+  String get cameraStreamEndpoint => '$cameraServiceUrl/cameras/api/v1/streaming';
+  String get cameraSnapshotEndpoint => '$cameraServiceUrl/cameras/api/v1/streaming';
   
   bool get isDevelopment => environment == 'development';
   bool get isStaging => environment == 'staging';

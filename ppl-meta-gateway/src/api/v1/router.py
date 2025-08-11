@@ -821,6 +821,12 @@ async def get_streaming_snapshot(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+@api_router.post("/streaming/{device_id}/snapshot")
+async def post_streaming_snapshot(request: Request):
+    """Proxy enhanced streaming snapshot to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
 @api_router.get("/streaming/{device_id}/video")
 async def get_streaming_video(request: Request):
     """Proxy get streaming video to Cameras service."""

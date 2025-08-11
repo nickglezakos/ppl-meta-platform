@@ -241,6 +241,212 @@ class CameraDetectionService:
 
         return saved_count
 
+    async def get_camera_capabilities(self, device_id: str) -> Optional[Dict]:
+        """Get camera's native capabilities including maximum resolution."""
+
+        camera_info = self.detected_cameras.get(device_id)
+        if not camera_info:
+            logger.error(f"Camera {device_id} not found in detected cameras")
+            return None
+
+        try:
+            import cv2
+
+            index = camera_info.get("index", 0)
+
+            # Test different resolutions to find maximum supported
+            test_resolutions = [
+                (3840, 2160),  # 4K UHD
+                (2560, 1440),  # 2K QHD
+                (1920, 1080),  # Full HD
+                (1280, 720),  # HD
+                (1024, 768),  # XGA
+                (800, 600),  # SVGA
+                (640, 480),  # VGA
+            ]
+
+            supported_resolutions = []
+            max_resolution = None
+
+            # Create temporary connection for testing
+            cap = cv2.VideoCapture(index)
+            if not cap.isOpened():
+                logger.error(
+                    f"Failed to open camera {device_id} for capability detection"
+                )
+                return None
+
+            for width, height in test_resolutions:
+                # Set resolution
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
+                # Read actual resolution
+                actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                # Test if we can actually capture at this resolution
+                ret, frame = cap.read()
+                if ret and frame is not None:
+                    if actual_width == width and actual_height == height:
+                        resolution_info = {
+                            "width": actual_width,
+                            "height": actual_height,
+                        }
+                        supported_resolutions.append(resolution_info)
+
+                        # Set max resolution to the first (highest) working resolution
+                        if max_resolution is None:
+                            max_resolution = resolution_info
+
+                        logger.info(f"Camera {device_id} supports {width}x{height}")
+                    else:
+                        logger.debug(
+                            f"Camera {device_id} requested {width}x{height}, got {actual_width}x{actual_height}"
+                        )
+                else:
+                    logger.debug(
+                        f"Camera {device_id} failed to capture at {width}x{height}"
+                    )
+
+            cap.release()
+
+            # Get current stream resolution if active
+            current_stream_resolution = None
+            active_cap = self.active_connections.get(device_id)
+            if active_cap:
+                current_width = int(active_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                current_height = int(active_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                current_stream_resolution = {
+                    "width": current_width,
+                    "height": current_height,
+                }
+
+            capabilities = {
+                "device_id": device_id,
+                "max_resolution": max_resolution or {"width": 640, "height": 480},
+                "supported_resolutions": supported_resolutions
+                or [{"width": 640, "height": 480}],
+                "supports_formats": ["JPEG", "PNG", "BMP"],
+                "current_stream_resolution": current_stream_resolution,
+            }
+
+            logger.info(
+                f"Camera {device_id} capabilities: max {max_resolution}, {len(supported_resolutions)} supported"
+            )
+            return capabilities
+
+        except Exception as e:
+            logger.error(f"Error detecting capabilities for camera {device_id}: {e}")
+            return None
+
+    async def capture_high_res_snapshot(
+        self, device_id: str, settings: Dict
+    ) -> Optional[Tuple[bool, any, Dict]]:
+        """Capture snapshot at specified resolution, independent of streaming resolution."""
+
+        try:
+            import time
+
+            import cv2
+
+            camera_info = self.detected_cameras.get(device_id)
+            if not camera_info:
+                logger.error(f"Camera {device_id} not found")
+                return None
+
+            index = camera_info.get("index", 0)
+
+            # Determine target resolution
+            resolution = settings.get("resolution", "max")
+            target_width, target_height = await self._resolve_target_resolution(
+                device_id, resolution
+            )
+
+            if not target_width or not target_height:
+                logger.error(f"Could not resolve target resolution for {device_id}")
+                return None
+
+            # Create temporary high-resolution connection
+            logger.info(
+                f"Creating high-res connection for {device_id} at {target_width}x{target_height}"
+            )
+            temp_cap = cv2.VideoCapture(index)
+
+            if not temp_cap.isOpened():
+                logger.error(f"Failed to create high-res connection for {device_id}")
+                return None
+
+            try:
+                # Set target resolution
+                temp_cap.set(cv2.CAP_PROP_FRAME_WIDTH, target_width)
+                temp_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, target_height)
+
+                # Allow camera to adjust
+                time.sleep(0.1)
+
+                # Capture frame
+                ret, frame = temp_cap.read()
+
+                if ret and frame is not None:
+                    actual_width = int(temp_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    actual_height = int(temp_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                    metadata = {
+                        "requested_resolution": f"{target_width}x{target_height}",
+                        "actual_resolution": f"{actual_width}x{actual_height}",
+                        "capture_time": time.time(),
+                        "settings": settings,
+                    }
+
+                    logger.info(
+                        f"High-res snapshot captured: {actual_width}x{actual_height}"
+                    )
+                    return (True, frame, metadata)
+                else:
+                    logger.error(f"Failed to capture high-res frame from {device_id}")
+                    return None
+
+            finally:
+                temp_cap.release()
+
+        except Exception as e:
+            logger.error(f"Error in high-res snapshot capture for {device_id}: {e}")
+            return None
+
+    async def _resolve_target_resolution(
+        self, device_id: str, resolution: str
+    ) -> Tuple[Optional[int], Optional[int]]:
+        """Resolve target resolution from settings."""
+
+        if resolution == "max":
+            # Get maximum supported resolution
+            capabilities = await self.get_camera_capabilities(device_id)
+            if capabilities and capabilities.get("max_resolution"):
+                max_res = capabilities["max_resolution"]
+                return max_res.get("width"), max_res.get("height")
+
+        elif resolution == "stream":
+            # Use current streaming resolution
+            active_cap = self.active_connections.get(device_id)
+            if active_cap:
+                width = int(active_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(active_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                return width, height
+
+        elif "x" in resolution:
+            # Parse WIDTHxHEIGHT format
+            try:
+                width, height = resolution.split("x")
+                return int(width), int(height)
+            except (ValueError, IndexError):
+                logger.error(f"Invalid resolution format: {resolution}")
+                return None, None
+
+        # Fallback to default
+        logger.warning(f"Could not resolve resolution '{resolution}', using default")
+        return 1280, 720
+
 
 # Global camera detection service instance
 camera_service = CameraDetectionService()

@@ -38,17 +38,6 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
   void initState() {
     super.initState();
     _elementId = 'camera-stream-${widget.cameraId}-${DateTime.now().millisecondsSinceEpoch}';
-    
-    // Listen to streaming state changes
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.listen<CameraStreamState>(cameraStreamProvider, (previous, next) {
-        // If streaming stopped or camera changed, clear the stream
-        if (!next.isStreaming || next.cameraId != widget.cameraId) {
-          print('Stream state changed - stopping: isStreaming=${next.isStreaming}, cameraId=${next.cameraId}');
-          _clearVideoStream();
-        }
-      });
-    });
   }
 
   @override
@@ -145,15 +134,14 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
     
     // Check if streaming has stopped or this camera is not the active one
     final isStreamingStopped = !streamState.isStreaming || 
-                              streamState.cameraId != widget.cameraId ||
-                              streamState.streamingInfo == null;
+                              streamState.cameraId != widget.cameraId;
     
     if (!_isActive || isStreamingStopped) {
       // Clear video if we haven't already
       if (_currentStreamUrl != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _clearVideoStream();
-        });
+        print('Stream state changed - stopping: isStreaming=${streamState.isStreaming}, cameraId=${streamState.cameraId}');
+        // Clear immediately instead of using post frame callback
+        _clearVideoStream();
       }
       
       return Container(

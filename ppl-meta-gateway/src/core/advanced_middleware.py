@@ -127,7 +127,14 @@ class AdvancedRateLimitMiddleware(BaseHTTPMiddleware):
 
         # Determine rate limit for this endpoint
         path = request.url.path
-        rate_string = self.strategies.get(path, self.default_rate)
+        rate_string = self.default_rate
+
+        # Check for exact match first, then prefix match
+        for strategy_path, strategy_rate in self.strategies.items():
+            if path == strategy_path or path.startswith(strategy_path):
+                rate_string = strategy_rate
+                break
+
         limit, window = self.parse_rate(rate_string)
 
         # Create rate limit key

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/providers/auth_provider.dart';
+import '../../../core/theme/app_theme.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -17,6 +18,12 @@ class HomeScreen extends ConsumerWidget {
         title: const Text('PPL Meta Platform'),
         actions: [
           PopupMenuButton<String>(
+            color: AppColors.widgetFill,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Theme.of(context).colorScheme.outline),
+            ),
+            elevation: 0,
             onSelected: (value) async {
               switch (value) {
                 case 'profile':
@@ -34,28 +41,43 @@ class HomeScreen extends ConsumerWidget {
               }
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'profile',
-                child: ListTile(
-                  leading: Icon(Icons.person),
-                  title: Text('Profile'),
-                  contentPadding: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: Container(
+                  decoration: const BoxDecoration(),
+                  child: const ListTile(
+                    leading: Icon(Icons.person),
+                    title: Text('Profile'),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'users',
-                child: ListTile(
-                  leading: Icon(Icons.people),
-                  title: Text('Users'),
-                  contentPadding: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: Container(
+                  decoration: const BoxDecoration(),
+                  child: const ListTile(
+                    leading: Icon(Icons.people),
+                    title: Text('Users'),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'logout',
-                child: ListTile(
-                  leading: Icon(Icons.logout),
-                  title: Text('Logout'),
-                  contentPadding: EdgeInsets.zero,
+                padding: EdgeInsets.zero,
+                child: Container(
+                  decoration: const BoxDecoration(),
+                  child: const ListTile(
+                    leading: Icon(Icons.logout),
+                    title: Text('Logout'),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
               ),
             ],

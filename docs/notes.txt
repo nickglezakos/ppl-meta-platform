@@ -4,7 +4,7 @@
 - **Password**: `NewPassword234!`
 
 fresh.user@example.com
-NewPassword234!
+NewPassword234! 
 
 curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
@@ -27,4 +27,6 @@ llama3.1:latest            46e0c10c039e    4.9 GB    3 days ago
 
 
 
-
+Disconnect all cameras first (/api/v1/cameras/disconnect-all)
+Re-detect cameras (/api/v1/cameras/detect?save_to_db=true)
+Then connect to the specific camera (/api/v1/cameras/{device_id}/connect)

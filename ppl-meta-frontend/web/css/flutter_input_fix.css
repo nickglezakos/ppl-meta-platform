@@ -1,0 +1,36 @@
+/* Flutter Web Input Field Fix */
+/* Override Flutter's default transparent input styling */
+
+flutter-view flt-semantics input,
+flutter-view flt-semantics textarea {
+    background-color: #1F2937 !important;
+    color: white !important;
+    border: 1px solid #374151 !important;
+    border-radius: 4px !important;
+    padding: 12px !important;
+}
+
+flutter-view flt-semantics input::placeholder,
+flutter-view flt-semantics textarea::placeholder {
+    color: rgba(255, 255, 255, 0.54) !important;
+    opacity: 1 !important;
+}
+
+flutter-view flt-semantics input:focus,
+flutter-view flt-semantics textarea:focus {
+    outline: none !important;
+    border-color: #60A5FA !important;
+    background-color: #1F2937 !important;
+}
+
+/* Force caret to be visible */
+flutter-view flt-semantics input,
+flutter-view flt-semantics textarea {
+    caret-color: white !important;
+}
+
+/* Override selection colors */
+flutter-view input::selection,
+flutter-view textarea::selection {
+    background-color: rgba(96, 165, 250, 0.3) !important;
+}

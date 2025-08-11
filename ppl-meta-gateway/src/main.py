@@ -191,6 +191,7 @@ def create_app() -> FastAPI:
             "/api/v1/register": "5/minute",
             "/api/v1/password": "3/minute",
             "/api/v1/users": "50/minute",
+            "/api/v1/streaming": "1000/minute",  # High limit for cameras
         },
     )
 

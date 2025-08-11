@@ -1,208 +1,100 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Custom color palette for PPL Meta platform
 class AppColors {
-  // Primary colors
-  static const Color primary = Color(0xFF6366F1); // Indigo-500
-  static const Color primaryLight = Color(0xFF818CF8); // Indigo-400
-  static const Color primaryDark = Color(0xFF4F46E5); // Indigo-600
-  
-  // Secondary colors
-  static const Color secondary = Color(0xFF06B6D4); // Cyan-500
-  static const Color secondaryLight = Color(0xFF22D3EE); // Cyan-400
-  static const Color secondaryDark = Color(0xFF0891B2); // Cyan-600
-  
-  // Accent colors
-  static const Color accent = Color(0xFFF59E0B); // Amber-500
-  static const Color accentLight = Color(0xFFFBBF24); // Amber-400
-  static const Color accentDark = Color(0xFFD97706); // Amber-600
-  
-  // Status colors
-  static const Color success = Color(0xFF10B981); // Emerald-500
-  static const Color warning = Color(0xFFF59E0B); // Amber-500
-  static const Color error = Color(0xFFEF4444); // Red-500
-  static const Color info = Color(0xFF3B82F6); // Blue-500
-  
-  // Neutral colors
-  static const Color white = Color(0xFFFFFFFF);
-  static const Color black = Color(0xFF000000);
-  static const Color transparent = Colors.transparent;
-  
-  // Gray scale
-  static const Color gray50 = Color(0xFFF9FAFB);
-  static const Color gray100 = Color(0xFFF3F4F6);
-  static const Color gray200 = Color(0xFFE5E7EB);
-  static const Color gray300 = Color(0xFFD1D5DB);
-  static const Color gray400 = Color(0xFF9CA3AF);
-  static const Color gray500 = Color(0xFF6B7280);
-  static const Color gray600 = Color(0xFF4B5563);
-  static const Color gray700 = Color(0xFF374151);
-  static const Color gray800 = Color(0xFF1F2937);
-  static const Color gray900 = Color(0xFF111827);
-  
-  // Surface colors
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color surfaceVariant = Color(0xFFF8FAFC);
-  static const Color background = Color(0xFFF8FAFC);
-  static const Color backgroundDark = Color(0xFF0F172A);
-  
-  // Border colors
-  static const Color border = Color(0xFFE2E8F0);
-  static const Color borderLight = Color(0xFFF1F5F9);
-  static const Color borderDark = Color(0xFFCBD5E1);
+  // Primary colors (Material 3 compatible)
+  static const Color primary = Color(0xFF1976D2);
+  static const Color secondary = Color(0xFF03DAC6);
+  static const Color accent = Color(0xFF03DAC6);
+  static const Color surface = Color(0xFF061d36);
+  static const Color surfaceVariant = Color(0xFF0c2942);
+  static const Color background = Color(0xFF061d36);
+  static const Color widgetFill = Color(0xFF041121);
+  static const Color error = Color(0xFFCF6679);
+  static const Color success = Color(0xFF4CAF50);
+  static const Color warning = Color(0xFFFFC107);
+  static const Color info = Color(0xFF2196F3);
   
   // Text colors
-  static const Color textPrimary = Color(0xFF1E293B);
-  static const Color textSecondary = Color(0xFF64748B);
-  static const Color textTertiary = Color(0xFF94A3B8);
+  static const Color textPrimary = Color(0xFFFFFFFF);
+  static const Color textSecondary = Color(0xFFBBBBBB);
+  static const Color textTertiary = Color(0xFF888888);
   static const Color textOnPrimary = Color(0xFFFFFFFF);
-  static const Color textOnSecondary = Color(0xFFFFFFFF);
   
   // Media type colors
-  static const Color imageColor = Color(0xFF8B5CF6); // Purple-500
-  static const Color videoColor = Color(0xFFEC4899); // Pink-500
-  static const Color audioColor = Color(0xFF06B6D4); // Cyan-500
-  static const Color documentColor = Color(0xFF10B981); // Emerald-500
+  static const Color imageColor = Color(0xFF4CAF50);
+  static const Color videoColor = Color(0xFF2196F3);
+  static const Color audioColor = Color(0xFF9C27B0);
+  static const Color documentColor = Color(0xFF795548);
   
-  // Upload status colors
-  static const Color uploadPending = Color(0xFF6B7280); // Gray-500
-  static const Color uploadInProgress = Color(0xFF3B82F6); // Blue-500
-  static const Color uploadCompleted = Color(0xFF10B981); // Emerald-500
-  static const Color uploadFailed = Color(0xFFEF4444); // Red-500
+  // Upload state colors
+  static const Color uploadPending = Color(0xFFFFC107);
+  static const Color uploadInProgress = Color(0xFF2196F3);
+  static const Color uploadCompleted = Color(0xFF4CAF50);
+  static const Color uploadFailed = Color(0xFFCF6679);
   
-  // Dark theme colors
-  static const Color darkSurface = Color(0xFF1E293B);
-  static const Color darkSurfaceVariant = Color(0xFF334155);
-  static const Color darkBackground = Color(0xFF0F172A);
-  static const Color darkBorder = Color(0xFF334155);
-  static const Color darkTextPrimary = Color(0xFFF1F5F9);
-  static const Color darkTextSecondary = Color(0xFFCBD5E1);
-  static const Color darkTextTertiary = Color(0xFF94A3B8);
+  // Gray scale
+  static const Color white = Color(0xFFFFFFFF);
+  static const Color black = Color(0xFF000000);
+  static const Color gray50 = Color(0xFFFAFAFA);
+  static const Color gray100 = Color(0xFFF5F5F5);
+  static const Color gray200 = Color(0xFFEEEEEE);
+  static const Color gray300 = Color(0xFFE0E0E0);
+  static const Color gray400 = Color(0xFFBDBDBD);
+  static const Color gray500 = Color(0xFF9E9E9E);
+  static const Color gray600 = Color(0xFF757575);
+  static const Color gray700 = Color(0xFF616161);
+  static const Color gray800 = Color(0xFF424242);
+  static const Color gray900 = Color(0xFF212121);
+  
+  // Border color
+  static const Color border = Color(0xFF0c2942);
+  
+  // Utility method to get consistent border decoration
+  static BoxDecoration getOutlineDecoration({
+    Color? borderColor,
+    double borderRadius = 12.0,
+    Color? backgroundColor,
+  }) {
+    return BoxDecoration(
+      color: backgroundColor ?? widgetFill,
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: borderColor ?? border,
+        width: 1.0,
+      ),
+    );
+  }
+  
+  // Utility method to get consistent border side
+  static BorderSide getOutlineBorder({Color? color}) {
+    return BorderSide(
+      color: color ?? border,
+      width: 1.0,
+    );
+  }
 }
 
-/// Typography styles for the app
+/// Typography styles
 class AppTextStyles {
-  // Headlines
-  static const TextStyle h1 = TextStyle(
-    fontSize: 32,
-    fontWeight: FontWeight.bold,
-    color: AppColors.textPrimary,
-    height: 1.2,
-  );
+  static final h1 = GoogleFonts.roboto(fontSize: 32, fontWeight: FontWeight.bold);
+  static final h2 = GoogleFonts.roboto(fontSize: 28, fontWeight: FontWeight.bold);
+  static final h3 = GoogleFonts.roboto(fontSize: 24, fontWeight: FontWeight.bold);
+  static final h4 = GoogleFonts.roboto(fontSize: 20, fontWeight: FontWeight.bold);
+  static final h5 = GoogleFonts.roboto(fontSize: 18, fontWeight: FontWeight.bold);
+  static final h6 = GoogleFonts.roboto(fontSize: 16, fontWeight: FontWeight.bold);
   
-  static const TextStyle h2 = TextStyle(
-    fontSize: 28,
-    fontWeight: FontWeight.bold,
-    color: AppColors.textPrimary,
-    height: 1.25,
-  );
+  static final bodyLarge = GoogleFonts.roboto(fontSize: 16);
+  static final bodyMedium = GoogleFonts.roboto(fontSize: 14);
+  static final bodySmall = GoogleFonts.roboto(fontSize: 12);
   
-  static const TextStyle h3 = TextStyle(
-    fontSize: 24,
-    fontWeight: FontWeight.w600,
-    color: AppColors.textPrimary,
-    height: 1.3,
-  );
+  static final labelLarge = GoogleFonts.roboto(fontSize: 14, fontWeight: FontWeight.w500);
+  static final labelMedium = GoogleFonts.roboto(fontSize: 12, fontWeight: FontWeight.w500);
+  static final labelSmall = GoogleFonts.roboto(fontSize: 11, fontWeight: FontWeight.w500);
   
-  static const TextStyle h4 = TextStyle(
-    fontSize: 20,
-    fontWeight: FontWeight.w600,
-    color: AppColors.textPrimary,
-    height: 1.4,
-  );
-  
-  static const TextStyle h5 = TextStyle(
-    fontSize: 18,
-    fontWeight: FontWeight.w600,
-    color: AppColors.textPrimary,
-    height: 1.4,
-  );
-  
-  static const TextStyle h6 = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
-    color: AppColors.textPrimary,
-    height: 1.5,
-  );
-  
-  // Body text
-  static const TextStyle bodyLarge = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.normal,
-    color: AppColors.textPrimary,
-    height: 1.5,
-  );
-  
-  static const TextStyle bodyMedium = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.normal,
-    color: AppColors.textPrimary,
-    height: 1.5,
-  );
-  
-  static const TextStyle bodySmall = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.normal,
-    color: AppColors.textSecondary,
-    height: 1.4,
-  );
-  
-  // Labels
-  static const TextStyle labelLarge = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w500,
-    color: AppColors.textPrimary,
-    height: 1.4,
-  );
-  
-  static const TextStyle labelMedium = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w500,
-    color: AppColors.textPrimary,
-    height: 1.3,
-  );
-  
-  static const TextStyle labelSmall = TextStyle(
-    fontSize: 10,
-    fontWeight: FontWeight.w500,
-    color: AppColors.textSecondary,
-    height: 1.2,
-  );
-  
-  // Caption and overline
-  static const TextStyle caption = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.normal,
-    color: AppColors.textSecondary,
-    height: 1.3,
-  );
-  
-  static const TextStyle overline = TextStyle(
-    fontSize: 10,
-    fontWeight: FontWeight.w500,
-    color: AppColors.textTertiary,
-    height: 1.6,
-    letterSpacing: 1.5,
-  );
-  
-  // Button text
-  static const TextStyle buttonLarge = TextStyle(
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
-    height: 1.25,
-  );
-  
-  static const TextStyle buttonMedium = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1.3,
-  );
-  
-  static const TextStyle buttonSmall = TextStyle(
-    fontSize: 12,
-    fontWeight: FontWeight.w600,
-    height: 1.3,
-  );
+  static final caption = GoogleFonts.roboto(fontSize: 12);
+  static final overline = GoogleFonts.roboto(fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w500);
 }
 
 /// Spacing constants
@@ -213,48 +105,34 @@ class AppSpacing {
   static const double lg = 24.0;
   static const double xl = 32.0;
   static const double xxl = 48.0;
-  static const double xxxl = 64.0;
 }
 
 /// Border radius constants
 class AppRadius {
-  static const double xs = 4.0;
-  static const double sm = 8.0;
-  static const double md = 12.0;
-  static const double lg = 16.0;
-  static const double xl = 24.0;
-  static const double xxl = 32.0;
-  static const double full = 9999.0;
+  static const double xs = 2.0;
+  static const double sm = 4.0;
+  static const double md = 8.0;
+  static const double lg = 12.0;
+  static const double xl = 16.0;
+  static const double xxl = 24.0;
 }
 
-/// Shadow definitions
+/// Box shadow constants
 class AppShadows {
   static const BoxShadow sm = BoxShadow(
-    color: Color(0x0D000000),
-    offset: Offset(0, 1),
+    color: Color(0x1A000000),
     blurRadius: 2,
-    spreadRadius: 0,
+    offset: Offset(0, 1),
   );
-  
   static const BoxShadow md = BoxShadow(
     color: Color(0x1A000000),
-    offset: Offset(0, 4),
-    blurRadius: 6,
-    spreadRadius: -1,
+    blurRadius: 4,
+    offset: Offset(0, 2),
   );
-  
   static const BoxShadow lg = BoxShadow(
     color: Color(0x1A000000),
-    offset: Offset(0, 10),
-    blurRadius: 15,
-    spreadRadius: -3,
-  );
-  
-  static const BoxShadow xl = BoxShadow(
-    color: Color(0x1A000000),
-    offset: Offset(0, 20),
-    blurRadius: 25,
-    spreadRadius: -5,
+    blurRadius: 8,
+    offset: Offset(0, 4),
   );
 }
 
@@ -263,101 +141,223 @@ class AppDurations {
   static const Duration fast = Duration(milliseconds: 150);
   static const Duration normal = Duration(milliseconds: 300);
   static const Duration slow = Duration(milliseconds: 500);
-  static const Duration xslow = Duration(milliseconds: 1000);
 }
 
-/// Common curves for animations
+/// Animation curves
 class AppCurves {
   static const Curve easeInOut = Curves.easeInOut;
-  static const Curve easeOut = Curves.easeOut;
   static const Curve easeIn = Curves.easeIn;
+  static const Curve easeOut = Curves.easeOut;
   static const Curve bounce = Curves.bounceOut;
-  static const Curve elastic = Curves.elasticOut;
 }
 
+/// Main theme class with Material 3 support
 class AppTheme {
-  // Light theme
-  static ThemeData get lightTheme {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.primary,
-        brightness: Brightness.light,
-      ),
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-        scrolledUnderElevation: 1,
-        backgroundColor: AppColors.surface,
-        foregroundColor: AppColors.textPrimary,
-      ),
-      cardTheme: const CardThemeData(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(AppRadius.md)),
-        ),
-        color: AppColors.surface,
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.textOnPrimary,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-          ),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        filled: true,
-        fillColor: AppColors.surfaceVariant,
-      ),
-    );
-  }
-  
-  // Dark theme
+  // Use Material 3's official dark color scheme with custom background
+  static final ColorScheme _darkColorScheme = ColorScheme.fromSeed(
+    seedColor: AppColors.primary,
+    brightness: Brightness.dark,
+  ).copyWith(
+    background: AppColors.background,
+    surface: AppColors.surface,
+    surfaceVariant: AppColors.surfaceVariant,
+  );
+
+  static final ColorScheme _lightColorScheme = ColorScheme.fromSeed(
+    seedColor: AppColors.primary,
+    brightness: Brightness.light,
+  );
+
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.primary,
-        brightness: Brightness.dark,
+      colorScheme: _darkColorScheme,
+      textTheme: GoogleFonts.robotoTextTheme(
+        ThemeData.dark().textTheme,
       ),
-      appBarTheme: const AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-        scrolledUnderElevation: 1,
-        backgroundColor: AppColors.darkSurface,
-        foregroundColor: AppColors.darkTextPrimary,
-      ),
-      cardTheme: const CardThemeData(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(AppRadius.md)),
+      // Clean Material 3 input styling with proper dark theme colors
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.widgetFill,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _darkColorScheme.outline),
         ),
-        color: AppColors.darkSurface,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _darkColorScheme.outline),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _darkColorScheme.primary, width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        // Ensure text is visible in dark mode
+        labelStyle: TextStyle(color: _darkColorScheme.onSurfaceVariant),
+        hintStyle: TextStyle(color: _darkColorScheme.onSurfaceVariant.withOpacity(0.6)),
       ),
+      // Card theme with outline
+      cardTheme: CardThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _darkColorScheme.outline),
+        ),
+        elevation: 0,
+        color: AppColors.widgetFill,
+      ),
+      // Elevated button theme with outline
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.textOnPrimary,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.sm),
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: _darkColorScheme.outline),
+          ),
+          backgroundColor: AppColors.widgetFill,
+          foregroundColor: _darkColorScheme.onSurface,
+          elevation: 0,
+        ),
+      ),
+      // Outlined button theme
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          side: BorderSide(color: _darkColorScheme.outline),
+          foregroundColor: _darkColorScheme.onSurface,
+        ),
+      ),
+      // Text button theme with subtle outline
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: _darkColorScheme.outline.withOpacity(0.5)),
+          ),
+          foregroundColor: _darkColorScheme.onSurface,
+        ),
+      ),
+      // Container decoration theme
+      dividerTheme: DividerThemeData(
+        color: _darkColorScheme.outline,
+        thickness: 1,
+      ),
+      // Dialog theme with outline
+      dialogTheme: DialogThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _darkColorScheme.outline),
+        ),
+        backgroundColor: AppColors.widgetFill,
+        elevation: 0,
+      ),
+      // Bottom sheet theme with outline
+      bottomSheetTheme: BottomSheetThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+          side: BorderSide(color: _darkColorScheme.outline),
+        ),
+        backgroundColor: AppColors.widgetFill,
+        elevation: 0,
+      ),
+      // App bar theme without outline
+      appBarTheme: AppBarTheme(
+        backgroundColor: _darkColorScheme.surface,
+        foregroundColor: _darkColorScheme.onSurface,
+        elevation: 0,
+      ),
+            // List tile theme with consistent styling
+      listTileTheme: ListTileThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _darkColorScheme.outline.withOpacity(0.3)),
+        ),
+        tileColor: AppColors.widgetFill,
+      ),
+      // Floating action button theme with outline
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: AppColors.widgetFill,
+        foregroundColor: _darkColorScheme.onSurface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: _darkColorScheme.outline),
+        ),
+      ),
+      // Popup menu theme with consistent styling
+      popupMenuTheme: PopupMenuThemeData(
+        color: AppColors.widgetFill,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: _darkColorScheme.outline),
+        ),
+        elevation: 0,
+        textStyle: TextStyle(color: _darkColorScheme.onSurface),
+        // Remove outlines from individual menu items
+        menuPadding: EdgeInsets.zero,
+      ),
+      // Menu theme for dropdown menus
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStateProperty.all(AppColors.widgetFill),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: _darkColorScheme.outline),
+            ),
+          ),
+          elevation: WidgetStateProperty.all(0),
+        ),
+      ),
+      // Dropdown menu theme
+      dropdownMenuTheme: DropdownMenuThemeData(
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStateProperty.all(AppColors.widgetFill),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: _darkColorScheme.outline),
+            ),
+          ),
+          elevation: WidgetStateProperty.all(0),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: AppColors.widgetFill,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: _darkColorScheme.outline),
           ),
         ),
       ),
+    );
+  }
+
+  static ThemeData get lightTheme {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: _lightColorScheme,
+      textTheme: GoogleFonts.robotoTextTheme(
+        ThemeData.light().textTheme,
+      ),
       inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          borderSide: const BorderSide(color: AppColors.darkBorder),
-        ),
         filled: true,
-        fillColor: AppColors.darkSurfaceVariant,
+        fillColor: _lightColorScheme.surfaceContainer,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _lightColorScheme.outline),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _lightColorScheme.outline),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: _lightColorScheme.primary, width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        labelStyle: TextStyle(color: _lightColorScheme.onSurfaceVariant),
+        hintStyle: TextStyle(color: _lightColorScheme.onSurfaceVariant.withOpacity(0.6)),
       ),
     );
   }

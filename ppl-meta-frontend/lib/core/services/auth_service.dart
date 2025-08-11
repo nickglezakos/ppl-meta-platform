@@ -2,11 +2,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../api/api_client.dart';
 import '../models/user.dart';
 import '../config/app_config.dart';
 
-/// Exception thrown when authentication fails
 class AuthenticationException implements Exception {
   final String message;
   final String? code;
@@ -17,7 +17,6 @@ class AuthenticationException implements Exception {
   String toString() => message;
 }
 
-/// Authentication service for handling user authentication
 class AuthService {
   final ApiClient _apiClient;
   static const String _tokenKey = 'auth_token';
@@ -25,20 +24,28 @@ class AuthService {
 
   AuthService(this._apiClient);
 
-  /// Login with email and password
+  // Initialize the service with stored token
+  Future<void> initialize() async {
+    final token = await _getStoredToken();
+    if (token != null && !JwtDecoder.isExpired(token)) {
+      _apiClient.setAuthToken(token);
+    } else if (token != null) {
+      // Token exists but is expired, clear it
+      await _clearStoredData();
+    }
+  }
+
+  // Login method
   Future<AuthResponse> login(String email, String password) async {
     try {
-      // Format as form data for OAuth2PasswordRequestForm
-      final formData = FormData.fromMap({
-        'username': email, // Backend expects email as username
-        'password': password,
-      });
-
-      final response = await _apiClient.post<Map<String, dynamic>>(
+      final response = await _apiClient.post(
         '/api/v1/users/login',
-        data: formData,
+        data: {
+          'username': email,  // Backend expects 'username' field
+          'password': password,
+        },
         options: Options(
-          contentType: Headers.formUrlEncodedContentType,
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         ),
       );
 
@@ -48,31 +55,29 @@ class AuthService {
 
       final authResponse = AuthResponse.fromJson(response.data!);
       
-      // Store token and set it in API client
+      // Store the token and set it in the API client
       await _storeToken(authResponse.accessToken);
       _apiClient.setAuthToken(authResponse.accessToken);
-
-      // Fetch user info after successful login
-      final user = await _fetchUserProfile();
       
-      return authResponse.copyWith(user: user);
+      return authResponse;
     } on DioException catch (e) {
       throw _handleApiError(e);
     }
   }
 
-  /// Register a new user
+  // Register method
   Future<User> register(String username, String email, String password) async {
     try {
-      final registerRequest = RegisterRequest(
-        username: username,
-        email: email,
-        password: password,
-      );
-
-      final response = await _apiClient.post<Map<String, dynamic>>(
+      final response = await _apiClient.post(
         '/api/v1/users/register',
-        data: registerRequest.toJson(),
+        data: {
+          'username': username,
+          'email': email,
+          'password': password,
+        },
+        options: Options(
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        ),
       );
 
       if (response.data == null) {
@@ -85,53 +90,65 @@ class AuthService {
     }
   }
 
-  /// Logout user
+  // Logout method
   Future<void> logout() async {
     try {
-      // Call backend logout endpoint if token exists
-      final token = await _getStoredToken();
-      if (token != null) {
-        await _apiClient.post('/api/v1/users/logout');
-      }
+      await _apiClient.post('/api/v1/users/logout');
     } catch (e) {
-      // Continue with logout even if backend call fails
+      // Even if logout fails on server, clear local data
     } finally {
-      // Always clear local data
       await _clearStoredData();
       _apiClient.clearAuthToken();
     }
   }
 
-  /// Get current user profile
+  // Get current user
   Future<User?> getCurrentUser() async {
     try {
       final token = await _getStoredToken();
       if (token == null || JwtDecoder.isExpired(token)) {
         await _clearStoredData();
+        _apiClient.clearAuthToken();
         return null;
       }
 
-      _apiClient.setAuthToken(token);
-      return await _fetchUserProfile();
+      // Set the token in the API client if it's not already set
+      if (_apiClient.authToken != token) {
+        _apiClient.setAuthToken(token);
+      }
+
+      final response = await _apiClient.get('/api/v1/users/profile');
+      if (response.data != null) {
+        return User.fromJson(response.data!);
+      }
+      return null;
     } catch (e) {
       await _clearStoredData();
+      _apiClient.clearAuthToken();
       return null;
     }
   }
 
-  /// Check if user is authenticated
+  // Check if user is authenticated
   Future<bool> isAuthenticated() async {
     final token = await _getStoredToken();
-    return token != null && !JwtDecoder.isExpired(token);
+    if (token != null && !JwtDecoder.isExpired(token)) {
+      // Set the token in the API client if it's not already set
+      if (_apiClient.authToken != token) {
+        _apiClient.setAuthToken(token);
+      }
+      return true;
+    }
+    return false;
   }
 
-  /// Change user password
+  // Change password
   Future<void> changePassword(String currentPassword, String newPassword) async {
     try {
-      final response = await _apiClient.post<Map<String, dynamic>>(
-        '/api/v1/users/update-password',
+      final response = await _apiClient.post(
+        '/api/v1/users/change-password',
         data: {
-          'old_password': currentPassword,
+          'current_password': currentPassword,
           'new_password': newPassword,
         },
       );
@@ -144,56 +161,33 @@ class AuthService {
     }
   }
 
-  /// Fetch user profile from backend
-  Future<User> _fetchUserProfile() async {
-    try {
-      // Use media service user profile endpoint (integrated backend)
-      final response = await _apiClient.get<Map<String, dynamic>>(
-        '/api/v1/user/profile',
-      );
-
-      if (response.data == null) {
-        throw const AuthenticationException('Failed to fetch user profile');
-      }
-
-      // Extract user data from response
-      final userData = response.data!['user'] ?? response.data!;
-      return User.fromJson(userData);
-    } on DioException catch (e) {
-      throw _handleApiError(e);
-    }
-  }
-
-  /// Store authentication token
+  // Private helper methods
   Future<void> _storeToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
   }
 
-  /// Get stored authentication token
   Future<String?> _getStoredToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_tokenKey);
   }
 
-  /// Clear stored authentication data
   Future<void> _clearStoredData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_userKey);
   }
 
-  /// Handle API errors and convert to AuthenticationException
   AuthenticationException _handleApiError(DioException error) {
     if (error.response?.data != null) {
       try {
         final apiError = ApiError.fromJson(error.response!.data);
         return AuthenticationException(
           apiError.detail,
-          code: error.response?.statusCode.toString(),
+          code: apiError.type,
         );
-      } catch (e) {
-        // If parsing fails, use status message
+      } catch (_) {
+        // Fall through to status code handling
       }
     }
 
@@ -206,39 +200,27 @@ class AuthService {
         return const AuthenticationException('Unable to connect to server. Please try again later.');
       case DioExceptionType.badResponse:
         final statusCode = error.response?.statusCode;
-        if (statusCode == 400) {
-          return const AuthenticationException('Invalid email or password.');
-        } else if (statusCode == 401) {
-          return const AuthenticationException('Invalid credentials.');
-        } else if (statusCode == 409) {
-          return const AuthenticationException('Email already registered.');
+        switch (statusCode) {
+          case 401:
+            return const AuthenticationException('Invalid email or password.');
+          case 403:
+            return const AuthenticationException('Invalid credentials.');
+          case 409:
+            return const AuthenticationException('Email already registered.');
+          default:
+            return AuthenticationException(
+              error.response?.data?['message'] ?? 'Server error occurred.',
+              code: statusCode?.toString(),
+            );
         }
-        return AuthenticationException(
-          'Server error (${statusCode ?? 'unknown'}). Please try again later.',
-        );
       default:
         return const AuthenticationException('An unexpected error occurred. Please try again.');
     }
   }
 }
 
-/// Provider for authentication service
+// Provider for AuthService
 final authServiceProvider = Provider<AuthService>((ref) {
   final apiClient = ref.watch(apiClientProvider);
   return AuthService(apiClient);
 });
-
-/// Extension for AuthResponse to add copyWith method
-extension AuthResponseExtension on AuthResponse {
-  AuthResponse copyWith({
-    String? accessToken,
-    String? tokenType,
-    User? user,
-  }) {
-    return AuthResponse(
-      accessToken: accessToken ?? this.accessToken,
-      tokenType: tokenType ?? this.tokenType,
-      user: user ?? this.user,
-    );
-  }
-}
