@@ -34,6 +34,117 @@ This document tracks all development issues, requirements, and implementation ta
 
 ## 🔥 **CRITICAL ISSUES**
 
+### **CAM-FLUTTER-000: Correct Endpoint Architecture Documentation**
+
+**Priority**: 🔴 CRITICAL  
+**Status**: ✅ **RESOLVED & IMPLEMENTED**  
+**Documentation Date**: August 11, 2025  
+**Resolution Date**: August 11, 2025
+
+**Description**: Critical clarification of the correct endpoint architecture to prevent configuration errors during Flutter integration development. This issue included both documentation and implementation fixes for camera service response parsing.
+
+**✅ CORRECT ENDPOINT ARCHITECTURE**:
+
+### **Camera Management Endpoints (Direct to Camera Service)**
+
+```text
+http://localhost:8005/api/v1/cameras/          # List cameras
+http://localhost:8005/api/v1/cameras/detect    # Detect cameras  
+http://localhost:8005/api/v1/cameras/{id}      # Get camera by ID
+http://localhost:8005/api/v1/cameras/{id}/connect    # Connect camera
+http://localhost:8005/api/v1/cameras/{id}/disconnect # Disconnect camera
+http://localhost:8005/api/v1/cameras/active    # Get active cameras
+```
+
+### **Streaming Endpoints (Direct to Camera Service, NO `/cameras` prefix)**
+
+```text
+http://localhost:8005/api/v1/streaming/{device_id}/start   # Start streaming
+http://localhost:8005/api/v1/streaming/{device_id}/video   # Video stream
+http://localhost:8005/api/v1/streaming/{device_id}/stop    # Stop streaming
+http://localhost:8005/api/v1/streaming/{device_id}/status  # Stream status
+```
+
+**✅ IMPLEMENTED FIXES**:
+
+- **Camera Service Response Parsing**: Fixed service to handle both array and object response formats
+- **Configuration Correction**: Removed incorrect `/cameras` prefix from streaming endpoints
+- **Dual Response Format Support**: Service now handles both direct arrays and wrapped object responses
+- **Authentication Integration**: Direct camera service authentication with JWT tokens
+
+**Architectural Rationale**:
+
+- **Camera Management**: Direct connection to camera service for full feature access
+- **Streaming**: Direct connection to camera service to minimize latency and maximize throughput for real-time video data
+- **Authentication**: JWT tokens from Node service (8001) validated by camera service (8005)
+
+**✅ CORRECTED Flutter Configuration**:
+
+```dart
+// ✅ IMPLEMENTED: Direct camera service configuration
+class CameraService {
+  final Dio _cameraApiClient = Dio(BaseOptions(
+    baseUrl: AppConfig.instance.cameraServiceUrl, // http://localhost:8005
+  ));
+}
+
+// ✅ IMPLEMENTED: Corrected endpoint configuration
+String get cameraStreamEndpoint => '$cameraServiceUrl/api/v1/streaming';
+String get cameraSnapshotEndpoint => '$cameraServiceUrl/api/v1/streaming';
+```
+
+**✅ IMPLEMENTED Response Parsing Fix**:
+
+```dart
+// ✅ FIXED: Handles both response formats
+Future<List<Camera>> getCameras() async {
+  final response = await _cameraApiClient.get('/api/v1/cameras/');
+  
+  List<dynamic> camerasData;
+  if (response.data is List) {
+    camerasData = response.data as List<dynamic>; // Direct array format
+  } else if (response.data is Map && response.data['cameras'] != null) {
+    camerasData = response.data['cameras'] as List<dynamic>; // Wrapped format
+  }
+}
+```
+
+**✅ VERIFIED Configuration**:
+
+```json
+// env.development.json
+{
+  "API_BASE_URL": "http://localhost",          // Gateway for other services
+  "CAMERA_SERVICE_URL": "http://localhost:8005" // Direct camera service access
+}
+```
+
+**✅ RESOLVED ISSUES**:
+
+- ✅ "Unexpected camera error" - Fixed by corrected response parsing
+- ✅ Camera detection failures - Resolved with dual format support
+- ✅ Streaming endpoint configuration - Corrected path structure
+- ✅ Service connectivity - Direct camera service communication working
+
+**✅ TESTED & VERIFIED**:
+
+- ✅ Camera listing: `GET http://localhost:8005/api/v1/cameras/` returns array format
+- ✅ Camera detection: `POST http://localhost:8005/api/v1/cameras/detect` returns object format
+- ✅ Authentication: JWT tokens from Node service properly validated
+- ✅ Flutter integration: CameraService successfully parses both response formats
+- ✅ Stream status: Camera streaming active and responding correctly
+
+**Acceptance Criteria**:
+
+- ✅ Camera management endpoints working with direct service connection
+- ✅ Streaming endpoints correctly configured without `/cameras` prefix
+- ✅ Response parsing handles both array and object formats
+- ✅ Authentication flow working end-to-end
+- ✅ No more "unexpected camera error" messages
+- ✅ Camera detection and listing fully functional
+
+---
+
 ### **CAM-FLUTTER-001: Authentication Flow Integration**
 **Priority**: 🔴 CRITICAL  
 **Status**: ✅ **RESOLVED**  
