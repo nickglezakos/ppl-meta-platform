@@ -87,12 +87,10 @@ class HomeScreen extends ConsumerWidget {
                 CircleAvatar(
                   radius: 16,
                   backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-                  child: Text(
-                    currentUser?.username.substring(0, 1).toUpperCase() ?? 'U',
-                    style: TextStyle(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Icon(
+                    Icons.person,
+                    color: Theme.of(context).colorScheme.onSurface, // Match dropdown icons
+                    size: 20,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -180,60 +178,98 @@ class HomeScreen extends ConsumerWidget {
 
             // Action cards
             Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                children: [
-                  _ActionCard(
-                    icon: Icons.cloud_upload,
-                    title: 'Upload Media',
-                    subtitle: 'Upload photos and videos',
-                    onTap: () {
-                      context.go('/upload');
-                    },
-                  ),
-                  _ActionCard(
-                    icon: Icons.photo_library,
-                    title: 'My Media',
-                    subtitle: 'View your uploads',
-                    onTap: () {
-                      context.go('/gallery');
-                    },
-                  ),
-                  _ActionCard(
-                    icon: Icons.videocam,
-                    title: 'Cameras',
-                    subtitle: 'Manage live cameras',
-                    onTap: () {
-                      context.go('/cameras');
-                    },
-                  ),
-                  _ActionCard(
-                    icon: Icons.camera_alt,
-                    title: 'Snapshots',
-                    subtitle: 'Camera snapshot gallery',
-                    onTap: () {
-                      context.go('/snapshots');
-                    },
-                  ),
-                  _ActionCard(
-                    icon: Icons.collections,
-                    title: 'Collections',
-                    subtitle: 'Organize your media',
-                    onTap: () {
-                      context.go('/collections');
-                    },
-                  ),
-                  _ActionCard(
-                    icon: Icons.analytics,
-                    title: 'Analytics',
-                    subtitle: 'View statistics',
-                    onTap: () {
-                      context.go('/analytics');
-                    },
-                  ),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Responsive grid columns based on screen width
+                  int crossAxisCount;
+                  double childAspectRatio;
+                  
+                  if (constraints.maxWidth < 600) {
+                    // Mobile: 2 buttons per row
+                    crossAxisCount = 2;
+                    childAspectRatio = 1.0;
+                  } else if (constraints.maxWidth < 900) {
+                    // Tablet: 3 buttons per row
+                    crossAxisCount = 3;
+                    childAspectRatio = 1.1;
+                  } else {
+                    // Desktop: 4 buttons per row
+                    crossAxisCount = 4;
+                    childAspectRatio = 1.2;
+                  }
+                  
+                  return GridView.count(
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
+                    childAspectRatio: childAspectRatio,
+                    children: [
+                      _ActionCard(
+                        icon: Icons.cloud_upload,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Upload Media',
+                        subtitle: 'Upload photos and videos',
+                        onTap: () {
+                          context.go('/upload');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.photo_library,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'My Media',
+                        subtitle: 'View your uploads',
+                        onTap: () {
+                          context.go('/gallery');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.videocam,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Cameras',
+                        subtitle: 'Manage live cameras',
+                        onTap: () {
+                          context.go('/cameras');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.camera_alt,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Snapshots',
+                        subtitle: 'Camera snapshot gallery',
+                        onTap: () {
+                          context.go('/snapshots');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.collections,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Collections',
+                        subtitle: 'Organize your media',
+                        onTap: () {
+                          context.go('/collections');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.analytics,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Analytics',
+                        subtitle: 'View statistics',
+                        onTap: () {
+                          context.go('/analytics');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.sync,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Camera Media Sync',
+                        subtitle: 'Monitor snapshot syncing',
+                        onTap: () {
+                          context.go('/camera-media-sync');
+                        },
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -245,12 +281,14 @@ class HomeScreen extends ConsumerWidget {
 
 class _ActionCard extends StatelessWidget {
   final IconData icon;
+  final Color iconColor;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
   const _ActionCard({
     required this.icon,
+    required this.iconColor,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -258,33 +296,44 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Get screen width for responsive sizing
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 600; // Mobile
+    
     return Card(
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(isCompact ? 12 : 16),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
-                size: 48,
-                color: Theme.of(context).primaryColor,
+                size: isCompact ? 36 : 48,
+                color: iconColor, // Use the contextual color
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: isCompact ? 8 : 12),
               Text(
                 title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
+                  fontSize: isCompact ? 14 : null,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
+              SizedBox(height: isCompact ? 2 : 4),
               Text(
                 subtitle,
-                style: Theme.of(context).textTheme.bodySmall,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontSize: isCompact ? 11 : null,
+                ),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),

@@ -17,6 +17,7 @@ import '../../screens/collections_screen.dart';
 import '../../screens/profile_screen.dart';
 import '../../screens/features_screen.dart';
 import '../../screens/media_preview_screen.dart';
+import '../../screens/camera_media_sync_screen.dart';
 import '../../models/media_models.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -155,6 +156,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: MediaPreviewScreen(mediaItem: mediaItem),
           );
         },
+      ),
+      GoRoute(
+        path: '/camera-media-sync',
+        name: 'camera-media-sync',
+        builder: (context, state) => ProviderScreenWrapper(
+          child: CameraMediaSyncScreen(),
+        ),
       ),
       // Root route redirects based on auth status
       GoRoute(

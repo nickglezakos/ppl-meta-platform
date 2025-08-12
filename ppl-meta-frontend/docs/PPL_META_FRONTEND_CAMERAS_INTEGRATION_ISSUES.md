@@ -655,11 +655,37 @@ class SnapshotSettingsDialog extends StatefulWidget {
 - ✅ **Quick Gallery**: Local snapshot management with grid view and search
 - ✅ **Enhanced Resolution**: Integration with CAM-FLUTTER-003.1 custom settings
 
-### **🔄 Phase 2: Media Service Integration (Future)**
-- **Upload to Media**: Transfer snapshots to **Media Service** (`ppl-meta-media:8000`)
-- **Gallery Enhancement**: Leverage media service's existing gallery infrastructure
-- **Cloud Storage**: Utilize media service's cloud storage integration
-- **Advanced Features**: Collections, tags, facial recognition, sharing
+### **� Implementation Status**
+
+#### **Phase 1: ✅ COMPLETED**
+- ✅ **Real-time Camera Streaming**: Live preview from cameras service
+- ✅ **Instant Snapshot Capture**: Direct capture with immediate local storage
+- ✅ **Performance Optimized**: Sub-second capture times maintained
+- ✅ **Robust Error Handling**: Network resilience and fallback mechanisms
+
+#### **Phase 2: 🚧 IMPLEMENTATION COMPLETE - INTEGRATION PENDING**
+- ✅ **Architecture Design**: Complete 30-page implementation plan
+- ✅ **Core Services**: All 5 backend services implemented
+  - `SnapshotSyncService`: Background upload queue with retry logic
+  - `EnhancedGalleryService`: Hybrid local+cloud gallery
+  - `SnapshotCollectionService`: Professional organization features
+  - `EnhancedSnapshotService`: Unified Phase 2 API
+- ✅ **UI Components**: All 3 enhanced components implemented
+  - `SyncStatusWidgets`: Real-time sync status indicators
+  - `EnhancedSnapshotGalleryWidget`: Hybrid gallery display
+  - `EnhancedSnapshotPreviewDialog`: Professional preview with metadata
+- ⏳ **Provider Integration**: Dependency injection setup pending
+- ⏳ **Testing**: Integration testing with media service pending
+- ⏳ **Performance Validation**: Phase 1 speed maintenance verification pending
+
+### **�🔄 Phase 2: Media Service Integration (IN PROGRESS)**
+
+- ✅ **Background Upload Service**: Automatic transfer snapshots to **Media Service** (`ppl-meta-media:8000`)
+- ✅ **Enhanced Gallery Service**: Hybrid gallery combining local and cloud snapshots
+- ✅ **Collection Management**: Professional organization with project-based collections
+- ✅ **Sync Status Indicators**: Real-time visual feedback for upload progress
+- ⏳ **Advanced Sharing**: Professional sharing with permissions and expiration
+- ⏳ **Cross-Device Sync**: Access snapshots across multiple devices
 
 ## 🎯 **Expected User Journey**
 
@@ -672,6 +698,195 @@ class SnapshotSettingsDialog extends StatefulWidget {
 6. **Basic Sharing**: Direct file system integration for sharing
 
 ### **Phase 2: Enhanced Gallery Experience**
+
+**Status**: ✅ **ARCHITECTURE REFINED & READY FOR IMPLEMENTATION**  
+**Latest Update**: August 12, 2025  
+**Integration Strategy**: Camera-Owned Collections with Seamless User Experience
+
+## 🎯 **REFINED INTEGRATION STRATEGY - CAMERA-OWNED COLLECTIONS**
+
+**Key Insight**: Each camera should own a media collection in the existing Media Service, eliminating the need for separate systems and providing seamless integration.
+
+### **✅ CAMERA-OWNED COLLECTIONS ARCHITECTURE**
+
+#### **Collection-Camera Mapping**
+
+```text
+Camera Device → Owns → Media Collection
+├─ Camera ID: "cam_001_front_door"
+├─ Collection ID: "collection_cam_001" 
+├─ Collection Name: "Front Door Camera"
+└─ All snapshots → Auto-assigned to this collection
+```
+
+#### **Seamless Integration Benefits**
+
+- **✅ No Separate Systems**: 100% reuse of existing Media Service collections infrastructure
+- **✅ Unified Experience**: Camera media appears alongside user-created media in standard gallery
+- **✅ No Synchronization Issues**: Single source of truth for all media data
+- **✅ Standard Operations**: Share, delete, organize work consistently across all media types
+
+#### **User Experience Flow**
+
+1. **Camera Setup** → Auto-creates collection: "Living Room Camera"
+2. **Snapshot Capture** → Auto-tagged with camera's collection
+3. **Gallery Access** → Camera collections appear alongside user collections
+4. **Organization** → Users can move camera media to custom collections
+5. **Unified Search** → Search across all collections (camera + user-created)
+
+### **🔄 SEAMLESS AUTHENTICATION & SYNC STRATEGY**
+
+#### **Unified Authentication Architecture**
+
+```text
+App Startup → Check Stored Credentials → Auto-Login → Global Auth State
+```
+
+**Implementation Components**:
+
+- **Single AuthManager**: Handles all authentication across camera + media services
+- **Persistent Token Storage**: `SharedPreferences` or `FlutterSecureStorage`
+- **Automatic Refresh**: Token refresh before expiration
+- **Global State**: Shared auth state across all features
+
+#### **Background Sync Service**
+
+```text
+Camera Capture → Local Storage → Background Upload → Media Service → Gallery Update
+```
+
+**Sync Features**:
+
+- **Automatic Upload**: Every photo/video queued for upload
+- **Retry Logic**: Failed uploads retry with exponential backoff
+- **Offline Support**: Queue operations when offline, sync when online
+- **Progress Tracking**: Background upload progress indicators
+
+#### **Unified State Management**
+
+```text
+Camera Service ←→ Unified State ←→ Media Service
+                     ↕
+                Gallery/Collections
+```
+
+**State Architecture**:
+
+- **Single Source of Truth**: All media items in unified state
+- **Real-time Updates**: Camera captures update both local and cloud state
+- **Consistent UI**: Same components for local and cloud media
+- **Cross-Feature Sync**: Collections sync across camera and gallery features
+
+### **🚀 IMPLEMENTATION ROADMAP**
+
+#### **Phase 2A: Collection Auto-Creation**
+
+- **Camera Detection Enhancement**: Auto-create collections during camera setup
+- **Collection Mapping**: Store camera-collection relationships
+- **API Integration**: Use existing `POST /api/v1/collections/` endpoints
+
+#### **Phase 2B: Snapshot Auto-Assignment**
+
+- **Enhanced Capture**: Include `collection_id` in snapshot uploads
+- **Media Service Integration**: Use existing `POST /api/v1/media/upload` with collection assignment
+- **Gallery Display**: Camera media appears automatically in collections view
+
+#### **Phase 2C: Unified UI Integration**
+
+- **Collection Indicators**: Camera icon for auto-managed collections
+- **Navigation Enhancement**: "View Media" button on camera details → Opens collection
+- **Search Integration**: Unified search across all collections
+
+### **📱 ENHANCED USER WORKFLOWS**
+
+#### **Daily Usage (Seamless Experience)**
+
+1. **Open App** → Auto-login with stored credentials (no manual login)
+2. **Take Photo/Video** → Immediately visible in gallery
+3. **Background Upload** → Automatic sync to camera's collection
+4. **Gallery Access** → All media (camera + user) in unified interface
+5. **Organization** → Move camera media to custom collections as needed
+
+#### **Professional Camera Workflow**
+
+1. **Camera Setup** → "Front Door Camera" collection auto-created
+2. **Monitoring** → Live stream at 720p for bandwidth efficiency
+3. **Event Capture** → High-res 4K snapshot for documentation
+4. **Auto-Organization** → Snapshot appears in "Front Door Camera" collection
+5. **Professional Sharing** → Share collection with security team
+
+#### **Multi-Camera Management**
+
+1. **Camera Detection** → Each camera gets own collection
+2. **Unified Gallery** → Browse all camera collections in one interface
+3. **Smart Organization** → "All Camera Media" virtual collection
+4. **Time-based Browsing** → Timeline view across all cameras
+5. **Custom Collections** → Create "Security Events" from multiple cameras
+
+### **🔧 TECHNICAL IMPLEMENTATION DETAILS**
+
+#### **Service Integration**
+
+```dart
+// Enhanced CameraService with collection integration
+class CameraService {
+  Future<String> createCameraCollection(String cameraId, String cameraName);
+  Future<void> uploadSnapshotToCollection(SnapshotResult snapshot, String collectionId);
+  Future<MediaCollection> getCameraCollection(String cameraId);
+}
+
+// Unified MediaService integration
+class MediaService {
+  Future<List<MediaCollection>> getAllCollections(); // Includes camera collections
+  Future<List<MediaItem>> getCollectionMedia(String collectionId);
+  Future<void> moveMediaToCollection(String mediaId, String collectionId);
+}
+```
+
+#### **Authentication Manager**
+
+```dart
+class UnifiedAuthManager {
+  Future<bool> initializeAuth(); // Check stored credentials
+  Future<String?> getValidToken(); // Auto-refresh if needed
+  Future<void> loginOnce(String email, String password); // Store securely
+  Stream<AuthState> get authStateStream; // Global auth state
+}
+```
+
+#### **Background Sync Service**
+
+```dart
+class BackgroundSyncService {
+  Future<void> queueSnapshotUpload(SnapshotResult snapshot);
+  Future<void> processUploadQueue(); // Background processing
+  Stream<SyncProgress> get syncProgressStream;
+  Future<void> retryFailedUploads(); // Exponential backoff
+}
+```
+
+### **💡 KEY ARCHITECTURAL INSIGHTS**
+
+#### **No Duplicate Systems**
+
+- **Collections**: Use existing Media Service collections (no new data models)
+- **Gallery**: Enhance existing gallery components (no separate UI)
+- **Authentication**: Extend existing auth system (no parallel login)
+- **Storage**: Leverage existing cloud storage (no additional infrastructure)
+
+#### **Seamless User Experience**
+
+- **Single Login**: User logs in once, works everywhere
+- **Unified Interface**: Camera media appears alongside other media
+- **Standard Operations**: Share, delete, organize work consistently
+- **Professional Features**: Collections, search, permissions all work
+
+#### **Developer Benefits**
+
+- **Code Reuse**: 100% reuse of existing media infrastructure
+- **Maintenance**: Single codebase for all media operations
+- **Testing**: Consistent testing patterns across features
+- **Performance**: Same optimization applies to all media
 7. **Background Upload**: Snapshots automatically uploaded to media service
 8. **Professional Gallery**: Access enhanced gallery with thumbnails, search, collections
 9. **Cloud Backup**: Automatic cloud storage through media service

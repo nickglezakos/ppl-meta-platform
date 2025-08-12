@@ -1,11 +1,18 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'core/config/app_config.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/navigation/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize SharedPreferences for web platform
+  if (kIsWeb) {
+    SharedPreferences.setMockInitialValues({});
+  }
   
   // Initialize app configuration
   await AppConfig.initialize();
