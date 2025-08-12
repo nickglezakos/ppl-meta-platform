@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../config/app_config.dart';
 import '../models/camera.dart';
 import '../models/snapshot_settings.dart';
+import '../models/snapshot_result.dart';
 
 /// API Error model for error handling
 class ApiError {
@@ -584,7 +585,7 @@ class CameraSnapshotNotifier extends StateNotifier<CameraSnapshotState> {
       final snapshotResult = await _cameraService.captureSnapshot(cameraId);
       state = state.copyWith(
         isCapturing: false,
-        snapshotUrl: snapshotResult.data, // Use the data URL from the result
+        snapshotUrl: snapshotResult.dataUrl, // Use the data URL from the result
       );
     } catch (e) {
       state = state.copyWith(

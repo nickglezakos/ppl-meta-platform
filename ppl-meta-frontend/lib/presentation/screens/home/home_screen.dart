@@ -210,6 +210,14 @@ class HomeScreen extends ConsumerWidget {
                     },
                   ),
                   _ActionCard(
+                    icon: Icons.camera_alt,
+                    title: 'Snapshots',
+                    subtitle: 'Camera snapshot gallery',
+                    onTap: () {
+                      context.go('/snapshots');
+                    },
+                  ),
+                  _ActionCard(
                     icon: Icons.collections,
                     title: 'Collections',
                     subtitle: 'Organize your media',
