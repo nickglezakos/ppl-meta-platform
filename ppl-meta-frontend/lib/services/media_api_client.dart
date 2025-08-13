@@ -6,6 +6,7 @@ import 'package:http_parser/http_parser.dart' as http_parser;
 import 'package:path_provider/path_provider.dart';
 import '../models/api_response.dart';
 import '../models/media_models.dart';
+import '../core/models/collection_models.dart';
 import '../models/device_info.dart';
 import '../core/config/app_config.dart';
 import '../core/api/api_client.dart';
@@ -335,6 +336,39 @@ class MediaApiClient {
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Bulk add media items to collection using backend bulk-add endpoint
+  Future<ApiResponse<void>> bulkAddToCollection({
+    required String collectionId,
+    required List<String> mediaIds,
+  }) async {
+    try {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      print('DEBUG: MediaApiClient bulkAddToCollection - collectionId: $collectionId, mediaIds: $mediaIds, userId: $userId');
+      
+      final response = await _apiClient.post(
+        '/api/v1/media/collections/$collectionId/bulk-add',
+        data: {
+          'media_ids': mediaIds,
+          'collection_id': collectionId,
+          'user_id': userId,
+        },
+      );
+      
+      print('DEBUG: MediaApiClient bulkAddToCollection - success: ${response.data}');
+      return ApiResponse.success(null);
+    } on DioException catch (e) {
+      print('DEBUG: MediaApiClient bulkAddToCollection - DioException: $e');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('DEBUG: MediaApiClient bulkAddToCollection - Exception: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }
@@ -746,10 +780,17 @@ class MediaApiClient {
         return response.data['guid']?.toString();
       }
       return null;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        print('🔓 MediaApiClient: Authentication required - 401 error');
+      } else {
+        print('⚠️ MediaApiClient: Failed to get current user ID - Status: ${e.response?.statusCode}');
+      }
+      return null;
     } catch (e) {
-      print('Failed to get current user ID: $e');
+      print('⚠️ MediaApiClient: Network error getting user ID: $e');
+      return null;
     }
-    return null;
   }
 }
 

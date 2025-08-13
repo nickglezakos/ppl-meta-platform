@@ -31,8 +31,10 @@ class ApiClient {
         onError: (error, handler) async {
           // Handle token expiration and retry logic
           if (error.response?.statusCode == 401) {
-            // Token expired, clear it
+            // Token expired, clear it but don't auto-logout here
+            // Let the AuthService handle the 401 response properly
             _authToken = null;
+            print('🔓 ApiClient: Token cleared due to 401 response');
             // Could implement refresh token logic here
           }
           handler.next(error);
@@ -129,5 +131,6 @@ class ApiClient {
 /// Provider for API client
 final apiClientProvider = Provider<ApiClient>((ref) {
   final config = ref.watch(appConfigProvider);
+  ref.keepAlive(); // Prevent this provider from being disposed
   return ApiClient(config);
 });

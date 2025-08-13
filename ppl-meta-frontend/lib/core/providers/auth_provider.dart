@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logger/logger.dart';
 import '../models/user.dart';
 import '../services/auth_service.dart';
 
@@ -15,6 +16,17 @@ class AuthState {
     this.error,
     this.isAuthenticated = false,
   });
+
+  const AuthState.unauthenticated()
+      : user = null,
+        isLoading = false,
+        error = null,
+        isAuthenticated = false;
+
+  const AuthState.authenticated(this.user)
+      : isLoading = false,
+        error = null,
+        isAuthenticated = true;
 
   AuthState copyWith({
     User? user,
@@ -54,44 +66,54 @@ class AuthState {
 /// Authentication state notifier
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
+  final Logger _logger = Logger();
 
-  AuthNotifier(this._authService) : super(const AuthState()) {
+  AuthNotifier(this._authService) : super(const AuthState.unauthenticated()) {
+    _logger.i('AuthNotifier: Constructor called, initial state: unauthenticated');
+    // Initialize authentication automatically
     _initializeAuth();
   }
 
   /// Initialize authentication service and check current status
   Future<void> _initializeAuth() async {
-    await _authService.initialize();
-    await _checkAuthStatus();
+    _logger.i('AuthNotifier: _initializeAuth() started');
+    try {
+      await _authService.initialize();
+      _logger.i('AuthNotifier: AuthService initialized successfully');
+      await checkAuth();
+      _logger.i('AuthNotifier: Initial auth check completed');
+    } catch (e) {
+      _logger.e('AuthNotifier: _initializeAuth() failed: $e');
+    }
   }
 
   /// Check current authentication status
-  Future<void> _checkAuthStatus() async {
-    state = state.copyWith(isLoading: true, error: null);
+  Future<void> checkAuth() async {
+    _logger.i('AuthNotifier: checkAuth() called, current state: ${state.toString()}');
     
     try {
-      final isAuth = await _authService.isAuthenticated();
-      if (isAuth) {
-        final user = await _authService.getCurrentUser();
-        state = state.copyWith(
-          user: user,
-          isAuthenticated: user != null,
-          isLoading: false,
-        );
+      final token = await _authService.getToken();
+      _logger.i('AuthNotifier: Retrieved token from storage: ${token != null ? 'EXISTS (${token.length} chars)' : 'NULL'}');
+      
+      if (token == null) {
+        _logger.w('AuthNotifier: No token found, setting unauthenticated');
+        state = const AuthState.unauthenticated();
+        return;
+      }
+
+      final user = await _authService.getCurrentUser();
+      _logger.i('AuthNotifier: Current user: ${user != null ? 'FOUND (${user.username})' : 'NULL'}');
+      
+      if (user != null) {
+        _logger.i('AuthNotifier: Authentication valid, setting authenticated state');
+        state = AuthState.authenticated(user);
       } else {
-        state = state.copyWith(
-          user: null,
-          isAuthenticated: false,
-          isLoading: false,
-        );
+        _logger.w('AuthNotifier: User is null despite having token, setting unauthenticated');
+        state = const AuthState.unauthenticated();
       }
     } catch (e) {
-      state = state.copyWith(
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: e.toString(),
-      );
+      _logger.e('AuthNotifier: checkAuth error: $e');
+      state = const AuthState.unauthenticated();
     }
   }
 
@@ -196,8 +218,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 /// Provider for authentication state
 final authNotifierProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   final authService = ref.watch(authServiceProvider);
+  ref.keepAlive(); // Prevent this provider from being disposed
   return AuthNotifier(authService);
-});
+}, name: 'authNotifier');
 
 /// Convenience provider for current user
 final currentUserProvider = Provider<User?>((ref) {

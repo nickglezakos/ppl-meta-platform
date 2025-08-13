@@ -24,22 +24,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authNotifierProvider);
   
   return GoRouter(
-    initialLocation: authState.isAuthenticated ? '/home' : '/login',
+    initialLocation: '/home', // Set a default, let redirect handle authentication
     redirect: (context, state) {
       final isAuthenticated = authState.isAuthenticated;
       final isLoginRoute = state.fullPath == '/login';
       final isRegisterRoute = state.fullPath == '/register';
       
+      print('Router redirect - path: ${state.fullPath}, isAuthenticated: $isAuthenticated');
+      
       // If not authenticated and trying to access protected routes, redirect to login
       if (!isAuthenticated && !isLoginRoute && !isRegisterRoute) {
+        print('Redirecting to login - not authenticated');
         return '/login';
       }
       
       // If authenticated and trying to access auth routes, redirect to home
       if (isAuthenticated && (isLoginRoute || isRegisterRoute)) {
+        print('Redirecting to home - already authenticated');
         return '/home';
       }
       
+      print('No redirect needed - staying on: ${state.fullPath}');
       return null; // No redirect needed
     },
     routes: [
@@ -82,9 +87,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/collections',
         name: 'collections',
-        builder: (context, state) => const ProviderScreenWrapper(
-          child: CollectionsScreen(),
-        ),
+        builder: (context, state) {
+          final collectionId = state.uri.queryParameters['collectionId'];
+          return ProviderScreenWrapper(
+            child: CollectionsScreen(initialCollectionId: collectionId),
+          );
+        },
       ),
       GoRoute(
         path: '/profile',

@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../core/theme/app_theme.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
+import '../core/models/collection_models.dart';
 import '../widgets/collection_management.dart';
 import '../widgets/responsive_media_gallery.dart';
 import '../widgets/custom_app_bar.dart';
 
 /// Collections screen with management and media display
 class CollectionsScreen extends ConsumerStatefulWidget {
-  const CollectionsScreen({super.key});
+  final String? initialCollectionId;
+  
+  const CollectionsScreen({
+    super.key, 
+    this.initialCollectionId,
+  });
 
   @override
   ConsumerState<CollectionsScreen> createState() => _CollectionsScreenState();
@@ -17,11 +24,44 @@ class CollectionsScreen extends ConsumerStatefulWidget {
 
 class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   MediaCollection? _selectedCollection;
-  List<MediaItem> _selectedItems = [];
+  bool _isLoading = false;
   bool _isSelectionMode = false;
+  List<MediaItem> _selectedItems = [];
+
+  @override
+  void initState() {
+    super.initState();
+    print('🏗️ CollectionsScreen initState - initialCollectionId: ${widget.initialCollectionId}');
+    // Note: Don't set _selectedCollection here directly, let CollectionManagement handle auto-selection
+    // This ensures proper coordination between the widgets
+  }
+  
+  // Keep a reference to the gallery widget to prevent recreating it
+  ResponsiveMediaGallery? _mediaGallery;
+
+  // Method to build media gallery only when needed
+  ResponsiveMediaGallery _buildMediaGallery(ApiClient apiClient) {
+    if (_mediaGallery == null || 
+        _mediaGallery!.collectionId != _selectedCollection!.id ||
+        _mediaGallery!.enableSelection != _isSelectionMode) {
+      _mediaGallery = ResponsiveMediaGallery(
+        key: ValueKey(_selectedCollection!.id), // Use collection ID as key
+        collectionId: _selectedCollection!.id,
+        enableSelection: _isSelectionMode,
+        enableInfiniteScroll: true,
+        apiClient: apiClient,
+        onItemTap: _handleItemTap,
+        onItemLongPress: _handleItemLongPress,
+        onSelectionChanged: _handleSelectionChanged,
+      );
+    }
+    return _mediaGallery!;
+  }
 
   @override
   Widget build(BuildContext context) {
+    print('🏗️ CollectionsScreen build() - initialCollectionId: ${widget.initialCollectionId}, _selectedCollection: ${_selectedCollection?.id}');
+    
     final apiClient = ref.watch(apiClientProvider);
     return Scaffold(
       appBar: CustomAppBar(
@@ -31,11 +71,15 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         showBackButton: true, // Always show back button on collections screen
         onBackPressed: _selectedCollection != null 
             ? () {
+                print('🔙 Back button pressed - navigating to collections list');
+                // Clear selected collection and navigate back
                 setState(() {
                   _selectedCollection = null;
                   _isSelectionMode = false;
                   _selectedItems.clear();
                 });
+                // Navigate back to collections list using router
+                context.go('/collections');
               }
             : null,
       ),
@@ -50,10 +94,14 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     final apiClient = ref.watch(apiClientProvider);
     return CollectionManagement(
       apiClient: apiClient,
+      initialCollectionId: widget.initialCollectionId,
       onCollectionSelected: (collection) {
+        print('🎯 CollectionsScreen: Collection selected - ${collection?.name} (ID: ${collection?.id})');
+        print('🎯 Current _selectedCollection before update: ${_selectedCollection?.name} (ID: ${_selectedCollection?.id})');
         setState(() {
           _selectedCollection = collection;
         });
+        print('🎯 _selectedCollection after update: ${_selectedCollection?.name} (ID: ${_selectedCollection?.id})');
       },
       onItemsAddedToCollection: (items, collection) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -78,15 +126,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         
         // Collection media
         Expanded(
-          child: ResponsiveMediaGallery(
-            collectionId: _selectedCollection!.id,
-            enableSelection: _isSelectionMode,
-            enableInfiniteScroll: true,
-            apiClient: apiClient,
-            onItemTap: _handleItemTap,
-            onItemLongPress: _handleItemLongPress,
-            onSelectionChanged: _handleSelectionChanged,
-          ),
+          child: _buildMediaGallery(apiClient),
         ),
       ],
     );
@@ -177,13 +217,17 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
               _CollectionStat(
                 icon: Icons.schedule,
                 label: 'Created',
-                value: _formatDate(_selectedCollection!.createdAt),
+                value: _selectedCollection!.createdAt != null 
+                    ? _formatDate(_selectedCollection!.createdAt!) 
+                    : 'Unknown',
               ),
               const SizedBox(width: AppSpacing.lg),
               _CollectionStat(
                 icon: Icons.update,
                 label: 'Updated',
-                value: _formatDate(_selectedCollection!.updatedAt ?? _selectedCollection!.createdAt),
+                value: (_selectedCollection!.updatedAt ?? _selectedCollection!.createdAt) != null
+                    ? _formatDate(_selectedCollection!.updatedAt ?? _selectedCollection!.createdAt!)
+                    : 'Unknown',
               ),
             ],
           ),

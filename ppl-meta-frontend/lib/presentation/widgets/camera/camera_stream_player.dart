@@ -5,7 +5,7 @@ import 'dart:ui_web' as ui_web;
 import 'dart:async';
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/camera_providers.dart';
-import '../../../core/services/camera_service.dart' show cameraServiceProvider;
+import '../../../core/providers/camera_providers.dart';
 
 class CameraStreamPlayer extends ConsumerStatefulWidget {
   final String cameraId;

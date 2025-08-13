@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
+import '../core/models/collection_models.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
@@ -12,6 +13,7 @@ class CollectionManagement extends StatefulWidget {
   final Function(List<MediaItem>, MediaCollection)? onItemsAddedToCollection;
   final List<MediaItem>? selectedItems;
   final ApiClient? apiClient;
+  final String? initialCollectionId;
 
   const CollectionManagement({
     super.key,
@@ -19,6 +21,7 @@ class CollectionManagement extends StatefulWidget {
     this.onItemsAddedToCollection,
     this.selectedItems,
     this.apiClient,
+    this.initialCollectionId,
   });
 
   @override
@@ -37,6 +40,7 @@ class _CollectionManagementState extends State<CollectionManagement>
   bool _isLoading = false;
   bool _isCreating = false;
   String? _error;
+  bool _hasAutoSelected = false; // Prevent multiple auto-selections
   
   // Drag and drop state
   MediaCollection? _dragTargetCollection;
@@ -90,6 +94,12 @@ class _CollectionManagementState extends State<CollectionManagement>
           _collections = response.data!;
           _isLoading = false;
         });
+        
+        // Auto-select collection if initialCollectionId is provided and not already selected
+        if (widget.initialCollectionId != null && !_hasAutoSelected) {
+          _autoSelectCollection(widget.initialCollectionId!);
+          _hasAutoSelected = true;
+        }
       } else {
         setState(() {
           _error = response.error;
@@ -101,6 +111,26 @@ class _CollectionManagementState extends State<CollectionManagement>
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  /// Auto-select collection by ID
+  void _autoSelectCollection(String collectionId) {
+    print('🔍 Auto-selecting collection with ID: $collectionId');
+    print('🔍 Available collections: ${_collections.map((c) => 'ID=${c.id} (${c.id.runtimeType}) Name=${c.name}').toList()}');
+    
+    try {
+      final collection = _collections.firstWhere((c) => c.id == collectionId);
+      print('✅ Found matching collection: ${collection.name}');
+      setState(() {
+        _selectedCollection = collection;
+      });
+      // Notify parent widget about the selection
+      widget.onCollectionSelected?.call(collection);
+    } catch (e) {
+      // Collection with the specified ID not found
+      print('❌ Collection with ID $collectionId not found');
+      print('❌ Error: $e');
     }
   }
 
@@ -225,7 +255,7 @@ class _CollectionManagementState extends State<CollectionManagement>
         final index = _collections.indexWhere((c) => c.id == collection.id);
         if (index != -1) {
           _collections[index] = _collections[index].copyWith(
-            mediaCount: _collections[index].mediaCount + items.length,
+            itemCount: _collections[index].itemCount + items.length,
           );
         }
       });
@@ -673,7 +703,9 @@ class _CollectionListItem extends StatelessWidget {
                 ],
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  'Created ${_formatDate(collection.createdAt)}',
+                  collection.createdAt != null 
+                      ? 'Created ${_formatDate(collection.createdAt!)}'
+                      : 'Created recently',
                   style: AppTextStyles.caption,
                 ),
               ],

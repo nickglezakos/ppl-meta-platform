@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../models/user.dart';
 import '../config/app_config.dart';
+import 'secure_storage_service.dart';
 
 class AuthenticationException implements Exception {
   final String message;
@@ -21,18 +22,54 @@ class AuthService {
   final ApiClient _apiClient;
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'user_data';
+  
+  // Callbacks for authentication events
+  final List<Function()> _onAuthenticationSuccessCallbacks = [];
 
   AuthService(this._apiClient);
 
+  // Register callback for successful authentication
+  void registerOnAuthenticationSuccess(Function() callback) {
+    _onAuthenticationSuccessCallbacks.add(callback);
+  }
+
+  // Remove callback
+  void unregisterOnAuthenticationSuccess(Function() callback) {
+    _onAuthenticationSuccessCallbacks.remove(callback);
+  }
+
+  // Notify all callbacks
+  void _notifyAuthenticationSuccess() {
+    for (final callback in _onAuthenticationSuccessCallbacks) {
+      try {
+        callback();
+      } catch (e) {
+        print('Error in authentication success callback: $e');
+      }
+    }
+  }
+
   // Initialize the service with stored token
   Future<void> initialize() async {
+    print('AuthService: initialize() started');
     final token = await _getStoredToken();
+    print('AuthService: Retrieved stored token: ${token != null ? 'EXISTS (${token.length} chars)' : 'NULL'}');
+    
     if (token != null && !JwtDecoder.isExpired(token)) {
+      print('AuthService: Token is valid, setting in ApiClient');
       _apiClient.setAuthToken(token);
+      
+      // Notify success callbacks
+      print('AuthService: Authentication success callbacks notified');
+      _notifyAuthenticationSuccess();
     } else if (token != null) {
       // Token exists but is expired, clear it
+      print('AuthService: Token expired, clearing stored data');
       await _clearStoredData();
+    } else {
+      print('AuthService: No stored token found');
     }
+    print('AuthService: initialize() completed');
   }
 
   // Login method
@@ -122,9 +159,17 @@ class AuthService {
         return User.fromJson(response.data!);
       }
       return null;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        print('AuthService: 401 error - clearing stored auth data');
+        await _clearStoredData();
+        _apiClient.clearAuthToken();
+      } else {
+        print('AuthService: Non-401 error getting user profile: ${e.response?.statusCode}');
+      }
+      return null;
     } catch (e) {
-      await _clearStoredData();
-      _apiClient.clearAuthToken();
+      print('AuthService: Network error getting user profile: $e');
       return null;
     }
   }
@@ -163,19 +208,62 @@ class AuthService {
 
   // Private helper methods
   Future<void> _storeToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    print('AuthService: Storing token (${token.length} chars)');
+    try {
+      // Store in both secure storage and SharedPreferences for redundancy
+      await SecureStorageService.setString(_tokenKey, token);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenKey, token);
+      print('AuthService: Token stored successfully in both secure storage and SharedPreferences');
+    } catch (e) {
+      print('AuthService: Error storing token: $e');
+    }
   }
 
   Future<String?> _getStoredToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
+    print('AuthService: _getStoredToken() called');
+    try {
+      // Try secure storage first
+      String? token = await SecureStorageService.getString(_tokenKey);
+      print('AuthService: Secure storage result: ${token != null ? 'EXISTS (${token.length} chars)' : 'NULL'}');
+      
+      if (token != null) {
+        return token;
+      }
+      
+      // Fall back to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      print('AuthService: SharedPreferences keys: $keys');
+      token = prefs.getString(_tokenKey);
+      print('AuthService: SharedPreferences result: ${token != null ? 'EXISTS (${token.length} chars)' : 'NULL'}');
+      return token;
+    } catch (e) {
+      print('AuthService: Error in _getStoredToken(): $e');
+      return null;
+    }
   }
 
   Future<void> _clearStoredData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_userKey);
+    print('AuthService: Clearing stored authentication data');
+    try {
+      // Clear from both storage systems
+      await SecureStorageService.remove(_tokenKey);
+      await SecureStorageService.remove(_userKey);
+      
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove(_userKey);
+      
+      print('AuthService: Stored data cleared from both secure storage and SharedPreferences');
+    } catch (e) {
+      print('AuthService: Error clearing stored data: $e');
+    }
+  }
+
+  /// Get the current stored token for auth provider
+  Future<String?> getToken() async {
+    return await _getStoredToken();
   }
 
   AuthenticationException _handleApiError(DioException error) {

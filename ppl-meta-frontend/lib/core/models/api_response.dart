@@ -38,6 +38,9 @@ class ApiResponse<T> {
   
   /// Check if response has error
   bool get hasError => error != null;
+  
+  /// Alternative getter for success (for backward compatibility)
+  bool get isSuccess => success;
 }
 
 /// Loading state for UI components

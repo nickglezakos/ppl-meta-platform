@@ -275,6 +275,12 @@ face_pics/
 static-stage/
 Personprints_dir/
 
+# Media storage directories
+ppl-meta-media/storage/
+ppl-meta-cameras/snapshots/
+*/storage/media/
+*/snapshots/
+
 # Reports and temporary data
 reports/
 *.tmp

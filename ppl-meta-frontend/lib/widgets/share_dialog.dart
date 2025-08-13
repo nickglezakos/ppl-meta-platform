@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
+import '../core/models/collection_models.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
 

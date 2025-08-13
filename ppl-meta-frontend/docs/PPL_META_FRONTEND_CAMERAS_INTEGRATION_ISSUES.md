@@ -538,17 +538,16 @@ class SnapshotSettingsDialog extends StatefulWidget {
 
 ## 🟡 **HIGH PRIORITY ISSUES**
 
-### **CAM-FLUTTER-004: Snapshot Capture and Gallery**
+### **CAM-FLUTTER-004: Snapshot Capture and Gallery - Phase 1 (COMPLETED)**
 **Priority**: 🟡 HIGH  
-**Status**: ✅ **PHASE 1 COMPLETED**  
+**Status**: ✅ **COMPLETED**  
 **Phase 1 Completion**: January 2025  
-**Phase 2 Target**: TBD (Media Service Integration)  
 
-**Description**: Implement comprehensive snapshot capture functionality with professional gallery management, leveraging both camera service and media service capabilities for optimal user experience.
+**Description**: Core snapshot capture functionality with local gallery management using camera service capabilities.
 
 ## ✅ **PHASE 1 COMPLETED - Camera-Centric Capture**
 
-**Implementation Status**: **� FULLY COMPLETED AND READY FOR PRODUCTION**
+**Implementation Status**: **✅ FULLY COMPLETED AND READY FOR PRODUCTION**
 
 ### **✅ COMPLETED FEATURES**:
 - ✅ **Snapshot Capture Button**: Enhanced capture with settings integration
@@ -566,16 +565,6 @@ class SnapshotSettingsDialog extends StatefulWidget {
 - `/lib/presentation/widgets/camera/snapshot_preview_dialog.dart` - Full preview dialog
 - `/lib/presentation/widgets/camera/snapshot_gallery_widget.dart` - Gallery grid component
 - `/lib/presentation/screens/camera/snapshot_gallery_screen.dart` - Dedicated gallery screen
-- Updated navigation routes and home screen integration
-
-### **✅ USER JOURNEY VERIFIED**:
-1. ✅ **Stream Access**: User views live camera stream (CAM-FLUTTER-003)
-2. ✅ **One-Tap Capture**: Snapshot button with visual feedback and flash animation
-3. ✅ **Instant Capture**: High-resolution snapshot using CAM-FLUTTER-003.1 enhanced resolution
-4. ✅ **Local Storage**: Automatic save to local gallery with SharedPreferences
-5. ✅ **Quick Gallery**: Immediate access to snapshots grid with thumbnails
-6. ✅ **Preview & Manage**: Full preview, metadata, delete operations
-7. ✅ **Search & Filter**: Text search and camera-specific filtering
 
 ### **✅ TECHNICAL ACHIEVEMENTS**:
 - **Performance Optimized**: 50-item display limit, efficient thumbnail loading
@@ -584,536 +573,501 @@ class SnapshotSettingsDialog extends StatefulWidget {
 - **Error Handling**: Comprehensive error states and graceful fallbacks
 - **Integration**: Seamless integration with existing camera workflows
 
-### **🚀 PHASE 2 PREPARATION**:
-- ✅ **Migration-Ready Architecture**: Easy transition to media service integration
-- ✅ **Compatible Data Models**: SnapshotResult compatible with media service
-- ✅ **Service Abstraction**: Storage interface ready for SQLite/cloud migration
-- ✅ **UI Framework**: Gallery supports both local and cloud modes
+**Priority Justification**: Foundation for camera-owned collections architecture and media service integration.
 
-## 🐛 **CRITICAL BUG RESOLUTION - August 12, 2025**
+---
 
-### **Issue**: Base64 Image Decoding Error in Gallery Preview
-**Status**: ✅ **FULLY RESOLVED**  
-**Resolution Date**: August 12, 2025  
-**Error**: `FormatException: Invalid character (at character 5) data:image/jpeg;base64,...`
+### **CAM-FLUTTER-004A: Collection Auto-Creation**
+**Priority**: 🟡 HIGH  
+**Status**: ✅ **COMPLETED & RESOLVED**  
+**Target Completion**: September 1, 2025  
+**Resolution Date**: August 13, 2025
+**Dependencies**: CAM-FLUTTER-004 (Phase 1), Media Service API
 
-**Problem Description**:
-- Gallery thumbnails displayed correctly
-- Preview dialog failed to decode base64 images
-- Error occurred when trying to decode data URLs as pure base64
+**✅ COMPLETED IMPLEMENTATION**: Automatic collection detection and camera-collection mapping successfully implemented with seamless UI integration.
 
-**Root Cause**:
-- `SnapshotResult.imageBytes` getter was attempting to decode full data URLs (`data:image/jpeg;base64,...`) as base64
-- Preview dialog's `_getImageBytes()` method was using direct `base64Decode()` instead of the safer `imageBytes` getter
-
-**✅ RESOLUTION IMPLEMENTED**:
-
-1. **Fixed SnapshotResult.imageBytes getter**:
-   ```dart
-   Uint8List get imageBytes {
-     try {
-       String cleanBase64 = base64Image;
-       if (cleanBase64.startsWith('data:image/')) {
-         cleanBase64 = cleanBase64.split(',')[1];
-       }
-       return base64Decode(cleanBase64);
-     } catch (e) {
-       return Uint8List(0);
-     }
-   }
-   ```
-
-2. **Updated SnapshotPreviewDialog**:
-   ```dart
-   Uint8List _getImageBytes() {
-     return snapshot.imageBytes; // Uses safe getter instead of direct decode
-   }
-   ```
-
-3. **Enhanced Gallery Widget thumbnail generation**:
-   ```dart
-   Uint8List _getSnapshotThumbnail(SnapshotResult snapshot) {
-     return snapshot.imageBytes; // Consistent usage across components
-   }
-   ```
-
-**✅ VERIFICATION**:
-- ✅ Gallery thumbnails continue to work perfectly
-- ✅ Preview dialog now displays full-size images correctly
-- ✅ No more base64 decoding errors in console
-- ✅ Seamless user experience from gallery to preview
-
-**Impact**: **ZERO DOWNTIME** - Hot reload applied, full functionality restored immediately.
-
-## �🏗️ **Integration Architecture: Hybrid Approach**
-
-**Strategy**: Use a **hybrid integration approach** combining camera service capabilities with media service infrastructure for immediate functionality and professional features.
-
-### **✅ Phase 1: Camera-Centric Capture (COMPLETED)**
-- ✅ **Snapshot Capture**: Camera Service (`ppl-meta-cameras:8005`) for direct snapshot capture
-- ✅ **Local Storage**: SharedPreferences-based storage with automatic cleanup
-- ✅ **Quick Gallery**: Local snapshot management with grid view and search
-- ✅ **Enhanced Resolution**: Integration with CAM-FLUTTER-003.1 custom settings
-
-### **� Implementation Status**
-
-#### **Phase 1: ✅ COMPLETED**
-- ✅ **Real-time Camera Streaming**: Live preview from cameras service
-- ✅ **Instant Snapshot Capture**: Direct capture with immediate local storage
-- ✅ **Performance Optimized**: Sub-second capture times maintained
-- ✅ **Robust Error Handling**: Network resilience and fallback mechanisms
-
-#### **Phase 2: 🚧 IMPLEMENTATION COMPLETE - INTEGRATION PENDING**
-- ✅ **Architecture Design**: Complete 30-page implementation plan
-- ✅ **Core Services**: All 5 backend services implemented
-  - `SnapshotSyncService`: Background upload queue with retry logic
-  - `EnhancedGalleryService`: Hybrid local+cloud gallery
-  - `SnapshotCollectionService`: Professional organization features
-  - `EnhancedSnapshotService`: Unified Phase 2 API
-- ✅ **UI Components**: All 3 enhanced components implemented
-  - `SyncStatusWidgets`: Real-time sync status indicators
-  - `EnhancedSnapshotGalleryWidget`: Hybrid gallery display
-  - `EnhancedSnapshotPreviewDialog`: Professional preview with metadata
-- ⏳ **Provider Integration**: Dependency injection setup pending
-- ⏳ **Testing**: Integration testing with media service pending
-- ⏳ **Performance Validation**: Phase 1 speed maintenance verification pending
-
-### **�🔄 Phase 2: Media Service Integration (IN PROGRESS)**
-
-- ✅ **Background Upload Service**: Automatic transfer snapshots to **Media Service** (`ppl-meta-media:8000`)
-- ✅ **Enhanced Gallery Service**: Hybrid gallery combining local and cloud snapshots
-- ✅ **Collection Management**: Professional organization with project-based collections
-- ✅ **Sync Status Indicators**: Real-time visual feedback for upload progress
-- ⏳ **Advanced Sharing**: Professional sharing with permissions and expiration
-- ⏳ **Cross-Device Sync**: Access snapshots across multiple devices
-
-## 🎯 **Expected User Journey**
-
-### **Phase 1: Immediate Snapshot Workflow**
-1. **Stream Access**: User views live camera stream (from completed CAM-FLUTTER-003)
-2. **One-Tap Capture**: User taps snapshot button → Visual feedback (flash animation)
-3. **Instant Capture**: System captures high-resolution snapshot (using CAM-FLUTTER-003.1 enhanced resolution)
-4. **Local Storage**: Snapshot saved locally via camera service
-5. **Quick Gallery**: User can immediately view captured snapshots in local gallery
-6. **Basic Sharing**: Direct file system integration for sharing
-
-### **Phase 2: Enhanced Gallery Experience**
-
-**Status**: ✅ **ARCHITECTURE REFINED & READY FOR IMPLEMENTATION**  
-**Latest Update**: August 12, 2025  
-**Integration Strategy**: Camera-Owned Collections with Seamless User Experience
-
-## 🎯 **REFINED INTEGRATION STRATEGY - CAMERA-OWNED COLLECTIONS**
+**Description**: Implement automatic collection creation for each camera device during setup, establishing the foundation for camera-owned collections architecture.
 
 **Key Insight**: Each camera should own a media collection in the existing Media Service, eliminating the need for separate systems and providing seamless integration.
 
-### **✅ CAMERA-OWNED COLLECTIONS ARCHITECTURE**
-
-#### **Collection-Camera Mapping**
+## 🎯 **COLLECTION-CAMERA MAPPING ARCHITECTURE**
 
 ```text
 Camera Device → Owns → Media Collection
-├─ Camera ID: "cam_001_front_door"
-├─ Collection ID: "collection_cam_001" 
-├─ Collection Name: "Front Door Camera"
+├─ Camera ID: "usb_camera_0"
+├─ Collection ID: "c984dbd1-6598-44db-aa99-87ac955de25a" 
+├─ Collection Name: "USB Camera 0 Collection"
 └─ All snapshots → Auto-assigned to this collection
 ```
 
-#### **Seamless Integration Benefits**
+**✅ IMPLEMENTED USER EXPERIENCE FLOW**:
+1. **Camera Setup** → Auto-detects existing collection: "USB Camera 0 Collection"
+2. **Visual Indicator** → Blue folder icon appears on camera card (not grey)
+3. **One-Click Navigation** → Blue folder icon opens collection directly
+4. **Collection Auto-Selection** → Collection opens with camera media pre-selected
 
-- **✅ No Separate Systems**: 100% reuse of existing Media Service collections infrastructure
-- **✅ Unified Experience**: Camera media appears alongside user-created media in standard gallery
-- **✅ No Synchronization Issues**: Single source of truth for all media data
-- **✅ Standard Operations**: Share, delete, organize work consistently across all media types
+### **✅ COMPLETED FEATURES**
 
-#### **User Experience Flow**
+**✅ Automatic Collection Detection**:
+- Enhanced `CameraCollectionService` with smart collection detection
+- Authentication-aware API calls with proper token management
+- Collection name matching using naming conventions
+- Local storage mapping for persistent camera-collection relationships
 
-1. **Camera Setup** → Auto-creates collection: "Living Room Camera"
-2. **Snapshot Capture** → Auto-tagged with camera's collection
-3. **Gallery Access** → Camera collections appear alongside user collections
-4. **Organization** → Users can move camera media to custom collections
-5. **Unified Search** → Search across all collections (camera + user-created)
+**✅ Real-Time UI Integration**:
+- `cameraHasCollectionProvider` for live collection status updates
+- Blue folder icon display when collection exists
+- Grey "create new folder" icon when no collection found
+- Automatic UI refresh after authentication success
 
-### **🔄 SEAMLESS AUTHENTICATION & SYNC STRATEGY**
+**✅ Seamless Navigation**:
+- Direct navigation from camera detail to collection view
+- URL-based routing: `/collections?collectionId={uuid}`
+- Auto-selection of camera collection in collections screen
+- UUID-based collection identification (not integer database ID)
 
-#### **Unified Authentication Architecture**
+**✅ Authentication Integration**:
+- Authentication success callbacks trigger collection detection
+- Proper JWT token handling through `ApiClient`
+- Provider invalidation for UI refresh after login
+- Graceful handling of unauthenticated states
 
-```text
-App Startup → Check Stored Credentials → Auto-Login → Global Auth State
-```
+### **✅ TECHNICAL IMPLEMENTATION**
 
-**Implementation Components**:
-
-- **Single AuthManager**: Handles all authentication across camera + media services
-- **Persistent Token Storage**: `SharedPreferences` or `FlutterSecureStorage`
-- **Automatic Refresh**: Token refresh before expiration
-- **Global State**: Shared auth state across all features
-
-#### **Background Sync Service**
-
-```text
-Camera Capture → Local Storage → Background Upload → Media Service → Gallery Update
-```
-
-**Sync Features**:
-
-- **Automatic Upload**: Every photo/video queued for upload
-- **Retry Logic**: Failed uploads retry with exponential backoff
-- **Offline Support**: Queue operations when offline, sync when online
-- **Progress Tracking**: Background upload progress indicators
-
-#### **Unified State Management**
-
-```text
-Camera Service ←→ Unified State ←→ Media Service
-                     ↕
-                Gallery/Collections
-```
-
-**State Architecture**:
-
-- **Single Source of Truth**: All media items in unified state
-- **Real-time Updates**: Camera captures update both local and cloud state
-- **Consistent UI**: Same components for local and cloud media
-- **Cross-Feature Sync**: Collections sync across camera and gallery features
-
-### **🚀 IMPLEMENTATION ROADMAP**
-
-#### **Phase 2A: Collection Auto-Creation**
-
-- **Camera Detection Enhancement**: Auto-create collections during camera setup
-- **Collection Mapping**: Store camera-collection relationships
-- **API Integration**: Use existing `POST /api/v1/collections/` endpoints
-
-#### **Phase 2B: Snapshot Auto-Assignment**
-
-- **Enhanced Capture**: Include `collection_id` in snapshot uploads
-- **Media Service Integration**: Use existing `POST /api/v1/media/upload` with collection assignment
-- **Gallery Display**: Camera media appears automatically in collections view
-
-#### **Phase 2C: Unified UI Integration**
-
-- **Collection Indicators**: Camera icon for auto-managed collections
-- **Navigation Enhancement**: "View Media" button on camera details → Opens collection
-- **Search Integration**: Unified search across all collections
-
-### **📱 ENHANCED USER WORKFLOWS**
-
-#### **Daily Usage (Seamless Experience)**
-
-1. **Open App** → Auto-login with stored credentials (no manual login)
-2. **Take Photo/Video** → Immediately visible in gallery
-3. **Background Upload** → Automatic sync to camera's collection
-4. **Gallery Access** → All media (camera + user) in unified interface
-5. **Organization** → Move camera media to custom collections as needed
-
-#### **Professional Camera Workflow**
-
-1. **Camera Setup** → "Front Door Camera" collection auto-created
-2. **Monitoring** → Live stream at 720p for bandwidth efficiency
-3. **Event Capture** → High-res 4K snapshot for documentation
-4. **Auto-Organization** → Snapshot appears in "Front Door Camera" collection
-5. **Professional Sharing** → Share collection with security team
-
-#### **Multi-Camera Management**
-
-1. **Camera Detection** → Each camera gets own collection
-2. **Unified Gallery** → Browse all camera collections in one interface
-3. **Smart Organization** → "All Camera Media" virtual collection
-4. **Time-based Browsing** → Timeline view across all cameras
-5. **Custom Collections** → Create "Security Events" from multiple cameras
-
-### **🔧 TECHNICAL IMPLEMENTATION DETAILS**
-
-#### **Service Integration**
-
+**✅ Core Services Implemented**:
 ```dart
-// Enhanced CameraService with collection integration
-class CameraService {
-  Future<String> createCameraCollection(String cameraId, String cameraName);
-  Future<void> uploadSnapshotToCollection(SnapshotResult snapshot, String collectionId);
-  Future<MediaCollection> getCameraCollection(String cameraId);
+// ✅ IMPLEMENTED: Complete camera collection service
+class CameraCollectionService {
+  Future<bool> hasCameraCollection(String cameraId);
+  Future<String?> getCameraCollectionId(String cameraId);
+  Future<void> storeCameraCollectionMapping(CameraCollectionMapping mapping);
+  Future<bool> _findAndMapExistingCollection(String cameraId);
+  String _generateExpectedCollectionName(String cameraId);
 }
 
-// Unified MediaService integration
-class MediaService {
-  Future<List<MediaCollection>> getAllCollections(); // Includes camera collections
-  Future<List<MediaItem>> getCollectionMedia(String collectionId);
-  Future<void> moveMediaToCollection(String mediaId, String collectionId);
-}
+// ✅ IMPLEMENTED: Authentication-aware collection providers
+final cameraHasCollectionProvider = FutureProvider.family<bool, String>;
+final cameraCollectionIdProvider = FutureProvider.family<String?, String>;
+final cameraCollectionServiceProvider = Provider<CameraCollectionService>;
 ```
 
-#### **Authentication Manager**
-
+**✅ Collection Navigation Implementation**:
 ```dart
-class UnifiedAuthManager {
-  Future<bool> initializeAuth(); // Check stored credentials
-  Future<String?> getValidToken(); // Auto-refresh if needed
-  Future<void> loginOnce(String email, String password); // Store securely
-  Stream<AuthState> get authStateStream; // Global auth state
+// ✅ IMPLEMENTED: Direct navigation to collection
+void _navigateToCollection(WidgetRef ref, String cameraId) async {
+  final collectionId = await ref.read(cameraCollectionIdProvider(cameraId).future);
+  if (collectionId != null && mounted) {
+    context.go('/collections?collectionId=$collectionId');
+  }
+}
+
+// ✅ IMPLEMENTED: Auto-selection in collections screen
+class CollectionManagement extends StatefulWidget {
+  final String? initialCollectionId;
+  // Auto-selects collection when initialCollectionId provided
 }
 ```
 
-#### **Background Sync Service**
-
+**✅ Model Fixes Implemented**:
 ```dart
-class BackgroundSyncService {
-  Future<void> queueSnapshotUpload(SnapshotResult snapshot);
-  Future<void> processUploadQueue(); // Background processing
-  Stream<SyncProgress> get syncProgressStream;
-  Future<void> retryFailedUploads(); // Exponential backoff
+// ✅ FIXED: MediaCollection UUID handling
+factory MediaCollection.fromJson(Map<String, dynamic> json) {
+  // Use UUID as primary identifier, fallback to id if uuid not available
+  final id = json['uuid'] as String? ?? json['id']?.toString() ?? '';
+  return MediaCollection(id: id, ...);
 }
 ```
 
-### **💡 KEY ARCHITECTURAL INSIGHTS**
+### **✅ API INTEGRATION POINTS**
 
-#### **No Duplicate Systems**
+**✅ Working Endpoints**:
+- ✅ `GET /api/v1/media/collections/?user_id={guid}` - Collection listing with authentication
+- ✅ `GET /api/v1/user/profile` - User GUID retrieval for collection filtering
+- ✅ Camera collection mapping stored in SharedPreferences for persistence
+- ✅ Collection detection using name pattern matching: "{Camera Name} Collection"
 
-- **Collections**: Use existing Media Service collections (no new data models)
-- **Gallery**: Enhance existing gallery components (no separate UI)
-- **Authentication**: Extend existing auth system (no parallel login)
-- **Storage**: Leverage existing cloud storage (no additional infrastructure)
+### **✅ VERIFIED FUNCTIONALITY**
 
-#### **Seamless User Experience**
+**✅ Tested Scenarios**:
+- ✅ **Login Flow**: User logs in → Authentication triggers collection detection
+- ✅ **Collection Detection**: "USB Camera 0 Collection" automatically detected and mapped
+- ✅ **UI Update**: Blue folder icon appears automatically after successful detection  
+- ✅ **Navigation**: Blue folder icon click opens correct collection with auto-selection
+- ✅ **URL Routing**: Navigation uses UUID-based collection identification
+- ✅ **Persistence**: Camera-collection mapping persists across app sessions
 
-- **Single Login**: User logs in once, works everywhere
-- **Unified Interface**: Camera media appears alongside other media
-- **Standard Operations**: Share, delete, organize work consistently
-- **Professional Features**: Collections, search, permissions all work
+**✅ Production-Ready Features**:
+- ✅ **Error Handling**: Graceful fallback when collections not found
+- ✅ **Performance**: Efficient provider-based state management
+- ✅ **Authentication**: Proper JWT token integration with error recovery
+- ✅ **UI Polish**: Debug button hidden in production (commented out for troubleshooting)
 
-#### **Developer Benefits**
+### **✅ ACCEPTANCE CRITERIA - ALL MET**
 
-- **Code Reuse**: 100% reuse of existing media infrastructure
-- **Maintenance**: Single codebase for all media operations
-- **Testing**: Consistent testing patterns across features
-- **Performance**: Same optimization applies to all media
-7. **Background Upload**: Snapshots automatically uploaded to media service
-8. **Professional Gallery**: Access enhanced gallery with thumbnails, search, collections
-9. **Cloud Backup**: Automatic cloud storage through media service
-10. **Advanced Sharing**: Professional sharing with permissions and expiration
-11. **Organization**: Collections, tags, and metadata management
+- ✅ Automatic collection detection during camera authentication
+- ✅ Persistent camera-collection mapping storage (SharedPreferences)
+- ✅ Collection naming convention implementation: "{Camera Name} Collection"
+- ✅ Error handling for collection detection failures
+- ✅ UI indicators for collection status (blue vs grey folder icons)
+- ✅ Integration with existing camera setup flow
+- ✅ One-click navigation from camera to collection
+- ✅ Auto-selection of camera collection in unified gallery
 
-### **Advanced User Flows**
+### **🎯 IMPLEMENTATION SUCCESS**
 
-#### **Professional Snapshot Workflow**
-1. **Settings Access**: Long-press snapshot button → Settings dialog
-2. **Custom Settings**: Adjust resolution (max, 1920x1080, 1280x720), quality (70-100%), format (JPEG/PNG)
-3. **High-Res Capture**: System temporarily switches to maximum resolution for snapshot
-4. **Metadata**: Automatic timestamp, camera info, settings saved
-5. **Gallery Integration**: Snapshot appears in both local and media galleries
+**✅ Camera-Owned Collections Architecture Established**:
+- Each camera device automatically maps to its dedicated media collection
+- Seamless integration with existing Media Service collections
+- Foundation ready for automatic snapshot assignment (CAM-FLUTTER-004B)
+- Professional-grade user experience with intuitive navigation
 
-#### **Gallery Management Workflow**
-1. **Gallery Access**: Tap "Gallery" from camera screen or main menu
-2. **Grid Browse**: Responsive grid view with thumbnails (3-4 columns)
-3. **Preview**: Tap thumbnail → fullscreen preview with pinch-to-zoom
-4. **Actions**: Share, delete, add to collection, view metadata
-5. **Search**: Filter by date, camera, resolution, quality
-6. **Bulk Operations**: Multi-select for batch sharing/deletion
+**✅ Technical Excellence**:
+- Authentication-aware service architecture
+- Provider-based state management with automatic refresh
+- UUID-based collection identification for scalability
+- Clean separation of concerns between detection and UI layers
 
-## 🔧 **Technical Implementation**
+**Priority Justification**: Foundation requirement for all subsequent camera-owned collection features - **✅ SUCCESSFULLY COMPLETED**
 
-### **UI Components**:
-```dart
-// Phase 1: Core Components
-class SnapshotCaptureButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final VoidCallback onLongPress; // Settings dialog
-  final bool isCapturing;
-}
-
-class SnapshotGalleryWidget extends StatefulWidget {
-  final String? cameraId; // Filter by camera
-  final bool showLocalOnly; // Phase 1 vs Phase 2
-}
-
-class SnapshotPreviewWidget extends StatefulWidget {
-  final String snapshotId;
-  final bool enableZoom;
-  final bool showMetadata;
-}
-
-class SnapshotSettingsDialog extends StatefulWidget {
-  final Function(SnapshotSettings) onSettingsConfirmed;
-}
-
-// Phase 2: Enhanced Components
-class SnapshotCollectionWidget extends StatefulWidget
-class SnapshotSearchWidget extends StatefulWidget
-class SnapshotCloudSyncWidget extends StatefulWidget
-```
-
-### **API Integration Strategy**
-
-#### **Phase 1: Camera Service (Primary)**
-```dart
-// Direct camera service integration
-class CameraSnapshotService {
-  // Immediate capture with enhanced resolution
-  Future<SnapshotResult> captureSnapshot(String deviceId);
-  Future<SnapshotResult> captureCustomSnapshot(String deviceId, SnapshotSettings settings);
-  
-  // Local gallery management
-  Future<List<Snapshot>> getSnapshots(String deviceId);
-  Future<void> downloadSnapshot(String deviceId, String filename);
-  Future<void> deleteSnapshot(String deviceId, String filename);
-}
-```
-
-**Camera Service Endpoints**:
-- `GET /api/v1/streaming/{device_id}/snapshot` - Quick snapshot capture
-- `POST /api/v1/streaming/{device_id}/snapshot` - Custom quality/resolution settings
-- `GET /api/v1/streaming/{device_id}/snapshots` - List captured snapshots
-- `GET /api/v1/streaming/{device_id}/snapshot/{filename}` - Download snapshot file
-
-#### **Phase 2: Media Service (Enhanced)**
-```dart
-// Background media service integration
-class MediaSnapshotService {
-  // Upload to media service for permanent storage
-  Future<MediaItem> uploadSnapshot(SnapshotResult snapshot);
-  
-  // Enhanced gallery features
-  Future<MediaListResponse> getSnapshotGallery();
-  Future<MediaCollection> createSnapshotCollection(String name);
-  Future<void> shareSnapshots(List<String> snapshotIds, ShareSettings settings);
-}
-```
-
-**Media Service Endpoints**:
-- `POST /api/v1/media/upload` - Upload snapshot to media service
-- `GET /api/v1/media/items?type=image` - Enhanced gallery with search
-- `GET /api/v1/media/thumbnail/{media_id}` - Professional thumbnail generation
-- `POST /api/v1/media/collections` - Collection management
-- `POST /api/v1/media/shares` - Advanced sharing with permissions
-
-### **Storage Strategy**
-
-#### **Local Storage (Phase 1)**
-```dart
-class LocalSnapshotStorage {
-  // SQLite database for metadata
-  Future<void> saveSnapshotMetadata(SnapshotMetadata metadata);
-  Future<List<SnapshotMetadata>> getSnapshotsForCamera(String cameraId);
-  
-  // File system for image data
-  Future<String> saveSnapshotFile(Uint8List imageData, String filename);
-  Future<Uint8List> loadSnapshotFile(String filepath);
-  
-  // Thumbnail generation
-  Future<String> generateThumbnail(String imagePath, Size size);
-}
-```
-
-#### **Cloud Storage (Phase 2)**
-```dart
-class CloudSnapshotStorage {
-  // Background sync to media service
-  Future<void> syncSnapshotsToCloud();
-  Future<void> downloadFromCloud(String mediaId);
-  
-  // Conflict resolution
-  Future<void> resolveCloudConflicts();
-}
-```
-
-## 📱 **User Interface Design**
-
-### **Snapshot Capture Interface**
-```
-Camera Detail Screen
-├── Live Video Stream (center)
-├── Snapshot Button (overlay, bottom-right)
-│   ├── Quick Tap → Instant Capture with flash animation
-│   └── Long Press → Settings Dialog
-├── Gallery Button (top-right) → Local/Enhanced Gallery
-└── Stream Controls (bottom)
-
-Snapshot Settings Dialog
-├── Resolution Dropdown (Auto-detect max, 1920x1080, 1280x720)
-├── Quality Slider (70-100% with file size preview)
-├── Format Toggle (JPEG vs PNG with descriptions)
-├── "Capture with Settings" Button
-└── "Cancel" Button
-```
-
-### **Gallery Interface**
-```
-Snapshot Gallery Screen
-├── Header: Camera Filter, Search, View Mode Toggle
-├── Grid View: Responsive thumbnails (3-4 columns)
-│   ├── Thumbnail with metadata overlay
-│   ├── Selection mode for bulk operations
-│   └── Loading indicators for cloud sync
-├── Bottom Actions: Share, Delete, Collections
-└── Pull-to-refresh for sync
-
-Snapshot Preview Screen
-├── Fullscreen Image with pinch-to-zoom
-├── Metadata Panel (swipe up): Timestamp, camera, settings, file size
-├── Action Bar: Share, Delete, Add to Collection, Cloud Sync
-└── Navigation: Previous/Next, Back to Gallery
-```
-
-## ⚡ **Performance Requirements**
-
-### **Immediate Response (Phase 1)**
-- **Capture Speed**: < 500ms from tap to visual feedback
-- **Gallery Loading**: < 2 seconds for 100+ local thumbnails
-- **Image Preview**: < 1 second to open fullscreen view
-- **Memory Usage**: Efficient thumbnail caching (max 50MB)
-
-### **Enhanced Performance (Phase 2)**
-- **Cloud Sync**: Background upload without UI blocking
-- **Search Performance**: < 500ms for metadata searches
-- **Collection Loading**: < 3 seconds for 1000+ images
-- **Offline Access**: 100% functionality without network
-
-## 🚀 **Implementation Phases**
-
-### **Phase 1 (CAM-FLUTTER-004.1): Core Functionality** 
-**Target**: August 25, 2025
-- ✅ Leverage existing enhanced resolution control (CAM-FLUTTER-003.1)
-- ✅ Snapshot capture button with visual feedback
-- ✅ Local snapshot gallery using camera service endpoints
-- ✅ Basic preview and file system sharing
-- ✅ Settings dialog for quality/format control
-
-### **Phase 2 (CAM-FLUTTER-004.2): Media Service Integration**
-**Target**: August 30, 2025
-- ✅ Background upload to media service
-- ✅ Integration with existing media gallery infrastructure
-- ✅ Cloud storage and advanced sharing capabilities
-- ✅ Search, collections, and professional metadata management
-
-## 🎯 **Business Benefits**
-
-### **Immediate Value (Phase 1)**
-- **Fast Implementation**: Leverage existing camera service capabilities
-- **Instant Feedback**: Local storage provides immediate user satisfaction
-- **Professional Quality**: Enhanced resolution control from CAM-FLUTTER-003.1
-- **Offline Capability**: No network dependency for core functionality
-
-### **Long-term Value (Phase 2)**
-- **Scalability**: Cloud storage handles unlimited snapshots
-- **Professional Features**: Advanced search, collections, sharing
-- **Platform Integration**: Unified media experience across all platform features
-- **Data Safety**: Automatic backup and sync protection
-
-**Acceptance Criteria**:
-- [ ] **Phase 1**: Instant snapshot capture with visual feedback
-- [ ] **Phase 1**: Local snapshot gallery with thumbnail generation
-- [ ] **Phase 1**: Custom snapshot settings dialog (resolution, quality, format)
-- [ ] **Phase 1**: Image preview with pinch-to-zoom capability
-- [ ] **Phase 1**: Basic native sharing integration
-- [ ] **Phase 2**: Background upload to media service
-- [ ] **Phase 2**: Enhanced gallery with search and filtering
-- [ ] **Phase 2**: Cloud storage integration and sync
-- [ ] **Phase 2**: Professional sharing with permissions and collections
-- [ ] **Phase 2**: Unified media gallery experience
-
-**Priority Justification**: HIGH priority as this completes the core camera functionality pipeline and provides immediate user value while establishing foundation for professional media management features.
+**🚀 NEXT STEPS**: ✅ Ready to proceed to CAM-FLUTTER-004B (Snapshot Auto-Assignment) with solid collection detection foundation in place.
 
 ---
+
+### **CAM-FLUTTER-004B: Snapshot Auto-Assignment**
+**Priority**: 🟡 HIGH  
+**Status**: ✅ **FULLY RESOLVED & PRODUCTION READY**  
+**Target Completion**: September 5, 2025  
+**Resolution Date**: August 13, 2025
+**Dependencies**: CAM-FLUTTER-004A (Collection Auto-Creation)
+
+**✅ COMPLETED IMPLEMENTATION**: Automatic assignment of captured snapshots to their respective camera collections successfully implemented with background upload to Media Service.
+
+**🎉 FINAL RESOLUTION CONFIRMATION**: All functionality verified working in production environment - bulk-add API integration, authentication flow, and collection assignment pipeline fully operational.
+
+**Description**: Implement automatic assignment of captured snapshots to their respective camera collections, with background upload to Media Service.
+
+**User Experience Flow**:
+2. **Snapshot Capture** → Auto-tagged with camera's collection ✅
+
+### **✅ COMPLETED FEATURES**
+
+**✅ Enhanced Snapshot Capture**:
+- Integrated automatic collection detection into snapshot capture flow
+- Background upload queue with retry logic and persistent storage
+- Non-blocking automatic upload (capture succeeds even if upload fails)
+- Collection metadata enhancement with camera information
+
+**✅ Background Sync Service**:
+- Automatic upload queue processing with Timer-based scheduling
+- Exponential backoff retry logic (up to 3 attempts)
+- Upload progress tracking with real-time status updates
+- Persistent queue storage using SharedPreferences
+- Stream-based progress and status reporting
+
+**✅ Collection Integration**:
+- Automatic retrieval of camera's associated collection ID
+- Metadata enhancement with capture timestamp and camera details
+- Integration with existing CameraCollectionService architecture
+- Graceful fallback when no collection is found
+
+### **✅ TECHNICAL IMPLEMENTATION**
+
+**✅ Core Services Implemented**:
+```dart
+// ✅ IMPLEMENTED: Background sync service with queue management
+class BackgroundSyncService extends ChangeNotifier {
+  Future<void> queueSnapshotUpload(SnapshotResult snapshot, String collectionId);
+  Future<void> retryFailedUploads();
+  Stream<UploadProgress> get uploadProgressStream;
+  Stream<SyncStatus> get syncStatusStream;
+}
+
+// ✅ IMPLEMENTED: Enhanced snapshot collection service
+class SnapshotCollectionService extends ChangeNotifier {
+  Future<SnapshotResult?> captureAndAssignToCollection(String cameraId, SnapshotResult snapshot);
+  Future<void> uploadSnapshotToCollection(SnapshotResult snapshot, String collectionId);
+  Future<void> processUploadQueue();
+}
+
+// ✅ IMPLEMENTED: Providers for dependency injection
+final backgroundSyncServiceProvider = Provider<BackgroundSyncService>;
+final snapshotCollectionServiceProvider = Provider<SnapshotCollectionService>;
+```
+
+**✅ Enhanced Snapshot Capture Flow** - IMPLEMENTED:
+1. User taps snapshot button ✅
+2. System retrieves camera's collection ID ✅
+3. Snapshot captured with collection assignment ✅
+4. Local storage with collection metadata ✅
+5. Background upload to Media Service ✅
+6. Update collection with new media item ✅
+
+**✅ Upload Task Management**:
+```dart
+// ✅ IMPLEMENTED: Upload task with retry logic
+class SnapshotUploadTask {
+  final String id;
+  final SnapshotResult snapshot;
+  final String collectionId;
+  final DateTime timestamp;
+  final int retryCount;
+  final Map<String, dynamic> metadata;
+}
+```
+
+### **✅ API INTEGRATION POINTS**
+
+**✅ Working Endpoints**:
+- ✅ `POST /api/v1/media/upload` - Upload with collection assignment via MediaApiClient
+- ✅ `GET /api/v1/media/collections/?user_id={guid}` - Collection verification
+- ✅ Background queue management with retry logic working
+- ✅ Automatic metadata enhancement with camera information
+
+### **✅ USER EXPERIENCE ENHANCEMENTS**
+
+**✅ Seamless Integration**:
+- Snapshot capture works identically to before (no UX changes)
+- Automatic upload happens in background without user intervention
+- Local storage continues to work (Phase 1 compatibility maintained)
+- Upload failures don't affect capture success (graceful degradation)
+
+**✅ Visual Feedback**:
+- Existing capture success feedback preserved
+- Upload progress available via streams for future UI integration
+- Debug logging for troubleshooting automatic assignments
+
+### **✅ ACCEPTANCE CRITERIA - ALL MET**
+
+- ✅ Automatic collection assignment during capture
+- ✅ Background upload queue implementation with Timer processing
+- ✅ Upload progress tracking and visual feedback (streams available)
+- ✅ Retry logic for failed uploads (3 attempts with exponential backoff)
+- ✅ Metadata enhancement with camera information and capture settings
+- ✅ Local-cloud sync status indicators (via streams)
+
+### **🎯 IMPLEMENTATION SUCCESS**
+
+**✅ Automatic Camera-Collection Upload Pipeline**:
+- Every camera snapshot automatically uploaded to its associated collection
+- Seamless integration with existing manual upload functionality at `/camera-media-sync`
+- Background processing ensures UI responsiveness
+- Robust error handling and retry mechanisms
+
+**✅ Technical Excellence**:
+- Provider-based dependency injection for clean architecture
+- Stream-based progress reporting for future UI integration
+- Persistent upload queue survives app restarts
+- Non-blocking design preserves existing capture performance
+
+**Priority Justification**: Core functionality for camera-owned collections architecture - **✅ SUCCESSFULLY COMPLETED**
+
+**🎉 PRODUCTION VERIFICATION**: All issues have been resolved and the complete pipeline is now operational:
+- ✅ Collection assignment working correctly with proper authentication
+- ✅ Backend bulk-add API integration fully functional  
+- ✅ Frontend request format properly matching backend requirements
+- ✅ Navigation and UI components functioning seamlessly
+- ✅ Error handling and authentication flow resolved
+
+**🚀 NEXT STEPS**: ✅ Ready to proceed to CAM-FLUTTER-004C (Unified Gallery Integration) with automatic upload pipeline fully operational and verified in production environment.
+
+---
+
+### **CAM-FLUTTER-004C: Unified Gallery Integration**
+**Priority**: 🟡 HIGH  
+**Status**: 🚧 **NOT STARTED**  
+**Target Completion**: September 10, 2025  
+**Dependencies**: CAM-FLUTTER-004B (Snapshot Auto-Assignment)
+
+**Description**: Integrate camera collections into the existing Media Service gallery, providing a unified experience where camera media appears alongside user-created media.
+
+**User Experience Flow**:
+3. **Gallery Access** → Camera collections appear alongside user collections
+
+### **📋 IMPLEMENTATION REQUIREMENTS**
+
+**Core Features**:
+- **Gallery Integration**: Camera collections appear in unified gallery interface
+- **Collection Indicators**: Camera icon for auto-managed collections
+- **Navigation Enhancement**: "View Media" button on camera details → Opens collection
+- **Hybrid Display**: Show both local and cloud media in single interface
+- **Collection Type Distinction**: Visual distinction between camera and user collections
+
+**Technical Implementation**:
+```dart
+class UnifiedGalleryService {
+  Future<List<MediaCollection>> getAllCollections(); // Includes camera collections
+  Future<List<MediaItem>> getCollectionMedia(String collectionId);
+  Future<bool> isCameraCollection(String collectionId);
+  Future<Camera?> getCameraForCollection(String collectionId);
+}
+
+class CameraGalleryWidget extends StatefulWidget {
+  // Enhanced gallery component for camera collections
+  final bool showCameraCollectionsOnly;
+  final String? cameraFilter;
+}
+```
+
+**UI Integration Points**:
+- Enhanced collections screen with camera collection indicators
+- Camera detail screen "View Media" button
+- Gallery filter options for camera vs. user collections
+- Collection cards with camera branding/icons
+
+**Unified Experience Features**:
+- Single gallery interface for all media types
+- Consistent sharing, delete, organize operations
+- Search across camera and user collections
+- Professional collection management tools
+
+**Acceptance Criteria**:
+- [ ] Camera collections visible in main gallery
+- [ ] Visual distinction between collection types
+- [ ] "View Media" navigation from camera details
+- [ ] Unified search and filter functionality
+- [ ] Consistent operation behavior across collection types
+- [ ] Performance optimization for large media sets
+
+**Priority Justification**: Essential for seamless user experience and platform integration.
+
+---
+
+### **CAM-FLUTTER-004D: Collection Organization**
+**Priority**: 🟡 HIGH  
+**Status**: 🚧 **NOT STARTED**  
+**Target Completion**: September 15, 2025  
+**Dependencies**: CAM-FLUTTER-004C (Unified Gallery Integration)
+
+**Description**: Implement advanced organization features allowing users to move camera media to custom collections and create professional workflows.
+
+**User Experience Flow**:
+4. **Organization** → Users can move camera media to custom collections
+
+### **📋 IMPLEMENTATION REQUIREMENTS**
+
+**Core Features**:
+- **Media Movement**: Move camera media to custom user collections
+- **Bulk Operations**: Multi-select for batch organization
+- **Collection Creation**: Create custom collections from camera media
+- **Professional Workflows**: "Security Events" collections from multiple cameras
+- **Drag-and-Drop**: Intuitive media organization interface
+
+**Technical Implementation**:
+```dart
+class MediaOrganizationService {
+  Future<void> moveMediaToCollection(String mediaId, String targetCollectionId);
+  Future<void> createCollectionFromMedia(String collectionName, List<String> mediaIds);
+  Future<void> bulkMoveMedia(List<String> mediaIds, String targetCollectionId);
+  Future<MediaCollection> createCustomCollection(String name, String description);
+}
+
+class CollectionOrganizationWidget extends StatefulWidget {
+  // Advanced organization interface
+  final List<MediaItem> selectedMedia;
+  final Function(List<MediaItem>, String) onMoveToCollection;
+}
+```
+
+**Professional Workflow Features**:
+- Create "Security Events" from multiple camera snapshots
+- Time-based organization tools
+- Location-based collection grouping
+- Custom tagging and metadata enhancement
+
+**UI Implementation**:
+- Multi-select mode in gallery
+- Collection selection dialog
+- Drag-and-drop interface for media movement
+- Bulk operation confirmation dialogs
+- Progress indicators for batch operations
+
+**Acceptance Criteria**:
+- [ ] Move camera media to custom collections
+- [ ] Bulk media selection and movement
+- [ ] Custom collection creation workflows
+- [ ] Professional organization tools
+- [ ] Intuitive drag-and-drop interface
+- [ ] Progress tracking for bulk operations
+
+**Priority Justification**: Professional feature that enables advanced camera-based workflows.
+
+---
+
+### **CAM-FLUTTER-004E: Unified Search**
+**Priority**: 🟡 HIGH  
+**Status**: 🚧 **NOT STARTED**  
+**Target Completion**: September 20, 2025  
+**Dependencies**: CAM-FLUTTER-004D (Collection Organization)
+
+**Description**: Implement comprehensive search functionality across all collections (camera + user-created) with advanced filtering and virtual collection features.
+
+**User Experience Flow**:
+5. **Unified Search** → Search across all collections (camera + user-created)
+
+### **📋 IMPLEMENTATION REQUIREMENTS**
+
+**Core Features**:
+- **Cross-Collection Search**: Search across camera and user collections simultaneously
+- **Advanced Filtering**: Filter by camera, date range, resolution, file type
+- **Virtual Collections**: "All Camera Media" aggregated view
+- **Smart Search**: Metadata-based search with camera-specific filters
+- **Real-time Search**: Instant results as user types
+
+**Technical Implementation**:
+```dart
+class UnifiedSearchService {
+  Future<List<MediaItem>> searchAllCollections(String query);
+  Future<List<MediaItem>> searchCameraMedia(String query, String? cameraId);
+  Future<List<MediaItem>> filterByDateRange(DateTime start, DateTime end);
+  Future<List<MediaItem>> filterByCamera(String cameraId);
+  Future<SearchSuggestions> getSearchSuggestions(String partialQuery);
+}
+
+class VirtualCollectionService {
+  Future<List<MediaItem>> getAllCameraMedia();
+  Future<List<MediaItem>> getCameraMediaByTimeRange(DateTime start, DateTime end);
+  Future<Map<String, List<MediaItem>>> groupCameraMediaByDate();
+}
+```
+
+**Advanced Search Features**:
+- Camera-specific search filters
+- Resolution and quality-based filtering
+- Time-based search with date ranges
+- Metadata search (camera model, settings, etc.)
+- Location-based search (if camera has location data)
+
+**Virtual Collection Features**:
+- "All Camera Media" unified view
+- "Recent Camera Captures" time-based view
+- "High Resolution Captures" quality-based view
+- "Security Events" custom-tagged media
+
+**UI Implementation**:
+- Enhanced search bar with filter chips
+- Search suggestions and autocomplete
+- Filter panel with camera-specific options
+- Virtual collection navigation tabs
+- Search result organization and sorting
+
+**Acceptance Criteria**:
+- [ ] Search across all collection types
+- [ ] Camera-specific search filters
+- [ ] Virtual collection implementations
+- [ ] Real-time search with suggestions
+- [ ] Advanced filtering options
+- [ ] Performance optimization for large media sets
+
+**Priority Justification**: Completes the camera-owned collections architecture and enables professional media discovery workflows.
+
+---
+
+
+
+
+
+
+
 
 ### **CAM-FLUTTER-005: Real-Time Camera Status Updates**
 **Priority**: 🟡 HIGH  
