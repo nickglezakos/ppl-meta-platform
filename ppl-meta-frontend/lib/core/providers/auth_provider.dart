@@ -122,14 +122,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      final authResponse = await _authService.login(email, password);
-      state = state.copyWith(
-        user: authResponse.user,
-        isAuthenticated: true,
-        isLoading: false,
-      );
+      await _authService.login(email, password);
+      
+      // After successful login, fetch the user profile
+      final user = await _authService.getCurrentUser();
+      _logger.i('AuthNotifier: User fetched after login: ${user != null ? 'FOUND (${user.username})' : 'NULL'}');
+      
+      if (user != null) {
+        state = AuthState.authenticated(user);
+        _logger.i('AuthNotifier: Login successful, user authenticated');
+      } else {
+        _logger.w('AuthNotifier: Login successful but failed to fetch user profile');
+        state = state.copyWith(
+          isAuthenticated: true,
+          isLoading: false,
+        );
+      }
       return true;
     } catch (e) {
+      _logger.e('AuthNotifier: Login error: $e');
       state = state.copyWith(
         isLoading: false,
         error: e.toString(),

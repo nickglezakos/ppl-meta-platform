@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
 import '../core/models/api_response.dart';
 import '../core/models/collection_models.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
+import '../core/providers/camera_providers.dart';
+
+enum CollectionFilter { all, cameraOnly, userOnly }
 
 /// Collection management interface with drag-and-drop organization
-class CollectionManagement extends StatefulWidget {
+class CollectionManagement extends ConsumerStatefulWidget {
   final Function(MediaCollection)? onCollectionSelected;
   final Function(List<MediaItem>, MediaCollection)? onItemsAddedToCollection;
   final List<MediaItem>? selectedItems;
@@ -25,10 +29,10 @@ class CollectionManagement extends StatefulWidget {
   });
 
   @override
-  State<CollectionManagement> createState() => _CollectionManagementState();
+  ConsumerState<CollectionManagement> createState() => _CollectionManagementState();
 }
 
-class _CollectionManagementState extends State<CollectionManagement>
+class _CollectionManagementState extends ConsumerState<CollectionManagement>
     with TickerProviderStateMixin {
   final TextEditingController _createController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
@@ -36,11 +40,16 @@ class _CollectionManagementState extends State<CollectionManagement>
   late final MediaApiClient _apiClient;
   
   List<MediaCollection> _collections = [];
+  List<MediaCollection> _filteredCollections = [];
   MediaCollection? _selectedCollection;
   bool _isLoading = false;
   bool _isCreating = false;
   String? _error;
   bool _hasAutoSelected = false; // Prevent multiple auto-selections
+  
+  // Collection filtering
+  CollectionFilter _currentFilter = CollectionFilter.all;
+  Set<String> _cameraCollectionIds = {};
   
   // Drag and drop state
   MediaCollection? _dragTargetCollection;
@@ -67,6 +76,7 @@ class _CollectionManagementState extends State<CollectionManagement>
     );
     
     _loadCollections();
+    _loadCameraCollectionMappings();
     _searchController.addListener(_onSearchChanged);
   }
 
@@ -95,6 +105,8 @@ class _CollectionManagementState extends State<CollectionManagement>
           _isLoading = false;
         });
         
+        _applyFilters(); // Apply current filters after loading collections
+        
         // Auto-select collection if initialCollectionId is provided and not already selected
         if (widget.initialCollectionId != null && !_hasAutoSelected) {
           _autoSelectCollection(widget.initialCollectionId!);
@@ -112,6 +124,73 @@ class _CollectionManagementState extends State<CollectionManagement>
         _isLoading = false;
       });
     }
+  }
+
+  /// Load camera collection mappings
+  Future<void> _loadCameraCollectionMappings() async {
+    try {
+      final cameraCollectionService = ref.read(cameraCollectionServiceProvider);
+      final mappings = await cameraCollectionService.getAllCameraMappings();
+      
+      setState(() {
+        _cameraCollectionIds = mappings.map((m) => m.collectionId).toSet();
+      });
+      
+      _applyFilters(); // Reapply filters with updated camera collection info
+    } catch (e) {
+      print('Failed to load camera collection mappings: $e');
+    }
+  }
+
+  /// Check if a collection is a camera collection
+  bool _isCameraCollection(MediaCollection collection) {
+    // Check if collection ID is in camera mappings
+    if (_cameraCollectionIds.contains(collection.id)) {
+      return true;
+    }
+    
+    // Check by naming convention
+    return collection.name.toLowerCase().contains('camera') ||
+           RegExp(r'cam\d+|camera\s*\d+', caseSensitive: false).hasMatch(collection.name);
+  }
+
+  /// Apply collection filters
+  void _applyFilters() {
+    List<MediaCollection> filtered = List.from(_collections);
+    
+    // Apply collection type filter
+    switch (_currentFilter) {
+      case CollectionFilter.cameraOnly:
+        filtered = filtered.where((c) => _isCameraCollection(c)).toList();
+        break;
+      case CollectionFilter.userOnly:
+        filtered = filtered.where((c) => !_isCameraCollection(c)).toList();
+        break;
+      case CollectionFilter.all:
+        // No filtering needed
+        break;
+    }
+    
+    // Apply search filter
+    final searchQuery = _searchController.text.toLowerCase();
+    if (searchQuery.isNotEmpty) {
+      filtered = filtered.where((collection) {
+        return collection.name.toLowerCase().contains(searchQuery) ||
+               (collection.description?.toLowerCase().contains(searchQuery) ?? false);
+      }).toList();
+    }
+    
+    setState(() {
+      _filteredCollections = filtered;
+    });
+  }
+
+  /// Set collection filter
+  void _setCollectionFilter(CollectionFilter filter) {
+    setState(() {
+      _currentFilter = filter;
+    });
+    _applyFilters();
   }
 
   /// Auto-select collection by ID
@@ -136,10 +215,7 @@ class _CollectionManagementState extends State<CollectionManagement>
 
   /// Handle search input changes
   void _onSearchChanged() {
-    // Implement real-time search filtering
-    setState(() {
-      // Filter collections based on search query
-    });
+    _applyFilters();
   }
 
   /// Create new collection
@@ -364,6 +440,9 @@ class _CollectionManagementState extends State<CollectionManagement>
         // Header with search and create button
         _buildHeader(),
         
+        // Filter toggles
+        _buildFilterToggles(),
+        
         // Create collection form
         AnimatedBuilder(
           animation: _createAnimation,
@@ -424,6 +503,104 @@ class _CollectionManagementState extends State<CollectionManagement>
             onPressed: _showCreateDialog,
             icon: const Icon(Icons.add),
             label: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build filter toggles
+  Widget _buildFilterToggles() {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: AppColors.border),
+        ),
+      ),
+      child: Row(
+        children: [
+          Text(
+            'Filter:',
+            style: AppTextStyles.labelMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          
+          // Filter toggle buttons
+          ToggleButtons(
+            constraints: const BoxConstraints(
+              minHeight: 32,
+              minWidth: 80,
+            ),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            isSelected: [
+              _currentFilter == CollectionFilter.all,
+              _currentFilter == CollectionFilter.cameraOnly,
+              _currentFilter == CollectionFilter.userOnly,
+            ],
+            onPressed: (index) {
+              switch (index) {
+                case 0:
+                  _setCollectionFilter(CollectionFilter.all);
+                  break;
+                case 1:
+                  _setCollectionFilter(CollectionFilter.cameraOnly);
+                  break;
+                case 2:
+                  _setCollectionFilter(CollectionFilter.userOnly);
+                  break;
+              }
+            },
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.collections, size: 16),
+                    const SizedBox(width: AppSpacing.xs),
+                    const Text('All'),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.videocam, size: 16),
+                    const SizedBox(width: AppSpacing.xs),
+                    const Text('Camera'),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.person, size: 16),
+                    const SizedBox(width: AppSpacing.xs),
+                    const Text('User'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          
+          const Spacer(),
+          
+          // Show count of filtered collections
+          Text(
+            '${_filteredCollections.length} collections',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textTertiary,
+            ),
           ),
         ],
       ),
@@ -491,21 +668,22 @@ class _CollectionManagementState extends State<CollectionManagement>
       return _buildErrorState();
     }
 
-    if (_collections.isEmpty) {
+    if (_filteredCollections.isEmpty) {
       return _buildEmptyState();
     }
 
     return ListView.builder(
       padding: const EdgeInsets.all(AppSpacing.md),
-      itemCount: _collections.length,
+      itemCount: _filteredCollections.length,
       itemBuilder: (context, index) {
-        final collection = _collections[index];
+        final collection = _filteredCollections[index];
         
         return _CollectionListItem(
           collection: collection,
           isSelected: _selectedCollection?.id == collection.id,
           isDragTarget: _dragTargetCollection?.id == collection.id,
           canAcceptDrop: widget.selectedItems?.isNotEmpty ?? false,
+          isCameraCollection: _isCameraCollection(collection),
           onTap: () {
             setState(() {
               _selectedCollection = collection;
@@ -615,6 +793,7 @@ class _CollectionListItem extends StatelessWidget {
   final bool isSelected;
   final bool isDragTarget;
   final bool canAcceptDrop;
+  final bool isCameraCollection;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
@@ -627,6 +806,7 @@ class _CollectionListItem extends StatelessWidget {
     required this.isSelected,
     required this.isDragTarget,
     required this.canAcceptDrop,
+    required this.isCameraCollection,
     required this.onTap,
     required this.onRename,
     required this.onDelete,
@@ -668,19 +848,64 @@ class _CollectionListItem extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: isCameraCollection 
+                    ? AppColors.secondary.withOpacity(0.1)
+                    : AppColors.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
-              child: const Icon(
-                Icons.collections,
-                color: AppColors.primary,
+              child: Icon(
+                isCameraCollection ? Icons.videocam : Icons.collections,
+                color: isCameraCollection ? AppColors.secondary : AppColors.primary,
               ),
             ),
-            title: Text(
-              collection.name,
-              style: AppTextStyles.bodyLarge.copyWith(
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              ),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    collection.name,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                // Collection type badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isCameraCollection 
+                        ? AppColors.secondary.withOpacity(0.1)
+                        : AppColors.info.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
+                    border: Border.all(
+                      color: isCameraCollection 
+                          ? AppColors.secondary.withOpacity(0.3)
+                          : AppColors.info.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isCameraCollection ? Icons.videocam : Icons.person,
+                        size: 12,
+                        color: isCameraCollection ? AppColors.secondary : AppColors.info,
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        isCameraCollection ? 'Camera' : 'User',
+                        style: AppTextStyles.caption.copyWith(
+                          color: isCameraCollection ? AppColors.secondary : AppColors.info,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

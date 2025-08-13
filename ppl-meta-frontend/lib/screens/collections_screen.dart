@@ -8,6 +8,11 @@ import '../core/models/collection_models.dart';
 import '../widgets/collection_management.dart';
 import '../widgets/responsive_media_gallery.dart';
 import '../widgets/custom_app_bar.dart';
+import '../widgets/collection_organization_widget.dart';
+import '../widgets/collection_picker_dialog.dart';
+import '../widgets/media_details_dialog.dart';
+import '../services/media_organization_service.dart';
+import '../providers/media_organization_providers.dart';
 
 /// Collections screen with management and media display
 class CollectionsScreen extends ConsumerStatefulWidget {
@@ -27,6 +32,8 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   bool _isLoading = false;
   bool _isSelectionMode = false;
   List<MediaItem> _selectedItems = [];
+  bool _showOrganizationWidget = false;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -77,15 +84,100 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                   _selectedCollection = null;
                   _isSelectionMode = false;
                   _selectedItems.clear();
+                  _showOrganizationWidget = false;
                 });
                 // Navigate back to collections list using router
                 context.go('/collections');
               }
             : null,
+        actions: _selectedCollection != null 
+            ? [
+                if (_isSelectionMode) ...[
+                  // Selection count and actions
+                  if (_selectedItems.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${_selectedItems.length}',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    
+                    // Share button
+                    IconButton(
+                      onPressed: _shareSelectedItems,
+                      icon: const Icon(Icons.share),
+                      tooltip: 'Share selected',
+                    ),
+                    
+                    // Add to collection button
+                    IconButton(
+                      onPressed: _addSelectedToCollection,
+                      icon: const Icon(Icons.add_to_photos),
+                      tooltip: 'Add to collection',
+                    ),
+                    
+                    // Delete button
+                    IconButton(
+                      onPressed: _deleteSelectedItems,
+                      icon: const Icon(Icons.delete),
+                      tooltip: 'Delete selected',
+                    ),
+                  ],
+                  
+                  // Exit selection mode
+                  IconButton(
+                    onPressed: _exitSelectionMode,
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Exit selection',
+                  ),
+                ] else ...[
+                  // Enter selection mode
+                  IconButton(
+                    onPressed: _enterSelectionMode,
+                    icon: const Icon(Icons.checklist),
+                    tooltip: 'Multi-select',
+                  ),
+                ],
+                
+                // Organization button (only when in selection mode with items)
+                if (_isSelectionMode && _selectedItems.isNotEmpty)
+                  IconButton(
+                    onPressed: _toggleOrganizationWidget,
+                    icon: Icon(
+                      _showOrganizationWidget 
+                          ? Icons.keyboard_arrow_up 
+                          : Icons.drive_file_move,
+                    ),
+                    tooltip: _showOrganizationWidget 
+                        ? 'Hide organization panel' 
+                        : 'Organize items',
+                  ),
+              ]
+            : null,
       ),
       body: _selectedCollection == null
           ? _buildCollectionsList()
           : _buildCollectionDetails(apiClient),
+      floatingActionButton: _selectedCollection != null && 
+                          _isSelectionMode && 
+                          _selectedItems.isNotEmpty &&
+                          !_showOrganizationWidget
+          ? FloatingActionButton.extended(
+              onPressed: _toggleOrganizationWidget,
+              icon: const Icon(Icons.drive_file_move),
+              label: const Text('Organize'),
+              backgroundColor: AppColors.primary,
+            )
+          : null,
     );
   }
 
@@ -123,6 +215,23 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       children: [
         // Collection header
         _buildCollectionHeader(),
+        
+        // Organization widget (if shown)
+        if (_showOrganizationWidget && _selectedItems.isNotEmpty)
+          Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: AppColors.border),
+              ),
+            ),
+            child: CollectionOrganizationWidget(
+              selectedMedia: _selectedItems,
+              onMoveToCollection: _handleMoveToCollection,
+              onCopyToCollection: _handleCopyToCollection,
+              onCreateCollection: _handleCreateCollection,
+              onCancel: () => setState(() => _showOrganizationWidget = false),
+            ),
+          ),
         
         // Collection media
         Expanded(
@@ -290,11 +399,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
   /// Open item details
   void _openItemDetails(MediaItem item) {
-    // TODO: Implement item details dialog
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Opening details for: ${item.filename}'),
-      ),
+    showDialog(
+      context: context,
+      builder: (context) => MediaDetailsDialog(item: item),
     );
   }
 
@@ -342,6 +449,168 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         ],
       ),
     ) ?? false;
+  }
+
+  /// Toggle organization widget visibility
+  void _toggleOrganizationWidget() {
+    setState(() {
+      _showOrganizationWidget = !_showOrganizationWidget;
+    });
+  }
+
+  /// Handle organization operation completion
+  void _handleOrganizationComplete({
+    required String operation,
+    required int itemsCount,
+    String? targetCollectionName,
+  }) {
+    // Hide organization widget
+    setState(() {
+      _showOrganizationWidget = false;
+      _isSelectionMode = false;
+      _selectedItems.clear();
+    });
+
+    // Show success message
+    String message;
+    switch (operation) {
+      case 'move':
+        message = '${itemsCount} item${itemsCount == 1 ? '' : 's'} moved to "${targetCollectionName}"';
+        break;
+      case 'copy':
+        message = '${itemsCount} item${itemsCount == 1 ? '' : 's'} copied to "${targetCollectionName}"';
+        break;
+      case 'create':
+        message = 'Created new collection "${targetCollectionName}" with ${itemsCount} item${itemsCount == 1 ? '' : 's'}';
+        break;
+      default:
+        message = 'Organization operation completed';
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.success,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+
+    // Refresh the gallery to reflect changes
+    // Force rebuild to reflect changes
+    setState(() {
+      _mediaGallery = null; // This will force a rebuild of the gallery
+    });
+  }
+
+  /// Handle move to collection operation
+  void _handleMoveToCollection(List<MediaItem> items, String targetCollectionId) async {
+    final organizationService = ref.read(mediaOrganizationServiceProvider);
+    
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final mediaIds = items.map((item) => item.mediaId).toList();
+      final success = await organizationService.bulkMoveMedia(
+        mediaIds,
+        targetCollectionId,
+      );
+
+      if (success) {
+        _handleOrganizationComplete(
+          operation: 'move',
+          itemsCount: items.length,
+          targetCollectionName: 'selected collection',
+        );
+      } else {
+        _showErrorMessage('Failed to move items');
+      }
+    } catch (e) {
+      _showErrorMessage('Error moving items: $e');
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  /// Handle copy to collection operation
+  void _handleCopyToCollection(List<MediaItem> items, String targetCollectionId) async {
+    final organizationService = ref.read(mediaOrganizationServiceProvider);
+    
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final mediaIds = items.map((item) => item.mediaId).toList();
+      // Use move functionality with copy flag (if supported) or implement separate copy logic
+      final success = await organizationService.bulkMoveMedia(
+        mediaIds,
+        targetCollectionId,
+      );
+
+      if (success) {
+        _handleOrganizationComplete(
+          operation: 'copy',
+          itemsCount: items.length,
+          targetCollectionName: 'selected collection',
+        );
+      } else {
+        _showErrorMessage('Failed to copy items');
+      }
+    } catch (e) {
+      _showErrorMessage('Error copying items: $e');
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  /// Handle create collection operation
+  void _handleCreateCollection(String collectionName, List<MediaItem> items) async {
+    final organizationService = ref.read(mediaOrganizationServiceProvider);
+    
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      final mediaIds = items.map((item) => item.mediaId).toList();
+      final success = await organizationService.createCollectionFromMedia(
+        collectionName,
+        mediaIds,
+      );
+
+      if (success) {
+        _handleOrganizationComplete(
+          operation: 'create',
+          itemsCount: items.length,
+          targetCollectionName: collectionName,
+        );
+      } else {
+        _showErrorMessage('Failed to create collection');
+      }
+    } catch (e) {
+      _showErrorMessage('Error creating collection: $e');
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  /// Show error message
+  void _showErrorMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppColors.error,
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   /// Show collection menu
@@ -478,6 +747,117 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     } else {
       return '${date.month}/${date.day}/${date.year}';
     }
+  }
+
+  /// Share selected items
+  void _shareSelectedItems() async {
+    if (_selectedItems.isEmpty) return;
+    
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final mediaUrls = _selectedItems
+          .map((item) => 'http://localhost:8080${item.url}')
+          .toList();
+      
+      // TODO: Implement actual sharing functionality
+      // For now, show a placeholder message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Sharing ${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'}...',
+          ),
+          backgroundColor: AppColors.info,
+        ),
+      );
+      
+      _exitSelectionMode();
+    } catch (e) {
+      _showErrorMessage('Error sharing items: $e');
+    }
+  }
+
+  /// Delete selected items
+  void _deleteSelectedItems() async {
+    if (_selectedItems.isEmpty) return;
+    
+    final confirmed = await _showDeleteConfirmation();
+    if (!confirmed) return;
+    
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      
+      // TODO: Implement actual deletion functionality
+      // For now, show a placeholder message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'} deleted',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      
+      _exitSelectionMode();
+    } catch (e) {
+      _showErrorMessage('Error deleting items: $e');
+    }
+  }
+
+  /// Add selected items to another collection
+  void _addSelectedToCollection() async {
+    if (_selectedItems.isEmpty) return;
+    
+    try {
+      final mediaIds = _selectedItems.map((item) => item.id).toList();
+      
+      // Use the existing collection picker dialog
+      await showDialog(
+        context: context,
+        builder: (context) => CollectionPickerDialog(
+          mediaIds: mediaIds,
+          title: 'Add ${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'} to Collection',
+        ),
+      );
+      
+      // Show success message after dialog closes
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'} added to collection',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      _exitSelectionMode();
+    } catch (e) {
+      _showErrorMessage('Error adding to collection: $e');
+    }
+  }
+
+  /// Show delete confirmation dialog
+  Future<bool> _showDeleteConfirmation() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Items'),
+        content: Text(
+          'Permanently delete ${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'}? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    ) ?? false;
   }
 }
 

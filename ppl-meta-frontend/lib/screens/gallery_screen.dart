@@ -9,6 +9,7 @@ import '../widgets/responsive_media_gallery.dart';
 import '../widgets/advanced_search_interface.dart';
 import '../widgets/share_dialog.dart';
 import '../widgets/media_details_dialog.dart';
+import '../widgets/collection_picker_dialog.dart';
 import '../widgets/custom_app_bar.dart';
 
 /// Gallery screen with search and responsive media display
@@ -47,6 +48,11 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
               ),
               actions: [
                 if (_selectedItems.isNotEmpty) ...[
+                  IconButton(
+                    onPressed: _addToCollection,
+                    icon: const Icon(Icons.add_to_photos),
+                    tooltip: 'Add to Collection',
+                  ),
                   IconButton(
                     onPressed: _shareSelectedItems,
                     icon: const Icon(Icons.share),
@@ -212,6 +218,26 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
       context: context,
       builder: (context) => ShareDialog(items: _selectedItems),
     );
+  }
+
+  /// Add selected items to collection
+  void _addToCollection() async {
+    if (_selectedItems.isEmpty) return;
+    
+    final mediaIds = _selectedItems.map((item) => item.id).toList();
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => CollectionPickerDialog(
+        mediaIds: mediaIds,
+        title: 'Add ${_selectedItems.length} item${_selectedItems.length == 1 ? '' : 's'} to Collection',
+      ),
+    );
+    
+    // If items were successfully added to collection, exit selection mode
+    if (result == true) {
+      _exitSelectionMode();
+    }
   }
 
   /// Delete selected items

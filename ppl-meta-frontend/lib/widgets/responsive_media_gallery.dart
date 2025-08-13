@@ -153,6 +153,16 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
     await _refreshItems();
   }
 
+  /// Get currently selected items
+  List<MediaItem> get selectedItems {
+    return _items.where((item) => _selectedItems.contains(item.id)).toList();
+  }
+
+  /// Clear all selections
+  void clearSelections() {
+    _clearSelection();
+  }
+
   /// Handle scroll for infinite loading
   void _onScroll() {
     if (!widget.enableInfiniteScroll) return;
@@ -466,20 +476,21 @@ class _MediaGridItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: enableSelection && isSelected 
-          ? onSelectionToggle 
-          : onTap,
+      onTap: () {
+        if (enableSelection) {
+          onSelectionToggle?.call();
+        } else {
+          onTap?.call();
+        }
+      },
       onLongPress: onLongPress,
       child: AnimatedContainer(
         duration: AppDurations.fast,
         decoration: BoxDecoration(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: isSelected
-              ? Border.all(color: AppColors.primary, width: 3)
-              : null,
-          boxShadow: isSelected
-              ? [AppShadows.md]
-              : [AppShadows.sm],
+          border: Border.all(color: Colors.transparent, width: 4),
+          boxShadow: [AppShadows.sm],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.md),
@@ -610,25 +621,38 @@ class _MediaGridItem extends StatelessWidget {
     );
   }
 
-  /// Build selection overlay
+  /// Build selection overlay - just the tick icon
   Widget _buildSelectionOverlay() {
-    return Positioned.fill(
-      child: AnimatedContainer(
+    if (!enableSelection || !isSelected) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned(
+      top: AppSpacing.sm,
+      right: AppSpacing.sm,
+      child: AnimatedScale(
+        scale: 1.0,
         duration: AppDurations.fast,
-        decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withOpacity(0.3)
-              : Colors.transparent,
+        child: Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.5),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.check,
+            color: AppColors.white,
+            size: 18,
+          ),
         ),
-        child: isSelected
-            ? const Center(
-                child: Icon(
-                  Icons.check_circle,
-                  color: AppColors.white,
-                  size: 32,
-                ),
-              )
-            : null,
       ),
     );
   }
