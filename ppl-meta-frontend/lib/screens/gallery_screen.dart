@@ -71,6 +71,11 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
               showBackButton: true, // Show back button on main gallery screen
               actions: [
                 IconButton(
+                  onPressed: _resetGallery,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Reset to initial state',
+                ),
+                IconButton(
                   onPressed: _toggleSearch,
                   icon: Icon(_showSearch ? Icons.search_off : Icons.search),
                   tooltip: 'Search',
@@ -91,18 +96,19 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
         children: [
           // Search interface
           if (_showSearch)
-            AdvancedSearchInterface(
-              initialFilters: _currentFilters,
-              onSearch: _applyFilters,
-              onClear: _clearFilters,
-              availableTags: const [
-                'work', 'personal', 'project', 'meeting', 'vacation',
-                'family', 'friends', 'travel', 'food', 'nature',
-              ],
-              availableCollections: const [
-                'Work Documents', 'Family Photos', 'Project Assets',
-                'Meeting Notes', 'Travel Memories',
-              ],
+            Flexible(
+              flex: 0, // Don't take up more space than needed
+              child: AdvancedSearchInterface(
+                initialFilters: _currentFilters,
+                onSearch: _applyFilters,
+                onClear: _clearFilters,
+                apiClient: apiClient, // Pass API client for dynamic collection loading
+                availableTags: const [
+                  'work', 'personal', 'project', 'meeting', 'vacation',
+                  'family', 'friends', 'travel', 'food', 'nature',
+                ],
+                // Remove static collections - will be loaded dynamically
+              ),
             ),
           
           // Media gallery
@@ -138,9 +144,13 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   }
 
   /// Apply search filters
-  void _applyFilters(MediaSearchFilters filters) {
+  void _applyFilters(String query, MediaSearchFilters? filters) {
     setState(() {
-      _currentFilters = filters;
+      _currentFilters = filters ?? MediaSearchFilters();
+      // If query is provided, include it in the filters
+      if (query.isNotEmpty) {
+        _currentFilters = _currentFilters.copyWith(query: query);
+      }
     });
   }
 
@@ -149,6 +159,24 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
     setState(() {
       _currentFilters = MediaSearchFilters();
     });
+  }
+
+  /// Reset gallery to initial state
+  void _resetGallery() {
+    setState(() {
+      // Clear all filters
+      _currentFilters = MediaSearchFilters();
+      // Hide search interface
+      _showSearch = false;
+      // Exit selection mode if active
+      if (_isSelectionMode) {
+        _isSelectionMode = false;
+        _selectedItems.clear();
+      }
+    });
+    
+    // Refresh the gallery to show all media items
+    _galleryKey.currentState?.refresh();
   }
 
   /// Enter selection mode

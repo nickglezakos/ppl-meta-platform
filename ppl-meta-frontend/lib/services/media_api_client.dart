@@ -401,6 +401,7 @@ class MediaApiClient {
     DateTime? endDate,
     List<String>? tags,
     String? collectionId,
+    List<String>? collectionIds,
     String? sortBy,
     String? sortOrder,
     MediaSearchFilters? filters,
@@ -408,27 +409,42 @@ class MediaApiClient {
     int limit = 20,
   }) async {
     try {
-      // If searching within a specific collection, use the collection items endpoint
-      if (collectionId != null && collectionId.isNotEmpty) {
-        return await _getCollectionItems(
-          collectionId: collectionId,
-          page: page,
-          limit: limit,
-        );
-      }
-
-      // Otherwise use the general search endpoint
+      // Use the unified search endpoint that supports collection filtering
       final queryParams = <String, dynamic>{
         'page': page,
         'page_size': limit, // Backend uses page_size instead of limit
         if (query != null && query.isNotEmpty) 'query': query,
-        if (mediaType != null) 'media_types': mediaType.name,
+        if (mediaType != null) 'media_type': mediaType.apiValue,
         if (startDate != null) 'start_date': startDate.toIso8601String(),
         if (endDate != null) 'end_date': endDate.toIso8601String(),
         if (tags != null && tags.isNotEmpty) 'tags': tags.join(','),
+        if (collectionId != null) 'collection_id': collectionId,
+        if (collectionIds != null && collectionIds.isNotEmpty) 
+          'collection_ids': collectionIds.join(','),
         if (sortBy != null) 'sort_by': sortBy,
         if (sortOrder != null) 'sort_order': sortOrder,
-        // Note: filters parameter not used for now, using individual parameters
+        
+        // Support filters object as well
+        if (filters != null) ...{
+          if (filters.query != null && filters.query!.isNotEmpty) 
+            'query': filters.query,
+          if (filters.mediaType != null) 
+            'media_type': filters.mediaType!.apiValue,
+          if (filters.startDate != null) 
+            'start_date': filters.startDate!.toIso8601String(),
+          if (filters.endDate != null) 
+            'end_date': filters.endDate!.toIso8601String(),
+          if (filters.tags != null && filters.tags!.isNotEmpty) 
+            'tags': filters.tags!.join(','),
+          if (filters.collectionId != null) 
+            'collection_id': filters.collectionId,
+          if (filters.collectionIds != null && filters.collectionIds!.isNotEmpty) 
+            'collection_ids': filters.collectionIds!.join(','),
+          if (filters.sortBy != null) 
+            'sort_by': filters.sortBy,
+          if (filters.sortOrder != null) 
+            'sort_order': filters.sortOrder,
+        },
       };
 
       print('DEBUG: MediaApiClient searchMedia - general search queryParams: $queryParams');

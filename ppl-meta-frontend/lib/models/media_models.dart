@@ -35,6 +35,28 @@ enum MediaType {
   @JsonValue('other')
   other;
 
+    /// Get the API value for this media type (matches @JsonValue annotations)
+  String get apiValue {
+    switch (this) {
+      case MediaType.image:
+        return 'picture';
+      case MediaType.video:
+        return 'video';
+      case MediaType.audio:
+        return 'audio';
+      case MediaType.document:
+        return 'document';
+      case MediaType.pdf:
+        return 'pdf';
+      case MediaType.text:
+        return 'text';
+      case MediaType.archive:
+        return 'archive';
+      case MediaType.other:
+        return 'other';
+    }
+  }
+
   String get displayName {
     switch (this) {
       case MediaType.image:
@@ -165,6 +187,10 @@ class MediaItem {
   @JsonKey(name: 'duration')
   final int? duration; // Duration in seconds for video/audio files
   
+  // Collection information for search results (not serialized)
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  final CollectionInfo? collectionInfo;
+  
   // Convenience getters for compatibility
   String get id => mediaId;
   String get filename => originalFilename;
@@ -194,6 +220,7 @@ class MediaItem {
     this.thumbnailUrl,
     this.url,
     this.duration,
+    this.collectionInfo,
   });
   
   factory MediaItem.fromJson(Map<String, dynamic> json) => _$MediaItemFromJson(json);
@@ -313,6 +340,9 @@ class MediaSearchFilters {
   
   @JsonKey(name: 'collection_id')
   final String? collectionId;
+
+  @JsonKey(name: 'collection_ids')
+  final List<String>? collectionIds;
   
   @JsonKey(name: 'sort_by')
   final String? sortBy;
@@ -336,6 +366,7 @@ class MediaSearchFilters {
     this.endDate,
     this.tags,
     this.collectionId,
+    this.collectionIds,
     this.sortBy,
     this.sortOrder,
     this.minFileSize,
@@ -354,6 +385,7 @@ class MediaSearchFilters {
     DateTime? endDate,
     List<String>? tags,
     String? collectionId,
+    List<String>? collectionIds,
     String? sortBy,
     String? sortOrder,
     int? minFileSize,
@@ -367,6 +399,7 @@ class MediaSearchFilters {
       endDate: endDate ?? this.endDate,
       tags: tags ?? this.tags,
       collectionId: collectionId ?? this.collectionId,
+      collectionIds: collectionIds ?? this.collectionIds,
       sortBy: sortBy ?? this.sortBy,
       sortOrder: sortOrder ?? this.sortOrder,
       minFileSize: minFileSize ?? this.minFileSize,
@@ -383,6 +416,7 @@ class MediaSearchFilters {
            endDate != null ||
            tags != null && tags!.isNotEmpty ||
            collectionId != null ||
+           collectionIds != null && collectionIds!.isNotEmpty ||
            minFileSize != null ||
            maxFileSize != null ||
            hasThumbnail != null;
@@ -702,6 +736,116 @@ class MediaAnalytics {
       return '${(averageFileSize / 1024).toStringAsFixed(2)} KB';
     }
   }
+}
+
+/// Collection information for search results
+class CollectionInfo {
+  final String id;
+  final String name;
+  final bool isCamera;
+  final String? cameraId;
+  final String? cameraName;
+
+  const CollectionInfo({
+    required this.id,
+    required this.name,
+    required this.isCamera,
+    this.cameraId,
+    this.cameraName,
+  });
+}
+
+/// Virtual collection statistics
+class VirtualCollectionStats {
+  final int totalCameraMedia;
+  final int? recentCaptures;
+  final int recentCaptures24h;
+  final int? securityEvents;
+  final int totalCameras;
+  final int totalCollections;
+  final int totalSize;
+  final DateTime? oldestCameraCapture;
+  final DateTime? newestCameraCapture;
+  final Map<String, int>? mediaByType;
+  final Map<String, int>? mediaByCamera;
+  final DateTime? lastUpdated;
+
+  const VirtualCollectionStats({
+    required this.totalCameraMedia,
+    this.recentCaptures,
+    required this.recentCaptures24h,
+    this.securityEvents,
+    required this.totalCameras,
+    required this.totalCollections,
+    required this.totalSize,
+    this.oldestCameraCapture,
+    this.newestCameraCapture,
+    this.mediaByType,
+    this.mediaByCamera,
+    this.lastUpdated,
+  });
+}
+
+/// Search suggestions response
+class SearchSuggestions {
+  final List<String> queries;
+  final List<String> tags;
+  final List<String> cameras;
+  final List<String> collections;
+  final List<String> recentSearches;
+  final List<String> tagSuggestions;
+  final List<String> cameraSuggestions;
+  final List<String> quickFilters;
+
+  const SearchSuggestions({
+    this.queries = const [],
+    this.tags = const [],
+    this.cameras = const [],
+    this.collections = const [],
+    this.recentSearches = const [],
+    this.tagSuggestions = const [],
+    this.cameraSuggestions = const [],
+    this.quickFilters = const [],
+  });
+}
+
+/// Search parameters for providers
+class SearchParams {
+  final String query;
+  final MediaSearchFilters? filters;
+
+  const SearchParams({
+    required this.query,
+    this.filters,
+  });
+}
+
+/// Security events parameters
+class SecurityEventsParams {
+  final String? cameraId;
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final int? limit;
+
+  const SecurityEventsParams({
+    this.cameraId,
+    this.startDate,
+    this.endDate,
+    this.limit,
+  });
+}
+
+/// Camera media parameters
+class CameraMediaParams {
+  final String cameraId;
+  final MediaSearchFilters? filters;
+  final int? limit;
+
+  const CameraMediaParams({
+    required this.cameraId,
+    this.filters,
+    this.limit,
+  });
 }
 
 

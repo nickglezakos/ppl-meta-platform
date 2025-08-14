@@ -152,6 +152,10 @@ class MediaSearchRequest(BaseModel):
     is_archived: Optional[bool] = None
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
+    # Filter by specific collection (deprecated - use collection_ids)
+    collection_id: Optional[str] = None
+    # Filter by multiple collections
+    collection_ids: Optional[List[str]] = None
 
     # Pagination
     page: int = Field(default=1, ge=1)

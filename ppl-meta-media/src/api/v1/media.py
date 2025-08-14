@@ -4,6 +4,7 @@ Media API routes for PPL Meta Platform Media Service - API v1.
 
 import io
 import json
+import logging
 import os
 import sys
 import time
@@ -73,6 +74,9 @@ from src.schemas.media import (  # Variant schemas; Issue #016 - Advanced Metada
 )
 from src.services.media_service import MediaService
 from src.services.thumbnail_service import ThumbnailService
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -162,6 +166,12 @@ async def search_media(
     device_name: Optional[str] = None,
     device_manufacturer: Optional[str] = None,
     is_public: Optional[bool] = None,
+    start_date: Optional[str] = None,  # ISO 8601 date string
+    end_date: Optional[str] = None,  # ISO 8601 date string
+    collection_id: Optional[str] = None,  # Filter by specific collection
+    collection_ids: Optional[
+        str
+    ] = None,  # Filter by multiple collections (comma-separated)
     page: int = 1,
     page_size: int = 20,
     current_user: AuthUser = Depends(get_current_user),
@@ -183,12 +193,50 @@ async def search_media(
                     status_code=400, detail=f"Invalid media type: {e}"
                 ) from e
 
+        # Parse date parameters if provided
+        parsed_start_date = None
+        parsed_end_date = None
+
+        if start_date:
+            try:
+                # Handle ISO format with Z timezone
+                date_str = start_date.replace("Z", "+00:00")
+                parsed_start_date = datetime.fromisoformat(date_str)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid start_date format: {e}"
+                ) from e
+
+        if end_date:
+            try:
+                # Handle ISO format with Z timezone
+                date_str = end_date.replace("Z", "+00:00")
+                parsed_end_date = datetime.fromisoformat(date_str)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid end_date format: {e}"
+                ) from e
+
+        # Debug collection filtering
+        logger.info(
+            f"DEBUG API: collection_id={collection_id}, collection_ids={collection_ids}"
+        )
+        if collection_ids:
+            parsed_collection_ids = collection_ids.split(",")
+            logger.info(f"DEBUG API: parsed_collection_ids={parsed_collection_ids}")
+        else:
+            parsed_collection_ids = None
+
         search_request = MediaSearchRequest(
             uploaded_by=UUID(current_user.user_id),  # Filter by user
             media_types=parsed_media_types,
             tags=tags.split(",") if tags else None,
             categories=categories.split(",") if categories else None,
             is_public=is_public,
+            date_from=parsed_start_date,
+            date_to=parsed_end_date,
+            collection_id=collection_id,
+            collection_ids=parsed_collection_ids,
             page=page,
             page_size=page_size,
         )

@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import UUID
 
+import structlog
 from fastapi import UploadFile
 from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session
+
+logger = structlog.get_logger()
 
 from ..models.media import (
     Media,
@@ -138,6 +141,12 @@ class MediaService:
     async def search_media(self, search_request: MediaSearchRequest) -> List[Media]:
         """Search media with various filters."""
 
+        logger.info(
+            f"🔍 DEBUG: search_media called with search_request: {search_request}"
+        )
+        logger.info(f"🔍 DEBUG: collection_id = {search_request.collection_id}")
+        logger.info(f"🔍 DEBUG: collection_ids = {search_request.collection_ids}")
+
         query = self.db.query(Media)
 
         # Apply filters
@@ -167,6 +176,100 @@ class MediaService:
 
         if search_request.date_to:
             query = query.filter(Media.created_at <= search_request.date_to)
+
+        # Filter by collection if specified
+        if search_request.collection_id or search_request.collection_ids:
+            logger.info(f"🔍 DEBUG: Collection filtering requested")
+            logger.info(f"🔍 DEBUG: collection_id = {search_request.collection_id}")
+            logger.info(f"🔍 DEBUG: collection_ids = {search_request.collection_ids}")
+
+            # Join with collection_media table to filter by collection
+            from ..models.media import MediaCollection, MediaCollectionItem
+
+            # Support both single collection_id (deprecated) and multiple
+            collection_filters = []
+
+            # Handle single collection_id (backward compatibility)
+            if search_request.collection_id:
+                collection_filters.append(search_request.collection_id)
+
+            # Handle multiple collection_ids
+            if search_request.collection_ids:
+                collection_filters.extend(search_request.collection_ids)
+
+            print(f"🔍 DEBUG: collection_filters = {collection_filters}")
+
+            # Remove duplicates while preserving order
+            collection_filters = list(dict.fromkeys(collection_filters))
+
+            if collection_filters:
+                valid_collection_ids = []
+
+                for collection_filter in collection_filters:
+                    print(
+                        f"🔍 DEBUG: Processing collection_filter = {collection_filter}"
+                    )
+                    collection_exists = None
+
+                    # Try to parse as UUID first, then as integer ID
+                    try:
+                        # Try UUID first
+                        collection_uuid = UUID(collection_filter)
+                        print(f"🔍 DEBUG: Parsed as UUID: {collection_uuid}")
+                        collection_exists = (
+                            self.db.query(MediaCollection)
+                            .filter(
+                                MediaCollection.uuid == collection_uuid,
+                                MediaCollection.created_by
+                                == search_request.uploaded_by,
+                            )
+                            .first()
+                        )
+                    except ValueError:
+                        # Not a valid UUID, try as integer ID
+                        print(f"🔍 DEBUG: Not a valid UUID, trying as integer")
+                        try:
+                            collection_id_int = int(collection_filter)
+                            print(f"🔍 DEBUG: Parsed as integer: {collection_id_int}")
+                            collection_exists = (
+                                self.db.query(MediaCollection)
+                                .filter(
+                                    MediaCollection.id == collection_id_int,
+                                    MediaCollection.created_by
+                                    == search_request.uploaded_by,
+                                )
+                                .first()
+                            )
+                        except (ValueError, TypeError):
+                            # Invalid collection_id format
+                            print(f"🔍 DEBUG: Invalid collection_id format")
+                            collection_exists = None
+
+                    if collection_exists:
+                        print(
+                            f"🔍 DEBUG: Found collection: {collection_exists.name} (ID: {collection_exists.id})"
+                        )
+                        valid_collection_ids.append(collection_exists.id)
+                    else:
+                        print(f"🔍 DEBUG: Collection not found or not owned by user")
+
+                print(f"🔍 DEBUG: valid_collection_ids = {valid_collection_ids}")
+
+                if not valid_collection_ids:
+                    # No valid collections found
+                    print(f"🔍 DEBUG: No valid collections found, forcing no results")
+                    query = query.filter(Media.id == -1)  # Force no results
+                else:
+                    # Use explicit inner join to filter collection media
+                    print(
+                        f"🔍 DEBUG: Applying collection filter with IDs: {valid_collection_ids}"
+                    )
+                    query = query.join(
+                        MediaCollectionItem, Media.id == MediaCollectionItem.media_id
+                    ).filter(
+                        MediaCollectionItem.collection_id.in_(valid_collection_ids)
+                    )
+                    print(f"🔍 DEBUG: Collection filter applied successfully")
 
         # Apply sorting
         query = query.order_by(desc(Media.created_at))

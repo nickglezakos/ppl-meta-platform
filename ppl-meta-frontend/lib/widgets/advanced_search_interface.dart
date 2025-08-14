@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
+import '../core/models/collection_models.dart';
+import '../core/providers/search_providers.dart';
+import '../services/media_api_client.dart';
+import '../core/api/api_client.dart';
 
 /// Advanced search interface with filters and suggestions
 class AdvancedSearchInterface extends StatefulWidget {
   final MediaSearchFilters? initialFilters;
-  final Function(MediaSearchFilters) onSearch;
+  final Function(String, MediaSearchFilters?) onSearch;
   final Function()? onClear;
   final List<String>? availableTags;
-  final List<String>? availableCollections;
+  final List<String>? availableCollections; // Deprecated - use dynamic loading
   final bool showAdvancedFilters;
+  final bool enableCameraFilters;
+  final bool showVirtualCollections;
+  final ApiClient? apiClient; // For dynamic collection loading
 
   const AdvancedSearchInterface({
     super.key,
@@ -20,6 +27,9 @@ class AdvancedSearchInterface extends StatefulWidget {
     this.availableTags,
     this.availableCollections,
     this.showAdvancedFilters = false,
+    this.enableCameraFilters = false,
+    this.showVirtualCollections = false,
+    this.apiClient,
   });
 
   @override
@@ -38,6 +48,14 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
   MediaSearchFilters _filters = MediaSearchFilters();
   List<String> _searchSuggestions = [];
   bool _showSuggestions = false;
+  
+  // Multi-select collections state
+  List<String> _selectedCollectionIds = [];
+  
+  // Dynamic collection loading
+  MediaApiClient? _mediaApiClient;
+  List<MediaCollection> _availableCollections = [];
+  bool _loadingCollections = false;
 
   @override
   void initState() {
@@ -57,11 +75,25 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
     if (widget.initialFilters != null) {
       _filters = widget.initialFilters!;
       _searchController.text = _filters.query ?? '';
+      
+      // Initialize selected collections from filters
+      if (_filters.collectionIds != null) {
+        _selectedCollectionIds = List.from(_filters.collectionIds!);
+      } else if (_filters.collectionId != null) {
+        // Backward compatibility: convert single collection to list
+        _selectedCollectionIds = [_filters.collectionId!];
+      }
     }
     
     _showAdvancedFilters = widget.showAdvancedFilters;
     if (_showAdvancedFilters) {
       _filtersAnimationController.forward();
+    }
+    
+    // Initialize API client for dynamic collection loading
+    if (widget.apiClient != null) {
+      _mediaApiClient = MediaApiClient(widget.apiClient!);
+      _loadCollections();
     }
     
     _searchFocusNode.addListener(_onFocusChanged);
@@ -74,6 +106,49 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  /// Load collections dynamically from API
+  Future<void> _loadCollections() async {
+    if (_mediaApiClient == null) return;
+    
+    setState(() {
+      _loadingCollections = true;
+    });
+    
+    try {
+      final response = await _mediaApiClient!.getCollections();
+      if (response.success) {
+        setState(() {
+          _availableCollections = response.data ?? [];
+          _loadingCollections = false;
+          
+          // Validate and clean up selected collections after loading
+          _validateSelectedCollections();
+        });
+      } else {
+        print('Failed to load collections: ${response.error}');
+        setState(() {
+          _loadingCollections = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading collections: $e');
+      setState(() {
+        _loadingCollections = false;
+      });
+    }
+  }
+
+  void _validateSelectedCollections() {
+    // Remove any selected collection IDs that don't exist in available collections
+    final availableIds = _availableCollections.map((c) => c.id).toSet();
+    final initialCount = _selectedCollectionIds.length;
+    _selectedCollectionIds.removeWhere((id) => !availableIds.contains(id));
+    
+    if (_selectedCollectionIds.length != initialCount) {
+      print('Removed ${initialCount - _selectedCollectionIds.length} invalid collection IDs');
+    }
   }
 
   /// Handle search focus changes
@@ -154,11 +229,12 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
 
   /// Perform search with current filters
   void _performSearch() {
+    final query = _searchController.text;
     final updatedFilters = _filters.copyWith(
-      query: _searchController.text.isNotEmpty ? _searchController.text : null,
+      query: query.isNotEmpty ? query : null,
     );
     
-    widget.onSearch(updatedFilters);
+    widget.onSearch(query, updatedFilters);
     
     // Hide suggestions and unfocus
     setState(() {
@@ -172,6 +248,7 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
     setState(() {
       _searchController.clear();
       _filters = MediaSearchFilters();
+      _selectedCollectionIds.clear();
       _searchSuggestions.clear();
       _showSuggestions = false;
     });
@@ -191,33 +268,41 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Column(
-        children: [
-          // Main search bar
-          Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: _buildSearchBar(),
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.6, // Max 60% of screen height
+      ),
+      child: Card(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Main search bar
+              Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: _buildSearchBar(),
+              ),
+              
+              // Search suggestions
+              if (_showSuggestions)
+                _buildSuggestions(),
+              
+              // Advanced filters
+              AnimatedBuilder(
+                animation: _filtersAnimation,
+                builder: (context, child) {
+                  return SizeTransition(
+                    sizeFactor: _filtersAnimation,
+                    child: _buildAdvancedFilters(),
+                  );
+                },
+              ),
+              
+              // Action buttons
+              _buildActionButtons(),
+            ],
           ),
-          
-          // Search suggestions
-          if (_showSuggestions)
-            _buildSuggestions(),
-          
-          // Advanced filters
-          AnimatedBuilder(
-            animation: _filtersAnimation,
-            builder: (context, child) {
-              return SizeTransition(
-                sizeFactor: _filtersAnimation,
-                child: _buildAdvancedFilters(),
-              );
-            },
-          ),
-          
-          // Action buttons
-          _buildActionButtons(),
-        ],
+        ),
       ),
     );
   }
@@ -269,6 +354,7 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
   Widget _buildSuggestions() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+      constraints: const BoxConstraints(maxHeight: 200), // Limit height
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border.all(color: AppColors.border),
@@ -277,6 +363,7 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
       ),
       child: ListView.builder(
         shrinkWrap: true,
+        physics: const BouncingScrollPhysics(), // Add scrolling physics
         itemCount: _searchSuggestions.length,
         itemBuilder: (context, index) {
           final suggestion = _searchSuggestions[index];
@@ -309,6 +396,7 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
         ),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -335,7 +423,7 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
           const SizedBox(height: AppSpacing.md),
           
           // Collection filter
-          if (widget.availableCollections != null)
+          if (widget.availableCollections != null || _availableCollections.isNotEmpty)
             _buildCollectionFilter(),
           
           const SizedBox(height: AppSpacing.md),
@@ -503,46 +591,174 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
 
   /// Build collection filter
   Widget _buildCollectionFilter() {
+    // Use dynamic collections if available, otherwise fall back to static list
+    final collections = _availableCollections.isNotEmpty 
+        ? _availableCollections 
+        : (widget.availableCollections ?? []);
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Collection',
-          style: AppTextStyles.labelLarge,
+        Row(
+          children: [
+            Text(
+              'Collections',
+              style: AppTextStyles.labelLarge,
+            ),
+            if (_loadingCollections) ...[
+              const SizedBox(width: AppSpacing.sm),
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: AppSpacing.sm),
-        DropdownButtonFormField<String>(
-          value: _filters.collectionId,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
+        
+        // Multi-select collections container
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
-          hint: const Text('Select collection'),
-          items: [
-            const DropdownMenuItem(
-              value: null,
-              child: Text('All collections'),
-            ),
-            ...widget.availableCollections!.map((collection) {
-              return DropdownMenuItem(
-                value: collection,
-                child: Text(collection),
-              );
-            }),
-          ],
-          onChanged: (value) {
-            setState(() {
-              _filters = _filters.copyWith(collectionId: value);
-            });
-          },
+          child: Column(
+            children: [
+              // Selected collections display
+              if (_selectedCollectionIds.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(AppSpacing.sm),
+                  child: Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: _selectedCollectionIds.map((collectionId) {
+                      final collection = _availableCollections
+                          .firstWhere((c) => c.id == collectionId, 
+                                    orElse: () => MediaCollection(
+                                      id: collectionId, 
+                                      name: collectionId,
+                                      createdBy: '',
+                                      isPublic: false,
+                                      createdAt: DateTime.now(),
+                                    ));
+                      return Chip(
+                        label: Text(
+                          collection.name,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () {
+                          setState(() {
+                            _selectedCollectionIds.remove(collectionId);
+                            _updateFiltersWithCollections();
+                          });
+                        },
+                        backgroundColor: AppColors.primary.withOpacity(0.1),
+                        side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const Divider(height: 1),
+              ],
+              
+              // Collection selection interface
+              Container(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Add collections section
+                    if (_availableCollections.isNotEmpty || widget.availableCollections != null) ...[
+                      Text(
+                        'Available Collections',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      
+                      // Available collections grid
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: [
+                          // Dynamic collections from MediaCollection objects
+                          if (_availableCollections.isNotEmpty)
+                            ..._availableCollections
+                                .where((collection) => !_selectedCollectionIds.contains(collection.id))
+                                .map((collection) {
+                              return _buildCollectionChip(
+                                id: collection.id,
+                                name: collection.name,
+                                isSelected: false,
+                                onTap: () {
+                                  setState(() {
+                                    _selectedCollectionIds.add(collection.id);
+                                    _updateFiltersWithCollections();
+                                  });
+                                },
+                              );
+                            })
+                          
+                          // Fallback to static list for backward compatibility
+                          else if (widget.availableCollections != null)
+                            ...widget.availableCollections!
+                                .where((collection) => !_selectedCollectionIds.contains(collection))
+                                .map((collection) {
+                              return _buildCollectionChip(
+                                id: collection,
+                                name: collection,
+                                isSelected: false,
+                                onTap: () {
+                                  setState(() {
+                                    _selectedCollectionIds.add(collection);
+                                    _updateFiltersWithCollections();
+                                  });
+                                },
+                              );
+                            }),
+                        ],
+                      ),
+                    ],
+                    
+                    // Clear all button
+                    if (_selectedCollectionIds.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _selectedCollectionIds.clear();
+                            _updateFiltersWithCollections();
+                          });
+                        },
+                        icon: const Icon(Icons.clear_all, color: Colors.red),
+                        label: const Text('Clear all collections', style: TextStyle(color: Colors.red)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
+  }
+  
+  /// Update filters with current collection selections
+  void _updateFiltersWithCollections() {
+    _filters = _filters.copyWith(
+      collectionIds: _selectedCollectionIds.isEmpty ? null : List.from(_selectedCollectionIds),
+      // Clear single collectionId when using multi-select
+      collectionId: null,
+    );
+    
+    // Trigger search with updated filters
+    _performSearch();
   }
 
   /// Build sort options
@@ -738,6 +954,41 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
       case MediaType.other:
         return AppColors.documentColor; // Use same color as document
     }
+  }
+
+  /// Build collection chip
+  Widget _buildCollectionChip({
+    required String id,
+    required String name,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return ActionChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.folder,
+            size: 16,
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Flexible(
+            child: Text(
+              name,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isSelected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+      onPressed: onTap,
+      backgroundColor: isSelected 
+          ? AppColors.primary 
+          : AppColors.surfaceVariant,
+    );
   }
 }
 
