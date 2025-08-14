@@ -7,10 +7,10 @@ class AppColors {
   static const Color primary = Color(0xFF1976D2);
   static const Color secondary = Color(0xFF03DAC6);
   static const Color accent = Color(0xFF03DAC6);
-  static const Color surface = Color(0xFF061d36);
-  static const Color surfaceVariant = Color(0xFF0c2942);
-  static const Color background = Color(0xFF061d36);
-  static const Color widgetFill = Color(0xFF041121);
+  static const Color surface = Color(0xFF0A0A0F);
+  static const Color surfaceVariant = Color(0xFF0F0F14);
+  static const Color background = Color(0xFF0A0A0F);
+  static const Color widgetFill = Color(0xFF050509);
   static const Color error = Color(0xFFCF6679);
   static const Color success = Color(0xFF4CAF50);
   static const Color warning = Color(0xFFFFC107);
@@ -49,7 +49,7 @@ class AppColors {
   static const Color gray900 = Color(0xFF212121);
   
   // Border color
-  static const Color border = Color(0xFF0c2942);
+  static const Color border = Color(0xFF0F0F14);
   
   // Utility method to get consistent border decoration
   static BoxDecoration getOutlineDecoration({

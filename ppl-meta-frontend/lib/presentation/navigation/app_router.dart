@@ -88,9 +88,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/collections',
         name: 'collections',
         builder: (context, state) {
-          final collectionId = state.uri.queryParameters['collectionId'];
+          final initialCollectionId = state.uri.queryParameters['initialCollectionId'];
           return ProviderScreenWrapper(
-            child: CollectionsScreen(initialCollectionId: collectionId),
+            child: CollectionsScreen(initialCollectionId: initialCollectionId),
           );
         },
       ),
