@@ -3,12 +3,14 @@ Camera management endpoints for PPL Meta Cameras API.
 """
 
 import logging
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from src.database import get_db
-from src.models.camera import Camera, CameraStatus
+from src.models.camera import Camera, CameraStatus, CameraType
 from src.security.auth import (
     get_current_user,
     require_admin_cameras,
@@ -20,6 +22,17 @@ from src.services.camera_detection import camera_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class RTSPCameraCreate(BaseModel):
+    """Model for RTSP camera creation/update"""
+
+    name: str
+    host: str
+    port: int = 554
+    path: str = "/stream"
+    username: Optional[str] = None
+    password: Optional[str] = None
 
 
 @router.get("/", dependencies=[Depends(require_view_cameras)])
@@ -298,4 +311,228 @@ async def disconnect_all_cameras(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to disconnect all cameras",
+        )
+
+
+@router.post("/rtsp", dependencies=[Depends(require_admin_cameras)])
+async def add_rtsp_camera(
+    camera_data: Dict,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Add a new RTSP camera to the system."""
+
+    try:
+        # Validate required fields
+        required_fields = ["name", "host", "port", "path"]
+        for field in required_fields:
+            if field not in camera_data:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Missing required field: {field}",
+                )
+
+        # Extract camera data
+        name = camera_data["name"]
+        host = camera_data["host"]
+        port = int(camera_data["port"])
+        path = camera_data["path"]
+        username = camera_data.get("username")
+        password = camera_data.get("password")
+
+        # Build RTSP URL
+        credentials = ""
+        if username:
+            if password:
+                credentials = f"{username}:{password}@"
+            else:
+                credentials = f"{username}@"
+
+        rtsp_url = f"rtsp://{credentials}{host}:{port}{path}"
+        device_id = f"rtsp_{host}_{port}"
+
+        # Check if camera already exists
+        existing_camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if existing_camera:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"RTSP camera with host {host}:{port} already exists",
+            )
+
+        # Create new RTSP camera
+        new_camera = Camera(
+            name=name,
+            device_id=device_id,
+            camera_type=CameraType.RTSP,
+            status=CameraStatus.AVAILABLE,
+            connection_string=rtsp_url,
+            port=port,
+            username=username,
+            password=password,  # TODO: Encrypt in production
+            resolution_width=1920,  # Default resolution
+            resolution_height=1080,
+            max_fps=30,
+            supports_streaming=True,
+            supports_recording=False,
+            supports_audio=False,
+            supports_ptz=False,
+        )
+
+        db.add(new_camera)
+        db.commit()
+        db.refresh(new_camera)
+
+        logger.info(f"User {current_user.get('sub')} added RTSP camera: {name}")
+
+        return {
+            "message": "RTSP camera added successfully",
+            "camera": {
+                "id": new_camera.id,
+                "name": new_camera.name,
+                "device_id": new_camera.device_id,
+                "camera_type": new_camera.camera_type.value,
+                "status": new_camera.status.value,
+                "rtsp_url": rtsp_url,
+            },
+        }
+
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid port number: {camera_data.get('port')}",
+        )
+    except Exception as e:
+        logger.error(f"Error adding RTSP camera: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add RTSP camera",
+        )
+
+
+@router.delete("/rtsp/{device_id}", dependencies=[Depends(require_admin_cameras)])
+async def remove_rtsp_camera(
+    device_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Remove an RTSP camera from the system."""
+
+    try:
+        # Find the camera
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.RTSP
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="RTSP camera not found",
+            )
+
+        # Disconnect if connected
+        if camera.status == CameraStatus.CONNECTED:
+            await camera_service.disconnect_camera(device_id)
+
+        # Delete the camera
+        db.delete(camera)
+        db.commit()
+
+        logger.info(
+            f"User {current_user.get('sub')} removed RTSP camera: " f"{camera.name}"
+        )
+
+        return {
+            "message": "RTSP camera removed successfully",
+            "camera_id": device_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error removing RTSP camera: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to remove RTSP camera",
+        )
+
+
+@router.put("/rtsp/{device_id}", dependencies=[Depends(require_admin_cameras)])
+async def update_rtsp_camera(
+    device_id: str,
+    camera_update: RTSPCameraCreate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Update an existing RTSP camera configuration."""
+
+    try:
+        # Find the camera
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.RTSP
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="RTSP camera not found",
+            )
+
+        # Update camera fields
+        camera.name = camera_update.name
+
+        # Build new device_id and RTSP URL
+        new_device_id = f"rtsp_{camera_update.host}_{camera_update.port}"
+
+        # Build RTSP URL with credentials
+        credentials = ""
+        if camera_update.username:
+            if camera_update.password:
+                credentials = f"{camera_update.username}:{camera_update.password}@"
+            else:
+                credentials = f"{camera_update.username}@"
+
+        rtsp_url = f"rtsp://{credentials}{camera_update.host}:{camera_update.port}{camera_update.path}"
+
+        # Update camera fields
+        camera.device_id = new_device_id
+        camera.connection_string = rtsp_url
+        camera.username = camera_update.username
+        camera.password = camera_update.password
+        camera.last_seen = datetime.utcnow()
+
+        # Commit changes
+        db.commit()
+        db.refresh(camera)
+
+        logger.info(
+            f"User {current_user.get('sub')} updated RTSP camera: " f"{camera.name}"
+        )
+
+        return {
+            "message": "RTSP camera updated successfully",
+            "camera": {
+                "id": camera.id,
+                "name": camera.name,
+                "device_id": camera.device_id,
+                "camera_type": camera.camera_type.value,
+                "status": camera.status.value,
+                "rtsp_url": rtsp_url,
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating RTSP camera: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update RTSP camera",
         )

@@ -594,6 +594,12 @@ async def bulk_add_to_collection(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.delete("/media/collections/{collection_id}")
+async def delete_collection(request: Request):
+    """Proxy delete collection to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.delete("/media/collections/{collection_id}/remove/{media_id}")
 async def remove_media_from_collection(request: Request):
     """Proxy remove media from collection to Media service."""

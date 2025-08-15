@@ -10,6 +10,49 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 
+cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-frontend && flutter run -d chrome --web-port 3000
+
+Kkkkodikos234
+rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.75:554/stream1
+
+@app.websocket("/ws/camera_stream/")
+async def websocket_camera_stream(
+    websocket: WebSocket,
+    rtsp_url: str,
+    resize_percentage: int = 100,
+    record: bool = False,
+    cameraRequest: Optional[str] = None
+):
+
+    await websocket.accept()
+    logger.info(f"WebSocket connection accepted for RTSP URL: {rtsp_url}")
+
+    # Manually create a BackgroundTasks instance
+    background_tasks = BackgroundTasks()
+
+    try:
+        async for frame in generate_frames(
+            rtsp_url=rtsp_url,
+            resize_percentage=resize_percentage,
+            record=record,
+            cameraRequest=cameraRequest,
+            background_tasks=background_tasks
+        ):
+            try:
+                # Send the frame to the client
+                await websocket.send_bytes(frame)
+            except WebSocketDisconnect:
+                logger.info("WebSocket client disconnected.")
+                break
+            except Exception as e:
+                logger.error(f"Error sending frame via WebSocket: {e}")
+                break
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected.")
+    except Exception as e:
+        logger.error(f"Error in WebSocket stream: {e}")
+    finally:
+        logger.info("WebSocket connection closed.")
 
 
 Start Ollama: brew services start ollama

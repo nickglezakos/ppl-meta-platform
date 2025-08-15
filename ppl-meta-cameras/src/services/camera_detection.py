@@ -108,25 +108,69 @@ class CameraDetectionService:
             logger.warning(f"Camera {device_id} already connected")
             return self.active_connections[device_id]
 
+        # First check detected cameras (USB cameras)
         camera_info = self.detected_cameras.get(device_id)
-        if not camera_info:
-            logger.error(f"Camera {device_id} not found in detected cameras")
-            return None
 
         try:
-            if camera_info["camera_type"] == CameraType.USB:
-                index = int(camera_info["connection_string"])
-                cap = cv2.VideoCapture(index)
+            if camera_info:
+                # Handle USB cameras from detected cameras
+                if camera_info["camera_type"] == CameraType.USB:
+                    index = int(camera_info["connection_string"])
+                    cap = cv2.VideoCapture(index)
 
-                if cap.isOpened():
-                    self.active_connections[device_id] = cap
-                    logger.info(f"Connected to USB camera {device_id}")
-                    return cap
-                else:
-                    logger.error(f"Failed to open USB camera {device_id}")
-                    return None
+                    if cap.isOpened():
+                        self.active_connections[device_id] = cap
+                        logger.info(f"Connected to USB camera {device_id}")
+                        return cap
+                    else:
+                        logger.error(f"Failed to open USB camera {device_id}")
+                        return None
+            else:
+                # Camera not in detected cameras, check if it's RTSP camera in database
+                db_gen = get_db()
+                db = next(db_gen)
+                try:
+                    camera = (
+                        db.query(Camera).filter(Camera.device_id == device_id).first()
+                    )
+                    if camera and camera.camera_type == CameraType.RTSP:
+                        # Handle RTSP camera connection
+                        # For RTSP cameras, we need to construct RTSP URL from stored data
+                        # The connection_string should contain the RTSP URL
+                        rtsp_url = camera.connection_string
+                        if not rtsp_url:
+                            logger.error(
+                                f"RTSP camera {device_id} has no connection string"
+                            )
+                            return None
 
-            # TODO: Handle IP cameras, RTSP streams, etc.
+                        # URL decode the RTSP URL (e.g., %40 -> @)
+                        from urllib.parse import unquote
+
+                        decoded_rtsp_url = unquote(rtsp_url)
+
+                        logger.info(
+                            f"Connecting to RTSP camera {device_id} at {decoded_rtsp_url}"
+                        )
+                        # Try with explicit FFMPEG backend for better RTSP support
+                        cap = cv2.VideoCapture(decoded_rtsp_url, cv2.CAP_FFMPEG)
+
+                        if cap.isOpened():
+                            self.active_connections[device_id] = cap
+                            logger.info(f"Connected to RTSP camera {device_id}")
+                            return cap
+                        else:
+                            logger.error(
+                                f"Failed to open RTSP camera {device_id} at {decoded_rtsp_url}"
+                            )
+                            return None
+                    else:
+                        logger.error(
+                            f"Camera {device_id} not found in detected cameras or database"
+                        )
+                        return None
+                finally:
+                    db.close()
 
         except Exception as e:
             logger.error(f"Error connecting to camera {device_id}: {e}")

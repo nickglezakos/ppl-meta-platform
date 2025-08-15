@@ -131,8 +131,22 @@ async def video_stream(
         try:
             cap = await camera_service.get_camera_stream(device_id)
             if not cap:
-                logger.error(f"Camera {device_id} not connected for streaming")
-                return
+                logger.info(
+                    f"Camera {device_id} not connected, attempting to connect..."
+                )
+                # Try to connect the camera automatically
+                connection = await camera_service.connect_camera(device_id)
+                if not connection:
+                    logger.error(
+                        f"Failed to auto-connect camera {device_id} for streaming"
+                    )
+                    return
+                cap = await camera_service.get_camera_stream(device_id)
+                if not cap:
+                    logger.error(
+                        f"Camera {device_id} still not connected after auto-connect"
+                    )
+                    return
 
             # Set quality parameters
             quality_settings = {
@@ -224,8 +238,22 @@ async def video_stream_session(
         try:
             cap = await camera_service.get_camera_stream(device_id)
             if not cap:
-                logger.error("Camera %s not connected for streaming", device_id)
-                return
+                logger.info(
+                    "Camera %s not connected, attempting to connect...", device_id
+                )
+                # Try to connect the camera automatically
+                connection = await camera_service.connect_camera(device_id)
+                if not connection:
+                    logger.error(
+                        "Failed to auto-connect camera %s for streaming", device_id
+                    )
+                    return
+                cap = await camera_service.get_camera_stream(device_id)
+                if not cap:
+                    logger.error(
+                        "Camera %s still not connected after auto-connect", device_id
+                    )
+                    return
 
             # Set quality parameters
             quality_settings = {
@@ -547,18 +575,26 @@ async def stop_stream(
     """Stop streaming from a specific camera."""
 
     try:
-        # For now, we'll just keep the connection but log the stop request
-        # In a full implementation, you might track active streams separately
+        # Actually disconnect the camera to stop the stream
+        success = await camera_service.disconnect_camera(device_id)
 
-        logger.info(
-            f"User {current_user.get('sub')} stopped stream for camera {device_id}"
-        )
-
-        return {
-            "device_id": device_id,
-            "status": "stopped",
-            "message": f"Stream stopped for camera {device_id}",
-        }
+        if success:
+            logger.info(
+                f"User {current_user.get('sub')} stopped stream for "
+                f"camera {device_id}"
+            )
+            return {
+                "device_id": device_id,
+                "status": "stopped",
+                "message": f"Stream stopped for camera {device_id}",
+            }
+        else:
+            logger.warning(f"Camera {device_id} was not connected")
+            return {
+                "device_id": device_id,
+                "status": "stopped",
+                "message": f"Camera {device_id} was already stopped",
+            }
 
     except Exception as e:
         logger.error(f"Error stopping stream for camera {device_id}: {e}")

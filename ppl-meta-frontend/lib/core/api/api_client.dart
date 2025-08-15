@@ -64,6 +64,9 @@ class ApiClient {
   /// Get base URL
   String get baseUrl => _dio.options.baseUrl;
 
+  /// Get underlying Dio instance for advanced operations
+  Dio get dio => _dio;
+
   /// Clear authentication token
   void clearAuthToken() {
     _authToken = null;

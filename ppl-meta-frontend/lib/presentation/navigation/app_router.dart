@@ -18,6 +18,7 @@ import '../../screens/profile_screen.dart';
 import '../../screens/features_screen.dart';
 import '../../screens/media_preview_screen.dart';
 import '../../screens/camera_media_sync_screen.dart';
+import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -115,7 +116,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/cameras',
         name: 'cameras',
         builder: (context, state) => const ProviderScreenWrapper(
-          child: CamerasScreen(),
+          child: MultiCameraPage(),
         ),
       ),
       GoRoute(

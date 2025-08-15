@@ -4,6 +4,7 @@ import '../config/app_config.dart';
 import '../models/camera.dart';
 import '../models/snapshot_settings.dart';
 import '../models/snapshot_result.dart';
+import 'camera_collection_service.dart';
 
 /// API Error model for error handling
 class ApiError {
@@ -34,9 +35,10 @@ class CameraException implements Exception {
 /// Service for camera operations
 class CameraService {
   final ApiClient _apiClient;
+  final CameraCollectionService _collectionService;
   late final Dio _cameraApiClient;
 
-  CameraService(this._apiClient) {
+  CameraService(this._apiClient) : _collectionService = CameraCollectionService(_apiClient) {
     // Create dedicated camera service API client
     print('Camera service baseUrl: ${AppConfig.instance.cameraServiceUrl}');
     _cameraApiClient = Dio(BaseOptions(
@@ -278,6 +280,7 @@ class CameraService {
   /// 1. Disconnect all cameras first
   /// 2. Re-detect cameras to refresh state
   /// 3. Connect to the specific camera
+  /// 4. Auto-create collection for the camera
   Future<bool> connectCamera(String deviceId) async {
     try {
       print('Step 1: Disconnecting all cameras...');
@@ -296,6 +299,30 @@ class CameraService {
       
       if (response.statusCode == 200) {
         print('✅ Successfully connected to camera $deviceId');
+        
+        // Step 4: Auto-create collection for this USB camera
+        try {
+          // Get camera details to get the name
+          final cameras = await getCameras();
+          final camera = cameras.firstWhere(
+            (cam) => cam.deviceId == deviceId,
+            orElse: () => Camera(
+              id: deviceId,
+              deviceId: deviceId,
+              name: 'USB Camera $deviceId',
+              status: 'connected',
+              type: CameraType.usb,
+              isActive: true,
+            ),
+          );
+          
+          await _collectionService.setupCameraWithCollection(camera);
+          print('✅ Auto-created collection for USB camera: ${camera.name}');
+        } catch (e) {
+          print('⚠️ Failed to auto-create collection for USB camera $deviceId: $e');
+          // Don't fail the camera connection if collection creation fails
+        }
+        
         return true;
       } else {
         print('❌ Failed to connect to camera $deviceId: ${response.statusCode}');
@@ -396,6 +423,128 @@ class CameraService {
     } catch (e) {
       print('Error in getCameraCapabilities: $e');
       throw CameraException('Failed to get camera capabilities: $e');
+    }
+  }
+
+  /// Add RTSP camera configuration
+  Future<Camera> addRTSPCamera({
+    required String name,
+    required String host,
+    required int port,
+    required String path,
+    String? username,
+    String? password,
+  }) async {
+    try {
+      final response = await _cameraApiClient.post(
+        '/api/v1/cameras/rtsp',
+        data: {
+          'name': name,
+          'host': host,
+          'port': port,
+          'path': path,
+          if (username != null && username.isNotEmpty) 'username': username,
+          if (password != null && password.isNotEmpty) 'password': password,
+        },
+      );
+
+      if (response.data == null || response.data['camera'] == null) {
+        throw const CameraException('Invalid response from camera service');
+      }
+
+      // Convert the backend response to frontend Camera model
+      final cameraData = response.data['camera'] as Map<String, dynamic>;
+      
+      return Camera(
+        id: cameraData['device_id'] ?? 'unknown',
+        deviceId: cameraData['device_id'] ?? 'unknown',
+        name: cameraData['name'] ?? 'Unknown RTSP Camera',
+        type: CameraType.rtsp,
+        status: cameraData['status'] ?? 'disconnected',
+        resolution: cameraData['resolution'] ?? '1920x1080',
+        isActive: cameraData['status'] == 'connected',
+        lastSeen: cameraData['last_seen'] != null 
+            ? DateTime.parse(cameraData['last_seen']) 
+            : DateTime.now(),
+        metadata: {
+          'rtsp_url': cameraData['rtsp_url'],
+          'supports_streaming': cameraData['supports_streaming'] ?? true,
+          'supports_recording': cameraData['supports_recording'] ?? false,
+          'max_fps': cameraData['max_fps'] ?? 30,
+          'created_at': cameraData['created_at'],
+        },
+      );
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      throw CameraException('Failed to add RTSP camera: $e');
+    }
+  }
+
+  /// Update RTSP camera configuration
+  Future<Camera> updateRTSPCamera({
+    required String deviceId,
+    required String name,
+    required String host,
+    required int port,
+    required String path,
+    String? username,
+    String? password,
+  }) async {
+    try {
+      final response = await _cameraApiClient.put(
+        '/api/v1/cameras/rtsp/$deviceId',
+        data: {
+          'name': name,
+          'host': host,
+          'port': port,
+          'path': path,
+          if (username != null && username.isNotEmpty) 'username': username,
+          if (password != null && password.isNotEmpty) 'password': password,
+        },
+      );
+
+      if (response.data == null || response.data['camera'] == null) {
+        throw const CameraException('Invalid response from camera service');
+      }
+
+      // Convert the backend response to frontend Camera model
+      final cameraData = response.data['camera'] as Map<String, dynamic>;
+      
+      return Camera(
+        id: cameraData['device_id'] ?? deviceId,
+        deviceId: cameraData['device_id'] ?? deviceId,
+        name: cameraData['name'] ?? 'Unknown RTSP Camera',
+        type: CameraType.rtsp,
+        status: cameraData['status'] ?? 'disconnected',
+        resolution: cameraData['resolution'] ?? '1920x1080',
+        isActive: cameraData['status'] == 'connected',
+        lastSeen: cameraData['last_seen'] != null 
+            ? DateTime.parse(cameraData['last_seen']) 
+            : DateTime.now(),
+        metadata: {
+          'rtsp_url': cameraData['rtsp_url'],
+          'supports_streaming': cameraData['supports_streaming'] ?? true,
+          'supports_recording': cameraData['supports_recording'] ?? false,
+          'max_fps': cameraData['max_fps'] ?? 30,
+          'created_at': cameraData['created_at'],
+        },
+      );
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      throw CameraException('Failed to update RTSP camera: $e');
+    }
+  }
+
+  /// Delete RTSP camera
+  Future<void> deleteRTSPCamera(String deviceId) async {
+    try {
+      await _cameraApiClient.delete('/api/v1/cameras/rtsp/$deviceId');
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    } catch (e) {
+      throw CameraException('Failed to delete RTSP camera: $e');
     }
   }
 

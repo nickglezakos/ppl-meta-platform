@@ -444,13 +444,15 @@ async def partial_update_collection(
 @router.delete("/collections/{collection_id}")
 async def delete_collection(
     collection_id: str,
-    user_id: str,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Delete a collection."""
     try:
         media_service = MediaService(db)
-        success = await media_service.delete_collection(collection_id, UUID(user_id))
+        success = await media_service.delete_collection(
+            collection_id, UUID(current_user.user_id)
+        )
 
         if not success:
             raise HTTPException(status_code=404, detail="Collection not found")
