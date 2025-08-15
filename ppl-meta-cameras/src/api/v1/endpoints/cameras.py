@@ -35,6 +35,32 @@ class RTSPCameraCreate(BaseModel):
     password: Optional[str] = None
 
 
+class MobileCameraCreate(BaseModel):
+    """Model for mobile camera registration"""
+
+    name: str
+    device_id: str
+    ip_address: str
+    port: int = 8554
+    device_model: Optional[str] = None
+    device_manufacturer: Optional[str] = None
+    app_version: Optional[str] = None
+    resolution_width: int = 1920
+    resolution_height: int = 1080
+    max_fps: int = 30
+    supports_audio: bool = False
+
+
+class MobileCameraUpdate(BaseModel):
+    """Model for mobile camera status updates"""
+
+    status: Optional[CameraStatus] = None
+    resolution_width: Optional[int] = None
+    resolution_height: Optional[int] = None
+    current_fps: Optional[int] = None
+    battery_level: Optional[int] = None
+
+
 @router.get("/", dependencies=[Depends(require_view_cameras)])
 async def list_cameras(
     db: Session = Depends(get_db), current_user: Dict = Depends(get_current_user)
@@ -535,4 +561,313 @@ async def update_rtsp_camera(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update RTSP camera",
+        )
+
+
+# 📱 MOBILE CAMERA ENDPOINTS
+
+
+@router.post("/mobile", dependencies=[Depends(require_admin_cameras)])
+async def register_mobile_camera(
+    mobile_data: MobileCameraCreate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Register a mobile device as a camera in the PPL Meta Platform."""
+
+    try:
+        # Check if mobile camera already exists
+        existing_camera = (
+            db.query(Camera).filter(Camera.device_id == mobile_data.device_id).first()
+        )
+        if existing_camera:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Mobile camera {mobile_data.device_id} already registered",
+            )
+
+        # Build mobile streaming URL/connection string
+        connection_string = f"mobile://{mobile_data.ip_address}:{mobile_data.port}"
+
+        # Create new mobile camera
+        new_camera = Camera(
+            name=mobile_data.name,
+            device_id=mobile_data.device_id,
+            camera_type=CameraType.MOBILE,
+            status=CameraStatus.AVAILABLE,
+            connection_string=connection_string,
+            port=mobile_data.port,
+            resolution_width=mobile_data.resolution_width,
+            resolution_height=mobile_data.resolution_height,
+            max_fps=mobile_data.max_fps,
+            manufacturer=mobile_data.device_manufacturer,
+            model=mobile_data.device_model,
+            firmware_version=mobile_data.app_version,
+            supports_streaming=True,
+            supports_recording=False,
+            supports_audio=mobile_data.supports_audio,
+            supports_ptz=False,
+        )
+
+        db.add(new_camera)
+        db.commit()
+        db.refresh(new_camera)
+
+        logger.info(
+            f"User {current_user.get('sub')} registered mobile camera: "
+            f"{mobile_data.name} ({mobile_data.device_id})"
+        )
+
+        return {
+            "message": "Mobile camera registered successfully",
+            "camera": {
+                "id": new_camera.id,
+                "name": new_camera.name,
+                "device_id": new_camera.device_id,
+                "camera_type": new_camera.camera_type.value,
+                "status": new_camera.status.value,
+                "connection_string": connection_string,
+                "ip_address": mobile_data.ip_address,
+                "port": mobile_data.port,
+                "resolution": f"{mobile_data.resolution_width}x{mobile_data.resolution_height}",
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error registering mobile camera: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to register mobile camera",
+        )
+
+
+@router.put("/mobile/{device_id}", dependencies=[Depends(require_connect_camera)])
+async def update_mobile_camera(
+    device_id: str,
+    mobile_update: MobileCameraUpdate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Update mobile camera status and properties."""
+
+    try:
+        # Find the mobile camera
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera {device_id} not found",
+            )
+
+        # Update fields if provided
+        updated_fields = []
+        if mobile_update.status is not None:
+            camera.status = mobile_update.status
+            updated_fields.append("status")
+
+        if mobile_update.resolution_width is not None:
+            camera.resolution_width = mobile_update.resolution_width
+            updated_fields.append("resolution_width")
+
+        if mobile_update.resolution_height is not None:
+            camera.resolution_height = mobile_update.resolution_height
+            updated_fields.append("resolution_height")
+
+        # Update last_seen timestamp
+        camera.last_seen = datetime.utcnow()
+        updated_fields.append("last_seen")
+
+        db.commit()
+
+        logger.info(
+            f"User {current_user.get('sub')} updated mobile camera "
+            f"{device_id}: {', '.join(updated_fields)}"
+        )
+
+        return {
+            "message": "Mobile camera updated successfully",
+            "device_id": device_id,
+            "updated_fields": updated_fields,
+            "camera": {
+                "id": camera.id,
+                "name": camera.name,
+                "device_id": camera.device_id,
+                "status": camera.status.value,
+                "resolution": f"{camera.resolution_width}x{camera.resolution_height}",
+                "last_seen": camera.last_seen.isoformat(),
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating mobile camera {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update mobile camera",
+        )
+
+
+@router.delete("/mobile/{device_id}", dependencies=[Depends(require_admin_cameras)])
+async def unregister_mobile_camera(
+    device_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Unregister a mobile camera from the PPL Meta Platform."""
+
+    try:
+        # Find the mobile camera
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera {device_id} not found",
+            )
+
+        # Disconnect if connected
+        if camera.status == CameraStatus.CONNECTED:
+            await camera_service.disconnect_camera(device_id)
+
+        # Delete the camera
+        camera_name = camera.name
+        db.delete(camera)
+        db.commit()
+
+        logger.info(
+            f"User {current_user.get('sub')} unregistered mobile camera: "
+            f"{camera_name} ({device_id})"
+        )
+
+        return {
+            "message": "Mobile camera unregistered successfully",
+            "device_id": device_id,
+            "camera_name": camera_name,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unregistering mobile camera {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to unregister mobile camera",
+        )
+
+
+@router.get("/mobile", dependencies=[Depends(require_view_cameras)])
+async def list_mobile_cameras(
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> List[Dict]:
+    """List all registered mobile cameras."""
+
+    try:
+        mobile_cameras = (
+            db.query(Camera).filter(Camera.camera_type == CameraType.MOBILE).all()
+        )
+
+        camera_list = []
+        for camera in mobile_cameras:
+            camera_dict = {
+                "id": camera.id,
+                "name": camera.name,
+                "device_id": camera.device_id,
+                "camera_type": camera.camera_type.value,
+                "status": camera.status.value,
+                "ip_address": camera.connection_string.split("://")[1].split(":")[0],
+                "port": camera.port,
+                "resolution": f"{camera.resolution_width}x{camera.resolution_height}",
+                "max_fps": camera.max_fps,
+                "supports_audio": camera.supports_audio,
+                "manufacturer": camera.manufacturer,
+                "model": camera.model,
+                "app_version": camera.firmware_version,
+                "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
+                "created_at": (
+                    camera.created_at.isoformat() if camera.created_at else None
+                ),
+            }
+            camera_list.append(camera_dict)
+
+        logger.info(
+            f"User {current_user.get('sub')} listed {len(camera_list)} mobile cameras"
+        )
+
+        return camera_list
+
+    except Exception as e:
+        logger.error(f"Error listing mobile cameras: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list mobile cameras",
+        )
+
+
+@router.post(
+    "/mobile/{device_id}/heartbeat", dependencies=[Depends(require_connect_camera)]
+)
+async def mobile_camera_heartbeat(
+    device_id: str,
+    heartbeat_data: Optional[Dict] = None,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Receive heartbeat from mobile camera to update last_seen timestamp."""
+
+    try:
+        # Find the mobile camera
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera {device_id} not found",
+            )
+
+        # Update last_seen timestamp
+        camera.last_seen = datetime.utcnow()
+
+        # Update status to CONNECTED if it was AVAILABLE
+        if camera.status == CameraStatus.AVAILABLE:
+            camera.status = CameraStatus.CONNECTED
+
+        db.commit()
+
+        return {
+            "message": "Heartbeat received",
+            "device_id": device_id,
+            "status": camera.status.value,
+            "timestamp": camera.last_seen.isoformat(),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing heartbeat for mobile camera {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to process mobile camera heartbeat",
         )

@@ -28,11 +28,12 @@ class CameraStatus(str, Enum):
 class CameraType(str, Enum):
     """Camera type enumeration."""
 
-    USB = "usb"
-    IP = "ip"
-    RTSP = "rtsp"
-    WEBCAM = "webcam"
-    VIRTUAL = "virtual"
+    USB = "USB"
+    IP = "IP"
+    RTSP = "RTSP"
+    WEBCAM = "WEBCAM"
+    VIRTUAL = "VIRTUAL"
+    MOBILE = "MOBILE"
 
 
 class StreamQuality(str, Enum):

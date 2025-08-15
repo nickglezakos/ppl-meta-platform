@@ -15,6 +15,31 @@ cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-frontend && flutter run
 Kkkkodikos234
 rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.75:554/stream1
 
+
+echo "📱 Reconnecting Redmi Note 11 via WiFi Debugging"
+echo "=============================================="
+echo ""
+echo "On your phone:"
+echo "1. Go to Settings → Additional settings → Developer options"
+echo "2. Find 'Wireless debugging' and tap it"
+echo "3. Tap 'Pair device with pairing code'"
+echo "4. Note the IP:Port and 6-digit code"
+echo ""
+echo "Then run: adb pair [IP:PORT] [CODE]"
+echo "Example: adb pair 192.168.1.66:41259 840776"
+
+Scenario 1: Local Network Direct Connection
+📱 Mobile Device: Connected to same WiFi as platform (192.168.1.x network) 
+🖥️ Platform: On same WiFi network (192.168.1.68) 
+🔗 Connection: Direct local network access 
+✅ Expected: App discovers platform at 192.168.1.68, network type: local_network
+
+Scenario 2: Mobile Carrier + Tailscale VPN
+📱 Mobile Device: On mobile carrier network (5G/4G) + Tailscale VPN active 
+🖥️ Platform: On WiFi network + Tailscale VPN (100.102.56.67) 
+🔗 Connection: Via Tailscale mesh VPN tunnel 
+✅ Expected: App discovers platform at 100.102.56.67, network type: vpn_tailscale
+
 @app.websocket("/ws/camera_stream/")
 async def websocket_camera_stream(
     websocket: WebSocket,

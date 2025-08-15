@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Allow cleartext traffic for local development -->
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">192.168.1.68</domain>
+        
+        <!-- Allow cleartext traffic for Tailscale VPN -->
+        <domain includeSubdomains="true">100.102.56.67</domain>
+        
+        <!-- Allow cleartext traffic for all local networks -->
+        <domain includeSubdomains="true">192.168.0.0/16</domain>
+        <domain includeSubdomains="true">10.0.0.0/8</domain>
+        <domain includeSubdomains="true">172.16.0.0/12</domain>
+        
+        <!-- Allow cleartext traffic for Tailscale network range -->
+        <domain includeSubdomains="true">100.64.0.0/10</domain>
+    </domain-config>
+    
+    <!-- Allow cleartext traffic for debugging -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <!-- Trust system CAs -->
+            <certificates src="system"/>
+        </trust-anchors>
+    </base-config>
+</network-security-config>

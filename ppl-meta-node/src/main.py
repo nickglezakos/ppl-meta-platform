@@ -1,6 +1,8 @@
 """Main entry point for the PPL Meta Node - User Management Service."""
 
 import os
+import socket
+import subprocess
 import sys
 import time
 import uuid
@@ -91,6 +93,64 @@ def get_or_create_installation_guid(db: Session):
         db.commit()
         db.refresh(info)
     return info.guid
+
+
+def get_local_network_ips():
+    """Get all local network IP addresses including VPN ranges"""
+    ips = []
+    try:
+        # Use ifconfig to get all IPs - more reliable than netifaces
+        import re
+
+        result = subprocess.run(
+            ["ifconfig"], capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            # Look for inet addresses
+            inet_pattern = r"inet (\d+\.\d+\.\d+\.\d+)"
+            matches = re.findall(inet_pattern, result.stdout)
+
+            for ip in matches:
+                # Skip localhost and link-local addresses
+                if not ip.startswith(("127.", "169.254.")):
+                    ips.append(ip)
+
+                    # Log VPN detection
+                    if ip.startswith("100."):
+                        print(f"Detected Tailscale VPN IP: {ip}")
+                    elif ip.startswith(("10.", "172.")):
+                        if ip.startswith("172."):
+                            # Check if it's in private range 172.16-31.x
+                            parts = ip.split(".")
+                            if len(parts) >= 2:
+                                second_octet = int(parts[1])
+                                if 16 <= second_octet <= 31:
+                                    print(f"Detected VPN/Private IP: {ip}")
+                        else:
+                            print(f"Detected VPN/Private IP: {ip}")
+                    elif ip.startswith("192.168."):
+                        print(f"Detected local network IP: {ip}")
+
+    except Exception as e:
+        print(f"ifconfig method failed: {e}")
+        # Fallback to socket method
+        hostname = socket.gethostname()
+        try:
+            ips = [socket.gethostbyname(hostname)]
+        except socket.error:
+            ips = []
+
+    return ips
+
+
+def get_dynamic_allowed_hosts():
+    """Get dynamically detected allowed hosts for TrustedHostMiddleware."""
+    base_hosts = ["localhost", "127.0.0.1", "*.localhost"]
+    network_ips = get_local_network_ips()
+
+    all_hosts = base_hosts + network_ips
+    logger.info(f"Dynamic allowed hosts: {all_hosts}")
+    return all_hosts
 
 
 class TimingMiddleware(BaseHTTPMiddleware):
@@ -267,10 +327,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Trusted host middleware
-app.add_middleware(
-    TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "*.localhost"]
-)
+# Trusted host middleware - Dynamic IP detection for external access
+dynamic_hosts = get_dynamic_allowed_hosts()
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=dynamic_hosts)
 
 # Include API routers
 app.include_router(v1_router)  # API v1 routes
@@ -305,6 +364,87 @@ async def root():
         "status": "running",
         "docs": "/docs",
         "health": "/api/v1/health",
+    }
+
+
+# Mobile pairing endpoints
+@app.get("/api/v1/mobile/discover")
+async def mobile_discover():
+    """Mobile discovery endpoint for automatic pairing."""
+    network_ips = get_local_network_ips()
+
+    # Categorize network types
+    network_types = {}
+    for ip in network_ips:
+        if ip.startswith(("192.168.", "10.", "172.")):
+            network_types[ip] = "local_network"
+        elif ip.startswith("100."):
+            network_types[ip] = "vpn_tailscale"
+        elif ip.startswith("169.254."):
+            network_types[ip] = "link_local"
+        else:
+            network_types[ip] = "other"
+
+    return {
+        "service": "PPL Meta Platform",
+        "version": settings.APP_VERSION,
+        "node_service": {
+            "port": settings.PORT,
+            "endpoints": {
+                "health": "/api/v1/health",
+                "login": "/api/v1/users/login",
+                "discover": "/api/v1/mobile/discover",
+            },
+        },
+        "camera_service": {
+            "port": 8005,
+            "endpoints": {
+                "health": "/health",
+                "mobile_cameras": "/api/v1/cameras/mobile",
+            },
+        },
+        "network": {
+            "detected_ips": network_ips,
+            "network_types": network_types,
+            "supported_hosts": get_dynamic_allowed_hosts(),
+            "vpn_support": "tailscale_wireguard_compatible",
+        },
+        "pairing": {
+            "status": "ready",
+            "instructions": ("Use any detected IP with the specified ports to connect"),
+            "vpn_info": "Supports Tailscale and other mesh VPN networks",
+        },
+    }
+
+
+@app.get("/api/v1/mobile/pairing-info")
+async def get_pairing_info():
+    """Get pairing information for mobile app setup."""
+    network_ips = get_local_network_ips()
+
+    # Prefer the first private network IP if available
+    preferred_ip = network_ips[0] if network_ips else "localhost"
+
+    return {
+        "platform": "PPL Meta",
+        "connection": {
+            "preferred_ip": preferred_ip,
+            "available_ips": network_ips,
+            "node_service_url": f"http://{preferred_ip}:8001",
+            "camera_service_url": f"http://{preferred_ip}:8005",
+        },
+        "services": {
+            "node": {"port": 8001, "status": "running"},
+            "cameras": {"port": 8005, "status": "running"},
+            "media": {"port": 8000, "status": "running"},
+            "gateway": {"port": 8080, "status": "running"},
+        },
+        "authentication": {
+            "login_endpoint": f"http://{preferred_ip}:8001/api/v1/users/login",
+            "method": "POST",
+            "content_type": "application/x-www-form-urlencoded",
+            "fields": ["username", "password"],
+        },
     }
 
 
