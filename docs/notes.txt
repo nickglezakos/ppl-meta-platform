@@ -15,6 +15,9 @@ cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-frontend && flutter run
 Kkkkodikos234
 rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.75:554/stream1
 
+http://192.168.1.68:8001
+
+
 
 echo "📱 Reconnecting Redmi Note 11 via WiFi Debugging"
 echo "=============================================="

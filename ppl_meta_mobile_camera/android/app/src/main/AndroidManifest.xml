@@ -40,6 +40,10 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Force camera plugin to use Camera2 API instead of CameraX -->
+        <meta-data
+            android:name="camera_implementation"
+            android:value="camera2" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
