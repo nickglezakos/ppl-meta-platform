@@ -112,7 +112,12 @@ class _MainNavigatorState extends State<MainNavigator> {
     return Consumer<AuthenticationProvider>(
       builder: (context, authProvider, child) {
         if (authProvider.isAuthenticated) {
-          return const CameraScreen();
+          // Check if camera registration is required
+          if (authProvider.requiresCameraRegistration) {
+            return const CameraRegistrationScreen();
+          } else {
+            return const CameraScreen();
+          }
         } else {
           return const AuthenticationScreen();
         }

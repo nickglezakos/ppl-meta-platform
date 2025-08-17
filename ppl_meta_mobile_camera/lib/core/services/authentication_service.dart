@@ -33,6 +33,22 @@ class AuthenticationService {
   String get serverUrl => _serverUrl;
   bool get isInitialized => _isInitialized;
 
+  /// Get platform services connectivity data
+  Map<String, dynamic>? get platformServices {
+    return _deviceData?['platform_services'];
+  }
+
+  /// Get recommended streaming endpoint for mobile cameras
+  String? get recommendedStreamingEndpoint {
+    return platformServices?['mobile_camera_config']?['recommended_endpoint'];
+  }
+
+  /// Get camera service endpoint for registration
+  String? get cameraServiceEndpoint {
+    final services = platformServices?['microservices']?['cameras'];
+    return services?['endpoints']?['local'] ?? services?['endpoints']?['tailscale'];
+  }
+
   /// Initialize authentication service with auto-discovery
   Future<bool> initializeAuth() async {
     try {
@@ -84,13 +100,14 @@ class AuthenticationService {
     }
   }
 
-  /// Try to automatically discover the PPL Meta server on localhost
+  /// Try to automatically discover the PPL Meta server on network
   Future<void> _tryAutoDiscoverServer() async {
+    // Auto-discovery candidates - will try to detect platform services
     const List<String> candidates = [
-      'http://localhost:8001',  // Direct Node service
-      'http://localhost',       // Via Nginx proxy
-      'http://127.0.0.1:8001',  // Alternative localhost
-      'http://127.0.0.1',       // Alternative via proxy
+      'http://localhost:8001',     // Direct Node service (development)
+      'http://localhost',          // Via Nginx proxy (development)
+      'http://127.0.0.1:8001',     // Alternative localhost
+      'http://127.0.0.1',          // Alternative via proxy
     ];
     
     print('Attempting auto-discovery of PPL Meta server...');
@@ -269,9 +286,15 @@ class AuthenticationService {
         print('🎫 Token received: ${token.substring(0, 20)}...');
         print('👤 User data: $_userData');
 
+        // Fetch platform services connectivity data
+        print('🔍 [LOGIN] Fetching platform services connectivity data...');
+        await _fetchPlatformServices();
+
         // Save to persistent storage
+        print('💾 [LOGIN] Saving authentication data to storage...');
         await _saveToStorage();
 
+        print('🎉 [LOGIN] Login process completed successfully');
         return AuthResult.success(token);
       } else {
         // Handle authentication errors
@@ -388,6 +411,72 @@ class AuthenticationService {
     }
   }
 
+  /// Fetch platform services connectivity data after authentication
+  Future<void> _fetchPlatformServices() async {
+    try {
+      if (_serverUrl.isEmpty || _authToken == null) {
+        print('❌ [PLATFORM_SERVICES] Cannot fetch platform services: missing server URL or token');
+        print('🔍 [PLATFORM_SERVICES] Server URL: $_serverUrl');
+        print('🔍 [PLATFORM_SERVICES] Auth Token: ${_authToken != null ? 'present' : 'null'}');
+        return;
+      }
+
+      print('🔍 [PLATFORM_SERVICES] Fetching platform services connectivity data...');
+      print('🌐 [PLATFORM_SERVICES] Request URL: $_serverUrl/api/v1/users/platform/services');
+      
+      final response = await http.get(
+        Uri.parse('$_serverUrl/api/v1/users/platform/services'),
+        headers: {
+          'Authorization': 'Bearer $_authToken',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      print('📥 [PLATFORM_SERVICES] Response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final platformData = json.decode(response.body);
+        
+        print('✅ [PLATFORM_SERVICES] Platform services data fetched successfully');
+        print('📊 [PLATFORM_SERVICES] Data keys: ${platformData.keys.toList()}');
+        
+        // Store platform services data
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('ppl_meta_platform_services', json.encode(platformData));
+        print('💾 [PLATFORM_SERVICES] Data saved to SharedPreferences');
+        
+        print('🌐 [PLATFORM_SERVICES] Local IP: ${platformData['connectivity']['local_ip']}');
+        print('📡 [PLATFORM_SERVICES] Available networks: ${platformData['connectivity']['networks']}');
+        print('🎯 [PLATFORM_SERVICES] Recommended streaming endpoint: ${platformData['mobile_camera_config']['recommended_endpoint']}');
+        
+        // Log microservices information
+        if (platformData.containsKey('microservices')) {
+          final microservices = platformData['microservices'] as Map<String, dynamic>;
+          print('🔧 [PLATFORM_SERVICES] Available microservices:');
+          microservices.forEach((serviceName, serviceData) {
+            print('   - $serviceName: ${serviceData['endpoint']} (${serviceData['purpose']})');
+          });
+        }
+        
+        // Update device data with connectivity info
+        _deviceData = {
+          ...(_deviceData ?? {}),
+          'platform_services': platformData,
+          'connectivity_fetched_at': DateTime.now().toIso8601String(),
+        };
+        
+        print('🎯 [PLATFORM_SERVICES] Device data updated with platform connectivity info');
+        
+      } else {
+        print('⚠️ [PLATFORM_SERVICES] Failed to fetch platform services: ${response.statusCode}');
+        print('📄 [PLATFORM_SERVICES] Response body: ${response.body}');
+      }
+    } catch (e) {
+      print('❌ [PLATFORM_SERVICES] Error fetching platform services: $e');
+      print('🔍 [PLATFORM_SERVICES] Error type: ${e.runtimeType}');
+    }
+  }
+
   /// Refresh authentication token
   Future<bool> refreshToken() async {
     try {
@@ -435,6 +524,40 @@ class AuthenticationService {
 
       return response.statusCode == 200;
     } catch (e) {
+      return false;
+    }
+  }
+
+  /// Validate token for Camera service (uses different endpoint)
+  Future<bool> validateTokenForCameraService(String cameraServiceUrl) async {
+    try {
+      if (_authToken == null || _authToken!.isEmpty) {
+        print('❌ No token available for camera service validation');
+        return false;
+      }
+
+      print('🔍 Validating token for camera service: $cameraServiceUrl');
+      
+      // Camera service expects token as query parameter
+      final response = await http.post(
+        Uri.parse('$cameraServiceUrl/api/v1/auth/validate-token?token=$_authToken'),
+        headers: {
+          'Accept': 'application/json',
+        },
+      );
+
+      print('📊 Camera service validation response: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final isValid = data['valid'] ?? false;
+        print('✅ Camera service token validation: $isValid');
+        return isValid;
+      }
+      
+      return false;
+    } catch (e) {
+      print('💥 Error validating token for camera service: $e');
       return false;
     }
   }
@@ -540,61 +663,22 @@ class AuthenticationService {
     return normalized;
   }
 
-  /// Fetch platform services information after successful authentication
-  Future<void> _fetchPlatformServices() async {
-    try {
-      if (_authToken == null || _serverUrl.isEmpty) {
-        print('Cannot fetch platform services: missing token or server URL');
-        return;
-      }
-
-      final response = await http.get(
-        Uri.parse('$_serverUrl/api/v1/users/platform/services'),
-        headers: getAuthHeaders(),
-      ).timeout(const Duration(seconds: 15));
-
-      if (response.statusCode == 200) {
-        final platformData = json.decode(response.body);
-        
-        // Store platform services data for the streaming provider to use
-        _deviceData = {
-          ..._deviceData ?? {},
-          'platform_services': platformData,
-          'last_platform_fetch': DateTime.now().toIso8601String(),
-        };
-        
-        // Extract key information
-        final connectivity = platformData['connectivity'] as Map<String, dynamic>?;
-        final microservices = platformData['microservices'] as Map<String, dynamic>?;
-        
-        if (connectivity != null && microservices != null) {
-          // Log important information for debugging
-          print('✅ Platform services fetched:');
-          print('   Platform IP: ${connectivity['local_ip']}');
-          print('   Nginx Available: ${connectivity['nginx_available']}');
-          print('   Services: ${microservices.keys.join(', ')}');
-          
-          // Check if media service is recommended
-          final mediaService = microservices['media'] as Map<String, dynamic>?;
-          if (mediaService != null) {
-            print('   📹 Recommended: Media Service (port ${mediaService['port']})');
-          }
-        }
-        
-        // Store updated device data
-        await _storeAuthData();
-        
-      } else {
-        print('⚠️ Failed to fetch platform services: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('⚠️ Error fetching platform services: $e');
-    }
-  }
-
   /// Get stored platform services data
   Map<String, dynamic>? getPlatformServices() {
-    return _deviceData?['platform_services'] as Map<String, dynamic>?;
+    final platformServices = _deviceData?['platform_services'] as Map<String, dynamic>?;
+    print('🔍 [GET_PLATFORM_SERVICES] Requested platform services');
+    print('📊 [GET_PLATFORM_SERVICES] Device data keys: ${_deviceData?.keys.toList()}');
+    print('🎯 [GET_PLATFORM_SERVICES] Platform services available: ${platformServices != null}');
+    
+    if (platformServices != null) {
+      print('✅ [GET_PLATFORM_SERVICES] Returning platform services data');
+      print('🌐 [GET_PLATFORM_SERVICES] Services keys: ${platformServices.keys.toList()}');
+    } else {
+      print('❌ [GET_PLATFORM_SERVICES] No platform services data available');
+      print('🔍 [GET_PLATFORM_SERVICES] Current device data: $_deviceData');
+    }
+    
+    return platformServices;
   }
 
   /// Hash password for secure transmission
@@ -639,6 +723,67 @@ class AuthenticationService {
       print('✅ Authentication data saved to storage');
     } catch (e) {
       print('❌ Failed to save authentication data: $e');
+    }
+  }
+
+  /// Make an authenticated HTTP request
+  Future<Map<String, dynamic>?> makeAuthenticatedRequest(
+    String method, 
+    String url, {
+    Map<String, dynamic>? body,
+    Map<String, String>? additionalHeaders,
+  }) async {
+    try {
+      if (!_isAuthenticated || _authToken == null) {
+        throw Exception('Not authenticated - cannot make authenticated request');
+      }
+
+      final headers = getAuthHeaders();
+      if (additionalHeaders != null) {
+        headers.addAll(additionalHeaders);
+      }
+
+      late http.Response response;
+      final uri = Uri.parse(url);
+
+      switch (method.toUpperCase()) {
+        case 'GET':
+          response = await http.get(uri, headers: headers);
+          break;
+        case 'POST':
+          response = await http.post(
+            uri,
+            headers: headers,
+            body: body != null ? json.encode(body) : null,
+          );
+          break;
+        case 'PUT':
+          response = await http.put(
+            uri,
+            headers: headers,
+            body: body != null ? json.encode(body) : null,
+          );
+          break;
+        case 'DELETE':
+          response = await http.delete(uri, headers: headers);
+          break;
+        default:
+          throw Exception('Unsupported HTTP method: $method');
+      }
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (response.body.isNotEmpty) {
+          return json.decode(response.body) as Map<String, dynamic>;
+        } else {
+          return {'success': true};
+        }
+      } else {
+        print('❌ Authenticated request failed: ${response.statusCode} - ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error making authenticated request: $e');
+      return null;
     }
   }
 }

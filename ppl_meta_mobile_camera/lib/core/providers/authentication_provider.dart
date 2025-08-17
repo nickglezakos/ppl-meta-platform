@@ -15,6 +15,9 @@ class AuthenticationProvider extends ChangeNotifier {
   Map<String, dynamic>? _deviceData;
   String? _serverUrl;
 
+  // Camera registration state
+  bool _isCameraRegistered = false;
+
   // Server connection state
   bool _isServerOnline = false;
   Map<String, dynamic>? _serverInfo;
@@ -27,6 +30,7 @@ class AuthenticationProvider extends ChangeNotifier {
   Map<String, dynamic>? get userData => _userData;
   Map<String, dynamic>? get deviceData => _deviceData;
   String? get serverUrl => _serverUrl;
+  bool get isCameraRegistered => _isCameraRegistered;
   bool get isServerOnline => _isServerOnline;
   Map<String, dynamic>? get serverInfo => _serverInfo;
 
@@ -176,6 +180,7 @@ class AuthenticationProvider extends ChangeNotifier {
 
       // Clear state
       _isAuthenticated = false;
+      _isCameraRegistered = false;
       _userData = null;
       _deviceData = null;
       _serverUrl = null;
@@ -421,4 +426,13 @@ class AuthenticationProvider extends ChangeNotifier {
       return true; // Continue checking
     });
   }
+
+  /// Set camera registration status
+  void setCameraRegistered(bool registered) {
+    _isCameraRegistered = registered;
+    notifyListeners();
+  }
+
+  /// Check if camera registration is required
+  bool get requiresCameraRegistration => _isAuthenticated && !_isCameraRegistered;
 }

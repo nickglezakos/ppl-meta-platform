@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mobile_camera.dart';
 import '../services/camera_registration_service.dart';
 import '../services/mjpeg_streaming_service.dart';
@@ -83,13 +84,34 @@ class PlatformStreamingProvider extends ChangeNotifier {
   /// Get platform services info after login (replaces slow network discovery)
   Future<void> getPlatformServices(String nodeServiceUrl, String bearerToken) async {
     try {
+      print('🚀 [STREAMING_PROVIDER] Starting platform services discovery...');
+      print('🌐 [STREAMING_PROVIDER] Node service URL: $nodeServiceUrl');
+      print('🔑 [STREAMING_PROVIDER] Bearer token: ${bearerToken.substring(0, 20)}...');
+      
       _isDiscovering = true;
       _discoveredPlatforms.clear();
       _statusMessage = 'Getting platform services...';
       notifyListeners();
 
+      // First, check if we have cached platform services
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedServices = prefs.getString('ppl_meta_platform_services');
+        if (cachedServices != null) {
+          print('📦 [STREAMING_PROVIDER] Found cached platform services data');
+          final cachedData = json.decode(cachedServices) as Map<String, dynamic>;
+          print('🔍 [STREAMING_PROVIDER] Cached data keys: ${cachedData.keys.toList()}');
+        } else {
+          print('❌ [STREAMING_PROVIDER] No cached platform services found');
+        }
+      } catch (e) {
+        print('⚠️ [STREAMING_PROVIDER] Error checking cached services: $e');
+      }
+
       // Call the platform services endpoint
       final uri = Uri.parse('$nodeServiceUrl/api/v1/users/platform/services');
+      print('📡 [STREAMING_PROVIDER] Making request to: $uri');
+      
       final response = await http.get(
         uri,
         headers: {
@@ -98,8 +120,12 @@ class PlatformStreamingProvider extends ChangeNotifier {
         },
       ).timeout(const Duration(seconds: 10));
 
+      print('📥 [STREAMING_PROVIDER] Response status: ${response.statusCode}');
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
+        print('✅ [STREAMING_PROVIDER] Platform services data received');
+        print('📊 [STREAMING_PROVIDER] Data keys: ${data.keys.toList()}');
         
         // Extract platform information
         final platformInfo = data['platform_info'] as Map<String, dynamic>;
@@ -107,15 +133,31 @@ class PlatformStreamingProvider extends ChangeNotifier {
         final microservices = data['microservices'] as Map<String, dynamic>;
         final mobileConfig = data['mobile_camera_config'] as Map<String, dynamic>;
         
+        print('🏗️ [STREAMING_PROVIDER] Platform info: ${platformInfo['name']} v${platformInfo['version']}');
+        print('🌐 [STREAMING_PROVIDER] Connectivity - Local IP: ${connectivity['local_ip']}');
+        print('🔧 [STREAMING_PROVIDER] Available microservices: ${microservices.keys.toList()}');
+        print('📱 [STREAMING_PROVIDER] Mobile camera config: ${mobileConfig['recommended_endpoint']}');
+        
         // Create platform discovery results from the microservices
         final platforms = <PlatformDiscoveryResult>[];
         
         // Add recommended media service
         if (microservices.containsKey('media')) {
           final media = microservices['media'] as Map<String, dynamic>;
-          platforms.add(PlatformDiscoveryResult.reachable(
-            ipAddress: connectivity['local_ip'],
-            port: media['port'],
+          final mediaEndpoints = media['endpoints'] as Map<String, dynamic>;
+          final localEndpoint = mediaEndpoints['local'] as String;
+          
+          // Parse the endpoint URL to get IP and port
+          final uri = Uri.parse(localEndpoint);
+          
+          print('🎬 [STREAMING_PROVIDER] Adding Media service: $localEndpoint');
+          print('🔍 [STREAMING_PROVIDER] Debug - parsed IP: ${uri.host}, port: ${uri.port}');
+          
+          platforms.add(PlatformDiscoveryResult(
+            ipAddress: uri.host,
+            port: uri.port,
+            baseUrl: localEndpoint, // Use the exact endpoint URL from platform services
+            isReachable: true,
             responseTime: Duration(milliseconds: 50),
             healthData: {
               'service': 'ppl-meta-media',
@@ -129,9 +171,18 @@ class PlatformStreamingProvider extends ChangeNotifier {
         // Add cameras service as fallback
         if (microservices.containsKey('cameras')) {
           final cameras = microservices['cameras'] as Map<String, dynamic>;
-          platforms.add(PlatformDiscoveryResult.reachable(
-            ipAddress: connectivity['local_ip'],
-            port: cameras['port'],
+          final camerasEndpoints = cameras['endpoints'] as Map<String, dynamic>;
+          final localEndpoint = camerasEndpoints['local'] as String;
+          
+          // Parse the endpoint URL to get IP and port
+          final uri = Uri.parse(localEndpoint);
+          
+          print('📹 [STREAMING_PROVIDER] Adding Cameras service: $localEndpoint');
+          platforms.add(PlatformDiscoveryResult(
+            ipAddress: uri.host,
+            port: uri.port,
+            baseUrl: localEndpoint, // Use the exact endpoint URL from platform services
+            isReachable: true,
             responseTime: Duration(milliseconds: 100),
             healthData: {
               'service': 'ppl-meta-cameras',
@@ -144,43 +195,46 @@ class PlatformStreamingProvider extends ChangeNotifier {
         
         _discoveredPlatforms = platforms;
         _statusMessage = 'Found ${platforms.length} platform services. Recommended: Media Service.';
+        print('✅ [STREAMING_PROVIDER] Successfully discovered ${platforms.length} platform services');
+        
       } else {
+        print('❌ [STREAMING_PROVIDER] Failed to get platform services - status: ${response.statusCode}');
+        print('📄 [STREAMING_PROVIDER] Response body: ${response.body}');
         _statusMessage = 'Failed to get platform services. Try manual connection.';
       }
     } catch (e) {
+      print('💥 [STREAMING_PROVIDER] Platform services discovery error: $e');
+      print('🔍 [STREAMING_PROVIDER] Error type: ${e.runtimeType}');
       _statusMessage = 'Platform services discovery failed. Use manual connection.';
-      print('Platform services error: $e');
     } finally {
       _isDiscovering = false;
       notifyListeners();
+      print('🏁 [STREAMING_PROVIDER] Platform services discovery completed');
     }
   }
 
   /// Connect to a discovered or manually entered platform
   Future<bool> connectToPlatform([String? platformUrl]) async {
     try {
-      // Use provided URL or get from authenticated session
-      final authService = AuthenticationService.instance;
-      final targetUrl = platformUrl ?? authService.serverUrl;
-      
-      if (targetUrl.isEmpty) {
-        print('❌ No platform URL provided and no authenticated server URL available');
+      // Require platform URL to be provided - no fallback to Node service
+      if (platformUrl == null || platformUrl.isEmpty) {
+        print('❌ [STREAMING_PROVIDER] No platform URL provided for connection');
         _status = MobileCameraStatus.offline;
-        _statusMessage = 'No platform URL available';
+        _statusMessage = 'Platform URL required for connection';
         notifyListeners();
         return false;
       }
       
-      print('🔗 Connecting to platform: $targetUrl');
-      _platformUrl = targetUrl;
+      print('🔗 [STREAMING_PROVIDER] Connecting to platform: $platformUrl');
+      _platformUrl = platformUrl;
       _status = MobileCameraStatus.connecting;
       _statusMessage = 'Connecting to platform...';
       notifyListeners();
 
       // Parse URL to extract IP and port
-      final uri = Uri.parse(targetUrl);
+      final uri = Uri.parse(platformUrl);
       final host = uri.host;
-      final port = uri.port != 0 ? uri.port : 8005; // Default to cameras service port
+      final port = uri.port;
       
       // Test platform connectivity
       print('🔍 Testing platform connectivity to $host:$port');
@@ -197,15 +251,33 @@ class PlatformStreamingProvider extends ChangeNotifier {
       print('✅ Platform connectivity confirmed');
       
       // Verify we have authentication token from user login
-      if (authService.token?.isEmpty ?? true) {
-        print('❌ No authentication token available - user must login first');
+      print('🔍 [STREAMING_PROVIDER] Getting valid authentication token...');
+      final authService = AuthenticationService.instance;
+      final token = await authService.getValidToken();
+      if (token == null) {
+        print('❌ [STREAMING_PROVIDER] No valid authentication token available - user must login first');
         _status = MobileCameraStatus.offline;
         _statusMessage = 'Authentication required - please login first';
         notifyListeners();
         return false;
       }
       
-      print('✅ Using authenticated session for platform connection');
+      print('✅ [STREAMING_PROVIDER] Valid authentication token obtained: ${token.substring(0, 20)}...');
+      
+      // If this looks like a camera service, validate token specifically for camera service
+      if (port == 8005 || platformUrl.contains(':8005')) {
+        print('🎥 [STREAMING_PROVIDER] Detected camera service, validating token...');
+        final isValidForCamera = await authService.validateTokenForCameraService(platformUrl);
+        if (!isValidForCamera) {
+          print('❌ [STREAMING_PROVIDER] Token validation failed for camera service');
+          _status = MobileCameraStatus.offline;
+          _statusMessage = 'Camera service authentication failed';
+          notifyListeners();
+          return false;
+        }
+        print('✅ [STREAMING_PROVIDER] Token validated successfully for camera service');
+      }
+      
       _isConnectedToPlatform = true;
       _status = MobileCameraStatus.connected;
       _statusMessage = 'Connected to platform with authenticated session';

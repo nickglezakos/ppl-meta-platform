@@ -48,7 +48,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _initializeCamera() async {
     final cameraProvider = context.read<CameraProvider>();
-    await cameraProvider.initializeCamera();
+    await cameraProvider.initialize();
   }
 
   @override

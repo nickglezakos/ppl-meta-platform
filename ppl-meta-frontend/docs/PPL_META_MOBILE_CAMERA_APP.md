@@ -551,6 +551,152 @@ class CameraStreamingService {
 
 ---
 
+### **MOBILE-CAM-002-1: Automatic Streaming Workflow**
+**Priority**: 🔴 CRITICAL  
+**Status**: 🚧 **IN PROGRESS** - Authentication fixes implemented  
+**Target Completion**: August 25, 2025  
+**Dependencies**: ✅ MOBILE-CAM-002 (Phase 1), 🔄 Service discovery and authentication
+
+**Description**: Implement fully automatic streaming workflow with optimal UX. User only needs to provide camera name - everything else happens automatically behind the scenes.
+
+**🎯 User Experience Goal**:
+```
+Simplified Workflow:
+1. User logs in ✅ (Already working)
+2. User enters camera name
+3. User taps "Start Streaming" 
+4. App handles everything automatically:
+   ├── Auto-discover platform services
+   ├── Auto-connect to Camera Service (8005)
+   ├── Auto-register mobile camera with name
+   ├── Auto-connect to Media Service (8000)
+   └── Auto-start video streaming
+```
+
+**🔧 Technical Implementation**:
+
+1. **Automatic Service Discovery**:
+```dart
+class AutoStreamingService {
+  Future<StreamingResult> startAutomaticStreaming(String cameraName) async {
+    // 1. Get platform services from authenticated session
+    final services = await _authService.getPlatformServices();
+    
+    // 2. Auto-connect to Camera Service
+    final cameraService = services.cameraService;
+    await _connectToCameraService(cameraService.endpoint);
+    
+    // 3. Auto-register mobile camera
+    final camera = await _registerMobileCamera(cameraName);
+    
+    // 4. Auto-connect to Media Service
+    final mediaService = services.mediaService;
+    await _connectToMediaService(mediaService.endpoint);
+    
+    // 5. Start streaming with camera ID
+    await _startStreamingToMedia(camera.id);
+    
+    return StreamingResult.success(camera);
+  }
+}
+```
+
+2. **Enhanced Service Connection Logic**:
+```dart
+class ServiceConnectionManager {
+  // No fallbacks to wrong services
+  Future<bool> connectToSpecificService(ServiceEndpoint endpoint) async {
+    if (endpoint.isEmpty) {
+      throw ServiceException('No endpoint provided for ${endpoint.type}');
+    }
+    
+    // Use exact endpoint URLs from platform discovery
+    return await _connectWithProperAuth(endpoint);
+  }
+  
+  // Service-specific authentication
+  Future<bool> authenticateWithCameraService(String endpoint) async {
+    return await _authService.validateTokenForCameraService(endpoint);
+  }
+}
+```
+
+3. **Streamlined UI Flow**:
+```dart
+class StreamingControlPanel extends StatefulWidget {
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Simple camera name input
+        TextField(
+          controller: _cameraNameController,
+          decoration: InputDecoration(
+            labelText: 'Camera Name',
+            hintText: 'e.g., Front Door Camera',
+          ),
+        ),
+        
+        // Single action button
+        ElevatedButton(
+          onPressed: _isReady ? _startAutomaticStreaming : null,
+          child: Text(_isStreaming ? 'Stop Streaming' : 'Start Streaming'),
+        ),
+        
+        // Status indicator (connection progress)
+        StreamingStatusWidget(),
+      ],
+    );
+  }
+}
+```
+
+**🚫 Removed Complex UX**:
+- ❌ No manual service selection screens
+- ❌ No "Connect to Media" vs "Connect to Camera" confusion  
+- ❌ No manual endpoint entry forms
+- ❌ No separate connection steps
+
+**✅ Automatic Behind-the-Scenes Operations**:
+- ✅ **Service Discovery**: Use platform services from login session
+- ✅ **Camera Service Connection**: Auto-connect to correct endpoint with proper authentication
+- ✅ **Camera Registration**: Auto-register with user-provided name
+- ✅ **Media Service Connection**: Auto-connect for streaming
+- ✅ **Error Handling**: Automatic retry with user-friendly error messages
+
+**🔄 Current Authentication Fixes Applied**:
+- ✅ Camera Service uses query parameter authentication (`/api/v1/auth/validate-token?token=JWT`)
+- ✅ Camera Registration uses Bearer token authentication
+- ✅ Media Service requires no authentication for basic operations
+- ✅ Platform service endpoints used directly (no manual URL construction)
+- ✅ No fallback to Node service for streaming operations
+
+**🎯 Acceptance Criteria**:
+- [ ] Single "Start Streaming" button with camera name input
+- [ ] Automatic service discovery and connection
+- [ ] No manual service selection by user
+- [ ] Proper authentication flow for each service type
+- [ ] Real-time status updates during automatic connection process
+- [ ] Graceful error handling with clear user messages
+- [ ] Background operation continues after setup
+
+**🚨 Critical Issues Being Resolved**:
+- ✅ **Wrong IP Construction**: Fixed to use exact endpoint URLs from platform services
+- ✅ **Service-Specific Authentication**: Camera service authentication via query parameters
+- ✅ **No Node Service Fallback**: Removed fallback to Node service for streaming operations
+- 🔄 **UX Simplification**: Single-action streaming workflow implementation
+
+**📋 Implementation Status**:
+```
+Authentication Integration: ✅ COMPLETE
+Service Discovery: ✅ COMPLETE  
+Camera Service Auth: ✅ COMPLETE
+Media Service Connection: 🔄 IN PROGRESS
+Automatic Workflow: 🔄 IN PROGRESS
+UI Simplification: 🔄 PENDING
+```
+
+---
+
 ### **MOBILE-CAM-003: Comprehensive Logging Infrastructure**
 **Priority**: 🟡 HIGH  
 **Status**: 🔄 **PLANNING**  

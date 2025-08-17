@@ -1,0 +1,44 @@
+import 'package:flutter/material.dart';
+
+void main() {
+  runApp(const SimplePPLMetaApp());
+}
+
+class SimplePPLMetaApp extends StatelessWidget {
+  const SimplePPLMetaApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'PPL Meta Platform - Simple Test',
+      theme: ThemeData.dark(useMaterial3: true),
+      home: const SimpleHomePage(),
+    );
+  }
+}
+
+class SimpleHomePage extends StatelessWidget {
+  const SimpleHomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('PPL Meta Platform'),
+      ),
+      body: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'PPL Meta Platform',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+            Text('Platform is loading...'),
+          ],
+        ),
+      ),
+    );
+  }
+}

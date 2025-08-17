@@ -19,6 +19,20 @@ class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
   void initState() {
     super.initState();
     _cameraNameController.text = 'Mobile Camera ${DateTime.now().millisecondsSinceEpoch % 1000}';
+    
+    // Automatically load platform services if user is authenticated
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      print('🚀 [PLATFORM_CONNECTION] Screen initialized, checking authentication...');
+      final authService = AuthenticationService.instance;
+      final streamingProvider = Provider.of<PlatformStreamingProvider>(context, listen: false);
+      
+      if (authService.isAuthenticated) {
+        print('✅ [PLATFORM_CONNECTION] User is authenticated, automatically loading platform services');
+        _loadPlatformServicesFromAuth(streamingProvider, authService);
+      } else {
+        print('❌ [PLATFORM_CONNECTION] User not authenticated, manual discovery required');
+      }
+    });
   }
 
   @override
@@ -197,6 +211,11 @@ class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
                   );
                 } else if (isAuthenticated) {
                   // Authenticated but no platform services
+                  print('⚠️ [PLATFORM_CONNECTION] User authenticated but no platform services discovered');
+                  print('🔍 [PLATFORM_CONNECTION] Auth token: ${authService.authToken != null}');
+                  print('🌐 [PLATFORM_CONNECTION] Server URL: ${authService.serverUrl}');
+                  print('📊 [PLATFORM_CONNECTION] Platform services: ${authService.getPlatformServices()}');
+                  
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -277,21 +296,28 @@ class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
                     ),
                     title: Row(
                       children: [
-                        Text(platform.displayName),
+                        Expanded(
+                          child: Text(
+                            platform.displayName,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                         if (isRecommended) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Text(
-                              'RECOMMENDED',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'REC',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ),
@@ -590,14 +616,26 @@ class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
 
   /// Load platform services from authentication service
   void _loadPlatformServicesFromAuth(PlatformStreamingProvider streamingProvider, AuthenticationService authService) {
+    print('🔍 [PLATFORM_CONNECTION] Loading platform services from auth service...');
+    print('🔑 [PLATFORM_CONNECTION] Auth status: ${authService.isAuthenticated}');
+    print('🌐 [PLATFORM_CONNECTION] Server URL: ${authService.serverUrl}');
+    print('🎫 [PLATFORM_CONNECTION] Auth token: ${authService.authToken != null ? 'present' : 'null'}');
+    
     final platformServices = authService.getPlatformServices();
+    print('📊 [PLATFORM_CONNECTION] Platform services data: ${platformServices != null ? 'available' : 'null'}');
+    
     if (platformServices != null && authService.authToken != null) {
+      print('✅ [PLATFORM_CONNECTION] Using authenticated platform services discovery');
+      print('🚀 [PLATFORM_CONNECTION] Calling streamingProvider.getPlatformServices()');
+      
       // Use the authenticated platform services discovery
       streamingProvider.getPlatformServices(
         authService.serverUrl,
         authService.authToken!,
       );
     } else {
+      print('❌ [PLATFORM_CONNECTION] Platform services or auth token not available');
+      print('🔄 [PLATFORM_CONNECTION] Falling back to network discovery');
       // Fallback to network discovery
       streamingProvider.discoverPlatforms();
     }

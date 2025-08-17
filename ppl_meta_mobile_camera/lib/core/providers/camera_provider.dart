@@ -54,19 +54,18 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
   double get zoomLevel => _zoomLevel;
   bool get isFrontCamera => _isFrontCamera;
 
-  /// Initialize camera provider
-  Future<void> initializeCamera() async {
-    if (_isLoading) {
-      print('🔄 Camera initialization already in progress, skipping duplicate call');
+  /// Initialize the camera provider with all necessary services
+  Future<void> initialize() async {
+    if (_isInitialized) {
+      print('Camera provider already initialized');
       return;
     }
 
-    print('🚀 === CAMERA PROVIDER INITIALIZATION START ===');
     _setLoading(true);
     clearError();
 
     try {
-      print('📱 Starting camera provider initialization...');
+      print('🎯 === STARTING CAMERA PROVIDER INITIALIZATION ===');
       
       // Initialize camera service
       print('🔧 Step 1: Initializing camera service...');
@@ -133,7 +132,47 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
     }
   }
 
-  /// Switch between front and back cameras
+  /// Initialize the camera provider with platform connectivity data
+  /// This method is called after camera registration to set up streaming capabilities
+  Future<void> initializeWithConnectivity({
+    required Map<String, dynamic> connectivityData,
+    required String registeredCameraName,
+  }) async {
+    print('🔗 === INITIALIZING CAMERA PROVIDER WITH CONNECTIVITY ===');
+    print('🔗 Camera name: $registeredCameraName');
+    print('🔗 Connectivity data: $connectivityData');
+
+    try {
+      // First initialize the basic camera functionality
+      await initialize();
+
+      // Store connectivity information for streaming
+      if (connectivityData['streaming_endpoints'] != null) {
+        print('🔗 Configuring streaming endpoints...');
+        // TODO: Store streaming endpoint configuration
+        // This will be used when the user starts streaming
+      }
+
+      if (connectivityData['camera_endpoints'] != null) {
+        print('🔗 Configuring camera API endpoints...');
+        // TODO: Store camera API endpoint configuration
+      }
+
+      if (connectivityData['media_endpoints'] != null) {
+        print('🔗 Configuring media endpoints...');
+        // TODO: Store media endpoint configuration
+      }
+
+      // Store the registered camera name
+      // TODO: Add camera name storage if needed
+
+      print('✅ Camera provider initialized with connectivity data');
+      notifyListeners();
+    } catch (e) {
+      print('❌ Failed to initialize camera provider with connectivity: $e');
+      rethrow;
+    }
+  }  /// Switch between front and back cameras
   Future<void> switchCamera() async {
     if (_isLoading) {
       print('Camera switch already in progress');
