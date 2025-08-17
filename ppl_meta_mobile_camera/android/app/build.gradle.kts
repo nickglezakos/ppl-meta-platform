@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.pplmeta.mobile.ppl_meta_mobile_camera"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36  // Updated for camera plugin compatibility
     ndkVersion = "27.0.12077973"
 
     compileOptions {

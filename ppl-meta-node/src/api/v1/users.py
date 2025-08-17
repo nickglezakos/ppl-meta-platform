@@ -253,6 +253,181 @@ async def login(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
+@router.get("/platform/services")
+async def get_platform_services(
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Get platform service discovery information for external connectivity.
+
+    This endpoint provides all microservice endpoints and connectivity details
+    needed for external services like mobile cameras to connect to platform.
+    """
+    try:
+        # Get local machine's IP address
+        import socket
+        import subprocess
+
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+
+        # Try to get a more reliable local IP
+        try:
+            # Create a socket connection to determine the local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            # Fallback to localhost if network detection fails
+            local_ip = "127.0.0.1"
+
+        # Check for Tailscale IP (100.x.x.x range)
+        tailscale_ip = None
+        try:
+            result = subprocess.run(
+                ["ip", "addr", "show", "tailscale0"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                lines = result.stdout.split("\n")
+                for line in lines:
+                    if "inet " in line and "100." in line:
+                        tailscale_ip = line.split()[1].split("/")[0]
+                        break
+        except Exception:
+            # Tailscale not available or error occurred
+            pass
+
+        # Define platform services
+        platform_services = {
+            "platform_info": {
+                "name": "PPL Meta Platform",
+                "version": "2.12.1",
+                "environment": "development",
+            },
+            "connectivity": {
+                "local_ip": local_ip,
+                "tailscale_ip": tailscale_ip,
+                "hostname": hostname,
+                "networks": (["local", "tailscale"] if tailscale_ip else ["local"]),
+            },
+            "microservices": {
+                "node": {
+                    "name": "User Management Service",
+                    "port": 8001,
+                    "endpoints": {
+                        "local": f"http://{local_ip}:8001",
+                        "tailscale": (
+                            f"http://{tailscale_ip}:8001" if tailscale_ip else None
+                        ),
+                    },
+                    "health": "/api/v1/health",
+                    "purpose": "User authentication and management",
+                },
+                "media": {
+                    "name": "Media Processing Service",
+                    "port": 8000,
+                    "endpoints": {
+                        "local": f"http://{local_ip}:8000",
+                        "tailscale": (
+                            f"http://{tailscale_ip}:8000" if tailscale_ip else None
+                        ),
+                    },
+                    "health": "/health",
+                    "purpose": "Media processing and streaming (mobile cameras)",
+                    "streaming_endpoints": {
+                        "upload": "/upload",
+                        "stream": "/stream",
+                        "mjpeg": "/mjpeg",
+                    },
+                },
+                "cameras": {
+                    "name": "Camera Management Service",
+                    "port": 8005,
+                    "endpoints": {
+                        "local": f"http://{local_ip}:8005",
+                        "tailscale": (
+                            f"http://{tailscale_ip}:8005" if tailscale_ip else None
+                        ),
+                    },
+                    "health": "/health",
+                    "purpose": "Camera registration and management",
+                    "mobile_endpoints": {
+                        "register": "/api/cameras/register",
+                        "status": "/api/cameras/status",
+                        "stream_config": "/api/cameras/stream-config",
+                    },
+                },
+                "gateway": {
+                    "name": "API Gateway Service",
+                    "port": 8080,
+                    "endpoints": {
+                        "local": f"http://{local_ip}:8080",
+                        "tailscale": (
+                            f"http://{tailscale_ip}:8080" if tailscale_ip else None
+                        ),
+                    },
+                    "health": "/health",
+                    "purpose": "API routing and aggregation",
+                },
+                "orchestrator": {
+                    "name": "Workflow Orchestration Service",
+                    "port": 8002,
+                    "endpoints": {
+                        "local": f"http://{local_ip}:8002",
+                        "tailscale": (
+                            f"http://{tailscale_ip}:8002" if tailscale_ip else None
+                        ),
+                    },
+                    "health": "/health",
+                    "purpose": "Workflow management and automation",
+                },
+                "vision": {
+                    "name": "Computer Vision Service",
+                    "port": 8003,
+                    "endpoints": {
+                        "local": f"http://{local_ip}:8003",
+                        "tailscale": (
+                            f"http://{tailscale_ip}:8003" if tailscale_ip else None
+                        ),
+                    },
+                    "health": "/health",
+                    "purpose": "Image analysis and face detection",
+                },
+            },
+            "mobile_camera_config": {
+                "recommended_service": "media",
+                "recommended_endpoint": f"http://{local_ip}:8000",
+                "fallback_service": "cameras",
+                "fallback_endpoint": f"http://{local_ip}:8005",
+                "streaming_format": "mjpeg",
+                "registration_required": True,
+                "authentication": "bearer_token",
+            },
+            "network_info": {
+                "proxy_available": True,
+                "nginx_port": 80,
+                "ssl_available": False,
+                "cors_enabled": True,
+            },
+        }
+
+        # Log the service discovery request
+        log_user_action(
+            db, current_user.username, current_user.email, "platform_services_discovery"
+        )
+
+        return platform_services
+
+    except Exception as e:
+        logger.error("Platform services discovery error: %s", e)
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve platform services"
+        ) from e
+
+
 @router.get("/profile")
 async def get_profile(current_user: User = Depends(get_current_user)):
     """Get current user profile."""

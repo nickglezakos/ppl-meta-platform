@@ -19,7 +19,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python lib directories only (exclude Flutter lib/ directories)
+**/venv/lib/
+**/env/lib/
 lib64/
 parts/
 sdist/
@@ -274,7 +276,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python lib directories only (exclude Flutter lib/ directories)
+**/venv/lib/
+**/env/lib/
 lib64/
 parts/
 sdist/
