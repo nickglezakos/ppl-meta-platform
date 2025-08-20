@@ -1,7 +1,8 @@
 
-
 - **Email**: `fresh.user@example.com`
 - **Password**: `NewPassword234!`
+
+http://192.168.21.253:8000
 
 fresh.user@example.com
 NewPassword234! 

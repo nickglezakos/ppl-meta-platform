@@ -57,6 +57,7 @@ from src.models.otp import OTP
 from src.models.role import Capability, Role, RoleCapability, UserRole
 from src.models.user import User, UserAction
 from src.schemas.user import UserCreate
+from src.services.multicast_discovery import MulticastServiceDiscoveryBroadcaster
 from src.services.role_service import ensure_admin_role
 
 # Try to import the shared service discovery module
@@ -168,6 +169,8 @@ class TimingMiddleware(BaseHTTPMiddleware):
 async def lifespan(_app: FastAPI):
     """Application lifespan context manager for startup and shutdown tasks."""
     global service_discovery_client
+    multicast_broadcaster = None
+
     logger.info("Starting PPL Meta Node service...")
 
     # Initialize service discovery if available - disabled for testing
@@ -246,6 +249,24 @@ async def lifespan(_app: FastAPI):
                 raise
 
         await run_in_threadpool(init_guid_and_admin)
+
+        # Start multicast discovery broadcaster
+        def start_multicast_broadcaster():
+            nonlocal multicast_broadcaster
+            try:
+                multicast_broadcaster = MulticastServiceDiscoveryBroadcaster(
+                    service_port=settings.PORT, service_name="ppl-meta-node"
+                )
+                if multicast_broadcaster.start():
+                    logger.info("✅ Multicast discovery broadcaster started")
+                else:
+                    logger.warning("⚠️ Failed to start multicast broadcaster")
+                    multicast_broadcaster = None
+            except Exception as e:
+                logger.error(f"❌ Error starting multicast broadcaster: {e}")
+                multicast_broadcaster = None
+
+        await run_in_threadpool(start_multicast_broadcaster)
         logger.info("Service startup completed successfully")
 
     except Exception as e:
@@ -255,6 +276,14 @@ async def lifespan(_app: FastAPI):
     yield
 
     logger.info("Service shutting down...")
+
+    # Stop multicast broadcaster
+    if multicast_broadcaster:
+        try:
+            multicast_broadcaster.stop()
+            logger.info("✅ Multicast discovery broadcaster stopped")
+        except Exception as e:
+            logger.error(f"❌ Error stopping multicast broadcaster: {e}")
 
     # Deregister from service discovery - disabled for testing
     # if service_discovery_client:

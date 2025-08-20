@@ -5,6 +5,7 @@ import '../widgets/registration_form.dart';
 import '../widgets/server_status_indicator.dart';
 import '../widgets/login_form.dart';
 import '../../camera/camera.dart';
+import 'automatic_setup_screen.dart';
 
 /// Main authentication screen with login and registration tabs
 class AuthenticationScreen extends StatefulWidget {
@@ -18,6 +19,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
   bool _isInitialized = false;
+  String? _discoveredServerUrl;
 
   @override
   void initState() {
@@ -77,6 +79,77 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
               child: ServerStatusIndicator(),
             ),
             
+            // Automatic Setup Option
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.auto_fix_high,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Quick Setup',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  'Automatically discover and connect',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () async {
+                            final discoveredUrl = await Navigator.push<String>(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const AutomaticSetupScreen(),
+                              ),
+                            );
+                            // Store the discovered URL and update the UI
+                            if (discoveredUrl != null) {
+                              setState(() {
+                                _discoveredServerUrl = discoveredUrl;
+                              });
+                              print('🎯 Discovered server URL: $discoveredUrl');
+                              // Switch to login tab to show the simplified form
+                              _tabController.animateTo(0);
+                            }
+                          },
+                          icon: const Icon(Icons.auto_awesome),
+                          label: const Text('Start Auto Setup'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                            foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
             // Tab Bar
             _buildTabBar(),
             
@@ -91,7 +164,10 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
                     padding: EdgeInsets.only(
                       bottom: MediaQuery.of(context).viewInsets.bottom,
                     ),
-                    child: LoginForm(onLoginSuccess: _navigateToHome),
+                    child: LoginForm(
+                      onLoginSuccess: _navigateToHome,
+                      prefilledServerUrl: _discoveredServerUrl,
+                    ),
                   ),
                   // Registration Form with scrollable container
                   SingleChildScrollView(

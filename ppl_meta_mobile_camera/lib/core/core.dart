@@ -16,6 +16,11 @@ export 'services/camera_registration_service.dart';
 export 'services/mjpeg_streaming_service.dart';
 export 'services/network_discovery_service.dart';
 
+// Automatic detection services
+export '../../services/multicast_network_discovery.dart';
+export '../../services/auto_authentication_service.dart';
+export '../../services/auto_camera_registration_service.dart';
+
 // Providers
 export 'providers/camera_provider.dart';
 export 'providers/gallery_provider.dart';

@@ -4,10 +4,12 @@ import '../../../core/providers/authentication_provider.dart';
 
 class LoginForm extends StatefulWidget {
   final VoidCallback onLoginSuccess;
+  final String? prefilledServerUrl;
 
   const LoginForm({
     super.key,
     required this.onLoginSuccess,
+    this.prefilledServerUrl,
   });
 
   @override
@@ -21,6 +23,15 @@ class _LoginFormState extends State<LoginForm> {
   final _passwordController = TextEditingController();
   
   bool _isPasswordVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // If a server URL was discovered via automatic setup, prefill it
+    if (widget.prefilledServerUrl != null) {
+      _serverUrlController.text = widget.prefilledServerUrl!;
+    }
+  }
 
   @override
   void dispose() {
@@ -37,8 +48,29 @@ class _LoginFormState extends State<LoginForm> {
 
     final authProvider = context.read<AuthenticationProvider>();
     
+    // Determine the server URL (from prefilled or manual input)
+    final serverUrl = widget.prefilledServerUrl ?? _serverUrlController.text.trim();
+    
+    if (serverUrl.isEmpty) {
+      _showErrorSnackBar('No service URL available - please provide server URL');
+      return;
+    }
+
+    // Check if this is automatic setup mode (has camera name)
+    final isAutomaticMode = widget.prefilledServerUrl != null;
+    
+    if (isAutomaticMode) {
+      // Automatic setup mode - use enhanced authentication
+      await _handleAutomaticLogin();
+    } else {
+      // Manual mode - use existing authentication
+      await _handleManualLogin(serverUrl, authProvider);
+    }
+  }
+
+  Future<void> _handleManualLogin(String serverUrl, AuthenticationProvider authProvider) async {
     final success = await authProvider.login(
-      serverUrl: _serverUrlController.text.trim(),
+      serverUrl: serverUrl,
       username: _usernameController.text.trim(),
       password: _passwordController.text,
     );
@@ -49,6 +81,32 @@ class _LoginFormState extends State<LoginForm> {
     } else {
       final error = authProvider.error ?? 'Login failed';
       _showErrorSnackBar(error);
+    }
+  }
+
+  Future<void> _handleAutomaticLogin() async {
+    try {
+      // Step 1: Authenticate normally using the existing provider
+      final authProvider = context.read<AuthenticationProvider>();
+      final success = await authProvider.login(
+        serverUrl: widget.prefilledServerUrl!,
+        username: _usernameController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (!success) {
+        throw Exception(authProvider.error ?? 'Authentication failed');
+      }
+
+      print('✅ Authentication successful');
+      _showSuccessSnackBar('Login successful! Please register your camera.');
+
+      // Navigate to home/camera registration
+      widget.onLoginSuccess();
+
+    } catch (e) {
+      print('❌ Login failed: $e');
+      _showErrorSnackBar('Login failed: ${e.toString()}');
     }
   }
 
@@ -102,32 +160,72 @@ class _LoginFormState extends State<LoginForm> {
               children: [
                 const SizedBox(height: 24),
                 
-                // Server URL Field
-                TextFormField(
-                  controller: _serverUrlController,
-                  keyboardType: TextInputType.url,
-                  textInputAction: TextInputAction.next,
-                  decoration: InputDecoration(
-                    labelText: 'Server URL',
-                    hintText: 'http://localhost:8001 or https://your-server.com',
-                    prefixIcon: const Icon(Icons.cloud),
-                    border: OutlineInputBorder(
+                // Server URL Field or Success Indicator
+                if (widget.prefilledServerUrl != null) ...[
+                  // Show success indicator for automatic setup
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green.withOpacity(0.3)),
                     ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainer.withOpacity(0.3),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Server Auto-Discovered',
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                widget.prefilledServerUrl!,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.green[600],
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Server URL is required';
-                    }
-                    final uri = Uri.tryParse(value.trim());
-                    if (uri == null || (!uri.hasScheme || !uri.hasAuthority)) {
-                      return 'Please enter a valid URL';
-                    }
-                    return null;
-                  },
-                ),
+                ] else ...[
+                  // Show manual server URL input
+                  TextFormField(
+                    controller: _serverUrlController,
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: 'Server URL',
+                      hintText: 'http://localhost:8001 or https://your-server.com',
+                      prefixIcon: const Icon(Icons.cloud),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Theme.of(context).colorScheme.surfaceContainer.withOpacity(0.3),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Server URL is required';
+                      }
+                      final uri = Uri.tryParse(value.trim());
+                      if (uri == null || (!uri.hasScheme || !uri.hasAuthority)) {
+                        return 'Please enter a valid URL';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
                 
                 const SizedBox(height: 20),
                 
@@ -216,12 +314,14 @@ class _LoginFormState extends State<LoginForm> {
                               ),
                             ),
                             SizedBox(width: 12),
-                            Text('Logging in...'),
+                            Text('Setting up...'),
                           ],
                         )
-                      : const Text(
-                          'Login',
-                          style: TextStyle(
+                      : Text(
+                          widget.prefilledServerUrl != null 
+                              ? 'Login' 
+                              : 'Login',
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),

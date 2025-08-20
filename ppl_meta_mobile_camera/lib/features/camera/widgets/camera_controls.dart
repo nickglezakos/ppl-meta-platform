@@ -9,6 +9,7 @@ class CameraControls extends StatefulWidget {
   final VoidCallback onToggleFlash;
   final Function(double) onZoomChanged;
   final VoidCallback onOpenGallery;
+  final VoidCallback onVideoTap; // NEW: Video icon handler for simplified streaming
   final bool isFlashOn;
   final double zoomLevel;
   final bool isFrontCamera;
@@ -21,6 +22,7 @@ class CameraControls extends StatefulWidget {
     required this.onToggleFlash,
     required this.onZoomChanged,
     required this.onOpenGallery,
+    required this.onVideoTap, // NEW: Video icon handler
     required this.isFlashOn,
     required this.zoomLevel,
     required this.isFrontCamera,
@@ -85,6 +87,9 @@ class _CameraControlsState extends State<CameraControls>
             children: [
               // Gallery Button
               _buildGalleryButton(),
+              
+              // Video Button (NEW: Simplified streaming workflow)
+              _buildVideoButton(),
               
               // Capture Button
               _buildCaptureButton(),
@@ -228,6 +233,31 @@ class _CameraControlsState extends State<CameraControls>
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoButton() {
+    return GestureDetector(
+      onTap: widget.onVideoTap,
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.8),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withOpacity(0.5),
+            width: 2,
+          ),
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.videocam,
+            color: Colors.white,
+            size: 24,
+          ),
         ),
       ),
     );

@@ -56,6 +56,9 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
 
   /// Initialize the camera provider with all necessary services
   Future<void> initialize() async {
+    print('🔍 === CAMERA PROVIDER INITIALIZE CALLED ===');
+    print('🔍 Current state: _isInitialized=$_isInitialized, _isLoading=$_isLoading');
+    
     if (_isInitialized) {
       print('Camera provider already initialized');
       return;

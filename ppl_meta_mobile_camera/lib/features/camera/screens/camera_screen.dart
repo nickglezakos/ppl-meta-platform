@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import '../../../core/core.dart';
+import '../../../services/automatic_streaming_workflow.dart';
+import '../../../services/auto_camera_registration_service.dart';
+import '../../../services/auto_authentication_service.dart';
 import '../widgets/camera_preview_widget.dart';
 import '../widgets/camera_controls.dart';
 import '../widgets/camera_settings_panel.dart';
@@ -24,6 +27,7 @@ class _CameraScreenState extends State<CameraScreen>
   late AnimationController _streamingAnimationController;
   bool _showSettings = false;
   bool _showStreamingPanel = false;
+  bool _isNavigatingToAuth = false; // Prevent navigation loop
 
   @override
   void initState() {
@@ -36,7 +40,13 @@ class _CameraScreenState extends State<CameraScreen>
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
-    _initializeCamera();
+    
+    // Initialize camera asynchronously to avoid blocking the build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initializeCamera();
+      }
+    });
   }
 
   @override
@@ -48,27 +58,51 @@ class _CameraScreenState extends State<CameraScreen>
 
   Future<void> _initializeCamera() async {
     final cameraProvider = context.read<CameraProvider>();
-    await cameraProvider.initialize();
+    
+    // Only initialize if not already initialized or initializing
+    if (!cameraProvider.isInitialized && !cameraProvider.isLoading) {
+      print('🎬 Camera screen: Initializing camera provider...');
+      await cameraProvider.initialize();
+      print('🎬 Camera screen: Camera provider initialization complete');
+    } else {
+      print('🎬 Camera screen: Camera provider already initialized or initializing');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    print('🔍 CameraScreen build() called - Auth: ${context.read<AuthenticationProvider>().isAuthenticated}, Camera initialized: ${context.read<CameraProvider>().isInitialized}');
     return Consumer3<CameraProvider, AuthenticationProvider, PlatformStreamingProvider>(
       builder: (context, cameraProvider, authProvider, streamingProvider, child) {
-        // Check authentication
-        if (!authProvider.isAuthenticated) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) => const AuthenticationScreen(),
-              ),
-            );
+        print('🔍 Consumer3 builder called - Auth: ${authProvider.isAuthenticated}, Camera init: ${cameraProvider.isInitialized}, Camera loading: ${cameraProvider.isLoading}');
+        
+        // Check authentication - only redirect once
+        if (!authProvider.isAuthenticated && !_isNavigatingToAuth) {
+          print('🔍 Not authenticated, navigating to auth screen');
+          _isNavigatingToAuth = true;
+          Future.microtask(() {
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(
+                  builder: (context) => const AuthenticationScreen(),
+                ),
+              );
+            }
           });
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
+        // Show loading while camera is initializing
+        if (cameraProvider.isLoading) {
+          print('🔍 Camera is loading, showing loading indicator');
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        print('🔍 Rendering main camera interface');
         return Scaffold(
           backgroundColor: Colors.black,
           body: SafeArea(
@@ -86,8 +120,8 @@ class _CameraScreenState extends State<CameraScreen>
                 // Settings Panel
                 _buildSettingsPanel(cameraProvider),
                 
-                // Streaming Panel - Use streaming provider
-                _buildStreamingPanel(cameraProvider, streamingProvider),
+                // Streaming Panel - COMMENTED OUT (using simplified workflow)
+                // _buildStreamingPanel(cameraProvider, streamingProvider),
                 
                 // Error Overlay
                 if (cameraProvider.error != null)
@@ -201,11 +235,11 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
             
-            // Streaming Toggle
+            // Streaming Toggle - SIMPLIFIED WORKFLOW
             Consumer<CameraProvider>(
               builder: (context, cameraProvider, child) {
                 return IconButton(
-                  onPressed: () => _toggleStreamingPanel(),
+                  onPressed: () => _handleSimpleStreamingWorkflow(),
                   icon: Icon(
                     cameraProvider.isStreaming 
                         ? Icons.videocam 
@@ -216,7 +250,7 @@ class _CameraScreenState extends State<CameraScreen>
                   ),
                   tooltip: cameraProvider.isStreaming 
                       ? 'Stop Streaming' 
-                      : 'Start Streaming',
+                      : 'Setup Camera & Stream',
                 );
               },
             ),
@@ -311,11 +345,12 @@ class _CameraScreenState extends State<CameraScreen>
         onSwitchCamera: () => _switchCamera(cameraProvider),
         onToggleFlash: () => _toggleFlash(cameraProvider),
         onZoomChanged: (zoom) => _setZoom(cameraProvider, zoom),
+        onOpenGallery: _openGallery,
+        onVideoTap: _handleSimpleStreamingWorkflow, // NEW: Simplified streaming workflow
         isFlashOn: cameraProvider.isFlashOn,
         zoomLevel: cameraProvider.zoomLevel,
         isFrontCamera: cameraProvider.isFrontCamera,
         galleryItemCount: cameraProvider.galleryItems.length,
-        onOpenGallery: _openGallery,
       ),
     );
   }
@@ -339,6 +374,8 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  // COMMENTED OUT - OLD STREAMING PANEL (using simplified workflow)
+  /*
   Widget _buildStreamingPanel(CameraProvider cameraProvider, PlatformStreamingProvider streamingProvider) {
     return AnimatedBuilder(
       animation: _streamingAnimationController,
@@ -360,6 +397,7 @@ class _CameraScreenState extends State<CameraScreen>
       },
     );
   }
+  */
 
   Widget _buildErrorOverlay(CameraProvider cameraProvider) {
     return Positioned(
@@ -450,6 +488,8 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  // OLD STREAMING PANEL METHODS - COMMENTED OUT
+  /*
   void _toggleStreamingPanel() {
     setState(() {
       _showStreamingPanel = !_showStreamingPanel;
@@ -461,6 +501,7 @@ class _CameraScreenState extends State<CameraScreen>
       _streamingAnimationController.reverse();
     }
   }
+  */
 
   Future<void> _capturePhoto(CameraProvider cameraProvider) async {
     final result = await cameraProvider.capturePhoto();
@@ -496,6 +537,245 @@ class _CameraScreenState extends State<CameraScreen>
     await cameraProvider.updateStreamQuality(streamQuality);
   }
 
+  // ============================================================================
+  // SIMPLIFIED STREAMING WORKFLOW - NEW APPROACH
+  // ============================================================================
+  
+  /// Simplified streaming workflow - just ask camera name and handle everything else automatically
+  Future<void> _handleSimpleStreamingWorkflow() async {
+    final cameraProvider = context.read<CameraProvider>();
+    
+    // If already streaming, stop it
+    if (cameraProvider.isStreaming) {
+      await cameraProvider.stopStreaming();
+      return;
+    }
+    
+    // Show camera name dialog
+    final cameraName = await _showCameraNameDialog();
+    if (cameraName == null || cameraName.trim().isEmpty) {
+      return; // User cancelled
+    }
+    
+    try {
+      // Step 1: Register camera in background (automatic)
+      await _registerCameraInBackground(cameraName.trim());
+      
+      // Step 2: Start streaming immediately after registration
+      await _startStreamingToMediaService();
+      
+      // Show success
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Camera "$cameraName" registered and streaming started!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to setup streaming: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  /// Show simple camera name input dialog
+  Future<String?> _showCameraNameDialog() async {
+    final controller = TextEditingController();
+    
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.camera_alt, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Camera Setup'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Enter a name for this camera:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Camera Name',
+                hintText: 'e.g., Living Room Camera',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) => Navigator.of(context).pop(value),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Setup & Stream'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  /// Register camera in background using discovered services
+  Future<void> _registerCameraInBackground(String cameraName) async {
+    final authService = AuthenticationService.instance;
+    final token = authService.token;
+    final platformServices = authService.platformServices;
+    
+    if (token == null) {
+      throw Exception('No authentication token available');
+    }
+    
+    if (platformServices == null) {
+      throw Exception('Platform services not available');
+    }
+    
+    // Use the automatic camera registration service
+    final autoRegistrationService = AutoCameraRegistrationService();
+    final services = _convertToPlatformServices(platformServices);
+    
+    final registrationResult = await autoRegistrationService.autoRegisterCamera(
+      cameraName: cameraName,
+      jwtToken: token,
+      services: services,
+    );
+    
+    if (!registrationResult.success) {
+      throw Exception('Camera registration failed: ${registrationResult.error}');
+    }
+    
+    print('✅ Camera registered successfully: ${registrationResult.cameraId}');
+  }
+  
+  /// Start streaming to media service using discovered endpoint
+  Future<void> _startStreamingToMediaService() async {
+    final cameraProvider = context.read<CameraProvider>();
+    final authService = AuthenticationService.instance;
+    final platformServices = authService.platformServices;
+    
+    if (platformServices == null) {
+      throw Exception('Platform services not available');
+    }
+    
+    // Get media service endpoint from discovered services
+    final mediaServiceConfig = platformServices['mobile_camera_config'];
+    final streamingEndpoint = mediaServiceConfig?['recommended_endpoint'];
+    
+    if (streamingEndpoint == null) {
+      throw Exception('Media service endpoint not found');
+    }
+    
+    print('🎬 Starting streaming to: $streamingEndpoint');
+    
+    // Start streaming using the camera provider
+    await cameraProvider.startStreaming(
+      streamTitle: 'PPL Meta Mobile Camera Stream',
+      quality: StreamQuality.medium,
+    );
+    
+    print('✅ Streaming started successfully');
+  }
+
+  // ============================================================================
+  // ESSENTIAL UI METHODS (needed by the simplified workflow)
+  // ============================================================================
+
+  void _openGallery() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const GalleryScreen(),
+      ),
+    );
+  }
+
+  void _handleUserMenuAction(String action, AuthenticationProvider authProvider) {
+    switch (action) {
+      case 'profile':
+        _showUserProfile(authProvider);
+        break;
+      case 'gallery':
+        _openGallery();
+        break;
+      case 'logout':
+        _handleLogout(authProvider);
+        break;
+    }
+  }
+
+  void _showUserProfile(AuthenticationProvider authProvider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('User Profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Server: ${AuthenticationService.instance.serverUrl ?? 'Not connected'}'),
+            const SizedBox(height: 8),
+            Text('Status: ${authProvider.isAuthenticated ? 'Authenticated' : 'Not authenticated'}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleLogout(AuthenticationProvider authProvider) async {
+    await authProvider.logout();
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => const AuthenticationScreen(),
+        ),
+      );
+    }
+  }
+
+  void _showCaptureSuccess() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 8),
+            Text('Photo captured successfully!'),
+          ],
+        ),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // ============================================================================
+  // OLD STREAMING METHODS - COMMENTED OUT
+  // ============================================================================
+  
+  /*
   Future<void> _startStreaming(PlatformStreamingProvider streamingProvider) async {
     print('🎬 === START STREAMING REQUESTED ===');
     print('🎬 Is connected to platform: ${streamingProvider.isConnectedToPlatform}');
@@ -651,7 +931,10 @@ class _CameraScreenState extends State<CameraScreen>
       ),
     );
   }
+  */
 
+  // OLD PLATFORM CONNECTION METHODS - COMMENTED OUT (using simplified workflow)
+  /*
   void _openPlatformConnection() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -689,26 +972,201 @@ class _CameraScreenState extends State<CameraScreen>
   void _showRegistrationRequiredDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Registration Required'),
-        content: const Text(
-          'You need to register this device as a mobile camera before you can start streaming. '
-          'Go to Platform Connection and register your camera.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _openPlatformConnection();
-            },
-            child: const Text('Register Now'),
-          ),
-        ],
+      builder: (context) => _CameraRegistrationDialog(
+        onRegister: (cameraName) => _handleStreamlinedCameraRegistration(cameraName),
       ),
     );
+  }
+  */
+
+  // OLD STREAMLINED REGISTRATION METHOD - COMMENTED OUT (using new simplified approach)
+  /*
+  /// Handle streamlined camera registration using automatic workflow
+  Future<void> _handleStreamlinedCameraRegistration(String cameraName) async {
+    try {
+      final authProvider = context.read<AuthenticationProvider>();
+      final streamingProvider = context.read<PlatformStreamingProvider>();
+      
+      // Get saved credentials from authentication service
+      final authService = AuthenticationService.instance;
+      final userData = authService.userData;
+      
+      if (userData == null) {
+        throw Exception('No user credentials available');
+      }
+
+      // Extract username from user data
+      String? username;
+      if (userData.containsKey('username')) {
+        username = userData['username'];
+      } else if (userData.containsKey('email')) {
+        username = userData['email'];
+      } else {
+        throw Exception('No username found in user data');
+      }
+
+      // Note: Password is not stored for security, so we'll use the existing token approach
+      // Instead of full automatic workflow, use the existing registration services
+      final token = authService.token;
+      if (token == null) {
+        throw Exception('No authentication token available');
+      }
+
+      final platformServices = authService.platformServices;
+      if (platformServices == null) {
+        throw Exception('Platform services not available');
+      }
+
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Use the camera registration service directly
+      final autoRegistrationService = AutoCameraRegistrationService();
+      final services = _convertToPlatformServices(platformServices);
+      
+      final registrationResult = await autoRegistrationService.autoRegisterCamera(
+        cameraName: cameraName,
+        jwtToken: token,
+        services: services,
+      );
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      if (!registrationResult.success) {
+        throw Exception('Camera registration failed: ${registrationResult.error}');
+      }
+
+        // Show success and start streaming
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Camera "$cameraName" registered successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          // Refresh the streaming provider by reconnecting
+          await streamingProvider.connectToPlatform();
+          
+          // Start streaming automatically
+          await streamingProvider.startStreaming();
+        }    } catch (e) {
+      // Close loading dialog if open
+      if (mounted) Navigator.of(context).pop();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Registration failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  */
+
+  /// Convert platform services to the format expected by auto registration
+  PlatformServices _convertToPlatformServices(Map<String, dynamic> platformServices) {
+    final microservices = platformServices['microservices'] as Map<String, dynamic>;
+    
+    return PlatformServices(
+      cameraService: ServiceEndpoint.fromJson('cameras', microservices['cameras']),
+      mediaService: ServiceEndpoint.fromJson('media', microservices['media']),
+      gatewayService: ServiceEndpoint.fromJson('gateway', microservices['gateway']),
+      orchestratorService: ServiceEndpoint.fromJson('orchestrator', microservices['orchestrator']),
+      visionService: microservices['vision'] != null 
+        ? ServiceEndpoint.fromJson('vision', microservices['vision'])
+        : null,
+    );
+  }
+}
+
+/// Simple camera registration dialog
+class _CameraRegistrationDialog extends StatefulWidget {
+  final Function(String) onRegister;
+
+  const _CameraRegistrationDialog({required this.onRegister});
+
+  @override
+  State<_CameraRegistrationDialog> createState() => _CameraRegistrationDialogState();
+}
+
+class _CameraRegistrationDialogState extends State<_CameraRegistrationDialog> {
+  final _controller = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.camera_alt, color: Colors.blue),
+          SizedBox(width: 8),
+          Text('Register Camera'),
+        ],
+      ),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter a name for this camera. Everything else is automatic!',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Camera Name',
+                hintText: 'e.g., Living Room Camera',
+                prefixIcon: Icon(Icons.camera_alt),
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Please enter a camera name';
+                }
+                return null;
+              },
+              onFieldSubmitted: (_) => _register(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _register,
+          child: const Text('Register & Start Streaming'),
+        ),
+      ],
+    );
+  }
+
+  void _register() {
+    if (_formKey.currentState!.validate()) {
+      Navigator.of(context).pop();
+      widget.onRegister(_controller.text.trim());
+    }
   }
 }
