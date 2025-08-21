@@ -11,17 +11,17 @@ class AutomaticStreamingWorkflow {
   final AutoAuthenticationService _authService = AutoAuthenticationService();
   final AutoCameraRegistrationService _registrationService = AutoCameraRegistrationService();
   
-  /// Execute complete automatic workflow with zero user input required
+  /// Execute complete automatic workflow with zero input beyond credentials
   /// 
   /// User inputs required:
   /// - username: PPL Meta platform credentials
   /// - password: PPL Meta platform credentials  
   /// 
-  /// Everything else is completely automatic:
+  /// Everything else is automatic:
+  /// - Camera name generation (mcam-<device-model>-<unique-id>)
   /// - IP detection and Node service discovery
   /// - Authentication and JWT token handling
   /// - Platform services discovery
-  /// - Automatic camera name generation from device info
   /// - Camera registration with device specs
   Future<WorkflowResult> executeCompleteWorkflow({
     required String username,
@@ -30,9 +30,8 @@ class AutomaticStreamingWorkflow {
     print('🚀 ========================================');
     print('🚀 STARTING AUTOMATIC STREAMING WORKFLOW');
     print('🚀 ========================================');
-    print('🎯 ZERO USER INPUT WORKFLOW - Fully Automatic');
-    print('🤖 Camera name will be auto-generated from device info');
-    print('🎯 Goal: Complete automation with no user dialogs');
+    print('🎯 ZERO INPUT WORKFLOW: Only credentials required');
+    print('📱 Camera name will be generated automatically');
     print('🚀 ========================================');
     
     try {
