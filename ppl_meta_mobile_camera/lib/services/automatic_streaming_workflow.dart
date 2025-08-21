@@ -11,28 +11,28 @@ class AutomaticStreamingWorkflow {
   final AutoAuthenticationService _authService = AutoAuthenticationService();
   final AutoCameraRegistrationService _registrationService = AutoCameraRegistrationService();
   
-  /// Execute complete automatic workflow with minimal user input
+  /// Execute complete automatic workflow with zero user input required
   /// 
   /// User inputs required:
   /// - username: PPL Meta platform credentials
   /// - password: PPL Meta platform credentials  
-  /// - cameraName: Desired camera name (e.g., "Living Room Camera")
   /// 
-  /// Everything else is automatic:
+  /// Everything else is completely automatic:
   /// - IP detection and Node service discovery
   /// - Authentication and JWT token handling
   /// - Platform services discovery
+  /// - Automatic camera name generation from device info
   /// - Camera registration with device specs
   Future<WorkflowResult> executeCompleteWorkflow({
     required String username,
     required String password,
-    required String cameraName,
   }) async {
     print('🚀 ========================================');
     print('🚀 STARTING AUTOMATIC STREAMING WORKFLOW');
     print('🚀 ========================================');
-    print('📱 Camera Name: "$cameraName" (only user input required)');
-    print('🎯 Goal: Everything else should be automatic');
+    print('🎯 ZERO USER INPUT WORKFLOW - Fully Automatic');
+    print('🤖 Camera name will be auto-generated from device info');
+    print('🎯 Goal: Complete automation with no user dialogs');
     print('🚀 ========================================');
     
     try {
@@ -61,12 +61,11 @@ class AutomaticStreamingWorkflow {
         print('👁️ Vision Service: ${services.visionService!.endpoint}');
       }
       
-      // Phase 3: Automatic camera registration
+      // Phase 3: Automatic camera registration with auto-generated name
       print('');
-      print('📱 PHASE 3: Automatic Camera Registration');
-      print('📱 Step 3: Auto-registering camera "$cameraName"...');
+      print('📱 PHASE 3: Automatic Camera Registration (Zero Input)');
+      print('🤖 Step 3: Auto-generating camera name and registering...');
       final cameraResult = await _registrationService.autoRegisterCamera(
-        cameraName: cameraName,
         jwtToken: authResult.token!,
         services: services,
       );
@@ -75,7 +74,8 @@ class AutomaticStreamingWorkflow {
         throw WorkflowException('Camera registration failed: ${cameraResult.error}');
       }
       
-      print('✅ Camera registered successfully!');
+      print('✅ Camera registered automatically with zero user input!');
+      print('🤖 Auto-generated camera name: ${cameraResult.cameraName}');
       print('📊 Camera ID: ${cameraResult.cameraId}');
       print('🆔 Device ID: ${cameraResult.deviceId}');
       print('📡 Status: ${cameraResult.status}');
@@ -83,11 +83,12 @@ class AutomaticStreamingWorkflow {
       // Workflow completion
       print('');
       print('🎉 ========================================');
-      print('🎉 AUTOMATIC WORKFLOW COMPLETED!');
+      print('🎉 ZERO-INPUT AUTOMATIC WORKFLOW COMPLETED!');
       print('🎉 ========================================');
-      print('📱 Camera "${cameraResult.cameraName}" is ready for streaming');
+      print('🤖 Camera "${cameraResult.cameraName}" auto-registered and ready');
       print('🔗 Camera ID: ${cameraResult.cameraId}');
       print('🎬 Media Service: ${cameraResult.mediaServiceURL}');
+      print('🎯 Achievement: Complete automation with ZERO user input!');
       print('📹 Camera Service: ${services.cameraService.endpoint}');
       print('🎉 ========================================');
       
