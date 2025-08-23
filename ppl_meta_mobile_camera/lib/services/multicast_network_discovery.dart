@@ -333,6 +333,15 @@ class EnhancedNetworkDiscoveryService {
         return localNetworkUrl;
       }
       
+      // Fallback 3: Try localhost (for nginx proxy development)
+      debugPrint('🔄 Fallback 3: Testing localhost nginx proxy...');
+      final localhostUrl = await _testLocalhostProxy();
+      
+      if (localhostUrl != null && await _testConnection(localhostUrl)) {
+        debugPrint('✅ Localhost nginx proxy successful: $localhostUrl');
+        return localhostUrl;
+      }
+      
       debugPrint('❌ All discovery methods failed');
       return null;
       
@@ -465,6 +474,35 @@ class EnhancedNetworkDiscoveryService {
     }
   }
 
+  /// Test localhost nginx proxy for development
+  Future<String?> _testLocalhostProxy() async {
+    try {
+      debugPrint('🏠 Testing localhost nginx proxy...');
+      
+      // When using nginx proxy, the Node service is accessible via localhost
+      final localhostUrls = [
+        'http://localhost',      // nginx proxy root
+        'http://127.0.0.1',     // localhost IP
+        'http://localhost:8001', // direct node service (fallback)
+      ];
+      
+      for (final url in localhostUrls) {
+        debugPrint('🔍 Testing localhost URL: $url');
+        if (await _testConnection(url)) {
+          debugPrint('🎯 Found PPL Meta via localhost: $url');
+          return url;
+        }
+      }
+      
+      debugPrint('⚠️ No localhost services found');
+      return null;
+      
+    } catch (e) {
+      debugPrint('❌ Error testing localhost: $e');
+      return null;
+    }
+  }
+
   /// Test if a service URL is accessible
   Future<bool> _testConnection(String baseUrl) async {
     try {
@@ -473,7 +511,21 @@ class EnhancedNetworkDiscoveryService {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 5); // Increased timeout for VPN
       
-      final uri = Uri.parse('$baseUrl/api/v1/health');
+      // Determine the correct health endpoint based on URL
+      late Uri uri;
+      if (baseUrl.contains('localhost') || baseUrl.contains('127.0.0.1')) {
+        // For localhost/nginx proxy, test the node health endpoint
+        if (baseUrl == 'http://localhost' || baseUrl == 'http://127.0.0.1') {
+          uri = Uri.parse('$baseUrl/health/node');
+        } else {
+          // For direct localhost:8001, use the API health endpoint
+          uri = Uri.parse('$baseUrl/api/v1/health');
+        }
+      } else {
+        // For network IPs, use the standard API health endpoint
+        uri = Uri.parse('$baseUrl/api/v1/health');
+      }
+      
       debugPrint('🌐 Making request to: $uri');
       
       final request = await client.getUrl(uri);

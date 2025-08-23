@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../../shared/navigation/app_navigation.dart';
+import '../../../services/app_logger.dart';
 
 /// Camera controls widget with capture, flash, zoom, and gallery
 class CameraControls extends StatefulWidget {
@@ -240,7 +241,16 @@ class _CameraControlsState extends State<CameraControls>
 
   Widget _buildVideoButton() {
     return GestureDetector(
-      onTap: widget.onVideoTap,
+      onTap: () {
+        CameraLogger.setup('Red video button tapped!');
+        CameraLogger.setup('Calling onVideoTap callback...');
+        if (widget.onVideoTap != null) {
+          widget.onVideoTap!();
+          CameraLogger.setup('onVideoTap callback executed');
+        } else {
+          CameraLogger.error('onVideoTap callback is null!');
+        }
+      },
       child: Container(
         width: 50,
         height: 50,

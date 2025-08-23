@@ -3,8 +3,15 @@ import 'package:provider/provider.dart';
 import 'core/core.dart';
 import 'features/authentication/authentication.dart';
 import 'features/camera/camera.dart';
+import 'services/app_logger.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize logging system
+  await AppLogger.instance.initialize();
+  AppLogger.instance.info('🚀 PPL Meta Mobile Camera starting...');
+  
   runApp(const PPLMetaCameraApp());
 }
 

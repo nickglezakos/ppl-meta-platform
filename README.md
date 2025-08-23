@@ -168,7 +168,7 @@ docker-compose up --build
 
 ## 📚 Documentation
 
-**📖 Complete Documentation**: [docs/README.md](./docs/README.md)
+**📖 Complete Documentation**: [docs/README.md](docs/archive/README.md)
 
 ### Quick Links
 - **[Current Development Issues](./docs/current/)** - Active development and issues

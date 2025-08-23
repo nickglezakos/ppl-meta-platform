@@ -64,12 +64,9 @@ class AutomaticStreamingWorkflow {
       print('');
       print('📱 PHASE 3: Automatic Camera Registration (Zero Input)');
       print('🤖 Step 3: Auto-generating camera name and registering...');
-      final cameraResult = await _registrationService.autoRegisterCamera(
-        jwtToken: authResult.token!,
-        services: services,
-      );
+      final cameraResult = await _registrationService.autoRegisterCamera(authResult.token!);
       
-      if (!cameraResult.success) {
+      if (!cameraResult.isSuccess) {
         throw WorkflowException('Camera registration failed: ${cameraResult.error}');
       }
       
@@ -77,7 +74,6 @@ class AutomaticStreamingWorkflow {
       print('🤖 Auto-generated camera name: ${cameraResult.cameraName}');
       print('📊 Camera ID: ${cameraResult.cameraId}');
       print('🆔 Device ID: ${cameraResult.deviceId}');
-      print('📡 Status: ${cameraResult.status}');
       
       // Workflow completion
       print('');
@@ -86,7 +82,7 @@ class AutomaticStreamingWorkflow {
       print('🎉 ========================================');
       print('🤖 Camera "${cameraResult.cameraName}" auto-registered and ready');
       print('🔗 Camera ID: ${cameraResult.cameraId}');
-      print('🎬 Media Service: ${cameraResult.mediaServiceURL}');
+      print('🎬 Media Service: ${services.mediaService.endpoint}');
       print('🎯 Achievement: Complete automation with ZERO user input!');
       print('📹 Camera Service: ${services.cameraService.endpoint}');
       print('🎉 ========================================');
@@ -98,7 +94,7 @@ class AutomaticStreamingWorkflow {
         jwtToken: authResult.token!,
         nodeServiceURL: authResult.nodeURL!,
         cameraServiceURL: services.cameraService.endpoint,
-        mediaServiceURL: cameraResult.mediaServiceURL!,
+        mediaServiceURL: services.mediaService.endpoint,
         gatewayServiceURL: services.gatewayService.endpoint,
         readyForStreaming: true,
       );

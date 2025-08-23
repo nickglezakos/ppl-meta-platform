@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import '../../../core/core.dart';
+import '../../../models/camera_registration_result.dart';
 import '../../../services/automatic_streaming_workflow.dart';
 import '../../../services/auto_camera_registration_service.dart';
 import '../../../services/auto_authentication_service.dart';
+import '../../../services/app_logger.dart';
 import '../widgets/camera_preview_widget.dart';
 import '../widgets/camera_controls.dart';
 import '../widgets/camera_settings_panel.dart';
@@ -61,24 +63,24 @@ class _CameraScreenState extends State<CameraScreen>
     
     // Only initialize if not already initialized or initializing
     if (!cameraProvider.isInitialized && !cameraProvider.isLoading) {
-      print('🎬 Camera screen: Initializing camera provider...');
+      CameraLogger.debug('Initializing camera provider...');
       await cameraProvider.initialize();
-      print('🎬 Camera screen: Camera provider initialization complete');
+      CameraLogger.success('Camera provider initialization complete');
     } else {
-      print('🎬 Camera screen: Camera provider already initialized or initializing');
+      CameraLogger.debug('Camera provider already initialized or initializing');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    print('🔍 CameraScreen build() called - Auth: ${context.read<AuthenticationProvider>().isAuthenticated}, Camera initialized: ${context.read<CameraProvider>().isInitialized}');
+    CameraLogger.debug('Build called - Auth: ${context.read<AuthenticationProvider>().isAuthenticated}, Camera init: ${context.read<CameraProvider>().isInitialized}');
     return Consumer3<CameraProvider, AuthenticationProvider, PlatformStreamingProvider>(
       builder: (context, cameraProvider, authProvider, streamingProvider, child) {
-        print('🔍 Consumer3 builder called - Auth: ${authProvider.isAuthenticated}, Camera init: ${cameraProvider.isInitialized}, Camera loading: ${cameraProvider.isLoading}');
+        CameraLogger.debug('Consumer builder - Auth: ${authProvider.isAuthenticated}, Camera init: ${cameraProvider.isInitialized}, Loading: ${cameraProvider.isLoading}');
         
         // Check authentication - only redirect once
         if (!authProvider.isAuthenticated && !_isNavigatingToAuth) {
-          print('🔍 Not authenticated, navigating to auth screen');
+          CameraLogger.warning('Not authenticated, navigating to auth screen');
           _isNavigatingToAuth = true;
           Future.microtask(() {
             if (mounted) {
@@ -96,13 +98,13 @@ class _CameraScreenState extends State<CameraScreen>
 
         // Show loading while camera is initializing
         if (cameraProvider.isLoading) {
-          print('🔍 Camera is loading, showing loading indicator');
+          CameraLogger.info('Camera is loading, showing loading indicator');
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        print('🔍 Rendering main camera interface');
+        CameraLogger.debug('Rendering main camera interface');
         return Scaffold(
           backgroundColor: Colors.black,
           body: SafeArea(
@@ -336,6 +338,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Widget _buildCameraControls(CameraProvider cameraProvider) {
+    CameraLogger.debug('Building camera controls with zero-input workflow callback');
     return Positioned(
       bottom: 0,
       left: 0,
@@ -346,7 +349,10 @@ class _CameraScreenState extends State<CameraScreen>
         onToggleFlash: () => _toggleFlash(cameraProvider),
         onZoomChanged: (zoom) => _setZoom(cameraProvider, zoom),
         onOpenGallery: _openGallery,
-        onVideoTap: _handleSimpleStreamingWorkflow, // NEW: Simplified streaming workflow
+        onVideoTap: () {
+          CameraLogger.info('Video tap triggered - starting zero-input workflow');
+          _handleSimpleStreamingWorkflow();
+        }, // NEW: Simplified streaming workflow with debug
         isFlashOn: cameraProvider.isFlashOn,
         zoomLevel: cameraProvider.zoomLevel,
         isFrontCamera: cameraProvider.isFrontCamera,
@@ -473,7 +479,7 @@ class _CameraScreenState extends State<CameraScreen>
   // Event Handlers
   void _handlePreviewTap(TapUpDetails details) {
     // Future: Implement tap-to-focus
-    print('Preview tapped at: ${details.localPosition}');
+    CameraLogger.debug('Preview tapped at: ${details.localPosition}');
   }
 
   void _toggleSettings() {
@@ -541,50 +547,90 @@ class _CameraScreenState extends State<CameraScreen>
   // SIMPLIFIED STREAMING WORKFLOW - NEW APPROACH
   // ============================================================================
   
-  /// Simplified streaming workflow - just ask camera name and handle everything else automatically
+  /// Zero-input streaming workflow - automatic camera registration without user input
   Future<void> _handleSimpleStreamingWorkflow() async {
+    CameraLogger.setup('RED BUTTON TAPPED - Starting zero-input workflow');
+    
     final cameraProvider = context.read<CameraProvider>();
     
     // If already streaming, stop it
     if (cameraProvider.isStreaming) {
+      CameraLogger.streaming('Camera is already streaming, stopping current stream');
       await cameraProvider.stopStreaming();
+      CameraLogger.streaming('Stream stopped');
       return;
     }
     
-    // Show camera name dialog
-    final cameraName = await _showCameraNameDialog();
-    if (cameraName == null || cameraName.trim().isEmpty) {
-      return; // User cancelled
-    }
+    CameraLogger.setup('Camera not streaming, proceeding with automatic registration');
     
     try {
-      // Step 1: Register camera in background (automatic)
-      await _registerCameraInBackground(cameraName.trim());
+      CameraLogger.setup('Showing loading indicator');
+      // Show loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+              SizedBox(width: 16),
+              Text('Registering camera automatically...'),
+            ],
+          ),
+          duration: Duration(seconds: 10),
+          backgroundColor: Colors.blue,
+        ),
+      );
+      CameraLogger.info('Loading indicator displayed for user');
       
+      CameraLogger.step('2', 'Starting automatic camera registration');
+      // Step 1: Register camera automatically with zero input
+      final registrationResult = await _registerCameraAutomatically();
+      CameraLogger.success('Camera registration completed: ${registrationResult.cameraName}');
+      
+      CameraLogger.step('3', 'Starting streaming to media service');
       // Step 2: Start streaming immediately after registration
       await _startStreamingToMediaService();
+      CameraLogger.success('Streaming started successfully');
       
-      // Show success
+      // Clear loading snackbar and show success with auto-generated camera name
       if (mounted) {
+        CameraLogger.step('4', 'Showing success message to user');
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Camera "$cameraName" registered and streaming started!'),
+            content: Text('🎉 Camera "${registrationResult.cameraName}" registered and streaming started automatically!'),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
           ),
         );
+        CameraLogger.success('Success message displayed to user');
       }
+      
+      CameraLogger.success('=== ZERO-INPUT WORKFLOW COMPLETED SUCCESSFULLY ===');
     } catch (e) {
+      CameraLogger.error('Error in zero-input workflow: ${e.toString()}', e);
+      
       if (mounted) {
+        CameraLogger.info('Showing error message to user');
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to setup streaming: ${e.toString()}'),
+            content: Text('❌ Failed to setup streaming: ${e.toString()}'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
+        CameraLogger.info('Error message displayed to user');
       }
+      
+      CameraLogger.error('=== ZERO-INPUT WORKFLOW FAILED ===');
     }
   }
   
+  /// Show automatic setup confirmation dialog
   /// Show simple camera name input dialog
   Future<String?> _showCameraNameDialog() async {
     final controller = TextEditingController();
@@ -630,6 +676,48 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
   
+  /// Register camera automatically with zero input and return result
+  Future<CameraRegistrationResult> _registerCameraAutomatically() async {
+    CameraLogger.step('AUTO_REG', 'Starting automatic camera registration');
+    
+    final authService = AuthenticationService.instance;
+    final token = authService.token;
+    final platformServices = authService.platformServices;
+    
+    CameraLogger.debug('Token available: ${token != null}');
+    CameraLogger.debug('Platform services available: ${platformServices != null}');
+    
+    if (token == null) {
+      CameraLogger.error('No authentication token available');
+      throw Exception('No authentication token available');
+    }
+    
+    if (platformServices == null) {
+      CameraLogger.error('Platform services not available');
+      throw Exception('Platform services not available');
+    }
+    
+    CameraLogger.debug('Creating AutoCameraRegistrationService...');
+    // Use the automatic camera registration service with zero-input workflow
+    final autoRegistrationService = AutoCameraRegistrationService();
+    final services = _convertToPlatformServices(platformServices);
+    
+    CameraLogger.debug('Calling autoRegisterCamera...');
+    final registrationResult = await autoRegistrationService.autoRegisterCamera(token);
+    
+    CameraLogger.debug('Registration result - Success: ${registrationResult.isSuccess}');
+    CameraLogger.debug('Registration result - Camera ID: ${registrationResult.cameraId}');
+    CameraLogger.debug('Registration result - Camera Name: ${registrationResult.cameraName}');
+    
+    if (!registrationResult.isSuccess) {
+      CameraLogger.error('Camera registration failed: ${registrationResult.error}');
+      throw Exception('Camera registration failed: ${registrationResult.error}');
+    }
+    
+    CameraLogger.success('Camera registered automatically: ${registrationResult.cameraId}');
+    return registrationResult;
+  }
+
   /// Register camera in background using discovered services
   Future<void> _registerCameraInBackground(String cameraName) async {
     final authService = AuthenticationService.instance;
@@ -644,21 +732,17 @@ class _CameraScreenState extends State<CameraScreen>
       throw Exception('Platform services not available');
     }
     
-    // Use the automatic camera registration service
+    // Use the automatic camera registration service with zero-input workflow
     final autoRegistrationService = AutoCameraRegistrationService();
     final services = _convertToPlatformServices(platformServices);
     
-    final registrationResult = await autoRegistrationService.autoRegisterCamera(
-      cameraName: cameraName,
-      jwtToken: token,
-      services: services,
-    );
+    final registrationResult = await autoRegistrationService.autoRegisterCamera(token);
     
-    if (!registrationResult.success) {
+    if (!registrationResult.isSuccess) {
       throw Exception('Camera registration failed: ${registrationResult.error}');
     }
     
-    print('✅ Camera registered successfully: ${registrationResult.cameraId}');
+    CameraLogger.success('Camera registered successfully: ${registrationResult.cameraId}');
   }
   
   /// Start streaming to media service using discovered endpoint
@@ -679,7 +763,7 @@ class _CameraScreenState extends State<CameraScreen>
       throw Exception('Media service endpoint not found');
     }
     
-    print('🎬 Starting streaming to: $streamingEndpoint');
+    CameraLogger.info('Starting streaming to: $streamingEndpoint');
     
     // Start streaming using the camera provider
     await cameraProvider.startStreaming(
@@ -687,7 +771,7 @@ class _CameraScreenState extends State<CameraScreen>
       quality: StreamQuality.medium,
     );
     
-    print('✅ Streaming started successfully');
+    CameraLogger.success('Streaming started successfully');
   }
 
   // ============================================================================
@@ -777,26 +861,26 @@ class _CameraScreenState extends State<CameraScreen>
   
   /*
   Future<void> _startStreaming(PlatformStreamingProvider streamingProvider) async {
-    print('🎬 === START STREAMING REQUESTED ===');
-    print('🎬 Is connected to platform: ${streamingProvider.isConnectedToPlatform}');
-    print('🎬 Is registered: ${streamingProvider.isRegistered}');
-    print('🎬 Current status: ${streamingProvider.status}');
+    CameraLogger.info('=== START STREAMING REQUESTED ===');
+    CameraLogger.debug('Is connected to platform: ${streamingProvider.isConnectedToPlatform}');
+    CameraLogger.debug('Is registered: ${streamingProvider.isRegistered}');
+    CameraLogger.debug('Current status: ${streamingProvider.status}');
     
     if (!streamingProvider.isConnectedToPlatform) {
-      print('🎬 ERROR: Not connected to platform - showing dialog');
+      CameraLogger.error('Not connected to platform - showing dialog');
       _showConnectionRequiredDialog();
       return;
     }
     
     if (!streamingProvider.isRegistered) {
-      print('🎬 ERROR: Not registered - showing dialog');
+      CameraLogger.error('Not registered - showing dialog');
       _showRegistrationRequiredDialog();
       return;
     }
     
-    print('🎬 Starting streaming...');
+    CameraLogger.info('Starting streaming...');
     final success = await streamingProvider.startStreaming();
-    print('🎬 Streaming result: $success');
+    CameraLogger.info('Streaming result: $success');
   }
 
   Future<void> _stopStreaming(PlatformStreamingProvider streamingProvider) async {
@@ -1026,20 +1110,16 @@ class _CameraScreenState extends State<CameraScreen>
         ),
       );
 
-      // Use the camera registration service directly
+      // Use the camera registration service with zero-input workflow
       final autoRegistrationService = AutoCameraRegistrationService();
       final services = _convertToPlatformServices(platformServices);
       
-      final registrationResult = await autoRegistrationService.autoRegisterCamera(
-        cameraName: cameraName,
-        jwtToken: token,
-        services: services,
-      );
+      final registrationResult = await autoRegistrationService.autoRegisterCamera(token);
 
       // Close loading dialog
       if (mounted) Navigator.of(context).pop();
 
-      if (!registrationResult.success) {
+      if (!registrationResult.isSuccess) {
         throw Exception('Camera registration failed: ${registrationResult.error}');
       }
 
@@ -1047,7 +1127,7 @@ class _CameraScreenState extends State<CameraScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Camera "$cameraName" registered successfully!'),
+              content: Text('Camera "${registrationResult.cameraName}" registered automatically!'),
               backgroundColor: Colors.green,
             ),
           );

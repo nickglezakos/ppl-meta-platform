@@ -53,10 +53,10 @@ class DeviceIdentifierService {
     
     if (sanitized.isEmpty) return 'device';
     
-    // Limit length but ensure minimum of 3 characters
-    final maxLength = model.length > 15 ? 15 : model.length;
-    final minLength = sanitized.length < 3 ? sanitized.length : 3;
-    final finalLength = maxLength < minLength ? sanitized.length : maxLength;
+    // Fix the substring logic to prevent RangeError
+    final maxLength = 15;
+    final actualLength = sanitized.length;
+    final finalLength = actualLength > maxLength ? maxLength : actualLength;
     
     return sanitized.substring(0, finalLength);
   }
@@ -93,29 +93,32 @@ class DeviceIdentifierService {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
         return {
-          'device_model': androidInfo.model,
-          'device_manufacturer': androidInfo.manufacturer,
-          'device_brand': androidInfo.brand,
-          'android_version': androidInfo.version.release,
-          'android_sdk': androidInfo.version.sdkInt,
+          'manufacturer': androidInfo.manufacturer,
+          'model': androidInfo.model,
+          'brand': androidInfo.brand,
+          'os_version': androidInfo.version.release,
+          'sdk_version': androidInfo.version.sdkInt,
           'device_id': androidInfo.id,
           'fingerprint': androidInfo.fingerprint,
-          'is_physical_device': androidInfo.isPhysicalDevice,
+          'platform': Platform.operatingSystem,
         };
       } else {
+        // Fallback for other platforms
         return {
-          'device_model': 'Unknown',
-          'device_manufacturer': 'PPL Meta Mobile',
-          'device_brand': 'Generic',
+          'manufacturer': 'Unknown',
+          'model': 'Mobile Device',
+          'brand': 'Generic',
+          'os_version': Platform.operatingSystemVersion,
           'platform': Platform.operatingSystem,
         };
       }
     } catch (e) {
       print('⚠️ Error getting device info: $e');
       return {
-        'device_model': 'Unknown Device',
-        'device_manufacturer': 'PPL Meta Mobile',
-        'device_brand': 'Generic',
+        'manufacturer': 'PPL Meta Mobile',
+        'model': 'Unknown Device',
+        'brand': 'Generic',
+        'os_version': 'Unknown',
         'error': e.toString(),
       };
     }

@@ -49,6 +49,7 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.0.1
   image: ^4.3.0  # For MJPEG frame processing
+  logging: ^1.2.0  # Professional logging system
 
 dev_dependencies:
   flutter_test:
