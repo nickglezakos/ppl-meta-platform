@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     PPL_MEDIA_SERVICE_URL: str = "http://localhost:8000"
     MEDIA_SERVICE_URL: str = "http://localhost:8000"
     GATEWAY_SERVICE_URL: str = "http://localhost:8080"
+    BOOTCORE_SERVICE_URL: str = "http://localhost:8007"
     SERVICE_SECRET: str = ""
 
     # Redis Configuration

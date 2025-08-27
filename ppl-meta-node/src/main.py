@@ -39,6 +39,17 @@ try:
     from src.models.user import Base
     from src.services.user_service import create_user, get_user_by_email
 
+    # Import licensing service for initialization
+    try:
+        from src.services.licensing_service import init_licensing_service
+
+        LICENSING_AVAILABLE = True
+        logger.info("Licensing service available")
+    except ImportError:
+        LICENSING_AVAILABLE = False
+        init_licensing_service = None
+        logger.warning("Licensing service not available")
+
     logger.info("Successfully imported core modules")
 except Exception as e:
     logger.error(f"Failed to import core modules: {e}")
@@ -249,6 +260,14 @@ async def lifespan(_app: FastAPI):
                 raise
 
         await run_in_threadpool(init_guid_and_admin)
+
+        # Initialize licensing service if available
+        if LICENSING_AVAILABLE and init_licensing_service:
+            try:
+                await init_licensing_service()
+                logger.info("✅ Licensing service initialized")
+            except Exception as e:
+                logger.error(f"⚠️ Licensing service initialization failed: {e}")
 
         # Start multicast discovery broadcaster
         def start_multicast_broadcaster():

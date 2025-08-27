@@ -1,10 +1,14 @@
 """API v1 routes aggregation."""
 
 from fastapi import APIRouter
-from src.api.v1 import users, health
+from src.api import licences
+from src.api.v1 import health, users
 
 router = APIRouter()
 
 # Include v1 routers
 router.include_router(users.router)
 router.include_router(health.router)
+
+# Include licensing router
+router.include_router(licences.router)

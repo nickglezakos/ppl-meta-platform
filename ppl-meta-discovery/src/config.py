@@ -1,0 +1,65 @@
+"""Configuration settings for PPL Meta Discovery Service."""
+
+import os
+from typing import List
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """Application settings with environment variable support."""
+    
+    # Service Configuration
+    SERVICE_NAME: str = "ppl-meta-discovery"
+    VERSION: str = "1.0.0"
+    DEBUG: bool = False
+    
+    # Server Configuration
+    HOST: str = "0.0.0.0"
+    PORT: int = 8006
+    
+    # Security Configuration
+    ALLOWED_ORIGINS: List[str] = ["*"]
+    ALLOWED_HOSTS: List[str] = ["*"]
+    
+    # Discovery Configuration
+    ENABLE_MULTICAST: bool = True
+    MULTICAST_GROUP: str = "224.1.1.1"
+    MULTICAST_PORT: int = 12345
+    
+    # Health Monitoring
+    HEALTH_CHECK_INTERVAL: int = 30  # seconds
+    SERVICE_TIMEOUT: int = 10  # seconds
+    MAX_MISSED_HEARTBEATS: int = 3
+    
+    # Registry Configuration
+    REGISTRY_CLEANUP_INTERVAL: int = 60  # seconds
+    EDGE_DEVICE_TIMEOUT: int = 300  # 5 minutes
+    SERVICE_REGISTRY_SIZE: int = 100
+    EDGE_REGISTRY_SIZE: int = 1000
+    
+    # Network Configuration
+    VPN_DISCOVERY_ENABLED: bool = True
+    TAILSCALE_DOMAINS: List[str] = ["*.tailnet.ts.net"]
+    OPENVPN_RANGES: List[str] = ["10.8.0.0/24", "192.168.255.0/24"]
+    
+    # Logging Configuration  
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    
+    class Config:
+        """Pydantic configuration."""
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = True
+
+
+# Global settings instance
+_settings = None
+
+
+def get_settings() -> Settings:
+    """Get application settings (singleton pattern)."""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings

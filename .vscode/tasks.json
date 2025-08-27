@@ -169,6 +169,30 @@
 			"problemMatcher": []
 		},
 		{
+			"label": "🔍 Start Discovery Service (Local Python)",
+			"type": "shell",
+			"command": "cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop Discovery Service (Local Python)",
+			"type": "shell",
+			"command": "echo '🛑 Stopping Discovery Service...' && pkill -f 'ppl-meta-discovery.*uvicorn.*main:app' 2>/dev/null || true && echo 'Discovery service stopped.'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Discovery Service Health Check (Local)",
+			"type": "shell",
+			"command": "curl -L -s http://localhost:8006/health | python3 -m json.tool 2>/dev/null || echo 'Discovery service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
 			"label": "🔧 Start PPL Meta Mini Service",
 			"type": "shell",
 			"command": "cd ppl-meta-mini/src && python main.py",
@@ -204,7 +228,11 @@
 			"label": "🏗️ Build All Docker Images",
 			"type": "shell",
 			"command": "docker-compose",
-			"args": ["-f", "docker-compose.minimal.yml", "build"],
+			"args": [
+				"-f",
+				"docker-compose.minimal.yml",
+				"build"
+			],
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -213,9 +241,16 @@
 			"label": "🚀 Start All Services (Docker)",
 			"type": "shell",
 			"command": "docker-compose",
-			"args": ["-f", "docker-compose.minimal.yml", "up", "-d"],
+			"args": [
+				"-f",
+				"docker-compose.minimal.yml",
+				"up",
+				"-d"
+			],
 			"group": "build",
-			"dependsOn": ["🏗️ Build All Docker Images"],
+			"dependsOn": [
+				"🏗️ Build All Docker Images"
+			],
 			"isBackground": false,
 			"problemMatcher": []
 		},
@@ -223,7 +258,11 @@
 			"label": "🛑 Stop All Services (Docker)",
 			"type": "shell",
 			"command": "docker-compose",
-			"args": ["-f", "docker-compose.minimal.yml", "down"],
+			"args": [
+				"-f",
+				"docker-compose.minimal.yml",
+				"down"
+			],
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -232,7 +271,10 @@
 			"label": "🏥 Health Check - All Services (Docker)",
 			"type": "shell",
 			"command": "python",
-			"args": ["-c", "import requests; import sys; services = [('Gateway', 'http://localhost:8080/health'), ('Node', 'http://localhost:8001/health'), ('Media', 'http://localhost:8000/health'), ('Orchestrator', 'http://localhost:8002/health')]; results = []; [results.append(f'✅ {name}: {requests.get(url, timeout=5).status_code}' if (lambda: requests.get(url, timeout=5).status_code == 200)() else f'❌ {name}: Failed') for name, url in services]; [print(r) for r in results]"],
+			"args": [
+				"-c",
+				"import requests; import sys; services = [('Gateway', 'http://localhost:8080/health'), ('Node', 'http://localhost:8001/health'), ('Media', 'http://localhost:8000/health'), ('Orchestrator', 'http://localhost:8002/health')]; results = []; [results.append(f'✅ {name}: {requests.get(url, timeout=5).status_code}' if (lambda: requests.get(url, timeout=5).status_code == 200)() else f'❌ {name}: Failed') for name, url in services]; [print(r) for r in results]"
+			],
 			"group": "test",
 			"isBackground": false,
 			"problemMatcher": []
@@ -241,7 +283,12 @@
 			"label": "📋 View Logs - All Services (Docker)",
 			"type": "shell",
 			"command": "docker-compose",
-			"args": ["-f", "docker-compose.minimal.yml", "logs", "-f"],
+			"args": [
+				"-f",
+				"docker-compose.minimal.yml",
+				"logs",
+				"-f"
+			],
 			"group": "test",
 			"isBackground": true,
 			"problemMatcher": []
@@ -421,6 +468,13 @@
 			"group": "test",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "🔧 Start Bootcore Service (Local Python)",
+			"type": "shell",
+			"command": "cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload",
+			"isBackground": true,
+			"group": "build"
 		}
 	]
 }
