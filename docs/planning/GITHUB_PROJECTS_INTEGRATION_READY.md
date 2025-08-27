@@ -8,11 +8,16 @@ Your document lifecycle workflow is now a **complete enterprise-grade project ma
 
 **Revolutionary Hybrid Approach**: Solve GitHub's single-milestone limitation with our innovative system that supports **multiple milestone types per issue**!
 
+**🏃 Sprint-Optimized Strategy (RECOMMENDED)**:
+- **Primary Milestones**: Sprints only (`Sprint 5`, `Sprint 6`) for visual progress tracking
+- **Secondary Labels**: Everything else (`version:v2.14.0`, `feature:api-enhancement`)
+- **Benefits**: Full GitHub web interface compatibility + native milestone progress bars
+
 **Milestone Categories**:
-- 🎯 **Version Milestones** - Release targets (v2.14.0, v3.0.0)
-- 🏃 **Sprint Milestones** - Time-boxed iterations (Sprint 5, Q4-2025)
-- 🚀 **Feature Milestones** - Major feature rollouts (Mobile-Camera, API-v2)
-- 📋 **Generic Milestones** - Project phases (Research, Planning, Deployment)
+- 🎯 **Version Labels** - Release targets (`version:v2.14.0`)
+- 🏃 **Sprint Milestones** - Primary milestones for visual tracking (Sprint 5, Q4-2025)
+- 🚀 **Feature Labels** - Major features (`feature:mobile-camera`)
+- 📋 **Generic Labels** - Project phases (`generic:research`)
 
 **Development vs Release Project Separation**:
 - 🔧 **Development Project**: Feature planning, sprint management, daily development (main branch)
@@ -23,9 +28,18 @@ Your document lifecycle workflow is now a **complete enterprise-grade project ma
 - 🏃 **Release Management**: Create release branches when ready for production
 - 👥 **Team Development**: Feature branches with PR workflow (future scaling)
 
+**Sprint-Optimized Assignment**:
+```bash
+# NEW: Sprint as primary milestone, everything else as labels
+./scripts/docs-lifecycle-enhanced.sh assign-sprint 4 "Sprint 6" --version "v2.14.0" --feature "Mobile Integration"
+
+# Document to GitHub issue content generation
+./scripts/docs-lifecycle-enhanced.sh generate-issue-content docs/planning/ISSUE-4-mobile-integration-PLAN.md
+```
+
 **Smart Assignment System**:
 ```bash
-# Assign multiple milestone types to single issue
+# Assign multiple milestone types to single issue (original approach)
 ./scripts/docs-lifecycle-enhanced.sh assign-milestones 4 --version "v2.14.0" --sprint "Sprint 5" --feature "Mobile Integration"
 
 # View all milestone types for your project
@@ -197,7 +211,7 @@ gh pr create --title "New Feature" --milestone "v2.14.0"
    
    # Result: Issue now tracked in:
    # - Primary GitHub Milestone: v3.0.0 (for release planning)
-   # - Secondary Labels: milestone-sprint:Sprint 6, milestone-feature:Mobile Integration
+   # - Secondary Labels: sprint:Sprint 6, feature:Mobile Integration
    ```
 
 3. **View Complete Milestone Overview**:
@@ -213,7 +227,7 @@ gh pr create --title "New Feature" --milestone "v2.14.0"
    ```bash
    # System automatically handles conflicts using priority: Version > Generic > Sprint > Feature
    ./scripts/docs-lifecycle-enhanced.sh assign-milestones 5 --version "v3.0.0" --generic "Q4 Goals"
-   # Result: Primary milestone = v3.0.0, Label = milestone-generic:Q4 Goals
+   # Result: Primary milestone = v3.0.0, Label = generic:Q4 Goals
    ```
 
 ### **Workflow 2: Version Release Planning**
@@ -272,7 +286,7 @@ gh pr create --title "New Feature" --milestone "v2.14.0"
    ```bash
    # NEW: Assign multiple milestone types for complete tracking
    ./scripts/docs-lifecycle-enhanced.sh assign-milestones 7 --version "v2.14.0" --sprint "Sprint 6" --feature "Mobile Integration"
-   # Result: Primary milestone: v2.14.0, Labels: milestone-sprint:Sprint 6, milestone-feature:Mobile Integration
+   # Result: Primary milestone: v2.14.0, Labels: sprint:Sprint 6, feature:Mobile Integration
    ```
 
 3. **Create Planning Document**:

@@ -524,22 +524,22 @@ assign_multiple_milestones() {
         local labels_to_add=()
         
         if [[ -n "$sprint_milestone" && "$primary_type" != "sprint" ]]; then
-            local sprint_label="milestone-sprint:$(echo "$sprint_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
+            local sprint_label="sprint:$(echo "$sprint_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
             labels_to_add+=("$sprint_label")
         fi
         
         if [[ -n "$feature_milestone" && "$primary_type" != "feature" ]]; then
-            local feature_label="milestone-feature:$(echo "$feature_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
+            local feature_label="feature:$(echo "$feature_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
             labels_to_add+=("$feature_label")
         fi
         
         if [[ -n "$version_milestone" && "$primary_type" != "version" ]]; then
-            local version_label="milestone-version:$(echo "$version_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
+            local version_label="version:$(echo "$version_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
             labels_to_add+=("$version_label")
         fi
         
         if [[ -n "$generic_milestone" && "$primary_type" != "generic" ]]; then
-            local generic_label="milestone-generic:$(echo "$generic_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
+            local generic_label="generic:$(echo "$generic_milestone" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
             labels_to_add+=("$generic_label")
         fi
         
@@ -608,7 +608,7 @@ list_milestone_types() {
         
         echo ""
         echo -e "${CYAN}🏷️  Secondary Milestone Labels:${NC}"
-        gh api repos/"$REPO_OWNER"/"$REPO_NAME"/labels --jq '.[] | select(.name | test("^milestone-")) | "  🏷️  \(.name) - \(.description // "No description")"' 2>/dev/null || echo -e "${YELLOW}  No secondary milestone labels${NC}"
+        gh api repos/"$REPO_OWNER"/"$REPO_NAME"/labels --jq '.[] | select(.name | test("^(version|feature|generic|sprint):")) | "  🏷️  \(.name) - \(.description // "No description")"' 2>/dev/null || echo -e "${YELLOW}  No secondary milestone labels${NC}"
         
         echo -e "${PURPLE}═══════════════════════════════════════════════════════════════${NC}"
     else
@@ -631,7 +631,7 @@ milestone_report() {
         
         echo ""
         echo -e "${CYAN}🏷️  Issues by Secondary Milestone Labels:${NC}"
-        gh api repos/"$REPO_OWNER"/"$REPO_NAME"/issues --paginate --jq '.[] | .labels[] | select(.name | test("^milestone-")) | .name' 2>/dev/null | sort | uniq -c | sort -nr | while read count label; do
+        gh api repos/"$REPO_OWNER"/"$REPO_NAME"/issues --paginate --jq '.[] | .labels[] | select(.name | test("^(version|feature|generic|sprint):")) | .name' 2>/dev/null | sort | uniq -c | sort -nr | while read count label; do
             echo -e "  🏷️  $label: ${GREEN}$count issues${NC}"
         done
         
@@ -639,7 +639,7 @@ milestone_report() {
         echo -e "${CYAN}📊 Summary Statistics:${NC}"
         local total_issues=$(gh api repos/"$REPO_OWNER"/"$REPO_NAME"/issues --paginate --jq 'length' 2>/dev/null)
         local issues_with_milestones=$(gh api repos/"$REPO_OWNER"/"$REPO_NAME"/issues --paginate --jq '.[] | select(.milestone != null) | 1' 2>/dev/null | wc -l | tr -d ' ')
-        local issues_with_secondary=$(gh api repos/"$REPO_OWNER"/"$REPO_NAME"/issues --paginate --jq '.[] | select(.labels[] | .name | test("^milestone-")) | 1' 2>/dev/null | wc -l | tr -d ' ')
+        local issues_with_secondary=$(gh api repos/"$REPO_OWNER"/"$REPO_NAME"/issues --paginate --jq '.[] | select(.labels[] | .name | test("^(version|feature|generic|sprint):")) | 1' 2>/dev/null | wc -l | tr -d ' ')
         
         echo -e "  📋 Total Issues: ${BLUE}$total_issues${NC}"
         echo -e "  🎯 Issues with Primary Milestone: ${GREEN}$issues_with_milestones${NC}"
@@ -775,16 +775,21 @@ usage() {
     echo "  create-release <version> --auto-notes     - Create GitHub release with auto-generated notes"
     echo "  version-status                            - Show version and release status"
     echo ""
-    echo "� Enhanced Milestone Management Commands:"
+    echo "🎯 Enhanced Milestone Management Commands:"
     echo "  assign-milestones <issue> [--version <v>] [--sprint <s>] [--feature <f>] [--generic <g>]"
     echo "                                            - Assign multiple milestone types to issue"
+    echo "  assign-sprint <issue> <sprint> [--version <v>] [--feature <f>] [--generic <g>]"
+    echo "                                            - Sprint-optimized assignment (NEW!)"
     echo "  list-milestone-types                      - Show all milestone types and their issues"
     echo "  milestone-report                          - Generate comprehensive milestone distribution report"
     echo ""
-    echo "�🏃 Sprint Management Commands:"
+    echo "🏃 Sprint Management Commands:"
     echo "  create-sprint <name> <due-date> <desc>    - Create new sprint milestone"
     echo "  sprint-status                             - Show current sprint status"
     echo "  sprint-progress <milestone-name>          - Show progress for specific sprint"
+    echo ""
+    echo "📋 Document-Issue Sync Commands (NEW!):"
+    echo "  generate-issue-content <document-path>    - Generate GitHub-ready content from document"
     echo ""
     echo "📊 Status & Integration Commands:"
     echo "  status                                    - Show status of all documents"
@@ -804,6 +809,10 @@ usage() {
     echo "  planning, current, architecture, development, deployment, api, troubleshooting, research"
     echo ""
     echo "💡 Examples:"
+    echo "  # Sprint-Optimized Workflow (NEW!)"
+    echo "  $0 assign-sprint 5 \"Sprint 6\" --version \"v2.14.0\" --feature \"API Enhancement\""
+    echo "  $0 generate-issue-content docs/planning/ISSUE-5-api-enhancement-PLAN.md"
+    echo ""
     echo "  # Enhanced Milestone Management"
     echo "  $0 assign-milestones 5 --version \"v2.14.0\" --sprint \"Sprint 5\" --feature \"API Enhancement\""
     echo "  $0 list-milestone-types"
@@ -1181,6 +1190,117 @@ list_documents() {
     fi
 }
 
+# Sprint-optimized milestone assignment (new workflow)
+assign_sprint_optimized() {
+    local issue_number=$1
+    local sprint_milestone=$2
+    local additional_labels=()
+    
+    # Parse additional labels (version, feature, generic)
+    shift 2
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --version)
+                additional_labels+=("version:$(echo "$2" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')")
+                shift 2
+                ;;
+            --feature)
+                additional_labels+=("feature:$(echo "$2" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')")
+                shift 2
+                ;;
+            --generic)
+                additional_labels+=("generic:$(echo "$2" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')")
+                shift 2
+                ;;
+            *)
+                echo -e "${YELLOW}⚠️  Unknown option: $1${NC}"
+                shift
+                ;;
+        esac
+    done
+    
+    if [[ -z "$issue_number" || -z "$sprint_milestone" ]]; then
+        echo -e "${RED}Error: Issue number and sprint milestone required${NC}"
+        echo "Usage: $0 assign-sprint <issue-number> <sprint-milestone> [--version <v>] [--feature <f>] [--generic <g>]"
+        exit 1
+    fi
+    
+    if check_gh_cli && gh auth status &>/dev/null; then
+        echo -e "${CYAN}🏃 Sprint-Optimized Assignment for Issue #$issue_number${NC}"
+        
+        # Assign sprint as primary milestone
+        if gh issue edit "$issue_number" --milestone "$sprint_milestone" 2>/dev/null; then
+            echo -e "${GREEN}✅ Sprint milestone assigned: $sprint_milestone${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Sprint milestone '$sprint_milestone' may not exist, creating it...${NC}"
+            create_milestone_if_not_exists "$sprint_milestone"
+            gh issue edit "$issue_number" --milestone "$sprint_milestone" 2>/dev/null || echo -e "${RED}❌ Failed to assign sprint milestone${NC}"
+        fi
+        
+        # Add additional labels
+        for label in "${additional_labels[@]}"; do
+            if gh issue edit "$issue_number" --add-label "$label" 2>/dev/null; then
+                echo -e "${GREEN}✅ Label added: $label${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Failed to add label: $label${NC}"
+            fi
+        done
+        
+        echo ""
+        echo -e "${PURPLE}📊 Summary for Issue #$issue_number:${NC}"
+        echo -e "  🏃 Primary Sprint: $sprint_milestone"
+        for label in "${additional_labels[@]}"; do
+            echo -e "  🏷️  Label: $label"
+        done
+        
+        echo ""
+        echo -e "${CYAN}💡 Next Steps:${NC}"
+        echo -e "  1. Copy document content to GitHub issue description"
+        echo -e "  2. Move issue to appropriate project column"
+        echo -e "  3. Update document sync status"
+        
+    else
+        echo -e "${YELLOW}⚠️  GitHub CLI not available${NC}"
+    fi
+}
+
+# Generate GitHub-ready issue content from document
+generate_issue_content() {
+    local document_path=$1
+    
+    if [[ -z "$document_path" || ! -f "$document_path" ]]; then
+        echo -e "${RED}Error: Document file not found: $document_path${NC}"
+        exit 1
+    fi
+    
+    echo -e "${CYAN}📋 Generating GitHub Issue Content${NC}"
+    echo -e "${BLUE}Source: $document_path${NC}"
+    echo ""
+    
+    # Extract content suitable for GitHub issue
+    echo -e "${YELLOW}═══ COPY BELOW FOR GITHUB ISSUE ═══${NC}"
+    echo ""
+    
+    # Skip the header and GitHub sync sections, extract main content
+    awk '
+    BEGIN { in_content = 0; skip_sync = 0 }
+    /^## 📋 GitHub Issue Sync Status/ { skip_sync = 1; next }
+    /^---$/ && skip_sync { skip_sync = 0; next }
+    /^## 🔗 Project Integration/ { in_content = 1; next }
+    in_content && !skip_sync { print }
+    ' "$document_path"
+    
+    echo ""
+    echo -e "${YELLOW}═══ END COPY SECTION ═══${NC}"
+    
+    echo ""
+    echo -e "${CYAN}💡 Usage Tips:${NC}"
+    echo -e "  1. Copy the content above"
+    echo -e "  2. Paste into GitHub issue description"
+    echo -e "  3. Update document sync status"
+    echo -e "  4. Add milestone and labels as needed"
+}
+
 show_status() {
     echo -e "${BLUE}PPL Meta Platform - Document Lifecycle Status${NC}"
     echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
@@ -1310,6 +1430,25 @@ case "${COMMAND:-}" in
         else
             echo -e "${RED}Error: Issue number required${NC}"
             echo "Usage: $0 assign-milestones <issue-number> [--version <v>] [--sprint <s>] [--feature <f>] [--generic <g>]"
+            exit 1
+        fi
+        ;;
+    "assign-sprint")
+        # Sprint-optimized assignment
+        if [[ -n "$ARG1" && -n "$ARG2" ]]; then
+            assign_sprint_optimized "$@"
+        else
+            echo -e "${RED}Error: Issue number and sprint milestone required${NC}"
+            echo "Usage: $0 assign-sprint <issue-number> <sprint-milestone> [--version <v>] [--feature <f>] [--generic <g>]"
+            exit 1
+        fi
+        ;;
+    "generate-issue-content")
+        if [[ -n "$ARG1" ]]; then
+            generate_issue_content "$ARG1"
+        else
+            echo -e "${RED}Error: Document path required${NC}"
+            echo "Usage: $0 generate-issue-content <document-path>"
             exit 1
         fi
         ;;
