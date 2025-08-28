@@ -37,7 +37,7 @@ from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_m
 
 # Try to import the shared service discovery module
 try:
-    from shared.service_discovery import ServiceDiscoveryClient
+    from shared.service_discovery import register_service
 
     service_discovery_available = True
 except ImportError:
@@ -70,29 +70,28 @@ async def lifespan(_app: FastAPI):
     logger.info("Starting PPL Meta Media Service...")
 
     # Initialize service discovery if available
-    if service_discovery_available and CONSUL_CONFIG["enabled"]:
+    if service_discovery_available:
         try:
-            service_discovery_client = ServiceDiscoveryClient(
-                consul_host=CONSUL_CONFIG["host"], consul_port=CONSUL_CONFIG["port"]
-            )
-            await service_discovery_client.register_service(
-                service_name="ppl-meta-media",
-                service_host="0.0.0.0",
-                service_port=8000,
-                health_check_path="/api/v1/health",
-                tags=["media", "processing", "microservice"],
-            )
-            logger.info("Service registered with Consul")
+            from shared.service_discovery import register_service
 
-            # Start health monitoring
-            await service_discovery_client.start_health_monitoring(
-                "ppl-meta-media", "0.0.0.0", 8000
+            await register_service(
+                name="ppl-meta-media",
+                service_type="backend",
+                version="1.0.0",
+                host="0.0.0.0",
+                port=8000,
+                health_endpoint="/health",
+                capabilities=["media-processing", "image-analysis", "storage"],
+                metadata={
+                    "version": "1.0.0",
+                    "environment": "development",
+                    "features": "media_processing,image_analysis,facial_recognition",
+                },
             )
-            logger.info("Health monitoring started")
+            logger.info("Successfully registered ppl-meta-media with discovery service")
         except Exception as e:
-            logger.error(f"Failed to initialize service discovery: {e}")
+            logger.error(f"Failed to register with discovery service: {e}")
             logger.info("Continuing without service discovery")
-            service_discovery_client = None
 
     # Get and log configuration
     config.log_configuration()
@@ -139,10 +138,12 @@ async def lifespan(_app: FastAPI):
     logger.info("Shutting down PPL Meta Media Service...")
 
     # Deregister from service discovery
-    if service_discovery_client:
+    if service_discovery_available:
         try:
-            await service_discovery_client.deregister_service("ppl-meta-media")
-            logger.info("Service deregistered from Consul")
+            from shared.service_discovery import deregister_service
+
+            await deregister_service("ppl-meta-media")
+            logger.info("Service deregistered from discovery service")
         except Exception as e:
             logger.error(f"Failed to deregister service: {e}")
 

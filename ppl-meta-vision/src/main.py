@@ -21,6 +21,24 @@ from typing import Any, Dict, List, Optional, Union
 current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
+# Add parent directory to path for shared modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+try:
+    from shared.service_discovery import deregister_service, register_service
+
+    service_discovery_available = True
+except ImportError:
+    service_discovery_available = False
+
+    # Create stub functions
+    async def register_service(*args, **kwargs):
+        pass
+
+    async def deregister_service(*args, **kwargs):
+        pass
+
+
 import base64
 import io
 
@@ -205,6 +223,10 @@ service_start_time = time.time()
 async def startup_event():
     """Initialize the face detector and media processor when the service starts."""
     global face_detector_instance, media_processor_instance
+
+    # Set up logger first (outside try block for exception handling)
+    logger = logging.getLogger("ppl-meta-vision")
+
     try:
         # Initialize database
         vision_db.init_database()
@@ -213,17 +235,54 @@ async def startup_event():
         face_detector_instance = ExtractedFaceDetector()
 
         # Initialize media processor
-        media_processor_instance = MediaProcessingService(face_detector_instance)
+        media_processor_instance = MediaProcessingService(
+            face_detector=face_detector_instance
+        )
 
-        logger = logging.getLogger("ppl-meta-vision")
+        # Register with discovery service
+        try:
+            await register_service(
+                name="ppl-meta-vision",
+                service_type="backend",
+                version="1.1.0",
+                host="0.0.0.0",
+                port=8003,
+                health_endpoint="/health",
+                capabilities=["vision", "face-detection", "image-analysis"],
+                metadata={
+                    "version": "1.1.0",
+                    "environment": "development",
+                    "features": "face_detection,image_analysis,media_processing",
+                },
+            )
+            logger.info(
+                "✅ Successfully registered ppl-meta-vision with discovery service"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to register with discovery service: {e}")
+            logger.info("Continuing without service discovery")
+
         logger.info("✅ PPL Meta Vision Service started successfully")
         logger.info(f"📊 Available methods: {face_detector_instance.available_methods}")
         logger.info("🗄️ Database initialized")
-        logger.info("🎬 Media processor initialized")
+
     except Exception as e:
-        logger = logging.getLogger("ppl-meta-vision")
         logger.error(f"❌ Failed to initialize services: {e}")
         raise
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup when the service is shutting down."""
+    try:
+        # Add parent directory to path for shared modules
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        from shared.service_discovery import deregister_service
+
+        await deregister_service("ppl-meta-vision")
+        logger.info("✅ Service deregistered from discovery service")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to deregister service: {e}")
 
 
 def decode_base64_image(image_base64: str) -> np.ndarray:

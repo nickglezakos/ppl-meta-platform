@@ -20,6 +20,7 @@ from models import (
     ServiceList,
 )
 from services.edge_registry import EdgeRegistry
+from services.multicast_announcer import MulticastAnnouncer
 from services.service_registry import ServiceRegistry
 
 # Configure logging
@@ -28,25 +29,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global registries
+# Global registries and announcer
 service_registry = ServiceRegistry()
 edge_registry = EdgeRegistry()
+multicast_announcer = MulticastAnnouncer()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    logger.info("PPL Meta Discovery Service started")
+    logger.info("PPL Meta Discovery Service v2.14.0 - Phase 2 Implementation starting")
 
     # Start registries
     await service_registry.start()
     await edge_registry.start()
 
+    # Start multicast announcer for network discovery
+    await multicast_announcer.start()
+
     yield
 
-    # Stop registries
+    # Stop all services
+    await multicast_announcer.stop()
     await service_registry.stop()
     await edge_registry.stop()
+
+    logger.info("PPL Meta Discovery Service stopped")
 
     logger.info("PPL Meta Discovery Service stopped")
 
@@ -153,25 +161,190 @@ async def get_device(device_id: str):
 
 
 # Discovery endpoints
-@app.get("/api/v1/topology")
-async def get_topology():
-    """Get platform topology."""
+# Enhanced discovery endpoints with complete platform topology
+@app.get("/api/v1/discovery/topology", response_model=PlatformTopology)
+async def get_platform_topology():
+    """Get complete platform topology including all services and devices."""
     services = service_registry.list_services()
     devices = edge_registry.list_devices()
 
-    return PlatformTopology(
-        platform="ppl-meta",
-        version="1.0.0",
-        discovery_service="http://localhost:8006",
-        timestamp=datetime.utcnow(),
+    # Get mobile cameras specifically
+    mobile_cameras = edge_registry.get_mobile_cameras()
+    raspberry_pi_devices = edge_registry.get_raspberry_pi_devices()
+
+    topology = PlatformTopology(
+        discovery_service={
+            "service_id": "discovery-service",
+            "name": "ppl-meta-discovery",
+            "version": "2.14.0",
+            "status": "healthy",
+            "port": 8006,
+            "endpoints": [
+                "/health",
+                "/api/v1/services",
+                "/api/v1/devices",
+                "/api/v1/discovery/topology",
+                "/api/v1/discovery/capabilities",
+                "/api/v1/platform/metadata",
+            ],
+            "multicast": {
+                "address": multicast_announcer.multicast_group,
+                "port": multicast_announcer.multicast_port,
+                "active": True,
+            },
+        },
         backend_services={service.service_id: service for service in services.services},
         edge_devices={device.device_id: device for device in devices.devices},
-        network_config={
-            "discovery_port": 8006,
-            "multicast_enabled": True,
-            "vpn_discovery_enabled": True,
+        network_summary={
+            "total_services": len(services.services),
+            "healthy_services": len(
+                [s for s in services.services if s.status == "healthy"]
+            ),
+            "total_devices": len(devices.devices),
+            "mobile_cameras": len(mobile_cameras),
+            "raspberry_pi_devices": len(raspberry_pi_devices),
+            "capabilities": list(edge_registry._device_capabilities_index.keys()),
+            "locations": list(edge_registry._location_index.keys()),
         },
+        timestamp=datetime.utcnow(),
     )
+
+    return topology
+
+
+@app.get("/api/v1/discovery/capabilities")
+async def get_platform_capabilities():
+    """Get all available capabilities across the platform."""
+    service_capabilities = set()
+    device_capabilities = set()
+
+    # Collect service capabilities
+    services = service_registry.list_services()
+    for service in services.services:
+        service_capabilities.update(service.capabilities)
+
+    # Collect device capabilities
+    devices = edge_registry.list_devices()
+    for device in devices.devices:
+        device_capabilities.update(device.capabilities)
+
+    return {
+        "service_capabilities": list(service_capabilities),
+        "device_capabilities": list(device_capabilities),
+        "all_capabilities": list(service_capabilities.union(device_capabilities)),
+        "capability_index": edge_registry._device_capabilities_index,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/api/v1/discovery/mobile-cameras")
+async def get_mobile_cameras():
+    """Get all registered mobile camera devices."""
+    cameras = edge_registry.get_mobile_cameras()
+    return {
+        "mobile_cameras": cameras,
+        "count": len(cameras),
+        "online": len([c for c in cameras if c.status == "healthy"]),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/api/v1/discovery/raspberry-pi")
+async def get_raspberry_pi_devices():
+    """Get all registered Raspberry Pi devices."""
+    pi_devices = edge_registry.get_raspberry_pi_devices()
+    return {
+        "raspberry_pi_devices": pi_devices,
+        "count": len(pi_devices),
+        "online": len([d for d in pi_devices if d.status == "healthy"]),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/api/v1/discovery/by-capability/{capability}")
+async def find_devices_by_capability(capability: str):
+    """Find all devices that have a specific capability."""
+    devices = edge_registry.find_devices_by_capability(capability)
+    return {
+        "capability": capability,
+        "devices": devices,
+        "count": len(devices),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/api/v1/discovery/by-location/{location}")
+async def find_devices_by_location(location: str):
+    """Find all devices in a specific location."""
+    devices = edge_registry.find_devices_by_location(location)
+    return {
+        "location": location,
+        "devices": devices,
+        "count": len(devices),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.post("/api/v1/discovery/announce")
+async def trigger_multicast_announcement():
+    """Manually trigger a multicast announcement."""
+    try:
+        multicast_announcer.send_discovery_request()
+        return {
+            "status": "success",
+            "message": "Multicast announcement sent",
+            "multicast_group": multicast_announcer.multicast_group,
+            "multicast_port": multicast_announcer.multicast_port,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Failed to send multicast announcement: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to send announcement: {str(e)}"
+        )
+
+
+@app.get("/api/v1/discovery/status")
+async def get_discovery_status():
+    """Get comprehensive discovery service status."""
+    services = service_registry.list_services()
+    devices = edge_registry.list_devices()
+
+    return {
+        "discovery_service": {
+            "name": "ppl-meta-discovery",
+            "version": "2.14.0",
+            "phase": "Phase 2 - Core Implementation",
+            "status": "healthy",
+            "uptime": "active",
+            "port": 8006,
+        },
+        "multicast": {
+            "group": multicast_announcer.multicast_group,
+            "port": multicast_announcer.multicast_port,
+            "active": True,
+            "announcement_interval": multicast_announcer.announcement_interval,
+        },
+        "registries": {
+            "services": {
+                "total": len(services.services),
+                "healthy": len([s for s in services.services if s.status == "healthy"]),
+                "types": list(set(s.service_type for s in services.services)),
+            },
+            "devices": {
+                "total": len(devices.devices),
+                "healthy": len([d for d in devices.devices if d.status == "healthy"]),
+                "types": list(set(d.device_type for d in devices.devices)),
+            },
+        },
+        "capabilities": {
+            "device_capabilities": list(
+                edge_registry._device_capabilities_index.keys()
+            ),
+            "locations": list(edge_registry._location_index.keys()),
+        },
+        "timestamp": datetime.utcnow().isoformat(),
+    }
 
 
 # Additional discovery endpoints

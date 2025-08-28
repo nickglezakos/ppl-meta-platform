@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/config/app_config.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/navigation/app_router.dart';
+import 'services/dynamic_service_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,8 +32,21 @@ class PPLMetaApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
     
+    // Initialize service discovery if enabled
+    ref.listen(serviceDiscoveryInitProvider, (previous, next) {
+      next.when(
+        data: (initialized) {
+          if (initialized) {
+            print('✅ Service Discovery initialized successfully');
+          }
+        },
+        loading: () => print('🔄 Initializing Service Discovery...'),
+        error: (error, stack) => print('❌ Service Discovery initialization failed: $error'),
+      );
+    });
+    
     return MaterialApp.router(
-      title: 'PPL Meta Platform v2.0.0',
+      title: 'PPL Meta Platform v2.0.0 with Dynamic Service Discovery',
       theme: AppTheme.darkTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.dark,

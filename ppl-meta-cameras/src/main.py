@@ -30,7 +30,7 @@ from src.models.camera import Camera, CameraCapability, CameraSession
 
 # Try to import the shared service discovery module
 try:
-    from shared.service_discovery import ServiceDiscoveryClient
+    from shared.service_discovery import register_service
 
     service_discovery_available = True
 except ImportError:
@@ -82,25 +82,30 @@ async def lifespan(_app: FastAPI):
     logger.info("Metrics initialization skipped")
 
     # Initialize service discovery if available
-    if (
-        service_discovery_available
-        and hasattr(config, "CONSUL_ENABLED")
-        and config.CONSUL_ENABLED
-    ):
+    # Initialize service discovery if available
+    if service_discovery_available:
         try:
-            service_discovery_client = ServiceDiscoveryClient(
-                consul_host=getattr(config, "CONSUL_HOST", "localhost"),
-                consul_port=getattr(config, "CONSUL_PORT", 8500),
-            )
-            await service_discovery_client.register_service(
-                "ppl-meta-cameras",
+            from shared.service_discovery import register_service
+
+            await register_service(
+                name="ppl-meta-cameras",
+                service_type="backend",
+                version="1.0.0",
                 host="0.0.0.0",
                 port=config.PORT,
-                tags=["cameras", "video", "detection"],
+                health_endpoint="/health",
+                capabilities=["cameras", "video-streaming", "detection"],
+                metadata={
+                    "version": "1.0.0",
+                    "environment": "development",
+                    "features": "camera_management,video_streaming,motion_detection",
+                },
             )
-            logger.info("Service registered with Consul successfully")
+            logger.info(
+                "Successfully registered ppl-meta-cameras with discovery service"
+            )
         except Exception as e:
-            logger.error(f"Failed to register service with Consul: {e}")
+            logger.error(f"Failed to register with discovery service: {e}")
 
     logger.info("PPL Meta Cameras Service startup completed")
 
@@ -110,10 +115,12 @@ async def lifespan(_app: FastAPI):
     logger.info("Shutting down PPL Meta Cameras Service...")
 
     # Deregister service
-    if service_discovery_client:
+    if service_discovery_available:
         try:
-            await service_discovery_client.deregister_service("ppl-meta-cameras")
-            logger.info("Service deregistered from Consul")
+            from shared.service_discovery import deregister_service
+
+            await deregister_service("ppl-meta-cameras")
+            logger.info("Service deregistered from discovery service")
         except Exception as e:
             logger.error(f"Failed to deregister service: {e}")
 

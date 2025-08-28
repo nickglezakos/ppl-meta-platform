@@ -50,6 +50,8 @@ dependencies:
   mobile_scanner: ^7.0.1
   image: ^4.3.0  # For MJPEG frame processing
   logging: ^1.2.0  # Professional logging system
+  dio: ^5.4.0  # Enhanced HTTP client for service discovery
+  riverpod: ^2.5.1  # State management for service discovery
 
 dev_dependencies:
   flutter_test:

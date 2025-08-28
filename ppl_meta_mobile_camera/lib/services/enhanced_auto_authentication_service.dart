@@ -1,30 +1,38 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'ppl_meta_discovery_client.dart';
+import 'unified_discovery_service.dart';
 
-/// Enhanced authentication service with PPL Meta Discovery Service integration
-class AutoAuthenticationService {
-  final EnhancedNetworkDiscoveryService _networkService = EnhancedNetworkDiscoveryService();
+/// Enhanced authentication service with unified discovery (multicast + central)
+class EnhancedAutoAuthenticationService {
+  final UnifiedDiscoveryService _discoveryService = UnifiedDiscoveryService();
   
-  /// Automatic login with Node service auto-discovery
+  /// Automatic login with comprehensive service discovery
   /// 
   /// Process:
-  /// 1. Auto-discover Node service using multicast + fallback
-  /// 2. Login with discovered endpoint
-  /// 3. Get platform services with JWT token
+  /// 1. Use unified discovery (central + multicast + local scan)
+  /// 2. Find best Node service for authentication
+  /// 3. Login with discovered endpoint
+  /// 4. Get platform services with JWT token
   Future<AuthResult> autoLogin(String username, String password) async {
     try {
-      print('🔐 Starting automatic login process...');
+      print('🔐 Starting enhanced automatic login process...');
       print('👤 Username: $username');
       
-      // Step 1: Auto-discover Node service
-      print('🔍 Step 1: Auto-discovering Node service...');
-      final nodeURL = await _networkService.autoDiscoverNodeService();
-      if (nodeURL == null) {
-        throw AuthException('Failed to discover Node service');
+      // Step 1: Unified service discovery
+      print('🔍 Step 1: Running unified service discovery...');
+      final nodeService = await _discoveryService.findBestNodeService();
+      
+      if (nodeService == null) {
+        throw AuthException('Failed to discover any Node service using all discovery methods');
       }
       
-      print('🎯 Auto-discovered Node service: $nodeURL');
+      final nodeURL = nodeService.baseUrl;
+      print('🎯 Selected Node service: $nodeURL (via ${nodeService.discoveryMethod})');
+      print('📊 Service details:');
+      print('   Host: ${nodeService.host}:${nodeService.port}');
+      print('   Version: ${nodeService.version}');
+      print('   Status: ${nodeService.status}');
+      print('   Capabilities: ${nodeService.capabilities.join(', ')}');
       
       // Step 2: Login with discovered endpoint
       print('📤 Step 2: Authenticating with Node service...');
@@ -61,10 +69,20 @@ class AutoAuthenticationService {
         final services = await _getPlatformServices(nodeURL, token);
         print('✅ Platform services discovered successfully!');
         
+        // Step 4: Get discovered services for additional context
+        print('🔍 Step 4: Getting additional discovered services...');
+        final discoveredServices = _discoveryService.currentServices;
+        print('📊 Total discovered services: ${discoveredServices.length}');
+        for (final service in discoveredServices) {
+          print('   - ${service.name} at ${service.baseUrl} (${service.discoveryMethod})');
+        }
+        
         return AuthResult.success(
           token: token,
           nodeURL: nodeURL,
           services: services,
+          discoveredServices: discoveredServices,
+          discoveryMethod: nodeService.discoveryMethod,
         );
       } else {
         final errorBody = response.body.isNotEmpty ? response.body : 'No error details';
@@ -75,6 +93,9 @@ class AutoAuthenticationService {
       print('💥 Login exception: $e');
       if (e is AuthException) rethrow;
       throw AuthException('Login process failed: $e');
+    } finally {
+      // Don't dispose here as we might need discovery service later
+      // _discoveryService.dispose();
     }
   }
   
@@ -100,15 +121,30 @@ class AutoAuthenticationService {
       throw AuthException('Failed to get platform services: ${response.statusCode} - ${response.body}');
     }
   }
+
+  /// Get current discovery service (for accessing discovered services)
+  UnifiedDiscoveryService get discoveryService => _discoveryService;
+
+  /// Refresh service discovery
+  Future<List<DiscoveredServiceInfo>> refreshDiscovery() async {
+    return await _discoveryService.discoverAllServices();
+  }
+
+  /// Dispose resources
+  void dispose() {
+    _discoveryService.dispose();
+  }
 }
 
-/// Authentication result container
+/// Enhanced authentication result container with discovery information
 class AuthResult {
   final bool success;
   final String? token;
   final String? nodeURL;
   final PlatformServices? services;
   final String? error;
+  final List<DiscoveredServiceInfo>? discoveredServices;
+  final String? discoveryMethod;
   
   AuthResult._({
     required this.success,
@@ -116,26 +152,49 @@ class AuthResult {
     this.nodeURL, 
     this.services,
     this.error,
+    this.discoveredServices,
+    this.discoveryMethod,
   });
   
   factory AuthResult.success({
     required String token,
     required String nodeURL,
     required PlatformServices services,
+    List<DiscoveredServiceInfo>? discoveredServices,
+    String? discoveryMethod,
   }) => AuthResult._(
     success: true,
     token: token,
     nodeURL: nodeURL,
     services: services,
+    discoveredServices: discoveredServices,
+    discoveryMethod: discoveryMethod,
   );
   
   factory AuthResult.failure(String error) => AuthResult._(
     success: false,
     error: error,
   );
+
+  /// Get summary of discovery results
+  String get discoveryySummary {
+    if (discoveredServices == null) return 'No discovery information';
+    
+    final groupedServices = <String, int>{};
+    for (final service in discoveredServices!) {
+      groupedServices[service.discoveryMethod] = 
+          (groupedServices[service.discoveryMethod] ?? 0) + 1;
+    }
+    
+    final parts = groupedServices.entries
+        .map((e) => '${e.value} via ${e.key}')
+        .toList();
+    
+    return 'Found ${discoveredServices!.length} services: ${parts.join(', ')}';
+  }
 }
 
-/// Platform services configuration
+/// Platform services configuration (unchanged from original)
 class PlatformServices {
   final ServiceEndpoint cameraService;
   final ServiceEndpoint mediaService;
@@ -175,7 +234,7 @@ class PlatformServices {
   }
 }
 
-/// Service endpoint configuration
+/// Service endpoint configuration (unchanged from original)
 class ServiceEndpoint {
   final String name;
   final String endpoint;
@@ -212,7 +271,7 @@ class ServiceEndpoint {
   }
 }
 
-/// Authentication exception
+/// Authentication exception (unchanged from original)
 class AuthException implements Exception {
   final String message;
   AuthException(this.message);

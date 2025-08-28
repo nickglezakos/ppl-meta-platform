@@ -1,10 +1,11 @@
 """Edge device registry for mobile and edge devices."""
 
 import asyncio
+import json
 import logging
 import uuid
-from datetime import datetime
-from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Set
 
 from fastapi import HTTPException
 from models import (
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class EdgeRegistry:
-    """Registry for managing edge devices."""
+    """Registry for managing edge devices like mobile cameras and Raspberry Pi."""
 
     def __init__(self, heartbeat_timeout: int = 120):
         """Initialize the edge device registry.
@@ -31,10 +32,12 @@ class EdgeRegistry:
         self._devices: Dict[str, EdgeDeviceInfo] = {}
         self._heartbeat_timeout = heartbeat_timeout
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._device_capabilities_index: Dict[str, Set[str]] = {}
+        self._location_index: Dict[str, Set[str]] = {}
 
     async def start(self):
         """Start the edge registry background tasks."""
-        logger.info("Starting edge device registry")
+        logger.info("Starting edge device registry with enhanced mobile camera support")
         self._cleanup_task = asyncio.create_task(self._cleanup_stale_devices())
 
     async def stop(self):
@@ -58,44 +61,187 @@ class EdgeRegistry:
         Returns:
             Registration response with device ID
         """
-        # Generate unique device ID
-        device_id = str(uuid.uuid4())
+        # Validate device type
+        supported_types = {
+            "mobile_camera",
+            "raspberry_pi",
+            "ip_camera",
+            "android_device",
+            "ios_device",
+            "edge_gateway",
+        }
+        if request.device_type not in supported_types:
+            logger.warning(f"Unsupported device type: {request.device_type}")
 
-        # Check if device with same name already exists
+        # Generate unique device ID or reuse existing
+        device_id = str(uuid.uuid4())
         existing_device = self._find_device_by_name(request.device_name)
+
         if existing_device:
             logger.info(f"Updating existing device: {request.device_name}")
             device_id = existing_device.device_id
+            # Remove old device from indexes
+            self._remove_from_indexes(existing_device)
 
-        # Create device info
+        # Enhanced device info with mobile camera specific fields
         device_info = EdgeDeviceInfo(
             device_id=device_id,
             device_name=request.device_name,
             device_type=request.device_type,
-            capabilities=request.capabilities,
-            network_interfaces=request.network_interfaces,
-            platform_info=request.platform_info,
+            capabilities=request.capabilities or [],
+            network_interfaces=request.network_interfaces or [],
+            platform_info=request.platform_info or {},
             location=request.location,
-            metadata=request.metadata,
+            metadata=self._enhance_metadata(request),
             status=ServiceStatus.HEALTHY,
             registered_at=datetime.utcnow(),
             last_seen=datetime.utcnow(),
+            heartbeat_count=0,
         )
 
         # Store the device
         self._devices[device_id] = device_info
 
+        # Update indexes
+        self._update_indexes(device_info)
+
         logger.info(
             f"Registered edge device {request.device_name} "
-            f"({device_id}) of type {request.device_type}"
+            f"({device_id}) of type {request.device_type} with {len(request.capabilities or [])} capabilities"
         )
+
+        # Determine heartbeat interval based on device type
+        heartbeat_interval = self._get_heartbeat_interval(request.device_type)
 
         return RegistrationResponse(
             success=True,
             device_id=device_id,
             message=f"Device {request.device_name} registered successfully",
-            heartbeat_interval=60,
+            heartbeat_interval=heartbeat_interval,
         )
+
+    def _enhance_metadata(self, request: EdgeRegistrationRequest) -> Dict:
+        """Enhance metadata with device-specific information."""
+        metadata = request.metadata or {}
+
+        # Add registration timestamp
+        metadata["registration_timestamp"] = datetime.utcnow().isoformat()
+
+        # Add device-specific enhancements
+        if request.device_type == "mobile_camera":
+            metadata.update(
+                {
+                    "camera_ready": True,
+                    "supports_live_stream": "live_stream"
+                    in (request.capabilities or []),
+                    "supports_recording": "video_recording"
+                    in (request.capabilities or []),
+                    "mobile_platform": request.platform_info.get("platform", "unknown"),
+                    "app_version": request.platform_info.get("app_version", "unknown"),
+                }
+            )
+        elif request.device_type == "raspberry_pi":
+            metadata.update(
+                {
+                    "pi_model": request.platform_info.get("model", "unknown"),
+                    "pi_os": request.platform_info.get("os", "unknown"),
+                    "supports_gpio": "gpio_control" in (request.capabilities or []),
+                    "camera_attached": "camera_module" in (request.capabilities or []),
+                }
+            )
+        elif request.device_type in ["android_device", "ios_device"]:
+            metadata.update(
+                {
+                    "mobile_os": request.platform_info.get("os", "unknown"),
+                    "device_model": request.platform_info.get("model", "unknown"),
+                    "supports_push": "push_notifications"
+                    in (request.capabilities or []),
+                }
+            )
+
+        return metadata
+
+    def _get_heartbeat_interval(self, device_type: str) -> int:
+        """Get appropriate heartbeat interval for device type."""
+        intervals = {
+            "mobile_camera": 30,  # Frequent for mobile cameras
+            "raspberry_pi": 60,  # Standard for Pi devices
+            "ip_camera": 45,  # Medium for IP cameras
+            "android_device": 30,  # Frequent for mobile
+            "ios_device": 30,  # Frequent for mobile
+            "edge_gateway": 60,  # Standard for gateways
+        }
+        return intervals.get(device_type, 60)
+
+    def _update_indexes(self, device_info: EdgeDeviceInfo):
+        """Update capability and location indexes."""
+        device_id = device_info.device_id
+
+        # Update capabilities index
+        for capability in device_info.capabilities:
+            if capability not in self._device_capabilities_index:
+                self._device_capabilities_index[capability] = set()
+            self._device_capabilities_index[capability].add(device_id)
+
+        # Update location index
+        if device_info.location:
+            location_key = f"{device_info.location.get('area', 'unknown')}"
+            if location_key not in self._location_index:
+                self._location_index[location_key] = set()
+            self._location_index[location_key].add(device_id)
+
+    def _remove_from_indexes(self, device_info: EdgeDeviceInfo):
+        """Remove device from all indexes."""
+        device_id = device_info.device_id
+
+        # Remove from capabilities index
+        for capability in device_info.capabilities:
+            if capability in self._device_capabilities_index:
+                self._device_capabilities_index[capability].discard(device_id)
+                if not self._device_capabilities_index[capability]:
+                    del self._device_capabilities_index[capability]
+
+        # Remove from location index
+        if device_info.location:
+            location_key = f"{device_info.location.get('area', 'unknown')}"
+            if location_key in self._location_index:
+                self._location_index[location_key].discard(device_id)
+                if not self._location_index[location_key]:
+                    del self._location_index[location_key]
+
+    def find_devices_by_capability(self, capability: str) -> List[EdgeDeviceInfo]:
+        """Find devices that have a specific capability."""
+        device_ids = self._device_capabilities_index.get(capability, set())
+        return [
+            self._devices[device_id]
+            for device_id in device_ids
+            if device_id in self._devices
+        ]
+
+    def find_devices_by_location(self, location_area: str) -> List[EdgeDeviceInfo]:
+        """Find devices in a specific location area."""
+        device_ids = self._location_index.get(location_area, set())
+        return [
+            self._devices[device_id]
+            for device_id in device_ids
+            if device_id in self._devices
+        ]
+
+    def get_mobile_cameras(self) -> List[EdgeDeviceInfo]:
+        """Get all registered mobile camera devices."""
+        return [
+            device
+            for device in self._devices.values()
+            if device.device_type == "mobile_camera"
+        ]
+
+    def get_raspberry_pi_devices(self) -> List[EdgeDeviceInfo]:
+        """Get all registered Raspberry Pi devices."""
+        return [
+            device
+            for device in self._devices.values()
+            if device.device_type == "raspberry_pi"
+        ]
 
     async def update_heartbeat(self, request: HeartbeatRequest) -> Dict[str, str]:
         """Update device heartbeat.

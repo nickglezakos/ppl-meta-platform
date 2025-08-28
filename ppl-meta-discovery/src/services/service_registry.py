@@ -328,43 +328,192 @@ class ServiceRegistry:
         return status
 
     async def _cleanup_stale_services(self):
-        """Background task to clean up stale services."""
+        """Background task to cleanup stale services."""
+        logger.info("Starting service cleanup task")
+
         while True:
             try:
+                await asyncio.sleep(30)  # Check every 30 seconds
+
                 current_time = datetime.utcnow()
                 stale_services = []
 
                 for service_id, service in self._services.items():
-                    time_since_heartbeat = (
+                    time_since_last_seen = (
                         current_time - service.last_seen
                     ).total_seconds()
 
-                    if time_since_heartbeat > self._heartbeat_timeout:
-                        stale_services.append(service_id)
-                        service.status = ServiceStatus.UNHEALTHY
+                    if time_since_last_seen > self._heartbeat_timeout:
+                        stale_services.append((service_id, service))
                         logger.warning(
-                            f"Service {service.name} ({service_id}) "
-                            f"marked as stale (last seen: {service.last_seen})"
+                            f"Service {service.name} ({service_id}) is stale "
+                            f"(last seen {time_since_last_seen:.0f}s ago)"
                         )
 
-                # Remove very stale services (2x timeout)
-                very_stale_threshold = self._heartbeat_timeout * 2
-                for service_id in list(self._services.keys()):
-                    service = self._services[service_id]
-                    time_since_heartbeat = (
-                        current_time - service.last_seen
-                    ).total_seconds()
+                # Remove stale services
+                for service_id, service in stale_services:
+                    # Mark as unhealthy first
+                    service.status = ServiceStatus.UNHEALTHY
 
-                    if time_since_heartbeat > very_stale_threshold:
+                    # Try to perform final health check
+                    try:
+                        health_status = await self._check_service_health(service)
+                        if health_status == ServiceStatus.HEALTHY:
+                            # Service is actually healthy, update last_seen
+                            service.last_seen = current_time
+                            service.status = ServiceStatus.HEALTHY
+                            logger.info(
+                                f"Service {service.name} ({service_id}) recovered"
+                            )
+                            continue
+                    except Exception:
+                        pass
+
+                    # Remove the stale service
+                    try:
                         del self._services[service_id]
                         logger.info(
-                            f"Removed very stale service {service.name} "
-                            f"({service_id})"
+                            f"Removed stale service {service.name} ({service_id})"
                         )
+                    except KeyError:
+                        pass  # Service already removed
 
-                # Sleep for cleanup interval
-                await asyncio.sleep(30)
+                # Log registry status
+                if len(self._services) > 0:
+                    healthy_count = len(
+                        [
+                            s
+                            for s in self._services.values()
+                            if s.status == ServiceStatus.HEALTHY
+                        ]
+                    )
+                    logger.debug(
+                        f"Service registry status: {len(self._services)} total, "
+                        f"{healthy_count} healthy"
+                    )
 
+            except asyncio.CancelledError:
+                logger.info("Service cleanup task cancelled")
+                break
             except Exception as e:
                 logger.error(f"Error in service cleanup task: {e}")
-                await asyncio.sleep(30)
+                # Continue running despite errors
+
+    async def force_cleanup_service(self, service_id: str) -> bool:
+        """Force cleanup of a specific service.
+
+        Args:
+            service_id: ID of service to cleanup
+
+        Returns:
+            True if service was removed, False if not found
+        """
+        if service_id in self._services:
+            service = self._services[service_id]
+            del self._services[service_id]
+            logger.info(f"Force removed service {service.name} ({service_id})")
+            return True
+        return False
+
+    async def cleanup_by_status(self, status: ServiceStatus) -> int:
+        """Remove all services with a specific status.
+
+        Args:
+            status: Status of services to remove
+
+        Returns:
+            Number of services removed
+        """
+        services_to_remove = [
+            (service_id, service)
+            for service_id, service in self._services.items()
+            if service.status == status
+        ]
+
+        count = 0
+        for service_id, service in services_to_remove:
+            try:
+                del self._services[service_id]
+                logger.info(f"Removed {status} service {service.name} ({service_id})")
+                count += 1
+            except KeyError:
+                pass
+
+        return count
+
+    async def batch_health_check(self) -> Dict[str, Dict]:
+        """Perform batch health check and cleanup.
+
+        Returns:
+            Dictionary with health check results and cleanup actions
+        """
+        logger.info("Starting batch health check")
+
+        results = {
+            "checked": 0,
+            "healthy": 0,
+            "unhealthy": 0,
+            "removed": 0,
+            "services": {},
+        }
+
+        current_time = datetime.utcnow()
+        services_to_check = list(self._services.items())
+
+        for service_id, service in services_to_check:
+            results["checked"] += 1
+
+            try:
+                # Check if service is too stale
+                time_since_last_seen = (
+                    current_time - service.last_seen
+                ).total_seconds()
+
+                if time_since_last_seen > self._heartbeat_timeout * 2:
+                    # Remove very stale services immediately
+                    del self._services[service_id]
+                    results["removed"] += 1
+                    results["services"][service_id] = {
+                        "name": service.name,
+                        "action": "removed_stale",
+                        "last_seen_ago": time_since_last_seen,
+                    }
+                    continue
+
+                # Perform health check
+                health_status = await self._check_service_health(service)
+                service.status = health_status
+
+                if health_status == ServiceStatus.HEALTHY:
+                    service.last_seen = current_time
+                    results["healthy"] += 1
+                    results["services"][service_id] = {
+                        "name": service.name,
+                        "action": "healthy",
+                        "status": "healthy",
+                    }
+                else:
+                    results["unhealthy"] += 1
+                    results["services"][service_id] = {
+                        "name": service.name,
+                        "action": "marked_unhealthy",
+                        "status": "unhealthy",
+                    }
+
+            except Exception as e:
+                logger.error(f"Health check failed for {service.name}: {e}")
+                service.status = ServiceStatus.UNHEALTHY
+                results["unhealthy"] += 1
+                results["services"][service_id] = {
+                    "name": service.name,
+                    "action": "health_check_failed",
+                    "error": str(e),
+                }
+
+        logger.info(
+            f"Batch health check complete: {results['checked']} checked, "
+            f"{results['healthy']} healthy, {results['unhealthy']} unhealthy, "
+            f"{results['removed']} removed"
+        )
+
+        return results

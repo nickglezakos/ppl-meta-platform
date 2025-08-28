@@ -3,12 +3,12 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-# Local imports
-from config import settings
-
 # Standard library and third-party imports
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+
+# Local imports
+from config import settings
 
 # Setup basic logging
 logging.basicConfig(
@@ -44,28 +44,29 @@ async def lifespan(_app: FastAPI):
     logger.info("Starting PPL Meta Orchestrator Service...")
 
     # Initialize service discovery if available
-    if service_discovery_available and CONSUL_CONFIG["enabled"]:
-        try:
-            consul_client = consul.Consul(
-                host=CONSUL_CONFIG["host"], port=CONSUL_CONFIG["port"]
-            )
+    try:
+        from shared.service_discovery import register_service
 
-            # Register service with Consul
-            consul_client.agent.service.register(
-                name="ppl-meta-orchestrator",
-                service_id="ppl-meta-orchestrator",
-                address=settings.HOST,
-                port=settings.PORT,
-                tags=["orchestrator", "coordination", "microservice"],
-                check=consul.Check.http(
-                    f"http://{settings.HOST}:{settings.PORT}/health", interval="10s"
-                ),
-            )
-            logger.info("Service registered with Consul")
-        except Exception as e:
-            logger.error(f"Failed to initialize service discovery: {e}")
-            logger.info("Continuing without service discovery")
-            consul_client = None
+        await register_service(
+            name="ppl-meta-orchestrator",
+            service_type="backend",
+            version="1.0.0",
+            host=settings.HOST,
+            port=settings.PORT,
+            health_endpoint="/health",
+            capabilities=["orchestration", "coordination", "workflow"],
+            metadata={
+                "version": "1.0.0",
+                "environment": "development",
+                "features": "orchestration,coordination,workflow_management",
+            },
+        )
+        logger.info(
+            "Successfully registered ppl-meta-orchestrator with discovery service"
+        )
+    except Exception as e:
+        logger.error(f"Failed to register with discovery service: {e}")
+        logger.info("Continuing without service discovery")
 
     logger.info("Service startup completed successfully")
 
@@ -74,12 +75,13 @@ async def lifespan(_app: FastAPI):
     logger.info("Shutting down PPL Meta Orchestrator Service...")
 
     # Deregister from service discovery
-    if consul_client:
-        try:
-            consul_client.agent.service.deregister("ppl-meta-orchestrator")
-            logger.info("Service deregistered from Consul")
-        except Exception as e:
-            logger.error(f"Failed to deregister service: {e}")
+    try:
+        from shared.service_discovery import deregister_service
+
+        await deregister_service("ppl-meta-orchestrator")
+        logger.info("Service deregistered from discovery service")
+    except Exception as e:
+        logger.error(f"Failed to deregister service: {e}")
 
 
 def validate_orchestrator_input(data: Dict[str, Any]) -> Dict[str, Any]:

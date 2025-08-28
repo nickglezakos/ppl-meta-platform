@@ -17,7 +17,7 @@ export 'services/mjpeg_streaming_service.dart';
 export 'services/network_discovery_service.dart';
 
 // Automatic detection services
-export '../../services/multicast_network_discovery.dart';
+export '../../services/ppl_meta_discovery_client.dart';
 export '../../services/auto_authentication_service.dart';
 export '../../services/auto_camera_registration_service.dart';
 

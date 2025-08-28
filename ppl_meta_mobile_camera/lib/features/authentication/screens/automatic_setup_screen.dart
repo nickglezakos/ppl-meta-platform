@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/core.dart';
-import '../../../services/multicast_network_discovery.dart';
 import '../../../services/auto_authentication_service.dart';
 import '../../../services/auto_camera_registration_service.dart';
 
