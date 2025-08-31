@@ -24,7 +24,18 @@ class AuthenticationProvider extends ChangeNotifier {
   DateTime? _lastConnectionCheck;
 
   // Getters
-  bool get isAuthenticated => _isAuthenticated;
+  /// Check if user is authenticated
+  bool get isAuthenticated {
+    // Sync with authentication service to ensure consistency
+    final serviceAuth = _authService.isAuthenticated;
+    if (_isAuthenticated != serviceAuth) {
+      print('🔑 [AUTH_DEBUG] Authentication state mismatch detected - Provider: $_isAuthenticated, Service: $serviceAuth');
+      _isAuthenticated = serviceAuth;
+    }
+    print('🔑 [AUTH_DEBUG] isAuthenticated getter called - returning: $_isAuthenticated');
+    print('🔑 [AUTH_DEBUG] Auth service isAuthenticated: ${_authService.isAuthenticated}');
+    return _isAuthenticated;
+  }
   bool get isLoading => _isLoading;
   String? get error => _error;
   Map<String, dynamic>? get userData => _userData;
@@ -48,6 +59,9 @@ class AuthenticationProvider extends ChangeNotifier {
         _userData = _authService.userData;
         _deviceData = _authService.deviceData;
         _serverUrl = _authService.serverUrl;
+
+        print('🔑 [AUTH_DEBUG] Init - Auth service isAuthenticated: ${_authService.isAuthenticated}');
+        print('🔑 [AUTH_DEBUG] Init - Provider isAuthenticated set to: $_isAuthenticated');
 
         // Initialize streaming service if authenticated
         if (_isAuthenticated && _serverUrl != null) {
@@ -103,13 +117,22 @@ class AuthenticationProvider extends ChangeNotifier {
         _deviceData = _authService.deviceData;
         _serverUrl = _authService.serverUrl;
 
+        print('🔑 [AUTH_DEBUG] Authentication state set to true');
+        print('🔑 [AUTH_DEBUG] Auth service isAuthenticated: ${_authService.isAuthenticated}');
+        print('🔑 [AUTH_DEBUG] Provider isAuthenticated: $_isAuthenticated');
+
         // Initialize streaming service
         await _initializeStreamingService();
 
+        print('🔑 [AUTH_DEBUG] Before server connection check - isAuthenticated: $_isAuthenticated');
+        
         // Re-check server connection after successful login
         if (_serverUrl != null) {
           await _checkServerConnectionWithRetry();
         }
+
+        print('🔑 [AUTH_DEBUG] After server connection check - isAuthenticated: $_isAuthenticated');
+        print('🔑 [AUTH_DEBUG] Auth service isAuthenticated: ${_authService.isAuthenticated}');
 
         print('Login successful for user: $username');
         print('User data: ${_userData?['username'] ?? 'No username'}');

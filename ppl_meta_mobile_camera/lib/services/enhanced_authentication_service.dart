@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/auth_result.dart';
-import '../../services/hybrid_service_discovery.dart';
+import '../core/models/auth_result.dart';
+import 'hybrid_service_discovery.dart';
 
 /// Enhanced authentication service with hybrid service discovery integration
 class EnhancedAuthenticationService {
@@ -171,13 +171,7 @@ class EnhancedAuthenticationService {
 
         print('🎉 Auto-login completed successfully!');
         
-        return AuthResult.success(
-          message: 'Auto-login successful',
-          token: token,
-          userData: userData,
-          serverUrl: nodeURL,
-          platformServices: platformData,
-        );
+        return AuthResult.success(token);
 
       } else {
         final errorBody = response.body.isNotEmpty ? response.body : 'No error details';
@@ -342,7 +336,7 @@ class EnhancedAuthenticationService {
       _isAuthenticated = false;
 
       print('✅ Logout successful');
-      return AuthResult.success(message: 'Logout successful');
+      return AuthResult.success('');
 
     } catch (e) {
       print('❌ Logout error: $e');

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/core.dart';
-import '../../../services/auto_authentication_service.dart';
+import '../../../services/discovery_based_authentication_service.dart';
 import '../../../services/auto_camera_registration_service.dart';
 
 /// Automatic setup screen for zero-configuration camera setup
@@ -14,13 +14,12 @@ class AutomaticSetupScreen extends StatefulWidget {
 
 class _AutomaticSetupScreenState extends State<AutomaticSetupScreen> {
   bool _isDiscovering = false;
-  String _statusMessage = 'Ready to discover PPL Meta services automatically';
+  String _statusMessage = 'Ready to discover PPL Meta services via Discovery Service';
   String? _discoveredServiceUrl;
   bool _isAuthenticating = false;
   bool _isRegistering = false;
   
-  final EnhancedNetworkDiscoveryService _discoveryService = EnhancedNetworkDiscoveryService();
-  final AutoAuthenticationService _authService = AutoAuthenticationService();
+  final DiscoveryBasedAuthenticationService _authService = DiscoveryBasedAuthenticationService();
   final AutoCameraRegistrationService _registrationService = AutoCameraRegistrationService();
 
   @override
@@ -173,77 +172,91 @@ class _AutomaticSetupScreenState extends State<AutomaticSetupScreen> {
 
   Future<void> _startAutomaticSetup() async {
     try {
-      // Step 1: Service Discovery
+      // Step 1: Discovery Service Discovery and Service Registry
       setState(() {
         _isDiscovering = true;
-        _statusMessage = 'Discovering PPL Meta services...';
+        _statusMessage = '🔍 Discovering PPL Meta Discovery Service...';
       });
 
-      print('🔍 Starting automatic setup process');
-      final serviceUrl = await _discoveryService.autoDiscoverNodeService();
+      print('🔍 Starting Discovery Service-based automatic setup');
       
-      if (serviceUrl == null) {
-        throw Exception('Failed to discover PPL Meta Node service');
+      // Get all services from Discovery Service
+      final services = await _authService.getAllServices();
+      
+      if (services.isEmpty) {
+        throw Exception('No services found in Discovery Service');
       }
 
       setState(() {
-        _discoveredServiceUrl = serviceUrl;
-        _statusMessage = 'Service discovered! Setting up connection...';
-        _isDiscovering = false;
-        _isAuthenticating = true;
+        _statusMessage = '✅ Found ${services.length} services! Verifying connections...';
       });
 
-      print('✅ Service discovered: $serviceUrl');
+      print('✅ Services discovered from Discovery Service:');
+      for (final service in services) {
+        print('  📱 ${service.name} at ${service.baseUrl}');
+      }
 
-      // Step 2: Test the discovered server URL
-      final authProvider = context.read<AuthenticationProvider>();
-      
-      // Test if the server is reachable
-      await authProvider.checkServerConnection(serviceUrl);
-      
+      // Step 2: Test connectivity to key services
       setState(() {
-        _statusMessage = 'Server discovered and verified! You can now log in.';
-        _isAuthenticating = false;
+        _statusMessage = '🩺 Testing service connectivity...';
       });
 
-      print('✅ Server verification complete');
+      final nodeConnected = await _authService.testServiceConnectivity('ppl-meta-node');
+      final gatewayConnected = await _authService.testServiceConnectivity('ppl-meta-gateway');
 
-      // Step 3: Navigate back with success
+      if (!nodeConnected) {
+        throw Exception('Node service is not reachable for authentication');
+      }
+
+      // Get Node service URL
+      _discoveredServiceUrl = await _authService.getServiceUrl('ppl-meta-node');
+
+      setState(() {
+        _isDiscovering = false;
+        _statusMessage = '✅ Services verified! Discovery Service setup complete.';
+      });
+
+      print('✅ Service connectivity verified');
+      print('🎯 Node service: ${_discoveredServiceUrl}');
+
+      // Step 3: Show success with service details
       await Future.delayed(const Duration(seconds: 2));
       
       if (mounted) {
-        // Show success dialog with server URL to copy
+        final nodeUrl = await _authService.getServiceUrl('ppl-meta-node');
+        final mediaUrl = await _authService.getServiceUrl('ppl-meta-media');
+        final gatewayUrl = await _authService.getServiceUrl('ppl-meta-gateway');
+        
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('🎉 Setup Complete'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('✅ PPL Meta service discovered and verified!'),
-                const SizedBox(height: 16),
-                const Text('Server URL:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceVariant,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SelectableText(
-                    serviceUrl,
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text('The server URL has been automatically filled in the login form. You can now log in with your credentials or register a new camera.'),
-              ],
+            title: const Text('🎉 Discovery Service Setup Complete'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('✅ PPL Meta services discovered via Discovery Service!'),
+                  const SizedBox(height: 16),
+                  
+                  const Text('Available Services:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  
+                  if (nodeUrl != null) _buildServiceRow('🔐 Node Service', nodeUrl),
+                  if (gatewayUrl != null) _buildServiceRow('🌐 Gateway Service', gatewayUrl),
+                  if (mediaUrl != null) _buildServiceRow('📱 Media Service', mediaUrl),
+                  
+                  const SizedBox(height: 16),
+                  const Text('The services have been automatically configured. You can now log in with your credentials.',
+                    style: TextStyle(color: Colors.green)),
+                ],
+              ),
             ),
             actions: [
               TextButton(
                 onPressed: () {
                   Navigator.pop(context); // Close dialog
-                  Navigator.pop(context, serviceUrl); // Go back with discovered URL
+                  Navigator.pop(context, nodeUrl); // Go back with Node service URL
                 },
                 child: const Text('Continue to Login'),
               ),
@@ -253,31 +266,87 @@ class _AutomaticSetupScreenState extends State<AutomaticSetupScreen> {
       }
 
     } catch (e) {
-      print('❌ Automatic setup failed: $e');
-      
+      print('💥 Automatic setup failed: $e');
       setState(() {
-        _statusMessage = 'Setup failed: ${e.toString()}';
         _isDiscovering = false;
         _isAuthenticating = false;
-        _isRegistering = false;
+        _statusMessage = '❌ Setup failed: ${e.toString()}';
       });
 
-      // Show error dialog
       if (mounted) {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Setup Failed'),
-            content: Text('Automatic setup encountered an error:\n\n${e.toString()}'),
+            title: const Text('❌ Setup Failed'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Failed to set up connection to PPL Meta services:'),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    e.toString(),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onErrorContainer,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('Please check your network connection and ensure PPL Meta services are running.'),
+              ],
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
+                child: const Text('Try Again'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                child: const Text('Manual Setup'),
               ),
             ],
           ),
         );
       }
     }
+  }
+  
+  Widget _buildServiceRow(String label, String url) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(label, style: const TextStyle(fontSize: 12)),
+          ),
+          Expanded(
+            flex: 3,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                url,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

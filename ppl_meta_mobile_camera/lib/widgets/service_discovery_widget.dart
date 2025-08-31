@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import '../services/ppl_meta_discovery_client.dart';
 import '../services/unified_discovery_service.dart';
 
 /// Service discovery status widget for mobile camera app
@@ -154,7 +154,7 @@ class _ServiceDiscoveryStatusWidgetState extends State<ServiceDiscoveryStatusWid
                 ),
               ),
               const SizedBox(height: 12),
-              ...._services.map((service) => _buildServiceTile(service)),
+              ..._services.map((service) => _buildServiceTile(service)),
             ],
           ],
         ),

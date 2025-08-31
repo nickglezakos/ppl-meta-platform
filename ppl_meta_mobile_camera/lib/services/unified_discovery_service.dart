@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'multicast_network_discovery.dart';
@@ -229,12 +228,27 @@ class UnifiedDiscoveryService {
     debugPrint('📻 Attempting multicast discovery...');
     
     try {
-      final nodeService = await _multicastService.findNodeService(
-        timeout: const Duration(seconds: 8),
-      );
+      final nodeUrl = await _multicastService.autoDiscoverNodeService();
 
-      if (nodeService != null) {
-        final discoveredService = DiscoveredServiceInfo.fromMulticast(nodeService);
+      if (nodeUrl != null) {
+        // Create a DiscoveredServiceInfo from the URL
+        final uri = Uri.parse(nodeUrl);
+        final now = DateTime.now();
+        final discoveredService = DiscoveredServiceInfo(
+          serviceId: 'ppl-meta-node-multicast',
+          name: 'ppl-meta-node',
+          serviceType: 'backend',
+          version: '1.0.0',
+          host: uri.host,
+          port: uri.port,
+          healthEndpoint: '/api/v1/health',
+          status: 'healthy',
+          capabilities: ['authentication', 'user-management'],
+          metadata: {'discovery_method': 'multicast'},
+          registeredAt: now,
+          lastSeen: now,
+          discoveryMethod: 'multicast',
+        );
         debugPrint('✅ Multicast discovery successful: ${discoveredService.name}');
         return [discoveredService];
       } else {

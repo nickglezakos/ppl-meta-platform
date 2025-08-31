@@ -16,10 +16,14 @@ export 'services/camera_registration_service.dart';
 export 'services/mjpeg_streaming_service.dart';
 export 'services/network_discovery_service.dart';
 
-// Automatic detection services
-export '../../services/ppl_meta_discovery_client.dart';
-export '../../services/auto_authentication_service.dart';
+// Discovery Service Integration
+export '../../services/ppl_meta_discovery_client.dart' hide ServiceInfo, DiscoveryException;
+export '../../services/simplified_discovery_client.dart';
+export '../../services/discovery_based_authentication_service.dart';
 export '../../services/auto_camera_registration_service.dart';
+
+// Legacy services (for backward compatibility)  
+export '../../services/auto_authentication_service.dart' hide AuthResult, PlatformServices, AuthException;
 
 // Providers
 export 'providers/camera_provider.dart';

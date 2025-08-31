@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/core.dart';
 import 'features/authentication/authentication.dart';
+import 'features/authentication/screens/simple_setup_screen.dart';
 import 'features/camera/camera.dart';
 import 'services/app_logger.dart';
 
@@ -108,10 +109,10 @@ class _MainNavigatorState extends State<MainNavigator> {
   @override
   void initState() {
     super.initState();
-    // Initialize authentication on app start
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AuthenticationProvider>().initializeAuth();
-    });
+    // Skip auto-initialization - using Simple Setup approach instead
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   context.read<AuthenticationProvider>().initializeAuth();
+    // });
   }
 
   @override
@@ -126,7 +127,7 @@ class _MainNavigatorState extends State<MainNavigator> {
             return const CameraScreen();
           }
         } else {
-          return const AuthenticationScreen();
+          return const SimpleSetupScreen();
         }
       },
     );

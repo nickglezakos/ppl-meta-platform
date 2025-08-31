@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 
 /// Service announcement data received via multicast
@@ -549,5 +548,10 @@ class EnhancedNetworkDiscoveryService {
       }
       return false;
     }
+  }
+  
+  /// Dispose resources
+  void dispose() {
+    _multicastDiscovery.dispose();
   }
 }

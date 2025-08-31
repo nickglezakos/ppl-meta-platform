@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:io';
+import 'package:network_info_plus/network_info_plus.dart';
 import '../../../core/core.dart';
+import '../../../services/device_identifier_service.dart';
 
 /// Screen for registering the mobile device as a camera with the PPL Meta platform
 class CameraRegistrationScreen extends StatefulWidget {
@@ -14,6 +17,7 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _cameraNameController = TextEditingController();
   final _locationController = TextEditingController();
+  final _deviceService = DeviceIdentifierService();
   bool _isRegistering = false;
   String? _errorMessage;
 
@@ -127,9 +131,9 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
               'stream': '${mediaService?['endpoints']?['local']}/stream',
             },
             'camera_endpoints': {
-              'register': '${cameraService?['endpoints']?['local']}/api/cameras/register',
-              'status': '${cameraService?['endpoints']?['local']}/api/cameras/status',
-              'config': '${cameraService?['endpoints']?['local']}/api/cameras/stream-config',
+              'register': '${cameraService?['endpoints']?['local']}/api/v1/cameras/mobile',
+              'status': '${cameraService?['endpoints']?['local']}/api/v1/cameras/status',
+              'config': '${cameraService?['endpoints']?['local']}/api/v1/cameras/stream-config',
             },
             'server_info': {
               'host': localIp,
@@ -181,34 +185,31 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
       final authService = AuthenticationService.instance;
       final serverUrl = authService.serverUrl;
       
-      // Prepare camera registration data
+      // Get device information and IP for the correct payload format
+      final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
+      final deviceIP = await _getDeviceIP();
+      final deviceId = await _generateDeviceId();
+      
+      // Prepare camera registration data in CORRECT format (MobileCameraCreate schema)
       final registrationData = {
         'name': cameraName,
-        'type': 'mobile',
-        'location': location.isNotEmpty ? location : 'Mobile Device',
-        'capabilities': [
-          'video_streaming',
-          'photo_capture',
-          'motion_detection',
-        ],
-        'streaming_config': {
-          'protocol': 'mjpeg',
-          'resolution': '1920x1080',
-          'framerate': 30,
-          'quality': 'high',
-        },
-        'device_info': {
-          'platform': 'mobile',
-          'app_version': '1.0.0',
-          'registration_time': DateTime.now().toIso8601String(),
-        },
+        'device_id': deviceId,
+        'ip_address': deviceIP,
+        'port': 8554,
+        'device_model': deviceInfo['model'] ?? 'Mobile Camera',
+        'device_manufacturer': deviceInfo['manufacturer'] ?? 'PPL Meta Mobile',
+        'app_version': '1.0.0',
+        'resolution_width': 1920,
+        'resolution_height': 1080,
+        'max_fps': 30,
+        'supports_audio': true,
       };
 
-      print('🎯 Registering camera with data: $registrationData');
+      print('🎯 Registering camera with CORRECT data: $registrationData');
 
-      // Register with cameras service
+      // Register with cameras service using CORRECT endpoint
       final cameraEndpoint = connectivityInfo['camera_endpoints']?['register'] ?? 
-                            '$serverUrl/api/v1/cameras/register';
+                            '$serverUrl/api/v1/cameras/mobile';
       
       final response = await authService.makeAuthenticatedRequest(
         'POST',
@@ -219,10 +220,52 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
       print('📥 Camera registration response: $response');
 
       return response != null && 
-             (response['success'] == true || response['status'] == 'success');
+             (response['message']?.contains('successfully') == true || 
+              response['success'] == true || 
+              response['status'] == 'success');
     } catch (e) {
       print('❌ Camera registration error: $e');
       return false;
+    }
+  }
+
+  /// Get device IP address
+  Future<String> _getDeviceIP() async {
+    try {
+      final info = NetworkInfo();
+      final wifiIP = await info.getWifiIP();
+      if (wifiIP != null && wifiIP.isNotEmpty) {
+        return wifiIP;
+      }
+      
+      // Fallback: Try to get IP from network interfaces
+      for (final interface in await NetworkInterface.list()) {
+        for (final addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            return addr.address;
+          }
+        }
+      }
+      
+      // Final fallback
+      return '192.168.1.100';
+    } catch (e) {
+      print('⚠️ Error getting device IP: $e');
+      return '192.168.1.100'; // Fallback IP
+    }
+  }
+
+  /// Generate unique device ID for camera registration
+  Future<String> _generateDeviceId() async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
+      final baseId = deviceInfo['device_id'] ?? 'unknown';
+      return 'mobile_${baseId}_$timestamp';
+    } catch (e) {
+      print('⚠️ Error generating device ID: $e');
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      return 'mobile_fallback_$timestamp';
     }
   }
 

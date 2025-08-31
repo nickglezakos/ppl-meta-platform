@@ -48,15 +48,22 @@ try:
             True if registration successful, False otherwise
         """
         try:
+            # Create service metadata with all the additional info
+            service_metadata = {
+                "service_type": service_type,
+                "version": version,
+                "capabilities": capabilities or [],
+                **(metadata or {}),
+            }
+
             config = ServiceConfig(
-                name=name,
-                service_type=service_type,
-                version=version,
+                service_name=name,
+                service_id=f"{name}-{host}-{port}",
                 host=host,
                 port=port,
                 health_endpoint=health_endpoint,
-                capabilities=capabilities or [],
-                metadata=metadata or {},
+                tags=[service_type] + (capabilities or []),
+                metadata=service_metadata,
             )
 
             client = _get_client()

@@ -5,7 +5,8 @@ import '../../../core/core.dart';
 import '../../../models/camera_registration_result.dart';
 import '../../../services/automatic_streaming_workflow.dart';
 import '../../../services/auto_camera_registration_service.dart';
-import '../../../services/auto_authentication_service.dart';
+import '../../../services/auto_authentication_service.dart' hide PlatformServices;
+import '../../../services/discovery_based_authentication_service.dart' show PlatformServices;
 import '../../../services/app_logger.dart';
 import '../widgets/camera_preview_widget.dart';
 import '../widgets/camera_controls.dart';
@@ -1158,14 +1159,24 @@ class _CameraScreenState extends State<CameraScreen>
     final microservices = platformServices['microservices'] as Map<String, dynamic>;
     
     return PlatformServices(
-      cameraService: ServiceEndpoint.fromJson('cameras', microservices['cameras']),
-      mediaService: ServiceEndpoint.fromJson('media', microservices['media']),
-      gatewayService: ServiceEndpoint.fromJson('gateway', microservices['gateway']),
-      orchestratorService: ServiceEndpoint.fromJson('orchestrator', microservices['orchestrator']),
+      cameraService: _extractServiceUrl(microservices['cameras']),
+      mediaService: _extractServiceUrl(microservices['media']),
+      gatewayService: _extractServiceUrl(microservices['gateway']),
+      orchestratorService: _extractServiceUrl(microservices['orchestrator']),
       visionService: microservices['vision'] != null 
-        ? ServiceEndpoint.fromJson('vision', microservices['vision'])
+        ? _extractServiceUrl(microservices['vision'])
         : null,
     );
+  }
+  
+  /// Extract service URL from service data
+  String? _extractServiceUrl(dynamic serviceData) {
+    if (serviceData == null) return null;
+    if (serviceData is String) return serviceData;
+    if (serviceData is Map<String, dynamic>) {
+      return serviceData['url'] ?? serviceData['baseUrl'] ?? serviceData['endpoint'];
+    }
+    return null;
   }
 }
 

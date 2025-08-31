@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import '../core/models/auth_result.dart';
 import 'multicast_network_discovery.dart';
 
 /// Enhanced service discovery that combines multicast with PPL Meta Discovery Service
@@ -237,11 +238,7 @@ class EnhancedAutoAuthenticationService {
         debugPrint('🔍 Step 3: Getting platform services...');
         final services = await _getPlatformServices(nodeURL, token);
         
-        return AuthResult.success(
-          token: token,
-          nodeURL: nodeURL,
-          services: services,
-        );
+        return AuthResult.success(token);
       } else {
         final errorBody = response.body.isNotEmpty ? response.body : 'No error details';
         throw AuthException('Login failed: HTTP ${response.statusCode} - $errorBody');
@@ -275,5 +272,56 @@ class EnhancedAutoAuthenticationService {
   }
 }
 
-// Re-export the existing classes for compatibility
-export 'auto_authentication_service.dart' show AuthResult, PlatformServices, ServiceEndpoint, AuthException;
+/// Simple platform services model  
+class PlatformServices {
+  final Map<String, ServiceEndpoint> services;
+  
+  const PlatformServices({required this.services});
+  
+  factory PlatformServices.fromJson(Map<String, dynamic> json) {
+    final services = <String, ServiceEndpoint>{};
+    if (json['services'] is Map) {
+      final servicesMap = json['services'] as Map<String, dynamic>;
+      for (final entry in servicesMap.entries) {
+        if (entry.value is Map) {
+          services[entry.key] = ServiceEndpoint.fromJson(entry.value as Map<String, dynamic>);
+        }
+      }
+    }
+    return PlatformServices(services: services);
+  }
+}
+
+/// Service endpoint model
+class ServiceEndpoint {
+  final String host;
+  final int port;
+  final String protocol;
+  
+  const ServiceEndpoint({
+    required this.host,
+    required this.port,
+    this.protocol = 'http',
+  });
+  
+  factory ServiceEndpoint.fromJson(Map<String, dynamic> json) {
+    return ServiceEndpoint(
+      host: json['host'] as String? ?? 'localhost',
+      port: json['port'] as int? ?? 8000,
+      protocol: json['protocol'] as String? ?? 'http',
+    );
+  }
+  
+  String get baseUrl => '$protocol://$host:$port';
+}
+
+/// Authentication exception
+class AuthException implements Exception {
+  final String message;
+  final int? statusCode;
+  
+  const AuthException(this.message, {this.statusCode});
+  
+  @override
+  String toString() => 'AuthException: $message${statusCode != null ? ' (${statusCode})' : ''}';
+}

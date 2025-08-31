@@ -140,6 +140,10 @@ class AutoRegistrationLogger {
     _logger.severe('❌ $message', error);
   }
   
+  static void warning(String message) {
+    _logger.warning('⚠️ $message');
+  }
+  
   static void debug(String message) {
     _logger.fine('🔍 $message');
   }

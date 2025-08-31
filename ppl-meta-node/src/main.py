@@ -155,7 +155,7 @@ def get_local_network_ips():
 
 def get_dynamic_allowed_hosts():
     """Get dynamically detected allowed hosts for TrustedHostMiddleware."""
-    base_hosts = ["localhost", "127.0.0.1", "*.localhost"]
+    base_hosts = ["localhost", "127.0.0.1", "*.localhost", "0.0.0.0"]
     network_ips = get_local_network_ips()
 
     all_hosts = base_hosts + network_ips
@@ -193,7 +193,7 @@ async def lifespan(_app: FastAPI):
                 version="1.0.0",
                 host=settings.HOST,
                 port=settings.PORT,
-                health_endpoint="/api/v1/health",
+                health_endpoint="/api/v1/health/",
                 capabilities=["user-management", "authentication", "api"],
                 metadata={
                     "version": "1.0.0",

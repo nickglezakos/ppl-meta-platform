@@ -1,13 +1,14 @@
 """PPL Meta Discovery Service - Main application."""
 
 import logging
+import socket
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
 # Import platform API
 from api.platform import router as platform_router
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from models import (
     DiscoveryQuery,
@@ -17,6 +18,7 @@ from models import (
     PlatformTopology,
     RegistrationRequest,
     RegistrationResponse,
+    ServiceInfo,
     ServiceList,
 )
 from services.edge_registry import EdgeRegistry
@@ -33,6 +35,53 @@ logger = logging.getLogger(__name__)
 service_registry = ServiceRegistry()
 edge_registry = EdgeRegistry()
 multicast_announcer = MulticastAnnouncer()
+
+
+def get_machine_ip() -> str:
+    """Get the machine's IP address for external connections."""
+    try:
+        # Connect to a remote address to determine the local IP
+        # that would be used for external connections
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        # Fallback to localhost if detection fails
+        return "127.0.0.1"
+
+
+def resolve_service_hosts(services_list: ServiceList) -> ServiceList:
+    """Resolve 0.0.0.0 hosts to actual machine IP for external clients."""
+    machine_ip = get_machine_ip()
+
+    resolved_services = []
+    for service in services_list.services:
+        if service.host == "0.0.0.0":
+            # Create a new service object with resolved host
+            resolved_service = ServiceInfo(
+                service_id=service.service_id,
+                name=service.name,
+                service_type=service.service_type,
+                version=service.version,
+                host=machine_ip,  # Replace 0.0.0.0 with actual IP
+                port=service.port,
+                health_endpoint=service.health_endpoint,
+                status=service.status,
+                capabilities=service.capabilities,
+                metadata=service.metadata,
+                registered_at=service.registered_at,
+                last_seen=service.last_seen,
+                heartbeat_count=service.heartbeat_count,
+            )
+            resolved_services.append(resolved_service)
+        else:
+            resolved_services.append(service)
+
+    return ServiceList(
+        services=resolved_services,
+        total_count=services_list.total_count,
+        healthy_count=services_list.healthy_count,
+    )
 
 
 @asynccontextmanager
@@ -101,8 +150,10 @@ async def register_service(request: RegistrationRequest):
 
 @app.get("/api/v1/services", response_model=ServiceList)
 async def list_services(query: Optional[DiscoveryQuery] = None):
-    """List all registered services."""
-    return service_registry.list_services(query)
+    """List all registered services with resolved hosts for external clients."""
+    services_list = service_registry.list_services(query)
+    # Resolve 0.0.0.0 hosts to actual machine IP for mobile/external clients
+    return resolve_service_hosts(services_list)
 
 
 @app.post("/api/v1/services/heartbeat")

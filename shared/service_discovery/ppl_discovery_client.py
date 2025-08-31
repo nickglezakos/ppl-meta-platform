@@ -81,15 +81,22 @@ class DiscoveryClient:
             if host in ["localhost", "127.0.0.1"]:
                 host = self._get_local_ip()
 
+            # Extract service info from metadata if available
+            service_type = config.metadata.get("service_type", "backend")
+            version = config.metadata.get("version", "1.0.0")
+            capabilities = config.metadata.get("capabilities", config.tags)
+
             registration_data = {
-                "service_name": config.service_name,
-                "service_id": config.service_id,
+                "name": config.service_name,
+                "service_type": service_type,
+                "version": version,
                 "host": host,
                 "port": config.port,
                 "health_endpoint": config.health_endpoint,
-                "tags": config.tags,
+                "capabilities": capabilities,
                 "metadata": {
                     **config.metadata,
+                    "service_id": config.service_id,
                     "registered_at": datetime.utcnow().isoformat(),
                     "check_interval": config.check_interval,
                 },

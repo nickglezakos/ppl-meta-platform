@@ -1,6 +1,33 @@
-# PPL Meta Platform Documentation
+# ## 📱 Mobile App Development
 
-## 📋 Documentation Structure & Lifecycle
+### [Flutter Authentication Flow](./development/FLUTTER_AUTHENTICATION_FLOW.md) ⭐ **LATEST UPDATE** 🚨 **CRITICAL ISSUE**
+
+**❌ PROBLEM IDENTIFIED:** Flutter app camera registration failing with 404 Not Found  
+**🔧 ROOT CAUSE:** Wrong endpoint (`/api/v1/cameras/register` → `/api/v1/cameras/mobile`) + wrong payload format  
+**✅ SOLUTION:** Updated documentation with correct implementation
+
+**Quick Reference:**
+- ✅ SimpleSetupScreen → Node Service Login → JWT Token → Camera Registration  
+- ✅ Working Credentials: `fresh.user@example.com` / `NewPassword234!`
+- ✅ JWT Verification: Node tokens automatically receive admin permissions
+- ❌ **FIX NEEDED:** Flutter app must use correct endpoint and payload format
+
+**Test Script Available:** `docs/development/flutter_camera_registration_test.sh`latform Documentation
+
+## � Mobile App Development
+
+### [Flutter Authentication Flow](development/FLUTTER_AUTHENTICATION_FLOW.md) ⭐ **LATEST UPDATE**
+Complete guide for the Flutter mobile app authentication and camera registration process.
+
+**Quick Reference:**
+- ✅ SimpleSetupScreen → Node Service Login → JWT Token → Camera Registration  
+- ✅ Working Credentials: `fresh.user@example.com` / `NewPassword234!`
+- ✅ JWT Verification: Node tokens automatically receive admin permissions
+- ✅ Camera Registration: Successful with proper payload validation
+
+---
+
+## �📋 Documentation Structure & Lifecycle
 
 This directory contains comprehensive documentation for the PPL Meta Platform, organized according to a **document lifecycle workflow** that aligns with our development process.
 

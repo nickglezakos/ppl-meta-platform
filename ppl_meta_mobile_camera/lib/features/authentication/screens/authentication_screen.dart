@@ -5,7 +5,7 @@ import '../widgets/registration_form.dart';
 import '../widgets/server_status_indicator.dart';
 import '../widgets/login_form.dart';
 import '../../camera/camera.dart';
-import 'automatic_setup_screen.dart';
+import 'simple_setup_screen.dart';
 
 /// Main authentication screen with login and registration tabs
 class AuthenticationScreen extends StatefulWidget {
@@ -35,14 +35,13 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
   }
 
   Future<void> _initializeAuth() async {
-    final authProvider = context.read<AuthenticationProvider>();
-    await authProvider.initializeAuth();
-    
+    // Skip auto-discovery since we're using Simple Setup approach
     setState(() {
       _isInitialized = true;
     });
 
-    // Navigate to home if already authenticated
+    // Check if already authenticated
+    final authProvider = context.read<AuthenticationProvider>();
     if (authProvider.isAuthenticated) {
       _navigateToHome();
     }
@@ -79,7 +78,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
               child: ServerStatusIndicator(),
             ),
             
-            // Automatic Setup Option
+            // Simple Setup Option
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
               child: Card(
@@ -90,7 +89,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
                       Row(
                         children: [
                           Icon(
-                            Icons.auto_fix_high,
+                            Icons.settings_ethernet,
                             color: Theme.of(context).colorScheme.primary,
                           ),
                           const SizedBox(width: 12),
@@ -99,13 +98,13 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Quick Setup',
+                                  'Simple Network Setup',
                                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 Text(
-                                  'Automatically discover and connect',
+                                  'Enter Discovery Service port + credentials',
                                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                     color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
                                   ),
@@ -120,24 +119,20 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           onPressed: () async {
-                            final discoveredUrl = await Navigator.push<String>(
+                            final result = await Navigator.push<Map<String, dynamic>>(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => const AutomaticSetupScreen(),
+                                builder: (context) => const SimpleSetupScreen(),
                               ),
                             );
-                            // Store the discovered URL and update the UI
-                            if (discoveredUrl != null) {
-                              setState(() {
-                                _discoveredServerUrl = discoveredUrl;
-                              });
-                              print('🎯 Discovered server URL: $discoveredUrl');
-                              // Switch to login tab to show the simplified form
-                              _tabController.animateTo(0);
+                            // Handle successful connection and authentication
+                            if (result != null) {
+                              // Authentication was successful, navigate to home
+                              _navigateToHome();
                             }
                           },
-                          icon: const Icon(Icons.auto_awesome),
-                          label: const Text('Start Auto Setup'),
+                          icon: const Icon(Icons.rocket_launch),
+                          label: const Text('Start Simple Setup'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                             foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
