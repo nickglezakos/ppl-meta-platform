@@ -2,11 +2,20 @@
 Camera management endpoints for PPL Meta Cameras API.
 """
 
+import asyncio
+import json
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from src.database import get_db
@@ -581,10 +590,26 @@ async def register_mobile_camera(
             db.query(Camera).filter(Camera.device_id == mobile_data.device_id).first()
         )
         if existing_camera:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Mobile camera {mobile_data.device_id} already registered",
+            # Camera already exists - return success with existing camera info
+            logger.info(
+                f"User {current_user.get('sub')} attempted to register existing mobile camera: "
+                f"{mobile_data.device_id} - returning existing camera info"
             )
+
+            return {
+                "message": "Mobile camera already registered",
+                "camera": {
+                    "id": existing_camera.id,
+                    "name": existing_camera.name,
+                    "device_id": existing_camera.device_id,
+                    "camera_type": existing_camera.camera_type.value,
+                    "status": existing_camera.status.value,
+                    "connection_string": existing_camera.connection_string,
+                    "ip_address": mobile_data.ip_address,
+                    "port": existing_camera.port,
+                    "resolution": f"{existing_camera.resolution_width}x{existing_camera.resolution_height}",
+                },
+            }
 
         # Build mobile streaming URL/connection string
         connection_string = f"mobile://{mobile_data.ip_address}:{mobile_data.port}"
@@ -871,3 +896,98 @@ async def mobile_camera_heartbeat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process mobile camera heartbeat",
         )
+
+
+@router.websocket("/{device_id}/stream")
+async def camera_stream_websocket(websocket: WebSocket, device_id: str):
+    """WebSocket endpoint for camera streaming that matches mobile app expectations."""
+    await websocket.accept()
+
+    try:
+        logger.info(f"WebSocket connection established for camera {device_id}")
+
+        # Send initial connection confirmation
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "connection_established",
+                    "device_id": device_id,
+                    "message": "Connected to PPL Meta camera streaming server",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
+            )
+        )
+
+        # Keep connection alive and handle incoming messages
+        while True:
+            try:
+                # Wait for messages from mobile app
+                data = await websocket.receive_text()
+                message = json.loads(data)
+
+                logger.info(
+                    f"Received message from mobile camera {device_id}: {message.get('type', 'unknown')}"
+                )
+
+                # Handle different message types
+                if message.get("type") == "ping":
+                    await websocket.send_text(
+                        json.dumps(
+                            {"type": "pong", "timestamp": datetime.utcnow().isoformat()}
+                        )
+                    )
+
+                elif message.get("type") == "start_stream":
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "stream_ready",
+                                "device_id": device_id,
+                                "message": "Camera stream is ready to receive frames",
+                                "timestamp": datetime.utcnow().isoformat(),
+                            }
+                        )
+                    )
+
+                elif message.get("type") == "frame_data":
+                    # Handle incoming frame data from mobile camera
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "frame_received",
+                                "timestamp": datetime.utcnow().isoformat(),
+                            }
+                        )
+                    )
+
+                else:
+                    # Echo back unknown messages
+                    await websocket.send_text(
+                        json.dumps(
+                            {
+                                "type": "echo",
+                                "original_message": message,
+                                "timestamp": datetime.utcnow().isoformat(),
+                            }
+                        )
+                    )
+
+            except json.JSONDecodeError:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "message": "Invalid JSON format",
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                    )
+                )
+
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket connection closed for camera {device_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for camera {device_id}: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass

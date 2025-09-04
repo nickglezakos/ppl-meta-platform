@@ -10,6 +10,7 @@ import '../screens/users/users_screen.dart';
 import '../screens/cameras/cameras_screen.dart';
 import '../screens/cameras/camera_detail_screen.dart';
 import '../screens/camera/snapshot_gallery_screen.dart';
+import '../screens/settings/settings_screen.dart';
 import '../../screens/upload_screen.dart';
 import '../../screens/gallery_screen.dart';
 import '../../screens/analytics_screen.dart';
@@ -172,6 +173,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ProviderScreenWrapper(
           child: CameraMediaSyncScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/settings',
+        name: 'settings',
+        builder: (context, state) => const SettingsScreen(),
       ),
       // Root route redirects based on auth status
       GoRoute(

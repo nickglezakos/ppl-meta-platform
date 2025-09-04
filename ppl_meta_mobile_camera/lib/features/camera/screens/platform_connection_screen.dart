@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/core.dart';
+import '../../../services/discovery_config_service.dart';
 
 /// Screen for connecting to PPL Meta Platform and registering as camera
 class PlatformConnectionScreen extends StatefulWidget {
@@ -11,14 +12,16 @@ class PlatformConnectionScreen extends StatefulWidget {
 }
 
 class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
-  final _ipController = TextEditingController(text: '192.168.1.68');
+  final _ipController = TextEditingController();
   final _portController = TextEditingController(text: '8005');
   final _cameraNameController = TextEditingController();
+  final DiscoveryConfigService _configService = DiscoveryConfigService.instance;
   
   @override
   void initState() {
     super.initState();
     _cameraNameController.text = 'Mobile Camera ${DateTime.now().millisecondsSinceEpoch % 1000}';
+    _loadUserConfiguration();
     
     // Automatically load platform services if user is authenticated
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -33,6 +36,33 @@ class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
         print('❌ [PLATFORM_CONNECTION] User not authenticated, manual discovery required');
       }
     });
+  }
+
+  /// Load user's discovery configuration
+  Future<void> _loadUserConfiguration() async {
+    try {
+      final configuredClient = await _configService.getConfiguredDiscoveryClient();
+      if (configuredClient != null) {
+        final discoveryUrl = await configuredClient.findDiscoveryService();
+        if (discoveryUrl != null) {
+          final uri = Uri.parse(discoveryUrl);
+          setState(() {
+            _ipController.text = uri.host;
+            _portController.text = uri.port.toString();
+          });
+        }
+      }
+    } catch (e) {
+      print('Could not load user configuration: $e');
+      // Set reasonable default based on device network
+      _setDefaultConfiguration();
+    }
+  }
+
+  /// Set default configuration based on device network
+  void _setDefaultConfiguration() {
+    // Leave IP empty so user can fill it in
+    _ipController.text = '';
   }
 
   @override
@@ -397,7 +427,7 @@ class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
                     controller: _ipController,
                     decoration: const InputDecoration(
                       labelText: 'IP Address',
-                      hintText: '192.168.1.100',
+                      hintText: 'Enter IP address (e.g., 192.168.129.107)',
                     ),
                   ),
                 ),

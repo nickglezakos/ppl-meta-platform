@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../../../utils/offline_fonts.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/camera_status_providers.dart';
 import '../../../core/theme/app_theme.dart';
@@ -173,7 +173,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           const SizedBox(height: 16),
           Text(
             'No cameras detected',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 18,
               fontWeight: FontWeight.w500,
               color: AppColors.textSecondary,
@@ -182,7 +182,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           const SizedBox(height: 8),
           Text(
             'Connect cameras and tap "Detect Cameras" to get started',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 14,
               color: AppColors.textSecondary.withOpacity(0.7),
             ),
@@ -220,7 +220,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           const SizedBox(height: 16),
           Text(
             'Error loading cameras',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 18,
               fontWeight: FontWeight.w500,
               color: Colors.red,
@@ -229,7 +229,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           const SizedBox(height: 8),
           Text(
             error.toString(),
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 14,
               color: AppColors.textSecondary,
             ),

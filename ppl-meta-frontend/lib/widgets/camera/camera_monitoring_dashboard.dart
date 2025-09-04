@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../../utils/offline_fonts.dart';
 import '../../core/services/camera_status_monitor.dart';
 import '../../core/providers/camera_status_providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -35,7 +35,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Text(
                   'Camera Monitoring Dashboard',
-                  style: GoogleFonts.inter(
+                  style: OfflineFonts.inter(
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
@@ -95,7 +95,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
           const SizedBox(width: 6),
           Text(
             '$count Active',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 12,
               fontWeight: FontWeight.w500,
               color: count > 0 ? Colors.green : Colors.grey,
@@ -118,7 +118,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
       children: [
         Text(
           'Performance Metrics',
-          style: GoogleFonts.inter(
+          style: OfflineFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
@@ -182,7 +182,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
               const SizedBox(width: 6),
               Text(
                 label,
-                style: GoogleFonts.inter(
+                style: OfflineFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                   color: AppColors.textSecondary,
@@ -193,7 +193,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
           const SizedBox(height: 4),
           Text(
             value,
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: color,
@@ -201,7 +201,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
           ),
           Text(
             subtitle,
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 10,
               color: AppColors.textSecondary,
             ),
@@ -227,7 +227,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
             const SizedBox(width: 8),
             Text(
               'No cameras currently being monitored',
-              style: GoogleFonts.inter(
+              style: OfflineFonts.inter(
                 fontSize: 14,
                 color: AppColors.textSecondary,
               ),
@@ -242,7 +242,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
       children: [
         Text(
           'Connection Health Distribution',
-          style: GoogleFonts.inter(
+          style: OfflineFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
@@ -291,7 +291,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
                 const SizedBox(width: 4),
                 Text(
                   '${health.name.capitalize()} ($count)',
-                  style: GoogleFonts.inter(
+                  style: OfflineFonts.inter(
                     fontSize: 12,
                     color: AppColors.textSecondary,
                   ),
@@ -318,7 +318,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
             const SizedBox(width: 6),
             Text(
               'Cameras with Issues (${camerasWithIssues.length})',
-              style: GoogleFonts.inter(
+              style: OfflineFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Colors.orange,
@@ -349,7 +349,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         'Camera $deviceId',
-                        style: GoogleFonts.inter(
+                        style: OfflineFonts.inter(
                           fontSize: 12,
                           color: AppColors.textPrimary,
                         ),
@@ -361,7 +361,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
                       },
                       child: Text(
                         'View',
-                        style: GoogleFonts.inter(
+                        style: OfflineFonts.inter(
                           fontSize: 11,
                           color: AppColors.primary,
                         ),
@@ -383,7 +383,7 @@ class CameraMonitoringDashboard extends ConsumerWidget {
       children: [
         Text(
           'Quick Actions',
-          style: GoogleFonts.inter(
+          style: OfflineFonts.inter(
             fontSize: 14,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
@@ -501,7 +501,7 @@ class CameraStatusOverview extends ConsumerWidget {
           const SizedBox(width: 6),
           Text(
             '$activeCount active',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 12,
               fontWeight: FontWeight.w500,
               color: AppColors.textPrimary,
@@ -525,7 +525,7 @@ class CameraStatusOverview extends ConsumerWidget {
             const SizedBox(width: 4),
             Text(
               '$healthyCount/$totalMonitored',
-              style: GoogleFonts.inter(
+              style: OfflineFonts.inter(
                 fontSize: 12,
                 color: AppColors.textSecondary,
               ),

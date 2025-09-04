@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'device_identifier_service.dart';
 import 'app_logger.dart';
+import 'discovery_config_service.dart';
 import '../models/camera_registration_result.dart';
 import '../models/platform_services.dart';
 
@@ -12,6 +13,126 @@ import '../models/platform_services.dart';
 /// Handles device identification, name generation, and registration
 class AutoCameraRegistrationService {
   final DeviceIdentifierService _deviceService = DeviceIdentifierService();
+  final DiscoveryConfigService _discoveryConfig = DiscoveryConfigService.instance;
+
+  /// Get cameras service URL from discovery service or fallback to direct URL
+  Future<String?> _getCamerasServiceUrl() async {
+    try {
+      // First try discovery service
+      final camerasService = await _discoveryConfig.findService('ppl-meta-cameras');
+      if (camerasService != null) {
+        AutoRegistrationLogger.debug('Found cameras service at: ${camerasService.baseUrl}');
+        return camerasService.baseUrl;
+      }
+      
+      AutoRegistrationLogger.warning('Cameras service not found in discovery service - trying fallback');
+      
+      // Fallback: try to get direct URL from platform services data
+      final prefs = await SharedPreferences.getInstance();
+      final servicesJson = prefs.getString('ppl_meta_platform_services');
+      if (servicesJson != null) {
+        final platformData = json.decode(servicesJson);
+        final cameraEndpoints = platformData['camera_endpoints'] as Map<String, dynamic>?;
+        if (cameraEndpoints != null && cameraEndpoints['register'] != null) {
+          // Extract base URL from register endpoint
+          final registerUrl = cameraEndpoints['register'] as String;
+          final uri = Uri.parse(registerUrl);
+          final baseUrl = '${uri.scheme}://${uri.host}:${uri.port}';
+          AutoRegistrationLogger.debug('Using fallback cameras service URL: $baseUrl');
+          return baseUrl;
+        }
+      }
+      
+      AutoRegistrationLogger.error('No cameras service URL available');
+      return null;
+    } catch (e) {
+      AutoRegistrationLogger.error('Failed to find cameras service: $e');
+      
+      // Last resort fallback: try to construct from platform IP
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final servicesJson = prefs.getString('ppl_meta_platform_services');
+        if (servicesJson != null) {
+          final platformData = json.decode(servicesJson);
+          final connectivity = platformData['connectivity'] as Map<String, dynamic>?;
+          if (connectivity != null && connectivity['local_ip'] != null) {
+            final platformIP = connectivity['local_ip'] as String;
+            final fallbackUrl = 'http://$platformIP:8005';
+            AutoRegistrationLogger.debug('Using constructed fallback URL: $fallbackUrl');
+            return fallbackUrl;
+          }
+        }
+      } catch (fallbackError) {
+        AutoRegistrationLogger.error('Fallback URL construction failed: $fallbackError');
+      }
+      
+      return null;
+    }
+  }
+  
+  /// Check if camera with device ID already exists
+  Future<Map<String, dynamic>?> checkExistingCamera(String jwtToken) async {
+    try {
+      final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
+      final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
+      final deviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix for consistency
+      
+      AutoRegistrationLogger.step('CHECK', 'Looking for existing camera with device ID: $deviceId');
+      
+      // Get cameras service URL from discovery service
+      final baseUrl = await _getCamerasServiceUrl();
+      if (baseUrl == null) {
+        AutoRegistrationLogger.warning('Cameras service URL not available - skipping existing camera check');
+        return null; // Don't throw exception, just return null to continue with registration
+      }
+      
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/v1/cameras/mobile'),
+        headers: {
+          'Authorization': 'Bearer $jwtToken',
+          'Accept': 'application/json',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        final mobileCameras = responseData as List;
+        
+        // Find camera with matching device ID
+        for (final camera in mobileCameras) {
+          if (camera['device_id'] == deviceId) {
+            AutoRegistrationLogger.success('Found existing camera: ${camera['name']} (ID: ${camera['id']})');
+            return camera;
+          }
+        }
+        
+        AutoRegistrationLogger.debug('No existing camera found for device ID: $deviceId');
+        return null;
+      } else {
+        AutoRegistrationLogger.warning('Failed to check existing cameras: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      AutoRegistrationLogger.warning('Error checking existing camera - will proceed with registration: $e');
+      return null; // Don't fail the whole registration process
+    }
+  }
+  
+    /// Create streaming session URL for the registered camera
+  Future<String?> createStreamingSessionUrl(String cameraId) async {
+    try {
+      final camerasUrl = await _getCamerasServiceUrl();
+      if (camerasUrl == null) {
+        AutoRegistrationLogger.error('Cameras service URL not available');
+        return null;
+      }
+
+      return '$camerasUrl/api/v1/cameras/$cameraId/stream';
+    } catch (e) {
+      AutoRegistrationLogger.error('Failed to create streaming session URL: $e');
+      return null;
+    }
+  }
   
   /// Register camera automatically using device information
   /// Returns CameraRegistrationResult with camera ID and device ID
@@ -19,6 +140,24 @@ class AutoCameraRegistrationService {
     AutoRegistrationLogger.step('START', 'Beginning automatic camera registration');
     
     try {
+      // Step 0: Check for existing camera registration
+      AutoRegistrationLogger.step('0', 'Checking for existing camera registration');
+      final existingCamera = await checkExistingCamera(jwtToken);
+      
+      if (existingCamera != null) {
+        // Camera already exists, return success with existing camera info
+        AutoRegistrationLogger.success('Using existing camera registration');
+        AutoRegistrationLogger.deviceInfo('Camera ID', existingCamera['id'].toString());
+        AutoRegistrationLogger.deviceInfo('Camera Name', existingCamera['name']);
+        AutoRegistrationLogger.deviceInfo('Device ID', existingCamera['device_id']);
+        
+        return CameraRegistrationResult.success(
+          cameraId: existingCamera['id'],
+          cameraName: existingCamera['name'],
+          deviceId: existingCamera['device_id'],
+        );
+      }
+      
       // Load platform services configuration
       final prefs = await SharedPreferences.getInstance();
       final servicesJson = prefs.getString('ppl_meta_platform_services');
@@ -60,9 +199,12 @@ class AutoCameraRegistrationService {
       // Step 4: Prepare registration data
       AutoRegistrationLogger.step('4', 'Preparing registration payload');
       
+      final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
+      final deviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix for consistency
+      
       final requestBody = {
         'name': cameraName,
-        'device_id': deviceInfo['device_id'] ?? 'unknown',
+        'device_id': deviceId,
         'ip_address': deviceIP,
         'port': 8554, // Default RTSP port for mobile cameras
         'device_model': deviceInfo['model'] ?? 'Mobile Camera',
@@ -75,11 +217,15 @@ class AutoCameraRegistrationService {
       // Step 5: Send registration request
       AutoRegistrationLogger.step('5', 'Sending registration request');
       
-      // Use nginx proxy URL for mobile camera registration
-      String cameraServiceUrl = 'http://localhost/cameras';
+      // Get cameras service URL from discovery service
+      final baseUrl = await _getCamerasServiceUrl();
+      if (baseUrl == null) {
+        throw Exception('Cameras service not available');
+      }
+      AutoRegistrationLogger.debug('Using cameras service base URL: $baseUrl');
       
       final response = await http.post(
-        Uri.parse('$cameraServiceUrl/api/v1/cameras/mobile'),
+        Uri.parse('$baseUrl/api/v1/cameras/mobile'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $jwtToken',
@@ -87,7 +233,7 @@ class AutoCameraRegistrationService {
         body: json.encode(requestBody),
       );
       
-      AutoRegistrationLogger.apiCall('POST', '$cameraServiceUrl/api/v1/cameras/mobile', response.statusCode);
+      AutoRegistrationLogger.apiCall('POST', '$baseUrl/api/v1/cameras/mobile', response.statusCode);
       AutoRegistrationLogger.debug('Response body: ${response.body}');
       
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -118,6 +264,34 @@ class AutoCameraRegistrationService {
             error: 'Registration failed: $errorBody',
           );
         }
+      } else if (response.statusCode == 400) {
+        // Handle "already registered" case
+        final errorBody = response.body.isNotEmpty ? response.body : '{}';
+        try {
+          final errorData = json.decode(errorBody);
+          final errorDetail = errorData['detail'] ?? '';
+          
+          if (errorDetail.contains('already registered')) {
+            AutoRegistrationLogger.success('Camera already registered - continuing with existing registration');
+            
+            // Return success since camera is already registered
+            // The device ID from the request is what we'll use
+            return CameraRegistrationResult.success(
+              cameraId: 0, // We don't have the actual ID, but that's okay for existing cameras
+              cameraName: cameraName,
+              deviceId: deviceId, // Use the consistent device ID with mobile_ prefix
+            );
+          }
+        } catch (e) {
+          AutoRegistrationLogger.debug('Could not parse error response: $e');
+        }
+        
+        AutoRegistrationLogger.error('Registration failed: ${response.statusCode}');
+        AutoRegistrationLogger.debug('Error details: $errorBody');
+        
+        return CameraRegistrationResult.failure(
+          error: 'HTTP ${response.statusCode}: $errorBody',
+        );
       } else {
         AutoRegistrationLogger.error('Registration failed: ${response.statusCode}');
         final errorBody = response.body.isNotEmpty ? response.body : 'Unknown error';
@@ -154,11 +328,11 @@ class AutoCameraRegistrationService {
         }
       }
       
-      // Final fallback
-      return '192.168.1.100';
+      // Final fallback - updated for current network
+      return '192.168.129.100';
     } catch (e) {
       AutoRegistrationLogger.error('Error getting device IP: $e');
-      return '192.168.1.100'; // Fallback IP
+      return '192.168.129.100'; // Fallback IP - updated for current network
     }
   }
 }

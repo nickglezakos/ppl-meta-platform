@@ -72,9 +72,12 @@ class EnhancedAutoCameraRegistrationService {
       // Step 4: Prepare registration data
       AutoRegistrationLogger.step('4', 'Preparing registration payload');
       
+      final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
+      final deviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix for consistency
+      
       final requestBody = {
         'name': cameraName,
-        'device_id': deviceInfo['device_id'] ?? 'unknown',
+        'device_id': deviceId,
         'ip_address': deviceIP,
         'port': 8554, // Default RTSP port for mobile cameras
         'device_model': deviceInfo['model'] ?? 'Mobile Camera',
@@ -245,11 +248,11 @@ class EnhancedAutoCameraRegistrationService {
         }
       }
       
-      // Final fallback
-      return '192.168.1.100';
+      // Final fallback - updated for current network
+      return '192.168.129.100';
     } catch (e) {
       AutoRegistrationLogger.error('Error getting device IP: $e');
-      return '192.168.1.100'; // Fallback IP
+      return '192.168.129.100'; // Fallback IP - updated for current network
     }
   }
 

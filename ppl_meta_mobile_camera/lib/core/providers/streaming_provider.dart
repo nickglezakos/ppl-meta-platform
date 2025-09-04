@@ -6,6 +6,7 @@ import '../services/mjpeg_streaming_service.dart';
 import '../services/network_discovery_service.dart';
 import '../services/authentication_service.dart';
 import '../interfaces/camera_interface.dart';
+import '../../services/device_identifier_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -337,8 +338,11 @@ class PlatformStreamingProvider extends ChangeNotifier {
         throw Exception('Camera interface not available');
       }
 
-      // Create camera info
-      final deviceId = 'mobile_camera_${DateTime.now().millisecondsSinceEpoch}';
+      // Create consistent camera info without timestamps
+      // Use device identifier service for consistent ID generation
+      final deviceService = DeviceIdentifierService();
+      final deviceInfo = await deviceService.getDeviceRegistrationInfo();
+      final deviceId = 'mobile_${deviceInfo['device_id'] ?? 'unknown'}';
       final deviceName = customName ?? 'Mobile Camera';
       
       print('📱 Creating camera info:');

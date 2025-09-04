@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/core.dart';
+import '../../../services/device_identifier_service.dart';
 
 /// Registration form widget for new device registration
 class RegistrationForm extends StatefulWidget {
@@ -44,10 +45,16 @@ class _RegistrationFormState extends State<RegistrationForm> {
     }
   }
 
-  void _generateDefaultDeviceName() {
-    // Generate a default device name based on device info
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    _deviceNameController.text = 'Camera-${timestamp.toString().substring(8)}';
+  void _generateDefaultDeviceName() async {
+    try {
+      // Use DeviceIdentifierService to generate consistent device name
+      final deviceService = DeviceIdentifierService();
+      final deviceName = await deviceService.generateCameraName();
+      _deviceNameController.text = deviceName;
+    } catch (e) {
+      // Fallback to simple name without timestamp
+      _deviceNameController.text = 'Mobile Camera';
+    }
   }
 
   Future<void> _handleRegistration() async {

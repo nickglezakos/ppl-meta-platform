@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../services/simplified_discovery_client.dart';
 import '../../../services/discovery_based_authentication_service.dart';
-import '../../../home_screen.dart';
+import '../../../services/discovery_config_service.dart';
 
 class SimpleSetupScreen extends StatefulWidget {
   const SimpleSetupScreen({super.key});
@@ -11,7 +11,7 @@ class SimpleSetupScreen extends StatefulWidget {
 }
 
 class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
-  final _ipLastPartController = TextEditingController(text: '68');
+  final _ipLastPartController = TextEditingController(text: '107');
   final _portController = TextEditingController(text: '8006');
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -57,6 +57,15 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       final port = _portController.text.trim();
       final username = _usernameController.text.trim();
       final password = _passwordController.text.trim();
+
+      // Save user's network configuration using DiscoveryConfigService
+      final configService = DiscoveryConfigService.instance;
+      await configService.configureFromUserInput(
+        ipLastPart: ipLastPart, 
+        port: port,
+      );
+      
+      print('✅ Discovery configuration saved');
 
       // Create discovery client with specific IP and port
       final discoveryClient = SimplifiedDiscoveryClient();
@@ -115,8 +124,8 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       }
     }
     
-    // Fallback
-    return '192.168.1.$lastPart';
+    // If device IP detection fails, throw error - no fallback
+    throw Exception('Could not detect device network. Please check network connection.');
   }
 
   @override
@@ -179,7 +188,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 controller: _ipLastPartController,
                 decoration: const InputDecoration(
                   labelText: 'Platform IP Last Part',
-                  hintText: 'e.g., 68 for 192.168.1.68',
+                  hintText: 'e.g., 107 (will use your network prefix)',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.computer),
                 ),
@@ -291,9 +300,28 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: Colors.red.shade200),
                   ),
-                  child: Text(
-                    _errorMessage!,
-                    style: TextStyle(color: Colors.red.shade700),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _errorMessage!,
+                        style: TextStyle(color: Colors.red.shade700),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _errorMessage = null;
+                          });
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Try Again'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

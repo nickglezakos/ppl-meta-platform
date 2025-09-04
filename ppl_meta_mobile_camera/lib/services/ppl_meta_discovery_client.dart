@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'discovery_config_service.dart';
 
 /// Enhanced discovery service client for PPL Meta mobile applications
 class PPLMetaDiscoveryClient {
@@ -7,13 +8,32 @@ class PPLMetaDiscoveryClient {
   static const Duration _discoveryTimeout = Duration(seconds: 10);
   
   final String discoveryServiceUrl;
+  final DiscoveryConfigService _configService = DiscoveryConfigService.instance;
   
   PPLMetaDiscoveryClient({
     this.discoveryServiceUrl = defaultDiscoveryUrl,
   });
 
-  /// Auto-detect host machine IP and create discovery URL
+  /// Get discovery URL from user configuration or auto-detect
   Future<String> _getDiscoveryUrl() async {
+    // Try configured discovery client first
+    try {
+      final configuredClient = await _configService.getConfiguredDiscoveryClient();
+      if (configuredClient != null) {
+        final discoveryUrl = await configuredClient.findDiscoveryService();
+        if (discoveryUrl != null) {
+          // Test that it's actually working
+          final services = await configuredClient.discoverServicesAtAddress(discoveryUrl.replaceFirst('http://', ''));
+          if (services.isNotEmpty) {
+            print('✅ Using configured discovery service at: $discoveryUrl');
+            return discoveryUrl;
+          }
+        }
+      }
+    } catch (e) {
+      print('⚠️ Configured discovery service not available: $e');
+    }
+    
     // PRIORITY 1: Try Discovery Service through nginx proxy (via host machine)
     final hostIPs = await _getHostMachineIPs();
     
@@ -50,10 +70,29 @@ class PPLMetaDiscoveryClient {
   Future<List<String>> _getHostMachineIPs() async {
     final List<String> hostIPs = [];
     
-    // Common host machine IPs when running on mobile device
+    // Check if user has configured a specific discovery service
+    try {
+      final configuredClient = await _configService.getConfiguredDiscoveryClient();
+      if (configuredClient != null) {
+        final discoveryUrl = await configuredClient.findDiscoveryService();
+        if (discoveryUrl != null) {
+          // Extract IP from configured discovery URL
+          final uri = Uri.parse(discoveryUrl);
+          if (uri.host != 'localhost' && uri.host != '127.0.0.1') {
+            hostIPs.add(uri.host);
+          }
+        }
+      }
+    } catch (e) {
+      print('Could not get configured IPs: $e');
+    }
+    
+    // Common host machine IPs when running on mobile device (fallback)
     hostIPs.addAll([
-      '192.168.1.68',    // Actual host machine IP (from ifconfig)
       '10.0.2.2',        // Android emulator host
+      '192.168.129.107', // Current network - backend services
+      '192.168.129.1',   // WiFi router (current network)
+      '192.168.129.100', // Common WiFi host IP (current network)
       '192.168.1.1',     // WiFi router (common gateway)
       '192.168.1.100',   // Common WiFi host IP
       '192.168.1.101',   
@@ -292,6 +331,8 @@ class EnhancedNetworkDiscoveryService {
       
       // Common local network IPs to try
       final commonIPs = [
+        'http://192.168.129.107:8001',  // Current network - main service
+        'http://192.168.129.100:8001',  // Current network - common IP
         'http://192.168.1.100:8001',
         'http://192.168.1.101:8001',
         'http://192.168.1.102:8001',

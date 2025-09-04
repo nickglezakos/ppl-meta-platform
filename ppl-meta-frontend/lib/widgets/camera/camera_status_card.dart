@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../../utils/offline_fonts.dart';
 import '../../core/services/camera_status_monitor.dart';
 import '../../core/providers/camera_status_providers.dart';
 import '../../core/theme/app_theme.dart';
@@ -121,7 +121,7 @@ class CameraStatusCard extends ConsumerWidget {
             Expanded(
               child: Text(
                 cameraName ?? 'Camera ${status.deviceId}',
-                style: GoogleFonts.inter(
+                style: OfflineFonts.inter(
                   fontSize: compact ? 14 : 16,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
@@ -179,7 +179,7 @@ class CameraStatusCard extends ConsumerWidget {
                 const SizedBox(width: 4),
                 Text(
                   '${status.latencyMs}ms',
-                  style: GoogleFonts.inter(
+                  style: OfflineFonts.inter(
                     fontSize: compact ? 11 : 12,
                     color: AppColors.textSecondary,
                   ),
@@ -201,7 +201,7 @@ class CameraStatusCard extends ConsumerWidget {
                 const SizedBox(width: 4),
                 Text(
                   _formatDuration(status.sessionDuration!),
-                  style: GoogleFonts.inter(
+                  style: OfflineFonts.inter(
                     fontSize: compact ? 11 : 12,
                     color: AppColors.textSecondary,
                   ),
@@ -238,7 +238,7 @@ class CameraStatusCard extends ConsumerWidget {
                 Expanded(
                   child: Text(
                     status.errorMessage!,
-                    style: GoogleFonts.inter(
+                    style: OfflineFonts.inter(
                       fontSize: 12,
                       color: Colors.red,
                     ),
@@ -254,7 +254,7 @@ class CameraStatusCard extends ConsumerWidget {
           const SizedBox(height: 8),
           Text(
             'Updated ${_formatTimestamp(status.lastUpdated)}',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 10,
               color: AppColors.textSecondary.withOpacity(0.7),
             ),
@@ -278,14 +278,14 @@ class CameraStatusCard extends ConsumerWidget {
         const SizedBox(width: 8),
         Text(
           '$label: ',
-          style: GoogleFonts.inter(
+          style: OfflineFonts.inter(
             fontSize: compact ? 11 : 12,
             color: AppColors.textSecondary,
           ),
         ),
         Text(
           status.toUpperCase(),
-          style: GoogleFonts.inter(
+          style: OfflineFonts.inter(
             fontSize: compact ? 11 : 12,
             fontWeight: FontWeight.w500,
             color: color,
@@ -318,7 +318,7 @@ class CameraStatusCard extends ConsumerWidget {
                 const SizedBox(width: 4),
                 Text(
                   _getModeLabel(mode),
-                  style: GoogleFonts.inter(
+                  style: OfflineFonts.inter(
                     fontSize: 11,
                     color: AppColors.primary,
                     fontWeight: FontWeight.w500,
@@ -406,7 +406,7 @@ class CameraStatusCard extends ConsumerWidget {
         const SizedBox(width: 12),
         Text(
           'Loading camera status...',
-          style: GoogleFonts.inter(
+          style: OfflineFonts.inter(
             fontSize: compact ? 12 : 14,
             color: AppColors.textSecondary,
           ),
@@ -427,7 +427,7 @@ class CameraStatusCard extends ConsumerWidget {
         Expanded(
           child: Text(
             'Error: $error',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: compact ? 12 : 14,
               color: Colors.red,
             ),

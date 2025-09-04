@@ -570,6 +570,12 @@ async def get_media_collections(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.get("/media/collections/{collection_id}")
+async def get_media_collection(request: Request):
+    """Proxy get single media collection to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.put("/media/collections/{collection_id}")
 async def update_media_collection(request: Request):
     """Proxy update media collection to Media service."""

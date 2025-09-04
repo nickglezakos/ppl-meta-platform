@@ -4,6 +4,7 @@ import '../models/camera_config.dart';
 import '../services/camera_service.dart';
 import '../services/gallery_service.dart';
 import '../services/streaming_service.dart';
+import '../services/authentication_service.dart';
 import '../interfaces/camera_interface.dart';
 import '../../shared/models/media_item.dart';
 import 'gallery_provider.dart';
@@ -149,25 +150,65 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
       // First initialize the basic camera functionality
       await initialize();
 
+      // Initialize streaming service with server configuration
+      String? streamingServerUrl;
+      
       // Store connectivity information for streaming
       if (connectivityData['streaming_endpoints'] != null) {
         print('🔗 Configuring streaming endpoints...');
-        // TODO: Store streaming endpoint configuration
-        // This will be used when the user starts streaming
+        final streamingEndpoints = connectivityData['streaming_endpoints'] as Map<String, dynamic>;
+        
+        // Try to use websocket endpoint for streaming
+        if (streamingEndpoints['websocket'] != null) {
+          streamingServerUrl = streamingEndpoints['websocket'] as String;
+          // Convert ws:// back to http:// for the base URL
+          streamingServerUrl = streamingServerUrl!.replaceFirst('ws://', 'http://').replaceFirst('/ws/camera_stream', '');
+        } else if (streamingEndpoints['stream'] != null) {
+          streamingServerUrl = streamingEndpoints['stream'] as String;
+        }
+        
+        print('🔗 Extracted streaming server URL: $streamingServerUrl');
       }
 
       if (connectivityData['camera_endpoints'] != null) {
         print('🔗 Configuring camera API endpoints...');
-        // TODO: Store camera API endpoint configuration
+        // Store camera endpoints for future use
       }
 
       if (connectivityData['media_endpoints'] != null) {
         print('🔗 Configuring media endpoints...');
-        // TODO: Store media endpoint configuration
+        // Store media endpoints for gallery operations
       }
 
-      // Store the registered camera name
-      // TODO: Add camera name storage if needed
+      // Initialize streaming service if we have streaming endpoints
+      if (streamingServerUrl != null) {
+        print('🔗 Initializing streaming service with URL: $streamingServerUrl');
+        
+        // Get auth headers from AuthenticationService
+        final authService = AuthenticationService.instance;
+        final authHeaders = authService.getAuthHeaders();
+        
+        final streamingInitialized = await _streamingService.initializeStreaming(
+          serverUrl: streamingServerUrl,
+          authHeaders: authHeaders,
+        );
+        
+        if (streamingInitialized) {
+          print('✅ Streaming service initialized successfully');
+          
+          // Try to connect to streaming server
+          final connected = await _streamingService.connect();
+          if (connected) {
+            print('✅ Connected to streaming server');
+          } else {
+            print('⚠️ Could not connect to streaming server initially');
+          }
+        } else {
+          print('❌ Failed to initialize streaming service');
+        }
+      } else {
+        print('⚠️ No streaming server URL found in connectivity data');
+      }
 
       print('✅ Camera provider initialized with connectivity data');
       notifyListeners();

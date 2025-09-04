@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:camera/camera.dart';
+// import 'package:camera/camera.dart'; // Unused import removed
 import '../../../core/core.dart';
 import '../../../models/camera_registration_result.dart';
-import '../../../services/automatic_streaming_workflow.dart';
+// import '../../../services/automatic_streaming_workflow.dart'; // Unused import removed
 import '../../../services/auto_camera_registration_service.dart';
-import '../../../services/auto_authentication_service.dart' hide PlatformServices;
+import '../../../services/device_identifier_service.dart';
+// import '../../../services/auto_authentication_service.dart' hide PlatformServices; // Unused import removed
 import '../../../services/discovery_based_authentication_service.dart' show PlatformServices;
 import '../../../services/app_logger.dart';
 import '../widgets/camera_preview_widget.dart';
 import '../widgets/camera_controls.dart';
 import '../widgets/camera_settings_panel.dart';
-import '../widgets/streaming_panel.dart';
+// import '../widgets/streaming_panel.dart'; // Unused import removed
 import 'gallery_screen.dart';
 import 'platform_connection_screen.dart';
 import '../../authentication/screens/authentication_screen.dart';
@@ -591,10 +592,10 @@ class _CameraScreenState extends State<CameraScreen>
       final registrationResult = await _registerCameraAutomatically();
       CameraLogger.success('Camera registration completed: ${registrationResult.cameraName}');
       
-      CameraLogger.step('3', 'Starting streaming to media service');
-      // Step 2: Start streaming immediately after registration
-      await _startStreamingToMediaService();
-      CameraLogger.success('Streaming started successfully');
+      CameraLogger.step('3', 'Starting streaming to session URL');
+      // Step 2: Start streaming to session URL instead of media service
+      await _startStreamingToSessionUrl();
+      CameraLogger.success('Streaming started successfully to session URL');
       
       // Clear loading snackbar and show success with auto-generated camera name
       if (mounted) {
@@ -746,33 +747,48 @@ class _CameraScreenState extends State<CameraScreen>
     CameraLogger.success('Camera registered successfully: ${registrationResult.cameraId}');
   }
   
-  /// Start streaming to media service using discovered endpoint
-  Future<void> _startStreamingToMediaService() async {
+  /// Start streaming to camera service using session-based approach
+  Future<void> _startStreamingToSessionUrl() async {
     final cameraProvider = context.read<CameraProvider>();
     final authService = AuthenticationService.instance;
-    final platformServices = authService.platformServices;
+    final token = authService.token;
     
-    if (platformServices == null) {
-      throw Exception('Platform services not available');
+    if (token == null) {
+      throw Exception('Authentication token not available');
     }
     
-    // Get media service endpoint from discovered services
-    final mediaServiceConfig = platformServices['mobile_camera_config'];
-    final streamingEndpoint = mediaServiceConfig?['recommended_endpoint'];
-    
-    if (streamingEndpoint == null) {
-      throw Exception('Media service endpoint not found');
+    try {
+      // Get the device ID for creating the streaming session
+      final deviceService = DeviceIdentifierService();
+      final deviceInfo = await deviceService.getDeviceRegistrationInfo();
+      final deviceId = deviceInfo['device_id'] ?? 'unknown';
+      
+      CameraLogger.info('Creating streaming session for device: $deviceId');
+      
+      // Create streaming session URL for the frontend to connect to
+      final autoRegistrationService = AutoCameraRegistrationService();
+      final streamingUrl = await autoRegistrationService.createStreamingSessionUrl(deviceId);
+      
+      if (streamingUrl != null) {
+        CameraLogger.success('Streaming session URL created: $streamingUrl');
+        CameraLogger.info('Frontend can now connect to this session URL');
+      } else {
+        CameraLogger.warning('Failed to create streaming session URL - proceeding with local streaming');
+      }
+      
+      // Start the local camera streaming using standard approach
+      CameraLogger.info('Starting local mobile camera streaming');
+      
+      await cameraProvider.startStreaming(
+        streamTitle: 'PPL Meta Mobile Camera Stream',
+        quality: StreamQuality.medium,
+      );
+      
+      CameraLogger.success('Mobile camera streaming started - frontend can now view via session URL');
+    } catch (e) {
+      CameraLogger.error('Failed to start streaming: $e');
+      throw e;
     }
-    
-    CameraLogger.info('Starting streaming to: $streamingEndpoint');
-    
-    // Start streaming using the camera provider
-    await cameraProvider.startStreaming(
-      streamTitle: 'PPL Meta Mobile Camera Stream',
-      quality: StreamQuality.medium,
-    );
-    
-    CameraLogger.success('Streaming started successfully');
   }
 
   // ============================================================================

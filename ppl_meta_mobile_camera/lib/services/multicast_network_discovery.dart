@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 /// Service announcement data received via multicast
@@ -142,15 +143,23 @@ class MulticastServiceDiscovery {
   void _handleIncomingPacket(RawSocketEvent event) {
     if (event == RawSocketEvent.read) {
       try {
-        final datagram = _socket!.receive();
-        if (datagram != null) {
+        final datagram = _socket?.receive();
+        if (datagram != null && datagram.data.isNotEmpty) {
           final message = utf8.decode(datagram.data);
-          debugPrint('📨 Received multicast packet: ${message.substring(0, 100)}...');
-          
-          _processServiceAnnouncement(message);
+          if (message.isNotEmpty && message.length > 10) {
+            debugPrint('📨 Received multicast packet: ${message.substring(0, math.min(100, message.length))}...');
+            _processServiceAnnouncement(message);
+          }
         }
       } catch (e) {
         debugPrint('⚠️ Error processing multicast packet: $e');
+        // If there are too many errors, stop the service to prevent infinite loops
+        if (e.toString().contains('Null check operator')) {
+          debugPrint('❌ Stopping multicast service due to repeated null check errors');
+          // Temporarily comment out problematic method call
+          // stopDiscovery();
+          stop(); // Use the correct method name
+        }
       }
     }
   }
@@ -158,8 +167,19 @@ class MulticastServiceDiscovery {
   /// Process a service announcement
   void _processServiceAnnouncement(String message) {
     try {
-      final json = jsonDecode(message) as Map<String, dynamic>;
+      // Add null safety checks
+      if (message.isEmpty) return;
+      
+      final json = jsonDecode(message) as Map<String, dynamic>?;
+      if (json == null) return;
+      
       final announcement = ServiceAnnouncement.fromJson(json);
+      
+      // Validate announcement data
+      if (announcement.service.isEmpty || announcement.ip.isEmpty || announcement.port <= 0) {
+        debugPrint('⚠️ Invalid service announcement data');
+        return;
+      }
       
       // Only process PPL Meta Node service announcements
       if (announcement.service == 'ppl-meta-node') {

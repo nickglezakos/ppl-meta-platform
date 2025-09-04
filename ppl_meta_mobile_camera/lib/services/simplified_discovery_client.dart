@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'discovery_config_service.dart';
 
 /// Simplified Discovery Service client focused on single point discovery
 /// 
@@ -11,6 +13,52 @@ class SimplifiedDiscoveryClient {
   String? _cachedDiscoveryUrl;
   
   /// Find the Discovery Service URL
+  /// Construct Discovery Service URL from user input
+  /// Uses device's network prefix + user's host IP + port
+  Future<String?> constructDiscoveryUrl(String userHostIP, String userPort) async {
+    print('🔍 Constructing Discovery Service URL from user input...');
+    
+    // Get the device's actual IP address
+    final deviceIP = await getMyIPAddress();
+    if (deviceIP == null) {
+      print('❌ Cannot detect device IP address - URL construction failed');
+      return null;
+    }
+    
+    // Extract network prefix from device IP (first 3 parts)
+    final parts = deviceIP.split('.');
+    if (parts.length != 4) {
+      print('❌ Invalid device IP address format: $deviceIP');
+      return null;
+    }
+    
+    final networkPrefix = '${parts[0]}.${parts[1]}.${parts[2]}';
+    final discoveryUrl = 'http://$networkPrefix.$userHostIP:$userPort/api/v1/services';
+    
+    print('📱 Device IP: $deviceIP');
+    print('🌐 Network prefix: $networkPrefix');
+    print('🎯 Constructed URL: $discoveryUrl');
+    
+    return discoveryUrl;
+  }
+
+  /// Test and cache a Discovery Service URL constructed from user input
+  Future<bool> testAndCacheDiscoveryUrl(String userHostIP, String userPort) async {
+    final url = await constructDiscoveryUrl(userHostIP, userPort);
+    if (url == null) {
+      return false;
+    }
+    
+    if (await _testDiscoveryServicesEndpoint(url)) {
+      _cachedDiscoveryUrl = url;
+      print('✅ Discovery Service validated and cached: $url');
+      return true;
+    } else {
+      print('❌ Discovery Service validation failed: $url');
+      return false;
+    }
+  }
+
   /// Returns null if Discovery Service cannot be found
   Future<String?> findDiscoveryService() async {
     print('🔍 Searching for PPL Meta Discovery Service...');
@@ -21,53 +69,85 @@ class SimplifiedDiscoveryClient {
       return _cachedDiscoveryUrl;
     }
     
-    // Get host machine IPs
-    final hostIPs = await _getHostMachineIPs();
-    
-    // PRIORITY 1: Try Discovery Service through nginx proxy (recommended)
-    for (final hostIP in hostIPs) {
-      final nginxUrl = 'http://$hostIP/discovery';
-      if (await _testDiscoveryUrl(nginxUrl)) {
-        _cachedDiscoveryUrl = nginxUrl;
-        print('✅ Found Discovery Service via nginx: $nginxUrl');
-        return nginxUrl;
+    // Try to get discovery URL from discovery config service
+    try {
+      final configService = DiscoveryConfigService.instance;
+      final configUrl = await configService.getDiscoveryUrl();
+      
+      if (configUrl != null) {
+        print('✅ Found discovery URL from config service: $configUrl');
+        _cachedDiscoveryUrl = configUrl;
+        return configUrl;
       }
+    } catch (e) {
+      print('⚠️ Could not get discovery URL from config service: $e');
     }
     
-    // PRIORITY 2: Try direct Discovery Service access (port 8006)
-    for (final hostIP in hostIPs) {
-      final directUrl = 'http://$hostIP:8006';
-      if (await _testDiscoveryUrl(directUrl)) {
-        _cachedDiscoveryUrl = directUrl;
-        print('✅ Found Discovery Service directly: $directUrl');
-        return directUrl;
-      }
-    }
-    
-    // PRIORITY 3: Try localhost (development fallback)
-    const localhostUrl = 'http://localhost:8006';
-    if (await _testDiscoveryUrl(localhostUrl)) {
-      _cachedDiscoveryUrl = localhostUrl;
-      print('✅ Found Discovery Service on localhost: $localhostUrl');
-      return localhostUrl;
-    }
-    
-    print('❌ Discovery Service not found on any known location');
+    print('❌ No cached Discovery Service URL - user input required');
     return null;
   }
   
+  /// Discover services at a specific IP:port address
+  Future<List<ServiceInfo>> discoverServicesAtAddress(String ipPort) async {
+    final url = 'http://$ipPort/api/v1/services';
+    
+    try {
+      print('🔍 Connecting to Discovery Service at: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Accept': 'application/json'},
+      ).timeout(_timeout);
+      
+      if (response.statusCode != 200) {
+        throw DiscoveryException('Discovery Service returned HTTP ${response.statusCode}');
+      }
+      
+      final data = json.decode(response.body);
+      final services = <ServiceInfo>[];
+      
+      for (final serviceData in data['services']) {
+        services.add(ServiceInfo.fromJson(serviceData));
+      }
+      
+      print('✅ Retrieved ${services.length} services from Discovery Service at $ipPort');
+      
+      // Cache this URL as it's working
+      _cachedDiscoveryUrl = 'http://$ipPort';
+      
+      return services;
+      
+    } catch (e) {
+      print('❌ Error connecting to Discovery Service at $ipPort: $e');
+      throw DiscoveryException('Failed to connect to Discovery Service at $ipPort: $e');
+    }
+  }
+
   /// Get all services from Discovery Service
   Future<List<ServiceInfo>> getAllServices() async {
-    final discoveryUrl = await findDiscoveryService();
-    if (discoveryUrl == null) {
-      throw DiscoveryException('Discovery Service not found');
+    final discoveryBaseUrl = await findDiscoveryService();
+    if (discoveryBaseUrl == null) {
+      throw DiscoveryException('Discovery Service not configured - user input required');
     }
     
     try {
       print('📋 Fetching services from Discovery Service...');
       
+      // Construct the full services endpoint URL
+      String servicesUrl;
+      if (discoveryBaseUrl.endsWith('/api/v1/services')) {
+        // URL already includes the endpoint
+        servicesUrl = discoveryBaseUrl;
+      } else {
+        // Add the endpoint to the base URL
+        final baseUrl = discoveryBaseUrl.endsWith('/') ? discoveryBaseUrl.substring(0, discoveryBaseUrl.length - 1) : discoveryBaseUrl;
+        servicesUrl = '$baseUrl/api/v1/services';
+      }
+      
+      print('🔗 Using services URL: $servicesUrl');
+      
       final response = await http.get(
-        Uri.parse('$discoveryUrl/api/v1/services'),
+        Uri.parse(servicesUrl),
         headers: {'Accept': 'application/json'},
       ).timeout(_timeout);
       
@@ -128,74 +208,100 @@ class SimplifiedDiscoveryClient {
     
     return await _testDiscoveryUrl(discoveryUrl);
   }
-  
-  /// Get services from Discovery Service at specific address
-  Future<List<ServiceInfo>> discoverServicesAtAddress(String address) async {
-    final url = 'http://$address';
+
+  /// Get the device's IP address on the current network
+
+  /// Get the device's network prefix (first 3 parts of IP)
+  /// Returns something like "192.168.200" for display in UI
+  Future<String?> getNetworkPrefix() async {
+    final deviceIP = await getMyIPAddress();
+    if (deviceIP == null) return null;
     
-    try {
-      print('🔍 Testing Discovery Service at: $url');
-      
-      // Test health first
-      final healthResponse = await http.get(
-        Uri.parse('$url/health'),
-        headers: {'Accept': 'application/json'},
-      ).timeout(const Duration(seconds: 5));
-      
-      if (healthResponse.statusCode != 200) {
-        throw DiscoveryException('Discovery Service health check failed at $url');
-      }
-      
-      print('✅ Discovery Service health OK at $url');
-      
-      // Get services
-      final servicesResponse = await http.get(
-        Uri.parse('$url/api/v1/services'),
-        headers: {'Accept': 'application/json'},
-      ).timeout(_timeout);
-      
-      if (servicesResponse.statusCode != 200) {
-        throw DiscoveryException('Failed to fetch services: HTTP ${servicesResponse.statusCode}');
-      }
-      
-      final data = json.decode(servicesResponse.body);
-      final services = <ServiceInfo>[];
-      
-      for (final serviceData in data['services']) {
-        services.add(ServiceInfo.fromJson(serviceData));
-      }
-      
-      print('✅ Retrieved ${services.length} services from Discovery Service at $url');
-      
-      // Cache this URL as it's working
-      _cachedDiscoveryUrl = url;
-      
-      return services;
-      
-    } catch (e) {
-      print('❌ Error connecting to Discovery Service at $url: $e');
-      throw DiscoveryException('Failed to connect to Discovery Service at $url: $e');
-    }
+    final parts = deviceIP.split('.');
+    if (parts.length != 4) return null;
+    
+    return '${parts[0]}.${parts[1]}.${parts[2]}';
   }
 
   /// Get the device's IP address on the current network
   Future<String?> getMyIPAddress() async {
     try {
-      // Simple approach: we'll assume we're on a standard home network
-      // and let the user specify the exact IP
-      // This is actually more reliable than trying to auto-detect
+      // Use socket connection to detect actual local IP
+      // Connect to a remote address to determine local IP
+      final socket = await Socket.connect('8.8.8.8', 80);
+      final localIP = socket.address.address;
+      socket.destroy();
       
-      print('📱 IP detection: Using manual network configuration');
-      print('💡 User will specify the target machine IP');
-      
-      // Return a sample IP for network detection purposes
-      // The UI will extract the network part and let user specify the host part
-      return '192.168.1.66'; // This represents the mobile device IP
+      // Validate that this is not a VPN/Tailscale IP
+      if (_isLocalNetworkIP(localIP)) {
+        print('📱 IP detection: Detected device IP: $localIP');
+        return localIP;
+      } else {
+        print('⚠️ Socket IP is VPN/Tailscale ($localIP), trying network interfaces...');
+      }
       
     } catch (e) {
       print('❌ IP detection error: $e');
-      return '192.168.1.66'; // Fallback
     }
+    
+    // Fallback: try to detect network interface, prioritizing local networks
+    try {
+      final interfaces = await NetworkInterface.list();
+      
+      // First pass: Look for common local network ranges
+      for (final interface in interfaces) {
+        for (final addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && 
+              !addr.isLoopback && 
+              !addr.address.startsWith('169.254') &&
+              _isLocalNetworkIP(addr.address)) {
+            print('📱 IP detection: Using local network interface IP: ${addr.address}');
+            return addr.address;
+          }
+        }
+      }
+      
+      // Second pass: If no local network found, use any non-loopback IPv4
+      for (final interface in interfaces) {
+        for (final addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && 
+              !addr.isLoopback && 
+              !addr.address.startsWith('169.254')) {
+            print('⚠️ IP detection: Using non-local network IP: ${addr.address}');
+            return addr.address;
+          }
+        }
+      }
+    } catch (e2) {
+      print('❌ Interface detection error: $e2');
+    }
+    
+    // No fallback IP - return null if detection fails
+    print('❌ Could not detect device IP address');
+    return null;
+  }
+  
+  /// Check if an IP address is in a local network range
+  bool _isLocalNetworkIP(String ip) {
+    // Common local network ranges
+    return ip.startsWith('192.168.') ||  // Class C private
+           ip.startsWith('10.0.') ||     // Class A private (but not Tailscale 10.x.x.x)
+           ip.startsWith('172.16.') ||   // Class B private
+           ip.startsWith('172.17.') ||
+           ip.startsWith('172.18.') ||
+           ip.startsWith('172.19.') ||
+           ip.startsWith('172.20.') ||
+           ip.startsWith('172.21.') ||
+           ip.startsWith('172.22.') ||
+           ip.startsWith('172.23.') ||
+           ip.startsWith('172.24.') ||
+           ip.startsWith('172.25.') ||
+           ip.startsWith('172.26.') ||
+           ip.startsWith('172.27.') ||
+           ip.startsWith('172.28.') ||
+           ip.startsWith('172.29.') ||
+           ip.startsWith('172.30.') ||
+           ip.startsWith('172.31.');
   }
 
   /// Clear cached Discovery Service URL (force re-discovery)
@@ -204,7 +310,37 @@ class SimplifiedDiscoveryClient {
     print('🗑️ Discovery Service cache cleared');
   }
 
-  // Private methods  /// Test if a URL is a valid Discovery Service
+  // Private methods
+  
+  /// Test if a URL is a valid Discovery Service /services endpoint
+  Future<bool> _testDiscoveryServicesEndpoint(String url) async {
+    try {
+      print('🩺 Testing Discovery Service /services endpoint: $url');
+      
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 5));
+      
+      if (response.statusCode == 200) {
+        // Verify it's the services endpoint by checking response structure
+        final data = json.decode(response.body);
+        if (data.containsKey('services') && data['services'] is List) {
+          print('✅ Verified Discovery Service /services endpoint: $url');
+          return true;
+        }
+      }
+      
+      print('❌ Not a valid Discovery Service /services endpoint: $url');
+      return false;
+      
+    } catch (e) {
+      print('❌ Failed to test Discovery Service /services endpoint at $url: $e');
+      return false;
+    }
+  }
+
+  /// Test if a URL is a valid Discovery Service (legacy method for health checks)
   Future<bool> _testDiscoveryUrl(String url) async {
     try {
       print('🩺 Testing Discovery Service at: $url');
@@ -230,33 +366,6 @@ class SimplifiedDiscoveryClient {
       print('❌ Failed to test Discovery Service at $url: $e');
       return false;
     }
-  }
-  
-  /// Get potential host machine IP addresses using network discovery
-  Future<List<String>> _getHostMachineIPs() async {
-    final discoveredIPs = <String>[];
-    
-    // Try to discover the actual network gateway/host machine
-    try {
-      // Use common development machine IPs in the current network
-      final networkPrefixes = ['192.168.1.', '192.168.0.', '10.0.0.', '172.16.0.'];
-      
-      for (final prefix in networkPrefixes) {
-        // Try common host machine IPs in each network
-        for (int i = 1; i <= 10; i++) {
-          discoveredIPs.add('$prefix$i');
-        }
-        // Try common development IPs
-        discoveredIPs.addAll([
-          '${prefix}100', '${prefix}101', '${prefix}102', 
-          '${prefix}200', '${prefix}201', '${prefix}229'
-        ]);
-      }
-    } catch (e) {
-      print('⚠️ Network discovery failed: $e');
-    }
-    
-    return discoveredIPs;
   }
 }
 

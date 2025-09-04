@@ -64,7 +64,7 @@ dependencies:
   
   # Development
   cupertino_icons: ^1.0.6
-  google_fonts: ^6.3.0
+  # google_fonts: ^6.3.0  # Temporarily disabled for offline development
 
 dev_dependencies:
   flutter_test:

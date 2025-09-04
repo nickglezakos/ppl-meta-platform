@@ -13,7 +13,7 @@ class DeviceIdentifierService {
   String? _cachedCameraName;
 
   /// Generates a unique camera name in the format: mcam-<device-model>-<unique-id>
-  /// Example: mcam-xiaomi-2201117ty-a1b2c3
+  /// Example: mcam-xiaomi-redminote11-2d7ee4 (consistent, no timestamps)
   Future<String> generateCameraName() async {
     if (_cachedCameraName != null) {
       return _cachedCameraName!;
@@ -25,17 +25,18 @@ class DeviceIdentifierService {
         final deviceModel = _sanitizeModelName(androidInfo.model);
         final uniqueId = await _generateUniqueId(androidInfo);
         
+        // Generate a consistent name without timestamps
         _cachedCameraName = 'mcam-$deviceModel-$uniqueId';
         return _cachedCameraName!;
       } else {
         // Fallback for other platforms
         final uniqueId = _generateFallbackId();
-        _cachedCameraName = 'mcam-unknown-$uniqueId';
+        _cachedCameraName = 'mcam-device-$uniqueId';
         return _cachedCameraName!;
       }
     } catch (e) {
       print('⚠️ Error generating camera name: $e');
-      // Generate fallback name
+      // Generate fallback name without timestamp
       final fallbackId = _generateFallbackId();
       _cachedCameraName = 'mcam-device-$fallbackId';
       return _cachedCameraName!;
@@ -79,12 +80,13 @@ class DeviceIdentifierService {
 
   /// Generates a fallback ID when device info is unavailable
   String _generateFallbackId() {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final randomComponent = timestamp.toString();
+    // Use a consistent fallback based on platform rather than timestamp
+    final platformHash = Platform.operatingSystem.hashCode.abs();
+    final idString = platformHash.toString();
     // Take last 6 digits, ensuring we don't exceed the string length
-    final endIndex = randomComponent.length;
+    final endIndex = idString.length;
     final startIndex = endIndex >= 6 ? endIndex - 6 : 0;
-    return randomComponent.substring(startIndex);
+    return idString.substring(startIndex);
   }
 
   /// Gets detailed device information for registration
@@ -92,13 +94,18 @@ class DeviceIdentifierService {
     try {
       if (Platform.isAndroid) {
         final androidInfo = await _deviceInfo.androidInfo;
+        
+        // Use the Android ID as the device_id for consistent identification
+        // This ensures the same device always gets the same ID
+        final deviceId = androidInfo.id ?? androidInfo.fingerprint ?? 'unknown-device';
+        
         return {
           'manufacturer': androidInfo.manufacturer,
           'model': androidInfo.model,
           'brand': androidInfo.brand,
           'os_version': androidInfo.version.release,
           'sdk_version': androidInfo.version.sdkInt,
-          'device_id': androidInfo.id,
+          'device_id': deviceId, // Consistent device ID without timestamps
           'fingerprint': androidInfo.fingerprint,
           'platform': Platform.operatingSystem,
         };
@@ -110,6 +117,7 @@ class DeviceIdentifierService {
           'brand': 'Generic',
           'os_version': Platform.operatingSystemVersion,
           'platform': Platform.operatingSystem,
+          'device_id': 'unknown-device', // Consistent fallback
         };
       }
     } catch (e) {
@@ -119,6 +127,7 @@ class DeviceIdentifierService {
         'model': 'Unknown Device',
         'brand': 'Generic',
         'os_version': 'Unknown',
+        'device_id': 'unknown-device', // Consistent fallback
         'error': e.toString(),
       };
     }

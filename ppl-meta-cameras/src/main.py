@@ -30,8 +30,7 @@ from src.models.camera import Camera, CameraCapability, CameraSession
 
 # Try to import the shared service discovery module
 try:
-    from shared.service_discovery import register_service
-
+    sys.path.append("/Users/nickgklezakos/Documents/ppl-meta-code/shared")
     service_discovery_available = True
 except ImportError:
     service_discovery_available = False
@@ -82,28 +81,42 @@ async def lifespan(_app: FastAPI):
     logger.info("Metrics initialization skipped")
 
     # Initialize service discovery if available
-    # Initialize service discovery if available
     if service_discovery_available:
         try:
-            from shared.service_discovery import register_service
+            from service_discovery.ppl_discovery_client import (
+                DiscoveryClient,
+                ServiceConfig,
+            )
 
-            await register_service(
-                name="ppl-meta-cameras",
-                service_type="backend",
-                version="1.0.0",
-                host="0.0.0.0",
+            # Create discovery client
+            discovery_client = DiscoveryClient("http://localhost:8006")
+
+            # Create service configuration
+            service_config = ServiceConfig(
+                service_name="ppl-meta-cameras",
+                service_id="ppl-meta-cameras-001",
+                host="192.168.185.107",
                 port=config.PORT,
-                health_endpoint="/health",
-                capabilities=["cameras", "video-streaming", "detection"],
+                health_endpoint="/health/",
+                tags=["cameras", "video-streaming", "detection"],
                 metadata={
+                    "service_type": "backend",
                     "version": "1.0.0",
                     "environment": "development",
-                    "features": "camera_management,video_streaming,motion_detection",
+                    "features": "camera_management,video_streaming,detection",
                 },
             )
+
+            # Register service
+            await discovery_client.register_service(service_config)
             logger.info(
                 "Successfully registered ppl-meta-cameras with discovery service"
             )
+
+            # Store client for cleanup
+            global service_discovery_client
+            service_discovery_client = discovery_client
+
         except Exception as e:
             logger.error(f"Failed to register with discovery service: {e}")
 
@@ -115,11 +128,9 @@ async def lifespan(_app: FastAPI):
     logger.info("Shutting down PPL Meta Cameras Service...")
 
     # Deregister service
-    if service_discovery_available:
+    if service_discovery_available and service_discovery_client:
         try:
-            from shared.service_discovery import deregister_service
-
-            await deregister_service("ppl-meta-cameras")
+            await service_discovery_client.deregister_service("ppl-meta-cameras-001")
             logger.info("Service deregistered from discovery service")
         except Exception as e:
             logger.error(f"Failed to deregister service: {e}")

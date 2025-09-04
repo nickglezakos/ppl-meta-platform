@@ -26,6 +26,36 @@ last development point:
 
 
 
+
+    {
+        "id": 63,
+        "name": "mcam-201117ty-2d7ee4",
+        "device_id": "mobile_TKQ1.221114.001_1756878026959",
+        "camera_type": "MOBILE",
+        "status": "connected",
+        "resolution": "1920x1080",
+        "max_fps": 30,
+        "supports_streaming": true,
+        "supports_recording": false,
+        "last_seen": "2025-09-03T08:40:26.594965",
+        "created_at": "2025-09-03T08:40:26.594965"
+    }
+    {
+        "id": 59,
+        "name": "mcam-201117ty-2d7ee4",
+        "device_id": "mobile_TKQ1.221114.001_1756843195421",
+        "camera_type": "MOBILE",
+        "status": "connected",
+        "resolution": "1920x1080",
+        "max_fps": 30,
+        "supports_streaming": true,
+        "supports_recording": false,
+        "last_seen": "2025-09-02T22:59:55.924403",
+        "created_at": "2025-09-02T22:59:55.924403"
+    }
+
+
+
 echo "📱 Reconnecting Redmi Note 11 via WiFi Debugging"
 echo "=============================================="
 echo ""

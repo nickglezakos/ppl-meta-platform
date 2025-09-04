@@ -60,6 +60,9 @@ class DiscoveryClient:
         # Track registered services for this client instance
         self.registered_services: Dict[str, ServiceConfig] = {}
 
+        # Track actual service IDs returned by discovery service
+        self.service_id_mapping: Dict[str, str] = {}  # local_id -> discovery_id
+
         # Health monitoring task
         self._health_task: Optional[asyncio.Task] = None
         self._health_running = False
@@ -107,6 +110,18 @@ class DiscoveryClient:
             response = await self._make_request("POST", url, json=registration_data)
 
             if response and response.get("success"):
+                # Store mapping between local service ID and discovery service ID
+                discovery_service_id = response.get("service_id")
+                if discovery_service_id:
+                    self.service_id_mapping[config.service_id] = discovery_service_id
+                    logger.info(
+                        f"Service {config.service_name} registered with ID {discovery_service_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"Registration successful but no service_id returned"
+                    )
+
                 self.registered_services[config.service_id] = config
                 logger.info(f"Service {config.service_name} registered successfully")
 
@@ -125,26 +140,33 @@ class DiscoveryClient:
             logger.error(f"Exception during service registration: {e}")
             return False
 
-    async def deregister_service(self, service_id: str) -> bool:
+    async def deregister_service(self, local_service_id: str) -> bool:
         """Deregister a service from the discovery service.
 
         Args:
-            service_id: Unique service identifier
+            local_service_id: Local service identifier
 
         Returns:
             True if deregistration successful, False otherwise
         """
         try:
-            url = f"{self.discovery_url}/api/v1/services/{service_id}"
+            # Get the actual discovery service ID
+            discovery_service_id = self.service_id_mapping.get(local_service_id)
+            if not discovery_service_id:
+                logger.warning(f"No discovery service ID found for {local_service_id}")
+                return False
+
+            url = f"{self.discovery_url}/api/v1/services/{discovery_service_id}"
             response = await self._make_request("DELETE", url)
 
             if response:
                 # Remove from local tracking
-                self.registered_services.pop(service_id, None)
-                logger.info(f"Service {service_id} deregistered successfully")
+                self.registered_services.pop(local_service_id, None)
+                self.service_id_mapping.pop(local_service_id, None)
+                logger.info(f"Service {local_service_id} deregistered successfully")
                 return True
             else:
-                logger.error(f"Failed to deregister service {service_id}")
+                logger.error(f"Failed to deregister service {local_service_id}")
                 return False
 
         except Exception as e:
@@ -238,18 +260,24 @@ class DiscoveryClient:
             logger.warning(f"Health check failed for {service_id}: {e}")
             return False
 
-    async def _send_heartbeat(self, service_id: str) -> bool:
+    async def _send_heartbeat(self, local_service_id: str) -> bool:
         """Send heartbeat to discovery service.
 
         Args:
-            service_id: Service identifier
+            local_service_id: Local service identifier
 
         Returns:
             True if heartbeat sent successfully
         """
         try:
+            # Get the actual discovery service ID
+            discovery_service_id = self.service_id_mapping.get(local_service_id)
+            if not discovery_service_id:
+                logger.warning(f"No discovery service ID found for {local_service_id}")
+                return False
+
             heartbeat_data = {
-                "service_id": service_id,
+                "service_id": discovery_service_id,
                 "timestamp": datetime.utcnow().isoformat(),
                 "status": "healthy",
             }
@@ -260,7 +288,7 @@ class DiscoveryClient:
             return response is not None
 
         except Exception as e:
-            logger.warning(f"Failed to send heartbeat for {service_id}: {e}")
+            logger.warning(f"Failed to send heartbeat for {local_service_id}: {e}")
             return False
 
     async def _start_health_monitoring(self):

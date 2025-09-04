@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../../core/theme/offline_fonts.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/models/camera.dart';
 import '../../core/models/rtsp_camera.dart';
@@ -74,7 +74,7 @@ class CameraCard extends ConsumerWidget {
             children: [
               Text(
                 camera.name,
-                style: GoogleFonts.inter(
+                style: OfflineFonts.inter(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary,
@@ -83,7 +83,7 @@ class CameraCard extends ConsumerWidget {
               const SizedBox(height: 4),
               Text(
                 'ID: ${camera.deviceId}',
-                style: GoogleFonts.inter(
+                style: OfflineFonts.inter(
                   fontSize: 12,
                   color: AppColors.textSecondary,
                 ),
@@ -102,7 +102,7 @@ class CameraCard extends ConsumerWidget {
                   const SizedBox(width: 6),
                   Text(
                     camera.status.toUpperCase(),
-                    style: GoogleFonts.inter(
+                    style: OfflineFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                       color: _getStatusColor(camera.status),
@@ -123,7 +123,7 @@ class CameraCard extends ConsumerWidget {
           ),
           child: Text(
             camera.resolution ?? 'Unknown',
-            style: GoogleFonts.inter(
+            style: OfflineFonts.inter(
               fontSize: 10,
               fontWeight: FontWeight.w500,
               color: AppColors.primary,

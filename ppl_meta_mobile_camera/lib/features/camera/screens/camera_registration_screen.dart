@@ -24,8 +24,8 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
   @override
   void initState() {
     super.initState();
-    // Set default camera name based on device info
-    _cameraNameController.text = _generateDefaultCameraName();
+    // Set default camera name based on device info (async)
+    _initializeDefaultCameraName();
   }
 
   @override
@@ -36,8 +36,23 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
   }
 
   String _generateDefaultCameraName() {
-    final now = DateTime.now();
-    return 'Mobile Camera ${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    // Use the DeviceIdentifierService to generate a consistent name
+    // This will be replaced by async call in initState
+    return 'Mobile Camera'; // Temporary placeholder
+  }
+
+  Future<void> _initializeDefaultCameraName() async {
+    try {
+      final deviceName = await _deviceService.generateCameraName();
+      if (mounted) {
+        setState(() {
+          _cameraNameController.text = deviceName;
+        });
+      }
+    } catch (e) {
+      print('⚠️ Error generating device-based camera name: $e');
+      // Keep the placeholder name if device service fails
+    }
   }
 
   Future<void> _registerCamera() async {
@@ -258,14 +273,12 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
   /// Generate unique device ID for camera registration
   Future<String> _generateDeviceId() async {
     try {
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
       final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
       final baseId = deviceInfo['device_id'] ?? 'unknown';
-      return 'mobile_${baseId}_$timestamp';
+      return 'mobile_$baseId'; // Use consistent device ID without timestamp
     } catch (e) {
       print('⚠️ Error generating device ID: $e');
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      return 'mobile_fallback_$timestamp';
+      return 'mobile_fallback_device'; // Consistent fallback without timestamp
     }
   }
 

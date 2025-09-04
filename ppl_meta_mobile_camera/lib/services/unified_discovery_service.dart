@@ -135,11 +135,11 @@ class UnifiedDiscoveryService {
     // Task 1: Central discovery service
     discoveryTasks.add(_discoverFromCentralService(discoveryUrls));
 
-    // Task 2: Multicast discovery
-    discoveryTasks.add(_discoverFromMulticast());
+    // Task 2: Multicast discovery - DISABLED due to infinite loop issues
+    // discoveryTasks.add(_discoverFromMulticast());
 
-    // Task 3: Local network scanning (fallback)
-    discoveryTasks.add(_discoverFromLocalScan());
+    // Task 3: Local network scanning (fallback) - DISABLED due to infinite loop issues  
+    // discoveryTasks.add(_discoverFromLocalScan());
 
     try {
       // Wait for all discovery methods to complete or timeout
@@ -225,40 +225,8 @@ class UnifiedDiscoveryService {
 
   /// Discover services using multicast
   Future<List<DiscoveredServiceInfo>> _discoverFromMulticast() async {
-    debugPrint('📻 Attempting multicast discovery...');
-    
-    try {
-      final nodeUrl = await _multicastService.autoDiscoverNodeService();
-
-      if (nodeUrl != null) {
-        // Create a DiscoveredServiceInfo from the URL
-        final uri = Uri.parse(nodeUrl);
-        final now = DateTime.now();
-        final discoveredService = DiscoveredServiceInfo(
-          serviceId: 'ppl-meta-node-multicast',
-          name: 'ppl-meta-node',
-          serviceType: 'backend',
-          version: '1.0.0',
-          host: uri.host,
-          port: uri.port,
-          healthEndpoint: '/api/v1/health',
-          status: 'healthy',
-          capabilities: ['authentication', 'user-management'],
-          metadata: {'discovery_method': 'multicast'},
-          registeredAt: now,
-          lastSeen: now,
-          discoveryMethod: 'multicast',
-        );
-        debugPrint('✅ Multicast discovery successful: ${discoveredService.name}');
-        return [discoveredService];
-      } else {
-        debugPrint('⚠️ No services found via multicast');
-        return [];
-      }
-    } catch (e) {
-      debugPrint('❌ Multicast discovery error: $e');
-      return [];
-    }
+    debugPrint('📻 Multicast discovery disabled - preventing infinite loop');
+    return [];
   }
 
   /// Discover services by scanning local network

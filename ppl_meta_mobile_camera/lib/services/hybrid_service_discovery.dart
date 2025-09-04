@@ -52,6 +52,9 @@ class HybridServiceDiscoveryService {
       final discoveryUrls = [
         'http://localhost:8006',           // Local development
         'http://127.0.0.1:8006',          // Localhost IP
+        'http://192.168.129.107:8006',    // Current network - main service
+        'http://192.168.129.100:8006',    // Current network - common IP
+        'http://192.168.129.1:8006',      // Current network router
         'http://192.168.1.100:8006',      // Common local network
         'http://192.168.1.1:8006',        // Router IP
         'http://10.0.0.1:8006',           // Alternative local network

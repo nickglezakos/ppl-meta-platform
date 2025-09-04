@@ -29,6 +29,9 @@ class HomeScreen extends ConsumerWidget {
                 case 'profile':
                   context.go('/profile');
                   break;
+                case 'settings':
+                  context.go('/settings');
+                  break;
                 case 'users':
                   context.go('/users');
                   break;
@@ -49,6 +52,19 @@ class HomeScreen extends ConsumerWidget {
                   child: const ListTile(
                     leading: Icon(Icons.person),
                     title: Text('Profile'),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                padding: EdgeInsets.zero,
+                child: Container(
+                  decoration: const BoxDecoration(),
+                  child: const ListTile(
+                    leading: Icon(Icons.settings),
+                    title: Text('Settings'),
                     contentPadding: EdgeInsets.symmetric(horizontal: 16),
                     visualDensity: VisualDensity.compact,
                   ),

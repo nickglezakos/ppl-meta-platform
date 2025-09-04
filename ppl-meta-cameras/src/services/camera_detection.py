@@ -164,6 +164,60 @@ class CameraDetectionService:
                                 f"Failed to open RTSP camera {device_id} at {decoded_rtsp_url}"
                             )
                             return None
+                    elif camera and camera.camera_type == CameraType.MOBILE:
+                        # Handle mobile camera connection
+                        from src.services.mobile_capture import MobileVideoCapture
+                        from src.services.mobile_streaming import (
+                            mobile_streaming_service,
+                        )
+
+                        # Extract mobile camera connection details
+                        connection_string = camera.connection_string  # mobile://ip:port
+                        if not connection_string or not connection_string.startswith(
+                            "mobile://"
+                        ):
+                            logger.error(
+                                f"Invalid mobile camera connection string for {device_id}"
+                            )
+                            return None
+
+                        # Parse connection string: mobile://ip:port
+                        try:
+                            _, address_part = connection_string.split("mobile://", 1)
+                            ip_address, port_str = address_part.split(":")
+                            port = int(port_str)
+                        except ValueError:
+                            logger.error(
+                                f"Failed to parse mobile camera connection string: {connection_string}"
+                            )
+                            return None
+
+                        # Create mobile stream configuration
+                        stream_config = {
+                            "ip_address": ip_address,
+                            "port": port,
+                            "protocol": "rtmp",  # Default to RTMP for mobile cameras
+                            "width": camera.resolution_width or 640,
+                            "height": camera.resolution_height or 480,
+                            "fps": camera.max_fps or 30,
+                        }
+
+                        # Create mobile video capture instance
+                        mobile_cap = MobileVideoCapture(
+                            device_id, mobile_streaming_service
+                        )
+
+                        # Open mobile camera stream
+                        success = await mobile_cap.open()
+                        if success:
+                            self.active_connections[device_id] = mobile_cap
+                            logger.info(f"Connected to mobile camera {device_id}")
+                            return mobile_cap
+                        else:
+                            logger.error(
+                                f"Failed to connect to mobile camera {device_id}"
+                            )
+                            return None
                     else:
                         logger.error(
                             f"Camera {device_id} not found in detected cameras or database"

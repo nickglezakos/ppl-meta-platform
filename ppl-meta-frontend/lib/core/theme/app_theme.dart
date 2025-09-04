@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../../../utils/offline_fonts.dart';
 
 /// Custom color palette for PPL Meta platform
 class AppColors {
@@ -78,23 +78,23 @@ class AppColors {
 
 /// Typography styles
 class AppTextStyles {
-  static final h1 = GoogleFonts.roboto(fontSize: 32, fontWeight: FontWeight.bold);
-  static final h2 = GoogleFonts.roboto(fontSize: 28, fontWeight: FontWeight.bold);
-  static final h3 = GoogleFonts.roboto(fontSize: 24, fontWeight: FontWeight.bold);
-  static final h4 = GoogleFonts.roboto(fontSize: 20, fontWeight: FontWeight.bold);
-  static final h5 = GoogleFonts.roboto(fontSize: 18, fontWeight: FontWeight.bold);
-  static final h6 = GoogleFonts.roboto(fontSize: 16, fontWeight: FontWeight.bold);
+  static final h1 = OfflineFonts.roboto(fontSize: 32, fontWeight: FontWeight.bold);
+  static final h2 = OfflineFonts.roboto(fontSize: 28, fontWeight: FontWeight.bold);
+  static final h3 = OfflineFonts.roboto(fontSize: 24, fontWeight: FontWeight.bold);
+  static final h4 = OfflineFonts.roboto(fontSize: 20, fontWeight: FontWeight.bold);
+  static final h5 = OfflineFonts.roboto(fontSize: 18, fontWeight: FontWeight.bold);
+  static final h6 = OfflineFonts.roboto(fontSize: 16, fontWeight: FontWeight.bold);
   
-  static final bodyLarge = GoogleFonts.roboto(fontSize: 16);
-  static final bodyMedium = GoogleFonts.roboto(fontSize: 14);
-  static final bodySmall = GoogleFonts.roboto(fontSize: 12);
+  static final bodyLarge = OfflineFonts.roboto(fontSize: 16);
+  static final bodyMedium = OfflineFonts.roboto(fontSize: 14);
+  static final bodySmall = OfflineFonts.roboto(fontSize: 12);
   
-  static final labelLarge = GoogleFonts.roboto(fontSize: 14, fontWeight: FontWeight.w500);
-  static final labelMedium = GoogleFonts.roboto(fontSize: 12, fontWeight: FontWeight.w500);
-  static final labelSmall = GoogleFonts.roboto(fontSize: 11, fontWeight: FontWeight.w500);
+  static final labelLarge = OfflineFonts.roboto(fontSize: 14, fontWeight: FontWeight.w500);
+  static final labelMedium = OfflineFonts.roboto(fontSize: 12, fontWeight: FontWeight.w500);
+  static final labelSmall = OfflineFonts.roboto(fontSize: 11, fontWeight: FontWeight.w500);
   
-  static final caption = GoogleFonts.roboto(fontSize: 12);
-  static final overline = GoogleFonts.roboto(fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w500);
+  static final caption = OfflineFonts.roboto(fontSize: 12);
+  static final overline = OfflineFonts.roboto(fontSize: 10, letterSpacing: 1.2, fontWeight: FontWeight.w500);
 }
 
 /// Spacing constants
@@ -172,7 +172,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: _darkColorScheme,
-      textTheme: GoogleFonts.robotoTextTheme(
+      textTheme: OfflineFonts.robotoTextTheme(
         ThemeData.dark().textTheme,
       ),
       // Clean Material 3 input styling with proper dark theme colors
@@ -337,7 +337,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: _lightColorScheme,
-      textTheme: GoogleFonts.robotoTextTheme(
+      textTheme: OfflineFonts.robotoTextTheme(
         ThemeData.light().textTheme,
       ),
       inputDecorationTheme: InputDecorationTheme(
