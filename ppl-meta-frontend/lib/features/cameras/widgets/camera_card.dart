@@ -118,6 +118,10 @@ class CameraCard extends ConsumerWidget {
         icon = Icons.camera;
         tooltip = 'MJPEG Camera';
         break;
+      case CameraType.mobile:
+        icon = Icons.phone_android;
+        tooltip = 'Mobile Camera';
+        break;
       case CameraType.virtual:
         icon = Icons.computer;
         tooltip = 'Virtual Camera';
@@ -182,15 +186,28 @@ class CameraCard extends ConsumerWidget {
   }
 
   Widget _buildActions(BuildContext context, WidgetRef ref) {
+    // Watch per-camera stream state instead of using camera.isActive
+    final perCameraStreamState = ref.watch(perCameraStreamProvider(camera.id));
+    final isStreaming = perCameraStreamState.isStreaming;
+    final isLoading = perCameraStreamState.isLoading;
+    
     return Row(
       children: [
         Expanded(
           child: ElevatedButton.icon(
-            onPressed: () => _handleStreaming(context, ref),
-            icon: Icon(camera.isActive ? Icons.stop : Icons.play_arrow),
-            label: Text(camera.isActive ? 'Stop' : 'Start'),
+            onPressed: isLoading ? null : () => _handleStreaming(context, ref),
+            icon: isLoading 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(isStreaming ? Icons.stop : Icons.play_arrow),
+            label: Text(isLoading 
+                ? 'Loading...' 
+                : (isStreaming ? 'Stop' : 'Start')),
             style: ElevatedButton.styleFrom(
-              backgroundColor: camera.isActive
+              backgroundColor: isStreaming
                   ? Theme.of(context).colorScheme.error
                   : Theme.of(context).colorScheme.primary,
             ),
@@ -230,19 +247,20 @@ class CameraCard extends ConsumerWidget {
   Future<void> _handleStreaming(BuildContext context, WidgetRef ref) async {
     try {
       final cameraActions = ref.read(cameraActionsProvider);
+      final perCameraStreamState = ref.read(perCameraStreamProvider(camera.id));
       
-      if (camera.isActive) {
+      if (perCameraStreamState.isStreaming) {
         await cameraActions.stopStreaming(camera.id);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Streaming stopped')),
+            SnackBar(content: Text('Streaming stopped for ${camera.name}')),
           );
         }
       } else {
         await cameraActions.startStreaming(camera.id);
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Streaming started')),
+            SnackBar(content: Text('Streaming started for ${camera.name}')),
           );
         }
       }
@@ -250,7 +268,7 @@ class CameraCard extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Error with ${camera.name}: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
@@ -258,20 +276,20 @@ class CameraCard extends ConsumerWidget {
     }
   }
 
-  Future<void> _handleSnapshot(BuildContext context, WidgetRef ref) async {
+  void _handleSnapshot(BuildContext context, WidgetRef ref) async {
     try {
       final cameraActions = ref.read(cameraActionsProvider);
-      final snapshotUrl = await cameraActions.takeSnapshot(camera.id);
+      final snapshotResult = await cameraActions.takeSnapshot(camera.id);
       
-      if (context.mounted) {
-        _showSnapshotDialog(context, snapshotUrl);
+      if (snapshotResult != null && context.mounted) {
+        _showSnapshotDialog(context, snapshotResult.base64Image);
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to take snapshot: $e'),
-            backgroundColor: Theme.of(context).colorScheme.error,
+            backgroundColor: Colors.red,
           ),
         );
       }

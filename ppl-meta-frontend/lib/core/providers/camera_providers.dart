@@ -61,22 +61,8 @@ class CameraListNotifier extends StateNotifier<CameraListState> {
     try {
       final cameras = await _cameraService.getCameras();
       
-      // TEMPORARY: Add hardcoded mobile camera for testing
-      final testMobileCamera = Camera(
-        id: 'mobile_TKQ1.221114.001',
-        name: 'Mobile Camera TKQ1',
-        deviceId: 'mobile_TKQ1.221114.001', // Use the full device ID that worked in HTML test
-        type: CameraType.mobile,
-        status: 'connected',
-        isActive: true,
-        resolution: '720x480',
-        lastSeen: DateTime.now(),
-      );
-      
-      final allCameras = [testMobileCamera, ...cameras];
-      
       state = state.copyWith(
-        cameras: allCameras,
+        cameras: cameras,
         isLoading: false,
       );
     } catch (e) {

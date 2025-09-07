@@ -68,6 +68,69 @@ final cameraActionsProvider = Provider<CameraActions>((ref) {
   return CameraActions(cameraService, ref);
 });
 
+/// Per-camera streaming state provider to avoid interference between camera types
+final perCameraStreamProvider = StateNotifierProvider.family<PerCameraStreamNotifier, PerCameraStreamState, String>((ref, cameraId) {
+  return PerCameraStreamNotifier(cameraId);
+});
+
+/// Per-camera streaming state
+class PerCameraStreamState {
+  final String cameraId;
+  final bool isStreaming;
+  final bool isLoading;
+  final String? error;
+
+  const PerCameraStreamState({
+    required this.cameraId,
+    this.isStreaming = false,
+    this.isLoading = false,
+    this.error,
+  });
+
+  PerCameraStreamState copyWith({
+    String? cameraId,
+    bool? isStreaming,
+    bool? isLoading,
+    String? error,
+  }) {
+    return PerCameraStreamState(
+      cameraId: cameraId ?? this.cameraId,
+      isStreaming: isStreaming ?? this.isStreaming,
+      isLoading: isLoading ?? this.isLoading,
+      error: error ?? this.error,
+    );
+  }
+}
+
+/// Per-camera stream notifier to manage individual camera streaming states
+class PerCameraStreamNotifier extends StateNotifier<PerCameraStreamState> {
+  PerCameraStreamNotifier(String cameraId) : super(PerCameraStreamState(cameraId: cameraId));
+
+  Future<void> startStreaming() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      // Streaming logic handled in camera actions, just update state
+      state = state.copyWith(isStreaming: true, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  Future<void> stopStreaming() async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      // Streaming logic handled in camera actions, just update state
+      state = state.copyWith(isStreaming: false, isLoading: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e.toString());
+    }
+  }
+
+  void setError(String error) {
+    state = state.copyWith(isLoading: false, error: error);
+  }
+}
+
 /// Camera actions class for state management using existing camera service
 class CameraActions {
   final CameraService _cameraService;
@@ -142,6 +205,9 @@ class CameraActions {
       final camera = allCameras.where((c) => c.id == cameraId).firstOrNull;
       if (camera == null) return null;
       
+      // Update per-camera stream state
+      _ref.read(perCameraStreamProvider(cameraId).notifier).startStreaming();
+      
       // First ensure camera is connected
       await connectCamera(cameraId);
       
@@ -154,6 +220,8 @@ class CameraActions {
       return streamingInfo;
     } catch (e) {
       print('Error starting streaming for camera $cameraId: $e');
+      // Update error state for this specific camera
+      _ref.read(perCameraStreamProvider(cameraId).notifier).setError(e.toString());
       return null;
     }
   }
@@ -166,12 +234,17 @@ class CameraActions {
       final camera = allCameras.where((c) => c.id == cameraId).firstOrNull;
       if (camera == null) return;
       
+      // Update per-camera stream state
+      _ref.read(perCameraStreamProvider(cameraId).notifier).stopStreaming();
+      
       await _cameraService.stopStreaming(camera.deviceId);
       
       // Refresh camera status
       _ref.invalidate(cameraStreamingInfoProvider(cameraId));
     } catch (e) {
       print('Error stopping streaming for camera $cameraId: $e');
+      // Update error state for this specific camera
+      _ref.read(perCameraStreamProvider(cameraId).notifier).setError(e.toString());
     }
   }
 

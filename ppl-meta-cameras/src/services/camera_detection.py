@@ -131,14 +131,34 @@ class CameraDetectionService:
                 # Handle USB cameras from detected cameras
                 if camera_info["camera_type"] == CameraType.USB:
                     index = int(camera_info["connection_string"])
+
+                    # For USB cameras, ensure proper initialization
+                    # to avoid black screen
                     cap = cv2.VideoCapture(index)
 
+                    # Wait a moment for camera to initialize
+                    await asyncio.sleep(0.1)
+
                     if cap.isOpened():
+                        # Set properties to ensure proper frame capture
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer
+                        cap.set(cv2.CAP_PROP_FPS, 30)  # Set frame rate
+
+                        # Read and discard first few frames to ensure
+                        # fresh frames
+                        for _ in range(3):
+                            ret, _ = cap.read()
+                            if not ret:
+                                break
+
                         self.active_connections[device_id] = cap
-                        logger.info(f"Connected to USB camera {device_id}")
+                        logger.info(
+                            "Connected to USB camera %s with fresh init", device_id
+                        )
                         return cap
                     else:
-                        logger.error(f"Failed to open USB camera {device_id}")
+                        logger.error("Failed to open USB camera %s", device_id)
+                        cap.release()
                         return None
             else:
                 # Camera not in detected cameras, check if it's RTSP camera in database

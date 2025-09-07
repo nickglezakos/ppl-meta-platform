@@ -14,7 +14,7 @@ import requests
 
 # Configuration
 CAMERAS_SERVICE_URL = "http://localhost:8005"
-JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3IiwiZXhwIjoxNzU2ODU3NjIxfQ.RJIaFDBuOPFL0XqQwIFY7UJnHO0SMz_uXxwM73nKwAw"
+JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3IiwiZXhwIjoxNzU3Mjc3NjU0fQ.ezfRHyLjV8qKrIjUOJ1iufArV0WvFtdvHFZbFq4ss8w"
 
 
 def get_auth_headers():

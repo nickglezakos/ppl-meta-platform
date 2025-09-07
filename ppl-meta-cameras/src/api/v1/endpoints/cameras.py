@@ -29,6 +29,7 @@ from src.security.auth import (
     require_view_cameras,
 )
 from src.services.camera_detection import camera_service
+from src.services.session_auth import session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -211,6 +212,9 @@ async def disconnect_camera(
     """Disconnect from a specific camera."""
 
     try:
+        # Clean up any active streaming sessions for this device
+        cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
+
         # Disconnect from camera
         success = await camera_service.disconnect_camera(device_id)
         if not success:
@@ -226,23 +230,27 @@ async def disconnect_camera(
             db.commit()
 
         logger.info(
-            f"User {current_user.get('sub')} disconnected from camera {device_id}"
+            "User %s disconnected from camera %s, cleaned %d sessions",
+            current_user.get("sub"),
+            device_id,
+            cleaned_sessions,
         )
 
         return {
             "device_id": device_id,
             "status": "disconnected",
             "message": f"Successfully disconnected from camera {device_id}",
+            "sessions_cleaned": cleaned_sessions,
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error disconnecting from camera {device_id}: {e}")
+        logger.error("Error disconnecting from camera %s: %s", device_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to disconnect from camera",
-        )
+        ) from e
 
 
 @router.get("/{device_id}/info", dependencies=[Depends(require_view_cameras)])
@@ -346,18 +354,29 @@ async def disconnect_all_cameras(
     """Disconnect all active camera connections (admin only)."""
 
     try:
+        # Clean up all active streaming sessions
+        cleaned_sessions = session_manager.cleanup_all_sessions()
+
         await camera_service.disconnect_all()
 
-        logger.info(f"Admin {current_user.get('sub')} disconnected all cameras")
+        logger.info(
+            "Admin %s disconnected all cameras, cleaned %d sessions",
+            current_user.get("sub"),
+            cleaned_sessions,
+        )
 
-        return {"message": "All cameras disconnected successfully", "status": "success"}
+        return {
+            "message": "All cameras disconnected successfully",
+            "status": "success",
+            "sessions_cleaned": cleaned_sessions,
+        }
 
     except Exception as e:
-        logger.error(f"Error disconnecting all cameras: {e}")
+        logger.error("Error disconnecting all cameras: %s", e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to disconnect all cameras",
-        )
+        ) from e
 
 
 @router.post("/rtsp", dependencies=[Depends(require_admin_cameras)])
@@ -819,6 +838,9 @@ async def unregister_mobile_camera(
                 detail=f"Mobile camera {device_id} not found",
             )
 
+        # Clean up any active streaming sessions for this device
+        cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
+
         # Disconnect if connected
         if camera.status == CameraStatus.CONNECTED:
             await camera_service.disconnect_camera(device_id)
@@ -829,14 +851,18 @@ async def unregister_mobile_camera(
         db.commit()
 
         logger.info(
-            f"User {current_user.get('sub')} unregistered mobile camera: "
-            f"{camera_name} ({device_id})"
+            "User %s unregistered mobile camera: %s (%s), cleaned %d sessions",
+            current_user.get("sub"),
+            camera_name,
+            device_id,
+            cleaned_sessions,
         )
 
         return {
             "message": "Mobile camera unregistered successfully",
             "device_id": device_id,
             "camera_name": camera_name,
+            "sessions_cleaned": cleaned_sessions,
         }
 
     except HTTPException:
@@ -1136,10 +1162,19 @@ async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
                 )
 
     except WebSocketDisconnect:
-        logger.info(f"WebSocket connection closed for camera {device_id}")
+        # Clean up sessions when mobile camera disconnects via WebSocket
+        cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
+        logger.info(
+            "WebSocket connection closed for camera %s, cleaned %d sessions",
+            device_id,
+            cleaned_sessions,
+        )
     except Exception as e:
-        logger.error(f"WebSocket error for camera {device_id}: {e}")
+        logger.error("WebSocket error for camera %s: %s", device_id, e)
+        # Clean up sessions on error as well
+        cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
+        logger.info("Cleaned %d sessions due to WebSocket error", cleaned_sessions)
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass

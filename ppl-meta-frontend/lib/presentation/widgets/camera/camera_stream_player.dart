@@ -5,7 +5,7 @@ import 'dart:ui_web' as ui_web;
 import 'dart:async';
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/camera_providers.dart';
-import '../../../core/providers/camera_providers.dart';
+import '../../../core/providers/multi_camera_providers.dart';
 
 class CameraStreamPlayer extends ConsumerStatefulWidget {
   final String cameraId;
@@ -97,12 +97,12 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
     
     if (!_isActive) return; // Check again before provider call
     
-    // Then stop the streaming via the provider
+    // Then stop the streaming via the per-camera provider
     try {
-      await ref.read(cameraStreamProvider.notifier).stopStreaming();
-      print('Streaming stopped successfully');
+      await ref.read(perCameraStreamProvider(widget.cameraId).notifier).stopStreaming();
+      print('Streaming stopped successfully for camera ${widget.cameraId}');
     } catch (e) {
-      print('Error stopping stream: $e');
+      print('Error stopping stream for camera ${widget.cameraId}: $e');
     }
   }
 
@@ -110,15 +110,25 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
     try {
       final cameraService = ref.read(cameraServiceProvider);
       
-      // Create a streaming session with the camera service
-      print('Creating streaming session for camera ${widget.cameraId}...');
+      // Get the camera to determine proper device ID for API calls
+      final cameras = await ref.read(allCamerasProvider.future);
+      final camera = cameras.where((c) => c.id == widget.cameraId).firstOrNull;
       
-      final sessionData = await cameraService.createStreamingSession(widget.cameraId);
+      if (camera == null) {
+        print('Camera not found: ${widget.cameraId}');
+        return null;
+      }
+      
+      // Use device ID for API calls instead of camera ID
+      final deviceId = camera.deviceId;
+      print('Creating streaming session for camera ${widget.cameraId} with device ID: $deviceId');
+      
+      final sessionData = await cameraService.createStreamingSession(deviceId);
       
       if (sessionData != null) {
         final streamingUrl = sessionData['streaming_url'];
         
-        print('Streaming session created successfully');
+        print('Streaming session created successfully for device: $deviceId');
         print('Session URL: $streamingUrl');
         
         // Return the full URL with the camera service base
@@ -128,7 +138,7 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
         print('Full streaming URL: $fullStreamingUrl');
         return fullStreamingUrl;
       } else {
-        print('Failed to create streaming session');
+        print('Failed to create streaming session for device: $deviceId');
         return null;
       }
     } catch (e) {
@@ -139,16 +149,16 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final streamState = ref.watch(cameraStreamProvider);
+    // Use per-camera stream state instead of global state
+    final perCameraStreamState = ref.watch(perCameraStreamProvider(widget.cameraId));
     
-    // Check if streaming has stopped or this camera is not the active one
-    final isStreamingStopped = !streamState.isStreaming || 
-                              streamState.cameraId != widget.cameraId;
+    // Check if streaming has stopped for THIS specific camera
+    final isStreamingStopped = !perCameraStreamState.isStreaming;
     
     if (!_isActive || isStreamingStopped) {
       // Clear video if we haven't already
       if (_currentStreamUrl != null) {
-        print('Stream state changed - stopping: isStreaming=${streamState.isStreaming}, cameraId=${streamState.cameraId}');
+        print('Stream state changed for camera ${widget.cameraId} - stopping: isStreaming=${perCameraStreamState.isStreaming}');
         // Clear immediately instead of using post frame callback
         _clearVideoStream();
       }
@@ -398,7 +408,7 @@ class _CameraStreamPlayerState extends ConsumerState<CameraStreamPlayer> {
                   ),
                 ),
                 // Stop button overlay
-                if (_isActive && streamState.isStreaming)
+                if (_isActive && perCameraStreamState.isStreaming)
                   Positioned(
                     bottom: 8,
                     right: 8,

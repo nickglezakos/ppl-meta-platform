@@ -86,6 +86,59 @@ class StreamingSessionManager:
             logger.info(f"Cleaning up expired session {session_id}")
             del self._sessions[session_id]
 
+    def cleanup_sessions_for_device(self, device_id: str) -> int:
+        """Clean up all sessions for a specific device when it disconnects."""
+        sessions_to_remove = [
+            session_id
+            for session_id, session in self._sessions.items()
+            if session["device_id"] == device_id
+        ]
+
+        for session_id in sessions_to_remove:
+            logger.info(
+                "Cleaning up session %s for disconnected device %s",
+                session_id,
+                device_id,
+            )
+            del self._sessions[session_id]
+
+        if sessions_to_remove:
+            logger.info(
+                "Cleaned up %d sessions for device %s",
+                len(sessions_to_remove),
+                device_id,
+            )
+
+        return len(sessions_to_remove)
+
+    def cleanup_sessions_for_user(self, user_id: str) -> int:
+        """Clean up all sessions for a specific user when they disconnect."""
+        sessions_to_remove = [
+            session_id
+            for session_id, session in self._sessions.items()
+            if session["user_id"] == user_id
+        ]
+
+        for session_id in sessions_to_remove:
+            logger.info("Cleaning up session %s for user %s", session_id, user_id)
+            del self._sessions[session_id]
+
+        if sessions_to_remove:
+            logger.info(
+                "Cleaned up %d sessions for user %s", len(sessions_to_remove), user_id
+            )
+
+        return len(sessions_to_remove)
+
+    def cleanup_all_sessions(self) -> int:
+        """Clean up all active sessions (useful for service restarts)."""
+        session_count = len(self._sessions)
+        if session_count > 0:
+            logger.info("Cleaning up all %d active sessions", session_count)
+            self._sessions.clear()
+
+        return session_count
+
     def get_active_sessions(self) -> Dict:
         """Get information about active sessions."""
         self.cleanup_expired_sessions()
@@ -94,7 +147,8 @@ class StreamingSessionManager:
             "total_sessions": len(self._sessions),
             "sessions": [
                 {
-                    "session_id": session_id[:16] + "...",  # Truncate for security
+                    # Truncate session ID for security
+                    "session_id": session_id[:16] + "...",
                     "user_id": session["user_id"],
                     "device_id": session["device_id"],
                     "created_at": session["created_at"],

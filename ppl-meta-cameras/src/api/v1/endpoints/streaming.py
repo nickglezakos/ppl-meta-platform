@@ -36,18 +36,25 @@ async def start_stream(
     """Start streaming from a specific camera."""
 
     try:
-        # Connect to camera if not already connected
-        connection = await camera_service.get_camera_stream(device_id)
+        # For USB cameras, always force a fresh connection to avoid black screen issues
+        # after stopping and restarting streams
+        existing_connection = await camera_service.get_camera_stream(device_id)
+        if existing_connection:
+            # Disconnect first to ensure fresh connection
+            await camera_service.disconnect_camera(device_id)
+
+        # Connect to camera with a fresh connection
+        connection = await camera_service.connect_camera(device_id)
         if not connection:
-            connection = await camera_service.connect_camera(device_id)
-            if not connection:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to connect to camera {device_id}",
-                )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to connect to camera {device_id}",
+            )
 
         logger.info(
-            f"User {current_user.get('sub')} started stream for camera {device_id}"
+            "User %s started stream for camera %s (fresh connection)",
+            current_user.get("sub"),
+            device_id,
         )
 
         return {
@@ -758,30 +765,37 @@ async def stop_stream(
     """Stop streaming from a specific camera."""
 
     try:
+        # Clean up any active streaming sessions for this device
+        cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
+
         # Actually disconnect the camera to stop the stream
         success = await camera_service.disconnect_camera(device_id)
 
         if success:
             logger.info(
-                f"User {current_user.get('sub')} stopped stream for "
-                f"camera {device_id}"
+                "User %s stopped stream for camera %s, cleaned %d sessions",
+                current_user.get("sub"),
+                device_id,
+                cleaned_sessions,
             )
             return {
                 "device_id": device_id,
                 "status": "stopped",
                 "message": f"Stream stopped for camera {device_id}",
+                "sessions_cleaned": cleaned_sessions,
             }
         else:
-            logger.warning(f"Camera {device_id} was not connected")
+            logger.warning("Camera %s was not connected", device_id)
             return {
                 "device_id": device_id,
                 "status": "stopped",
                 "message": f"Camera {device_id} was already stopped",
+                "sessions_cleaned": cleaned_sessions,
             }
 
     except Exception as e:
-        logger.error(f"Error stopping stream for camera {device_id}: {e}")
+        logger.error("Error stopping stream for camera %s: %s", device_id, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to stop stream",
-        )
+        ) from e
