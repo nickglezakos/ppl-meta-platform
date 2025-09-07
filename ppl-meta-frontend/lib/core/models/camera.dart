@@ -29,6 +29,33 @@ class Camera {
   });
 
   factory Camera.fromJson(Map<String, dynamic> json) {
+    // Extract connection string and other metadata for mobile camera detection
+    final connectionString = json['connection_string']?.toString();
+    final cameraTypeStr = json['camera_type']?.toString() ?? json['type']?.toString();
+    
+    // Build metadata including connection info
+    final metadata = Map<String, dynamic>.from(json['metadata'] as Map<String, dynamic>? ?? {});
+    if (connectionString != null) {
+      metadata['connection_string'] = connectionString;
+    }
+    if (json['ip_address'] != null) {
+      metadata['ip_address'] = json['ip_address'];
+    }
+    if (json['port'] != null) {
+      metadata['port'] = json['port'];
+    }
+    
+    // Determine camera type with mobile detection
+    CameraType cameraType;
+    if (cameraTypeStr?.toLowerCase() == 'mobile' || connectionString?.startsWith('mobile://') == true) {
+      cameraType = CameraType.mobile;
+    } else {
+      cameraType = CameraType.values.firstWhere(
+        (t) => t.name.toLowerCase() == cameraTypeStr?.toLowerCase(),
+        orElse: () => CameraType.usb,
+      );
+    }
+    
     return Camera(
       id: json['id']?.toString() ?? '',
       deviceId: json['device_id']?.toString() ?? '',
@@ -42,11 +69,8 @@ class Camera {
           ? DateTime.tryParse(json['last_seen'].toString())
           : null,
       streamUrl: json['stream_url']?.toString(),
-      type: CameraType.values.firstWhere(
-        (t) => t.name == (json['camera_type']?.toString() ?? json['type']?.toString()),
-        orElse: () => CameraType.usb,
-      ),
-      metadata: json['metadata'] as Map<String, dynamic>?,
+      type: cameraType,
+      metadata: metadata,
     );
   }
 
@@ -99,6 +123,39 @@ class Camera {
 
   /// Check if camera is connected (based on status)
   bool get isConnected => status.toLowerCase() == 'connected';
+
+  /// Check if this is a mobile camera
+  bool get isMobileCamera => type == CameraType.mobile || 
+      (metadata != null && metadata!['connection_string']?.toString().startsWith('mobile://') == true);
+
+  /// Get the direct MJPEG stream URL for mobile cameras
+  /// Returns null if this is not a mobile camera or if connection info is not available
+  String? get directStreamUrl {
+    if (!isMobileCamera) return null;
+    
+    // For mobile cameras, check if we have the backend server IP
+    // This should be the computer's IP where the cameras service is running
+    final backendIP = metadata?['backend_ip'] as String?;
+    final port = metadata?['backend_port'] as int?;
+    
+    if (backendIP != null) {
+      // Use the backend server's IP (computer where cameras service runs)
+      final camerasServicePort = port ?? 8005;
+      final baseUrl = 'http://$backendIP:$camerasServicePort';
+      return '$baseUrl/api/v1/streaming/$deviceId/video';
+    }
+    
+    // Fallback: For mobile cameras, use the cameras service streaming endpoint
+    // This uses the backend's /api/v1/streaming/{device_id}/video endpoint
+    // which can handle mobile camera frames received via the mobile app
+    
+    // Get the cameras service URL (typically port 8005)
+    // This should be configured to match the current environment
+    const camerasServiceUrl = 'http://localhost:8005'; // TODO: Make this configurable
+    
+    // Return the streaming endpoint URL
+    return '$camerasServiceUrl/api/v1/streaming/$deviceId/video';
+  }
 }
 
 /// Streaming information for a camera
@@ -373,6 +430,7 @@ enum CameraType {
   rtsp('RTSP Network Camera'),
   webRtc('WebRTC Camera'),
   mjpeg('MJPEG Camera'),
+  mobile('Mobile Camera'),
   virtual('Virtual Camera');
 
   const CameraType(this.displayName);

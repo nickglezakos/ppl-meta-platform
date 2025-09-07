@@ -12,6 +12,9 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from src.database import get_db
+from src.models.camera import Camera, CameraType
 from src.security.auth import (
     get_current_user,
     get_current_user_flexible,
@@ -19,6 +22,7 @@ from src.security.auth import (
     require_view_stream_flexible,
 )
 from src.services.camera_detection import camera_service
+from src.services.mobile_streaming import mobile_streaming_service
 from src.services.session_auth import session_manager
 
 logger = logging.getLogger(__name__)
@@ -122,8 +126,95 @@ async def video_stream(
     device_id: str,
     quality: str = "medium",
     current_user: Dict = Depends(require_view_stream_flexible),
+    db: Session = Depends(get_db),
 ):
     """Stream video from camera."""
+
+    # Check if this is a mobile camera
+    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+    if not camera:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera {device_id} not found",
+        )
+
+    # Handle mobile cameras differently
+    if camera.camera_type == CameraType.MOBILE:
+        return await handle_mobile_camera_stream(device_id, quality, current_user)
+
+    # Continue with regular camera streaming for non-mobile cameras
+
+
+async def handle_mobile_camera_stream(device_id: str, quality: str, current_user: Dict):
+    """Handle mobile camera streaming using the mobile streaming service."""
+
+    async def generate_mobile_frames():
+        """Generate video frames from mobile camera stream."""
+
+        try:
+            # Set quality parameters
+            quality_settings = {
+                "low": (320, 240, 15),
+                "medium": (640, 480, 30),
+                "high": (1280, 720, 30),
+                "ultra": (1920, 1080, 30),
+            }
+
+            width, height, fps = quality_settings.get(
+                quality, quality_settings["medium"]
+            )
+
+            while True:
+                # Get latest frame from mobile streaming service
+                frame = await mobile_streaming_service.get_latest_mobile_frame(
+                    device_id
+                )
+
+                if frame is None:
+                    # No frame available, send a blank frame or wait
+                    logger.debug(f"No frame available for mobile camera {device_id}")
+                    await asyncio.sleep(0.1)  # Wait 100ms before trying again
+                    continue
+
+                # Resize frame if needed
+                if frame.shape[1] != width or frame.shape[0] != height:
+                    frame = cv2.resize(frame, (width, height))
+
+                # Encode frame as JPEG
+                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                frame_bytes = buffer.tobytes()
+
+                # Yield frame in multipart format
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+
+                # Small delay to control frame rate
+                await asyncio.sleep(1.0 / fps)
+
+        except Exception as e:
+            logger.error(f"Error in mobile video stream for camera {device_id}: {e}")
+            return
+
+    try:
+        logger.info(
+            f"User {current_user.get('sub')} accessing mobile video stream for camera {device_id}"
+        )
+
+        return StreamingResponse(
+            generate_mobile_frames(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error setting up mobile video stream for camera {device_id}: {e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to setup mobile video stream",
+        )
 
     async def generate_frames():
         """Generate video frames for streaming."""
@@ -219,19 +310,111 @@ async def video_stream(
         )
 
 
+async def handle_mobile_camera_stream_session(
+    device_id: str, session_id: str, quality: str
+):
+    """Handle mobile camera streaming using session-based authentication."""
+
+    async def generate_mobile_frames():
+        """Generate video frames from mobile camera stream with session validation."""
+
+        try:
+            # Set quality parameters
+            quality_settings = {
+                "low": (320, 240, 15),
+                "medium": (640, 480, 30),
+                "high": (1280, 720, 30),
+                "ultra": (1920, 1080, 30),
+            }
+
+            width, height, fps = quality_settings.get(
+                quality, quality_settings["medium"]
+            )
+
+            logger.info(
+                f"Session {session_id[:16]}... accessing mobile video stream "
+                f"for camera {device_id} with quality {quality}"
+            )
+
+            while True:
+                # Validate session is still active
+                if not session_manager.validate_session(session_id, device_id):
+                    logger.warning(
+                        f"Session {session_id[:16]}... expired during mobile streaming"
+                    )
+                    break
+
+                # Get latest frame from mobile streaming service
+                frame = await mobile_streaming_service.get_latest_mobile_frame(
+                    device_id
+                )
+
+                if frame is None:
+                    # No frame available, send a blank frame or wait
+                    logger.debug(f"No frame available for mobile camera {device_id}")
+                    await asyncio.sleep(0.1)  # Wait 100ms before trying again
+                    continue
+
+                # Resize frame if needed
+                if frame.shape[1] != width or frame.shape[0] != height:
+                    frame = cv2.resize(frame, (width, height))
+
+                # Encode frame as JPEG
+                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                frame_bytes = buffer.tobytes()
+
+                # Yield frame in multipart format
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+
+                # Small delay to control frame rate
+                await asyncio.sleep(1.0 / fps)
+
+        except Exception as e:
+            logger.error(
+                f"Error in mobile video stream session for camera {device_id}: {e}"
+            )
+            return
+
+    try:
+        return StreamingResponse(
+            generate_mobile_frames(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Error setting up mobile video stream session for camera {device_id}: {e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to setup mobile video stream session",
+        )
+
+
 @router.get("/{device_id}/video-session/{session_id}")
 async def video_stream_session(
-    device_id: str, session_id: str, quality: str = "medium"
+    device_id: str,
+    session_id: str,
+    quality: str = "medium",
+    db: Session = Depends(get_db),
 ):
-    """Stream video from camera using session-based authentication (browser-compatible)."""
-
-    # Validate session
+    """Stream video from camera using session-based authentication."""  # Validate session
     session = session_manager.validate_session(session_id, device_id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired streaming session",
         )
+
+    # Check if this is a mobile camera
+    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+    if camera and camera.camera_type == CameraType.MOBILE:
+        return await handle_mobile_camera_stream_session(device_id, session_id, quality)
+
+    # Continue with regular camera streaming for non-mobile cameras
 
     async def generate_frames():
         """Generate video frames for streaming."""

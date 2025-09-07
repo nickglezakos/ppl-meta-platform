@@ -14,7 +14,7 @@ from src.security.auth import get_current_user
 router = APIRouter()
 
 
-@router.get("/", tags=["Health"])
+@router.get("/health", tags=["Health"])
 async def health_check() -> Dict[str, Any]:
     """Basic health check endpoint."""
 

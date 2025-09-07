@@ -49,6 +49,8 @@ class CameraCard extends ConsumerWidget {
   }
 
   Widget _buildCameraHeader(BuildContext context, WidgetRef ref) {
+    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+    
     return Row(
       children: [
         // Camera icon
@@ -59,7 +61,7 @@ class CameraCard extends ConsumerWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
-            Icons.camera_alt,
+            isMobile ? Icons.smartphone : Icons.camera_alt,
             color: _getStatusColor(camera.status),
             size: 24,
           ),
@@ -72,13 +74,37 @@ class CameraCard extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                camera.name,
-                style: OfflineFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      camera.name,
+                      style: OfflineFonts.inter(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                  if (isMobile) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      ),
+                      child: Text(
+                        'MOBILE',
+                        style: OfflineFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 4),
               Text(
@@ -152,49 +178,82 @@ class CameraCard extends ConsumerWidget {
     final cameraService = ref.read(cameraServiceProvider);
     final isConnected = camera.isConnected;
     final isRTSP = camera.type == CameraType.rtsp;
+    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
     
     return Column(
       children: [
         // Main action buttons row
         Row(
           children: [
-            // Connect/Disconnect button
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  try {
-                    if (isConnected) {
-                      await cameraService.disconnectCamera(camera.deviceId);
-                    } else {
-                      await cameraService.connectCamera(camera.deviceId);
+            // Connect/Disconnect button (not applicable for mobile cameras)
+            if (!isMobile) ...[
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    try {
+                      if (isConnected) {
+                        await cameraService.disconnectCamera(camera.deviceId);
+                      } else {
+                        await cameraService.connectCamera(camera.deviceId);
+                      }
+                      // Refresh camera list
+                      ref.read(cameraListProvider.notifier).loadCameras();
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     }
-                    // Refresh camera list
-                    ref.read(cameraListProvider.notifier).loadCameras();
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Error: $e'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
-                    }
-                  }
-                },
-                icon: Icon(
-                  isConnected ? Icons.stop : Icons.play_arrow,
-                  size: 16,
-                ),
-                label: Text(isConnected ? 'Disconnect' : 'Connect'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isConnected ? Colors.red : AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  },
+                  icon: Icon(
+                    isConnected ? Icons.stop : Icons.play_arrow,
+                    size: 16,
+                  ),
+                  label: Text(isConnected ? 'Disconnect' : 'Connect'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isConnected ? Colors.red : AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ),
-            ),
-            
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
+            ] else ...[
+              // For mobile cameras, show streaming status instead
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.smartphone,
+                        size: 16,
+                        color: Colors.blue.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Mobile Camera',
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
             
             // Snapshot button
             Expanded(
@@ -391,7 +450,7 @@ class CameraCard extends ConsumerWidget {
     final rtspCamera = RTSPCamera(
       id: camera.id.toString(),
       name: camera.name,
-      host: camera.streamUrl?.replaceFirst('rtsp://', '')?.split('@').last.split('/').first ?? '',
+      host: camera.streamUrl?.replaceFirst('rtsp://', '').split('@').last.split('/').first ?? '',
       port: 554, // Default RTSP port
       username: '', // We don't store credentials in Camera model
       password: '',

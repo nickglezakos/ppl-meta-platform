@@ -310,7 +310,7 @@ class ServiceEndpoint {
   factory ServiceEndpoint.fromJson(Map<String, dynamic> json) {
     return ServiceEndpoint(
       host: json['host'] as String? ?? 'localhost',
-      port: json['port'] as int? ?? 8000,
+      port: json['port'] as int? ?? 8005,  // Default to cameras service port
       protocol: json['protocol'] as String? ?? 'http',
     );
   }

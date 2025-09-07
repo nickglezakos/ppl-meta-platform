@@ -56,6 +56,7 @@ except Exception as e:
     sys.exit(1)
 
 from src.api import app_settings, backup, capabilities, logs, otp, roles
+from src.api.routes import legacy_health_router
 
 # Import API routers
 from src.api.v1.routes import router as v1_router
@@ -185,15 +186,28 @@ async def lifespan(_app: FastAPI):
     # Initialize service discovery if available
     if service_discovery_available:
         try:
+            # Detect actual network IP for registration
+            import socket
+
             from shared.service_discovery import register_service
+
+            try:
+                # Connect to a remote address to determine local IP
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                detected_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                # Fallback to hostname resolution
+                detected_ip = socket.gethostbyname(socket.gethostname())
 
             await register_service(
                 name="ppl-meta-node",
                 service_type="backend",
                 version="1.0.0",
-                host=settings.HOST,
+                host=detected_ip,
                 port=settings.PORT,
-                health_endpoint="/api/v1/health/",
+                health_endpoint="/health/",
                 capabilities=["user-management", "authentication", "api"],
                 metadata={
                     "version": "1.0.0",
@@ -363,12 +377,7 @@ app.add_middleware(TimingMiddleware)
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000",
-    ],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -380,6 +389,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=dynamic_hosts)
 
 # Include API routers
 app.include_router(v1_router)  # API v1 routes
+app.include_router(legacy_health_router)  # Legacy health endpoint
 
 # Add metrics endpoint - disabled for testing
 # metrics_router = create_metrics_endpoint()

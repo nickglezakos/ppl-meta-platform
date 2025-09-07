@@ -9,7 +9,7 @@ class DiscoveryConfigService {
   static const String _keyDeviceIPPrefix = 'device_ip_prefix';
   
   // Default configuration for PPL Meta platform
-  static const String _defaultDiscoveryHost = '192.168.185.107';
+  static const String _defaultDiscoveryHost = '192.168.69.107';
   static const String _defaultDiscoveryPort = '8006';
   
   static DiscoveryConfigService? _instance;

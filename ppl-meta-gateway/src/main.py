@@ -92,11 +92,33 @@ except ImportError:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management."""
-    # Setup distributed tracing
-    tracing_enabled = setup_tracing(app, settings)
-    if tracing_enabled:
-        logger.info("Distributed tracing enabled")
+    """Startup and shutdown lifespan for the FastAPI application."""
+
+    # Detect actual network IP for registration
+    import socket
+
+    detected_ip = None
+    try:
+        # Connect to a remote address to determine local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        detected_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        # Fallback to hostname resolution
+        detected_ip = socket.gethostbyname(socket.gethostname())
+
+    # Startup
+    logger.info("Starting PPL Meta Gateway", version=settings.service_version)
+
+    # Initialize tracing
+    if hasattr(settings, "jaeger_enabled") and settings.jaeger_enabled:
+        try:
+            init_tracing()
+            logger.info("Distributed tracing initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize tracing: {e}")
+            logger.info("Continuing without tracing")
     else:
         logger.info("Distributed tracing disabled or failed to initialize")
 
@@ -106,7 +128,7 @@ async def lifespan(app: FastAPI):
     if SERVICE_DISCOVERY_AVAILABLE:
         success = await register_service(
             service_name="ppl-meta-gateway",
-            host=settings.host,
+            host=detected_ip,
             port=settings.port,
             health_endpoint="/health",
             tags=["api-gateway", "routing", "load-balancer"],
@@ -124,7 +146,6 @@ async def lifespan(app: FastAPI):
 
         # Start health monitoring
         await start_health_monitoring()
-        logger.info("Health monitoring started")
 
     yield
 
@@ -134,9 +155,9 @@ async def lifespan(app: FastAPI):
     # Shutdown tracing
     shutdown_tracing()
 
-    if SERVICE_DISCOVERY_AVAILABLE:
+    if SERVICE_DISCOVERY_AVAILABLE and detected_ip:
         await deregister_service(
-            service_name="ppl-meta-gateway", host=settings.host, port=settings.port
+            service_name="ppl-meta-gateway", host=detected_ip, port=settings.port
         )
         await cleanup_service_discovery()
         logger.info("Service deregistered and discovery cleaned up")

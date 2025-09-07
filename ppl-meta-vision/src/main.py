@@ -241,11 +241,24 @@ async def startup_event():
 
         # Register with discovery service
         try:
+            import socket
+
+            # Detect actual network IP for registration
+            try:
+                # Connect to a remote address to determine local IP
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                detected_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                # Fallback to hostname resolution
+                detected_ip = socket.gethostbyname(socket.gethostname())
+
             await register_service(
                 name="ppl-meta-vision",
                 service_type="backend",
                 version="1.1.0",
-                host="0.0.0.0",
+                host=detected_ip,
                 port=8003,
                 health_endpoint="/health",
                 capabilities=["vision", "face-detection", "image-analysis"],

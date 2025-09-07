@@ -81,22 +81,60 @@ class MobileVideoCapture:
             return False, None
 
         try:
-            # For mobile cameras, try to get the actual MJPEG stream
-            # Mobile cameras should be running an MJPEG server at their IP:port
+            # Get the latest frame from the mobile streaming service
+            # Import here to avoid circular imports
+            # Try to get latest frame from the frame queue
+            import asyncio
 
-            # Try to read from OpenCV VideoCapture if we have a direct MJPEG URL
-            if hasattr(self, "_cv_capture") and self._cv_capture is not None:
-                ret, frame = self._cv_capture.read()
-                if ret and frame is not None:
+            from src.services.mobile_streaming import mobile_streaming_service
+
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're in an async context, we need to handle this differently
+                # For now, return the last cached frame
+                if hasattr(self, "_last_frame") and self._last_frame is not None:
+                    return True, self._last_frame
+                else:
+                    return False, None
+            else:
+                # Not in async context, can await
+                frame = loop.run_until_complete(
+                    mobile_streaming_service.get_latest_mobile_frame(self.device_id)
+                )
+
+                if frame is not None:
                     self._last_frame = frame
                     return True, frame
                 else:
-                    # Frame read failed, try to reconnect
-                    self._reconnect_mjpeg_stream()
+                    # No frame available, return test frame
+                    height, width = self._frame_height, self._frame_width
+                    test_frame = np.zeros((height, width, 3), dtype=np.uint8)
 
-            # Fall back to test frame if no real stream available
-            height, width = self._frame_height, self._frame_width
-            test_frame = np.zeros((height, width, 3), dtype=np.uint8)
+                    # Add some visual indication this is a test frame
+                    cv2.putText(
+                        test_frame,
+                        f"Mobile Camera: {self.device_id}",
+                        (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 255),
+                        2,
+                    )
+                    cv2.putText(
+                        test_frame,
+                        "Waiting for frames...",
+                        (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (128, 128, 128),
+                        1,
+                    )
+
+                    return True, test_frame
+
+        except Exception as e:
+            logger.error(f"Error reading mobile camera frame {self.device_id}: {e}")
+            return False, None
 
             # Add test pattern indicating waiting for mobile stream
             cv2.putText(

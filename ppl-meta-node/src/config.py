@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     # Redis Configuration
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Platform IP Configuration
+    PLATFORM_IP: str = ""  # Will be dynamically detected if not set
+
     # Additional standardized mail settings (already has main ones)
     MAIL_STARTTLS: bool = True
     MAIL_SSL_TLS: bool = False

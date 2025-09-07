@@ -95,26 +95,57 @@ class _AutoStreamingScreenState extends State<AutoStreamingScreen>
       await _cameraController!.dispose();
     }
     
-    _cameraController = CameraController(
-      camera,
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
+    // List of resolution presets to try, in order of preference
+    final resolutionPresets = [
+      ResolutionPreset.medium,   // Try medium first for better compatibility
+      ResolutionPreset.low,      // Fallback to low
+      ResolutionPreset.high,     // Try high last
+    ];
     
-    try {
-      await _cameraController!.initialize();
-      
-      setState(() {
-        _isCameraInitialized = true;
-        _isLoading = false;
-      });
-      
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Camera initialization failed: $e';
-        _isLoading = false;
-      });
+    // Use YUV420 format for better streaming compatibility
+    const imageFormat = ImageFormatGroup.yuv420;
+    
+    for (final preset in resolutionPresets) {
+      try {
+        _cameraController = CameraController(
+          camera,
+          preset,
+          enableAudio: false,
+          imageFormatGroup: imageFormat,
+        );
+        
+        await _cameraController!.initialize();
+        
+        setState(() {
+          _isCameraInitialized = true;
+          _isLoading = false;
+        });
+        
+        return; // Success, exit the loop
+        
+      } catch (e) {
+        // Clean up failed attempt
+        if (_cameraController != null) {
+          try {
+            await _cameraController!.dispose();
+          } catch (disposeError) {
+            // Ignore disposal errors
+          }
+          _cameraController = null;
+        }
+        
+        // If this was the last preset, show error
+        if (preset == resolutionPresets.last) {
+          setState(() {
+            _errorMessage = 'Camera initialization failed with all resolution settings: $e';
+            _isLoading = false;
+          });
+          return;
+        }
+        
+        // Wait a bit before trying next preset
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
     }
   }
   

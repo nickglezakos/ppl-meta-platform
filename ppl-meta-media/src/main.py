@@ -72,13 +72,26 @@ async def lifespan(_app: FastAPI):
     # Initialize service discovery if available
     if service_discovery_available:
         try:
+            import socket
+
             from shared.service_discovery import register_service
+
+            # Detect actual network IP for registration
+            try:
+                # Connect to a remote address to determine local IP
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                detected_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                # Fallback to hostname resolution
+                detected_ip = socket.gethostbyname(socket.gethostname())
 
             await register_service(
                 name="ppl-meta-media",
                 service_type="backend",
                 version="1.0.0",
-                host="0.0.0.0",
+                host=detected_ip,
                 port=8000,
                 health_endpoint="/health",
                 capabilities=["media-processing", "image-analysis", "storage"],

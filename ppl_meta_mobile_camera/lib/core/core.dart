@@ -12,7 +12,6 @@ export 'services/camera_service.dart';
 export 'services/gallery_service.dart';
 export 'services/streaming_service.dart';
 export 'services/authentication_service.dart';
-export 'services/camera_registration_service.dart';
 export 'services/mjpeg_streaming_service.dart';
 export 'services/network_discovery_service.dart';
 

@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import '../models/camera_config.dart';
+import '../../services/mobile_streaming_service.dart' hide StreamQuality;
 
 /// Core camera service for PPL Meta Mobile Camera
 class CameraService {
@@ -17,6 +18,9 @@ class CameraService {
   CameraConfig? _currentConfig;
   bool _isInitialized = false;
   bool _isStreaming = false;
+  
+  // Streaming service integration
+  MobileStreamingService? _streamingService;
 
   // Getters
   CameraController? get controller => _controller;
@@ -24,6 +28,13 @@ class CameraService {
   CameraConfig? get currentConfig => _currentConfig;
   bool get isInitialized => _isInitialized;
   bool get isStreaming => _isStreaming;
+
+  /// Set the streaming service for frame transmission
+  void setStreamingService(MobileStreamingService streamingService) {
+    print('🔗 CameraService.setStreamingService() called');
+    _streamingService = streamingService;
+    print('✅ Streaming service connected to CameraService');
+  }
 
   /// Initialize camera service and request permissions
   Future<bool> initializeCamera() async {
@@ -218,23 +229,73 @@ class CameraService {
       _currentConfig = cameraConfig;
       print('🎬 Camera config set: ${cameraConfig.camera.name} (${cameraConfig.camera.lensDirection})');
 
-      // Create new controller
+      // Create new controller with fallback resolution handling
       print('🎬 Creating new camera controller...');
-      _controller = CameraController(
-        cameraConfig.camera,
-        cameraConfig.resolution,
-        enableAudio: cameraConfig.enableAudio,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-      print('🎬 Camera controller created');
-
-      // Initialize controller
-      print('🎬 Initializing camera controller...');
-      await _controller!.initialize();
-      print('✅ Camera controller initialized successfully!');
-      print('🎬 Controller state: initialized=${_controller!.value.isInitialized}');
-      print('🎬 Preview size: ${_controller!.value.previewSize}');
-      print('🎬 Aspect ratio: ${_controller!.value.aspectRatio}');
+      
+      // List of resolution presets to try, in order of preference
+      final resolutionPresets = [
+        ResolutionPreset.medium,   // Try medium first for better compatibility
+        ResolutionPreset.low,      // Fallback to low
+        cameraConfig.resolution,   // Try the requested resolution
+        ResolutionPreset.high,     // Try high last
+      ];
+      
+      // Use YUV420 format for better streaming compatibility
+      const imageFormat = ImageFormatGroup.yuv420;
+      
+      CameraController? tempController;
+      bool initSuccess = false;
+      
+      for (final preset in resolutionPresets) {
+        try {
+          print('🎬 Trying resolution preset: ${preset.name}');
+          
+          tempController = CameraController(
+            cameraConfig.camera,
+            preset,
+            enableAudio: cameraConfig.enableAudio,
+            imageFormatGroup: imageFormat,
+          );
+          
+          // Initialize controller
+          print('🎬 Initializing camera controller with ${preset.name}...');
+          await tempController.initialize();
+          
+          if (tempController.value.isInitialized) {
+            _controller = tempController;
+            initSuccess = true;
+            print('✅ Camera controller initialized successfully with ${preset.name}!');
+            print('🎬 Controller state: initialized=${_controller!.value.isInitialized}');
+            print('🎬 Preview size: ${_controller!.value.previewSize}');
+            print('🎬 Aspect ratio: ${_controller!.value.aspectRatio}');
+            break;
+          } else {
+            await tempController.dispose();
+          }
+          
+        } catch (e) {
+          print('❌ Camera initialization failed with ${preset.name}: $e');
+          if (tempController != null) {
+            try {
+              await tempController.dispose();
+            } catch (disposeError) {
+              print('❌ Error disposing failed controller: $disposeError');
+            }
+          }
+          
+          // If this was the last preset, we'll fail
+          if (preset == resolutionPresets.last) {
+            throw Exception('Camera initialization failed with all resolution presets: $e');
+          }
+          
+          // Wait a bit before trying next preset
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+      
+      if (!initSuccess) {
+        throw Exception('Failed to initialize camera with any resolution preset');
+      }
       
       print('🎯 === CAMERA SETUP COMPLETE ===');
       return true;
@@ -380,19 +441,44 @@ class CameraService {
   Future<bool> startStreaming() async {
     try {
       if (_controller == null || !_controller!.value.isInitialized) {
+        print('❌ Cannot start streaming: Camera controller not initialized');
         return false;
       }
 
       if (_isStreaming) {
+        print('✅ Already streaming, returning true');
         return true; // Already streaming
       }
 
+      print('🎬 Starting image stream for mobile camera...');
       await _controller!.startImageStream(_onImageStreamData);
       _isStreaming = true;
+      print('✅ Image stream started successfully');
       return true;
     } catch (e) {
-      print('Failed to start streaming: $e');
-      return false;
+      print('❌ Failed to start streaming: $e');
+      
+      // Try to recover by stopping and restarting with a simpler configuration
+      try {
+        print('🔄 Attempting to recover from streaming error...');
+        if (_controller != null && _controller!.value.isInitialized) {
+          await _controller!.stopImageStream();
+        }
+        _isStreaming = false;
+        
+        // Wait a moment before retrying
+        await Future.delayed(Duration(milliseconds: 500));
+        
+        print('🔄 Retrying with basic configuration...');
+        await _controller!.startImageStream(_onImageStreamData);
+        _isStreaming = true;
+        print('✅ Streaming recovered successfully');
+        return true;
+      } catch (recoveryError) {
+        print('❌ Failed to recover streaming: $recoveryError');
+        _isStreaming = false;
+        return false;
+      }
     }
   }
 
@@ -414,10 +500,17 @@ class CameraService {
 
   /// Handle image stream data for streaming
   void _onImageStreamData(CameraImage image) {
-    // Convert CameraImage to bytes for streaming
-    // This will be implemented with the streaming service
-    // For now, we just acknowledge the frame
-    print('Received frame: ${image.width}x${image.height}');
+    // Send frame to backend via streaming service
+    print('🔍 _onImageStreamData called - _streamingService: ${_streamingService != null ? "CONNECTED" : "NULL"}, _isStreaming: $_isStreaming');
+    if (_streamingService != null && _isStreaming) {
+      print('✅ Sending frame to backend via streaming service');
+      _streamingService!.sendFrameToBackend(image);
+    } else {
+      print('❌ NOT sending frame - streamingService: ${_streamingService != null ? "OK" : "NULL"}, isStreaming: $_isStreaming');
+    }
+    
+    // Keep the debug message for monitoring
+    print('Received frame: ${image.width}x${image.height} | StreamingService: ${_streamingService != null ? "CONNECTED" : "NULL"} | isStreaming: $_isStreaming');
   }
 
   /// Update stream quality

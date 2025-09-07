@@ -6,7 +6,7 @@ import sys
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
@@ -255,7 +255,10 @@ async def login(
 
 @router.get("/platform/services")
 async def get_platform_services(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    request: Request,
+    mobile_ip: str = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Get platform service discovery information for external connectivity.
 
@@ -263,23 +266,26 @@ async def get_platform_services(
     needed for external services like mobile cameras to connect to platform.
     """
     try:
-        # Get local machine's IP address
+        # Detect actual network IP for platform services
         import socket
         import subprocess
 
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
-
-        # Try to get a more reliable local IP
+        # Detect actual network IP for registration
         try:
-            # Create a socket connection to determine the local IP
+            # Connect to a remote address to determine local IP
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
             s.close()
         except Exception:
-            # Fallback to localhost if network detection fails
-            local_ip = "127.0.0.1"
+            # Fallback to hostname resolution
+            local_ip = socket.gethostbyname(socket.gethostname())
+
+        hostname = socket.gethostname()
+
+        # If mobile IP is provided, use it for streaming endpoints
+        # so the platform can connect to the mobile device
+        streaming_ip = mobile_ip if mobile_ip else local_ip
 
         # Check for Tailscale IP (100.x.x.x range)
         tailscale_ip = None
@@ -398,13 +404,40 @@ async def get_platform_services(
                 },
             },
             "mobile_camera_config": {
-                "recommended_service": "media",
-                "recommended_endpoint": f"http://{local_ip}:8000",
-                "fallback_service": "cameras",
-                "fallback_endpoint": f"http://{local_ip}:8005",
+                "recommended_service": "cameras",
+                "recommended_endpoint": f"http://{streaming_ip}:8005",
+                "fallback_service": "media",
+                "fallback_endpoint": f"http://{streaming_ip}:8000",
                 "streaming_format": "mjpeg",
                 "registration_required": True,
                 "authentication": "bearer_token",
+            },
+            "streaming_endpoints": {
+                "mjpeg": f"http://{streaming_ip}:8000/mjpeg",
+                "websocket": (
+                    f"ws://{streaming_ip}:8005/api/v1/cameras/" f"{{device_id}}/stream"
+                ),
+                "upload": f"http://{streaming_ip}:8000/upload",
+                "stream": f"http://{streaming_ip}:8000/stream",
+            },
+            "camera_endpoints": {
+                "register": (f"http://{streaming_ip}:8005/api/v1/cameras/" f"mobile"),
+                "status": f"http://{streaming_ip}:8005/api/v1/cameras/status",
+                "config": (
+                    f"http://{streaming_ip}:8005/api/v1/cameras/" f"stream-config"
+                ),
+                "websocket_stream": (
+                    f"ws://{streaming_ip}:8005/api/v1/cameras/" f"{{device_id}}/stream"
+                ),
+            },
+            "server_info": {
+                "host": streaming_ip,
+                "node_port": 8001,
+                "media_port": 8000,
+                "gateway_port": 8080,
+                "cameras_port": 8005,
+                "vision_port": 8003,
+                "orchestrator_port": 8002,
             },
             "network_info": {
                 "proxy_available": True,

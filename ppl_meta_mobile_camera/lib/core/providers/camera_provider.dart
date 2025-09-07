@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:camera/camera.dart';
+import 'package:provider/provider.dart';
 import '../models/camera_config.dart';
 import '../services/camera_service.dart';
 import '../services/gallery_service.dart';
@@ -8,6 +9,7 @@ import '../services/authentication_service.dart';
 import '../interfaces/camera_interface.dart';
 import '../../shared/models/media_item.dart';
 import 'gallery_provider.dart';
+import 'streaming_provider.dart';
 
 /// Camera provider for managing camera state and operations
 class CameraProvider extends ChangeNotifier implements ICameraOperations {
@@ -162,7 +164,7 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
         if (streamingEndpoints['websocket'] != null) {
           streamingServerUrl = streamingEndpoints['websocket'] as String;
           // Convert ws:// back to http:// for the base URL
-          streamingServerUrl = streamingServerUrl!.replaceFirst('ws://', 'http://').replaceFirst('/ws/camera_stream', '');
+          streamingServerUrl = streamingServerUrl!.replaceFirst('ws://', 'http://');
         } else if (streamingEndpoints['stream'] != null) {
           streamingServerUrl = streamingEndpoints['stream'] as String;
         }
@@ -188,9 +190,23 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
         final authService = AuthenticationService.instance;
         final authHeaders = authService.getAuthHeaders();
         
+        // Try to get the device ID from the recently completed registration
+        // Since the registration was just completed, check for it in various places
+        String? deviceId = authService.getDeviceId();
+        
+        // If still "unknown", try to get it from the auth service's stored device data
+        if (deviceId == null || deviceId == 'unknown') {
+          // For now, let's see what device ID is being used and fix it in the next rebuild
+          print('⚠️ [DEVICE_ID_DEBUG] Device ID not found, using fallback. Auth service returned: $deviceId');
+          deviceId = null;  // This will trigger the fallback in streaming service
+        }
+        
+        print('🔍 [DEVICE_ID_DEBUG] Using device ID: $deviceId');
+        
         final streamingInitialized = await _streamingService.initializeStreaming(
           serverUrl: streamingServerUrl,
           authHeaders: authHeaders,
+          deviceId: deviceId,  // Pass device ID for correct endpoint
         );
         
         if (streamingInitialized) {
@@ -216,7 +232,29 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
       print('❌ Failed to initialize camera provider with connectivity: $e');
       rethrow;
     }
-  }  /// Switch between front and back cameras
+  }
+
+  /// Update streaming service with new device ID after camera registration
+  Future<void> updateStreamingDeviceId(String deviceId) async {
+    try {
+      print('🔄 [CAMERA_PROVIDER] Updating streaming service with device ID: $deviceId');
+      
+      if (_streamingService != null) {
+        final reconnected = await _streamingService.updateDeviceIdAndReconnect(deviceId);
+        if (reconnected) {
+          print('✅ [CAMERA_PROVIDER] Streaming service reconnected with new device ID');
+        } else {
+          print('⚠️ [CAMERA_PROVIDER] Streaming service failed to reconnect with new device ID');
+        }
+      } else {
+        print('⚠️ [CAMERA_PROVIDER] Streaming service not available for device ID update');
+      }
+    } catch (e) {
+      print('❌ [CAMERA_PROVIDER] Error updating streaming device ID: $e');
+    }
+  }
+
+  /// Switch between front and back cameras
   Future<void> switchCamera() async {
     if (_isLoading) {
       print('Camera switch already in progress');

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import '../models/auth_result.dart';
 
 /// Authentication service for PPL Meta platform integration
@@ -47,6 +48,28 @@ class AuthenticationService {
   String? get cameraServiceEndpoint {
     final services = platformServices?['microservices']?['cameras'];
     return services?['endpoints']?['local'] ?? services?['endpoints']?['tailscale'];
+  }
+
+  /// Get device ID for mobile camera operations
+  String getDeviceId() {
+    return _deviceData?['deviceId'] ?? 'unknown';
+  }
+
+  /// Set device ID after camera registration
+  void setDeviceId(String deviceId) {
+    if (_deviceData == null) {
+      _deviceData = {};
+    }
+    _deviceData!['deviceId'] = deviceId;
+    // Save to persistent storage
+    _storeAuthData();
+  }
+
+  /// Update device ID and trigger streaming service reconnection
+  Future<void> updateDeviceIdAndNotify(String deviceId) async {
+    print('🔄 [AUTH_DEBUG] Updating device ID: $deviceId');
+    setDeviceId(deviceId);
+    print('✅ [AUTH_DEBUG] Device ID updated in authentication service');
   }
 
   /// Initialize authentication service with auto-discovery
@@ -422,10 +445,17 @@ class AuthenticationService {
       }
 
       print('🔍 [PLATFORM_SERVICES] Fetching platform services connectivity data...');
-      print('🌐 [PLATFORM_SERVICES] Request URL: $_serverUrl/api/v1/users/platform/services');
+      
+      // Get mobile device IP to send to backend
+      final mobileIP = await _getMobileDeviceIP();
+      final queryParams = mobileIP != null ? '?mobile_ip=$mobileIP' : '';
+      final serviceUrl = '$_serverUrl/api/v1/users/platform/services$queryParams';
+      
+      print('🌐 [PLATFORM_SERVICES] Request URL: $serviceUrl');
+      print('📱 [PLATFORM_SERVICES] Mobile IP: ${mobileIP ?? 'not detected'}');
       
       final response = await http.get(
-        Uri.parse('$_serverUrl/api/v1/users/platform/services'),
+        Uri.parse(serviceUrl),
         headers: {
           'Authorization': 'Bearer $_authToken',
           'Accept': 'application/json',
@@ -783,6 +813,31 @@ class AuthenticationService {
       }
     } catch (e) {
       print('❌ Error making authenticated request: $e');
+      return null;
+    }
+  }
+
+  /// Get mobile device IP address
+  Future<String?> _getMobileDeviceIP() async {
+    try {
+      final info = NetworkInfo();
+      final wifiIP = await info.getWifiIP();
+      if (wifiIP != null && wifiIP.isNotEmpty) {
+        return wifiIP;
+      }
+      
+      // Fallback: Try to get IP from network interfaces
+      for (final interface in await NetworkInterface.list()) {
+        for (final addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            return addr.address;
+          }
+        }
+      }
+      
+      return null;
+    } catch (e) {
+      print('❌ Error getting mobile device IP: $e');
       return null;
     }
   }

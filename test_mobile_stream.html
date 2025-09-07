@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Mobile Camera Stream Test</title>
+</head>
+<body>
+    <h1>Mobile Camera Stream Test</h1>
+    <p>Testing direct MJPEG stream from mobile camera</p>
+    
+    <h2>Test Multiple Device IDs:</h2>
+    <button onclick="testMultipleDeviceIds()">Test Known Device IDs</button>
+    <div id="multiTestInfo"></div>
+    
+    <h2>Direct Session Stream (Current):</h2>
+    <button onclick="testDirectSession()">Test Session Stream</button>
+    <div id="directInfo"></div>
+    <img id="directStream" style="border: 1px solid #ccc; max-width: 640px;" />
+    
+    <h2>Session-based Stream:</h2>
+    <button onclick="createSessionAndStream()">Create Session & Stream</button>
+    <div id="sessionInfo"></div>
+    <img id="sessionStream" style="border: 1px solid #ccc; max-width: 640px;" />
+    
+    <script>
+        // Known device IDs from previous sessions
+        const knownDeviceIds = [
+            'mobile_TKQ1.221114.001',
+            'mobile_TKQ1.221114.001_1756878026959',
+            'mobile_TKQ1.221114.001_1756843195421',
+            'TKQ1.221114.001',
+        ];
+        
+        async function getAuthToken() {
+            try {
+                const loginResponse = await fetch('http://localhost:8001/api/v1/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'username=fresh.user@example.com&password=NewPassword234!'
+                });
+                
+                const loginData = await loginResponse.json();
+                return loginData.access_token;
+            } catch (error) {
+                console.error('Auth error:', error);
+                return null;
+            }
+        }
+        
+        async function testMultipleDeviceIds() {
+            const token = await getAuthToken();
+            if (!token) {
+                document.getElementById('multiTestInfo').innerHTML = '<p style="color: red;">❌ Failed to get auth token</p>';
+                return;
+            }
+            
+            const results = [];
+            
+            for (const deviceId of knownDeviceIds) {
+                try {
+                    console.log(`Testing device ID: ${deviceId}`);
+                    
+                    // Test session creation
+                    const sessionResponse = await fetch(`http://localhost:8005/api/v1/streaming/mobile/${deviceId}/streaming-session`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (sessionResponse.ok) {
+                        const sessionData = await sessionResponse.json();
+                        results.push(`✅ ${deviceId}: Session created (${sessionData.session_id})`);
+                        
+                        // Try to test the stream
+                        const streamUrl = `http://localhost:8005/api/v1/streaming/${deviceId}/video-session/${sessionData.session_id}`;
+                        console.log(`Testing stream URL: ${streamUrl}`);
+                        
+                        // Set up test image
+                        const testImg = new Image();
+                        testImg.onload = () => {
+                            results.push(`✅ ${deviceId}: Stream works!`);
+                            document.getElementById('multiTestInfo').innerHTML = results.map(r => `<p>${r}</p>`).join('');
+                        };
+                        testImg.onerror = () => {
+                            results.push(`❌ ${deviceId}: Stream failed`);
+                            document.getElementById('multiTestInfo').innerHTML = results.map(r => `<p>${r}</p>`).join('');
+                        };
+                        testImg.src = streamUrl;
+                        
+                    } else {
+                        results.push(`❌ ${deviceId}: Session failed (${sessionResponse.status})`);
+                    }
+                } catch (error) {
+                    results.push(`❌ ${deviceId}: Error - ${error.message}`);
+                }
+            }
+            
+            document.getElementById('multiTestInfo').innerHTML = results.map(r => `<p>${r}</p>`).join('');
+        }
+        
+        function testDirectSession() {
+            // Use the session ID we created via curl
+            const sessionId = 'v2I-UP13ApiqvQ6AfP9PF9lvzuEpbvnh7W9ApX4EJkE';
+            const streamUrl = `http://localhost:8005/api/v1/streaming/mobile_TKQ1.221114.001/video-session/${sessionId}`;
+            
+            document.getElementById('directInfo').innerHTML = `
+                <p><strong>Using pre-created session:</strong> ${sessionId}</p>
+                <p><strong>Stream URL:</strong> ${streamUrl}</p>
+            `;
+            
+            const img = document.getElementById('directStream');
+            img.src = streamUrl;
+            img.onload = () => {
+                console.log('Direct session stream loaded successfully');
+                document.getElementById('directInfo').innerHTML += '<p style="color: green;">✅ Stream loaded successfully!</p>';
+            };
+            img.onerror = (e) => {
+                console.error('Direct session stream error:', e);
+                document.getElementById('directInfo').innerHTML += '<p style="color: red;">❌ Stream failed to load</p>';
+            };
+        }
+        
+        async function createSessionAndStream() {
+            try {
+                const token = await getAuthToken();
+                if (!token) {
+                    document.getElementById('sessionInfo').innerHTML = '<p style="color: red;">❌ Failed to get auth token</p>';
+                    return;
+                }
+                
+                // Create streaming session
+                const sessionResponse = await fetch('http://localhost:8005/api/v1/streaming/mobile/mobile_TKQ1.221114.001/streaming-session', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const sessionData = await sessionResponse.json();
+                console.log('Session data:', sessionData);
+                
+                document.getElementById('sessionInfo').innerHTML = `
+                    <p><strong>Session ID:</strong> ${sessionData.session_id}</p>
+                    <p><strong>Device ID:</strong> ${sessionData.device_id}</p>
+                    <p><strong>Stream URL:</strong> ${sessionData.stream_url}</p>
+                `;
+                
+                // Set up the image to display the stream
+                const streamUrl = `http://localhost:8005/api/v1/streaming/mobile_TKQ1.221114.001/video-session/${sessionData.session_id}`;
+                console.log('Full stream URL:', streamUrl);
+                
+                const img = document.getElementById('sessionStream');
+                img.src = streamUrl;
+                img.onload = () => console.log('Stream loaded successfully');
+                img.onerror = (e) => console.error('Stream error:', e);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('sessionInfo').innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

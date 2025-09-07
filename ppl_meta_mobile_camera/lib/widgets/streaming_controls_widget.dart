@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../services/mobile_streaming_service.dart';
+import '../services/enhanced_authentication_service.dart';
+import '../services/device_identifier_service.dart';
+import 'dart:developer' as developer;
 
 /// Streaming controls widget for mobile camera streaming
 class StreamingControlsWidget extends StatefulWidget {
@@ -10,12 +13,12 @@ class StreamingControlsWidget extends StatefulWidget {
   final VoidCallback? onStreamingStopped;
   
   const StreamingControlsWidget({
-    Key? key,
+    super.key,
     required this.camera,
     this.rtmpUrl,
     this.onStreamingStarted,
     this.onStreamingStopped,
-  }) : super(key: key);
+  });
   
   @override
   State<StreamingControlsWidget> createState() => _StreamingControlsWidgetState();
@@ -23,6 +26,8 @@ class StreamingControlsWidget extends StatefulWidget {
 
 class _StreamingControlsWidgetState extends State<StreamingControlsWidget> {
   final MobileStreamingService _streamingService = MobileStreamingService();
+  final EnhancedAuthenticationService _authService = EnhancedAuthenticationService.instance;
+  final DeviceIdentifierService _deviceService = DeviceIdentifierService();
   StreamQuality _selectedQuality = StreamQuality.medium;
   bool _isLoading = false;
   
@@ -33,9 +38,46 @@ class _StreamingControlsWidgetState extends State<StreamingControlsWidget> {
   }
   
   Future<void> _initializeService() async {
-    await _streamingService.initialize();
-    if (mounted) {
-      setState(() {});
+    try {
+      // Initialize authentication service first
+      await _authService.initializeAuth();
+      
+      // Get required parameters for IP monitoring
+      final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
+      final deviceId = deviceInfo['device_id'] as String? ?? 'unknown-device';
+      final authToken = _authService.authToken;
+      final cameraServiceUrl = _authService.cameraServiceEndpoint;
+      
+      // Initialize streaming service with IP monitoring if we have the required info
+      if (authToken != null && cameraServiceUrl != null) {
+        developer.log('🔧 Initializing streaming service with IP monitoring...', name: 'StreamingControls');
+        developer.log('   Device ID: $deviceId', name: 'StreamingControls');
+        developer.log('   Camera Service: $cameraServiceUrl', name: 'StreamingControls');
+        
+        await _streamingService.initializeWithIPMonitoring(
+          deviceId: deviceId,
+          authToken: authToken,
+          cameraServiceUrl: cameraServiceUrl,
+        );
+        developer.log('✅ Streaming service with IP monitoring initialized', name: 'StreamingControls');
+      } else {
+        developer.log('⚠️ Missing auth token or camera service URL, using basic initialization', name: 'StreamingControls');
+        developer.log('   Auth Token: ${authToken != null ? "present" : "missing"}', name: 'StreamingControls');
+        developer.log('   Camera Service URL: ${cameraServiceUrl ?? "missing"}', name: 'StreamingControls');
+        
+        await _streamingService.initialize();
+      }
+      
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      developer.log('❌ Error initializing streaming service: $e', name: 'StreamingControls', level: 1000);
+      // Fallback to basic initialization
+      await _streamingService.initialize();
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
   

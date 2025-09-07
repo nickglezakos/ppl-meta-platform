@@ -83,10 +83,23 @@ async def lifespan(_app: FastAPI):
     # Initialize service discovery if available
     if service_discovery_available:
         try:
+            import socket
+
             from service_discovery.ppl_discovery_client import (
                 DiscoveryClient,
                 ServiceConfig,
             )
+
+            # Detect actual network IP for registration
+            try:
+                # Connect to a remote address to determine local IP
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                detected_ip = s.getsockname()[0]
+                s.close()
+            except Exception:
+                # Fallback to hostname resolution
+                detected_ip = socket.gethostbyname(socket.gethostname())
 
             # Create discovery client
             discovery_client = DiscoveryClient("http://localhost:8006")
@@ -95,9 +108,9 @@ async def lifespan(_app: FastAPI):
             service_config = ServiceConfig(
                 service_name="ppl-meta-cameras",
                 service_id="ppl-meta-cameras-001",
-                host="192.168.185.107",
+                host=detected_ip,
                 port=config.PORT,
-                health_endpoint="/health/",
+                health_endpoint="/health",
                 tags=["cameras", "video-streaming", "detection"],
                 metadata={
                     "service_type": "backend",
@@ -193,7 +206,7 @@ async def exception_handling_middleware(request: Request, call_next):
 
 
 # Include routers
-app.include_router(health_router, prefix="/health", tags=["Health"])
+app.include_router(health_router, tags=["Health"])
 app.include_router(v1_router, prefix="/api/v1", tags=["API v1"])
 
 # Skip metrics endpoint for now

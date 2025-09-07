@@ -22,6 +22,7 @@ class StreamingService {
   bool _isStreaming = false;
   String? _streamId;
   String? _serverUrl;
+  String? _deviceId;  // Add device ID for mobile cameras
   Map<String, String>? _authHeaders;
   
   // Stream metrics
@@ -51,10 +52,16 @@ class StreamingService {
   Future<bool> initializeStreaming({
     required String serverUrl,
     required Map<String, String> authHeaders,
+    String? deviceId,  // Add optional device ID for mobile cameras
   }) async {
     try {
       _serverUrl = serverUrl;
       _authHeaders = authHeaders;
+      _deviceId = deviceId;
+      
+      print('🔗 [STREAMING_DEBUG] Initialized with:');
+      print('   Server URL: $serverUrl');
+      print('   Device ID: $deviceId');
       
       return true;
     } catch (e) {
@@ -70,29 +77,60 @@ class StreamingService {
         return _isConnected;
       }
 
-      // Build WebSocket URL
-      final wsUrl = _serverUrl!.replaceFirst('http', 'ws') + '/stream';
+      // Build WebSocket URL for mobile camera streaming
+      print('🔗 [STREAMING_DEBUG] Building WebSocket URL:');
+      print('   Server URL: $_serverUrl');
+      print('   Device ID: $_deviceId');
       
-      print('Connecting to streaming server: $wsUrl');
+      String wsUrl;
+      if (_deviceId != null && _deviceId!.isNotEmpty && _deviceId != 'unknown') {
+        // Use mobile-specific endpoint for mobile cameras: /api/v1/cameras/mobile/{device_id}/stream
+        wsUrl = _serverUrl!.replaceFirst('http', 'ws') + '/api/v1/cameras/mobile/$_deviceId/stream';
+        print('🎯 [STREAMING_DEBUG] Using mobile-specific URL: $wsUrl');
+      } else {
+        // Fallback to generic endpoint - should not be used for mobile cameras
+        wsUrl = _serverUrl!.replaceFirst('http', 'ws') + '/api/v1/cameras/mobile/unknown/stream';
+        print('⚠️ [STREAMING_DEBUG] Using fallback URL (device ID missing): $wsUrl');
+      }
+      
+      print('🔗 [STREAMING_DEBUG] Connecting to streaming server: $wsUrl');
 
-      // Create WebSocket connection
-      _wsChannel = WebSocketChannel.connect(
-        Uri.parse(wsUrl),
-        protocols: ['ppl-meta-stream'],
-      );
+      try {
+        // Create WebSocket connection
+        _wsChannel = WebSocketChannel.connect(
+          Uri.parse(wsUrl),
+          protocols: ['ppl-meta-stream'],
+        );
+        print('🔗 [STREAMING_DEBUG] WebSocket channel created successfully');
+      } catch (e) {
+        print('🚨 [STREAMING_DEBUG] Failed to create WebSocket channel: $e');
+        throw e;
+      }
 
       // Set connection timeout
       final connectionCompleter = Completer<bool>();
       Timer(Duration(seconds: _connectionTimeout), () {
         if (!connectionCompleter.isCompleted) {
+          print('🕐 [STREAMING_DEBUG] Connection timeout after ${_connectionTimeout}s');
           connectionCompleter.complete(false);
         }
       });
 
       // Listen for connection messages
       _streamSubscription = _wsChannel!.stream.listen(
-        _onWebSocketMessage,
-        onError: _onWebSocketError,
+        (message) {
+          _onWebSocketMessage(message);
+          // Complete connection when we receive connection_established
+          if (!connectionCompleter.isCompleted && _isConnected) {
+            connectionCompleter.complete(true);
+          }
+        },
+        onError: (error) {
+          _onWebSocketError(error);
+          if (!connectionCompleter.isCompleted) {
+            connectionCompleter.complete(false);
+          }
+        },
         onDone: _onWebSocketClosed,
       );
 
@@ -104,18 +142,19 @@ class StreamingService {
       });
 
       // Wait for connection confirmation
-      await Future.delayed(Duration(seconds: 2));
+      final connected = await connectionCompleter.future;
       
-      if (_isConnected) {
+      if (connected && _isConnected) {
         _startHeartbeat();
         _reconnectAttempts = 0;
-        print('Successfully connected to streaming server');
+        print('✅ [STREAMING_DEBUG] Successfully connected to streaming server');
         return true;
       }
 
+      print('❌ [STREAMING_DEBUG] Connection failed - connected: $connected, _isConnected: $_isConnected');
       return false;
     } catch (e) {
-      print('Failed to connect to streaming server: $e');
+      print('❌ [STREAMING_DEBUG] Failed to connect to streaming server: $e');
       return false;
     }
   }
@@ -140,6 +179,38 @@ class StreamingService {
       print('Disconnected from streaming server');
     } catch (e) {
       print('Error during disconnect: $e');
+    }
+  }
+
+  /// Update device ID and reconnect to streaming server
+  Future<bool> updateDeviceIdAndReconnect(String newDeviceId) async {
+    print('🔄 [STREAMING_DEBUG] Updating device ID and reconnecting...');
+    print('🔄 [STREAMING_DEBUG] Old device ID: $_deviceId');
+    print('🔄 [STREAMING_DEBUG] New device ID: $newDeviceId');
+    
+    try {
+      // Disconnect first if connected
+      if (_isConnected) {
+        await disconnect();
+        print('🔄 [STREAMING_DEBUG] Disconnected from previous connection');
+      }
+      
+      // Update device ID
+      _deviceId = newDeviceId;
+      print('🔄 [STREAMING_DEBUG] Device ID updated');
+      
+      // Reconnect with new device ID
+      final connected = await connect();
+      if (connected) {
+        print('✅ [STREAMING_DEBUG] Successfully reconnected with new device ID: $newDeviceId');
+      } else {
+        print('❌ [STREAMING_DEBUG] Failed to reconnect with new device ID: $newDeviceId');
+      }
+      
+      return connected;
+    } catch (e) {
+      print('❌ [STREAMING_DEBUG] Error during device ID update and reconnect: $e');
+      return false;
     }
   }
 
@@ -307,6 +378,15 @@ class StreamingService {
       final type = data['type'] as String?;
 
       switch (type) {
+        case 'connection_established':
+          _isConnected = true;
+          print('✅ [STREAMING_DEBUG] Connection established successfully');
+          break;
+          
+        case 'echo':
+          print('✅ [STREAMING_DEBUG] Echo received from server');
+          break;
+          
         case 'auth_success':
           _isConnected = true;
           print('Authentication successful');
@@ -328,6 +408,10 @@ class StreamingService {
           // Heartbeat response
           break;
           
+        case 'stream_ready':
+          print('✅ [STREAMING_DEBUG] Stream is ready for receiving data');
+          break;
+          
         case 'error':
           print('Server error: ${data['message']}');
           break;
@@ -342,7 +426,10 @@ class StreamingService {
 
   /// Handle WebSocket errors
   void _onWebSocketError(error) {
-    print('WebSocket error: $error');
+    print('🚨 [WEBSOCKET_ERROR] WebSocket error: $error');
+    print('🚨 [WEBSOCKET_ERROR] Error type: ${error.runtimeType}');
+    print('🚨 [WEBSOCKET_ERROR] Server URL was: $_serverUrl');
+    print('🚨 [WEBSOCKET_ERROR] Device ID was: $_deviceId');
     _isConnected = false;
     
     if (_reconnectAttempts < _maxReconnectAttempts) {

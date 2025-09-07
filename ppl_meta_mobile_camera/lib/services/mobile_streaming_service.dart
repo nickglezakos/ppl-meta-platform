@@ -1,16 +1,23 @@
 import 'dart:async';
-// import 'dart:convert'; // Unused import removed
-// import 'dart:typed_data'; // Unused import removed
+import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:developer' as developer;
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'mobile_camera_ip_update_service.dart';
 import 'package:camera/camera.dart';
-// import 'package:http/http.dart' as http; // Unused import removed
-// import 'package:wakelock_plus/wakelock_plus.dart'; // Unused import removed
+import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
+import 'package:flutter/foundation.dart';
 
 /// Mobile camera streaming service for PPL Meta Platform
-/// Handles RTMP streaming from mobile device cameras to backend
+/// Handles streaming from mobile device cameras to backend
 class MobileStreamingService {
   static const String _logTag = 'MobileStreamingService';
+  
+  // Backend connection info
+  String? _backendUrl;
+  String? _accessToken;
+  String? _deviceId; // Add device ID storage
   
   // Streaming state
   bool _isStreaming = false;
@@ -26,6 +33,9 @@ class MobileStreamingService {
   // Network monitoring - Fixed for new connectivity API
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   ConnectivityResult _currentConnectivity = ConnectivityResult.none;
+  
+  // IP update service for dynamic network changes
+  MobileCameraIPUpdateService? _ipUpdateService;
   
   // Configuration
   StreamConfig _currentConfig = StreamConfig.medium();
@@ -63,6 +73,20 @@ class MobileStreamingService {
       developer.log('Failed to initialize streaming service: $e', name: _logTag, level: 1000);
       return false;
     }
+  }
+  
+    /// Set backend connection information
+  void setBackendConnection(String backendUrl, String accessToken, {String? deviceId}) {
+    _backendUrl = backendUrl;
+    _accessToken = accessToken;
+    _deviceId = deviceId;
+    developer.log('Backend connection set: $backendUrl, deviceId: ${deviceId ?? "not provided"}', name: _logTag);
+  }
+  
+  /// Enable frame sending for session-based streaming (without RTMP)
+  void enableFrameSending() {
+    _isStreaming = true;
+    developer.log('Frame sending enabled for session-based streaming', name: _logTag);
   }
   
   /// Start streaming with the given configuration
@@ -188,40 +212,203 @@ class MobileStreamingService {
   
   /// Initialize camera with streaming configuration
   Future<bool> _initializeCamera(CameraDescription camera, StreamConfig config) async {
-    try {
-      _cameraController = CameraController(
-        camera,
-        ResolutionPreset.high, // Will be adjusted based on config
-        enableAudio: config.enableAudio,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-      
-      await _cameraController!.initialize();
-      
-      // Start image streaming for RTMP
-      await _cameraController!.startImageStream(_onCameraFrame);
-      
-      developer.log('Camera initialized successfully', name: _logTag);
-      return true;
-      
-    } catch (e) {
-      developer.log('Camera initialization failed: $e', name: _logTag, level: 1000);
-      return false;
+    // List of resolution presets to try, in order of preference
+    final resolutionPresets = [
+      ResolutionPreset.medium,   // Try medium first for better compatibility
+      ResolutionPreset.low,      // Fallback to low
+      ResolutionPreset.high,     // Try high last
+    ];
+    
+    // Use YUV420 format for better streaming compatibility
+    const imageFormat = ImageFormatGroup.yuv420;
+    
+    for (final preset in resolutionPresets) {
+      try {
+        developer.log('Trying camera initialization with ${preset.name} resolution', name: _logTag);
+        
+        _cameraController = CameraController(
+          camera,
+          preset,
+          enableAudio: config.enableAudio,
+          imageFormatGroup: imageFormat,
+        );
+        
+        await _cameraController!.initialize();
+        
+        // Verify camera is properly initialized
+        if (!_cameraController!.value.isInitialized) {
+          developer.log('Camera controller not properly initialized', name: _logTag, level: 900);
+          await _cameraController!.dispose();
+          _cameraController = null;
+          continue;
+        }
+        
+        // Try to start image streaming
+        await _cameraController!.startImageStream(_onCameraFrame);
+        
+        developer.log('Camera initialized successfully with ${preset.name} resolution', name: _logTag);
+        developer.log('Camera preview size: ${_cameraController!.value.previewSize}', name: _logTag);
+        return true;
+        
+      } catch (e) {
+        developer.log('Camera initialization failed with ${preset.name}: $e', name: _logTag, level: 900);
+        
+        // Clean up failed attempt
+        if (_cameraController != null) {
+          try {
+            await _cameraController!.dispose();
+          } catch (disposeError) {
+            developer.log('Error disposing failed camera controller: $disposeError', name: _logTag, level: 900);
+          }
+          _cameraController = null;
+        }
+        
+        // If this was the last preset, return false
+        if (preset == resolutionPresets.last) {
+          developer.log('All camera initialization attempts failed', name: _logTag, level: 1000);
+          return false;
+        }
+        
+        // Wait a bit before trying next preset
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
     }
+    
+    return false;
   }
   
-  /// Handle camera frames for RTMP streaming
+  /// Handle camera frames for streaming to backend
   void _onCameraFrame(CameraImage image) {
     if (!_isStreaming) return;
     
-    // TODO: Convert CameraImage to RTMP-compatible format
-    // This would involve:
-    // 1. Converting YUV420 to RGB/YUV format suitable for RTMP
-    // 2. Encoding with H.264 codec
-    // 3. Sending to RTMP server
+    // Send frame to backend asynchronously (don't block camera stream)
+    _sendFrameToBackend(image);
     
-    // For now, just update stats
+    // Update stats
     _updateStats(StreamingStats.fromFrame(image));
+  }
+  
+  /// Public method to send frame to backend (called by CameraService)
+  Future<void> sendFrameToBackend(CameraImage image) async {
+    developer.log('sendFrameToBackend called - _isStreaming: $_isStreaming, _backendUrl: $_backendUrl, _accessToken: ${_accessToken != null ? "present" : "null"}', name: _logTag);
+    if (!_isStreaming || _backendUrl == null || _accessToken == null) {
+      developer.log('Skipping frame send - conditions not met', name: _logTag);
+      return;
+    }
+    developer.log('Sending frame to backend: ${image.width}x${image.height}', name: _logTag);
+    await _sendFrameToBackend(image);
+  }
+  
+  /// Send camera frame to backend
+  Future<void> _sendFrameToBackend(CameraImage image) async {
+    try {
+      // Convert CameraImage to JPEG bytes
+      final bytes = await _convertCameraImageToJpeg(image);
+      if (bytes == null) return;
+      
+      // Encode as base64
+      final base64Data = base64Encode(bytes);
+      
+      // Get device ID from stored value or session fallback
+      final deviceId = _deviceId ?? _currentSession?.rtmpUrl.split('/').last ?? 'unknown';
+      
+      // Send to backend frame endpoint
+      await _sendFrameDataToBackend(deviceId, base64Data, image);
+      
+    } catch (e) {
+      developer.log('Error sending frame to backend: $e', name: _logTag, level: 900);
+    }
+  }
+  
+  /// Convert CameraImage to JPEG bytes
+  Future<Uint8List?> _convertCameraImageToJpeg(CameraImage image) async {
+    try {
+      // Convert YUV420 to RGB
+      final int width = image.width;
+      final int height = image.height;
+      
+      // Create RGB image data
+      final Uint8List rgbBytes = Uint8List(width * height * 3);
+      
+      // Simple YUV to RGB conversion
+      final yPlane = image.planes[0];
+      final uPlane = image.planes[1]; 
+      final vPlane = image.planes[2];
+      
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+          final int yIndex = y * yPlane.bytesPerRow + x;
+          final int uvIndex = (y ~/ 2) * uPlane.bytesPerRow + (x ~/ 2);
+          
+          final int yValue = yPlane.bytes[yIndex];
+          final int uValue = uPlane.bytes[uvIndex];
+          final int vValue = vPlane.bytes[uvIndex];
+          
+          // YUV to RGB conversion
+          final int r = (yValue + 1.402 * (vValue - 128)).clamp(0, 255).toInt();
+          final int g = (yValue - 0.344 * (uValue - 128) - 0.714 * (vValue - 128)).clamp(0, 255).toInt();
+          final int b = (yValue + 1.772 * (uValue - 128)).clamp(0, 255).toInt();
+          
+          final int rgbIndex = (y * width + x) * 3;
+          rgbBytes[rgbIndex] = r;
+          rgbBytes[rgbIndex + 1] = g;
+          rgbBytes[rgbIndex + 2] = b;
+        }
+      }
+      
+      // Convert RGB to JPEG using image package
+      final img.Image rgbImage = img.Image.fromBytes(
+        width: width,
+        height: height,
+        bytes: rgbBytes.buffer,
+        order: img.ChannelOrder.rgb,
+      );
+      
+      return Uint8List.fromList(img.encodeJpg(rgbImage, quality: 80));
+      
+    } catch (e) {
+      developer.log('Error converting camera image: $e', name: _logTag, level: 1000);
+      return null;
+    }
+  }
+  
+  /// Send frame data to backend via HTTP
+  Future<void> _sendFrameDataToBackend(String deviceId, String base64Data, CameraImage image) async {
+    try {
+      if (_backendUrl == null || _accessToken == null) {
+        developer.log('Backend connection info not available', name: _logTag, level: 900);
+        return;
+      }
+      
+      final url = '$_backendUrl/api/v1/streaming/mobile/$deviceId/frame';
+      
+      final frameData = {
+        'device_id': deviceId,
+        'frame_data': base64Data,
+        'timestamp': DateTime.now().millisecondsSinceEpoch / 1000.0,
+        'width': image.width,
+        'height': image.height,
+        'format': 'jpeg',
+      };
+      
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_accessToken',
+        },
+        body: json.encode(frameData),
+      );
+      
+      if (response.statusCode == 200) {
+        developer.log('Frame sent successfully', name: _logTag);
+      } else {
+        developer.log('Failed to send frame: ${response.statusCode}', name: _logTag, level: 900);
+      }
+      
+    } catch (e) {
+      developer.log('Error sending frame data: $e', name: _logTag, level: 1000);
+    }
   }
   
   /// Start RTMP streaming to backend
@@ -273,9 +460,13 @@ class MobileStreamingService {
     if (_isStreaming) {
       if (result == ConnectivityResult.none) {
         _updateStatus(StreamingStatus.error('Network connection lost'));
-        // TODO: Implement reconnection logic
       } else {
         _updateStatus(StreamingStatus.streaming());
+        
+        // Trigger IP update check when network reconnects
+        if (result == ConnectivityResult.wifi || result == ConnectivityResult.ethernet) {
+          _ipUpdateService?.forceIPUpdate();
+        }
       }
     }
   }
@@ -290,15 +481,58 @@ class MobileStreamingService {
     _statsController?.add(stats);
   }
   
+  /// Initialize with IP update monitoring
+  Future<bool> initializeWithIPMonitoring({
+    required String deviceId,
+    required String authToken,
+    required String cameraServiceUrl,
+  }) async {
+    final baseInitialized = await initialize();
+    if (!baseInitialized) return false;
+    
+    try {
+      // Initialize IP update service
+      _ipUpdateService = MobileCameraIPUpdateService();
+      final ipServiceInitialized = await _ipUpdateService!.initialize(
+        deviceId: deviceId,
+        authToken: authToken,
+        cameraServiceUrl: cameraServiceUrl,
+      );
+      
+      if (ipServiceInitialized) {
+        developer.log('IP monitoring service initialized successfully', name: _logTag);
+      } else {
+        developer.log('IP monitoring service failed to initialize', name: _logTag, level: 900);
+      }
+      
+      return true;
+    } catch (e) {
+      developer.log('Failed to initialize IP monitoring: $e', name: _logTag, level: 1000);
+      return baseInitialized; // Return base initialization result
+    }
+  }
+
   /// Cleanup resources
   Future<void> _cleanup() async {
     try {
-      // Stop camera
+      // Stop camera with improved error handling
       if (_cameraController != null) {
-        if (_cameraController!.value.isStreamingImages) {
-          await _cameraController!.stopImageStream();
+        try {
+          if (_cameraController!.value.isStreamingImages) {
+            await _cameraController!.stopImageStream();
+            developer.log('Image stream stopped', name: _logTag);
+          }
+        } catch (e) {
+          developer.log('Error stopping image stream: $e', name: _logTag, level: 900);
         }
-        await _cameraController!.dispose();
+        
+        try {
+          await _cameraController!.dispose();
+          developer.log('Camera controller disposed', name: _logTag);
+        } catch (e) {
+          developer.log('Error disposing camera controller: $e', name: _logTag, level: 900);
+        }
+        
         _cameraController = null;
       }
       
@@ -313,11 +547,22 @@ class MobileStreamingService {
   
   /// Dispose the service
   Future<void> dispose() async {
-    await stopStreaming();
+    developer.log('Disposing Mobile Streaming Service', name: _logTag);
+    
+    await _cleanup();
     await _connectivitySubscription.cancel();
-    await _statusController?.close();
-    await _statsController?.close();
+    
+    // Dispose IP update service
+    await _ipUpdateService?.dispose();
+    _ipUpdateService = null;
+    
+    _statusController?.close();
+    _statsController?.close();
+    
     _isInitialized = false;
+    _isStreaming = false;
+    
+    // TODO: Stop monitoring timers/streams
   }
   
   // Getters

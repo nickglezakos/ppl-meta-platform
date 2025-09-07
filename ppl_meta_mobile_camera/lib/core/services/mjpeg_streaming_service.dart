@@ -154,27 +154,40 @@ class MJPEGStreamingService {
   void _handleRequest(HttpRequest request) async {
     try {
       final response = request.response;
+      final path = request.uri.path;
       
-      print('New client connected from ${request.connectionInfo?.remoteAddress}');
+      print('Request from ${request.connectionInfo?.remoteAddress} to path: $path');
 
-      // Set MJPEG headers
-      response.headers.set('Content-Type', 'multipart/x-mixed-replace; boundary=frame');
-      response.headers.set('Cache-Control', 'no-cache');
-      response.headers.set('Connection', 'close');
-      response.headers.set('Access-Control-Allow-Origin', '*');
+      // Only serve MJPEG stream on /stream endpoint
+      if (path == '/stream') {
+        print('Serving MJPEG stream to client ${request.connectionInfo?.remoteAddress}');
 
-      // Add client to list
-      _clients.add(response);
+        // Set MJPEG headers
+        response.headers.set('Content-Type', 'multipart/x-mixed-replace; boundary=frame');
+        response.headers.set('Cache-Control', 'no-cache');
+        response.headers.set('Connection', 'close');
+        response.headers.set('Access-Control-Allow-Origin', '*');
 
-      // Send initial frame boundary
-      response.add('--frame\r\n'.codeUnits);
+        // Add client to list
+        _clients.add(response);
 
-      // Keep connection alive until client disconnects
-      await response.done.catchError((e) {
-        print('Client disconnected: $e');
-      }).whenComplete(() {
-        _clients.remove(response);
-      });
+        // Send initial frame boundary
+        response.add('--frame\r\n'.codeUnits);
+
+        // Keep connection alive until client disconnects
+        await response.done.catchError((e) {
+          print('Client disconnected: $e');
+        }).whenComplete(() {
+          _clients.remove(response);
+        });
+      } else {
+        // Return 404 for other paths
+        print('Path not found: $path');
+        response.statusCode = HttpStatus.notFound;
+        response.headers.set('Content-Type', 'application/json');
+        response.write('{"error": "Path not found. MJPEG stream available at /stream"}');
+        await response.close();
+      }
 
     } catch (e) {
       print('Error handling request: $e');
@@ -314,7 +327,7 @@ class MJPEGStreamingService {
 
   /// Get MJPEG stream URL
   String getStreamUrl(String ipAddress, int port) {
-    return 'http://$ipAddress:$port/mjpeg';
+    return 'http://$ipAddress:$port/stream';
   }
 
   /// Reset statistics

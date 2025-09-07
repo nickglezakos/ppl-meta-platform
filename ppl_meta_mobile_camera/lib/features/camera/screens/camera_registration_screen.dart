@@ -79,6 +79,7 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
         cameraName: _cameraNameController.text.trim(),
         location: _locationController.text.trim(),
         connectivityInfo: connectivityInfo,
+        context: context,
       );
 
       if (success) {
@@ -141,7 +142,7 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
             'connectivity': connectivityInfo,
             'streaming_endpoints': {
               'mjpeg': '${mediaService?['endpoints']?['local']}/mjpeg',
-              'websocket': '${mediaService?['endpoints']?['local']?.replaceAll('http', 'ws')}/ws/camera_stream',
+              'websocket': '${cameraService?['endpoints']?['local']?.replaceAll('http', 'ws')}',
               'upload': '${mediaService?['endpoints']?['local']}/upload',
               'stream': '${mediaService?['endpoints']?['local']}/stream',
             },
@@ -195,6 +196,7 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
     required String cameraName,
     required String location,
     required Map<String, dynamic> connectivityInfo,
+    required BuildContext context,
   }) async {
     try {
       final authService = AuthenticationService.instance;
@@ -234,10 +236,24 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
 
       print('📥 Camera registration response: $response');
 
-      return response != null && 
+      final isSuccess = response != null && 
              (response['message']?.contains('successfully') == true || 
+              response['message']?.contains('updated') == true ||
               response['success'] == true || 
               response['status'] == 'success');
+              
+      // If registration was successful, store the device ID
+      if (isSuccess && registrationData['device_id'] != null) {
+        print('💾 Storing device ID after registration: ${registrationData['device_id']}');
+        authService.setDeviceId(registrationData['device_id']);
+        
+        // Update streaming service with the device ID immediately
+        print('🔄 Updating streaming service with device ID');
+        final cameraProvider = context.read<CameraProvider>();
+        await cameraProvider.updateStreamingDeviceId(registrationData['device_id']);
+      }
+
+      return isSuccess;
     } catch (e) {
       print('❌ Camera registration error: $e');
       return false;

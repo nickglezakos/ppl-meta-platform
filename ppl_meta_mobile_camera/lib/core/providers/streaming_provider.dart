@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/mobile_camera.dart';
-import '../services/camera_registration_service.dart';
 import '../services/mjpeg_streaming_service.dart';
 import '../services/network_discovery_service.dart';
 import '../services/authentication_service.dart';
 import '../interfaces/camera_interface.dart';
 import '../../services/device_identifier_service.dart';
+import '../../services/auto_camera_registration_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -364,43 +364,52 @@ class PlatformStreamingProvider extends ChangeNotifier {
         resolution: '${_streamingConfig.width}x${_streamingConfig.height}',
       );
 
-      // Set platform URL for registration service
-      print('🌐 Setting platform URL: $_platformUrl');
-      CameraRegistrationService.instance.setPlatformUrl(_platformUrl!);
+      // Use AutoCameraRegistrationService for simplified registration
+      print('🚀 Starting automatic camera registration...');
       
-      print('🚀 Calling CameraRegistrationService.registerMobileCamera...');
-      final result = await CameraRegistrationService.instance.registerMobileCamera(
-        customName: deviceName,
-        streamingPort: _streamingConfig.port,
-        resolutionWidth: _streamingConfig.width,
-        resolutionHeight: _streamingConfig.height,
-        maxFps: _streamingConfig.fps,
-        supportsAudio: false,
-      );
+      // Get JWT token from shared preferences
+      final prefs = await SharedPreferences.getInstance();
+      final jwtToken = prefs.getString('jwt_token');
+      
+      if (jwtToken == null) {
+        throw Exception('No JWT token available for registration');
+      }
+      
+      final autoRegistrationService = AutoCameraRegistrationService();
+      final result = await autoRegistrationService.autoRegisterCamera(jwtToken);
 
       print('📝 Registration result received:');
-      print('   success: ${result.success}');
-      print('   deviceId: ${result.deviceId}');
-      print('   message: ${result.message}');
+      print('   success: ${result.isSuccess}');
+      print('   cameraId: ${result.cameraId}');
+      print('   cameraName: ${result.cameraName}');
+      print('   error: ${result.error}');
 
-      final success = result.success;
+      final success = result.isSuccess;
 
       if (success) {
         print('✅ Camera registration successful!');
         _isRegistered = true;
-        _registeredDeviceId = result.deviceId ?? _cameraInfo!.deviceId;
+        _registeredDeviceId = result.deviceId ?? _cameraInfo!.deviceId;  // Use deviceId, not cameraId
         _status = MobileCameraStatus.registered;
         _statusMessage = 'Camera registered successfully';
         
-        // Update camera info with registration response
-        if (result.cameraInfo != null) {
-          print('📱 Updating camera info from registration response');
-          _cameraInfo = result.cameraInfo;
+        // Store device ID in authentication service for streaming access
+        if (result.deviceId != null) {
+          final authService = AuthenticationService.instance;
+          await authService.updateDeviceIdAndNotify(result.deviceId!);
+          print('🔍 [DEVICE_ID_DEBUG] Stored device ID in auth service: ${result.deviceId}');
+          
+          // TODO: Trigger streaming service reconnection with new device ID
+          print('🔄 [DEVICE_ID_DEBUG] Device registration complete - streaming should reconnect');
         }
+        
+        // Camera info is already updated in the registration process
+        print('📱 Camera registered with Device ID: ${result.deviceId}');
+        print('📱 Camera registered with Camera ID: ${result.cameraId}');
       } else {
-        print('❌ Camera registration failed: ${result.message}');
+        print('❌ Camera registration failed: ${result.error}');
         _status = MobileCameraStatus.connected;
-        _statusMessage = result.message ?? 'Registration failed';
+        _statusMessage = result.error ?? 'Registration failed';
       }
       
       notifyListeners();
@@ -421,7 +430,9 @@ class PlatformStreamingProvider extends ChangeNotifier {
     }
 
     try {
-      final success = await CameraRegistrationService.instance.unregisterCamera();
+      // For now, just mark as unregistered since AutoCameraRegistrationService 
+      // doesn't have an explicit unregister method
+      final success = true; // Simplified approach
 
       if (success) {
         _isRegistered = false;

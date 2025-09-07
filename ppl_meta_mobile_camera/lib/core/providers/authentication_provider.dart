@@ -32,8 +32,6 @@ class AuthenticationProvider extends ChangeNotifier {
       print('🔑 [AUTH_DEBUG] Authentication state mismatch detected - Provider: $_isAuthenticated, Service: $serviceAuth');
       _isAuthenticated = serviceAuth;
     }
-    print('🔑 [AUTH_DEBUG] isAuthenticated getter called - returning: $_isAuthenticated');
-    print('🔑 [AUTH_DEBUG] Auth service isAuthenticated: ${_authService.isAuthenticated}');
     return _isAuthenticated;
   }
   bool get isLoading => _isLoading;
@@ -44,6 +42,13 @@ class AuthenticationProvider extends ChangeNotifier {
   bool get isCameraRegistered => _isCameraRegistered;
   bool get isServerOnline => _isServerOnline;
   Map<String, dynamic>? get serverInfo => _serverInfo;
+  
+  /// Get access token for API requests
+  String? get accessToken => _authService.authToken;
+  String? get authToken => _authService.authToken;  // Alias
+  
+  /// Get camera service endpoint URL
+  String? get camerasServiceUrl => _authService.cameraServiceEndpoint;
 
   /// Initialize authentication provider
   Future<void> initializeAuth() async {
@@ -395,9 +400,27 @@ class AuthenticationProvider extends ChangeNotifier {
   Future<void> _initializeStreamingService() async {
     if (_serverUrl == null) return;
 
+    // Get cameras service URL from platform services data instead of node service URL
+    final platformServices = _authService.platformServices;
+    String streamingServerUrl = _serverUrl!; // fallback to node service
+    
+    if (platformServices != null) {
+      final microservices = platformServices['microservices'] as Map<String, dynamic>?;
+      final camerasService = microservices?['cameras'] as Map<String, dynamic>?;
+      final camerasEndpoint = camerasService?['endpoints']?['local'] as String?;
+      
+      if (camerasEndpoint != null) {
+        streamingServerUrl = camerasEndpoint;
+        print('🎯 [STREAMING_INIT] Using cameras service URL: $streamingServerUrl');
+      } else {
+        print('⚠️ [STREAMING_INIT] Cameras service not found, using fallback: $streamingServerUrl');
+      }
+    }
+
     await _streamingService.initializeStreaming(
-      serverUrl: _serverUrl!,
+      serverUrl: streamingServerUrl,
       authHeaders: getAuthHeaders(),
+      deviceId: getDeviceId(),  // Pass device ID for mobile camera streaming
     );
   }
 

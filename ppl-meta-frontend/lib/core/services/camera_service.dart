@@ -189,6 +189,24 @@ class CameraService {
     }
   }
 
+  /// Create a streaming session for a mobile camera (browser-compatible)
+  Future<Map<String, dynamic>?> createMobileStreamingSession(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.post<Map<String, dynamic>>(
+        '/api/v1/streaming/mobile/$deviceId/streaming-session',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data!;
+      } else {
+        throw CameraException('Failed to create mobile streaming session: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error creating mobile streaming session: $e');
+      return null;
+    }
+  }
+
   /// Stop streaming for a camera
   Future<void> stopStreaming(String cameraId) async {
     try {

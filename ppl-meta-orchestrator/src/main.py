@@ -45,13 +45,26 @@ async def lifespan(_app: FastAPI):
 
     # Initialize service discovery if available
     try:
+        import socket
+
         from shared.service_discovery import register_service
+
+        # Detect actual network IP for registration
+        try:
+            # Connect to a remote address to determine local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            detected_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            # Fallback to hostname resolution
+            detected_ip = socket.gethostbyname(socket.gethostname())
 
         await register_service(
             name="ppl-meta-orchestrator",
             service_type="backend",
             version="1.0.0",
-            host=settings.HOST,
+            host=detected_ip,
             port=settings.PORT,
             health_endpoint="/health",
             capabilities=["orchestration", "coordination", "workflow"],

@@ -6,12 +6,13 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -49,7 +50,7 @@ class MobileCameraCreate(BaseModel):
 
     name: str
     device_id: str
-    ip_address: str
+    ip_address: Optional[str] = None  # Will be auto-detected from client IP
     port: int = 8554
     device_model: Optional[str] = None
     device_manufacturer: Optional[str] = None
@@ -68,6 +69,8 @@ class MobileCameraUpdate(BaseModel):
     resolution_height: Optional[int] = None
     current_fps: Optional[int] = None
     battery_level: Optional[int] = None
+    ip_address: Optional[str] = None
+    port: Optional[int] = None
 
 
 @router.get("/", dependencies=[Depends(require_view_cameras)])
@@ -159,6 +162,14 @@ async def connect_camera(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Camera {device_id} not found",
+            )
+
+        # Mobile cameras should not be connected via backend - they use direct frontend access
+        if camera.camera_type == CameraType.MOBILE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Mobile camera {device_id} does not support backend connection. "
+                "Mobile cameras are accessed directly by frontend.",
             )
 
         # Connect to camera
@@ -576,28 +587,55 @@ async def update_rtsp_camera(
 # 📱 MOBILE CAMERA ENDPOINTS
 
 
-@router.post("/mobile", dependencies=[Depends(require_admin_cameras)])
+@router.post("/mobile", dependencies=[Depends(require_connect_camera)])
 async def register_mobile_camera(
     mobile_data: MobileCameraCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
     """Register a mobile device as a camera in the PPL Meta Platform."""
 
     try:
+        # Auto-detect client IP address from request
+        client_ip = request.client.host
+        actual_ip = mobile_data.ip_address or client_ip
+
+        logger.info(
+            f"Mobile camera registration: client_ip={client_ip}, provided_ip={mobile_data.ip_address}, using_ip={actual_ip}"
+        )
+
         # Check if mobile camera already exists
         existing_camera = (
             db.query(Camera).filter(Camera.device_id == mobile_data.device_id).first()
         )
         if existing_camera:
-            # Camera already exists - return success with existing camera info
+            # Update existing camera with new IP address and connection string
             logger.info(
-                f"User {current_user.get('sub')} attempted to register existing mobile camera: "
-                f"{mobile_data.device_id} - returning existing camera info"
+                f"User {current_user.get('sub')} updating existing mobile camera: "
+                f"{mobile_data.device_id} with new IP {actual_ip}"
             )
 
+            # Update IP address and rebuild connection string
+            existing_camera.connection_string = (
+                f"mobile://{actual_ip}:{mobile_data.port}"
+            )
+            existing_camera.port = mobile_data.port
+            existing_camera.last_seen = datetime.utcnow()
+
+            # Update other fields that might have changed
+            if mobile_data.name != existing_camera.name:
+                existing_camera.name = mobile_data.name
+            if mobile_data.resolution_width != existing_camera.resolution_width:
+                existing_camera.resolution_width = mobile_data.resolution_width
+            if mobile_data.resolution_height != existing_camera.resolution_height:
+                existing_camera.resolution_height = mobile_data.resolution_height
+
+            db.commit()
+            db.refresh(existing_camera)
+
             return {
-                "message": "Mobile camera already registered",
+                "message": "Mobile camera updated with new IP address",
                 "camera": {
                     "id": existing_camera.id,
                     "name": existing_camera.name,
@@ -605,14 +643,14 @@ async def register_mobile_camera(
                     "camera_type": existing_camera.camera_type.value,
                     "status": existing_camera.status.value,
                     "connection_string": existing_camera.connection_string,
-                    "ip_address": mobile_data.ip_address,
+                    "ip_address": actual_ip,
                     "port": existing_camera.port,
                     "resolution": f"{existing_camera.resolution_width}x{existing_camera.resolution_height}",
                 },
             }
 
         # Build mobile streaming URL/connection string
-        connection_string = f"mobile://{mobile_data.ip_address}:{mobile_data.port}"
+        connection_string = f"mobile://{actual_ip}:{mobile_data.port}"
 
         # Create new mobile camera
         new_camera = Camera(
@@ -652,7 +690,7 @@ async def register_mobile_camera(
                 "camera_type": new_camera.camera_type.value,
                 "status": new_camera.status.value,
                 "connection_string": connection_string,
-                "ip_address": mobile_data.ip_address,
+                "ip_address": actual_ip,
                 "port": mobile_data.port,
                 "resolution": f"{mobile_data.resolution_width}x{mobile_data.resolution_height}",
             },
@@ -672,6 +710,7 @@ async def register_mobile_camera(
 async def update_mobile_camera(
     device_id: str,
     mobile_update: MobileCameraUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
@@ -706,6 +745,20 @@ async def update_mobile_camera(
         if mobile_update.resolution_height is not None:
             camera.resolution_height = mobile_update.resolution_height
             updated_fields.append("resolution_height")
+
+        # Handle IP address update - use auto-detection instead of client-provided IP
+        if mobile_update.ip_address is not None:
+            # Auto-detect client IP address from request
+            client_ip = request.client.host
+            actual_ip = mobile_update.ip_address or client_ip
+            port = mobile_update.port or camera.port or 8554
+            camera.connection_string = f"mobile://{actual_ip}:{port}"
+            camera.port = port
+            updated_fields.append("ip_address")
+            updated_fields.append("connection_string")
+            logger.info(
+                f"Mobile camera {device_id} IP updated: client_ip={client_ip}, provided_ip={mobile_update.ip_address}, using_ip={actual_ip}"
+            )
 
         # Update last_seen timestamp
         camera.last_seen = datetime.utcnow()
@@ -816,6 +869,7 @@ async def list_mobile_cameras(
                 "device_id": camera.device_id,
                 "camera_type": camera.camera_type.value,
                 "status": camera.status.value,
+                "connection_string": camera.connection_string,  # Add for direct frontend access
                 "ip_address": camera.connection_string.split("://")[1].split(":")[0],
                 "port": camera.port,
                 "resolution": f"{camera.resolution_width}x{camera.resolution_height}",
@@ -842,6 +896,74 @@ async def list_mobile_cameras(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list mobile cameras",
+        )
+
+
+@router.post(
+    "/mobile/{device_id}/update-ip", dependencies=[Depends(require_connect_camera)]
+)
+async def update_mobile_camera_ip(
+    device_id: str,
+    ip_update: Dict[str, Any],
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Update mobile camera IP address when the device detects network changes."""
+
+    try:
+        # Find the mobile camera
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera {device_id} not found",
+            )
+
+        # Auto-detect client IP address from request
+        client_ip = request.client.host
+        provided_ip = ip_update.get("ip_address")
+        actual_ip = provided_ip or client_ip
+        new_port = ip_update.get("port", camera.port or 8554)
+
+        # Update connection string with detected IP
+        old_connection = camera.connection_string
+        camera.connection_string = f"mobile://{actual_ip}:{new_port}"
+        camera.port = new_port
+        camera.last_seen = datetime.utcnow()
+
+        db.commit()
+
+        logger.info(
+            f"Mobile camera {device_id} IP updated: client_ip={client_ip}, "
+            f"provided_ip={provided_ip}, using_ip={actual_ip}, "
+            f"old={old_connection} -> new=mobile://{actual_ip}:{new_port}"
+        )
+
+        return {
+            "message": "Mobile camera IP updated successfully",
+            "device_id": device_id,
+            "old_connection": old_connection,
+            "new_connection": camera.connection_string,
+            "ip_address": actual_ip,
+            "port": new_port,
+            "updated_at": camera.last_seen.isoformat() if camera.last_seen else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating mobile camera IP {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update mobile camera IP",
         )
 
 
@@ -898,8 +1020,38 @@ async def mobile_camera_heartbeat(
         )
 
 
-@router.websocket("/{device_id}/stream")
-async def camera_stream_websocket(websocket: WebSocket, device_id: str):
+@router.post("/mobile/cleanup-stale", dependencies=[Depends(require_admin_cameras)])
+async def cleanup_stale_mobile_cameras(
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Manually trigger cleanup of stale mobile camera connections."""
+
+    try:
+        from src.services.mobile_cleanup import mobile_cleanup_service
+
+        updated_count = await mobile_cleanup_service.cleanup_stale_mobile_cameras()
+
+        logger.info(
+            f"Admin {current_user.get('sub')} triggered mobile camera cleanup, "
+            f"updated {updated_count} cameras"
+        )
+
+        return {
+            "message": "Mobile camera cleanup completed",
+            "updated_cameras": updated_count,
+            "status": "success",
+        }
+
+    except Exception as e:
+        logger.error(f"Error during manual mobile camera cleanup: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to cleanup stale mobile cameras",
+        )
+
+
+@router.websocket("/mobile/{device_id}/stream")
+async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
     """WebSocket endpoint for camera streaming that matches mobile app expectations."""
     await websocket.accept()
 

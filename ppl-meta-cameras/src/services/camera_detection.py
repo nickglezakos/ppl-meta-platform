@@ -108,6 +108,21 @@ class CameraDetectionService:
             logger.warning(f"Camera {device_id} already connected")
             return self.active_connections[device_id]
 
+        # Check if this is a mobile camera - mobile cameras should not be
+        # connected via backend
+        db_gen = get_db()
+        db = next(db_gen)
+        try:
+            camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+            if camera and camera.camera_type == CameraType.MOBILE:
+                logger.info(
+                    f"Skipping backend connection for mobile camera {device_id} "
+                    "- mobile cameras use direct frontend access"
+                )
+                return None
+        finally:
+            db.close()
+
         # First check detected cameras (USB cameras)
         camera_info = self.detected_cameras.get(device_id)
 

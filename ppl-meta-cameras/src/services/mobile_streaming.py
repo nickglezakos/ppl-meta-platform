@@ -283,6 +283,75 @@ class MobileCameraStreamingService:
             ),
         }
 
+    async def receive_mobile_frame(
+        self, device_id: str, frame: np.ndarray, timestamp: float
+    ) -> bool:
+        """Receive and store a frame from a mobile camera."""
+
+        try:
+            # Check if we have an active stream for this device, if not create it
+            if device_id not in self.active_mobile_streams:
+                logger.info(f"Auto-setting up mobile camera stream for {device_id}")
+
+                # Auto-setup mobile camera stream with default configuration
+                stream_config = {
+                    "ip_address": "mobile",  # Placeholder for mobile cameras
+                    "port": 0,  # Not used for direct frame upload
+                    "protocol": "direct",  # Direct frame upload
+                }
+
+                success = await self.setup_mobile_camera_stream(
+                    device_id, stream_config
+                )
+                if not success:
+                    logger.error(
+                        f"Failed to auto-setup mobile camera stream for {device_id}"
+                    )
+                    return False
+
+            stream_info = self.active_mobile_streams[device_id]
+            frame_queue = self.stream_queues[device_id]
+
+            # Update last frame time
+            stream_info["last_frame_time"] = timestamp
+
+            # Add frame to queue (drop oldest if queue is full)
+            if frame_queue.full():
+                try:
+                    frame_queue.get_nowait()  # Remove oldest frame
+                except:
+                    pass
+
+            frame_queue.put_nowait(frame)
+            logger.debug(f"Received frame from mobile camera {device_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error receiving frame from mobile camera {device_id}: {e}")
+            return False
+
+    async def get_latest_mobile_frame(self, device_id: str) -> Optional[np.ndarray]:
+        """Get the latest frame from a mobile camera."""
+
+        if device_id not in self.stream_queues:
+            return None
+
+        frame_queue = self.stream_queues[device_id]
+
+        try:
+            # Get the most recent frame
+            latest_frame = None
+            while not frame_queue.empty():
+                latest_frame = frame_queue.get_nowait()
+
+            return latest_frame
+
+        except Exception as e:
+            logger.error(
+                f"Error getting latest frame from mobile camera {device_id}: {e}"
+            )
+            return None
+
     async def shutdown(self):
         """Shutdown all mobile camera streams."""
 

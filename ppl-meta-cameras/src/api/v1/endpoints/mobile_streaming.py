@@ -3,10 +3,15 @@ Mobile camera specific streaming endpoints for PPL Meta Cameras API.
 Extends the base streaming functionality with mobile-specific features.
 """
 
+import base64
+import io
 import logging
 from typing import Dict
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import numpy as np
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
+from PIL import Image
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from src.database import get_db
@@ -108,7 +113,7 @@ async def setup_mobile_camera_streaming(
         session_id = session_manager.create_session(
             user_id=current_user.get("sub"),
             device_id=device_id,
-            expires_minutes=60,  # 1 hour session
+            permissions=["cameras:stream:view", "cameras:stream:start"],
         )
 
         # Build response with streaming details
@@ -254,4 +259,134 @@ async def stop_mobile_streaming(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to stop mobile camera streaming",
+        )
+
+
+class MobileFrameData(BaseModel):
+    """Model for mobile camera frame data."""
+
+    device_id: str
+    frame_data: str  # Base64 encoded image data
+    timestamp: float
+    width: int
+    height: int
+    format: str = "jpeg"
+
+
+@router.post("/mobile/{device_id}/frame")
+async def receive_mobile_camera_frame(
+    device_id: str,
+    frame_data: MobileFrameData,
+    current_user: Dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Receive a video frame from a mobile camera."""
+
+    try:
+        # Verify mobile camera exists and is registered
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera {device_id} not found",
+            )
+
+        # Decode base64 frame data
+        try:
+            frame_bytes = base64.b64decode(frame_data.frame_data)
+
+            # Convert to numpy array for processing
+            image = Image.open(io.BytesIO(frame_bytes))
+            frame = np.array(image)
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid frame data: {e}",
+            )
+
+        # Store the frame in the mobile streaming service
+        success = await mobile_streaming_service.receive_mobile_frame(
+            device_id, frame, frame_data.timestamp
+        )
+
+        if success:
+            return {
+                "device_id": device_id,
+                "status": "received",
+                "message": "Frame received successfully",
+                "timestamp": frame_data.timestamp,
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to process mobile camera frame",
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error receiving mobile camera frame for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to receive mobile camera frame",
+        )
+
+
+@router.post("/mobile/{device_id}/streaming-session")
+async def create_mobile_streaming_session(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Create a streaming session for a mobile camera (browser-compatible)."""
+
+    try:
+        # Verify this is a mobile camera
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+
+        if camera.camera_type != CameraType.MOBILE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Camera {device_id} is not a mobile camera",
+            )
+
+        # Create streaming session for browser access
+        from src.services.session_auth import session_manager
+
+        session_id = session_manager.create_session(
+            user_id=current_user.get("sub"),
+            device_id=device_id,
+            permissions=["cameras:stream:view"],
+        )
+
+        logger.info(
+            f"User {current_user.get('sub')} created mobile streaming session for {device_id}"
+        )
+
+        return {
+            "session_id": session_id,
+            "device_id": device_id,
+            "stream_url": f"/cameras/api/v1/streaming/{device_id}/video-session/{session_id}",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating mobile streaming session for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create mobile streaming session",
         )

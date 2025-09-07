@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PPL Meta Mobile Camera Live Stream Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .stream-container { margin: 20px 0; text-align: center; }
+        img { max-width: 100%; border: 2px solid #333; border-radius: 4px; }
+        .info { background: #e8f4fd; padding: 15px; border-radius: 4px; margin: 10px 0; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 PPL Meta Mobile Camera Live Stream Test</h1>
+        
+        <div class="info">
+            <strong>📱 Testing Device:</strong> mobile_TKQ1.221114.001<br>
+            <strong>🔗 Backend:</strong> http://localhost:8005<br>
+            <strong>⏰ Test Time:</strong> <span id="testTime"></span>
+        </div>
+
+        <div id="sessionInfo" class="info">
+            <strong>📋 Session Info:</strong> <span id="sessionStatus">Creating session...</span>
+        </div>
+
+        <div class="stream-container">
+            <h3>📺 Live Mobile Camera Stream</h3>
+            <div id="streamStatus" class="status">Loading...</div>
+            <img id="streamImage" alt="Mobile Camera Stream" style="display: none;" />
+        </div>
+
+        <div style="text-align: center; margin-top: 20px;">
+            <button class="btn-primary" onclick="createNewSession()">🔄 Create New Session</button>
+            <button class="btn-success" onclick="refreshStream()">↻ Refresh Stream</button>
+            <button class="btn-primary" onclick="testStreamData()">🔍 Test Stream Data</button>
+            <button class="btn-primary" onclick="checkStreamHeaders()">📋 Check Headers</button>
+        </div>
+
+        <div id="streamAnalysis" style="margin-top: 20px; background: #f8f9fa; padding: 15px; border-radius: 4px;">
+            <strong>📊 Stream Analysis:</strong><br>
+            <div id="analysisContent">No analysis yet - click "Test Stream Data" to analyze the stream</div>
+        </div>
+
+        <div id="debugInfo" style="margin-top: 20px; font-family: monospace; font-size: 12px; background: #f8f9fa; padding: 15px; border-radius: 4px;">
+            <strong>🐛 Debug Log:</strong><br>
+            <div id="debugLog"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        let streamUrl = null;
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const debugLog = document.getElementById('debugLog');
+            debugLog.innerHTML += `[${timestamp}] ${message}<br>`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+            console.log(message);
+        }
+
+        function updateSessionStatus(message, isError = false) {
+            const statusElement = document.getElementById('sessionStatus');
+            statusElement.textContent = message;
+            statusElement.style.color = isError ? '#721c24' : '#155724';
+        }
+
+        function updateStreamStatus(message, isError = false) {
+            const statusElement = document.getElementById('streamStatus');
+            statusElement.textContent = message;
+            statusElement.className = isError ? 'status error' : 'status success';
+        }
+
+        async function createMobileStreamingSession() {
+            try {
+                log('🔄 Creating mobile streaming session...');
+                updateSessionStatus('Creating session...', false);
+
+                const response = await fetch('http://localhost:8005/api/v1/streaming/mobile/mobile_TKQ1.221114.001/streaming-session', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3IiwiZXhwIjoxNzU3MjA2OTkzfQ.SKrworUaevp-phpi7JTa4z7NctN8cDt6gecBcGeyDms'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const sessionData = await response.json();
+                currentSessionId = sessionData.session_id;
+                streamUrl = `http://localhost:8005/api/v1/streaming/mobile_TKQ1.221114.001/video-session/${currentSessionId}`;
+                
+                log(`✅ Session created: ${currentSessionId}`);
+                log(`🔗 Stream URL: ${streamUrl}`);
+                updateSessionStatus(`Session: ${currentSessionId}`, false);
+                
+                return streamUrl;
+            } catch (error) {
+                log(`❌ Failed to create session: ${error.message}`);
+                updateSessionStatus(`Error: ${error.message}`, true);
+                return null;
+            }
+        }
+
+        function setupStream(url) {
+            const img = document.getElementById('streamImage');
+            
+            img.onload = function() {
+                log('✅ Stream loaded successfully');
+                updateStreamStatus('🟢 Stream Active', false);
+                img.style.display = 'block';
+            };
+            
+            img.onerror = function() {
+                log('❌ Stream failed to load');
+                updateStreamStatus('🔴 Stream Failed', true);
+                img.style.display = 'none';
+            };
+            
+            log(`📡 Setting stream source: ${url}`);
+            updateStreamStatus('🟡 Connecting...', false);
+            img.src = url;
+        }
+
+        async function createNewSession() {
+            const url = await createMobileStreamingSession();
+            if (url) {
+                setupStream(url);
+            }
+        }
+
+        function refreshStream() {
+            if (streamUrl) {
+                log('🔄 Refreshing stream...');
+                // Add cache busting parameter
+                const refreshUrl = streamUrl + '?refresh=' + Date.now();
+                setupStream(refreshUrl);
+            } else {
+                log('⚠️ No stream URL available, creating new session...');
+                createNewSession();
+            }
+        }
+
+        async function testStreamData() {
+            if (!streamUrl) {
+                log('❌ No stream URL available. Create a session first.');
+                return;
+            }
+            
+            log('🔍 Testing stream data with fetch...');
+            updateAnalysis('Testing stream data...');
+            
+            try {
+                const response = await fetch(streamUrl);
+                log(`📊 Response status: ${response.status} ${response.statusText}`);
+                log(`📊 Content-Type: ${response.headers.get('content-type')}`);
+                log(`📊 Content-Length: ${response.headers.get('content-length') || 'unknown'}`);
+                
+                if (response.ok) {
+                    const reader = response.body.getReader();
+                    let bytesReceived = 0;
+                    let chunks = 0;
+                    const maxChunks = 3;
+                    
+                    log(`📦 Reading first ${maxChunks} chunks...`);
+                    
+                    for (let i = 0; i < maxChunks; i++) {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            log(`📊 Stream ended after ${chunks} chunks`);
+                            break;
+                        }
+                        
+                        bytesReceived += value.length;
+                        chunks++;
+                        
+                        // Convert first 100 bytes to string to see content
+                        const preview = new TextDecoder('utf-8', { fatal: false }).decode(value.slice(0, 100));
+                        log(`📦 Chunk ${chunks}: ${value.length} bytes`);
+                        log(`📝 Preview: ${preview.replace(/\r?\n/g, '\\n').substring(0, 80)}...`);
+                        
+                        // Check if it looks like MJPEG
+                        if (value.length > 4) {
+                            const header = Array.from(value.slice(0, 4)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                            log(`🔍 Hex header: ${header}`);
+                        }
+                    }
+                    
+                    reader.cancel();
+                    
+                    updateAnalysis(`
+                        <strong>Stream Analysis Results:</strong><br>
+                        • Status: ${response.status} ${response.statusText}<br>
+                        • Content-Type: ${response.headers.get('content-type')}<br>
+                        • Chunks received: ${chunks}<br>
+                        • Total bytes: ${bytesReceived}<br>
+                        • Stream status: ${bytesReceived > 0 ? '🟢 ACTIVE DATA' : '🔴 NO DATA'}<br>
+                        • Data type: ${chunks > 0 ? 'Streaming data detected' : 'No streaming data'}
+                    `);
+                } else {
+                    log(`❌ Stream request failed: ${response.status}`);
+                    const errorText = await response.text();
+                    log(`❌ Error response: ${errorText}`);
+                    updateAnalysis(`❌ Error: ${response.status} - ${errorText}`);
+                }
+                
+            } catch (error) {
+                log(`❌ Fetch error: ${error.message}`);
+                updateAnalysis(`❌ Fetch Error: ${error.message}`);
+            }
+        }
+
+        async function checkStreamHeaders() {
+            if (!streamUrl) {
+                log('❌ No stream URL available. Create a session first.');
+                return;
+            }
+            
+            log('🔍 Checking stream headers...');
+            
+            try {
+                const response = await fetch(streamUrl, { method: 'HEAD' });
+                log(`📊 HEAD response: ${response.status} ${response.statusText}`);
+                
+                const headers = [];
+                for (const [key, value] of response.headers) {
+                    headers.push(`${key}: ${value}`);
+                    log(`📋 ${key}: ${value}`);
+                }
+                
+                updateAnalysis(`
+                    <strong>Stream Headers:</strong><br>
+                    ${headers.map(h => `• ${h}`).join('<br>')}
+                `);
+                
+            } catch (error) {
+                log(`❌ HEAD request error: ${error.message}`);
+                updateAnalysis(`❌ Headers Error: ${error.message}`);
+            }
+        }
+
+        function updateAnalysis(content) {
+            document.getElementById('analysisContent').innerHTML = content;
+        }
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('testTime').textContent = new Date().toLocaleString();
+            log('🚀 Page loaded, initializing mobile camera stream test...');
+            createNewSession();
+        });
+    </script>
+</body>
+</html>

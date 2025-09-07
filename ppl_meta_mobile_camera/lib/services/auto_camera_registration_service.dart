@@ -73,18 +73,30 @@ class AutoCameraRegistrationService {
   /// Check if camera with device ID already exists
   Future<Map<String, dynamic>?> checkExistingCamera(String jwtToken) async {
     try {
-      final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
-      final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
-      final deviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix for consistency
-      
-      AutoRegistrationLogger.step('CHECK', 'Looking for existing camera with device ID: $deviceId');
-      
-      // Get cameras service URL from discovery service
+      // Get cameras service URL from discovery service first (no platform dependencies)
       final baseUrl = await _getCamerasServiceUrl();
       if (baseUrl == null) {
         AutoRegistrationLogger.warning('Cameras service URL not available - skipping existing camera check');
         return null; // Don't throw exception, just return null to continue with registration
       }
+      
+      // Try to get device info, but handle platform binding errors gracefully
+      Map<String, dynamic> deviceInfo;
+      try {
+        deviceInfo = await _deviceService.getDeviceRegistrationInfo();
+      } catch (e) {
+        if (e.toString().contains('Binding has not yet been initialized') || 
+            e.toString().contains('ServicesBinding')) {
+          AutoRegistrationLogger.warning('Platform services not yet available for existing camera check');
+          return null; // Skip check and proceed with registration
+        }
+        rethrow; // Re-throw other errors
+      }
+      
+      final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
+      final deviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix for consistency
+      
+      AutoRegistrationLogger.step('CHECK', 'Looking for existing camera with device ID: $deviceId');
       
       final response = await http.get(
         Uri.parse('$baseUrl/api/v1/cameras/mobile'),
@@ -127,7 +139,7 @@ class AutoCameraRegistrationService {
         return null;
       }
 
-      return '$camerasUrl/api/v1/cameras/$cameraId/stream';
+      return '$camerasUrl/api/v1/cameras/mobile/$cameraId/stream';
     } catch (e) {
       AutoRegistrationLogger.error('Failed to create streaming session URL: $e');
       return null;
@@ -180,21 +192,57 @@ class AutoCameraRegistrationService {
       
       // Step 1: Generate automatic camera name
       AutoRegistrationLogger.step('1', 'Generating camera name');
-      final cameraName = await _deviceService.generateCameraName();
-      AutoRegistrationLogger.success('Auto-generated camera name: $cameraName');
+      String cameraName;
+      try {
+        cameraName = await _deviceService.generateCameraName();
+        AutoRegistrationLogger.success('Auto-generated camera name: $cameraName');
+      } catch (e) {
+        if (e.toString().contains('Binding has not yet been initialized') || 
+            e.toString().contains('ServicesBinding')) {
+          AutoRegistrationLogger.error('Platform services not available for camera name generation');
+          return CameraRegistrationResult.failure(
+            error: 'Platform services not initialized. Please restart the app.',
+          );
+        }
+        rethrow;
+      }
       
       // Step 2: Get device information
       AutoRegistrationLogger.step('2', 'Collecting device information');
-      final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
-      AutoRegistrationLogger.success('Device specs collected automatically');
-      AutoRegistrationLogger.deviceInfo('Manufacturer', deviceInfo['manufacturer']);
-      AutoRegistrationLogger.deviceInfo('Model', deviceInfo['model']);
-      AutoRegistrationLogger.deviceInfo('OS Version', deviceInfo['os_version']);
+      Map<String, dynamic> deviceInfo;
+      try {
+        deviceInfo = await _deviceService.getDeviceRegistrationInfo();
+        AutoRegistrationLogger.success('Device specs collected automatically');
+        AutoRegistrationLogger.deviceInfo('Manufacturer', deviceInfo['manufacturer']);
+        AutoRegistrationLogger.deviceInfo('Model', deviceInfo['model']);
+        AutoRegistrationLogger.deviceInfo('OS Version', deviceInfo['os_version']);
+      } catch (e) {
+        if (e.toString().contains('Binding has not yet been initialized') || 
+            e.toString().contains('ServicesBinding')) {
+          AutoRegistrationLogger.error('Platform services not available for device information');
+          return CameraRegistrationResult.failure(
+            error: 'Platform services not initialized. Please restart the app.',
+          );
+        }
+        rethrow;
+      }
       
       // Step 3: Get device IP
       AutoRegistrationLogger.step('3', 'Getting device IP');
-      final deviceIP = await _getDeviceIP();
-      AutoRegistrationLogger.success('Device IP: $deviceIP');
+      String deviceIP;
+      try {
+        deviceIP = await _getDeviceIP();
+        AutoRegistrationLogger.success('Device IP: $deviceIP');
+      } catch (e) {
+        if (e.toString().contains('Binding has not yet been initialized') || 
+            e.toString().contains('ServicesBinding')) {
+          AutoRegistrationLogger.error('Platform services not available for IP detection');
+          return CameraRegistrationResult.failure(
+            error: 'Platform services not initialized. Please restart the app.',
+          );
+        }
+        rethrow;
+      }
       
       // Step 4: Prepare registration data
       AutoRegistrationLogger.step('4', 'Preparing registration payload');
@@ -237,31 +285,61 @@ class AutoCameraRegistrationService {
       AutoRegistrationLogger.debug('Response body: ${response.body}');
       
       if (response.statusCode == 200 || response.statusCode == 201) {
+        AutoRegistrationLogger.success('Registration API call successful (${response.statusCode})');
+        
         final responseData = json.decode(response.body);
+        AutoRegistrationLogger.debug('Full response data: $responseData');
+        
         final cameraData = responseData['camera'];
-        final cameraId = cameraData['id']?.toString();
-        final deviceId = cameraData['device_id']?.toString();
+        if (cameraData == null) {
+          AutoRegistrationLogger.error('No camera data in response');
+          return CameraRegistrationResult.failure(
+            error: 'No camera data in response: ${response.body}',
+          );
+        }
+        
+        AutoRegistrationLogger.debug('Camera data: $cameraData');
+        
+        // Extract camera information - these should always be present
+        final cameraId = cameraData['id'];
+        final deviceId = cameraData['device_id'];
+        final cameraNameFromResponse = cameraData['name'];
+        
+        AutoRegistrationLogger.debug('Raw values - ID: $cameraId, DeviceID: $deviceId, Name: $cameraNameFromResponse');
         
         if (cameraId != null && deviceId != null) {
-          AutoRegistrationLogger.success('Mobile camera registered successfully!');
-          AutoRegistrationLogger.deviceInfo('Camera ID', cameraId);
-          AutoRegistrationLogger.deviceInfo('Device ID', deviceId);
+          AutoRegistrationLogger.success('Mobile camera operation successful!');
+          AutoRegistrationLogger.deviceInfo('Camera ID', cameraId.toString());
+          AutoRegistrationLogger.deviceInfo('Device ID', deviceId.toString());
+          AutoRegistrationLogger.deviceInfo('Camera Name', cameraNameFromResponse?.toString() ?? cameraName);
           AutoRegistrationLogger.deviceInfo('Camera Type', cameraData['camera_type']);
           AutoRegistrationLogger.deviceInfo('Status', cameraData['status']);
           AutoRegistrationLogger.deviceInfo('Connection String', cameraData['connection_string']);
           
-          return CameraRegistrationResult.success(
-            cameraId: int.parse(cameraId),
-            cameraName: cameraName,
-            deviceId: deviceId,
-          );
+          try {
+            final successResult = CameraRegistrationResult.success(
+              cameraId: cameraId is int ? cameraId : int.tryParse(cameraId.toString()) ?? 0,
+              cameraName: cameraNameFromResponse?.toString() ?? cameraName,
+              deviceId: deviceId.toString(),
+            );
+            
+            AutoRegistrationLogger.debug('Created success result: ${successResult.toString()}');
+            AutoRegistrationLogger.debug('Success result isSuccess: ${successResult.isSuccess}');
+            
+            return successResult;
+          } catch (e) {
+            AutoRegistrationLogger.error('Exception creating success result: $e');
+            return CameraRegistrationResult.failure(
+              error: 'Failed to create success result: $e',
+            );
+          }
         } else {
-          AutoRegistrationLogger.error('Registration failed: Missing camera ID or device ID in response');
-          final errorBody = response.body.isNotEmpty ? response.body : 'No error details';
-          AutoRegistrationLogger.debug('Error details: $errorBody');
+          AutoRegistrationLogger.error('Missing required camera data in response');
+          AutoRegistrationLogger.error('Camera ID: $cameraId, Device ID: $deviceId');
+          AutoRegistrationLogger.error('Full camera data: $cameraData');
           
           return CameraRegistrationResult.failure(
-            error: 'Registration failed: $errorBody',
+            error: 'Invalid camera data in response - missing ID or device_id',
           );
         }
       } else if (response.statusCode == 400) {
@@ -302,8 +380,10 @@ class AutoCameraRegistrationService {
         );
       }
       
-    } catch (e, stackTrace) {
+    } catch (e) {
       AutoRegistrationLogger.error('Exception during registration: ${e.toString()}', e);
+      AutoRegistrationLogger.error('Exception type: ${e.runtimeType}');
+      AutoRegistrationLogger.error('Stack trace: ${StackTrace.current}');
       return CameraRegistrationResult.failure(
         error: 'Registration exception: $e',
       );
