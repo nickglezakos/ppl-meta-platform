@@ -1,7 +1,15 @@
 # 🔍 YELLOW RECTANGLES GITHUB ARCHAEOLOGY
 
 **Date**: September 10, 2025  
-**Objective**: Find the exact GitHub file versions that actually **Testing Plan**:
+**PPL Meta Version**: 2.17.1  
+**GitHub Commit**: 341cfc5 (Fix: Restore yellow face detection rectangles overlay functionality)  
+**Repository**: nickglezakos/ppl-meta-platform  
+**Branch**: main  
+**Objective**: Find the exact GitHub file versions that actually work for yellow rectangle face detection
+
+**Status**: ✅ **SUCCESS - YELLOW RECTANGLES WORKING** ✅
+
+**Testing Plan**:
 1. ✅ Verify file compiles without errors - **COMPLETED**
 2. ✅ Test yellow rectangles appear on video playback - **SUCCESS**
 3. ✅ Verify face detection positioning is correct - **WORKING**
@@ -16,6 +24,20 @@
 ---
 
 ## 🎉 **SUCCESS! YELLOW RECTANGLES RESTORED** ✅
+
+### **GITHUB REFERENCE INFORMATION**
+
+**Repository Location**: `https://github.com/nickglezakos/ppl-meta-platform`  
+**Final Working Commit**: `341cfc5` - "Fix: Restore yellow face detection rectangles overlay functionality"  
+**Git Tag**: `v2.17.1`  
+**Branch**: `main`  
+**Direct GitHub Link**: `https://github.com/nickglezakos/ppl-meta-platform/commit/341cfc5`
+
+**Key Files in Final Working State** (commit 341cfc5):
+- `/ppl-meta-frontend/lib/widgets/simple_video_face_detection_overlay.dart` - Main working overlay widget
+- `/ppl-meta-frontend/lib/screens/media_preview_screen.dart` - Integration point
+- `VERSION` - Updated to 2.17.1 for this bug fix release
+- Documentation files with complete investigation record
 
 ### **FINAL WORKING IMPLEMENTATION** (September 10, 2025)
 

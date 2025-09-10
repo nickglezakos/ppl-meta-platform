@@ -1,8 +1,14 @@
 # 🔍 FACE DETECTION YELLOW RECTANGLES INVESTIGATION
 
 **Date**: September 10, 2025  
+**PPL Meta Version**: 2.17.1  
+**GitHub Commit**: 341cfc5 (Fix: Restore yellow face detection rectangles overlay functionality)  
+**Repository**: nickglezakos/ppl-meta-platform  
+**Branch**: main  
 **Objective**: Find and restore the working face detection yellow rectangles overlay from previous implementation  
 **Success Criteria**: Understand exactly what changed and identify files to restore (NO DEVELOPMENT until clear understanding)
+
+**Status**: ✅ **INVESTIGATION COMPLETE - YELLOW RECTANGLES WORKING** ✅
 
 ## 📋 INVESTIGATION CHECKLIST
 
@@ -376,6 +382,22 @@ if face_detection:
 ---
 
 ## 🎉 **INVESTIGATION COMPLETE - SUCCESS!** ✅
+
+### **GITHUB REFERENCE INFORMATION**
+
+**Repository Location**: `https://github.com/nickglezakos/ppl-meta-platform`  
+**Final Working Commit**: `341cfc5` - "Fix: Restore yellow face detection rectangles overlay functionality"  
+**Git Tag**: `v2.17.1`  
+**Branch**: `main`  
+**Direct GitHub Link**: `https://github.com/nickglezakos/ppl-meta-platform/commit/341cfc5`
+
+**Key Files in Final Working State** (commit 341cfc5):
+- `/ppl-meta-frontend/lib/widgets/simple_video_face_detection_overlay.dart` - Main working overlay widget
+- `/ppl-meta-frontend/lib/screens/media_preview_screen.dart` - Integration point  
+- `/ppl-meta-media/src/api/v1/streaming.py` - Backend streaming with face detection
+- `VERSION` - Updated to 2.17.1 for this bug fix release
+
+**Historical Source**: Original working implementation found in commit `5038b88` and restored with modern API compatibility.
 
 ### **FINAL STATUS: YELLOW RECTANGLES RESTORED** (September 10, 2025)
 
