@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
 import '../widgets/video_player_widget.dart';
+import '../widgets/simple_video_face_detection_overlay.dart';
 import '../core/api/api_client.dart';
 import '../widgets/custom_app_bar.dart';
 import '../core/providers/features_provider.dart';
@@ -120,18 +121,24 @@ class _MediaPreviewScreenState extends ConsumerState<MediaPreviewScreen> {
             
             return Stack(
               children: [
-                VideoPlayerWidget(
+                SimpleFaceDetectionOverlay(
+                  videoController: _videoController,
                   videoUrl: videoUrl,
-                  headers: {
-                    if (apiClient.authToken != null)
-                      'Authorization': 'Bearer ${apiClient.authToken}',
-                  },
-                  onControllerReady: (controller) {
-                    debugPrint('🎬 Video controller ready with ${useEmbedded ? "embedded" : "overlay"} face detection');
-                    setState(() {
-                      _videoController = controller;
-                    });
-                  },
+                  enabled: !useEmbedded, // Only enable overlay when NOT using embedded detection
+                  useEmbeddedFaceDetection: useEmbedded,
+                  child: VideoPlayerWidget(
+                    videoUrl: videoUrl,
+                    headers: {
+                      if (apiClient.authToken != null)
+                        'Authorization': 'Bearer ${apiClient.authToken}',
+                    },
+                    onControllerReady: (controller) {
+                      debugPrint('🎬 Video controller ready with ${useEmbedded ? "embedded" : "overlay"} face detection');
+                      setState(() {
+                        _videoController = controller;
+                      });
+                    },
+                  ),
                 ),
               ],
             );
