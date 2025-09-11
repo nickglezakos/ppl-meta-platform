@@ -193,6 +193,7 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
                     f"🔄 [ROTATION_DEBUG] Processing frame - "
                     f"orientation: {orientation}, rotation_angle: {rotation_angle}"
                 )
+                logger.info(f"🔄 [ROTATION_DEBUG] Original frame shape: {frame.shape}")
 
                 # Apply rotation to frame based on orientation metadata
                 if rotation_angle != 0:
@@ -200,13 +201,29 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
                         f"🔄 [ROTATION_DEBUG] Applying {rotation_angle}° "
                         f"rotation to frame"
                     )
+                    original_shape = frame.shape
                     # Rotate frame based on rotation angle
                     if rotation_angle == 90:
                         frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                        logger.info(
+                            "🔄 [ROTATION_DEBUG] Applied 90° clockwise rotation"
+                        )
                     elif rotation_angle == 180:
                         frame = cv2.rotate(frame, cv2.ROTATE_180)
+                        logger.info("🔄 [ROTATION_DEBUG] Applied 180° rotation")
                     elif rotation_angle == 270:
                         frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                        logger.info(
+                            "🔄 [ROTATION_DEBUG] Applied 270° (90° counter-clockwise) rotation"
+                        )
+                    else:
+                        logger.warning(
+                            f"🔄 [ROTATION_DEBUG] Unknown rotation angle: {rotation_angle}"
+                        )
+
+                    logger.info(
+                        f"🔄 [ROTATION_DEBUG] Frame shape after rotation: {frame.shape} (was: {original_shape})"
+                    )
                     logger.info("🔄 [ROTATION_DEBUG] Frame rotated successfully")
                 else:
                     logger.info(

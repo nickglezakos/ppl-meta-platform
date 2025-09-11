@@ -297,6 +297,9 @@ class MobileCameraStreamingService:
             logger.info(
                 f"📱 [MOBILE_SERVICE_DEBUG] Storing frame with orientation: {orientation}, rotation: {rotation_angle}"
             )
+            logger.info(
+                f"📱 [MOBILE_SERVICE_DEBUG] Frame shape: {frame.shape}, timestamp: {timestamp}"
+            )
 
             # Check if we have an active stream for this device, if not create it
             if device_id not in self.active_mobile_streams:

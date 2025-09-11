@@ -291,6 +291,9 @@ async def receive_mobile_camera_frame(
         logger.info(
             f"📱 [FRAME_DEBUG] Frame metadata - orientation: {frame_data.orientation}, rotation_angle: {frame_data.rotation_angle}"
         )
+        logger.info(
+            f"📱 [FRAME_DEBUG] Raw frame data received - timestamp: {frame_data.timestamp}"
+        )
 
         # Verify mobile camera exists and is registered
         camera = (

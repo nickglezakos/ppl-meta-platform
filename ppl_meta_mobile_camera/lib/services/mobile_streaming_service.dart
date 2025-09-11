@@ -389,6 +389,12 @@ class MobileStreamingService {
       final currentOrientation = orientationService?.currentOrientation ?? DeviceOrientation.portraitUp;
       final rotationAngle = _getRotationAngle(currentOrientation);
       
+      // Debug logging for orientation
+      developer.log('📱 [FRAME_SEND_DEBUG] Sending frame with orientation data:', name: _logTag);
+      developer.log('📱 [FRAME_SEND_DEBUG] - Orientation: $currentOrientation', name: _logTag);
+      developer.log('📱 [FRAME_SEND_DEBUG] - Rotation angle: $rotationAngle°', name: _logTag);
+      developer.log('📱 [FRAME_SEND_DEBUG] - Frame size: ${image.width}x${image.height}', name: _logTag);
+      
       final frameData = {
         'device_id': deviceId,
         'frame_data': base64Data,
@@ -617,16 +623,22 @@ class MobileStreamingService {
   }
 
   /// Get rotation angle for the orientation
+  /// Camera sensor captures in landscape, so we need to rotate frames
+  /// to match the device orientation for proper display
   int _getRotationAngle(DeviceOrientation orientation) {
     switch (orientation) {
       case DeviceOrientation.portraitUp:
-        return 0;
-      case DeviceOrientation.landscapeLeft:
+        // Phone held upright, camera captures landscape -> rotate 90° clockwise
         return 90;
+      case DeviceOrientation.landscapeLeft:
+        // Phone held landscape left, camera captures landscape -> no rotation
+        return 0;
       case DeviceOrientation.portraitDown:
-        return 180;
-      case DeviceOrientation.landscapeRight:
+        // Phone held upside down, camera captures landscape -> rotate 270° clockwise  
         return 270;
+      case DeviceOrientation.landscapeRight:
+        // Phone held landscape right, camera captures landscape -> rotate 180°
+        return 180;
     }
   }
   
