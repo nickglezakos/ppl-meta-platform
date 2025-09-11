@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from src.database.database import get_db
+from src.database import get_db
 from src.models.camera import Camera, CameraStatus, CameraType
 
 logger = logging.getLogger(__name__)

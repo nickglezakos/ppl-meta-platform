@@ -12,39 +12,43 @@ class SimplifiedDiscoveryClient {
   
   String? _cachedDiscoveryUrl;
   
+  /// Clear cached discovery URL
+  void clearCache() {
+    _cachedDiscoveryUrl = null;
+    print('🗑️ SimplifiedDiscoveryClient cache cleared');
+  }
+  
   /// Find the Discovery Service URL
-  /// Construct Discovery Service URL from user input
-  /// Uses device's network prefix + user's host IP + port
-  Future<String?> constructDiscoveryUrl(String userHostIP, String userPort) async {
+  /// Construct Discovery Service URL from complete backend IP + port
+  Future<String?> constructDiscoveryUrl(String backendIP, String port) async {
     print('🔍 Constructing Discovery Service URL from user input...');
     
-    // Get the device's actual IP address
-    final deviceIP = await getMyIPAddress();
-    if (deviceIP == null) {
-      print('❌ Cannot detect device IP address - URL construction failed');
-      return null;
-    }
-    
-    // Extract network prefix from device IP (first 3 parts)
-    final parts = deviceIP.split('.');
+    // Validate IP format
+    final parts = backendIP.split('.');
     if (parts.length != 4) {
-      print('❌ Invalid device IP address format: $deviceIP');
+      print('❌ Invalid backend IP address format: $backendIP');
       return null;
     }
     
-    final networkPrefix = '${parts[0]}.${parts[1]}.${parts[2]}';
-    final discoveryUrl = 'http://$networkPrefix.$userHostIP:$userPort/api/v1/services';
+    // Validate each part is a valid number
+    for (final part in parts) {
+      final num = int.tryParse(part);
+      if (num == null || num < 0 || num > 255) {
+        print('❌ Invalid IP address part: $part');
+        return null;
+      }
+    }
     
-    print('📱 Device IP: $deviceIP');
-    print('🌐 Network prefix: $networkPrefix');
+    final discoveryUrl = 'http://$backendIP:$port/api/v1/services';
+    
     print('🎯 Constructed URL: $discoveryUrl');
     
     return discoveryUrl;
   }
 
-  /// Test and cache a Discovery Service URL constructed from user input
-  Future<bool> testAndCacheDiscoveryUrl(String userHostIP, String userPort) async {
-    final url = await constructDiscoveryUrl(userHostIP, userPort);
+  /// Test and cache a Discovery Service URL constructed from complete backend IP
+  Future<bool> testAndCacheDiscoveryUrl(String backendIP, String port) async {
+    final url = await constructDiscoveryUrl(backendIP, port);
     if (url == null) {
       return false;
     }
@@ -213,101 +217,18 @@ class SimplifiedDiscoveryClient {
 
   /// Get the device's network prefix (first 3 parts of IP)
   /// Returns something like "192.168.200" for display in UI
+  /// Get network prefix - DISABLED for manual configuration  
   Future<String?> getNetworkPrefix() async {
-    final deviceIP = await getMyIPAddress();
-    if (deviceIP == null) return null;
-    
-    final parts = deviceIP.split('.');
-    if (parts.length != 4) return null;
-    
-    return '${parts[0]}.${parts[1]}.${parts[2]}';
-  }
-
-  /// Get the device's IP address on the current network
-  Future<String?> getMyIPAddress() async {
-    try {
-      // Use socket connection to detect actual local IP
-      // Connect to a remote address to determine local IP
-      final socket = await Socket.connect('8.8.8.8', 80);
-      final localIP = socket.address.address;
-      socket.destroy();
-      
-      // Validate that this is not a VPN/Tailscale IP
-      if (_isLocalNetworkIP(localIP)) {
-        print('📱 IP detection: Detected device IP: $localIP');
-        return localIP;
-      } else {
-        print('⚠️ Socket IP is VPN/Tailscale ($localIP), trying network interfaces...');
-      }
-      
-    } catch (e) {
-      print('❌ IP detection error: $e');
-    }
-    
-    // Fallback: try to detect network interface, prioritizing local networks
-    try {
-      final interfaces = await NetworkInterface.list();
-      
-      // First pass: Look for common local network ranges
-      for (final interface in interfaces) {
-        for (final addr in interface.addresses) {
-          if (addr.type == InternetAddressType.IPv4 && 
-              !addr.isLoopback && 
-              !addr.address.startsWith('169.254') &&
-              _isLocalNetworkIP(addr.address)) {
-            print('📱 IP detection: Using local network interface IP: ${addr.address}');
-            return addr.address;
-          }
-        }
-      }
-      
-      // Second pass: If no local network found, use any non-loopback IPv4
-      for (final interface in interfaces) {
-        for (final addr in interface.addresses) {
-          if (addr.type == InternetAddressType.IPv4 && 
-              !addr.isLoopback && 
-              !addr.address.startsWith('169.254')) {
-            print('⚠️ IP detection: Using non-local network IP: ${addr.address}');
-            return addr.address;
-          }
-        }
-      }
-    } catch (e2) {
-      print('❌ Interface detection error: $e2');
-    }
-    
-    // No fallback IP - return null if detection fails
-    print('❌ Could not detect device IP address');
+    // No automatic network detection - user must provide complete backend IP
+    print('🔧 Automatic network detection disabled - using manual configuration');
     return null;
   }
-  
-  /// Check if an IP address is in a local network range
-  bool _isLocalNetworkIP(String ip) {
-    // Common local network ranges
-    return ip.startsWith('192.168.') ||  // Class C private
-           ip.startsWith('10.0.') ||     // Class A private (but not Tailscale 10.x.x.x)
-           ip.startsWith('172.16.') ||   // Class B private
-           ip.startsWith('172.17.') ||
-           ip.startsWith('172.18.') ||
-           ip.startsWith('172.19.') ||
-           ip.startsWith('172.20.') ||
-           ip.startsWith('172.21.') ||
-           ip.startsWith('172.22.') ||
-           ip.startsWith('172.23.') ||
-           ip.startsWith('172.24.') ||
-           ip.startsWith('172.25.') ||
-           ip.startsWith('172.26.') ||
-           ip.startsWith('172.27.') ||
-           ip.startsWith('172.28.') ||
-           ip.startsWith('172.29.') ||
-           ip.startsWith('172.30.') ||
-           ip.startsWith('172.31.');
-  }
 
-  /// Clear cached Discovery Service URL (force re-discovery)
-  void clearCache() {
-    _cachedDiscoveryUrl = null;
-    print('🗑️ Discovery Service cache cleared');
+  /// Get the device's IP address - DISABLED for manual configuration
+  Future<String?> getMyIPAddress() async {
+    // No automatic IP detection - user must provide complete backend IP
+    print('� Automatic IP detection disabled - using manual configuration');
+    return null;
   }
 
   // Private methods

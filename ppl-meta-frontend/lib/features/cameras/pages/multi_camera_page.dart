@@ -1,39 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../../../widgets/camera/camera_card.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/multi_camera_providers.dart';
 import '../../../core/models/camera.dart';
 import 'package:go_router/go_router.dart';
 
-/// Build responsive camera grid:
+/// Build responsive camera grid using StaggeredGridView:
 /// - Mobile (< 600px): 1 column
 /// - Tablet (600-1024px): 2 columns  
 /// - Desktop (> 1024px): 2 columns
+/// StaggeredGridView automatically handles different item heights
 Widget buildResponsiveCameraGrid(List<dynamic> cameras) {
   return LayoutBuilder(
     builder: (context, constraints) {
       int crossAxisCount;
-      double childAspectRatio;
       
       if (constraints.maxWidth < 600) {
         // Mobile: 1 column
         crossAxisCount = 1;
-        childAspectRatio = 1.8; // Wider aspect ratio for single column
       } else {
         // Tablet and Desktop: 2 columns
         crossAxisCount = 2;
-        childAspectRatio = 1.2;
       }
 
-      return GridView.builder(
+      return MasonryGridView.builder(
         padding: const EdgeInsets.all(16),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: SliverSimpleGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          childAspectRatio: childAspectRatio,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
         ),
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
         itemCount: cameras.length,
         itemBuilder: (context, index) {
           final camera = cameras[index];

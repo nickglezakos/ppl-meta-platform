@@ -4,10 +4,12 @@ import 'dart:typed_data';
 import 'dart:developer' as developer;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'mobile_camera_ip_update_service.dart';
+import '../core/services/orientation_service.dart';
 import 'package:camera/camera.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 /// Mobile camera streaming service for PPL Meta Platform
 /// Handles streaming from mobile device cameras to backend
@@ -382,6 +384,11 @@ class MobileStreamingService {
       
       final url = '$_backendUrl/api/v1/streaming/mobile/$deviceId/frame';
       
+      // Get current orientation from OrientationService
+      final orientationService = _getOrientationService();
+      final currentOrientation = orientationService?.currentOrientation ?? DeviceOrientation.portraitUp;
+      final rotationAngle = _getRotationAngle(currentOrientation);
+      
       final frameData = {
         'device_id': deviceId,
         'frame_data': base64Data,
@@ -389,6 +396,9 @@ class MobileStreamingService {
         'width': image.width,
         'height': image.height,
         'format': 'jpeg',
+        // Add orientation information
+        'orientation': currentOrientation.toString(),
+        'rotation_angle': rotationAngle,
       };
       
       final response = await http.post(
@@ -563,6 +573,61 @@ class MobileStreamingService {
     _isStreaming = false;
     
     // TODO: Stop monitoring timers/streams
+  }
+
+  /// Send orientation update to backend
+  Future<void> sendOrientationUpdate(String orientation, int rotationAngle) async {
+    if (_backendUrl == null || _accessToken == null) {
+      developer.log('Cannot send orientation update - backend not configured', name: _logTag, level: 900);
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_backendUrl/api/v1/mobile/orientation'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $_accessToken',
+        },
+        body: json.encode({
+          'device_id': _deviceId,
+          'orientation': orientation,
+          'rotation_angle': rotationAngle,
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        developer.log('Orientation update sent successfully: $orientation ($rotationAngle°)', name: _logTag);
+      } else {
+        developer.log('Failed to send orientation update: ${response.statusCode}', name: _logTag, level: 900);
+      }
+    } catch (e) {
+      developer.log('Error sending orientation update: $e', name: _logTag, level: 1000);
+    }
+  }
+
+  /// Get orientation service instance (simplified approach)
+  OrientationService? _getOrientationService() {
+    try {
+      return OrientationService.instance;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Get rotation angle for the orientation
+  int _getRotationAngle(DeviceOrientation orientation) {
+    switch (orientation) {
+      case DeviceOrientation.portraitUp:
+        return 0;
+      case DeviceOrientation.landscapeLeft:
+        return 90;
+      case DeviceOrientation.portraitDown:
+        return 180;
+      case DeviceOrientation.landscapeRight:
+        return 270;
+    }
   }
   
   // Getters

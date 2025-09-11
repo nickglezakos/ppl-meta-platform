@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/core.dart';
 import 'features/authentication/authentication.dart';
-import 'features/authentication/screens/simple_setup_screen.dart';
 import 'features/camera/camera.dart';
 import 'services/app_logger.dart';
 import 'services/discovery_config_service.dart';
@@ -14,9 +13,9 @@ void main() async {
   await AppLogger.instance.initialize();
   AppLogger.instance.info('🚀 PPL Meta Mobile Camera starting...');
   
-  // Initialize discovery service with default configuration
-  await DiscoveryConfigService.instance.initializeWithDefaults();
-  AppLogger.instance.info('🔧 Discovery service initialized with defaults');
+  // Initialize discovery service - user configuration required
+  await DiscoveryConfigService.instance.initialize();
+  AppLogger.instance.info('🔧 Discovery service ready - user configuration required');
   
   runApp(const PPLMetaCameraApp());
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import 'dart:async';
+import 'dart:math' as math;
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/camera_providers.dart';
 
@@ -293,9 +294,35 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         if (_imageElement == null) {
           _imageElement = html.ImageElement();
           _imageElement!.crossOrigin = 'anonymous';
-          _imageElement!.style.width = '100%';
-          _imageElement!.style.height = '100%';
-          _imageElement!.style.objectFit = 'cover';
+          
+          // Set a unique ID for the image element for orientation detection
+          final imageElementId = 'img-${_elementId}';
+          _imageElement!.id = imageElementId;
+          
+          // Check if this is a mobile camera for orientation handling
+          final cameraAsyncValue = ref.read(cameraByIdProvider(widget.cameraId));
+          final isMobileCamera = cameraAsyncValue.when(
+            data: (camera) => camera?.type.toString() == 'CameraType.mobile' || camera?.isMobileCamera == true,
+            loading: () => false,
+            error: (_, __) => false,
+          );
+          
+          if (isMobileCamera) {
+            // Mobile cameras: use contain to preserve aspect ratio, may stream in portrait
+            _imageElement!.style.width = '100%';
+            _imageElement!.style.height = '100%';
+            _imageElement!.style.objectFit = 'contain';
+            _imageElement!.style.objectPosition = 'center';
+            _imageElement!.style.transition = 'transform 0.3s ease';
+            
+            // Orientation will be handled by frame metadata from backend
+            print('📱 [MOBILE_STREAM_DEBUG] Mobile camera setup - orientation will be handled by frame metadata');
+          } else {
+            // Other cameras: use cover for landscape format
+            _imageElement!.style.width = '100%';
+            _imageElement!.style.height = '100%';
+            _imageElement!.style.objectFit = 'cover';
+          }
           _imageElement!.style.display = 'block';
           
           final containerDiv = html.DivElement();
@@ -303,6 +330,7 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
           containerDiv.style.height = '100%';
           containerDiv.style.overflow = 'hidden';
           containerDiv.style.position = 'relative';
+          containerDiv.style.backgroundColor = '#000000'; // Black background for mobile cameras
           containerDiv.append(_imageElement!);
           
           // Set the image source with the authenticated URL
@@ -427,5 +455,86 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         );
       },
     );
+  }
+
+  /// Detects if mobile camera stream is showing portrait content in landscape container
+  /// and applies CSS transform to rotate it correctly
+  void _detectAndFixOrientation(String elementId) {
+    print('📱 [ORIENTATION_DEBUG] Starting orientation detection for mobile camera');
+    
+    // For mobile cameras, we know from the logs that the mobile app
+    // always selects Camera 0 with Orientation=90° (landscape)
+    // but the phone is locked to portrait, so we need to rotate -90°
+    Timer(const Duration(seconds: 1), () {
+      try {
+        final element = html.document.getElementById(elementId);
+        if (element == null) {
+          print('📱 [ORIENTATION_DEBUG] Element not found: $elementId');
+          return;
+        }
+
+        if (element is html.ImageElement) {
+          final img = element as html.ImageElement;
+          final naturalWidth = img.naturalWidth;
+          final naturalHeight = img.naturalHeight;
+          
+          print('📱 [ORIENTATION_DEBUG] Natural dimensions: ${naturalWidth}x${naturalHeight}');
+          
+          // Based on mobile app logs, we know:
+          // - Camera sends landscape video (720x480) but phone is in portrait
+          // - We need to rotate +90° to correct the orientation
+          
+          if (naturalWidth > 0 && naturalHeight > 0) {
+            final aspectRatio = naturalWidth / naturalHeight;
+            print('📱 [ORIENTATION_DEBUG] Aspect ratio: $aspectRatio');
+            
+            // If mobile camera shows landscape (width > height) but phone is locked to portrait,
+            // we need to rotate it back to portrait orientation
+            bool needsRotation = naturalWidth > naturalHeight; // Landscape content
+            
+            if (needsRotation) {
+              print('📱 [ORIENTATION_DEBUG] Mobile camera needs rotation - applying +90° transform');
+              
+              // Apply CSS transform to rotate the video to portrait
+              img.style.transform = 'rotate(90deg)';
+              img.style.transformOrigin = 'center center';
+              
+              // Adjust container dimensions to accommodate the rotated video
+              // When we rotate 90°, width and height are swapped
+              final container = img.parent;
+              if (container != null) {
+                // Calculate the scale to fit the rotated video
+                final containerWidth = container.clientWidth;
+                final containerHeight = container.clientHeight;
+                
+                // After rotation, effective dimensions are swapped
+                final effectiveWidth = naturalHeight; // height becomes width
+                final effectiveHeight = naturalWidth; // width becomes height
+                
+                final scaleX = containerWidth / effectiveWidth;
+                final scaleY = containerHeight / effectiveHeight;
+                final scale = math.min(scaleX, scaleY);
+                
+                print('📱 [ORIENTATION_DEBUG] Applying scale: $scale for rotated video');
+                img.style.transform = 'rotate(90deg) scale($scale)';
+                
+                // Center the rotated and scaled video
+                img.style.position = 'absolute';
+                img.style.top = '50%';
+                img.style.left = '50%';
+                img.style.marginLeft = '-${(effectiveWidth * scale) / 2}px';
+                img.style.marginTop = '-${(effectiveHeight * scale) / 2}px';
+              }
+            } else {
+              print('📱 [ORIENTATION_DEBUG] Mobile camera orientation appears correct - no rotation needed');
+            }
+          } else {
+            print('📱 [ORIENTATION_DEBUG] Invalid dimensions: ${naturalWidth}x${naturalHeight}');
+          }
+        }
+      } catch (e) {
+        print('📱 [ORIENTATION_DEBUG] Error in orientation detection: $e');
+      }
+    }); // Wait 1 second for the image to fully load
   }
 }

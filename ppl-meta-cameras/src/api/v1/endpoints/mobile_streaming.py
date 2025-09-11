@@ -8,6 +8,7 @@ import io
 import logging
 from typing import Dict
 
+import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -271,6 +272,9 @@ class MobileFrameData(BaseModel):
     width: int
     height: int
     format: str = "jpeg"
+    # Orientation metadata
+    orientation: str = "portraitUp"  # portraitUp, landscapeLeft, etc.
+    rotation_angle: int = 0  # 0, 90, 180, 270 degrees
 
 
 @router.post("/mobile/{device_id}/frame")
@@ -283,6 +287,11 @@ async def receive_mobile_camera_frame(
     """Receive a video frame from a mobile camera."""
 
     try:
+        logger.info(f"📱 [FRAME_DEBUG] Received frame from mobile camera {device_id}")
+        logger.info(
+            f"📱 [FRAME_DEBUG] Frame metadata - orientation: {frame_data.orientation}, rotation_angle: {frame_data.rotation_angle}"
+        )
+
         # Verify mobile camera exists and is registered
         camera = (
             db.query(Camera)
@@ -312,9 +321,13 @@ async def receive_mobile_camera_frame(
                 detail=f"Invalid frame data: {e}",
             )
 
-        # Store the frame in the mobile streaming service
+        # Store the frame in the mobile streaming service with orientation
         success = await mobile_streaming_service.receive_mobile_frame(
-            device_id, frame, frame_data.timestamp
+            device_id,
+            frame,
+            frame_data.timestamp,
+            frame_data.orientation,
+            frame_data.rotation_angle,
         )
 
         if success:
@@ -337,6 +350,71 @@ async def receive_mobile_camera_frame(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to receive mobile camera frame",
+        )
+
+
+@router.get("/mobile/{device_id}/current-frame")
+async def get_mobile_current_frame(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Get the current frame from a mobile camera with orientation metadata."""
+
+    try:
+        # Verify mobile camera exists
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id, Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera {device_id} not found",
+            )
+
+        # Get latest frame data from mobile streaming service
+        frame_data = await mobile_streaming_service.get_latest_mobile_frame_data(
+            device_id
+        )
+
+        if frame_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No frame available",
+            )
+
+        frame = frame_data["frame"]
+        orientation = frame_data.get("orientation", "portraitUp")
+        rotation_angle = frame_data.get("rotation_angle", 0)
+        timestamp = frame_data.get("timestamp", 0)
+
+        # Encode frame as base64 JPEG
+        _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        frame_base64 = base64.b64encode(buffer.tobytes()).decode("utf-8")
+
+        return {
+            "device_id": device_id,
+            "frame_data": frame_base64,
+            "orientation": orientation,
+            "rotation_angle": rotation_angle,
+            "timestamp": timestamp,
+            "width": frame.shape[1],
+            "height": frame.shape[0],
+            "format": "jpeg",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting mobile camera frame for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get mobile camera frame",
         )
 
 

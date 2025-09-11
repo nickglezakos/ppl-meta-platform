@@ -118,30 +118,17 @@ class CameraService {
             // If we reach here, the camera works!
             await testController.dispose();
             
-            // Check if we already have this camera direction
-            final existingCamera = workingCameras.firstWhere(
-              (cam) => cam.lensDirection == testCamera.lensDirection,
-              orElse: () => testCamera,
-            );
-            
-            if (existingCamera == testCamera) {
-              workingCameras.add(testCamera);
-              print('✅ Camera ${testCamera.name} (${testCamera.lensDirection}) works!');
-            }
+            // Add all working cameras (don't filter by direction anymore)
+            // We want all orientations available for selection
+            workingCameras.add(testCamera);
+            print('✅ Camera ${testCamera.name} (${testCamera.lensDirection}, ${testCamera.sensorOrientation}°) works!');
             
           } catch (e) {
             print('❌ Camera ${config['id']} (${config['direction']}) failed: ${e.toString().split('\n').first}');
           }
           
-          // Stop testing once we have both front and back cameras
-          if (workingCameras.length >= 2) {
-            final hasBack = workingCameras.any((cam) => cam.lensDirection == CameraLensDirection.back);
-            final hasFront = workingCameras.any((cam) => cam.lensDirection == CameraLensDirection.front);
-            if (hasBack && hasFront) {
-              print('✅ Found both front and back cameras, stopping detection');
-              break;
-            }
-          }
+          // Continue testing all camera configurations to get all orientations
+          // No early termination - we want all working cameras available
         }
         
         _cameras = workingCameras;
@@ -212,10 +199,13 @@ class CameraService {
         cameraConfig = config;
       } else {
         print('🎬 Creating default camera config...');
-        // Try to find back camera first, then fall back to first available
+        // Try to find back camera with 0° orientation first (for portrait mode)
         final preferredCamera = _cameras!.firstWhere(
-          (camera) => camera.lensDirection == CameraLensDirection.back,
-          orElse: () => _cameras!.first,
+          (camera) => camera.lensDirection == CameraLensDirection.back && camera.sensorOrientation == 0,
+          orElse: () => _cameras!.firstWhere(
+            (camera) => camera.lensDirection == CameraLensDirection.back,
+            orElse: () => _cameras!.first,
+          ),
         );
         
         cameraConfig = CameraConfig(
@@ -223,7 +213,7 @@ class CameraService {
           resolution: ResolutionPreset.medium,
           enableAudio: false,
         );
-        print('🎬 Default config created for ${preferredCamera.lensDirection} camera (ID: ${preferredCamera.name})');
+        print('🎬 Default config created for ${preferredCamera.lensDirection} camera (ID: ${preferredCamera.name}, Orientation: ${preferredCamera.sensorOrientation}°)');
       }
 
       _currentConfig = cameraConfig;

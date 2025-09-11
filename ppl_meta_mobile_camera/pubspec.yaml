@@ -48,6 +48,9 @@ dependencies:
   json_annotation: ^4.9.0
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.0.1
+  # For orientation detection
+  flutter_riverpod: ^2.6.1
+  sensors_plus: ^6.1.2
   image: ^4.3.0  # For MJPEG frame processing
   logging: ^1.2.0  # Professional logging system
   dio: ^5.4.0  # Enhanced HTTP client for service discovery

@@ -172,18 +172,48 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
             )
 
             while True:
-                # Get latest frame from mobile streaming service
-                frame = await mobile_streaming_service.get_latest_mobile_frame(
-                    device_id
+                # Get latest frame data from mobile streaming service
+                frame_data = (
+                    await mobile_streaming_service.get_latest_mobile_frame_data(
+                        device_id
+                    )
                 )
 
-                if frame is None:
+                if frame_data is None:
                     # No frame available, send a blank frame or wait
                     logger.debug(f"No frame available for mobile camera {device_id}")
                     await asyncio.sleep(0.1)  # Wait 100ms before trying again
                     continue
 
-                # Resize frame if needed
+                frame = frame_data["frame"]
+                rotation_angle = frame_data.get("rotation_angle", 0)
+                orientation = frame_data.get("orientation", "portraitUp")
+
+                logger.info(
+                    f"🔄 [ROTATION_DEBUG] Processing frame - "
+                    f"orientation: {orientation}, rotation_angle: {rotation_angle}"
+                )
+
+                # Apply rotation to frame based on orientation metadata
+                if rotation_angle != 0:
+                    logger.info(
+                        f"🔄 [ROTATION_DEBUG] Applying {rotation_angle}° "
+                        f"rotation to frame"
+                    )
+                    # Rotate frame based on rotation angle
+                    if rotation_angle == 90:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                    elif rotation_angle == 180:
+                        frame = cv2.rotate(frame, cv2.ROTATE_180)
+                    elif rotation_angle == 270:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                    logger.info("🔄 [ROTATION_DEBUG] Frame rotated successfully")
+                else:
+                    logger.info(
+                        "🔄 [ROTATION_DEBUG] No rotation needed " "(rotation_angle = 0)"
+                    )
+
+                # Resize frame if needed (after rotation)
                 if frame.shape[1] != width or frame.shape[0] != height:
                     frame = cv2.resize(frame, (width, height))
 
@@ -191,7 +221,7 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
                 _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 frame_bytes = buffer.tobytes()
 
-                # Yield frame in multipart format
+                # Yield frame in standard multipart format (no need for orientation headers now)
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
@@ -351,18 +381,51 @@ async def handle_mobile_camera_stream_session(
                     )
                     break
 
-                # Get latest frame from mobile streaming service
-                frame = await mobile_streaming_service.get_latest_mobile_frame(
-                    device_id
+                # Get latest frame data from mobile streaming service
+                frame_data = (
+                    await mobile_streaming_service.get_latest_mobile_frame_data(
+                        device_id
+                    )
                 )
 
-                if frame is None:
+                if frame_data is None:
                     # No frame available, send a blank frame or wait
                     logger.debug(f"No frame available for mobile camera {device_id}")
                     await asyncio.sleep(0.1)  # Wait 100ms before trying again
                     continue
 
-                # Resize frame if needed
+                frame = frame_data["frame"]
+                rotation_angle = frame_data.get("rotation_angle", 0)
+                orientation = frame_data.get("orientation", "portraitUp")
+
+                logger.info(
+                    f"🔄 [ROTATION_DEBUG_SESSION] Processing frame - "
+                    f"orientation: {orientation}, rotation_angle: {rotation_angle}"
+                )
+
+                # Apply rotation to frame based on orientation metadata
+                if rotation_angle != 0:
+                    logger.info(
+                        f"🔄 [ROTATION_DEBUG_SESSION] Applying {rotation_angle}° "
+                        f"rotation to frame"
+                    )
+                    # Rotate frame based on rotation angle
+                    if rotation_angle == 90:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                    elif rotation_angle == 180:
+                        frame = cv2.rotate(frame, cv2.ROTATE_180)
+                    elif rotation_angle == 270:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                    logger.info(
+                        "🔄 [ROTATION_DEBUG_SESSION] Frame rotated successfully"
+                    )
+                else:
+                    logger.info(
+                        "🔄 [ROTATION_DEBUG_SESSION] No rotation needed "
+                        "(rotation_angle = 0)"
+                    )
+
+                # Resize frame if needed (after rotation)
                 if frame.shape[1] != width or frame.shape[0] != height:
                     frame = cv2.resize(frame, (width, height))
 

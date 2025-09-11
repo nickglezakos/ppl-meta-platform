@@ -284,11 +284,20 @@ class MobileCameraStreamingService:
         }
 
     async def receive_mobile_frame(
-        self, device_id: str, frame: np.ndarray, timestamp: float
+        self,
+        device_id: str,
+        frame: np.ndarray,
+        timestamp: float,
+        orientation: str = "portraitUp",
+        rotation_angle: int = 0,
     ) -> bool:
         """Receive and store a frame from a mobile camera."""
 
         try:
+            logger.info(
+                f"📱 [MOBILE_SERVICE_DEBUG] Storing frame with orientation: {orientation}, rotation: {rotation_angle}"
+            )
+
             # Check if we have an active stream for this device, if not create it
             if device_id not in self.active_mobile_streams:
                 logger.info(f"Auto-setting up mobile camera stream for {device_id}")
@@ -315,14 +324,22 @@ class MobileCameraStreamingService:
             # Update last frame time
             stream_info["last_frame_time"] = timestamp
 
-            # Add frame to queue (drop oldest if queue is full)
+            # Create frame data with metadata
+            frame_data = {
+                "frame": frame,
+                "timestamp": timestamp,
+                "orientation": orientation,
+                "rotation_angle": rotation_angle,
+            }
+
+            # Add frame data to queue (drop oldest if queue is full)
             if frame_queue.full():
                 try:
                     frame_queue.get_nowait()  # Remove oldest frame
                 except:
                     pass
 
-            frame_queue.put_nowait(frame)
+            frame_queue.put_nowait(frame_data)
             logger.debug(f"Received frame from mobile camera {device_id}")
             return True
 
@@ -331,7 +348,12 @@ class MobileCameraStreamingService:
             return False
 
     async def get_latest_mobile_frame(self, device_id: str) -> Optional[np.ndarray]:
-        """Get the latest frame from a mobile camera."""
+        """Get the latest frame from a mobile camera (backward compatibility)."""
+        frame_data = await self.get_latest_mobile_frame_data(device_id)
+        return frame_data["frame"] if frame_data else None
+
+    async def get_latest_mobile_frame_data(self, device_id: str) -> Optional[Dict]:
+        """Get the latest frame data with metadata from a mobile camera."""
 
         if device_id not in self.stream_queues:
             return None
@@ -339,12 +361,12 @@ class MobileCameraStreamingService:
         frame_queue = self.stream_queues[device_id]
 
         try:
-            # Get the most recent frame
-            latest_frame = None
+            # Get the most recent frame data
+            latest_frame_data = None
             while not frame_queue.empty():
-                latest_frame = frame_queue.get_nowait()
+                latest_frame_data = frame_queue.get_nowait()
 
-            return latest_frame
+            return latest_frame_data
 
         except Exception as e:
             logger.error(

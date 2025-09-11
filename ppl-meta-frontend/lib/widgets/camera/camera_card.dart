@@ -25,8 +25,11 @@ class CameraCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+    
     return Card(
-      color: AppColors.widgetFill,
+      margin: EdgeInsets.zero,
+      elevation: 4,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -161,14 +164,19 @@ class CameraCard extends ConsumerWidget {
   }
 
   Widget _buildStreamSection() {
+    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+    
     return SizedBox(
-      height: 240,
+      height: isMobile ? 320 : 240, // Taller container for mobile cameras to accommodate portrait aspect ratio
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: CameraStreamPlayerSimple(
-          cameraId: camera.deviceId,
-          width: double.infinity,
-          height: 240,
+        child: Container(
+          color: Colors.black, // Black background to show letterboxing clearly
+          child: CameraStreamPlayerSimple(
+            cameraId: camera.deviceId,
+            width: double.infinity,
+            height: isMobile ? 320 : 240,
+          ),
         ),
       ),
     );
@@ -185,75 +193,42 @@ class CameraCard extends ConsumerWidget {
         // Main action buttons row
         Row(
           children: [
-            // Connect/Disconnect button (not applicable for mobile cameras)
-            if (!isMobile) ...[
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    try {
-                      if (isConnected) {
-                        await cameraService.disconnectCamera(camera.deviceId);
-                      } else {
-                        await cameraService.connectCamera(camera.deviceId);
-                      }
-                      // Refresh camera list
-                      ref.read(cameraListProvider.notifier).loadCameras();
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Error: $e'),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
+            // Connect/Disconnect button (now available for all camera types including mobile)
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  try {
+                    if (isConnected) {
+                      await cameraService.disconnectCamera(camera.deviceId);
+                    } else {
+                      await cameraService.connectCamera(camera.deviceId);
                     }
-                  },
-                  icon: Icon(
-                    isConnected ? Icons.stop : Icons.play_arrow,
-                    size: 16,
-                  ),
-                  label: Text(isConnected ? 'Disconnect' : 'Connect'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isConnected ? Colors.red : AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-            ] else ...[
-              // For mobile cameras, show streaming status instead
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.smartphone,
-                        size: 16,
-                        color: Colors.blue.shade700,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Mobile Camera',
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontWeight: FontWeight.w500,
+                    // Refresh camera list
+                    ref.read(cameraListProvider.notifier).loadCameras();
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Error: $e'),
+                          backgroundColor: Colors.red,
                         ),
-                      ),
-                    ],
-                  ),
+                      );
+                    }
+                  }
+                },
+                icon: Icon(
+                  isConnected ? Icons.stop : (isMobile ? Icons.smartphone : Icons.play_arrow),
+                  size: 16,
+                ),
+                label: Text(isConnected ? 'Disconnect' : 'Connect'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isConnected ? Colors.red : (isMobile ? Colors.blue : AppColors.primary),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               ),
-              const SizedBox(width: 12),
-            ],
+            ),
+            const SizedBox(width: 12),
             
             // Snapshot button
             Expanded(

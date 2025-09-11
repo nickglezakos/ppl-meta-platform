@@ -327,41 +327,16 @@ class EnhancedNetworkDiscoveryService {
           debugPrint('✅ Service verified via multicast: $baseUrl');
           return baseUrl;
         } else {
-          debugPrint('⚠️ Multicast service not accessible, trying fallback');
-          debugPrint('💡 This might be a network connectivity issue between devices');
+          debugPrint('❌ Multicast service not accessible - network connectivity issue');
+          debugPrint('💡 Please ensure mobile device and backend are on the same network');
         }
       } else {
-        debugPrint('⚠️ No services found via multicast, trying fallback');
+        debugPrint('❌ No services found via multicast discovery');
+        debugPrint('� Please check that the backend services are running and discoverable');
       }
       
-      // Fallback 1: Try Tailscale network scan
-      debugPrint('🔄 Fallback 1: Scanning Tailscale network...');
-      final tailscaleUrl = await _scanTailscaleNetwork();
-      
-      if (tailscaleUrl != null && await _testConnection(tailscaleUrl)) {
-        debugPrint('✅ Tailscale network scan successful: $tailscaleUrl');
-        return tailscaleUrl;
-      }
-      
-      // Fallback 2: Try local network scan
-      debugPrint('🔄 Fallback 2: Scanning local network...');
-      final localNetworkUrl = await _scanLocalNetwork();
-      
-      if (localNetworkUrl != null && await _testConnection(localNetworkUrl)) {
-        debugPrint('✅ Local network scan successful: $localNetworkUrl');
-        return localNetworkUrl;
-      }
-      
-      // Fallback 3: Try localhost (for nginx proxy development)
-      debugPrint('🔄 Fallback 3: Testing localhost nginx proxy...');
-      final localhostUrl = await _testLocalhostProxy();
-      
-      if (localhostUrl != null && await _testConnection(localhostUrl)) {
-        debugPrint('✅ Localhost nginx proxy successful: $localhostUrl');
-        return localhostUrl;
-      }
-      
-      debugPrint('❌ All discovery methods failed');
+      debugPrint('❌ Service discovery failed - no fallbacks attempted');
+      debugPrint('� Please check network connectivity and service configuration');
       return null;
       
     } catch (e) {

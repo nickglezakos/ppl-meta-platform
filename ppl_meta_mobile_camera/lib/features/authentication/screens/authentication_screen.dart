@@ -5,7 +5,7 @@ import '../widgets/registration_form.dart';
 import '../widgets/server_status_indicator.dart';
 import '../widgets/login_form.dart';
 import '../../camera/camera.dart';
-import 'simple_setup_screen.dart';
+import 'simple_setup_screen_new.dart';
 
 /// Main authentication screen with login and registration tabs
 class AuthenticationScreen extends StatefulWidget {

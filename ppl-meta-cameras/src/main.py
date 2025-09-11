@@ -77,6 +77,15 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
 
+    # Start mobile camera cleanup service
+    try:
+        from src.services.mobile_cleanup import mobile_cleanup_service
+
+        await mobile_cleanup_service.start()
+        logger.info("Mobile camera cleanup service started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start mobile camera cleanup service: {e}")
+
     # Skip metrics initialization for now
     logger.info("Metrics initialization skipped")
 
@@ -139,6 +148,15 @@ async def lifespan(_app: FastAPI):
 
     # Shutdown tasks
     logger.info("Shutting down PPL Meta Cameras Service...")
+
+    # Stop mobile camera cleanup service
+    try:
+        from src.services.mobile_cleanup import mobile_cleanup_service
+
+        await mobile_cleanup_service.stop()
+        logger.info("Mobile camera cleanup service stopped successfully")
+    except Exception as e:
+        logger.error(f"Error stopping mobile camera cleanup service: {e}")
 
     # Deregister service
     if service_discovery_available and service_discovery_client:

@@ -87,21 +87,8 @@ class PPLMetaDiscoveryClient {
       print('Could not get configured IPs: $e');
     }
     
-    // Common host machine IPs when running on mobile device (fallback)
-    hostIPs.addAll([
-      '10.0.2.2',        // Android emulator host
-      '192.168.129.107', // Current network - backend services
-      '192.168.129.1',   // WiFi router (current network)
-      '192.168.129.100', // Common WiFi host IP (current network)
-      '192.168.1.1',     // WiFi router (common gateway)
-      '192.168.1.100',   // Common WiFi host IP
-      '192.168.1.101',   
-      '192.168.1.102',
-      '192.168.0.100',   // Alternative WiFi range
-      '192.168.0.101',
-      '192.168.4.1',     // Mobile hotspot
-      '172.20.10.1',     // iOS hotspot
-    ]);
+    // REMOVED: No fallback IPs - user must explicitly configure network
+    print('🔧 No hardcoded fallback IPs - explicit user configuration required');
     
     return hostIPs;
   }
@@ -329,25 +316,9 @@ class EnhancedNetworkDiscoveryService {
     try {
       print('🔍 Scanning local network for PPL Meta services...');
       
-      // Common local network IPs to try
-      final commonIPs = [
-        'http://192.168.129.107:8001',  // Current network - main service
-        'http://192.168.129.100:8001',  // Current network - common IP
-        'http://192.168.1.100:8001',
-        'http://192.168.1.101:8001',
-        'http://192.168.1.102:8001',
-        'http://192.168.0.100:8001',
-        'http://192.168.0.101:8001',
-        'http://10.0.0.100:8001',
-      ];
-      
-      for (final url in commonIPs) {
-        print('🔍 Testing network URL: $url');
-        if (await _testConnection(url)) {
-          print('🎯 Found PPL Meta Node via network: $url');
-          return url;
-        }
-      }
+      // REMOVED: No hardcoded common IPs - explicit user configuration required
+      print('� No hardcoded network IPs available - user must explicitly configure');
+      return null;
       
       print('⚠️ No network services found');
       return null;

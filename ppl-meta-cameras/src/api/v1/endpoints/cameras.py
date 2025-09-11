@@ -165,15 +165,28 @@ async def connect_camera(
                 detail=f"Camera {device_id} not found",
             )
 
-        # Mobile cameras should not be connected via backend - they use direct frontend access
+        # Handle mobile cameras differently - they don't need backend connection setup
         if camera.camera_type == CameraType.MOBILE:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Mobile camera {device_id} does not support backend connection. "
-                "Mobile cameras are accessed directly by frontend.",
+            # For mobile cameras, "connecting" means marking them as available for streaming
+            # The actual streaming connection is handled directly between frontend and mobile app
+            camera.status = CameraStatus.CONNECTED
+            camera.last_seen = datetime.utcnow()
+            db.commit()
+
+            logger.info(
+                f"User {current_user.get('sub')} manually connected mobile camera {device_id}"
             )
 
-        # Connect to camera
+            return {
+                "message": f"Mobile camera {device_id} marked as connected",
+                "device_id": device_id,
+                "status": "connected",
+                "camera_type": "mobile",
+                "connection_string": camera.connection_string,
+                "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
+            }
+
+        # Connect to USB/other camera types
         connection = await camera_service.connect_camera(device_id)
         if not connection:
             raise HTTPException(
@@ -215,25 +228,41 @@ async def disconnect_camera(
         # Clean up any active streaming sessions for this device
         cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
 
-        # Disconnect from camera
+        # Disconnect from camera (if currently connected)
         success = await camera_service.disconnect_camera(device_id)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Camera {device_id} was not connected",
-            )
 
-        # Update camera status in database
+        # Update camera status in database regardless of current connection state
+        # This fixes state inconsistencies where DB shows "connected" but no active connection exists
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
         if camera:
-            camera.status = CameraStatus.AVAILABLE
-            db.commit()
+            if camera.status == CameraStatus.CONNECTED:
+                camera.status = CameraStatus.AVAILABLE
+                db.commit()
+                logger.info(
+                    "Updated camera %s status from connected to available (was in inconsistent state: %s)",
+                    device_id,
+                    "active connection" if success else "no active connection",
+                )
+            elif not success:
+                # Camera was already available, but user tried to disconnect
+                logger.warning(
+                    "User %s attempted to disconnect camera %s which was already available",
+                    current_user.get("sub"),
+                    device_id,
+                )
+        elif not success:
+            # Camera not found in database and not connected
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
 
         logger.info(
-            "User %s disconnected from camera %s, cleaned %d sessions",
+            "User %s disconnected from camera %s, cleaned %d sessions, connection_was_active=%s",
             current_user.get("sub"),
             device_id,
             cleaned_sessions,
+            success,
         )
 
         return {

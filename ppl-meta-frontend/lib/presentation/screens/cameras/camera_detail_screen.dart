@@ -229,12 +229,28 @@ class _CameraDetailScreenState extends ConsumerState<CameraDetailScreen> {
                     const SizedBox(height: 16),
                     
                     // Stream Player
-                    if (streamState.streamUrl != null)
-                      CameraStreamPlayerSimple(
-                        cameraId: camera.deviceId,
-                        height: 300,
-                      )
-                    else
+                    if (streamState.streamUrl != null) ...[
+                      // Adjust height based on camera type - mobile cameras need more height for portrait streams
+                      Builder(
+                        builder: (context) {
+                          final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+                          return Container(
+                            height: isMobile ? 400 : 300, // Taller for mobile cameras
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CameraStreamPlayerSimple(
+                                cameraId: camera.deviceId,
+                                height: isMobile ? 400 : 300,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ] else ...[
                       Container(
                         height: 200,
                         decoration: BoxDecoration(
@@ -264,6 +280,7 @@ class _CameraDetailScreenState extends ConsumerState<CameraDetailScreen> {
                           ),
                         ),
                       ),
+                    ],
 
                     const SizedBox(height: 16),
 

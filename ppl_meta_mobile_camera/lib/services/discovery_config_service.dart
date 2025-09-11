@@ -8,8 +8,7 @@ class DiscoveryConfigService {
   static const String _keyDiscoveryPort = 'discovery_port';
   static const String _keyDeviceIPPrefix = 'device_ip_prefix';
   
-  // Default configuration for PPL Meta platform
-  static const String _defaultDiscoveryHost = '192.168.69.107';
+  // Default configuration removed - user must provide explicit network configuration
   static const String _defaultDiscoveryPort = '8006';
   
   static DiscoveryConfigService? _instance;
@@ -20,19 +19,29 @@ class DiscoveryConfigService {
   String? _cachedDiscoveryUrl;
   SimplifiedDiscoveryClient? _discoveryClient;
   
-  /// Initialize with default PPL Meta platform configuration
-  Future<void> initializeWithDefaults() async {
+  /// Initialize discovery service - no defaults provided
+  Future<void> initialize() async {
+    // Clear any old hardcoded configurations
+    await clearConfiguration();
+    print('🔧 No default discovery configuration - user input required');
+  }
+
+  /// Clear all stored discovery configuration
+  Future<void> clearConfiguration() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_keyDiscoveryHost);
+    await prefs.remove(_keyDiscoveryPort);
+    await prefs.remove(_keyDeviceIPPrefix);
     
-    // Only set defaults if no configuration exists
-    final existingHost = prefs.getString(_keyDiscoveryHost);
-    if (existingHost == null) {
-      await prefs.setString(_keyDiscoveryHost, _defaultDiscoveryHost);
-      await prefs.setString(_keyDiscoveryPort, _defaultDiscoveryPort);
-      
-      _cachedDiscoveryUrl = 'http://$_defaultDiscoveryHost:$_defaultDiscoveryPort';
-      print('🔧 Initialized default discovery configuration: $_cachedDiscoveryUrl');
+    // Also clear cached URL
+    _cachedDiscoveryUrl = null;
+    
+    // Clear SimplifiedDiscoveryClient cache as well
+    if (_discoveryClient != null) {
+      _discoveryClient!.clearCache();
     }
+    
+    print('🗑️ Cleared all stored discovery configuration and cache');
   }
 
   /// Initialize discovery configuration from user input
@@ -43,33 +52,20 @@ class DiscoveryConfigService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Build discovery service URL
-    String discoveryHost;
-    if (deviceIPPrefix != null) {
-      discoveryHost = '$deviceIPPrefix.$ipLastPart';
-    } else {
-      // Auto-detect device IP and build target IP
-      final discoveryClient = SimplifiedDiscoveryClient();
-      final myIP = await discoveryClient.getMyIPAddress();
-      
-      if (myIP != null) {
-        final parts = myIP.split('.');
-        if (parts.length == 4) {
-          discoveryHost = '${parts[0]}.${parts[1]}.${parts[2]}.$ipLastPart';
-        } else {
-          throw Exception('Invalid device IP format: $myIP');
-        }
-      } else {
-        throw Exception('Could not detect device network IP address');
-      }
+    // Build discovery service URL - require explicit network prefix
+    if (deviceIPPrefix == null) {
+      throw Exception(
+        'Network prefix is required. Please specify the network where your backend services are running '
+        '(e.g., "192.168.1" for services on 192.168.1.x network)'
+      );
     }
+    
+    final discoveryHost = '$deviceIPPrefix.$ipLastPart';
     
     // Store configuration
     await prefs.setString(_keyDiscoveryHost, discoveryHost);
     await prefs.setString(_keyDiscoveryPort, port);
-    if (deviceIPPrefix != null) {
-      await prefs.setString(_keyDeviceIPPrefix, deviceIPPrefix);
-    }
+    await prefs.setString(_keyDeviceIPPrefix, deviceIPPrefix);
     
     // Cache the discovery URL
     _cachedDiscoveryUrl = 'http://$discoveryHost:$port';
@@ -92,10 +88,9 @@ class DiscoveryConfigService {
       return _cachedDiscoveryUrl;
     }
 
-    // Fall back to default configuration if no user config found
-    _cachedDiscoveryUrl = 'http://$_defaultDiscoveryHost:$_defaultDiscoveryPort';
-    print('🔧 Using default discovery configuration: $_cachedDiscoveryUrl');
-    return _cachedDiscoveryUrl;
+    // No fallback - user must configure discovery service explicitly
+    print('❌ No discovery service configuration found - user input required');
+    return null;
   }
   
   /// Get discovery client configured with user settings
@@ -148,22 +143,10 @@ class DiscoveryConfigService {
     return await client.getAllServices();
   }
   
-  /// Clear discovery configuration
-  Future<void> clearConfiguration() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyDiscoveryHost);
-    await prefs.remove(_keyDiscoveryPort);
-    await prefs.remove(_keyDeviceIPPrefix);
-    
-    _cachedDiscoveryUrl = null;
-    _discoveryClient = null;
-    
-    print('🗑️ Discovery configuration cleared');
-  }
-  
-  /// Check if discovery is configured (always true with defaults)
+  /// Check if discovery is configured
   Future<bool> isConfigured() async {
-    // Always return true since we have default configuration
-    return true;
+    final prefs = await SharedPreferences.getInstance();
+    final host = prefs.getString(_keyDiscoveryHost);
+    return host != null;
   }
 }

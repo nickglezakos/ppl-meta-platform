@@ -48,26 +48,9 @@ class HybridServiceDiscoveryService {
   /// Try to discover services using PPL Meta Discovery Service
   Future<String?> _tryPPLMetaDiscoveryService() async {
     try {
-      // Common discovery service endpoints to try
-      final discoveryUrls = [
-        'http://localhost:8006',           // Local development
-        'http://127.0.0.1:8006',          // Localhost IP
-        'http://192.168.129.107:8006',    // Current network - main service
-        'http://192.168.129.100:8006',    // Current network - common IP
-        'http://192.168.129.1:8006',      // Current network router
-        'http://192.168.1.100:8006',      // Common local network
-        'http://192.168.1.1:8006',        // Router IP
-        'http://10.0.0.1:8006',           // Alternative local network
-      ];
-      
-      for (final discoveryUrl in discoveryUrls) {
-        debugPrint('🔍 Trying discovery service: $discoveryUrl');
-        
-        final nodeUrl = await _queryDiscoveryService(discoveryUrl);
-        if (nodeUrl != null) {
-          debugPrint('✅ Found Node service via discovery: $nodeUrl');
-          return nodeUrl;
-        }
+      // REMOVED: No hardcoded discovery service endpoints - explicit user configuration required
+      print('🔧 No hardcoded discovery endpoints available - user must explicitly configure');
+      return null;
       }
       
       debugPrint('⚠️ No discovery services responded');

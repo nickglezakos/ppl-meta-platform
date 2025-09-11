@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../services/simplified_discovery_client.dart';
 import '../../../services/discovery_based_authentication_service.dart';
 import '../../../services/discovery_config_service.dart';
+import '../../../core/providers/authentication_provider.dart';
 
 class SimpleSetupScreen extends StatefulWidget {
   const SimpleSetupScreen({super.key});
@@ -11,7 +13,7 @@ class SimpleSetupScreen extends StatefulWidget {
 }
 
 class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
-  final _ipLastPartController = TextEditingController(text: '107');
+  final _backendIPController = TextEditingController(text: '');
   final _portController = TextEditingController(text: '8006');
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -19,29 +21,11 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   
   bool _isLoading = false;
   String? _errorMessage;
-  String? _detectedNetwork;
 
   @override
   void initState() {
     super.initState();
-    _detectNetwork();
-  }
-
-  Future<void> _detectNetwork() async {
-    try {
-      final discoveryClient = SimplifiedDiscoveryClient();
-      final myIP = await discoveryClient.getMyIPAddress();
-      if (myIP != null) {
-        final parts = myIP.split('.');
-        if (parts.length == 4) {
-          setState(() {
-            _detectedNetwork = '${parts[0]}.${parts[1]}.${parts[2]}.X';
-          });
-        }
-      }
-    } catch (e) {
-      print('Network detection error: $e');
-    }
+    // No automatic detection - user must input complete backend IP
   }
 
   Future<void> _connectAndAuthenticate() async {
@@ -53,52 +37,58 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
     });
 
     try {
-      final ipLastPart = _ipLastPartController.text.trim();
+      final backendIP = _backendIPController.text.trim();
       final port = _portController.text.trim();
       final username = _usernameController.text.trim();
       final password = _passwordController.text.trim();
 
-      // Save user's network configuration using DiscoveryConfigService
+      // Save user's backend configuration - no network detection needed
       final configService = DiscoveryConfigService.instance;
       await configService.configureFromUserInput(
-        ipLastPart: ipLastPart, 
+        ipLastPart: backendIP.split('.').last, // Just for compatibility 
         port: port,
+        deviceIPPrefix: backendIP.split('.').take(3).join('.'), // Backend network prefix
       );
       
-      print('✅ Discovery configuration saved');
+      print('✅ Discovery configuration saved for backend IP: $backendIP');
 
-      // Create discovery client with specific IP and port
+      // Create discovery client with user-specified IP
       final discoveryClient = SimplifiedDiscoveryClient();
-      final targetIP = await _buildTargetIP(ipLastPart);
       
-      print('🔍 Attempting to connect to Discovery Service at $targetIP:$port');
+      print('🔍 Attempting to connect to Discovery Service at $backendIP:$port');
       
-      // Test connection to Discovery Service
-      final services = await discoveryClient.discoverServicesAtAddress('$targetIP:$port');
+      // Test connection to Discovery Service using complete backend IP
+      final services = await discoveryClient.discoverServicesAtAddress('$backendIP:$port');
       
       print('✅ Found ${services.length} services via Discovery Service');
       
-      // Find gateway service
-      final gatewayService = services.firstWhere(
-        (s) => s.name == 'ppl-meta-gateway',
-        orElse: () => throw Exception('Gateway service not found in Discovery Service'),
+      // Find node service for authentication (not gateway)
+      final nodeService = services.firstWhere(
+        (s) => s.name == 'ppl-meta-node',
+        orElse: () => throw Exception('Node service not found in Discovery Service'),
       );
       
-      print('🚪 Gateway found at ${gatewayService.host}:${gatewayService.port}');
+      print('🚪 Node service found at ${nodeService.host}:${nodeService.port}');
       
-      // Authenticate via gateway
-      final authService = DiscoveryBasedAuthenticationService();
-      final authResult = await authService.authenticateViaDiscovery(username, password);
+      // Construct node service URL for authentication
+      final nodeUrl = 'http://${nodeService.host}:${nodeService.port}';
       
-      if (authResult.success) {
-        print('🎉 Authentication successful!');
+      // Authenticate via AuthenticationProvider to properly set app state
+      final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
+      final loginSuccess = await authProvider.login(
+        serverUrl: nodeUrl,
+        username: username,
+        password: password,
+      );
+      
+      if (loginSuccess) {
+        print('🎉 Authentication successful! App state updated.');
         
-        // Return success to parent screen
-        if (mounted) {
-          Navigator.of(context).pop({'success': true});
-        }
+        // Navigation will be handled automatically by MainNavigator
+        // since AuthenticationProvider.isAuthenticated is now true
+        
       } else {
-        throw Exception('Authentication failed: ${authResult.error}');
+        throw Exception('Authentication failed: ${authProvider.error}');
       }
       
     } catch (e) {
@@ -111,21 +101,6 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
         _isLoading = false;
       });
     }
-  }
-
-  Future<String> _buildTargetIP(String lastPart) async {
-    final discoveryClient = SimplifiedDiscoveryClient();
-    final myIP = await discoveryClient.getMyIPAddress();
-    
-    if (myIP != null) {
-      final parts = myIP.split('.');
-      if (parts.length == 4) {
-        return '${parts[0]}.${parts[1]}.${parts[2]}.$lastPart';
-      }
-    }
-    
-    // If device IP detection fails, throw error - no fallback
-    throw Exception('Could not detect device network. Please check network connection.');
   }
 
   @override
@@ -144,32 +119,36 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
             children: [
               const SizedBox(height: 20),
               
-              // Network Info
-              if (_detectedNetwork != null)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.shade200),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Network Detected:',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        _detectedNetwork!,
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ],
-                  ),
+              // Instructions
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
                 ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Setup Instructions:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '1. Open the web frontend at http://localhost:3000/#/settings',
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '2. Check the IP address of the PPL Meta Platform services',
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      '3. Enter the complete backend IP address below',
+                    ),
+                  ],
+                ),
+              ),
               
               const SizedBox(height: 24),
               
@@ -183,23 +162,30 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
               ),
               const SizedBox(height: 16),
               
-              // IP Last Part Input
+              // Complete Backend IP Input
               TextFormField(
-                controller: _ipLastPartController,
+                controller: _backendIPController,
                 decoration: const InputDecoration(
-                  labelText: 'Platform IP Last Part',
-                  hintText: 'e.g., 107 (will use your network prefix)',
+                  labelText: 'Backend IP Address',
+                  hintText: 'e.g., 10.109.198.107 (complete IP from frontend settings)',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.computer),
                 ),
-                keyboardType: TextInputType.number,
+                keyboardType: TextInputType.text,
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Please enter the IP last part';
+                    return 'Please enter the complete backend IP address';
                   }
-                  final num = int.tryParse(value);
-                  if (num == null || num < 1 || num > 254) {
-                    return 'Enter a valid IP part (1-254)';
+                  // Basic IP validation
+                  final parts = value.split('.');
+                  if (parts.length != 4) {
+                    return 'Enter a valid IP address (e.g., 10.109.198.107)';
+                  }
+                  for (final part in parts) {
+                    final num = int.tryParse(part);
+                    if (num == null || num < 0 || num > 255) {
+                      return 'Enter a valid IP address';
+                    }
                   }
                   return null;
                 },
@@ -358,7 +344,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
 
   @override
   void dispose() {
-    _ipLastPartController.dispose();
+    _backendIPController.dispose();
     _portController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
