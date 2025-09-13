@@ -5,7 +5,7 @@
 http://192.168.21.253:8000
 
 fresh.user@example.com
-NewPassword234! 
+NewPassword234!
 
 curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
@@ -17,13 +17,6 @@ Kkkkodikos234
 rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.75:554/stream1
 
 http://192.168.1.68:8001
-
-
-
-last development point:
-# PPL Meta Mobile Camera App - Android Development Guide
-# ✅ AUTOMATIC CAMERA NAMING IMPLEMENTATION COMPLETE
-
 
 
 

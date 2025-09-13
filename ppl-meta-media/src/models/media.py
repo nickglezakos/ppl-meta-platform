@@ -102,6 +102,9 @@ class Media(BaseModel):
     # Relationships
     media_details = relationship("MediaDetails", back_populates="media", uselist=False)
     media_variants = relationship("MediaVariant", back_populates="media")
+    archive_status = relationship(
+        "MediaArchiveStatus", back_populates="media", uselist=False
+    )
 
     def __repr__(self):
         return (
@@ -186,6 +189,11 @@ class MediaCollection(BaseModel):
     # Ownership
     created_by = Column(UUID(as_uuid=True), nullable=False, index=True)
 
+    # Camera association
+    camera_device_id = Column(
+        String(255), nullable=True, index=True
+    )  # Links collection to specific camera
+
     # Collection settings
     is_public = Column(Boolean, default=False)
     cover_media_id = Column(Integer, ForeignKey("media.id"), nullable=True)
@@ -193,6 +201,14 @@ class MediaCollection(BaseModel):
     # Metadata
     tags = Column(JSON, nullable=True)
     settings = Column(JSON, nullable=True)  # Display settings, etc.
+
+    # Relationships
+    storage_config = relationship(
+        "CollectionStorageConfig", back_populates="collection", uselist=False
+    )
+    storage_usage = relationship(
+        "CollectionStorageUsage", back_populates="collection", uselist=False
+    )
 
 
 class MediaCollectionItem(BaseModel):

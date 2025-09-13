@@ -272,6 +272,18 @@ async def list_users(request: Request):
     return await _proxy_to_node_service(request)
 
 
+@api_router.get("/users/storage-preferences")
+async def get_user_storage_preferences(request: Request):
+    """Proxy get user storage preferences to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.put("/users/storage-preferences")
+async def update_user_storage_preferences(request: Request):
+    """Proxy update user storage preferences to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/test-profile")
 async def test_profile_endpoint():
     """Test endpoint to verify routing is working."""

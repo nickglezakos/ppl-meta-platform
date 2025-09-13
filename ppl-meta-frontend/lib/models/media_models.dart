@@ -187,6 +187,10 @@ class MediaItem {
   @JsonKey(name: 'duration')
   final int? duration; // Duration in seconds for video/audio files
   
+  // Collections that contain this media item (from backend search results)
+  @JsonKey(name: 'collections')
+  final List<Map<String, dynamic>>? collections;
+
   // Collection information for search results (not serialized)
   @JsonKey(includeFromJson: false, includeToJson: false)
   final CollectionInfo? collectionInfo;
@@ -220,6 +224,7 @@ class MediaItem {
     this.thumbnailUrl,
     this.url,
     this.duration,
+    this.collections,
     this.collectionInfo,
   });
   

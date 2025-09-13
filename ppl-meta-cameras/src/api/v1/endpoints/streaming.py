@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from src.database import get_db
 from src.models.camera import Camera, CameraType
@@ -20,6 +21,7 @@ from src.security.auth import (
     get_current_user_flexible,
     require_start_stream,
     require_view_stream_flexible,
+    security,
 )
 from src.services.camera_detection import camera_service
 from src.services.mobile_streaming import mobile_streaming_service
@@ -316,6 +318,9 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
                     logger.warning(f"Failed to read frame from camera {device_id}")
                     break
 
+                # Cache the frame for recording use
+                camera_service.latest_frames[device_id] = (ret, frame.copy())
+
                 # Resize frame if needed
                 if frame.shape[1] != width or frame.shape[0] != height:
                     frame = cv2.resize(frame, (width, height))
@@ -562,6 +567,9 @@ async def video_stream_session(
                     logger.warning("Failed to read frame from camera %s", device_id)
                     await asyncio.sleep(0.1)
                     continue
+
+                # Cache the frame for recording use
+                camera_service.latest_frames[device_id] = (ret, frame.copy())
 
                 # Encode frame as JPEG
                 _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -878,4 +886,169 @@ async def stop_stream(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to stop stream",
+        ) from e
+
+
+@router.post("/{device_id}/record/start")
+async def start_recording(
+    device_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    current_user: Dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Start recording from a specific camera to collection."""
+
+    try:
+        # Verify camera exists and supports recording
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+
+        if not camera.supports_recording:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Camera {device_id} does not support recording",
+            )
+
+        # Check if already recording
+        existing_recording = camera_service.get_active_recording(device_id)
+        if existing_recording:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Camera {device_id} is already recording",
+            )
+
+        # Start recording
+        recording_info = await camera_service.start_recording(
+            device_id=device_id,
+            user_id=current_user.get("sub") or "",
+            quality="high",  # TODO: Make configurable
+            auth_token=credentials.credentials,
+        )
+
+        if not recording_info:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to start recording for camera {device_id}",
+            )
+
+        logger.info(
+            f"User {current_user.get('sub')} started recording for camera {device_id}"
+        )
+
+        return {
+            "status": "success",
+            "message": f"Recording started for camera {device_id}",
+            "device_id": device_id,
+            "recording_id": recording_info.get("recording_id"),
+            "started_at": recording_info.get("started_at"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error starting recording for camera %s: %s", device_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start recording",
+        ) from e
+
+
+@router.post("/{device_id}/record/stop")
+async def stop_recording(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Stop recording from a specific camera and save to collection."""
+
+    try:
+        # Verify camera exists
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+
+        # Stop recording and get recording info
+        recording_result = await camera_service.stop_recording(
+            device_id=device_id, user_id=current_user.get("sub")
+        )
+
+        if not recording_result:
+            # Camera might not be recording
+            return {
+                "status": "success",
+                "message": f"Camera {device_id} was not recording",
+                "device_id": device_id,
+            }
+
+        logger.info(
+            f"User {current_user.get('sub')} stopped recording for camera {device_id} - "
+            f"Duration: {recording_result.get('duration_seconds')}s, "
+            f"File: {recording_result.get('file_path')}"
+        )
+
+        return {
+            "status": "success",
+            "message": f"Recording stopped for camera {device_id}",
+            "device_id": device_id,
+            "recording_id": recording_result.get("recording_id"),
+            "duration_seconds": recording_result.get("duration_seconds"),
+            "file_path": recording_result.get("file_path"),
+            "file_size_bytes": recording_result.get("file_size_bytes"),
+            "collection_id": recording_result.get("collection_id"),
+            "stopped_at": recording_result.get("stopped_at"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error stopping recording for camera %s: %s", device_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to stop recording",
+        ) from e
+
+
+@router.get("/{device_id}/record/status")
+async def get_recording_status(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Get recording status for a specific camera."""
+
+    try:
+        # Verify camera exists
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+
+        # Get recording status
+        recording_status = camera_service.get_recording_status(device_id)
+
+        return {
+            "device_id": device_id,
+            "is_recording": recording_status.get("is_recording", False),
+            "recording_id": recording_status.get("recording_id"),
+            "started_at": recording_status.get("started_at"),
+            "duration_seconds": recording_status.get("duration_seconds", 0),
+            "file_size_bytes": recording_status.get("file_size_bytes", 0),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error getting recording status for camera %s: %s", device_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get recording status",
         ) from e

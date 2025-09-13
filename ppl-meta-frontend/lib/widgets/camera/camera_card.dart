@@ -323,6 +323,12 @@ class CameraCard extends ConsumerWidget {
               ],
             ),
             
+            // Recording controls (show if camera supports recording and is connected)
+            if (isConnected && _cameraSupportsRecording()) ...[
+              const SizedBox(height: 8),
+              _buildRecordingControls(ref),
+            ],
+            
             // RTSP Edit/Delete buttons row (only show for RTSP cameras)
             if (isRTSP) ...[
               const SizedBox(height: 8),
@@ -361,6 +367,150 @@ class CameraCard extends ConsumerWidget {
               ),
             ],
           ],
+        );
+      }
+
+      /// Check if camera supports recording
+      bool _cameraSupportsRecording() {
+        // Check metadata first for explicit supports_recording flag
+        if (camera.metadata?['supports_recording'] == true) {
+          return true;
+        }
+        
+        // USB cameras typically support recording
+        if (camera.type == CameraType.usb) {
+          return true;
+        }
+        
+        // For now, be conservative and only enable for USB cameras
+        return false;
+      }
+
+      /// Build recording controls for the camera
+      Widget _buildRecordingControls(WidgetRef ref) {
+        final recordingState = ref.watch(cameraRecordingProvider(camera.deviceId));
+        final recordingNotifier = ref.read(cameraRecordingProvider(camera.deviceId).notifier);
+
+        return Row(
+          children: [
+            // Recording status and controls
+            Expanded(
+              flex: 2,
+              child: recordingState.isRecording
+                ? _buildRecordingActiveControls(recordingState, recordingNotifier)
+                : _buildRecordingStartControl(recordingState, recordingNotifier),
+            ),
+            
+            const SizedBox(width: 12),
+            
+            // Recording status info
+            if (recordingState.isRecording)
+              Expanded(
+                flex: 1,
+                child: _buildRecordingStatusInfo(recordingState),
+              ),
+          ],
+        );
+      }
+
+      /// Build controls when recording is active
+      Widget _buildRecordingActiveControls(CameraRecordingState recordingState, CameraRecordingNotifier recordingNotifier) {
+        return ElevatedButton.icon(
+          onPressed: recordingState.isLoading ? null : () => recordingNotifier.stopRecording(),
+          icon: recordingState.isLoading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildPulsingDot(),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.stop_circle, size: 16),
+                ],
+              ),
+          label: Text(recordingState.isLoading ? 'Stopping...' : 'Stop Recording'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        );
+      }
+
+      /// Build controls when recording is not active
+      Widget _buildRecordingStartControl(CameraRecordingState recordingState, CameraRecordingNotifier recordingNotifier) {
+        return ElevatedButton.icon(
+          onPressed: recordingState.isLoading ? null : () => recordingNotifier.startRecording(),
+          icon: recordingState.isLoading
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.fiber_manual_record, size: 16),
+          label: Text(recordingState.isLoading ? 'Starting...' : 'Start Recording'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red.shade700,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        );
+      }
+
+      /// Build recording status information
+      Widget _buildRecordingStatusInfo(CameraRecordingState recordingState) {
+        final duration = Duration(seconds: recordingState.durationSeconds);
+        final minutes = duration.inMinutes;
+        final seconds = duration.inSeconds % 60;
+        final fileSize = (recordingState.fileSizeBytes / (1024 * 1024)).toStringAsFixed(1);
+
+        return Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red.withOpacity(0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Recording: ${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                'Size: ${fileSize}MB',
+                style: const TextStyle(fontSize: 10),
+              ),
+            ],
+          ),
+        );
+      }
+
+      /// Build pulsing red dot for recording indicator
+      Widget _buildPulsingDot() {
+        return TweenAnimationBuilder<double>(
+          duration: const Duration(milliseconds: 1000),
+          tween: Tween(begin: 0.3, end: 1.0),
+          builder: (context, value, child) {
+            return Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(value),
+                shape: BoxShape.circle,
+              ),
+            );
+          },
+          onEnd: () {
+            // This will cause the animation to repeat
+          },
         );
       }
 

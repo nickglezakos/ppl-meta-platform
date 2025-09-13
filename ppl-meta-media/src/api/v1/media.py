@@ -243,13 +243,34 @@ async def search_media(
 
         media_list = await media_service.search_media(search_request)
 
-        # Generate URLs for each media item
+        # Generate URLs for each media item and load collections
         result = []
+        print(f"🔍 DEBUG SEARCH ENDPOINT: Processing {len(media_list)} media items")
         for media in media_list:
+            print(f"🔍 DEBUG SEARCH ENDPOINT: Processing media ID {media.id}")
             media_response = MediaResponse.model_validate(media)
             urls = media_service.generate_media_urls(media)
             media_response.thumbnail_url = urls["thumbnail_url"]
             media_response.url = urls["url"]
+
+            # Load collections for this media item
+            print(
+                f"🔍 DEBUG SEARCH ENDPOINT: About to call get_media_collections for media ID {media.id}"
+            )
+            collections = await media_service.get_media_collections(media.id)
+            print(
+                f"🔍 DEBUG SEARCH ENDPOINT: Got {len(collections)} collections for media ID {media.id}"
+            )
+            media_response.collections = [
+                {
+                    "id": col.id,
+                    "uuid": str(col.uuid),
+                    "name": col.name,
+                    "description": col.description,
+                }
+                for col in collections
+            ]
+
             result.append(media_response)
 
         return result
@@ -305,6 +326,32 @@ async def search_collections(
         )
 
         return [MediaCollectionResponse.model_validate(col) for col in collections]
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get(
+    "/collections/by-camera/{camera_device_id}",
+    response_model=Optional[MediaCollectionResponse],
+)
+async def get_collection_by_camera(
+    camera_device_id: str,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get collection associated with a specific camera device ID."""
+    try:
+        media_service = MediaService(db)
+        collection = await media_service.get_collection_by_camera_device_id(
+            camera_device_id=camera_device_id,
+            user_id=UUID(current_user.user_id),
+        )
+
+        if not collection:
+            return None
+
+        return MediaCollectionResponse.model_validate(collection)
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -741,6 +788,7 @@ async def create_collection(
     description: Optional[str] = Form(None),
     user_id: str = Form(...),
     is_public: bool = Form(False),
+    camera_device_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Create a new media collection."""
@@ -751,6 +799,7 @@ async def create_collection(
             description=description,
             user_id=UUID(user_id),
             is_public=is_public,
+            camera_device_id=camera_device_id,
         )
 
         return MediaCollectionResponse.model_validate(collection)

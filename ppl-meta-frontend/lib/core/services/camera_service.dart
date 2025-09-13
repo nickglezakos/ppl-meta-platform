@@ -566,6 +566,45 @@ class CameraService {
     }
   }
 
+  /// Start recording for a camera
+  Future<RecordingResult> startRecording(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.post(
+        '/api/v1/streaming/$deviceId/record/start',
+      );
+
+      return RecordingResult.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// Stop recording for a camera
+  Future<RecordingResult> stopRecording(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.post(
+        '/api/v1/streaming/$deviceId/record/stop',
+      );
+
+      return RecordingResult.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// Get recording status for a camera
+  Future<RecordingStatus> getRecordingStatus(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.get(
+        '/api/v1/streaming/$deviceId/record/status',
+      );
+
+      return RecordingStatus.fromJson(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
   CameraException _handleDioError(DioException e) {
     if (e.response?.data != null) {
       try {
@@ -601,5 +640,85 @@ class CameraService {
       default:
         return const CameraException('An unexpected camera error occurred. Please try again.');
     }
+  }
+}
+
+/// Recording result model for start/stop operations
+class RecordingResult {
+  final String status;
+  final String message;
+  final String deviceId;
+  final String? recordingId;
+  final DateTime? startedAt;
+  final DateTime? stoppedAt;
+  final int? durationSeconds;
+  final String? filePath;
+  final int? fileSizeBytes;
+  final String? collectionId;
+
+  RecordingResult({
+    required this.status,
+    required this.message,
+    required this.deviceId,
+    this.recordingId,
+    this.startedAt,
+    this.stoppedAt,
+    this.durationSeconds,
+    this.filePath,
+    this.fileSizeBytes,
+    this.collectionId,
+  });
+
+  factory RecordingResult.fromJson(Map<String, dynamic> json) {
+    return RecordingResult(
+      status: json['status'] ?? '',
+      message: json['message'] ?? '',
+      deviceId: json['device_id'] ?? '',
+      recordingId: json['recording_id'],
+      startedAt: json['started_at'] != null 
+          ? DateTime.parse(json['started_at']) 
+          : null,
+      stoppedAt: json['stopped_at'] != null 
+          ? DateTime.parse(json['stopped_at']) 
+          : null,
+      durationSeconds: json['duration_seconds'],
+      filePath: json['file_path'],
+      fileSizeBytes: json['file_size_bytes'],
+      collectionId: json['collection_id'],
+    );
+  }
+
+  bool get isSuccess => status == 'success';
+}
+
+/// Recording status model for status queries
+class RecordingStatus {
+  final String deviceId;
+  final bool isRecording;
+  final String? recordingId;
+  final DateTime? startedAt;
+  final int durationSeconds;
+  final int fileSizeBytes;
+
+  RecordingStatus({
+    required this.deviceId,
+    required this.isRecording,
+    this.recordingId,
+    this.startedAt,
+    this.durationSeconds = 0,
+    this.fileSizeBytes = 0,
+  });
+
+  factory RecordingStatus.fromJson(Map<String, dynamic> json) {
+    return RecordingStatus(
+      deviceId: json['device_id'] ?? '',
+      isRecording: json['is_recording'] ?? false,
+      recordingId: json['recording_id'],
+      startedAt: json['started_at'] != null 
+          ? DateTime.parse(json['started_at']) 
+          : null,
+      durationSeconds: json['duration_seconds'] ?? 0,
+      fileSizeBytes: json['file_size_bytes'] ?? 0,
+    );
   }
 }

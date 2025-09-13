@@ -341,6 +341,107 @@ class CameraService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Start recording for a camera
+  Future<RecordingResult?> startRecording(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return null;
+    }
+
+    try {
+      _logger.i('🎥 Starting recording for camera $deviceId...');
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/streaming/$deviceId/record/start'),
+        headers: _authService.getAuthHeaders(),
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('Start recording timed out', const Duration(seconds: 10)),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _logger.i('✅ Recording started: ${data['recording_id']}');
+        
+        return RecordingResult.fromJson(data);
+      } else {
+        _lastError = 'Failed to start recording: ${response.statusCode}';
+        _logger.e('❌ $_lastError');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Start recording error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return null;
+    }
+  }
+
+  /// Stop recording for a camera
+  Future<RecordingResult?> stopRecording(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return null;
+    }
+
+    try {
+      _logger.i('⏹️ Stopping recording for camera $deviceId...');
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/streaming/$deviceId/record/stop'),
+        headers: _authService.getAuthHeaders(),
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('Stop recording timed out', const Duration(seconds: 10)),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _logger.i('✅ Recording stopped: ${data['file_path']}');
+        
+        return RecordingResult.fromJson(data);
+      } else {
+        _lastError = 'Failed to stop recording: ${response.statusCode}';
+        _logger.e('❌ $_lastError');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Stop recording error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return null;
+    }
+  }
+
+  /// Get recording status for a camera
+  Future<RecordingStatus?> getRecordingStatus(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return null;
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/streaming/$deviceId/record/status'),
+        headers: _authService.getAuthHeaders(),
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException('Get recording status timed out', const Duration(seconds: 5)),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return RecordingStatus.fromJson(data);
+      } else {
+        _lastError = 'Failed to get recording status: ${response.statusCode}';
+        _logger.e('❌ $_lastError');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Get recording status error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return null;
+    }
+  }
+
   @override
   void dispose() {
     _authService.removeListener(_onAuthStateChanged);
@@ -421,5 +522,85 @@ class CameraInfo {
       'capabilities': capabilities,
       'is_connected': isConnected,
     };
+  }
+}
+
+/// Recording result model for start/stop operations
+class RecordingResult {
+  final String status;
+  final String message;
+  final String deviceId;
+  final String? recordingId;
+  final DateTime? startedAt;
+  final DateTime? stoppedAt;
+  final int? durationSeconds;
+  final String? filePath;
+  final int? fileSizeBytes;
+  final String? collectionId;
+
+  RecordingResult({
+    required this.status,
+    required this.message,
+    required this.deviceId,
+    this.recordingId,
+    this.startedAt,
+    this.stoppedAt,
+    this.durationSeconds,
+    this.filePath,
+    this.fileSizeBytes,
+    this.collectionId,
+  });
+
+  factory RecordingResult.fromJson(Map<String, dynamic> json) {
+    return RecordingResult(
+      status: json['status'] ?? '',
+      message: json['message'] ?? '',
+      deviceId: json['device_id'] ?? '',
+      recordingId: json['recording_id'],
+      startedAt: json['started_at'] != null 
+          ? DateTime.parse(json['started_at']) 
+          : null,
+      stoppedAt: json['stopped_at'] != null 
+          ? DateTime.parse(json['stopped_at']) 
+          : null,
+      durationSeconds: json['duration_seconds'],
+      filePath: json['file_path'],
+      fileSizeBytes: json['file_size_bytes'],
+      collectionId: json['collection_id'],
+    );
+  }
+
+  bool get isSuccess => status == 'success';
+}
+
+/// Recording status model for status queries
+class RecordingStatus {
+  final String deviceId;
+  final bool isRecording;
+  final String? recordingId;
+  final DateTime? startedAt;
+  final int durationSeconds;
+  final int fileSizeBytes;
+
+  RecordingStatus({
+    required this.deviceId,
+    required this.isRecording,
+    this.recordingId,
+    this.startedAt,
+    this.durationSeconds = 0,
+    this.fileSizeBytes = 0,
+  });
+
+  factory RecordingStatus.fromJson(Map<String, dynamic> json) {
+    return RecordingStatus(
+      deviceId: json['device_id'] ?? '',
+      isRecording: json['is_recording'] ?? false,
+      recordingId: json['recording_id'],
+      startedAt: json['started_at'] != null 
+          ? DateTime.parse(json['started_at']) 
+          : null,
+      durationSeconds: json['duration_seconds'] ?? 0,
+      fileSizeBytes: json['file_size_bytes'] ?? 0,
+    );
   }
 }

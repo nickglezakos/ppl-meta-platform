@@ -21,6 +21,12 @@ from src.api.v1.routes import v1_router
 from src.config import get_config
 from src.database import Base, engine, test_connection
 from src.microservice_config import CONSUL_CONFIG
+from src.models.collection_storage import (
+    CollectionStorageConfig,
+    CollectionStorageUsage,
+    MediaArchiveStatus,
+    UserStoragePreferences,
+)
 
 # Import all models for table creation
 from src.models.media import (

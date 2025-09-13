@@ -31,6 +31,9 @@ MediaItem _$MediaItemFromJson(Map<String, dynamic> json) => MediaItem(
       thumbnailUrl: json['thumbnail_url'] as String?,
       url: json['url'] as String?,
       duration: (json['duration'] as num?)?.toInt(),
+      collections: (json['collections'] as List<dynamic>?)
+          ?.map((e) => e as Map<String, dynamic>)
+          .toList(),
     );
 
 Map<String, dynamic> _$MediaItemToJson(MediaItem instance) => <String, dynamic>{
@@ -56,6 +59,7 @@ Map<String, dynamic> _$MediaItemToJson(MediaItem instance) => <String, dynamic>{
       'thumbnail_url': instance.thumbnailUrl,
       'url': instance.url,
       'duration': instance.duration,
+      'collections': instance.collections,
     };
 
 const _$MediaTypeEnumMap = {

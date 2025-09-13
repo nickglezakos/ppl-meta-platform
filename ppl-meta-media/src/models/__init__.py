@@ -3,6 +3,12 @@ Database models for PPL Meta Media Service.
 """
 
 from .base import Base, BaseModel
+from .collection_storage import (
+    CollectionStorageConfig,
+    CollectionStorageUsage,
+    MediaArchiveStatus,
+    UserStoragePreferences,
+)
 from .media import (
     Media,
     MediaCollection,
@@ -27,4 +33,8 @@ __all__ = [
     "MediaCollection",
     "MediaCollectionItem",
     "MediaShare",
+    "CollectionStorageConfig",
+    "CollectionStorageUsage",
+    "MediaArchiveStatus",
+    "UserStoragePreferences",
 ]

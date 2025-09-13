@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/camera_service.dart';
 import '../services/camera_collection_service.dart';
@@ -563,4 +564,194 @@ final cameraHasCollectionProvider = FutureProvider.family<bool, String>((ref, ca
 final cameraCollectionIdProvider = FutureProvider.family<String?, String>((ref, cameraId) async {
   final collectionService = ref.watch(cameraCollectionServiceProvider);
   return await collectionService.getCameraCollectionId(cameraId);
+});
+
+/// Recording state for a camera
+class CameraRecordingState {
+  final String cameraId;
+  final bool isRecording;
+  final bool isLoading;
+  final String? recordingId;
+  final DateTime? startedAt;
+  final int durationSeconds;
+  final int fileSizeBytes;
+  final String? error;
+
+  const CameraRecordingState({
+    required this.cameraId,
+    this.isRecording = false,
+    this.isLoading = false,
+    this.recordingId,
+    this.startedAt,
+    this.durationSeconds = 0,
+    this.fileSizeBytes = 0,
+    this.error,
+  });
+
+  CameraRecordingState copyWith({
+    String? cameraId,
+    bool? isRecording,
+    bool? isLoading,
+    String? recordingId,
+    DateTime? startedAt,
+    int? durationSeconds,
+    int? fileSizeBytes,
+    String? error,
+  }) {
+    return CameraRecordingState(
+      cameraId: cameraId ?? this.cameraId,
+      isRecording: isRecording ?? this.isRecording,
+      isLoading: isLoading ?? this.isLoading,
+      recordingId: recordingId ?? this.recordingId,
+      startedAt: startedAt ?? this.startedAt,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      error: error ?? this.error,
+    );
+  }
+
+  /// Clear error state
+  CameraRecordingState clearError() {
+    return copyWith(error: null);
+  }
+}
+
+/// State notifier for managing camera recording
+class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
+  final CameraService _cameraService;
+  Timer? _statusTimer;
+
+  CameraRecordingNotifier(this._cameraService, String cameraId)
+      : super(CameraRecordingState(cameraId: cameraId));
+
+  /// Start recording for this camera
+  Future<void> startRecording() async {
+    if (state.isRecording || state.isLoading) return;
+
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final result = await _cameraService.startRecording(state.cameraId);
+      
+      if (result != null && result.isSuccess) {
+        state = state.copyWith(
+          isLoading: false,
+          isRecording: true,
+          recordingId: result.recordingId,
+          startedAt: result.startedAt,
+        );
+        
+        // Start periodic status updates
+        _startStatusUpdates();
+      } else {
+        state = state.copyWith(
+          isLoading: false,
+          error: result?.message ?? 'Failed to start recording',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Recording error: $e',
+      );
+    }
+  }
+
+  /// Stop recording for this camera
+  Future<void> stopRecording() async {
+    if (!state.isRecording || state.isLoading) return;
+
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final result = await _cameraService.stopRecording(state.cameraId);
+      
+      if (result != null && result.isSuccess) {
+        state = state.copyWith(
+          isLoading: false,
+          isRecording: false,
+          recordingId: null,
+          startedAt: null,
+          durationSeconds: 0,
+          fileSizeBytes: 0,
+        );
+        
+        // Stop status updates
+        _stopStatusUpdates();
+      } else {
+        state = state.copyWith(
+          isLoading: false,
+          error: result?.message ?? 'Failed to stop recording',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Stop recording error: $e',
+      );
+    }
+  }
+
+  /// Update recording status
+  Future<void> updateStatus() async {
+    if (!state.isRecording) return;
+
+    try {
+      final status = await _cameraService.getRecordingStatus(state.cameraId);
+      
+      if (status != null) {
+        if (status.isRecording) {
+          state = state.copyWith(
+            durationSeconds: status.durationSeconds,
+            fileSizeBytes: status.fileSizeBytes,
+            error: null,
+          );
+        } else {
+          // Recording stopped externally
+          state = state.copyWith(
+            isRecording: false,
+            recordingId: null,
+            startedAt: null,
+            durationSeconds: 0,
+            fileSizeBytes: 0,
+          );
+          _stopStatusUpdates();
+        }
+      }
+    } catch (e) {
+      // Don't update error state for status check failures
+      // to avoid disrupting the recording UI
+    }
+  }
+
+  /// Start periodic status updates
+  void _startStatusUpdates() {
+    _stopStatusUpdates(); // Ensure no duplicate timers
+    _statusTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      updateStatus();
+    });
+  }
+
+  /// Stop periodic status updates
+  void _stopStatusUpdates() {
+    _statusTimer?.cancel();
+    _statusTimer = null;
+  }
+
+  /// Clear error state
+  void clearError() {
+    state = state.clearError();
+  }
+
+  @override
+  void dispose() {
+    _stopStatusUpdates();
+    super.dispose();
+  }
+}
+
+/// Provider for camera recording state
+final cameraRecordingProvider = StateNotifierProvider.family<CameraRecordingNotifier, CameraRecordingState, String>((ref, cameraId) {
+  final cameraService = ref.watch(cameraServiceProvider);
+  return CameraRecordingNotifier(cameraService, cameraId);
 });

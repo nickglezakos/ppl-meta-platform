@@ -3,7 +3,9 @@ Camera detection and management service for PPL Meta Cameras.
 """
 
 import asyncio
+import datetime
 import logging
+import os
 import platform
 import subprocess
 import uuid
@@ -25,6 +27,9 @@ class CameraDetectionService:
     def __init__(self):
         self.detected_cameras: Dict[str, Dict] = {}
         self.active_connections: Dict[str, cv2.VideoCapture] = {}
+        self.active_recordings: Dict[str, Dict] = {}  # Track active recordings
+        # Store latest frames for each camera (device_id -> (ret, frame))
+        self.latest_frames: Dict[str, Tuple] = {}
 
     async def detect_available_cameras(self) -> List[Dict]:
         """Detect all available cameras on the system."""
@@ -298,11 +303,18 @@ class CameraDetectionService:
 
         try:
             ret, frame = cap.read()
+            # Store the latest frame for recording use
+            if ret and frame is not None:
+                self.latest_frames[device_id] = (ret, frame.copy())
             return (ret, frame)
 
         except Exception as e:
             logger.error(f"Error capturing frame from camera {device_id}: {e}")
             return None
+
+    async def get_latest_frame(self, device_id: str) -> Optional[Tuple[bool, any]]:
+        """Get the latest cached frame for a camera."""
+        return self.latest_frames.get(device_id)
 
     async def get_camera_info(self, device_id: str) -> Optional[Dict]:
         """Get detailed information about a camera."""
@@ -587,6 +599,797 @@ class CameraDetectionService:
         # Fallback to default
         logger.warning(f"Could not resolve resolution '{resolution}', using default")
         return 1280, 720
+
+    # ==========================================
+    # VIDEO RECORDING METHODS
+    # ==========================================
+
+    async def start_recording(
+        self,
+        device_id: str,
+        user_id: str,
+        quality: str = "high",
+        auth_token: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """Start recording video from camera using existing stream frames."""
+
+        try:
+            # Check if camera is connected
+            if device_id not in self.active_connections:
+                logger.error(f"Camera {device_id} not connected for recording")
+                return None
+
+            # Check if already recording
+            if device_id in self.active_recordings:
+                logger.warning(f"Camera {device_id} is already recording")
+                return None
+
+            # Check if this is a mobile camera - handle differently
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                is_mobile = camera and camera.camera_type == CameraType.MOBILE
+            finally:
+                db.close()
+
+            if is_mobile:
+                return await self._start_mobile_recording(
+                    device_id, user_id, quality, auth_token
+                )
+            else:
+                return await self._start_regular_recording(
+                    device_id, user_id, quality, auth_token
+                )
+
+        except Exception as e:
+            logger.error("Error starting recording for camera %s: %s", device_id, e)
+            return None
+
+    async def _start_regular_recording(
+        self,
+        device_id: str,
+        user_id: str,
+        quality: str,
+        auth_token: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """Start recording for USB/RTSP cameras using stream frames."""
+        logger.info(f"🎬 [DEBUG] Starting USB/RTSP recording for {device_id}")
+        logger.info(f"🎬 [DEBUG] User ID: {user_id}, Quality: {quality}")
+
+        cap = self.active_connections[device_id]
+        logger.info(f"🎬 [DEBUG] Retrieved camera connection for {device_id}")
+
+        # Get recording parameters based on current stream settings
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+        logger.info(
+            f"🎬 [DEBUG] Camera properties - Width: {width}, Height: {height}, FPS: {fps}"
+        )
+
+        # Generate recording file path
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"recording_{device_id}_{timestamp}.mp4"
+        recordings_dir = os.path.join("recordings", device_id)
+        os.makedirs(recordings_dir, exist_ok=True)
+        file_path = os.path.join(recordings_dir, filename)
+        logger.info(f"🎬 [DEBUG] Recording file path: {file_path}")
+
+        # Initialize video writer with better codec for compatibility
+        # Use mp4v codec for better compatibility and avoid hanging
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        logger.info(f"🎬 [DEBUG] Using fourcc codec: mp4v")
+        video_writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
+
+        if not video_writer.isOpened():
+            logger.error(
+                f"🎬 [DEBUG] ❌ CRITICAL: Failed to initialize video writer for {device_id}"
+            )
+            return None
+
+        logger.info(
+            f"🎬 [DEBUG] ✅ Video writer initialized successfully for {device_id}: {width}x{height} at {fps} fps"
+        )
+
+        # Store recording info
+        recording_id = str(uuid.uuid4())
+        logger.info(f"🎬 [DEBUG] Generated recording ID: {recording_id}")
+
+        recording_info = {
+            "recording_id": recording_id,
+            "device_id": device_id,
+            "user_id": user_id,
+            "file_path": file_path,
+            "video_writer": video_writer,
+            "started_at": datetime.datetime.now(),
+            "frame_count": 0,
+            "quality": quality,
+            "resolution": f"{width}x{height}",
+            "fps": fps,
+            "is_mobile": False,
+            "auth_token": auth_token,
+        }
+        logger.info(f"🎬 [DEBUG] Recording info created for {device_id}")
+
+        self.active_recordings[device_id] = recording_info
+        logger.info(f"🎬 [DEBUG] Added recording to active_recordings for {device_id}")
+
+        # Start frame recording task
+        asyncio.create_task(self._frame_recording_loop(device_id))
+        logger.info(f"🎬 [DEBUG] Frame recording loop task created for {device_id}")
+
+        logger.info(
+            f"🎬 [DEBUG] Recording started for camera {device_id} to {file_path}"
+        )
+
+        return {
+            "recording_id": recording_id,
+            "started_at": recording_info["started_at"].isoformat(),
+            "file_path": file_path,
+        }
+
+    async def _start_mobile_recording(
+        self,
+        device_id: str,
+        user_id: str,
+        quality: str,
+        auth_token: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """Start recording for mobile cameras using frame data from mobile service."""
+
+        # Get quality settings for mobile recording
+        quality_settings = {
+            "low": (320, 240, 15),
+            "medium": (640, 480, 30),
+            "high": (1280, 720, 30),
+            "ultra": (1920, 1080, 30),
+        }
+
+        width, height, fps = quality_settings.get(quality, quality_settings["medium"])
+
+        # Generate recording file path
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"mobile_recording_{device_id}_{timestamp}.mp4"
+        recordings_dir = os.path.join("recordings", device_id)
+        os.makedirs(recordings_dir, exist_ok=True)
+        file_path = os.path.join(recordings_dir, filename)
+
+        # Initialize video writer
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        video_writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
+
+        if not video_writer.isOpened():
+            logger.error(f"Failed to initialize video writer for mobile {device_id}")
+            return None
+
+        # Store recording info
+        recording_id = str(uuid.uuid4())
+        recording_info = {
+            "recording_id": recording_id,
+            "device_id": device_id,
+            "user_id": user_id,
+            "file_path": file_path,
+            "video_writer": video_writer,
+            "started_at": datetime.datetime.now(),
+            "frame_count": 0,
+            "quality": quality,
+            "resolution": f"{width}x{height}",
+            "fps": fps,
+            "is_mobile": True,
+            "target_size": (width, height),
+            "auth_token": auth_token,
+        }
+
+        self.active_recordings[device_id] = recording_info
+
+        # Start mobile frame recording task
+        asyncio.create_task(self._mobile_recording_loop(device_id))
+
+        logger.info(
+            "Started mobile recording for camera %s to %s", device_id, file_path
+        )
+
+        return {
+            "recording_id": recording_id,
+            "started_at": recording_info["started_at"].isoformat(),
+            "file_path": file_path,
+        }
+
+    async def stop_recording(self, device_id: str, user_id: str) -> Optional[Dict]:
+        """Stop recording video from camera and finalize file."""
+        logger.info(f"🎬 [DEBUG] Stop recording requested for {device_id}")
+
+        try:
+            if device_id not in self.active_recordings:
+                logger.warning(f"🎬 [DEBUG] ⚠️ Camera {device_id} is not recording")
+                return None
+
+            recording_info = self.active_recordings[device_id]
+            logger.info(f"🎬 [DEBUG] Found active recording for {device_id}")
+
+            # Finalize recording
+            video_writer = recording_info["video_writer"]
+            logger.info(f"🎬 [DEBUG] Releasing video writer for {device_id}")
+            video_writer.release()
+
+            # Calculate final stats
+            stopped_at = datetime.datetime.now()
+            duration = stopped_at - recording_info["started_at"]
+            logger.info(
+                f"🎬 [DEBUG] Recording duration: {duration.total_seconds():.1f}s"
+            )
+
+            # Get file size
+            file_size = os.path.getsize(recording_info["file_path"])
+            logger.info(f"🎬 [DEBUG] Recording file size: {file_size} bytes")
+
+            # Clean up recording info
+            del self.active_recordings[device_id]
+            logger.info(f"🎬 [DEBUG] Removed {device_id} from active recordings")
+
+            # TODO: Upload to media service and assign to camera collection
+            logger.info(f"🎬 [DEBUG] Starting upload to collection for {device_id}")
+            collection_id = await self._upload_recording_to_collection(
+                recording_info, user_id
+            )
+            logger.info(f"🎬 [DEBUG] Upload completed, collection_id: {collection_id}")
+
+            logger.info(
+                "Stopped recording for camera %s - "
+                "Duration: %.1fs, Frames: %s, Size: %s bytes",
+                device_id,
+                duration.total_seconds(),
+                recording_info["frame_count"],
+                file_size,
+            )
+
+            result = {
+                "recording_id": recording_info["recording_id"],
+                "duration_seconds": int(duration.total_seconds()),
+                "frame_count": recording_info["frame_count"],
+                "file_path": recording_info["file_path"],
+                "file_size_bytes": file_size,
+                "collection_id": collection_id,
+                "stopped_at": stopped_at.isoformat(),
+            }
+            logger.info(
+                f"🎬 [DEBUG] ✅ Stop recording complete for {device_id}: {result}"
+            )
+            return result
+
+        except Exception as e:
+            logger.error(f"🎬 [DEBUG] ❌ Error stopping recording for {device_id}: {e}")
+            return None
+
+    def get_active_recording(self, device_id: str) -> Optional[Dict]:
+        """Get active recording info for a camera."""
+        return self.active_recordings.get(device_id)
+
+    def get_recording_status(self, device_id: str) -> Dict:
+        """Get recording status for a camera."""
+
+        recording_info = self.active_recordings.get(device_id)
+
+        if not recording_info:
+            return {
+                "is_recording": False,
+                "recording_id": None,
+                "started_at": None,
+                "duration_seconds": 0,
+                "file_size_bytes": 0,
+            }
+
+        # Calculate current duration
+        current_time = datetime.datetime.now()
+        duration = current_time - recording_info["started_at"]
+
+        # Estimate file size (rough approximation)
+        # ~50KB per frame estimate
+        estimated_size = recording_info["frame_count"] * 50000
+
+        return {
+            "is_recording": True,
+            "recording_id": recording_info["recording_id"],
+            "started_at": recording_info["started_at"].isoformat(),
+            "duration_seconds": int(duration.total_seconds()),
+            "file_size_bytes": estimated_size,
+            "frame_count": recording_info["frame_count"],
+        }
+
+    async def _frame_recording_loop(self, device_id: str):
+        """Record frames as continuous video stream for USB/RTSP cameras."""
+        logger.info(f"🎬 [DEBUG] Starting frame recording loop for {device_id}")
+
+        try:
+            recording_info = self.active_recordings.get(device_id)
+            if not recording_info:
+                logger.error(f"🎬 [DEBUG] ❌ No recording info found for {device_id}")
+                return
+
+            video_writer = recording_info["video_writer"]
+            target_fps = recording_info["fps"]
+            cap = self.active_connections[device_id]
+            frame_interval = 1.0 / target_fps  # Target time between frames
+            max_consecutive_failures = 10
+            failure_count = 0
+
+            logger.info(f"🎬 [DEBUG] Recording loop initialized for {device_id}")
+            logger.info(
+                f"🎬 [DEBUG] Target FPS: {target_fps}, Frame interval: {frame_interval:.3f}s"
+            )
+
+            logger.info(
+                "Starting continuous video recording for camera %s at %d fps",
+                device_id,
+                target_fps,
+            )
+
+            frame_write_count = 0
+            while device_id in self.active_recordings:
+                try:
+                    # Read frame directly from camera with timeout protection
+                    ret, frame = cap.read()
+
+                    if not ret or frame is None:
+                        failure_count += 1
+                        logger.warning(
+                            f"🎬 [DEBUG] ⚠️ Failed to read frame {failure_count} for {device_id}"
+                        )
+
+                        # Break if too many consecutive failures
+                        if failure_count >= max_consecutive_failures:
+                            logger.error(
+                                f"🎬 [DEBUG] ❌ Too many frame read failures ({failure_count}), stopping recording for {device_id}"
+                            )
+                            break
+
+                        # Don't sleep too long on frame read failures
+                        await asyncio.sleep(0.1)
+                        continue
+
+                    # Reset failure count on successful read
+                    failure_count = 0
+                    frame_write_count += 1
+
+                    # Write frame immediately for continuous stream
+                    video_writer.write(frame)
+                    recording_info["frame_count"] += 1
+
+                    # Log progress every 30 frames (about 1 second at 30fps)
+                    if frame_write_count % 30 == 0:
+                        logger.info(
+                            f"🎬 [DEBUG] ✅ Wrote {frame_write_count} frames for {device_id}"
+                        )
+
+                    # Use async sleep for proper event loop handling
+                    await asyncio.sleep(frame_interval)
+
+                except Exception as frame_error:
+                    logger.warning(
+                        f"🎬 [DEBUG] ⚠️ Frame processing error for {device_id}: {frame_error}"
+                    )
+                    await asyncio.sleep(0.1)
+
+            logger.info(
+                f"🎬 [DEBUG] ✅ Recording loop ended for {device_id}, total frames: {recording_info['frame_count']}"
+            )
+            logger.info(
+                "Continuous video recording ended for camera %s, wrote %d frames",
+                device_id,
+                recording_info["frame_count"],
+            )
+
+        except Exception as e:
+            logger.error(
+                f"🎬 [DEBUG] ❌ CRITICAL: Error in video recording loop for {device_id}: {e}"
+            )
+        finally:
+            # Always clean up on exit
+            if device_id in self.active_recordings:
+                recording_info = self.active_recordings[device_id]
+                try:
+                    recording_info["video_writer"].release()
+                except Exception:
+                    pass
+                del self.active_recordings[device_id]
+
+    async def _mobile_recording_loop(self, device_id: str):
+        """Record frames from mobile camera stream data."""
+
+        try:
+            recording_info = self.active_recordings.get(device_id)
+            if not recording_info:
+                return
+
+            video_writer = recording_info["video_writer"]
+            target_fps = recording_info["fps"]
+            target_size = recording_info["target_size"]
+
+            logger.info("Starting mobile recording loop for camera %s", device_id)
+
+            # Import mobile streaming service
+            from src.services.mobile_streaming import mobile_streaming_service
+
+            while device_id in self.active_recordings:
+                # Get frame data from mobile streaming service
+                frame_data = (
+                    await mobile_streaming_service.get_latest_mobile_frame_data(
+                        device_id
+                    )
+                )
+
+                if frame_data is None:
+                    logger.debug(f"No mobile frame available for recording {device_id}")
+                    await asyncio.sleep(0.1)
+                    continue
+
+                frame = frame_data["frame"]
+                rotation_angle = frame_data.get("rotation_angle", 0)
+
+                # Apply rotation if needed
+                if rotation_angle != 0:
+                    if rotation_angle == 90:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                    elif rotation_angle == 180:
+                        frame = cv2.rotate(frame, cv2.ROTATE_180)
+                    elif rotation_angle == 270:
+                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+                # Resize frame to target recording size
+                if frame.shape[1] != target_size[0] or frame.shape[0] != target_size[1]:
+                    frame = cv2.resize(frame, target_size)
+
+                # Write frame to video file
+                video_writer.write(frame)
+                recording_info["frame_count"] += 1
+
+                # Control frame rate
+                await asyncio.sleep(1.0 / target_fps)
+
+            logger.info("Mobile recording loop ended for camera %s", device_id)
+
+        except Exception as e:
+            logger.error(
+                "Error in mobile recording loop for camera %s: %s", device_id, e
+            )
+            # Clean up on error
+            if device_id in self.active_recordings:
+                recording_info = self.active_recordings[device_id]
+                recording_info["video_writer"].release()
+                del self.active_recordings[device_id]
+
+    async def _upload_recording_to_collection(
+        self, recording_info: Dict, user_id: str
+    ) -> Optional[str]:
+        """Upload recorded video to media service and assign to collection."""
+        logger.info(f"🎬 [DEBUG] Starting upload process for recording")
+        from pathlib import Path
+
+        import aiofiles
+        import aiohttp
+
+        try:
+            file_path = recording_info["file_path"]
+            device_id = recording_info["device_id"]
+            logger.info(f"🎬 [DEBUG] Upload file: {file_path}, device: {device_id}")
+
+            logger.info(
+                "Uploading recording %s to collection for camera %s " "(user: %s)",
+                file_path,
+                device_id,
+                user_id,
+            )
+
+            # Get media service URL
+            MEDIA_SERVICE_URL = "http://localhost:8000"
+            logger.info(f"🎬 [DEBUG] Media service URL: {MEDIA_SERVICE_URL}")
+
+            # Get file info
+            path_obj = Path(file_path)
+            if not path_obj.exists():
+                logger.error(f"🎬 [DEBUG] ❌ Recording file not found: {file_path}")
+                return None
+
+            file_size = path_obj.stat().st_size
+            logger.info(f"🎬 [DEBUG] File exists, size: {file_size} bytes")
+
+            duration = recording_info.get("duration", 0)
+            frame_count = recording_info.get("frame_count", 0)
+            fps = recording_info.get("fps", 30)
+            logger.info(
+                f"🎬 [DEBUG] Video metadata - Duration: {duration}s, Frames: {frame_count}, FPS: {fps}"
+            )
+
+            # Read file content
+            logger.info(f"🎬 [DEBUG] Reading file content...")
+            async with aiofiles.open(file_path, "rb") as file:
+                file_content = await file.read()
+            logger.info(f"🎬 [DEBUG] ✅ File content read: {len(file_content)} bytes")
+
+            # Upload to media service
+            async with aiohttp.ClientSession() as session:
+                # Set JWT token for authentication
+                headers = {}
+                auth_token = recording_info.get("auth_token")
+                if auth_token:
+                    headers["Authorization"] = f"Bearer {auth_token}"
+                    logger.info(f"🎬 [DEBUG] ✅ Using auth token for media upload")
+                else:
+                    logger.warning(
+                        f"🎬 [DEBUG] ⚠️ No auth token available for media upload"
+                    )
+
+                # Get user GUID from user profile since media service needs UUID format
+                user_guid = None
+                if auth_token:
+                    logger.info(f"🎬 [DEBUG] Getting user profile for GUID...")
+                    try:
+                        async with session.get(
+                            "http://localhost:8001/api/v1/users/profile",
+                            headers={"Authorization": f"Bearer {auth_token}"},
+                        ) as profile_response:
+                            if profile_response.status == 200:
+                                profile_data = await profile_response.json()
+                                user_guid = profile_data.get("guid")
+                                logger.info(
+                                    f"🎬 [DEBUG] ✅ Retrieved user GUID: {user_guid}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"🎬 [DEBUG] ⚠️ Failed to get user profile for GUID: {profile_response.status}"
+                                )
+                    except Exception as profile_error:
+                        logger.warning(
+                            f"🎬 [DEBUG] ⚠️ Error getting user profile: {profile_error}"
+                        )
+
+                # Use GUID if available, otherwise fall back to original user_id
+                final_user_id = user_guid if user_guid else user_id
+                logger.info(f"🎬 [DEBUG] Final user ID for upload: {final_user_id}")
+
+                logger.info(f"🎬 [DEBUG] Preparing upload form data...")
+                data = aiohttp.FormData()
+                data.add_field(
+                    "file",
+                    file_content,
+                    filename=f"camera_{device_id}_{path_obj.name}",
+                    content_type="video/mp4",
+                )
+                # Required fields
+                data.add_field("media_type", "video")
+                data.add_field("user_id", final_user_id)
+
+                # Optional fields
+                title = f"Camera Recording - {device_id}"
+                description = f"Camera recording from {device_id} ({duration:.1f}s, {frame_count} frames, {fps} fps)"
+                data.add_field("title", title)
+                data.add_field("description", description)
+                data.add_field("tags", f'["camera","recording","{device_id}"]')
+                data.add_field("is_public", "false")
+
+                logger.info(f"🎬 [DEBUG] Upload form prepared - Title: {title}")
+                logger.info(f"🎬 [DEBUG] Description: {description}")
+
+                try:
+                    logger.info(f"🎬 [DEBUG] 🚀 Starting HTTP POST to media service...")
+                    async with session.post(
+                        f"{MEDIA_SERVICE_URL}/api/v1/media/upload",
+                        data=data,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=60),
+                    ) as response:
+                        logger.info(
+                            f"🎬 [DEBUG] Upload response status: {response.status}"
+                        )
+
+                        if response.status == 200:
+                            result = await response.json()
+                            media_id = result.get("id")
+                            media_uuid = result.get("uuid")
+                            logger.info(
+                                f"🎬 [DEBUG] ✅ Successfully uploaded! "
+                                f"Media ID: {media_id}, UUID: {media_uuid}"
+                            )
+                            logger.info(
+                                "Successfully uploaded recording %s " "as media %s",
+                                file_path,
+                                media_id,
+                            )
+
+                            # Find or create camera collection and assign video
+                            logger.info(
+                                f"🎬 [DEBUG] Finding/creating camera collection..."
+                            )
+                            collection_id = (
+                                await self._find_or_create_camera_collection(
+                                    device_id, final_user_id, session, headers
+                                )
+                            )
+                            logger.info(
+                                f"🎬 [DEBUG] Collection found/created: {collection_id}"
+                            )
+
+                            if collection_id:
+                                # Assign uploaded video to camera collection
+                                logger.info(
+                                    f"🎬 [DEBUG] Assigning media to collection..."
+                                )
+                                await self._assign_media_to_collection(
+                                    media_uuid,  # Use UUID instead of integer ID
+                                    collection_id,
+                                    final_user_id,
+                                    session,
+                                    headers,
+                                )
+                                logger.info(
+                                    f"🎬 [DEBUG] ✅ Media assigned to collection"
+                                )
+                                logger.info(
+                                    "Assigned media %s to camera collection %s",
+                                    media_id,
+                                    collection_id,
+                                )
+                            else:
+                                logger.warning(
+                                    f"🎬 [DEBUG] ⚠️ Could not find or create collection for camera {device_id}"
+                                )
+
+                            # Clean up local file after successful upload
+                            try:
+                                logger.info(f"🎬 [DEBUG] Cleaning up local file...")
+                                path_obj.unlink()
+                                logger.info(
+                                    f"🎬 [DEBUG] ✅ Local file cleaned up: {file_path}"
+                                )
+                            except Exception as cleanup_error:
+                                logger.warning(
+                                    f"🎬 [DEBUG] ⚠️ Failed to clean up file {file_path}: {cleanup_error}"
+                                )
+
+                            return collection_id
+                        else:
+                            error_text = await response.text()
+                            logger.error(
+                                f"🎬 [DEBUG] ❌ Upload failed: {response.status} - {error_text}"
+                            )
+                            logger.error(
+                                "Failed to upload recording %s: %s %s",
+                                file_path,
+                                response.status,
+                                error_text,
+                            )
+                            return None
+
+                except aiohttp.ClientError as http_error:
+                    logger.error(
+                        "HTTP error uploading recording %s: %s", file_path, http_error
+                    )
+                    return None
+
+        except Exception as e:
+            logger.error(
+                "Error uploading recording %s to collection: %s",
+                recording_info.get("file_path", "unknown"),
+                e,
+            )
+            return None
+
+    async def _find_or_create_camera_collection(
+        self, device_id: str, user_id: str, session, headers: Dict
+    ) -> Optional[str]:
+        """Find existing or create camera collection using database lookup."""
+        import aiohttp
+
+        try:
+            logger.info(
+                f"🔍 [COLLECTION] Looking for existing collection for camera {device_id}"
+            )
+
+            # First, try to find existing collection by camera device ID
+            async with session.get(
+                f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
+                headers=headers,
+            ) as response:
+                if response.status == 200:
+                    collection_data = await response.json()
+                    if collection_data:  # Collection found
+                        collection_uuid = collection_data.get("uuid")
+                        collection_name = collection_data.get("name")
+                        logger.info(
+                            f"🔍 [COLLECTION] ✅ Found existing collection "
+                            f"'{collection_name}' (UUID: {collection_uuid}) "
+                            f"for camera {device_id}"
+                        )
+                        return collection_uuid
+
+            # No existing collection found, create new one
+            collection_name = f"{device_id} Collection"
+
+            logger.info(
+                f"🔍 [COLLECTION] Creating new collection '{collection_name}' "
+                f"for camera {device_id}"
+            )
+
+            data = aiohttp.FormData()
+            data.add_field("name", collection_name)
+            data.add_field("description", f"Media collection for camera {device_id}")
+            data.add_field("user_id", user_id)
+            data.add_field("is_public", "false")
+            data.add_field("camera_device_id", device_id)  # Link to camera
+            data.add_field("description", f"Collection for camera: {device_id}")
+            data.add_field("user_id", user_id)
+            data.add_field("is_public", "false")
+
+            async with session.post(
+                "http://localhost:8000/api/v1/media/collections/",
+                data=data,
+                headers=headers,
+            ) as response:
+                if response.status in [200, 201]:
+                    result = await response.json()
+                    collection_id = result.get("id")
+                    collection_uuid = result.get("uuid")
+                    logger.info(
+                        "Created new collection %s (UUID: %s) for camera %s",
+                        collection_id,
+                        collection_uuid,
+                        device_id,
+                    )
+                    return collection_uuid
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        "Failed to create collection for camera %s: %s %s",
+                        device_id,
+                        response.status,
+                        error_text,
+                    )
+                    return None
+
+        except Exception as e:
+            logger.error(
+                "Error finding/creating collection for camera %s: %s",
+                device_id,
+                e,
+            )
+            return None
+
+    async def _assign_media_to_collection(
+        self, media_id: str, collection_id: str, user_id: str, session, headers: Dict
+    ) -> bool:
+        """Assign media item to a collection."""
+        try:
+            endpoint = f"http://localhost:8000/api/v1/media/collections/{collection_id}/add/{media_id}"
+            async with session.post(
+                endpoint, headers=headers, params={"user_id": user_id}
+            ) as response:
+                if response.status == 200:
+                    logger.info(
+                        "Successfully assigned media %s to collection %s",
+                        media_id,
+                        collection_id,
+                    )
+                    return True
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        "Failed to assign media %s to collection %s: %s %s",
+                        media_id,
+                        collection_id,
+                        response.status,
+                        error_text,
+                    )
+                    return False
+
+        except Exception as e:
+            logger.error(
+                "Error assigning media %s to collection %s: %s",
+                media_id,
+                collection_id,
+                e,
+            )
+            return False
 
 
 # Global camera detection service instance

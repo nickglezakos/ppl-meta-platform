@@ -213,6 +213,7 @@ class MediaResponse(MediaBase):
     updated_at: Optional[datetime] = None
     thumbnail_url: Optional[str] = None
     url: Optional[str] = None
+    collections: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -267,6 +268,7 @@ class MediaCollectionBase(BaseModel):
     is_public: bool = Field(default=False)
     tags: Optional[List[str]] = Field(default_factory=list)
     settings: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    camera_device_id: Optional[str] = Field(None, max_length=255)
 
 
 class MediaCollectionCreateRequest(MediaCollectionBase):
@@ -286,6 +288,7 @@ class MediaCollectionUpdateRequest(BaseModel):
     tags: Optional[List[str]] = None
     settings: Optional[Dict[str, Any]] = None
     cover_media_id: Optional[int] = None
+    camera_device_id: Optional[str] = Field(None, max_length=255)
 
 
 class MediaCollectionResponse(MediaCollectionBase):

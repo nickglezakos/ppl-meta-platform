@@ -318,6 +318,28 @@ class MediaService:
 
         return query.first()
 
+    async def get_media_collections(self, media_id: int) -> List:
+        """Get all collections that contain the specified media item."""
+        from ..models.media import MediaCollection, MediaCollectionItem
+
+        print(f"🔍 DEBUG get_media_collections: media_id {media_id}")
+
+        query = (
+            self.db.query(MediaCollection)
+            .join(
+                MediaCollectionItem,
+                MediaCollection.id == MediaCollectionItem.collection_id,
+            )
+            .filter(MediaCollectionItem.media_id == media_id)
+        )
+
+        collections = query.all()
+        print(f"🔍 DEBUG: Found {len(collections)} collections")
+        for collection in collections:
+            print(f"  - Collection: {collection.id} ({collection.name})")
+
+        return collections
+
     def get_share_by_token(self, share_token: str) -> Optional[MediaShare]:
         """Get share record by token."""
         return (
@@ -525,7 +547,12 @@ class MediaService:
 
     # Collection methods
     async def create_collection(
-        self, name: str, description: str, user_id: UUID, is_public: bool = False
+        self,
+        name: str,
+        description: str,
+        user_id: UUID,
+        is_public: bool = False,
+        camera_device_id: Optional[str] = None,
     ) -> MediaCollection:
         """Create a new media collection."""
 
@@ -534,13 +561,54 @@ class MediaService:
             description=description,
             created_by=user_id,
             is_public=is_public,
+            camera_device_id=camera_device_id,
         )
 
         self.db.add(collection)
         self.db.commit()
         self.db.refresh(collection)
 
+        # Automatically initialize storage configuration with user preferences
+        await self._initialize_collection_storage(collection.id, user_id)
+
         return collection
+
+    async def _initialize_collection_storage(self, collection_id: int, user_id: UUID):
+        """Initialize storage configuration for a new collection using user preferences."""
+        try:
+            from .collection_storage_service import CollectionStorageConfigService
+            from .user_storage_preferences_service import UserStoragePreferencesService
+
+            # Get user storage preferences
+            preferences_service = UserStoragePreferencesService(self.db)
+            user_preferences = await preferences_service.get_user_preferences(user_id)
+
+            # Prepare configuration data from user preferences
+            config_data = {
+                "total_size_gb": user_preferences.default_collection_size_gb,
+                "live_portion_percentage": user_preferences.default_live_portion_percentage,
+                "archive_portion_percentage": 100.0
+                - user_preferences.default_live_portion_percentage,
+                "auto_archive_enabled": user_preferences.default_auto_archive_enabled,
+                "min_age_for_archive_days": user_preferences.default_min_age_for_archive_days,
+                "warning_threshold_percentage": user_preferences.notification_threshold_percentage,
+                "auto_delete_enabled": user_preferences.auto_delete_old_archives_enabled,
+                "auto_delete_after_days": user_preferences.auto_delete_after_days,
+            }
+
+            # Initialize collection storage with user's default preferences
+            storage_service = CollectionStorageConfigService(self.db)
+            await storage_service.initialize_collection_storage(
+                collection_id=collection_id, user_id=user_id, config_data=config_data
+            )
+
+            print(
+                f"✅ Storage initialized for collection {collection_id} with {user_preferences.default_collection_size_gb}GB default size"
+            )
+
+        except Exception as e:
+            print(f"⚠️ Failed to initialize storage for collection {collection_id}: {e}")
+            # Don't fail collection creation if storage initialization fails
 
     async def add_media_to_collection(
         self, collection_id: str, media_id: str, user_id: UUID
@@ -628,6 +696,22 @@ class MediaService:
         if collection.created_by != user_id and not collection.is_public:
             return None
 
+        return collection
+
+    async def get_collection_by_camera_device_id(
+        self, camera_device_id: str, user_id: UUID
+    ) -> Optional[MediaCollection]:
+        """Get a collection associated with a specific camera device ID."""
+        collection = (
+            self.db.query(MediaCollection)
+            .filter(
+                and_(
+                    MediaCollection.camera_device_id == camera_device_id,
+                    MediaCollection.created_by == user_id,
+                )
+            )
+            .first()
+        )
         return collection
 
     async def get_collection_items(

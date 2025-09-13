@@ -12,6 +12,7 @@ class Camera {
   final String? streamUrl;
   final CameraType type;
   final Map<String, dynamic>? metadata;
+  final bool supportsRecording;
 
   const Camera({
     required this.id,
@@ -26,6 +27,7 @@ class Camera {
     this.streamUrl,
     this.type = CameraType.usb,
     this.metadata,
+    this.supportsRecording = false,
   });
 
   factory Camera.fromJson(Map<String, dynamic> json) {
@@ -71,6 +73,7 @@ class Camera {
       streamUrl: json['stream_url']?.toString(),
       type: cameraType,
       metadata: metadata,
+      supportsRecording: json['supports_recording'] as bool? ?? false,
     );
   }
 
@@ -88,6 +91,7 @@ class Camera {
       'stream_url': streamUrl,
       'type': type.name,
       'metadata': metadata,
+      'supports_recording': supportsRecording,
     };
   }
 

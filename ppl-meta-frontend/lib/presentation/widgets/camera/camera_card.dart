@@ -126,8 +126,10 @@ class CameraCard extends ConsumerWidget {
                   
                   const Spacer(),
                   
-                  // Stream button
-                  if (camera.isConnected)
+                  // Recording and stream controls
+                  if (camera.isConnected) ...[
+                    _RecordingControls(cameraId: camera.deviceId),
+                    const SizedBox(width: 8),
                     IconButton(
                       onPressed: onTap,
                       icon: const Icon(Icons.play_circle_outline),
@@ -136,6 +138,7 @@ class CameraCard extends ConsumerWidget {
                       constraints: const BoxConstraints(),
                       tooltip: 'View stream',
                     ),
+                  ],
                 ],
               ),
             ],
@@ -233,6 +236,118 @@ class _CollectionStatusIndicator extends ConsumerWidget {
         color: Colors.red,
         size: 16,
       ),
+    );
+  }
+}
+
+/// Recording controls widget for camera cards
+class _RecordingControls extends ConsumerWidget {
+  final String cameraId;
+
+  const _RecordingControls({required this.cameraId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final recordingState = ref.watch(cameraRecordingProvider(cameraId));
+    final recordingNotifier = ref.read(cameraRecordingProvider(cameraId).notifier);
+
+    // Recording indicator dot
+    if (recordingState.isRecording) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Recording indicator with pulsing animation
+          _PulsingRecordingDot(),
+          const SizedBox(width: 4),
+          // Stop recording button
+          IconButton(
+            onPressed: recordingState.isLoading 
+                ? null 
+                : () => recordingNotifier.stopRecording(),
+            icon: recordingState.isLoading
+                ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 1.5),
+                  )
+                : const Icon(Icons.stop_circle, color: Colors.red),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            tooltip: recordingState.isLoading ? 'Stopping...' : 'Stop recording',
+          ),
+        ],
+      );
+    } else {
+      // Start recording button
+      return IconButton(
+        onPressed: recordingState.isLoading 
+            ? null 
+            : () => recordingNotifier.startRecording(),
+        icon: recordingState.isLoading
+            ? const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              )
+            : const Icon(Icons.fiber_manual_record, color: Colors.red),
+        iconSize: 20,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        tooltip: recordingState.isLoading ? 'Starting...' : 'Start recording',
+      );
+    }
+  }
+}
+
+/// Pulsing red dot to indicate active recording
+class _PulsingRecordingDot extends StatefulWidget {
+  @override
+  _PulsingRecordingDotState createState() => _PulsingRecordingDotState();
+}
+
+class _PulsingRecordingDotState extends State<_PulsingRecordingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+    _animation = Tween<double>(
+      begin: 0.3,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+    _animationController.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(_animation.value),
+            shape: BoxShape.circle,
+          ),
+        );
+      },
     );
   }
 }

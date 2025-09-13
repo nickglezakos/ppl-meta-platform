@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/settings/network_settings_section.dart';
+import '../../widgets/settings/storage_settings_section.dart';
 import '../../../widgets/custom_app_bar.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -21,6 +22,11 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             // Network Settings Section
             NetworkSettingsSection(),
+            
+            SizedBox(height: 24),
+            
+            // Storage Settings Section
+            StorageSettingsSection(),
             
             // Additional sections can be added here in the future
             // e.g., UserSettingsSection(), AppearanceSettingsSection(), etc.
