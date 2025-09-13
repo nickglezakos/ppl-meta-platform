@@ -477,15 +477,30 @@ class StorageNotificationWidget extends StatelessWidget {
 - [x] **Database migration completed** - Successfully applied Alembic migration to add `camera_device_id` column
 - [x] **Camera service refactored** - Updated `_find_or_create_camera_collection()` to use database queries instead of naming patterns
 - [x] **Data backfill completed** - Populated 9 existing collections with appropriate `camera_device_id` values
+- [x] **Video codec compatibility fixed (USB cameras)** - Changed from MP4V/MPEG4 to H.264 codec for web player compatibility
 - [ ] Create storage configuration data models for collection size limits
 - [ ] Implement user storage preferences for default collection sizes
 - [ ] Add storage settings page to frontend
 - [ ] Create default collection size assignment
 
-**⚠️ KNOWN ISSUE: Video Playback**
-- Videos in collections are currently **not playable** in the frontend
-- Collection assignment and storage work correctly, but video streaming/playback functionality needs implementation
-- Videos are stored in the database but lack proper streaming endpoints or media URL generation
+**✅ VIDEO CODEC COMPATIBILITY BREAKTHROUGH**
+- **Discovery**: Video playback issues were caused by codec incompatibility, not streaming infrastructure
+- **Root Cause**: `cv2.VideoWriter_fourcc(*"mp4v")` produces MP4V/MPEG4 codec with poor Flutter video player support
+- **Solution**: `cv2.VideoWriter_fourcc(*"H264")` produces H.264/AVC codec with excellent web compatibility
+- **Verification**: New H.264 recordings stream and play perfectly in collections frontend
+- **Action Required**: Apply same codec update to RTSP and mobile camera recording functions
+
+**✅ RESOLVED: Video Playback Issue (USB Cameras)**
+- **Root Cause**: Camera recordings were using MP4V/MPEG4 codec which has poor Flutter video player support
+- **Solution**: Changed codec from `cv2.VideoWriter_fourcc(*"mp4v")` to `cv2.VideoWriter_fourcc(*"H264")` in camera_detection.py
+- **Status**: USB camera recordings now play correctly in collections frontend
+- **Streaming Infrastructure**: All streaming endpoints work properly - issue was codec compatibility, not infrastructure
+
+**⚠️ PENDING: Codec Update for Other Camera Types**
+- **RTSP Cameras**: Need to verify/update codec for RTSP camera recordings 
+- **Mobile Cameras**: Need to verify/update codec for mobile camera frame-to-video conversion
+- **Testing Required**: Record and test videos from RTSP and mobile cameras to ensure H.264 compatibility
+- **Implementation**: Apply same codec changes to mobile camera recording in camera_detection.py
 
 **Phase 2: Live/Archive Management**
 - [ ] Implement automatic archival service

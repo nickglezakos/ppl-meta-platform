@@ -676,10 +676,10 @@ class CameraDetectionService:
         file_path = os.path.join(recordings_dir, filename)
         logger.info(f"🎬 [DEBUG] Recording file path: {file_path}")
 
-        # Initialize video writer with better codec for compatibility
-        # Use mp4v codec for better compatibility and avoid hanging
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        logger.info(f"🎬 [DEBUG] Using fourcc codec: mp4v")
+        # Initialize video writer with H.264 codec for web compatibility
+        # Use H.264 codec for better web player support (Flutter video_player)
+        fourcc = cv2.VideoWriter_fourcc(*"H264")
+        logger.info(f"🎬 [DEBUG] Using fourcc codec: H264")
         video_writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
 
         if not video_writer.isOpened():
@@ -755,8 +755,8 @@ class CameraDetectionService:
         os.makedirs(recordings_dir, exist_ok=True)
         file_path = os.path.join(recordings_dir, filename)
 
-        # Initialize video writer
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        # Initialize video writer with H.264 codec for web compatibility
+        fourcc = cv2.VideoWriter_fourcc(*"H264")
         video_writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
 
         if not video_writer.isOpened():
