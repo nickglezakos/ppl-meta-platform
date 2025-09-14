@@ -614,11 +614,6 @@ class CameraDetectionService:
         """Start recording video from camera using existing stream frames."""
 
         try:
-            # Check if camera is connected
-            if device_id not in self.active_connections:
-                logger.error(f"Camera {device_id} not connected for recording")
-                return None
-
             # Check if already recording
             if device_id in self.active_recordings:
                 logger.warning(f"Camera {device_id} is already recording")
@@ -634,10 +629,24 @@ class CameraDetectionService:
                 db.close()
 
             if is_mobile:
+                # For mobile cameras, check if we're receiving frames instead of active connections
+                from src.services.mobile_streaming import mobile_streaming_service
+
+                if not mobile_streaming_service.has_active_mobile_camera(device_id):
+                    logger.error(
+                        f"Mobile camera {device_id} not streaming for recording"
+                    )
+                    return None
+
                 return await self._start_mobile_recording(
                     device_id, user_id, quality, auth_token
                 )
             else:
+                # For USB/RTSP cameras, check active connections
+                if device_id not in self.active_connections:
+                    logger.error(f"Camera {device_id} not connected for recording")
+                    return None
+
                 return await self._start_regular_recording(
                     device_id, user_id, quality, auth_token
                 )
@@ -1000,17 +1009,26 @@ class CameraDetectionService:
         try:
             recording_info = self.active_recordings.get(device_id)
             if not recording_info:
+                logger.error(
+                    f"🎬 [MOBILE_RECORDING] No recording info found for {device_id}"
+                )
                 return
 
             video_writer = recording_info["video_writer"]
             target_fps = recording_info["fps"]
             target_size = recording_info["target_size"]
 
-            logger.info("Starting mobile recording loop for camera %s", device_id)
+            logger.info(
+                f"🎬 [MOBILE_RECORDING] Starting mobile recording loop for camera {device_id}"
+            )
+            logger.info(
+                f"🎬 [MOBILE_RECORDING] Target FPS: {target_fps}, Target size: {target_size}"
+            )
 
             # Import mobile streaming service
             from src.services.mobile_streaming import mobile_streaming_service
 
+            frame_count = 0
             while device_id in self.active_recordings:
                 # Get frame data from mobile streaming service
                 frame_data = (
@@ -1020,12 +1038,22 @@ class CameraDetectionService:
                 )
 
                 if frame_data is None:
-                    logger.debug(f"No mobile frame available for recording {device_id}")
+                    logger.debug(
+                        f"🎬 [MOBILE_RECORDING] No mobile frame available for recording {device_id}"
+                    )
                     await asyncio.sleep(0.1)
                     continue
 
+                logger.debug(
+                    f"🎬 [MOBILE_RECORDING] Got frame data for {device_id}: {type(frame_data)}"
+                )
+
                 frame = frame_data["frame"]
                 rotation_angle = frame_data.get("rotation_angle", 0)
+
+                logger.debug(
+                    f"🎬 [MOBILE_RECORDING] Frame shape: {frame.shape}, rotation: {rotation_angle}"
+                )
 
                 # Apply rotation if needed
                 if rotation_angle != 0:
@@ -1043,11 +1071,19 @@ class CameraDetectionService:
                 # Write frame to video file
                 video_writer.write(frame)
                 recording_info["frame_count"] += 1
+                frame_count += 1
+
+                if frame_count % 30 == 0:  # Log every 30 frames
+                    logger.info(
+                        f"🎬 [MOBILE_RECORDING] Recorded {frame_count} frames for {device_id}"
+                    )
 
                 # Control frame rate
                 await asyncio.sleep(1.0 / target_fps)
 
-            logger.info("Mobile recording loop ended for camera %s", device_id)
+            logger.info(
+                f"🎬 [MOBILE_RECORDING] Mobile recording loop ended for camera {device_id} with {frame_count} frames"
+            )
 
         except Exception as e:
             logger.error(

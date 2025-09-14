@@ -467,7 +467,7 @@ async def add_rtsp_camera(
             resolution_height=1080,
             max_fps=30,
             supports_streaming=True,
-            supports_recording=False,
+            supports_recording=True,  # Enable RTSP camera recording
             supports_audio=False,
             supports_ptz=False,
         )
@@ -715,7 +715,7 @@ async def register_mobile_camera(
             model=mobile_data.device_model,
             firmware_version=mobile_data.app_version,
             supports_streaming=True,
-            supports_recording=False,
+            supports_recording=True,  # Enable mobile camera recording
             supports_audio=mobile_data.supports_audio,
             supports_ptz=False,
         )

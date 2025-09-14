@@ -382,7 +382,12 @@ class CameraCard extends ConsumerWidget {
           return true;
         }
         
-        // For now, be conservative and only enable for USB cameras
+        // Mobile cameras support recording (H.264 codec)
+        if (camera.type == CameraType.mobile || camera.isMobileCamera) {
+          return true;
+        }
+        
+        // For now, be conservative and only enable for USB and mobile cameras
         return false;
       }
 

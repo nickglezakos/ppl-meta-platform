@@ -388,6 +388,10 @@ class MobileCameraStreamingService:
 
         logger.info("Mobile camera streaming service shutdown complete")
 
+    def has_active_mobile_camera(self, device_id: str) -> bool:
+        """Check if a mobile camera is actively streaming."""
+        return device_id in self.active_mobile_streams
+
 
 # Global instance
 mobile_streaming_service = MobileCameraStreamingService()
