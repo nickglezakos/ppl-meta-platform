@@ -387,7 +387,12 @@ class CameraCard extends ConsumerWidget {
           return true;
         }
         
-        // For now, be conservative and only enable for USB and mobile cameras
+        // RTSP cameras support recording (same as USB cameras, direct stream recording)
+        if (camera.type == CameraType.rtsp) {
+          return true;
+        }
+        
+        // For now, be conservative and only enable for USB, mobile, and RTSP cameras
         return false;
       }
 

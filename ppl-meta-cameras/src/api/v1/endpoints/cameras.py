@@ -600,6 +600,7 @@ async def update_rtsp_camera(
         camera.connection_string = rtsp_url
         camera.username = camera_update.username
         camera.password = camera_update.password
+        camera.supports_recording = True  # Enable RTSP camera recording
         camera.last_seen = datetime.utcnow()
 
         # Commit changes

@@ -484,6 +484,7 @@ class CameraService {
         lastSeen: cameraData['last_seen'] != null 
             ? DateTime.parse(cameraData['last_seen']) 
             : DateTime.now(),
+        supportsRecording: cameraData['supports_recording'] ?? false,
         metadata: {
           'rtsp_url': cameraData['rtsp_url'],
           'supports_streaming': cameraData['supports_streaming'] ?? true,
@@ -540,6 +541,7 @@ class CameraService {
         lastSeen: cameraData['last_seen'] != null 
             ? DateTime.parse(cameraData['last_seen']) 
             : DateTime.now(),
+        supportsRecording: cameraData['supports_recording'] ?? false,
         metadata: {
           'rtsp_url': cameraData['rtsp_url'],
           'supports_streaming': cameraData['supports_streaming'] ?? true,
