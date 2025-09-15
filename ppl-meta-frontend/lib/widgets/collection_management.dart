@@ -149,7 +149,12 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
       return true;
     }
     
-    // Check by naming convention
+    // Check if collection has a camera_device_id (definitive indicator)
+    if (collection.cameraDeviceId != null && collection.cameraDeviceId!.isNotEmpty) {
+      return true;
+    }
+    
+    // Fallback: check by naming convention
     return collection.name.toLowerCase().contains('camera') ||
            RegExp(r'cam\d+|camera\s*\d+', caseSensitive: false).hasMatch(collection.name);
   }

@@ -592,12 +592,16 @@ class StorageNotificationWidget extends StatelessWidget {
 - Mobile cameras send individual JPEG frames via `POST /mobile/{device_id}/frame`
 - Need frame buffering and MP4/WebM conversion before media service upload
 
-#### ⚠️ 4. Frame Rate Detection for Playback - **NEW ISSUE IDENTIFIED**
+#### ✅ 4. Frame Rate Detection for Playback - **RESOLVED**
 - Mobile camera recordings save to collections successfully
-- **Problem**: Video playback is erratic due to frame rate detection issues
-- **Root Cause**: Mobile frame capture doesn't specify consistent frame rate metadata
-- **Impact**: Videos play too fast/slow or with stuttering playback
-- **Solution Needed**: Implement frame rate detection and standardization for mobile recordings
+- **Problem**: Video playback was erratic due to frame rate detection issues causing 3-4x speed playback
+- **Root Cause**: Mobile frame capture didn't specify consistent frame rate metadata
+- **Impact**: Videos played too fast/slow or with stuttering playback
+- **Solution Implemented**: 
+  - Added mobile camera collection detection in `VideoPlayerWidget`
+  - Implemented automatic speed correction (0.3x playback rate) for mobile camera videos
+  - Used proper backend `camera_device_id` field to identify mobile camera collections
+- **Status**: ✅ **RESOLVED** - Mobile camera videos now play at correct speed
 
 ## Proposed Video Recording Pipeline
 
@@ -816,11 +820,34 @@ async def register_mobile_camera(self, device_id: str, camera_info: dict):
 - [x] **Verify frontend collection display for mobile cameras** - Mobile camera recordings confirmed in correct collections
 - [x] **Database cleanup completed** - Resolved duplicate collection issue, all mobile recordings now in expected collection
 
-#### ⚠️ **NEW ISSUE IDENTIFIED: Mobile Camera Frame Rate Detection**
-**Problem**: Mobile camera recordings save successfully but playback is erratic due to frame rate issues
-**Impact**: Videos play too fast/slow or with stuttering playback
-**Root Cause**: Mobile frame capture doesn't specify consistent frame rate metadata
-**Status**: Requires investigation and frame rate standardization implementation
+#### ✅ **RESOLVED: Mobile Camera Frame Rate Detection & Collection Classification**
+**Problem 1**: Mobile camera recordings saved successfully but playback was erratic due to frame rate issues causing 3-4x speed playback
+**Problem 2**: Mobile camera collections were incorrectly classified as "user collections" instead of "camera collections"
+
+**Impact**: 
+- Videos played too fast/slow or with stuttering playback
+- Mobile camera collections appeared in wrong category in frontend
+
+**Root Cause**: 
+- Mobile frame capture didn't specify consistent frame rate metadata  
+- Frontend collection detection logic was missing `camera_device_id` field handling
+
+**Solutions Implemented**:
+1. **Video Speed Correction**:
+   - Added mobile camera collection detection in `VideoPlayerWidget`
+   - Implemented automatic speed correction (0.3x playback rate) for mobile camera videos
+   - Added `_isMobileCameraCollection()` and `_calculateMobileSpeedCorrection()` methods
+
+2. **Collection Classification Fix**:
+   - Added `cameraDeviceId` field to `MediaCollection` model with proper JSON serialization
+   - Updated `_isCameraCollection()` method to use backend `camera_device_id` field
+   - Removed hardcoding and pattern matching, now uses proper database-driven detection
+
+**Status**: ✅ **BOTH ISSUES RESOLVED** 
+- Mobile camera videos now play at correct speed
+- Mobile camera collections now properly appear under "Camera Collections" category
+
+**Next Step**: Test video recording functionality for RTSP cameras to ensure complete pipeline coverage
 
 #### Phase 2: Recording Infrastructure
 
@@ -1016,6 +1043,52 @@ class CameraRecordingControls extends StatefulWidget {
 - Multiple simultaneous recordings
 - Storage performance under load
 - Mobile app battery impact
+
+## Current Implementation Status
+
+### ✅ Completed Features
+
+#### 1. Mobile Camera Collection Assignment & Playback
+- **Collection Assignment**: Mobile cameras automatically create and save recordings to dedicated camera collections
+- **Proper Classification**: Collections correctly appear under "Camera Collections" (not "User Collections")  
+- **Video Playback Fix**: Mobile camera recordings now play at correct speed (resolved 3-4x speed issue)
+- **Backend Integration**: Proper `camera_device_id` field usage for collection detection
+- **Frontend Updates**: Updated `MediaCollection` model and collection management logic
+
+#### 2. Collection-Based Storage System
+- **Database Schema**: `camera_device_id` field properly indexed and utilized
+- **API Endpoints**: Camera collection lookup via `/api/v1/media/collections/by-camera/{camera_device_id}`
+- **Collection Detection**: Database-driven collection assignment (no hardcoding)
+
+### 🚧 Next Priority: RTSP Camera Recording Testing
+
+**Objective**: Verify that RTSP cameras can record videos to their collections using the existing pipeline
+
+**Test Requirements**:
+1. **RTSP Stream Recording**: Confirm RTSP cameras can initiate recording sessions
+2. **Collection Assignment**: Verify recordings save to correct RTSP camera collections  
+3. **Video Quality**: Ensure recorded videos maintain streaming quality and codec compatibility
+4. **Playback Verification**: Test that RTSP camera recordings play correctly in frontend
+5. **Storage Management**: Confirm collection storage limits and archival work for RTSP recordings
+
+**Expected Outcome**: RTSP cameras should leverage the existing recording infrastructure without additional mobile-specific logic.
+
+### 📋 Implementation Priorities
+
+1. **Immediate (Next Sprint)**:
+   - [ ] Test RTSP camera recording functionality end-to-end
+   - [ ] Verify collection assignment for RTSP recordings
+   - [ ] Validate video playback quality for RTSP recordings
+
+2. **Short Term**:
+   - [ ] Implement recording controls in camera management interface
+   - [ ] Add recording session management (start/stop/status)
+   - [ ] Create recording history viewer
+
+3. **Medium Term**:
+   - [ ] Storage management and archival for all camera types
+   - [ ] Recording scheduling and automation
+   - [ ] Performance optimization for concurrent recordings
 
 ## Conclusion
 

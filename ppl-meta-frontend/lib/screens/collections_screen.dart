@@ -401,7 +401,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   void _openItemDetails(MediaItem item) {
     showDialog(
       context: context,
-      builder: (context) => MediaDetailsDialog(item: item),
+      builder: (context) => MediaDetailsDialog(
+        item: item,
+        collectionId: _selectedCollection?.uuid, // Pass collection ID
+      ),
     );
   }
 

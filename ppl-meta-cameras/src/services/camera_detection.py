@@ -748,6 +748,8 @@ class CameraDetectionService:
         """Start recording for mobile cameras using frame data from mobile service."""
 
         # Get quality settings for mobile recording
+        # Note: FPS is now used as a fallback/target rate - actual recording
+        # uses dynamic frame rate based on mobile frame timestamps
         quality_settings = {
             "low": (320, 240, 15),
             "medium": (640, 480, 30),
@@ -755,7 +757,9 @@ class CameraDetectionService:
             "ultra": (1920, 1080, 30),
         }
 
-        width, height, fps = quality_settings.get(quality, quality_settings["medium"])
+        width, height, target_fps = quality_settings.get(
+            quality, quality_settings["medium"]
+        )
 
         # Generate recording file path
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -766,7 +770,7 @@ class CameraDetectionService:
 
         # Initialize video writer with H.264 codec for web compatibility
         fourcc = cv2.VideoWriter_fourcc(*"H264")
-        video_writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
+        video_writer = cv2.VideoWriter(file_path, fourcc, target_fps, (width, height))
 
         if not video_writer.isOpened():
             logger.error(f"Failed to initialize video writer for mobile {device_id}")
@@ -784,7 +788,7 @@ class CameraDetectionService:
             "frame_count": 0,
             "quality": quality,
             "resolution": f"{width}x{height}",
-            "fps": fps,
+            "fps": target_fps,
             "is_mobile": True,
             "target_size": (width, height),
             "auth_token": auth_token,
@@ -1078,8 +1082,10 @@ class CameraDetectionService:
                         f"🎬 [MOBILE_RECORDING] Recorded {frame_count} frames for {device_id}"
                     )
 
-                # Control frame rate
-                await asyncio.sleep(1.0 / target_fps)
+                # Dynamic frame rate: Only process when new frame is available
+                # Remove sleep to eliminate artificial timing constraints
+                # This allows video to be recorded at natural mobile frame rate
+                await asyncio.sleep(0.01)  # Small sleep to prevent CPU spinning
 
             logger.info(
                 f"🎬 [MOBILE_RECORDING] Mobile recording loop ended for camera {device_id} with {frame_count} frames"

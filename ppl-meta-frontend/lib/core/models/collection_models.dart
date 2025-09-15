@@ -15,6 +15,8 @@ class MediaCollection {
   final int itemCount;
   @JsonKey(name: 'created_by')
   final String? createdBy;
+  @JsonKey(name: 'camera_device_id')
+  final String? cameraDeviceId;
   final Map<String, dynamic>? metadata;
   @JsonKey(name: 'is_public')
   final bool isPublic;
@@ -28,6 +30,7 @@ class MediaCollection {
     this.updatedAt,
     this.itemCount = 0,
     this.createdBy,
+    this.cameraDeviceId,
     this.metadata,
     this.isPublic = false,
     this.uuid,
@@ -44,6 +47,7 @@ class MediaCollection {
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
       itemCount: json['itemCount'] as int? ?? 0,
       createdBy: json['created_by'] as String?,
+      cameraDeviceId: json['camera_device_id'] as String?,
       metadata: json['metadata'] as Map<String, dynamic>?,
       isPublic: json['is_public'] as bool? ?? false,
       uuid: json['uuid'] as String?,

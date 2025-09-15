@@ -11,10 +11,12 @@ import 'video_player_widget.dart';
 /// Media details dialog with comprehensive information and actions
 class MediaDetailsDialog extends ConsumerStatefulWidget {
   final MediaItem item;
+  final String? collectionId;
 
   const MediaDetailsDialog({
     super.key,
     required this.item,
+    this.collectionId,
   });
 
   @override
@@ -342,6 +344,7 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
                     if (apiClient.authToken != null)
                       'Authorization': 'Bearer ${apiClient.authToken}',
                   },
+                  collectionId: widget.collectionId, // Pass collection ID
                 ),
               ),
             ),

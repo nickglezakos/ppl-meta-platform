@@ -132,6 +132,7 @@ class _MediaPreviewScreenState extends ConsumerState<MediaPreviewScreen> {
                       if (apiClient.authToken != null)
                         'Authorization': 'Bearer ${apiClient.authToken}',
                     },
+                    collectionId: null, // TODO: Pass collection ID from route parameters
                     onControllerReady: (controller) {
                       debugPrint('🎬 Video controller ready with ${useEmbedded ? "embedded" : "overlay"} face detection');
                       setState(() {
