@@ -1,0 +1,11 @@
+{
+  "timestamp": 1757953189.11785,
+  "results": {
+    "status_check_ms": 71.73954100289848,
+    "frame_lookup_ms": 13.052707989118062,
+    "face_retrieval_ms": 24.137999993399717,
+    "cache_warming_ms": 17.359541001496837,
+    "avg_cache_retrieval_ms": 3.0401498021092266,
+    "metrics_update_ms": 23.4234590025153
+  }
+}

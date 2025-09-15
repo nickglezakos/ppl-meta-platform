@@ -191,6 +191,89 @@ class VisionDatabase:
             logger.error(f"Failed to store face detection: {e}")
             return False
 
+    def store_face_detection_with_session(
+        self, detection: FaceDetectionResult, session_uuid: str
+    ) -> bool:
+        """Store face detection with session tracking for Workflow 4."""
+        if not self.connection:
+            return False
+
+        try:
+            cursor = self.connection.cursor()
+
+            # Check if session_uuid column exists (migration may not be applied yet)
+            cursor.execute(
+                """
+                SELECT column_name FROM information_schema.columns 
+                WHERE table_name = 'face_detections' AND column_name = 'session_uuid'
+            """
+            )
+            has_session_column = cursor.fetchone() is not None
+
+            if has_session_column:
+                # Use enhanced schema with session tracking
+                cursor.execute(
+                    """
+                    INSERT INTO face_detections
+                    (id, media_id, session_uuid, frame_number, timestamp,
+                     bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                     confidence, method)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        confidence = EXCLUDED.confidence,
+                        method = EXCLUDED.method,
+                        session_uuid = EXCLUDED.session_uuid
+                """,
+                    (
+                        detection.id,
+                        detection.media_id,
+                        session_uuid,
+                        detection.frame_number,
+                        detection.timestamp,
+                        detection.bbox[0],
+                        detection.bbox[1],
+                        detection.bbox[2],
+                        detection.bbox[3],
+                        detection.confidence,
+                        detection.method,
+                    ),
+                )
+            else:
+                # Fallback to regular storage if schema not upgraded
+                logger.warning(
+                    "Session UUID column not found, falling back to regular storage"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO face_detections
+                    (id, media_id, frame_number, timestamp,
+                     bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                     confidence, method)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        confidence = EXCLUDED.confidence,
+                        method = EXCLUDED.method
+                """,
+                    (
+                        detection.id,
+                        detection.media_id,
+                        detection.frame_number,
+                        detection.timestamp,
+                        detection.bbox[0],
+                        detection.bbox[1],
+                        detection.bbox[2],
+                        detection.bbox[3],
+                        detection.confidence,
+                        detection.method,
+                    ),
+                )
+
+            cursor.close()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store face detection with session: {e}")
+            return False
+
     def get_face_detections(
         self,
         media_id: str,
@@ -307,3 +390,6 @@ class VisionDatabase:
 
 # Global instance
 vision_db = VisionDatabase()
+
+# Alias for compatibility
+DatabaseManager = VisionDatabase

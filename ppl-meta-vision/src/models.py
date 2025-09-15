@@ -112,6 +112,24 @@ class MediaProcessingResponse(BaseResponse):
 
 
 # Database Models
+class FaceDetectionSession(BaseModel):
+    """Database model for face detection sessions."""
+
+    session_uuid: str = Field(..., description="Unique session identifier")
+    media_uuid: str = Field(..., description="Associated media UUID")
+    camera_device_uuid: str = Field(..., description="Camera device UUID")
+    session_type: str = Field(
+        ..., description="Session type (streaming, batch, realtime)"
+    )
+    started_at: datetime = Field(default_factory=datetime.now)
+    ended_at: Optional[datetime] = Field(default=None)
+    processing_status: str = Field(default="active", description="Session status")
+    total_faces_detected: int = Field(default=0, description="Total faces detected")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Session metadata"
+    )
+
+
 class MediaRecord(BaseModel):
     """Database model for media records."""
 

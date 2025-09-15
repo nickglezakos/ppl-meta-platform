@@ -30,6 +30,9 @@ from src.security.auth import (
 )
 from src.services.camera_detection import camera_service
 from src.services.session_auth import session_manager
+from src.services.session_aware_face_detector import session_aware_face_detector
+from src.services.session_statistics_broadcaster import statistics_broadcaster
+from src.services.streaming_session_manager import streaming_session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1108,8 +1111,10 @@ async def cleanup_stale_mobile_cameras(
 
 @router.websocket("/mobile/{device_id}/stream")
 async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
-    """WebSocket endpoint for camera streaming that matches mobile app expectations."""
+    """WebSocket endpoint for camera streaming with integrated session management."""
     await websocket.accept()
+
+    session_uuid = None  # Track session for cleanup
 
     try:
         logger.info(f"WebSocket connection established for camera {device_id}")
@@ -1146,27 +1151,132 @@ async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
                     )
 
                 elif message.get("type") == "start_stream":
-                    await websocket.send_text(
-                        json.dumps(
-                            {
-                                "type": "stream_ready",
-                                "device_id": device_id,
-                                "message": "Camera stream is ready to receive frames",
-                                "timestamp": datetime.utcnow().isoformat(),
-                            }
+                    # Create a new streaming session when stream starts
+                    session_uuid = (
+                        await streaming_session_manager.create_streaming_session(
+                            device_id=device_id,
+                            session_metadata={
+                                "connection_type": "websocket",
+                                "stream_start_time": datetime.utcnow().isoformat(),
+                            },
                         )
                     )
 
-                elif message.get("type") == "frame_data":
-                    # Handle incoming frame data from mobile camera
-                    await websocket.send_text(
-                        json.dumps(
-                            {
-                                "type": "frame_received",
-                                "timestamp": datetime.utcnow().isoformat(),
-                            }
+                    response = {
+                        "type": "stream_ready",
+                        "device_id": device_id,
+                        "message": "Camera stream is ready to receive frames",
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+
+                    if session_uuid:
+                        response["session_uuid"] = session_uuid
+                        logger.info(
+                            f"✅ Created streaming session {session_uuid} for device {device_id}"
                         )
-                    )
+                    else:
+                        logger.warning(
+                            f"⚠️ Failed to create streaming session for device {device_id}"
+                        )
+
+                    await websocket.send_text(json.dumps(response))
+
+                elif message.get("type") == "frame_data":
+                    # Handle incoming frame data with session-aware face detection
+                    frame_response = {
+                        "type": "frame_received",
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+
+                    try:
+                        # Extract frame data from message
+                        frame_base64 = message.get("frame_data")
+                        if frame_base64 and session_uuid:
+                            # Decode frame and perform session-aware face detection
+                            import base64
+
+                            import cv2
+                            import numpy as np
+
+                            # Decode base64 frame
+                            frame_bytes = base64.b64decode(frame_base64)
+                            nparr = np.frombuffer(frame_bytes, np.uint8)
+                            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                            if frame is not None:
+                                # Perform session-aware face detection
+                                detection_result = await session_aware_face_detector.detect_faces_with_session(
+                                    frame=frame,
+                                    session_uuid=session_uuid,
+                                    device_id=device_id,
+                                    method="two_stage",
+                                    confidence_threshold=0.7,
+                                    frame_metadata={
+                                        "frame_size": frame.shape,
+                                        "websocket_message_type": "frame_data",
+                                        "encoding": "base64_jpeg",
+                                    },
+                                )
+
+                                # Update session with detection results
+                                await streaming_session_manager.update_session_detection(
+                                    device_id=device_id,
+                                    faces_detected=detection_result["faces_detected"],
+                                    frame_metadata=detection_result["frame_metadata"],
+                                )
+
+                                # Include enhanced detection results in response
+                                frame_response.update(
+                                    {
+                                        "faces_detected": detection_result[
+                                            "face_count"
+                                        ],
+                                        "session_uuid": session_uuid,
+                                        "detection_results": detection_result[
+                                            "faces_detected"
+                                        ],
+                                        "session_statistics": detection_result[
+                                            "session_statistics"
+                                        ],
+                                        "detection_time_ms": detection_result[
+                                            "detection_time_ms"
+                                        ],
+                                    }
+                                )
+
+                                # Broadcast immediate statistics update if there are faces detected
+                                if detection_result["face_count"] > 0:
+                                    immediate_stats = {
+                                        "timestamp": datetime.utcnow().isoformat(),
+                                        "type": "immediate_detection",
+                                        "device_id": device_id,
+                                        "session_uuid": session_uuid,
+                                        "faces_detected": detection_result[
+                                            "face_count"
+                                        ],
+                                        "session_statistics": detection_result[
+                                            "session_statistics"
+                                        ],
+                                    }
+                                    await statistics_broadcaster.broadcast_immediate(
+                                        immediate_stats
+                                    )
+
+                                logger.debug(
+                                    f"🔍 Detected {detection_result['face_count']} faces in WebSocket frame from {device_id}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"⚠️ Failed to decode frame from {device_id}"
+                                )
+
+                    except Exception as detection_error:
+                        logger.error(
+                            f"❌ Face detection error for {device_id}: {detection_error}"
+                        )
+                        frame_response["detection_error"] = str(detection_error)
+
+                    await websocket.send_text(json.dumps(frame_response))
 
                 else:
                     # Echo back unknown messages
@@ -1193,6 +1303,14 @@ async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
 
     except WebSocketDisconnect:
         # Clean up sessions when mobile camera disconnects via WebSocket
+        if session_uuid:
+            await streaming_session_manager.complete_streaming_session(
+                device_id=device_id, completion_reason="websocket_disconnect"
+            )
+            logger.info(
+                f"✅ Completed streaming session {session_uuid} due to WebSocket disconnect"
+            )
+
         cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
         logger.info(
             "WebSocket connection closed for camera %s, cleaned %d sessions",
@@ -1201,6 +1319,16 @@ async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
         )
     except Exception as e:
         logger.error("WebSocket error for camera %s: %s", device_id, e)
+
+        # Complete streaming session on error
+        if session_uuid:
+            await streaming_session_manager.complete_streaming_session(
+                device_id=device_id, completion_reason="websocket_error"
+            )
+            logger.info(
+                f"✅ Completed streaming session {session_uuid} due to WebSocket error"
+            )
+
         # Clean up sessions on error as well
         cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
         logger.info("Cleaned %d sessions due to WebSocket error", cleaned_sessions)
@@ -1208,3 +1336,9 @@ async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
             await websocket.close()
         except Exception:
             pass
+
+
+@router.websocket("/statistics/stream")
+async def session_statistics_websocket(websocket: WebSocket):
+    """WebSocket endpoint for real-time session statistics broadcasting."""
+    await statistics_broadcaster.handle_statistics_websocket(websocket)

@@ -13,7 +13,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -238,6 +238,26 @@ async def startup_event():
         media_processor_instance = MediaProcessingService(
             face_detector=face_detector_instance
         )
+
+        # Initialize session manager for Workflow 4
+        try:
+            from session_manager import initialize_session_manager
+
+            initialize_session_manager(vision_db)
+            logger.info("✅ Session manager initialized for Workflow 4")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to initialize session manager: {e}")
+            logger.info("Continuing without session management")
+
+        # Initialize analytics service for Phase 5
+        try:
+            from analytics_service import get_analytics_service
+
+            global analytics_service_instance
+            analytics_service_instance = get_analytics_service()
+            logger.info("✅ Advanced Analytics Service initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ Advanced Analytics Service failed: {e}")
 
         # Register with discovery service
         try:
@@ -548,12 +568,17 @@ async def detect_faces_file(
 
 @app.post("/process/media", summary="Process Media from Media Service")
 async def process_media_from_service(
-    media_id: str, media_url: str, media_type: str = "image"
+    media_id: str,
+    media_url: str,
+    media_type: str = "image",
+    camera_device_uuid: Optional[str] = None,
+    create_session: bool = True,
 ):
     """
     Process media file from Media Service for face detection.
 
     This endpoint fetches media from the Media Service and processes it for faces.
+    Now includes automatic session management for Workflow 4 traceability.
     """
     global face_detector_instance
 
@@ -561,11 +586,57 @@ async def process_media_from_service(
         raise HTTPException(status_code=503, detail="Face detector not initialized")
 
     start_time = time.time()
+    session_uuid = None
+    session_mgr = None
 
     try:
+        # Initialize session if requested (default behavior)
+        if create_session:
+            try:
+                from api_models import SessionCreateRequest
+                from session_manager import get_session_manager
+
+                session_mgr = get_session_manager()
+                if session_mgr:
+                    session_request = SessionCreateRequest(
+                        media_uuid=media_id,
+                        camera_device_uuid=camera_device_uuid,
+                        session_type="upload" if media_type == "image" else "batch",
+                        metadata={
+                            "media_url": media_url,
+                            "media_type": media_type,
+                            "processing_method": "process_media_endpoint",
+                        },
+                    )
+
+                    session_result = await session_mgr.create_session(session_request)
+                    if not hasattr(session_result, "error"):
+                        session_uuid = session_result.session.session_uuid
+                        logger.info(
+                            f"Created session {session_uuid} for media {media_id}"
+                        )
+            except Exception as e:
+                logger.warning(
+                    f"Session creation failed, continuing without session: {e}"
+                )
+
         # Fetch media from Media Service
         response = requests.get(media_url, timeout=30)
         if response.status_code != 200:
+            # Complete session with error if applicable
+            if session_mgr and session_uuid:
+                try:
+                    from api_models import SessionCompleteRequest
+
+                    await session_mgr.complete_session(
+                        session_uuid,
+                        SessionCompleteRequest(
+                            metadata={"error": "Failed to fetch media"}
+                        ),
+                    )
+                except Exception:
+                    pass
+
             raise HTTPException(
                 status_code=400, detail="Failed to fetch media from Media Service"
             )
@@ -576,35 +647,103 @@ async def process_media_from_service(
             image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
             if image is None:
+                # Complete session with error if applicable
+                if session_mgr and session_uuid:
+                    try:
+                        from api_models import SessionCompleteRequest
+
+                        await session_mgr.complete_session(
+                            session_uuid,
+                            SessionCompleteRequest(
+                                metadata={"error": "Invalid image data"}
+                            ),
+                        )
+                    except Exception:
+                        pass
                 raise HTTPException(status_code=400, detail="Invalid image data")
 
             # Run face detection
             results = face_detector_instance.detect_faces_multi_method(image)
 
-            # Aggregate results
+            # Aggregate results and store with session tracking
             all_detections = []
+            stored_count = 0
+
             for method, result in results.items():
                 if result.get("success", False):
                     for det in result.get("detections", []):
-                        all_detections.append(
-                            {
-                                "bbox": det["bbox"],
-                                "confidence": det["confidence"],
-                                "method": det["method"],
-                                "media_id": media_id,
-                            }
-                        )
+                        detection_dict = {
+                            "bbox": det["bbox"],
+                            "confidence": det["confidence"],
+                            "method": det["method"],
+                            "media_id": media_id,
+                        }
+                        all_detections.append(detection_dict)
+
+                        # Store in database with session tracking
+                        if vision_db and vision_db.connection:
+                            try:
+                                detection = FaceDetectionResult(
+                                    id=str(uuid.uuid4()),
+                                    media_id=media_id,
+                                    media_type=media_type,
+                                    frame_number=0,  # Single image
+                                    timestamp=datetime.now(),
+                                    bbox=det["bbox"],
+                                    confidence=det["confidence"],
+                                    method=det["method"],
+                                )
+
+                                # Store with session UUID if available
+                                if session_uuid:
+                                    # Enhanced storage with session tracking
+                                    vision_db.store_face_detection_with_session(
+                                        detection, session_uuid
+                                    )
+                                    # Update session face count
+                                    if session_mgr:
+                                        await session_mgr.update_session_face_count(
+                                            session_uuid, 1
+                                        )
+                                else:
+                                    # Fallback to regular storage
+                                    vision_db.store_face_detection(detection)
+
+                                stored_count += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to store detection: {e}")
 
             processing_time = time.time() - start_time
+
+            # Complete session if created
+            if session_mgr and session_uuid:
+                try:
+                    from api_models import SessionCompleteRequest
+
+                    await session_mgr.complete_session(
+                        session_uuid,
+                        SessionCompleteRequest(
+                            metadata={
+                                "processing_time": processing_time,
+                                "total_faces_detected": len(all_detections),
+                                "stored_count": stored_count,
+                            }
+                        ),
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to complete session: {e}")
 
             return {
                 "success": True,
                 "media_id": media_id,
                 "media_type": media_type,
                 "total_faces": len(all_detections),
+                "stored_faces": stored_count,
                 "detections": all_detections,
                 "processing_time": processing_time,
-                "message": f"Processed {media_type} with {len(all_detections)} faces detected",
+                "session_uuid": session_uuid,
+                "message": f"Processed {media_type} with {len(all_detections)} faces detected"
+                + (f" (session: {session_uuid})" if session_uuid else ""),
             }
 
         else:
@@ -773,9 +912,45 @@ async def store_bulk_faces(
     media_id: str,
     faces_data: dict,
     authorization: str = Header(None),
+    camera_device_uuid: Optional[str] = None,
+    create_session: bool = True,
 ):
-    """Store multiple face detections for a media file."""
+    """Store multiple face detections for a media file with session tracking."""
     try:
+        session_uuid = None
+        session_mgr = None
+
+        # Initialize session if requested (default behavior)
+        if create_session:
+            try:
+                from api_models import SessionCreateRequest
+                from session_manager import get_session_manager
+
+                session_mgr = get_session_manager()
+                if session_mgr:
+                    session_request = SessionCreateRequest(
+                        media_uuid=media_id,
+                        camera_device_uuid=camera_device_uuid,
+                        session_type="batch",
+                        metadata={
+                            "total_frames": faces_data.get("total_frames", 0),
+                            "duration": faces_data.get("duration", 0.0),
+                            "fps": faces_data.get("fps", 30.0),
+                            "processing_method": "bulk_storage_endpoint",
+                        },
+                    )
+
+                    session_result = await session_mgr.create_session(session_request)
+                    if not hasattr(session_result, "error"):
+                        session_uuid = session_result.session.session_uuid
+                        logger.info(
+                            f"Created session {session_uuid} for bulk storage of media {media_id}"
+                        )
+            except Exception as e:
+                logger.warning(
+                    f"Session creation failed, continuing without session: {e}"
+                )
+
         # Extract user_id from JWT token for ownership
         user_id = extract_user_id_from_token(authorization) if authorization else None
 
@@ -793,7 +968,7 @@ async def store_bulk_faces(
 
         vision_db.store_media_record(media_record)
 
-        # Store face detections
+        # Store face detections with session tracking
         stored_count = 0
         faces_by_frame = faces_data.get("faces_by_frame", {})
 
@@ -802,7 +977,7 @@ async def store_bulk_faces(
                 detection = FaceDetectionResult(
                     id=str(uuid.uuid4()),
                     media_id=media_id,
-                    media_type="video",  # Add required media_type field
+                    media_type="video",
                     frame_number=int(frame_number),
                     timestamp=face.get("timestamp"),
                     bbox=face["bbox"],
@@ -810,15 +985,54 @@ async def store_bulk_faces(
                     method=face.get("method", "real_time"),
                 )
 
-                if vision_db.store_face_detection(detection):
-                    stored_count += 1
+                # Store with session tracking if available
+                if session_uuid:
+                    if vision_db.store_face_detection_with_session(
+                        detection, session_uuid
+                    ):
+                        stored_count += 1
+                        # Update session face count periodically (every 10 faces for performance)
+                        if stored_count % 10 == 0 and session_mgr:
+                            await session_mgr.update_session_face_count(
+                                session_uuid, 10
+                            )
+                else:
+                    # Fallback to regular storage
+                    if vision_db.store_face_detection(detection):
+                        stored_count += 1
+
+        # Final session face count update
+        if session_mgr and session_uuid:
+            await session_mgr.update_session_face_count(
+                session_uuid, 0
+            )  # This will recount from DB
+
+        # Complete session if created
+        if session_mgr and session_uuid:
+            try:
+                from api_models import SessionCompleteRequest
+
+                await session_mgr.complete_session(
+                    session_uuid,
+                    SessionCompleteRequest(
+                        metadata={
+                            "total_faces_stored": stored_count,
+                            "total_frames_processed": len(faces_by_frame),
+                            "storage_method": "bulk_endpoint",
+                        }
+                    ),
+                )
+            except Exception as e:
+                logger.warning(f"Failed to complete session: {e}")
 
         return {
             "success": True,
             "media_id": media_id,
             "stored_faces": stored_count,
             "total_frames": len(faces_by_frame),
-            "message": f"Successfully stored {stored_count} face detections for {len(faces_by_frame)} frames",
+            "session_uuid": session_uuid,
+            "message": f"Successfully stored {stored_count} face detections for {len(faces_by_frame)} frames"
+            + (f" (session: {session_uuid})" if session_uuid else ""),
         }
 
     except Exception as e:
@@ -1065,21 +1279,58 @@ async def bulk_process_video_faces(
         1, description="Process every frame (1 = maximum efficiency)"
     ),
     max_frames: int = Query(1000, description="Max frames to process"),
+    camera_device_uuid: Optional[str] = None,
+    create_session: bool = True,
 ):
     """
-    Bulk process entire video for face detection in memory.
+    Bulk process entire video for face detection in memory with session tracking.
 
     Downloads video once, extracts frames in memory, and processes all frames
     with face detection in a single operation. Much more efficient than
     frame-by-frame processing.
 
     ALWAYS uses two_stage method with 0.5 confidence threshold for consistency.
+    Now includes automatic session management for Workflow 4 traceability.
     """
     try:
         if not face_detector_instance:
             raise HTTPException(status_code=503, detail="Face detector not initialized")
 
         start_time = time.time()
+        session_uuid = None
+        session_mgr = None
+
+        # Initialize session if requested (default behavior)
+        if create_session:
+            try:
+                from api_models import SessionCreateRequest
+                from session_manager import get_session_manager
+
+                session_mgr = get_session_manager()
+                if session_mgr:
+                    session_request = SessionCreateRequest(
+                        media_uuid=media_id,
+                        camera_device_uuid=camera_device_uuid,
+                        session_type="batch",
+                        metadata={
+                            "frame_interval": frame_interval,
+                            "max_frames": max_frames,
+                            "detection_method": "two_stage",
+                            "confidence_threshold": 0.5,
+                            "processing_method": "bulk_process_video_endpoint",
+                        },
+                    )
+
+                    session_result = await session_mgr.create_session(session_request)
+                    if not hasattr(session_result, "error"):
+                        session_uuid = session_result.session.session_uuid
+                        logger.info(
+                            f"Created session {session_uuid} for bulk video processing of media {media_id}"
+                        )
+            except Exception as e:
+                logger.warning(
+                    f"Session creation failed, continuing without session: {e}"
+                )
 
         # Force consistent detection parameters
         confidence_threshold = 0.5  # Always use 0.5 confidence
@@ -1088,6 +1339,19 @@ async def bulk_process_video_faces(
         # Get user authentication
         user_uuid = get_user_uuid_from_profile(authorization) if authorization else None
         if not user_uuid:
+            # Complete session with error if applicable
+            if session_mgr and session_uuid:
+                try:
+                    from api_models import SessionCompleteRequest
+
+                    await session_mgr.complete_session(
+                        session_uuid,
+                        SessionCompleteRequest(
+                            metadata={"error": "Authentication required"}
+                        ),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(status_code=401, detail="Authentication required")
 
         # Prepare headers for media service requests
@@ -1100,10 +1364,38 @@ async def bulk_process_video_faces(
         )
         media_response = requests.get(media_url, headers=headers)
         if media_response.status_code != 200:
+            # Complete session with error if applicable
+            if session_mgr and session_uuid:
+                try:
+                    from api_models import SessionCompleteRequest
+
+                    await session_mgr.complete_session(
+                        session_uuid,
+                        SessionCompleteRequest(
+                            metadata={"error": f"Media not found: {media_id}"}
+                        ),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(status_code=404, detail=f"Media not found: {media_id}")
 
         media_info = media_response.json()
         if media_info.get("media_type") != "video":
+            # Complete session with error if applicable
+            if session_mgr and session_uuid:
+                try:
+                    from api_models import SessionCompleteRequest
+
+                    await session_mgr.complete_session(
+                        session_uuid,
+                        SessionCompleteRequest(
+                            metadata={
+                                "error": "Only video files supported for bulk processing"
+                            }
+                        ),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=400, detail="Only video files supported for bulk processing"
             )
@@ -1190,7 +1482,7 @@ async def bulk_process_video_faces(
                             }
                         )
 
-                        # Store face detection in database
+                        # Store face detection in database with session tracking
                         face_detection = FaceDetectionResult(
                             id=str(uuid.uuid4()),
                             media_id=media_id,
@@ -1202,9 +1494,19 @@ async def bulk_process_video_faces(
                             method=face["method"],
                         )
 
-                        # Store in database
+                        # Store in database with session tracking if available
                         try:
-                            vision_db.store_face_detection(face_detection)
+                            if session_uuid:
+                                vision_db.store_face_detection_with_session(
+                                    face_detection, session_uuid
+                                )
+                                # Update session face count periodically (every 100 faces for performance)
+                                if processed_frames % 100 == 0 and session_mgr:
+                                    await session_mgr.update_session_face_count(
+                                        session_uuid, 0
+                                    )  # Recount from DB
+                            else:
+                                vision_db.store_face_detection(face_detection)
                         except Exception as db_error:
                             logger.warning(f"Store failed: {db_error}")
 
@@ -1217,6 +1519,33 @@ async def bulk_process_video_faces(
             # Calculate total faces found
             total_faces = sum(len(detections) for detections in all_detections.values())
             processing_time = time.time() - start_time
+
+            # Complete session if created
+            if session_mgr and session_uuid:
+                try:
+                    # Final face count update
+                    await session_mgr.update_session_face_count(
+                        session_uuid, 0
+                    )  # Recount from DB
+
+                    from api_models import SessionCompleteRequest
+
+                    await session_mgr.complete_session(
+                        session_uuid,
+                        SessionCompleteRequest(
+                            metadata={
+                                "total_faces_detected": total_faces,
+                                "frames_processed": processed_frames,
+                                "total_frames": int(total_frames),
+                                "processing_time": processing_time,
+                                "frame_interval": frame_interval,
+                                "detection_method": "two_stage",
+                                "confidence_threshold": confidence_threshold,
+                            }
+                        ),
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to complete session: {e}")
 
             return {
                 "success": True,
@@ -1234,9 +1563,11 @@ async def bulk_process_video_faces(
                 "total_faces": int(total_faces),  # Python int
                 "processing_time": float(processing_time),  # Python float
                 "confidence_threshold": float(confidence_threshold),  # Python float
+                "session_uuid": session_uuid,
                 "message": (
                     f"Bulk processed {processed_frames} frames, "
                     f"found {total_faces} faces total"
+                    + (f" (session: {session_uuid})" if session_uuid else "")
                 ),
             }
 
@@ -1311,6 +1642,1299 @@ async def debug_auth(authorization: str = Header(None, alias="Authorization")):
         }
 
 
+# Session Management Endpoints - Phase 2 Implementation
+
+
+@app.post("/sessions/start", summary="Start Face Detection Session")
+async def start_face_detection_session(request: dict):
+    """
+    Start a new face detection session for traceability.
+
+    This endpoint creates a new session for tracking face detection operations
+    across streaming, upload, or batch processing scenarios.
+    """
+    try:
+        from api_models import SessionCreateRequest
+        from session_manager import get_session_manager
+
+        session_mgr = get_session_manager()
+        if not session_mgr:
+            raise HTTPException(
+                status_code=503, detail="Session management not available"
+            )
+
+        # Convert dict to SessionCreateRequest
+        session_request = SessionCreateRequest(**request)
+
+        # Create session
+        result = await session_mgr.create_session(session_request)
+
+        # Check if result is an error
+        if hasattr(result, "error"):
+            raise HTTPException(status_code=400, detail=result.message)
+
+        return result.dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting session: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to start session: {str(e)}"
+        )
+
+
+@app.get("/sessions/{session_uuid}/status", summary="Get Session Status")
+async def get_session_status(session_uuid: str):
+    """
+    Get the current status and statistics of a face detection session.
+
+    Returns session details, processing status, and face detection counts.
+    """
+    try:
+        from session_manager import get_session_manager
+
+        session_mgr = get_session_manager()
+        if not session_mgr:
+            raise HTTPException(
+                status_code=503, detail="Session management not available"
+            )
+
+        # Get session status
+        result = await session_mgr.get_session_status(session_uuid)
+
+        # Check if result is an error
+        if hasattr(result, "error"):
+            if result.error == "SESSION_NOT_FOUND":
+                raise HTTPException(status_code=404, detail=result.message)
+            else:
+                raise HTTPException(status_code=400, detail=result.message)
+
+        return result.dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session status: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get session status: {str(e)}"
+        )
+
+
+@app.post("/sessions/{session_uuid}/complete", summary="Complete Session")
+async def complete_face_detection_session(session_uuid: str, request: dict = None):
+    """
+    Complete a face detection session and finalize statistics.
+
+    Marks the session as completed and calculates final processing statistics.
+    """
+    try:
+        from api_models import SessionCompleteRequest
+        from session_manager import get_session_manager
+
+        session_mgr = get_session_manager()
+        if not session_mgr:
+            raise HTTPException(
+                status_code=503, detail="Session management not available"
+            )
+
+        # Convert dict to SessionCompleteRequest (if provided)
+        complete_request = SessionCompleteRequest(**(request or {}))
+
+        # Complete session
+        result = await session_mgr.complete_session(session_uuid, complete_request)
+
+        # Check if result is an error
+        if hasattr(result, "error"):
+            if result.error == "SESSION_NOT_FOUND":
+                raise HTTPException(status_code=404, detail=result.message)
+            else:
+                raise HTTPException(status_code=400, detail=result.message)
+
+        return result.dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error completing session: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to complete session: {str(e)}"
+        )
+
+
+@app.get("/sessions", summary="Query Sessions")
+async def query_face_detection_sessions(
+    media_uuid: Optional[str] = None,
+    camera_device_uuid: Optional[str] = None,
+    session_type: Optional[str] = None,
+    processing_status: Optional[str] = None,
+    limit: Optional[int] = 50,
+    offset: Optional[int] = 0,
+):
+    """
+    Query face detection sessions based on various criteria.
+
+    Supports filtering by media UUID, camera device, session type, and processing status.
+    """
+    try:
+        from api_models import SessionQueryRequest
+        from session_manager import get_session_manager
+
+        session_mgr = get_session_manager()
+        if not session_mgr:
+            raise HTTPException(
+                status_code=503, detail="Session management not available"
+            )
+
+        # Create query request
+        query_request = SessionQueryRequest(
+            media_uuid=media_uuid,
+            camera_device_uuid=camera_device_uuid,
+            session_type=session_type,
+            processing_status=processing_status,
+            limit=limit,
+            offset=offset,
+        )
+
+        # Query sessions
+        result = await session_mgr.query_sessions(query_request)
+
+        # Check if result is an error
+        if hasattr(result, "error"):
+            raise HTTPException(status_code=400, detail=result.message)
+
+        return result.dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error querying sessions: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to query sessions: {str(e)}"
+        )
+
+
+@app.get("/sessions/stats", summary="Get Session Statistics")
+async def get_session_statistics():
+    """
+    Get overall session management statistics.
+
+    Returns counts of active sessions, total sessions, and system status.
+    """
+    try:
+        from session_manager import get_session_manager
+
+        session_mgr = get_session_manager()
+        if not session_mgr:
+            raise HTTPException(
+                status_code=503, detail="Session management not available"
+            )
+
+        active_count = session_mgr.get_active_session_count()
+
+        return {
+            "active_sessions": active_count,
+            "session_manager_status": "available",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting session statistics: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get session statistics: {str(e)}"
+        )
+
+
+# ============================================================================
+# PHASE 4: Enhanced Face Storage with Session Context
+# ============================================================================
+
+
+@app.post("/faces/store", summary="Store Face Detection with Session Context")
+async def store_face_detection_with_session(
+    request: dict,
+    authorization: str = Header(None),
+):
+    """
+    Store individual face detection with complete session context.
+
+    This endpoint validates session existence and creates proper linkage
+    between face detections and their originating sessions for full
+    traceability.
+
+    Request body should contain:
+    - session_uuid: Associated session UUID
+    - frame_number: Frame number (for video)
+    - timestamp: Timestamp in video (seconds)
+    - bbox: [x1, y1, x2, y2] bounding box coordinates
+    - confidence: Detection confidence (0.0-1.0)
+    - method: Detection method used
+    """
+    try:
+        # Import required models
+        from api_models import FaceDetectionWithSessionRequest
+        from session_manager import get_session_manager
+
+        # Validate request data
+        try:
+            face_request = FaceDetectionWithSessionRequest(**request)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid request format: {str(e)}"
+            )
+
+        # Get session manager
+        session_mgr = get_session_manager()
+        if not session_mgr:
+            raise HTTPException(
+                status_code=503, detail="Session management not available"
+            )
+
+        # Validate session exists and is active
+        session_status = await session_mgr.get_session_status(face_request.session_uuid)
+        if hasattr(session_status, "error"):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Session not found: {face_request.session_uuid}",
+            )
+
+        if not session_status.session.processing_status == "active":
+            status = session_status.session.processing_status
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Session {face_request.session_uuid} is not active "
+                    f"(status: {status})"
+                ),
+            )
+
+        # Get media UUID from session
+        media_uuid = session_status.session.media_uuid
+
+        # Generate unique face detection ID
+        face_id = str(uuid.uuid4())
+
+        # Store face detection in database with session context
+        if vision_db and vision_db.connection:
+            try:
+                with vision_db.connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO face_detections
+                        (id, media_id, session_uuid, frame_number, timestamp,
+                         bbox_x1, bbox_y1, bbox_x2, bbox_y2, confidence,
+                         method, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            face_id,
+                            media_uuid,
+                            face_request.session_uuid,
+                            face_request.frame_number,
+                            face_request.timestamp,
+                            face_request.bbox[0],  # x1
+                            face_request.bbox[1],  # y1
+                            face_request.bbox[2],  # x2
+                            face_request.bbox[3],  # y2
+                            face_request.confidence,
+                            face_request.method,
+                            datetime.now(timezone.utc),
+                        ),
+                    )
+
+                    # Update session face count
+                    cursor.execute(
+                        """
+                        UPDATE face_detection_sessions
+                        SET total_faces_detected = total_faces_detected + 1,
+                            updated_at = %s
+                        WHERE session_uuid = %s
+                        """,
+                        (datetime.now(timezone.utc), face_request.session_uuid),
+                    )
+
+                logger.info(
+                    f"Stored face detection {face_id} for session "
+                    f"{face_request.session_uuid}"
+                )
+
+            except Exception as e:
+                logger.error(f"Database error storing face detection: {e}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to store face detection: {str(e)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Database connection not available"
+            )
+
+        # Return response
+        return {
+            "status": "stored",
+            "face_id": face_id,
+            "session_uuid": face_request.session_uuid,
+            "media_id": media_uuid,
+            "frame_number": face_request.frame_number,
+            "timestamp": face_request.timestamp,
+            "bbox": face_request.bbox,
+            "confidence": face_request.confidence,
+            "method": face_request.method,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error storing face detection with session: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/processing-status/{media_uuid}", summary="Get Media Processing Status")
+async def get_video_processing_status(
+    media_uuid: str,
+    authorization: str = Header(None),
+):
+    """
+    Check if media file has been processed for face detection.
+
+    Returns processing status including whether face detection has been
+    completed, associated session information, and processing statistics.
+    """
+    try:
+        # Validate UUID format
+        try:
+            uuid.UUID(media_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid media UUID format")
+
+        # Query processing status from database
+        if vision_db and vision_db.connection:
+            try:
+                with vision_db.connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT media_uuid, face_detection_processed, face_detection_session_uuid,
+                               processing_completed_at, total_frames_processed, total_faces_detected,
+                               processing_method, last_updated
+                        FROM media_processing_status 
+                        WHERE media_uuid = %s
+                        """,
+                        (media_uuid,),
+                    )
+
+                    result = cursor.fetchone()
+
+                    if not result:
+                        return {
+                            "media_uuid": media_uuid,
+                            "face_detection_processed": False,
+                            "status": "unprocessed",
+                            "message": "Media has not been processed for face detection",
+                        }
+
+                    # Unpack result
+                    (
+                        media_uuid_db,
+                        face_detection_processed,
+                        session_uuid,
+                        completed_at,
+                        total_frames,
+                        total_faces,
+                        method,
+                        last_updated,
+                    ) = result
+
+                    return {
+                        "media_uuid": media_uuid,
+                        "face_detection_processed": face_detection_processed,
+                        "face_detection_session_uuid": session_uuid,
+                        "processing_completed_at": (
+                            completed_at.isoformat() if completed_at else None
+                        ),
+                        "total_frames_processed": total_frames,
+                        "total_faces_detected": total_faces,
+                        "processing_method": method,
+                        "last_updated": (
+                            last_updated.isoformat() if last_updated else None
+                        ),
+                        "status": (
+                            "processed" if face_detection_processed else "unprocessed"
+                        ),
+                    }
+
+            except Exception as e:
+                logger.error(f"Database error getting processing status: {e}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get processing status: {str(e)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Database connection not available"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting processing status: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.post("/processing-status/{media_uuid}/complete", summary="Mark Media as Processed")
+async def mark_video_as_processed(
+    media_uuid: str,
+    request: dict,
+    authorization: str = Header(None),
+):
+    """
+    Mark media file as fully processed for face detection.
+
+    Updates the processing status with completion information including
+    session UUID, total frames processed, and detection statistics.
+
+    Request body should contain:
+    - session_uuid: Processing session UUID
+    - total_frames: Total number of frames processed
+    - total_faces: Total faces detected
+    - method: Detection method used
+    """
+    try:
+        # Import required models
+        from api_models import CompleteProcessingRequest
+
+        # Validate request data
+        try:
+            complete_request = CompleteProcessingRequest(**request)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid request format: {str(e)}"
+            )
+
+        # Validate media UUID format
+        try:
+            uuid.UUID(media_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid media UUID format")
+
+        # Update or insert processing status
+        if vision_db and vision_db.connection:
+            try:
+                with vision_db.connection.cursor() as cursor:
+                    # Use UPSERT (INSERT ... ON CONFLICT) to handle existing records
+                    cursor.execute(
+                        """
+                        INSERT INTO media_processing_status 
+                        (media_uuid, face_detection_processed, face_detection_session_uuid,
+                         processing_completed_at, total_frames_processed, total_faces_detected,
+                         processing_method, last_updated)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (media_uuid) DO UPDATE SET
+                            face_detection_processed = EXCLUDED.face_detection_processed,
+                            face_detection_session_uuid = EXCLUDED.face_detection_session_uuid,
+                            processing_completed_at = EXCLUDED.processing_completed_at,
+                            total_frames_processed = EXCLUDED.total_frames_processed,
+                            total_faces_detected = EXCLUDED.total_faces_detected,
+                            processing_method = EXCLUDED.processing_method,
+                            last_updated = EXCLUDED.last_updated
+                        """,
+                        (
+                            media_uuid,
+                            True,  # face_detection_processed
+                            complete_request.session_uuid,
+                            datetime.now(timezone.utc),
+                            complete_request.total_frames,
+                            complete_request.total_faces,
+                            complete_request.method,
+                            datetime.now(timezone.utc),
+                        ),
+                    )
+
+                logger.info(
+                    f"Marked media {media_uuid} as processed (session: {complete_request.session_uuid}, "
+                    f"frames: {complete_request.total_frames}, faces: {complete_request.total_faces})"
+                )
+
+            except Exception as e:
+                logger.error(f"Database error marking media as processed: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to mark media as processed: {str(e)}",
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Database connection not available"
+            )
+
+        return {
+            "status": "marked_as_processed",
+            "media_uuid": media_uuid,
+            "session_uuid": complete_request.session_uuid,
+            "total_frames": complete_request.total_frames,
+            "total_faces": complete_request.total_faces,
+            "processing_method": complete_request.method,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking media as processed: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get(
+    "/faces/media/{media_uuid}/frames",
+    summary="Get Frame-Indexed Face Data for Playback",
+)
+async def get_stored_face_data_for_playback(
+    media_uuid: str,
+    frame_start: Optional[int] = Query(None, description="Start frame number"),
+    frame_end: Optional[int] = Query(None, description="End frame number"),
+    confidence_threshold: Optional[float] = Query(
+        None, description="Minimum confidence threshold"
+    ),
+    authorization: str = Header(None),
+):
+    """
+    Retrieve frame-indexed face detection data for video playback.
+
+    This endpoint returns face detection data organized by frame numbers,
+    optimized for video playback with frame-by-frame face overlay rendering.
+    Supports filtering by frame range and confidence threshold.
+
+    Args:
+        media_uuid: Media file UUID
+        frame_start: Optional start frame number (inclusive)
+        frame_end: Optional end frame number (inclusive)
+        confidence_threshold: Optional minimum confidence threshold
+
+    Returns:
+        Face data organized by frame number with session context
+    """
+    try:
+        # Validate UUID format
+        try:
+            uuid.UUID(media_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid media UUID format")
+
+        # Validate optional parameters
+        if frame_start is not None and frame_start < 0:
+            raise HTTPException(
+                status_code=400, detail="frame_start must be non-negative"
+            )
+
+        if frame_end is not None and frame_end < 0:
+            raise HTTPException(
+                status_code=400, detail="frame_end must be non-negative"
+            )
+
+        if (
+            frame_start is not None
+            and frame_end is not None
+            and frame_start > frame_end
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="frame_start must be less than or equal to frame_end",
+            )
+
+        if confidence_threshold is not None and (
+            confidence_threshold < 0.0 or confidence_threshold > 1.0
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="confidence_threshold must be between 0.0 and 1.0",
+            )
+
+        # Query face detections from database
+        if vision_db and vision_db.connection:
+            try:
+                with vision_db.connection.cursor() as cursor:
+                    # Build dynamic query based on parameters
+                    query = """
+                        SELECT frame_number, bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                               confidence, method, session_uuid, created_at
+                        FROM face_detections 
+                        WHERE media_id = %s
+                    """
+                    params = [media_uuid]
+
+                    if frame_start is not None:
+                        query += " AND frame_number >= %s"
+                        params.append(frame_start)
+
+                    if frame_end is not None:
+                        query += " AND frame_number <= %s"
+                        params.append(frame_end)
+
+                    if confidence_threshold is not None:
+                        query += " AND confidence >= %s"
+                        params.append(confidence_threshold)
+
+                    # Order by frame number for organized output
+                    query += " ORDER BY frame_number, confidence DESC"
+
+                    cursor.execute(query, params)
+                    results = cursor.fetchall()
+
+                    if not results:
+                        return {
+                            "media_uuid": media_uuid,
+                            "total_frames": 0,
+                            "face_data": {},
+                            "session_uuid": None,
+                            "message": "No face data found for specified criteria",
+                        }
+
+                    # Organize results by frame number
+                    face_data = {}
+                    session_uuid = None
+                    max_frame = 0
+
+                    for row in results:
+                        (
+                            frame_num,
+                            x1,
+                            y1,
+                            x2,
+                            y2,
+                            confidence,
+                            method,
+                            sess_uuid,
+                            created_at,
+                        ) = row
+
+                        if frame_num is None:
+                            continue  # Skip faces without frame numbers
+
+                        frame_key = str(frame_num)
+                        if frame_key not in face_data:
+                            face_data[frame_key] = []
+
+                        face_data[frame_key].append(
+                            {
+                                "bbox": [x1, y1, x2, y2],
+                                "confidence": confidence,
+                                "method": method,
+                                "created_at": (
+                                    created_at.isoformat() if created_at else None
+                                ),
+                            }
+                        )
+
+                        # Track session UUID and max frame
+                        if session_uuid is None:
+                            session_uuid = sess_uuid
+                        if frame_num > max_frame:
+                            max_frame = frame_num
+
+                    return {
+                        "media_uuid": media_uuid,
+                        "total_frames": max_frame if face_data else 0,
+                        "face_data": face_data,
+                        "session_uuid": session_uuid,
+                        "frame_range": {"start": frame_start, "end": frame_end},
+                        "confidence_threshold": confidence_threshold,
+                        "total_detections": len(results),
+                    }
+
+            except Exception as e:
+                logger.error(f"Database error retrieving face data: {e}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to retrieve face data: {str(e)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Database connection not available"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving frame-indexed face data: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@app.get("/faces/session/{session_uuid}/analytics", summary="Get Session Analytics")
+async def get_session_analytics(
+    session_uuid: str,
+    authorization: str = Header(None),
+):
+    """
+    Get comprehensive analytics for a face detection session.
+
+    Returns detailed statistics including face counts by frame,
+    average confidence, processing duration, and detection methods.
+    """
+    try:
+        # Validate UUID format
+        try:
+            uuid.UUID(session_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid session UUID format")
+
+        # Get session information
+        from session_manager import get_session_manager
+
+        session_mgr = get_session_manager()
+        if not session_mgr:
+            raise HTTPException(
+                status_code=503, detail="Session management not available"
+            )
+
+        session_status = await session_mgr.get_session_status(session_uuid)
+        if hasattr(session_status, "error"):
+            raise HTTPException(
+                status_code=404, detail=f"Session not found: {session_uuid}"
+            )
+
+        session = session_status.session
+
+        # Query face detection analytics from database
+        if vision_db and vision_db.connection:
+            try:
+                with vision_db.connection.cursor() as cursor:
+                    # Get face count by frame
+                    cursor.execute(
+                        """
+                        SELECT frame_number, COUNT(*) as face_count
+                        FROM face_detections 
+                        WHERE session_uuid = %s AND frame_number IS NOT NULL
+                        GROUP BY frame_number
+                        ORDER BY frame_number
+                    """,
+                        (session_uuid,),
+                    )
+                    frame_counts = dict(cursor.fetchall())
+
+                    # Get average confidence
+                    cursor.execute(
+                        """
+                        SELECT AVG(confidence) as avg_confidence
+                        FROM face_detections 
+                        WHERE session_uuid = %s
+                    """,
+                        (session_uuid,),
+                    )
+                    avg_conf_result = cursor.fetchone()
+                    avg_confidence = (
+                        float(avg_conf_result[0]) if avg_conf_result[0] else 0.0
+                    )
+
+                    # Get method distribution
+                    cursor.execute(
+                        """
+                        SELECT method, COUNT(*) as count
+                        FROM face_detections 
+                        WHERE session_uuid = %s
+                        GROUP BY method
+                    """,
+                        (session_uuid,),
+                    )
+                    method_counts = dict(cursor.fetchall())
+
+                    # Calculate session duration
+                    duration_seconds = None
+                    if session.ended_at and session.started_at:
+                        duration_seconds = (
+                            session.ended_at - session.started_at
+                        ).total_seconds()
+
+                    return {
+                        "session_uuid": session_uuid,
+                        "media_uuid": session.media_uuid,
+                        "camera_device_uuid": session.camera_device_uuid,
+                        "session_type": session.session_type,
+                        "total_faces": session.total_faces_detected,
+                        "session_duration": duration_seconds,
+                        "avg_confidence": avg_confidence,
+                        "faces_per_frame": frame_counts,
+                        "detection_methods": method_counts,
+                        "processing_status": session.processing_status,
+                        "started_at": (
+                            session.started_at.isoformat()
+                            if session.started_at
+                            else None
+                        ),
+                        "ended_at": (
+                            session.ended_at.isoformat() if session.ended_at else None
+                        ),
+                        "metadata": session.metadata,
+                    }
+
+            except Exception as e:
+                logger.error(f"Database error getting session analytics: {e}")
+                raise HTTPException(
+                    status_code=500, detail=f"Failed to get session analytics: {str(e)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=503, detail="Database connection not available"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session analytics: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+# ============================================================================
+# PHASE 5: Advanced Analytics & Traceability Features
+# ============================================================================
+
+# Analytics Service Integration
+analytics_service_instance = None
+
+
+@app.get("/analytics/cross-session", summary="Cross-Session Analytics")
+async def get_cross_session_analytics(
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    camera_device_uuid: Optional[str] = Query(
+        None, description="Filter by camera device"
+    ),
+    authorization: str = Header(None),
+):
+    """
+    Get comprehensive cross-session analytics for face detection operations.
+
+    Provides insights across multiple sessions including:
+    - Session overview statistics
+    - Detection trends over time
+    - Camera performance analysis
+    - Success rate analysis
+    """
+    try:
+        if not analytics_service_instance:
+            raise HTTPException(
+                status_code=503, detail="Analytics service not available"
+            )
+
+        # Parse date filters
+        start_datetime = None
+        end_datetime = None
+
+        if start_date:
+            try:
+                start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, "%Y-%m-%d")
+                # Set to end of day
+                end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+
+        # Get analytics data
+        analytics = analytics_service_instance.get_cross_session_analytics(
+            start_date=start_datetime,
+            end_date=end_datetime,
+            camera_device_uuid=camera_device_uuid,
+        )
+
+        return {
+            "success": True,
+            "analytics": analytics,
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "camera_device_uuid": camera_device_uuid,
+            },
+            "message": "Cross-session analytics retrieved successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting cross-session analytics: {e}")
+        raise HTTPException(status_code=500, detail=f"Analytics error: {str(e)}")
+
+
+@app.get(
+    "/analytics/device/{camera_device_uuid}", summary="Device Traceability Analytics"
+)
+async def get_device_traceability_analytics(
+    camera_device_uuid: str,
+    days: Optional[int] = Query(30, description="Number of days to analyze"),
+    include_sessions: Optional[bool] = Query(
+        True, description="Include session details"
+    ),
+    authorization: str = Header(None),
+):
+    """
+    Get comprehensive traceability analytics for a specific camera device.
+
+    Provides device-specific insights including:
+    - Session overview for device
+    - Session history with processing status
+    - Daily activity patterns
+    - Quality metrics analysis
+    """
+    try:
+        if not analytics_service_instance:
+            raise HTTPException(
+                status_code=503, detail="Analytics service not available"
+            )
+
+        # Validate UUID format
+        try:
+            uuid.UUID(camera_device_uuid)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid camera device UUID format"
+            )
+
+        # Calculate date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # Get device analytics
+        analytics = analytics_service_instance.get_device_traceability(
+            camera_device_uuid=camera_device_uuid,
+            start_date=start_date,
+            end_date=end_date,
+            include_session_details=include_sessions,
+        )
+
+        return {
+            "success": True,
+            "camera_device_uuid": camera_device_uuid,
+            "analytics": analytics,
+            "analysis_period": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "days": days,
+            },
+            "message": f"Device traceability analytics for {camera_device_uuid} retrieved successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting device traceability analytics: {e}")
+        raise HTTPException(status_code=500, detail=f"Analytics error: {str(e)}")
+
+
+@app.get("/analytics/media/{media_uuid}/timeline", summary="Media Timeline Analytics")
+async def get_media_timeline_analytics(
+    media_uuid: str,
+    include_sessions: Optional[bool] = Query(
+        True, description="Include session details"
+    ),
+    include_frames: Optional[bool] = Query(False, description="Include frame analysis"),
+    authorization: str = Header(None),
+):
+    """
+    Get comprehensive timeline analytics for a specific media file.
+
+    Provides chronological view of face detection sessions including:
+    - Media processing overview
+    - Session timeline with processing details
+    - Frame analysis (if requested)
+    - Processing quality metrics
+    """
+    try:
+        if not analytics_service_instance:
+            raise HTTPException(
+                status_code=503, detail="Analytics service not available"
+            )
+
+        # Validate UUID format
+        try:
+            uuid.UUID(media_uuid)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid media UUID format")
+
+        # Get media timeline analytics
+        analytics = analytics_service_instance.get_media_timeline_analytics(
+            media_uuid=media_uuid,
+            include_session_details=include_sessions,
+            include_frame_analysis=include_frames,
+        )
+
+        return {
+            "success": True,
+            "media_uuid": media_uuid,
+            "analytics": analytics,
+            "options": {
+                "include_sessions": include_sessions,
+                "include_frames": include_frames,
+            },
+            "message": f"Media timeline analytics for {media_uuid} retrieved successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting media timeline analytics: {e}")
+        raise HTTPException(status_code=500, detail=f"Analytics error: {str(e)}")
+
+
+@app.get("/analytics/query", summary="Advanced Analytics Query")
+async def advanced_analytics_query(
+    query_type: str = Query(
+        ..., description="Type of query: sessions, devices, media, performance"
+    ),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    camera_device_uuid: Optional[str] = Query(
+        None, description="Filter by camera device"
+    ),
+    media_uuid: Optional[str] = Query(None, description="Filter by media file"),
+    session_type: Optional[str] = Query(None, description="Filter by session type"),
+    processing_status: Optional[str] = Query(
+        None, description="Filter by processing status"
+    ),
+    confidence_threshold: Optional[float] = Query(
+        None, description="Minimum confidence threshold"
+    ),
+    limit: Optional[int] = Query(100, description="Maximum number of results"),
+    offset: Optional[int] = Query(0, description="Result offset for pagination"),
+    authorization: str = Header(None),
+):
+    """
+    Advanced querying system for complex analytics with filters and aggregations.
+
+    Supports multiple query types:
+    - sessions: Query session data with complex filters
+    - devices: Query device-specific analytics
+    - media: Query media processing analytics
+    - performance: Query system performance metrics
+    """
+    try:
+        if not analytics_service_instance:
+            raise HTTPException(
+                status_code=503, detail="Analytics service not available"
+            )
+
+        # Validate query type
+        valid_query_types = ["sessions", "devices", "media", "performance"]
+        if query_type not in valid_query_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid query_type. Must be one of: {', '.join(valid_query_types)}",
+            )
+
+        # Parse date filters
+        start_datetime = None
+        end_datetime = None
+
+        if start_date:
+            try:
+                start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+
+        if end_date:
+            try:
+                end_datetime = datetime.strptime(end_date, "%Y-%m-%d")
+                end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
+
+        # Build filter dictionary
+        filters = {}
+        if start_datetime:
+            filters["start_date"] = start_datetime
+        if end_datetime:
+            filters["end_date"] = end_datetime
+        if camera_device_uuid:
+            filters["camera_device_uuid"] = camera_device_uuid
+        if media_uuid:
+            filters["media_uuid"] = media_uuid
+        if session_type:
+            filters["session_type"] = session_type
+        if processing_status:
+            filters["processing_status"] = processing_status
+        if confidence_threshold is not None:
+            filters["confidence_threshold"] = confidence_threshold
+
+        # Execute query based on type
+        if query_type == "sessions":
+            result = analytics_service_instance.query_sessions(filters, limit, offset)
+        elif query_type == "devices":
+            result = analytics_service_instance.query_devices(filters, limit, offset)
+        elif query_type == "media":
+            result = analytics_service_instance.query_media(filters, limit, offset)
+        elif query_type == "performance":
+            result = analytics_service_instance.query_performance(
+                filters, limit, offset
+            )
+
+        return {
+            "success": True,
+            "query_type": query_type,
+            "result": result,
+            "filters": filters,
+            "pagination": {
+                "limit": limit,
+                "offset": offset,
+                "total_results": (
+                    result.get("total_count", 0) if isinstance(result, dict) else None
+                ),
+            },
+            "message": f"Advanced {query_type} query executed successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing advanced analytics query: {e}")
+        raise HTTPException(status_code=500, detail=f"Analytics query error: {str(e)}")
+
+
+@app.get("/analytics/performance", summary="Performance Analytics")
+async def get_performance_analytics(
+    metric_type: Optional[str] = Query(
+        None, description="Specific metric: processing_time, accuracy, throughput"
+    ),
+    days: Optional[int] = Query(7, description="Number of days to analyze"),
+    granularity: Optional[str] = Query(
+        "hour", description="Time granularity: hour, day"
+    ),
+    authorization: str = Header(None),
+):
+    """
+    Get performance analytics and monitoring data.
+
+    Provides system performance insights including:
+    - Processing time analytics
+    - Detection accuracy metrics
+    - System throughput analysis
+    - Performance trends over time
+    """
+    try:
+        if not analytics_service_instance:
+            raise HTTPException(
+                status_code=503, detail="Analytics service not available"
+            )
+
+        # Validate parameters
+        valid_metrics = ["processing_time", "accuracy", "throughput", None]
+        if metric_type not in valid_metrics:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid metric_type. Must be one of: {', '.join([m for m in valid_metrics if m])}",
+            )
+
+        valid_granularities = ["hour", "day"]
+        if granularity not in valid_granularities:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid granularity. Must be one of: {', '.join(valid_granularities)}",
+            )
+
+        # Calculate date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # Get performance analytics
+        analytics = analytics_service_instance.get_performance_analytics(
+            start_date=start_date,
+            end_date=end_date,
+            metric_type=metric_type,
+            granularity=granularity,
+        )
+
+        return {
+            "success": True,
+            "analytics": analytics,
+            "parameters": {
+                "metric_type": metric_type,
+                "days": days,
+                "granularity": granularity,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+            "message": "Performance analytics retrieved successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting performance analytics: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Performance analytics error: {str(e)}"
+        )
+
+
+@app.get("/analytics/summary", summary="Analytics Dashboard Summary")
+async def get_analytics_dashboard_summary(
+    days: Optional[int] = Query(7, description="Number of days for summary"),
+    authorization: str = Header(None),
+):
+    """
+    Get comprehensive analytics dashboard summary.
+
+    Provides high-level overview including:
+    - System activity summary
+    - Top performing cameras
+    - Recent processing statistics
+    - System health metrics
+    """
+    try:
+        if not analytics_service_instance:
+            raise HTTPException(
+                status_code=503, detail="Analytics service not available"
+            )
+
+        # Calculate date range
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # Get comprehensive summary
+        summary = {
+            "period": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "days": days,
+            }
+        }
+
+        # Get cross-session overview
+        cross_session = analytics_service_instance.get_cross_session_analytics(
+            start_date=start_date, end_date=end_date
+        )
+
+        summary["system_overview"] = cross_session.get("session_overview", {})
+        summary["detection_trends"] = cross_session.get("detection_trends", {})
+        summary["camera_performance"] = cross_session.get("camera_performance", {})
+
+        # Get performance metrics
+        performance = analytics_service_instance.get_performance_analytics(
+            start_date=start_date, end_date=end_date, granularity="day"
+        )
+
+        summary["performance_metrics"] = performance
+
+        return {
+            "success": True,
+            "summary": summary,
+            "generated_at": datetime.now().isoformat(),
+            "message": f"Analytics dashboard summary for {days} days retrieved successfully",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting analytics dashboard summary: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Analytics summary error: {str(e)}"
+        )
+
+
 # Error handlers
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
@@ -1330,6 +2954,17 @@ async def not_found_handler(request, exc):
                 "/media/{media_id}/analytics",
                 "/faces/media/{media_id}/frame/{frame_number}",
                 "/faces/media/{media_id}/bulk-process",
+                "/sessions/start",
+                "/sessions/{session_uuid}/status",
+                "/sessions/{session_uuid}/complete",
+                "/sessions",
+                "/sessions/stats",
+                "/analytics/cross-session",
+                "/analytics/device/{camera_device_uuid}",
+                "/analytics/media/{media_uuid}/timeline",
+                "/analytics/query",
+                "/analytics/performance",
+                "/analytics/summary",
                 "/database/status",
                 "/debug/auth",
                 "/docs",

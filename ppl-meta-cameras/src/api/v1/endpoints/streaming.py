@@ -26,6 +26,8 @@ from src.security.auth import (
 from src.services.camera_detection import camera_service
 from src.services.mobile_streaming import mobile_streaming_service
 from src.services.session_auth import session_manager
+from src.services.session_aware_face_detector import session_aware_face_detector
+from src.services.streaming_session_manager import streaming_session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -137,7 +139,7 @@ async def video_stream(
     current_user: Dict = Depends(require_view_stream_flexible),
     db: Session = Depends(get_db),
 ):
-    """Stream video from camera."""
+    """Stream video from camera with integrated session management."""
 
     # Check if this is a mobile camera
     camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -151,7 +153,168 @@ async def video_stream(
     if camera.camera_type == CameraType.MOBILE:
         return await handle_mobile_camera_stream(device_id, quality, current_user)
 
-    # Continue with regular camera streaming for non-mobile cameras
+    # Continue with regular camera streaming for non-mobile cameras with session support
+
+    async def generate_frames():
+        """Generate video frames for streaming with face detection and session tracking."""
+
+        session_uuid = None
+
+        try:
+            cap = await camera_service.get_camera_stream(device_id)
+            if not cap:
+                logger.info(
+                    f"Camera {device_id} not connected, attempting to connect..."
+                )
+                # Try to connect the camera automatically
+                connection = await camera_service.connect_camera(device_id)
+                if not connection:
+                    logger.error(
+                        f"Failed to auto-connect camera {device_id} for streaming"
+                    )
+                    return
+                cap = await camera_service.get_camera_stream(device_id)
+                if not cap:
+                    logger.error(
+                        f"Camera {device_id} still not connected after auto-connect"
+                    )
+                    return
+
+            # Create streaming session for USB camera
+            session_uuid = await streaming_session_manager.create_streaming_session(
+                device_id=device_id,
+                camera_device_uuid=camera.device_id,
+                session_metadata={
+                    "camera_type": "usb",
+                    "quality": quality,
+                    "stream_type": "http_mjpeg",
+                },
+            )
+
+            logger.info(
+                f"✅ Created USB camera streaming session {session_uuid} for device {device_id}"
+            )
+
+            # Set quality parameters
+            quality_settings = {
+                "low": (320, 240, 15),
+                "medium": (640, 480, 30),
+                "high": (1280, 720, 30),
+                "ultra": (1920, 1080, 30),
+            }
+
+            width, height, fps = quality_settings.get(
+                quality, quality_settings["medium"]
+            )
+
+            # Set camera properties
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            cap.set(cv2.CAP_PROP_FPS, fps)
+
+            frame_count = 0
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    logger.warning(f"Failed to read frame from camera {device_id}")
+                    break
+
+                # Cache the frame for recording use
+                camera_service.latest_frames[device_id] = (ret, frame.copy())
+
+                # Perform session-aware face detection on every 5th frame to balance performance
+                if frame_count % 5 == 0 and session_uuid:
+                    try:
+                        detection_result = (
+                            await session_aware_face_detector.detect_faces_with_session(
+                                frame=frame,
+                                session_uuid=session_uuid,
+                                device_id=device_id,
+                                method="two_stage",
+                                confidence_threshold=0.7,
+                                frame_metadata={
+                                    "frame_count": frame_count,
+                                    "frame_size": frame.shape,
+                                    "stream_type": "usb_mjpeg",
+                                },
+                            )
+                        )
+
+                        # Update session with detection results
+                        await streaming_session_manager.update_session_detection(
+                            device_id=device_id,
+                            faces_detected=detection_result["faces_detected"],
+                            frame_metadata=detection_result["frame_metadata"],
+                        )
+
+                        if detection_result["face_count"] > 0:
+                            logger.debug(
+                                f"🔍 USB Camera {device_id}: detected {detection_result['face_count']} faces in frame {frame_count}"
+                            )
+
+                    except Exception as detection_error:
+                        logger.error(
+                            f"❌ Face detection error for USB camera {device_id}: {detection_error}"
+                        )
+
+                # Resize frame if needed
+                if frame.shape[1] != width or frame.shape[0] != height:
+                    frame = cv2.resize(frame, (width, height))
+
+                # Encode frame as JPEG
+                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                frame_bytes = buffer.tobytes()
+
+                # Yield frame in multipart format
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+
+                frame_count += 1
+
+                # Small delay to control frame rate
+                await asyncio.sleep(1.0 / fps)
+
+        except Exception as e:
+            logger.error(f"Error in video stream for camera {device_id}: {e}")
+            return
+        finally:
+            # Complete session when stream ends
+            if session_uuid:
+                await streaming_session_manager.complete_streaming_session(
+                    device_id=device_id, completion_reason="stream_ended"
+                )
+                logger.info(f"✅ Completed USB camera streaming session {session_uuid}")
+
+                # Cleanup session-aware detector session
+                session_aware_face_detector.cleanup_session(session_uuid)
+
+    try:
+        # Check if camera is connected
+        cap = await camera_service.get_camera_stream(device_id)
+        if not cap:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not connected",
+            )
+
+        logger.info(
+            f"User {current_user.get('sub')} accessing video stream for camera {device_id}"
+        )
+
+        return StreamingResponse(
+            generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error setting up video stream for camera {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to setup video stream",
+        )
 
 
 async def handle_mobile_camera_stream(device_id: str, quality: str, current_user: Dict):
