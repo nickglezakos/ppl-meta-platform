@@ -275,6 +275,24 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
+                        icon: Icons.auto_awesome,
+                        iconColor: AppColors.primary, // Use primary color for workflows
+                        title: 'Workflows',
+                        subtitle: 'Face detection dashboard',
+                        onTap: () {
+                          context.go('/workflows');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.smart_toy,
+                        iconColor: Colors.purple, // Distinct color for automation
+                        title: 'Automation',
+                        subtitle: 'Smart automation rules',
+                        onTap: () {
+                          context.go('/automation');
+                        },
+                      ),
+                      _ActionCard(
                         icon: Icons.sync,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Camera Media Sync',

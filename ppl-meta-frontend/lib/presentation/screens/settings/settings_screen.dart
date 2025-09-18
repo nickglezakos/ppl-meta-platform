@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/settings/network_settings_section.dart';
 import '../../widgets/settings/storage_settings_section.dart';
+import '../../widgets/settings/workflow_settings_section.dart';
 import '../../../widgets/custom_app_bar.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -20,6 +21,11 @@ class SettingsScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Workflow Settings Section
+            WorkflowSettingsSection(),
+            
+            SizedBox(height: 24),
+            
             // Network Settings Section
             NetworkSettingsSection(),
             

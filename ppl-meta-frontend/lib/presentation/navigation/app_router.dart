@@ -19,8 +19,11 @@ import '../../screens/profile_screen.dart';
 import '../../screens/features_screen.dart';
 import '../../screens/media_preview_screen.dart';
 import '../../screens/camera_media_sync_screen.dart';
+import '../../screens/workflow_dashboard_screen.dart';
+import '../../screens/automation_screen.dart';
 import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
+import '../../pages/workflow_widget_test_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authNotifierProvider);
@@ -107,6 +110,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const FeaturesScreen(),
       ),
       GoRoute(
+        path: '/workflows',
+        name: 'workflows',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: WorkflowDashboardScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/workflow-test',
+        name: 'workflow-test',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: WorkflowWidgetTestPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/automation',
+        name: 'automation',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: AutomationScreen(),
+        ),
+      ),
+      GoRoute(
         path: '/users',
         name: 'users',
         builder: (context, state) => const ProviderScreenWrapper(
@@ -163,7 +187,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             );
           }
           return ProviderScreenWrapper(
-            child: MediaPreviewScreen(mediaItem: mediaItem),
+            child: EnhancedMediaPreviewScreen(mediaItem: mediaItem),
           );
         },
       ),

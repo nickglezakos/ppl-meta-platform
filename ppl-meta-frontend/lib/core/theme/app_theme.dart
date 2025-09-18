@@ -48,8 +48,10 @@ class AppColors {
   static const Color gray800 = Color(0xFF424242);
   static const Color gray900 = Color(0xFF212121);
   
-  // Border color
+  // Border and card colors
   static const Color border = Color(0xFF0F0F14);
+  static const Color divider = Color(0xFF0F0F14);
+  static const Color cardBackground = Color(0xFF0F0F14);
   
   // Utility method to get consistent border decoration
   static BoxDecoration getOutlineDecoration({
@@ -88,6 +90,10 @@ class AppTextStyles {
   static final bodyLarge = OfflineFonts.roboto(fontSize: 16);
   static final bodyMedium = OfflineFonts.roboto(fontSize: 14);
   static final bodySmall = OfflineFonts.roboto(fontSize: 12);
+  
+  // Subtitle styles for compatibility
+  static final subtitle1 = OfflineFonts.roboto(fontSize: 16, fontWeight: FontWeight.w500);
+  static final subtitle2 = OfflineFonts.roboto(fontSize: 14, fontWeight: FontWeight.w500);
   
   static final labelLarge = OfflineFonts.roboto(fontSize: 14, fontWeight: FontWeight.w500);
   static final labelMedium = OfflineFonts.roboto(fontSize: 12, fontWeight: FontWeight.w500);

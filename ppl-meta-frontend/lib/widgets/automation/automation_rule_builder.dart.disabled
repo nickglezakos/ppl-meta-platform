@@ -1,0 +1,849 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/automation_providers.dart';
+
+/// Automation rule builder widget for creating and editing automation rules
+/// Provides visual interface for configuring triggers, conditions, and actions
+class AutomationRuleBuilder extends ConsumerStatefulWidget {
+  final AutomationRule? existingRule;
+  final Function(AutomationRule)? onSaved;
+  final Function()? onCanceled;
+
+  const AutomationRuleBuilder({
+    Key? key,
+    this.existingRule,
+    this.onSaved,
+    this.onCanceled,
+  }) : super(key: key);
+
+  @override
+  ConsumerState<AutomationRuleBuilder> createState() => _AutomationRuleBuilderState();
+}
+
+class _AutomationRuleBuilderState extends ConsumerState<AutomationRuleBuilder> {
+  late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
+  late AutomationRule _rule;
+  bool _isValid = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _rule = widget.existingRule ?? AutomationRule.empty();
+    _nameController = TextEditingController(text: _rule.name);
+    _descriptionController = TextEditingController(text: _rule.description);
+    _validateRule();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.existingRule != null ? 'Edit Rule' : 'Create Rule'),
+        actions: [
+          TextButton(
+            onPressed: _isValid ? _saveRule : null,
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Basic Information
+            _buildBasicInfoSection(),
+            const SizedBox(height: 24),
+            
+            // Trigger Configuration
+            _buildTriggerSection(),
+            const SizedBox(height: 24),
+            
+            // Conditions Configuration
+            _buildConditionsSection(),
+            const SizedBox(height: 24),
+            
+            // Actions Configuration
+            _buildActionsSection(),
+            const SizedBox(height: 24),
+            
+            // Schedule Configuration
+            _buildScheduleSection(),
+            const SizedBox(height: 24),
+            
+            // Advanced Settings
+            _buildAdvancedSection(),
+            const SizedBox(height: 32),
+            
+            // Preview & Test
+            _buildPreviewSection(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBasicInfoSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.info_outline),
+                const SizedBox(width: 8),
+                Text(
+                  'Basic Information',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Rule Name
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Rule Name',
+                hintText: 'Enter a descriptive name for this rule',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _rule = _rule.copyWith(name: value);
+                  _validateRule();
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Rule Description
+            TextFormField(
+              controller: _descriptionController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Description',
+                hintText: 'Describe what this rule does',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) {
+                setState(() {
+                  _rule = _rule.copyWith(description: value);
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            
+            // Rule Priority
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Priority',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                DropdownButton<RulePriority>(
+                  value: _rule.priority,
+                  items: RulePriority.values.map((priority) {
+                    return DropdownMenuItem(
+                      value: priority,
+                      child: Row(
+                        children: [
+                          Icon(
+                            _getPriorityIcon(priority),
+                            color: _getPriorityColor(priority),
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(priority.name.toUpperCase()),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (priority) {
+                    if (priority != null) {
+                      setState(() {
+                        _rule = _rule.copyWith(priority: priority);
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+            
+            // Rule Status
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Rule Enabled',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Switch(
+                  value: _rule.enabled,
+                  onChanged: (value) {
+                    setState(() {
+                      _rule = _rule.copyWith(enabled: value);
+                    });
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTriggerSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.flash_on),
+                const SizedBox(width: 8),
+                Text(
+                  'Trigger',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'What event should start this automation?',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Trigger Type Selection
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: TriggerType.values.map((triggerType) {
+                final isSelected = _rule.trigger?.type == triggerType;
+                return FilterChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _getTriggerIcon(triggerType),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(triggerType.displayName),
+                    ],
+                  ),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() {
+                        _rule = _rule.copyWith(
+                          trigger: AutomationTrigger.fromType(triggerType),
+                        );
+                        _validateRule();
+                      });
+                    }
+                  },
+                );
+              }).toList(),
+            ),
+            
+            // Trigger Configuration
+            if (_rule.trigger != null) ...[
+              const SizedBox(height: 16),
+              TriggerConfigurationWidget(
+                trigger: _rule.trigger!,
+                onChanged: (trigger) {
+                  setState(() {
+                    _rule = _rule.copyWith(trigger: trigger);
+                    _validateRule();
+                  });
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConditionsSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.rule),
+                const SizedBox(width: 8),
+                Text(
+                  'Conditions',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _addCondition,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Condition'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Additional requirements that must be met',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            if (_rule.conditions.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.rule_outlined,
+                      size: 48,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No conditions defined',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'The rule will execute whenever the trigger occurs',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...List.generate(_rule.conditions.length, (index) {
+                final condition = _rule.conditions[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ConditionWidget(
+                    condition: condition,
+                    index: index,
+                    onChanged: (updatedCondition) {
+                      setState(() {
+                        final conditions = List<AutomationCondition>.from(_rule.conditions);
+                        conditions[index] = updatedCondition;
+                        _rule = _rule.copyWith(conditions: conditions);
+                        _validateRule();
+                      });
+                    },
+                    onRemoved: () {
+                      setState(() {
+                        final conditions = List<AutomationCondition>.from(_rule.conditions);
+                        conditions.removeAt(index);
+                        _rule = _rule.copyWith(conditions: conditions);
+                        _validateRule();
+                      });
+                    },
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionsSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.play_arrow),
+                const SizedBox(width: 8),
+                Text(
+                  'Actions',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _addAction,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Action'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'What should happen when this rule triggers?',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            if (_rule.actions.isEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.play_circle_outline,
+                      size: 48,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No actions defined',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Add actions to specify what should happen',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ...List.generate(_rule.actions.length, (index) {
+                final action = _rule.actions[index];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ActionWidget(
+                    action: action,
+                    index: index,
+                    onChanged: (updatedAction) {
+                      setState(() {
+                        final actions = List<AutomationAction>.from(_rule.actions);
+                        actions[index] = updatedAction;
+                        _rule = _rule.copyWith(actions: actions);
+                        _validateRule();
+                      });
+                    },
+                    onRemoved: () {
+                      setState(() {
+                        final actions = List<AutomationAction>.from(_rule.actions);
+                        actions.removeAt(index);
+                        _rule = _rule.copyWith(actions: actions);
+                        _validateRule();
+                      });
+                    },
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScheduleSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.schedule),
+                const SizedBox(width: 8),
+                Text(
+                  'Schedule',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'When should this rule be active?',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            ScheduleConfigurationWidget(
+              schedule: _rule.schedule,
+              onChanged: (schedule) {
+                setState(() {
+                  _rule = _rule.copyWith(schedule: schedule);
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdvancedSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.tune),
+                const SizedBox(width: 8),
+                Text(
+                  'Advanced Settings',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Cooldown Period
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Cooldown Period',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      Text(
+                        'Minimum time between executions',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 120,
+                  child: TextFormField(
+                    initialValue: _rule.cooldownMinutes.toString(),
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      suffix: Text('min'),
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                    onChanged: (value) {
+                      final minutes = int.tryParse(value) ?? _rule.cooldownMinutes;
+                      setState(() {
+                        _rule = _rule.copyWith(cooldownMinutes: minutes);
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Max Executions Per Day
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Max Executions Per Day',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      Text(
+                        'Limit daily rule executions (0 = unlimited)',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 120,
+                  child: TextFormField(
+                    initialValue: _rule.maxExecutionsPerDay.toString(),
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                    onChanged: (value) {
+                      final max = int.tryParse(value) ?? _rule.maxExecutionsPerDay;
+                      setState(() {
+                        _rule = _rule.copyWith(maxExecutionsPerDay: max);
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Notification Settings
+            CheckboxListTile(
+              title: const Text('Send notifications'),
+              subtitle: const Text('Notify when rule executes'),
+              value: _rule.sendNotifications,
+              onChanged: (value) {
+                setState(() {
+                  _rule = _rule.copyWith(sendNotifications: value ?? false);
+                });
+              },
+            ),
+            
+            CheckboxListTile(
+              title: const Text('Log executions'),
+              subtitle: const Text('Keep execution history'),
+              value: _rule.logExecutions,
+              onChanged: (value) {
+                setState(() {
+                  _rule = _rule.copyWith(logExecutions: value ?? false);
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviewSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.preview),
+                const SizedBox(width: 8),
+                Text(
+                  'Rule Preview',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                if (_isValid)
+                  TextButton.icon(
+                    onPressed: _testRule,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Test Rule'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _generateRuleDescription(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+            
+            if (!_isValid) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    Icons.warning,
+                    color: Theme.of(context).colorScheme.error,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Rule is incomplete. Please configure trigger and at least one action.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _getPriorityIcon(RulePriority priority) {
+    switch (priority) {
+      case RulePriority.low:
+        return Icons.keyboard_arrow_down;
+      case RulePriority.normal:
+        return Icons.remove;
+      case RulePriority.high:
+        return Icons.keyboard_arrow_up;
+      case RulePriority.critical:
+        return Icons.priority_high;
+    }
+  }
+
+  Color _getPriorityColor(RulePriority priority) {
+    switch (priority) {
+      case RulePriority.low:
+        return Colors.blue;
+      case RulePriority.normal:
+        return Colors.grey;
+      case RulePriority.high:
+        return Colors.orange;
+      case RulePriority.critical:
+        return Colors.red;
+    }
+  }
+
+  IconData _getTriggerIcon(TriggerType type) {
+    switch (type) {
+      case TriggerType.faceDetected:
+        return Icons.face;
+      case TriggerType.motionDetected:
+        return Icons.directions_run;
+      case TriggerType.schedule:
+        return Icons.schedule;
+      case TriggerType.manual:
+        return Icons.touch_app;
+      case TriggerType.webhook:
+        return Icons.webhook;
+      case TriggerType.deviceStatus:
+        return Icons.device_hub;
+    }
+  }
+
+  void _addCondition() {
+    setState(() {
+      final conditions = List<AutomationCondition>.from(_rule.conditions);
+      conditions.add(AutomationCondition.empty());
+      _rule = _rule.copyWith(conditions: conditions);
+    });
+  }
+
+  void _addAction() {
+    setState(() {
+      final actions = List<AutomationAction>.from(_rule.actions);
+      actions.add(AutomationAction.empty());
+      _rule = _rule.copyWith(actions: actions);
+    });
+  }
+
+  void _validateRule() {
+    setState(() {
+      _isValid = _rule.name.isNotEmpty &&
+                 _rule.trigger != null &&
+                 _rule.actions.isNotEmpty;
+    });
+  }
+
+  String _generateRuleDescription() {
+    if (!_isValid) {
+      return 'Configure the rule to see a preview...';
+    }
+
+    final trigger = _rule.trigger!.getDescription();
+    final actions = _rule.actions.map((a) => a.getDescription()).join(', ');
+    final conditions = _rule.conditions.isNotEmpty 
+        ? ' when ${_rule.conditions.map((c) => c.getDescription()).join(' and ')}'
+        : '';
+
+    return 'When $trigger$conditions, then $actions.';
+  }
+
+  void _testRule() {
+    // In a real implementation, this would trigger a test execution
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Test Rule'),
+        content: const Text('Rule test would be executed here. This would simulate the trigger and show the expected actions.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _saveRule() {
+    if (_isValid) {
+      final finalRule = _rule.copyWith(
+        name: _nameController.text,
+        description: _descriptionController.text,
+      );
+      
+      widget.onSaved?.call(finalRule);
+      Navigator.of(context).pop();
+    }
+  }
+}
+
+// Supporting widgets and data classes would be implemented in separate files:
+// - TriggerConfigurationWidget
+// - ConditionWidget  
+// - ActionWidget
+// - ScheduleConfigurationWidget
+// - AutomationRule, AutomationTrigger, AutomationCondition, AutomationAction classes
+// - Related enums (TriggerType, RulePriority, etc.)

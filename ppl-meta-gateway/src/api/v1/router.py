@@ -694,6 +694,31 @@ async def get_video_frame_faces(request: Request):
     return await _proxy_to_vision_service(request)
 
 
+# Enhanced Workflow Widget API Routes for Vision Service
+@api_router.get("/processing-status/{media_uuid}/widget")
+async def get_widget_processing_status(request: Request):
+    """Proxy widget-optimized processing status to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/processing-status/{media_uuid}/analytics")
+async def get_widget_processing_analytics(request: Request):
+    """Proxy processing analytics for widgets to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/processing-status/health")
+async def get_processing_system_health(request: Request):
+    """Proxy processing system health to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/sessions/active/overview")
+async def get_active_sessions_overview(request: Request):
+    """Proxy active sessions overview to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
 async def _proxy_to_cameras_service(request: Request) -> Response:
     """Helper function to proxy requests to the Cameras service."""
     try:

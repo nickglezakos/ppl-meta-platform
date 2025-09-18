@@ -68,9 +68,12 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
   void _stopStreaming() {
     print('🛑 Stopping stream for camera: ${widget.cameraId}');
     
-    setState(() {
-      _isStreaming = false;
-    });
+    // Check if widget is still mounted before calling setState
+    if (mounted) {
+      setState(() {
+        _isStreaming = false;
+      });
+    }
     
     // Clean up HTML elements
     _imageElement?.remove();

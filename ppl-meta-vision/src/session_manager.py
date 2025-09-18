@@ -16,12 +16,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 
+import psycopg2
+import psycopg2.extras
 from api_models import (
     FaceDetectionSessionModel,
+    FaceDetectionSessionRequest,
     MediaProcessingStatusModel,
     SessionCompleteRequest,
     SessionCompleteResponse,
-    SessionCreateRequest,
     SessionErrorResponse,
     SessionQueryRequest,
     SessionQueryResponse,
@@ -58,7 +60,7 @@ class SessionManager:
             return False
 
     async def create_session(
-        self, request: SessionCreateRequest
+        self, request: FaceDetectionSessionRequest
     ) -> Union[SessionStartResponse, SessionErrorResponse]:
         """
         Create a new face detection session.
@@ -222,7 +224,8 @@ class SessionManager:
                                     s.*,
                                     COUNT(f.id) as current_face_count
                                 FROM face_detection_sessions s
-                                LEFT JOIN face_detections f ON s.session_uuid = f.session_uuid
+                                LEFT JOIN face_detections f
+                                    ON s.media_uuid = f.media_id
                                 WHERE s.session_uuid = %s
                                 GROUP BY s.session_uuid
                             """,
@@ -287,7 +290,8 @@ class SessionManager:
                                 s.*,
                                 COUNT(f.id) as current_face_count
                             FROM face_detection_sessions s
-                            LEFT JOIN face_detections f ON s.session_uuid = f.session_uuid
+                            LEFT JOIN face_detections f
+                                ON s.media_uuid = f.media_id
                             WHERE s.session_uuid = %s
                             GROUP BY s.session_uuid
                         """,
@@ -628,11 +632,14 @@ class SessionManager:
                             where_conditions.append("s.processing_status = %s")
                             params.append(request.processing_status)
 
-                        if request.started_after:
+                        if hasattr(request, "started_after") and request.started_after:
                             where_conditions.append("s.started_at >= %s")
                             params.append(request.started_after)
 
-                        if request.started_before:
+                        if (
+                            hasattr(request, "started_before")
+                            and request.started_before
+                        ):
                             where_conditions.append("s.started_at <= %s")
                             params.append(request.started_before)
 
@@ -648,7 +655,8 @@ class SessionManager:
                                 s.*,
                                 COUNT(f.id) as total_faces_detected
                             FROM face_detection_sessions s
-                            LEFT JOIN face_detections f ON s.session_uuid = f.session_uuid
+                            LEFT JOIN face_detections f
+                                ON s.media_uuid = f.media_id
                             {where_clause}
                             GROUP BY s.session_uuid
                             ORDER BY s.started_at DESC
@@ -701,6 +709,7 @@ class SessionManager:
                     )
 
             return SessionQueryResponse(
+                success=True,
                 sessions=sessions,
                 total_count=len(sessions),
                 limit=request.limit or 50,

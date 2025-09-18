@@ -171,14 +171,85 @@ class SessionCompleteResponse(BaseAPIResponse):
     ended_at: datetime = Field(..., description="Session end timestamp")
 
 
+class SessionQueryRequest(BaseModel):
+    """Request model for querying face detection sessions."""
+
+    media_uuid: Optional[str] = Field(default=None, description="Filter by media UUID")
+    camera_device_uuid: Optional[str] = Field(
+        default=None, description="Filter by camera device UUID"
+    )
+    session_type: Optional[str] = Field(
+        default=None, description="Filter by session type"
+    )
+    processing_status: Optional[str] = Field(
+        default=None,
+        description="Filter by processing status (active, completed, failed)",
+    )
+    started_after: Optional[str] = Field(
+        default=None, description="Filter sessions started after this timestamp"
+    )
+    started_before: Optional[str] = Field(
+        default=None, description="Filter sessions started before this timestamp"
+    )
+    limit: Optional[int] = Field(
+        default=50, description="Maximum number of sessions to return"
+    )
+    offset: Optional[int] = Field(default=0, description="Number of sessions to skip")
+
+
+class SessionQueryResponse(BaseAPIResponse):
+    """Response model for session query results."""
+
+    sessions: List[FaceDetectionSessionModel] = Field(
+        default_factory=list, description="List of matching sessions"
+    )
+    total_count: int = Field(..., description="Total number of matching sessions")
+    limit: int = Field(..., description="Applied limit")
+    offset: int = Field(..., description="Applied offset")
+
+
+class SessionStartResponse(BaseAPIResponse):
+    """Response model for session start operations."""
+
+    session: FaceDetectionSessionModel = Field(
+        ..., description="Created session details"
+    )
+    message: str = Field(..., description="Success message")
+
+
+class SessionStatusResponse(BaseAPIResponse):
+    """Response model for session status queries."""
+
+    session: FaceDetectionSessionModel = Field(..., description="Session details")
+    status: str = Field(..., description="Current session status")
+
+
 class SessionErrorResponse(BaseAPIResponse):
     """Response model for session errors."""
 
+    success: bool = Field(default=False, description="Always False for error responses")
     session_uuid: Optional[str] = Field(
         default=None, description="Session UUID if available"
     )
     error_code: str = Field(..., description="Error code")
     error_details: Optional[Dict[str, Any]] = Field(default=None)
+
+    def __init__(self, error_code: str = None, error: str = None, **data):
+        """Initialize with backward compatibility for 'error' parameter."""
+        # Handle legacy 'error' parameter
+        if error and not error_code:
+            data["error_code"] = error
+        elif error_code:
+            data["error_code"] = error_code
+
+        # Ensure success is False
+        data["success"] = False
+
+        # Handle legacy fields
+        if "details" in data:
+            data["error_details"] = data.pop("details")
+
+        super().__init__(**data)
 
 
 # Face Detection Models

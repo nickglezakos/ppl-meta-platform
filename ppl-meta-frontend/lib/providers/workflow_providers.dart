@@ -1,0 +1,605 @@
+import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../services/workflow_api_client.dart';
+import '../services/media_api_client.dart';
+import '../models/face_detection_models.dart';
+import '../models/workflow_widget_models.dart' hide PlaybackMode; // Avoid conflict
+import '../core/api/api_client.dart';
+import '../core/config/app_config.dart';
+import '../widgets/workflow/authenticated_workflow_wrapper.dart';
+
+// =============================================================================
+// WORKFLOW PROVIDERS CONFIGURATION
+// =============================================================================
+// 
+// This file configures all Provider/Riverpod dependencies for Workflows 4 & 5
+// face detection integration, connecting workflow services to UI components.
+//
+// Provider Hierarchy:
+// 1. Core Workflow Dependencies (WorkflowApiClient)
+// 2. Session Management Providers (Active sessions, session status)
+// 3. Processing Status Providers (Media processing status, playback modes)
+// 4. Performance Metrics Providers (System performance, analytics)
+// 5. Cached State Providers (Optimized data loading)
+//
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// CORE WORKFLOW DEPENDENCY PROVIDERS
+// -----------------------------------------------------------------------------
+
+/// API client provider for workflow operations
+final workflowApiClientProvider = Provider<WorkflowApiClient>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return WorkflowApiClient(
+    baseUrl: 'http://localhost:8003', // ppl-meta-vision service
+    apiClient: apiClient,
+  );
+});
+
+/// Alternative workflow API client with custom base URL
+final workflowApiClientWithUrlProvider = Provider.family<WorkflowApiClient, String>((ref, baseUrl) {
+  final apiClient = ref.watch(apiClientProvider);
+  return WorkflowApiClient(
+    baseUrl: baseUrl,
+    apiClient: apiClient,
+  );
+});
+
+// -----------------------------------------------------------------------------
+// WORKFLOW 4 - SESSION MANAGEMENT PROVIDERS
+// -----------------------------------------------------------------------------
+
+/// Provider for all active face detection sessions (comprehensive dashboard view)
+final allActiveSessionsProvider = FutureProvider<List<FaceDetectionSession>>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getAllActiveSessions();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load active sessions: ${response.error}');
+  }
+});
+
+/// Provider for all active face detection sessions (legacy name for compatibility)
+final activeSessionsProvider = FutureProvider<List<FaceDetectionSession>>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getAllActiveSessions();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load active sessions: ${response.error}');
+  }
+});
+
+/// Provider for sessions specific to a media item
+final mediaSessionsProvider = FutureProvider.family<List<FaceDetectionSession>, String>((ref, mediaUuid) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getSessionsForMedia(mediaUuid);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load media sessions: ${response.error}');
+  }
+});
+
+/// Provider for a specific session status
+final sessionStatusProvider = FutureProvider.family<FaceDetectionSession, String>((ref, sessionUuid) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getSessionStatus(sessionUuid);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load session status: ${response.error}');
+  }
+});
+
+/// Provider for real-time session statistics
+final sessionStatisticsProvider = FutureProvider.family<SessionStatistics, String>((ref, sessionUuid) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getSessionStatistics(sessionUuid);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load session statistics: ${response.error}');
+  }
+});
+
+/// Auto-refreshing provider for session statistics (updates every 2 seconds)
+final autoRefreshSessionStatisticsProvider = FutureProvider.family<SessionStatistics, String>((ref, sessionUuid) async {
+  // Auto-refresh every 2 seconds for active sessions
+  final timer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    ref.invalidateSelf();
+  });
+  
+  ref.onDispose(() => timer.cancel());
+  
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getSessionStatistics(sessionUuid);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load session statistics: ${response.error}');
+  }
+});
+
+// -----------------------------------------------------------------------------
+// WORKFLOW 5 - PROCESSING STATUS & SMART PLAYBACK PROVIDERS
+// -----------------------------------------------------------------------------
+
+/// Provider for media processing status
+final processingStatusProvider = FutureProvider.family<ProcessingStatus, String>((ref, mediaUuid) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getProcessingStatus(mediaUuid);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load processing status: ${response.error}');
+  }
+});
+
+/// Provider for optimal playback mode
+final optimalPlaybackModeProvider = FutureProvider.family<PlaybackMode, String>((ref, mediaUuid) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getOptimalPlaybackMode(mediaUuid);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load playback mode: ${response.error}');
+  }
+});
+
+/// Provider for stored face data (optimized for Workflow 5)
+final storedFaceDataProvider = FutureProvider.family<List<FaceDetection>, StoredFaceDataParams>((ref, params) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getStoredFaceData(
+    mediaUuid: params.mediaUuid,
+    startFrame: params.startFrame,
+    endFrame: params.endFrame,
+    confidenceThreshold: params.confidenceThreshold,
+  );
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load stored face data: ${response.error}');
+  }
+});
+
+/// Provider for all processed videos
+final allProcessedVideosProvider = FutureProvider<List<ProcessingStatus>>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getAllProcessedVideos();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load processed videos: ${response.error}');
+  }
+});
+
+// -----------------------------------------------------------------------------
+// PERFORMANCE METRICS & ANALYTICS PROVIDERS
+// -----------------------------------------------------------------------------
+
+/// Provider for current workflow performance metrics
+final performanceMetricsProvider = FutureProvider<WorkflowPerformanceMetrics>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getPerformanceMetrics();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load performance metrics: ${response.error}');
+  }
+});
+
+/// Provider for current workflow performance metrics (dashboard alias)
+final workflowPerformanceMetricsProvider = FutureProvider<WorkflowPerformanceMetrics>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getPerformanceMetrics();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load performance metrics: ${response.error}');
+  }
+});
+
+/// Auto-refreshing provider for performance metrics (updates every 5 seconds)
+final livePerformanceMetricsProvider = FutureProvider<WorkflowPerformanceMetrics>((ref) async {
+  // Auto-refresh every 5 seconds
+  final timer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    ref.invalidateSelf();
+  });
+  
+  ref.onDispose(() => timer.cancel());
+  
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getPerformanceMetrics();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load performance metrics: ${response.error}');
+  }
+});
+
+/// Provider for performance metrics history
+final performanceHistoryProvider = FutureProvider.family<List<WorkflowPerformanceMetrics>, PerformanceHistoryParams>((ref, params) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getPerformanceHistory(
+    startDate: params.startDate,
+    endDate: params.endDate,
+    interval: params.interval,
+  );
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load performance history: ${response.error}');
+  }
+});
+
+// -----------------------------------------------------------------------------
+// HEALTH & STATUS PROVIDERS
+// -----------------------------------------------------------------------------
+
+/// Provider for workflow service health status
+final workflowHealthProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.checkWorkflowHealth();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to check workflow health: ${response.error}');
+  }
+});
+
+/// Provider for workflow service capabilities
+final workflowCapabilitiesProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getWorkflowCapabilities();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load workflow capabilities: ${response.error}');
+  }
+});
+
+// -----------------------------------------------------------------------------
+// CACHED STATE PROVIDERS FOR PERFORMANCE
+// -----------------------------------------------------------------------------
+
+/// Cached provider for processing status (5-minute cache)
+final cachedProcessingStatusProvider = FutureProvider.family<ProcessingStatus, String>((ref, mediaUuid) async {
+  // Keep cache alive for 5 minutes
+  final timer = Timer(const Duration(minutes: 5), () {
+    ref.invalidateSelf();
+  });
+  
+  ref.onDispose(() => timer.cancel());
+  
+  return ref.watch(processingStatusProvider(mediaUuid).future);
+});
+
+/// Cached provider for performance metrics (30-second cache)
+final cachedPerformanceMetricsProvider = FutureProvider<WorkflowPerformanceMetrics>((ref) async {
+  // Keep cache alive for 30 seconds
+  final timer = Timer(const Duration(seconds: 30), () {
+    ref.invalidateSelf();
+  });
+  
+  ref.onDispose(() => timer.cancel());
+  
+  return ref.watch(performanceMetricsProvider.future);
+});
+
+/// Cached provider for active sessions (1-minute cache to reduce flickering)
+final cachedActiveSessionsProvider = FutureProvider<List<FaceDetectionSession>>((ref) async {
+  // Keep cache alive for 1 minute to reduce frequent calls
+  final timer = Timer(const Duration(minutes: 1), () {
+    ref.invalidateSelf();
+  });
+  
+  ref.onDispose(() => timer.cancel());
+  
+  return ref.watch(allActiveSessionsProvider.future);
+});
+
+/// Cached provider for widget processing status (2-minute cache to reduce API calls)
+final cachedWidgetProcessingStatusProvider = FutureProvider.family<WidgetStatusResponse, String>((ref, mediaUuid) async {
+  // Keep cache alive for 2 minutes to prevent frequent polling
+  final timer = Timer(const Duration(minutes: 2), () {
+    ref.invalidateSelf();
+  });
+  
+  ref.onDispose(() => timer.cancel());
+  
+  final client = ref.watch(workflowWidgetApiClientProvider);
+  if (client == null) {
+    throw Exception('WorkflowWidgetApiClient not available');
+  }
+  
+  final response = await client.getWidgetProcessingStatus(
+    mediaUuid: mediaUuid,
+    includeProgress: true,
+  );
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load widget processing status: ${response.message}');
+  }
+});
+
+// -----------------------------------------------------------------------------
+// COMBINED DATA PROVIDERS FOR UI CONVENIENCE
+// -----------------------------------------------------------------------------
+
+/// Combined provider for media workflow data
+final mediaWorkflowDataProvider = FutureProvider.family<MediaWorkflowData, String>((ref, mediaUuid) async {
+  // Fetch all workflow-related data for a media item in parallel
+  final futures = await Future.wait([
+    ref.watch(processingStatusProvider(mediaUuid).future),
+    ref.watch(optimalPlaybackModeProvider(mediaUuid).future),
+    ref.watch(mediaSessionsProvider(mediaUuid).future),
+  ]);
+  
+  return MediaWorkflowData(
+    processingStatus: futures[0] as ProcessingStatus,
+    playbackMode: futures[1] as PlaybackMode,
+    sessions: futures[2] as List<FaceDetectionSession>,
+  );
+});
+
+/// Provider for workflow dashboard data
+final workflowDashboardDataProvider = FutureProvider<WorkflowDashboardData>((ref) async {
+  // Fetch all dashboard data in parallel
+  final futures = await Future.wait([
+    ref.watch(activeSessionsProvider.future),
+    ref.watch(allProcessedVideosProvider.future),
+    ref.watch(performanceMetricsProvider.future),
+  ]);
+  
+  return WorkflowDashboardData(
+    activeSessions: futures[0] as List<FaceDetectionSession>,
+    processedVideos: futures[1] as List<ProcessingStatus>,
+    performanceMetrics: futures[2] as WorkflowPerformanceMetrics,
+  );
+});
+
+// -----------------------------------------------------------------------------
+// ACTION PROVIDERS FOR STATE MUTATIONS
+// -----------------------------------------------------------------------------
+
+/// Provider for creating face detection sessions
+final createSessionProvider = Provider<Future<FaceDetectionSession> Function(SessionCreationRequest)>((ref) {
+  return (request) async {
+    final client = ref.read(workflowApiClientProvider);
+    final response = await client.createFaceDetectionSession(
+      mediaUuid: request.mediaUuid,
+      confidenceThreshold: request.confidenceThreshold,
+      detectionMethods: request.detectionMethods,
+      priority: request.priority,
+      enableProgressUpdates: request.enableProgressUpdates,
+    );
+    
+    if (response.success) {
+      // Invalidate related providers to refresh UI
+      ref.invalidate(activeSessionsProvider);
+      ref.invalidate(mediaSessionsProvider(request.mediaUuid));
+      
+      return response.data!;
+    } else {
+      throw Exception('Failed to create session: ${response.error}');
+    }
+  };
+});
+
+/// Provider for deleting sessions
+final deleteSessionProvider = Provider<Future<void> Function(String)>((ref) {
+  return (sessionUuid) async {
+    final client = ref.read(workflowApiClientProvider);
+    final response = await client.deleteSession(sessionUuid);
+    
+    if (response.success) {
+      // Invalidate related providers to refresh UI
+      ref.invalidate(activeSessionsProvider);
+      ref.invalidate(sessionStatusProvider(sessionUuid));
+      
+      return;
+    } else {
+      throw Exception('Failed to delete session: ${response.error}');
+    }
+  };
+});
+
+/// Provider for starting video optimization processing
+final startOptimizationProvider = Provider<Future<FaceDetectionSession> Function(String, double?, List<String>?)>((ref) {
+  return (mediaUuid, confidenceThreshold, detectionMethods) async {
+    final client = ref.read(workflowApiClientProvider);
+    final response = await client.processVideoForOptimization(
+      mediaUuid: mediaUuid,
+      confidenceThreshold: confidenceThreshold,
+      detectionMethods: detectionMethods,
+    );
+    
+    if (response.success) {
+      // Invalidate related providers to refresh UI
+      ref.invalidate(processingStatusProvider(mediaUuid));
+      ref.invalidate(activeSessionsProvider);
+      
+      return response.data!;
+    } else {
+      throw Exception('Failed to start optimization: ${response.error}');
+    }
+  };
+});
+
+// -----------------------------------------------------------------------------
+// ANALYTICS & PERFORMANCE PROVIDERS
+// -----------------------------------------------------------------------------
+
+/// Provider for analytics summary data (dashboard widgets)
+final analyticsSummaryProvider = FutureProvider.family<Map<String, dynamic>, int>((ref, days) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getAnalyticsSummary(days: days);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load analytics summary: ${response.error}');
+  }
+});
+
+/// Provider for database status and statistics
+final databaseStatusProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getDatabaseStatus();
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load database status: ${response.error}');
+  }
+});
+
+/// Auto-refreshing analytics summary (updates every 30 seconds)
+final autoRefreshAnalyticsSummaryProvider = FutureProvider.family<Map<String, dynamic>, int>((ref, days) async {
+  // Auto-refresh every 30 seconds
+  final timer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    ref.invalidateSelf();
+  });
+  
+  ref.onDispose(() => timer.cancel());
+  
+  final client = ref.watch(workflowApiClientProvider);
+  final response = await client.getAnalyticsSummary(days: days);
+  
+  if (response.success) {
+    return response.data!;
+  } else {
+    throw Exception('Failed to load analytics summary: ${response.error}');
+  }
+});
+
+// =============================================================================
+// PARAMETER CLASSES FOR FAMILY PROVIDERS
+// =============================================================================
+
+/// Parameters for stored face data provider
+class StoredFaceDataParams {
+  final String mediaUuid;
+  final int? startFrame;
+  final int? endFrame;
+  final double? confidenceThreshold;
+
+  const StoredFaceDataParams({
+    required this.mediaUuid,
+    this.startFrame,
+    this.endFrame,
+    this.confidenceThreshold,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StoredFaceDataParams &&
+          runtimeType == other.runtimeType &&
+          mediaUuid == other.mediaUuid &&
+          startFrame == other.startFrame &&
+          endFrame == other.endFrame &&
+          confidenceThreshold == other.confidenceThreshold;
+
+  @override
+  int get hashCode =>
+      mediaUuid.hashCode ^
+      startFrame.hashCode ^
+      endFrame.hashCode ^
+      confidenceThreshold.hashCode;
+}
+
+/// Parameters for performance history provider
+class PerformanceHistoryParams {
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final String? interval;
+
+  const PerformanceHistoryParams({
+    this.startDate,
+    this.endDate,
+    this.interval,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PerformanceHistoryParams &&
+          runtimeType == other.runtimeType &&
+          startDate == other.startDate &&
+          endDate == other.endDate &&
+          interval == other.interval;
+
+  @override
+  int get hashCode =>
+      startDate.hashCode ^
+      endDate.hashCode ^
+      interval.hashCode;
+}
+
+/// Combined workflow data for a media item
+class MediaWorkflowData {
+  final ProcessingStatus processingStatus;
+  final PlaybackMode playbackMode;
+  final List<FaceDetectionSession> sessions;
+
+  const MediaWorkflowData({
+    required this.processingStatus,
+    required this.playbackMode,
+    required this.sessions,
+  });
+
+  /// Get the active session for this media (if any)
+  FaceDetectionSession? get activeSession =>
+      sessions.where((s) => s.isActive).firstOrNull;
+
+  /// Check if this media has any workflow processing
+  bool get hasWorkflowProcessing => sessions.isNotEmpty;
+
+  /// Check if this media is ready for optimized playback
+  bool get isOptimizedPlaybackReady => processingStatus.isOptimizedPlaybackReady;
+}
+
+/// Combined dashboard data
+class WorkflowDashboardData {
+  final List<FaceDetectionSession> activeSessions;
+  final List<ProcessingStatus> processedVideos;
+  final WorkflowPerformanceMetrics performanceMetrics;
+
+  const WorkflowDashboardData({
+    required this.activeSessions,
+    required this.processedVideos,
+    required this.performanceMetrics,
+  });
+
+  /// Get total number of videos with workflow processing
+  int get totalWorkflowVideos => processedVideos.length;
+
+  /// Get number of videos ready for optimized playback
+  int get optimizedVideosCount =>
+      processedVideos.where((p) => p.isOptimizedPlaybackReady).length;
+
+  /// Get overall system health status
+  String get systemHealthStatus => performanceMetrics.systemHealthStatus;
+}
