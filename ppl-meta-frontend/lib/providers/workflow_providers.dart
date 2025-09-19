@@ -134,27 +134,31 @@ final autoRefreshSessionStatisticsProvider = FutureProvider.family<SessionStatis
 // -----------------------------------------------------------------------------
 
 /// Provider for media processing status
-final processingStatusProvider = FutureProvider.family<ProcessingStatus, String>((ref, mediaUuid) async {
+final processingStatusProvider = FutureProvider.family<ProcessingStatus?, String>((ref, mediaUuid) async {
   final client = ref.watch(workflowApiClientProvider);
   final response = await client.getProcessingStatus(mediaUuid);
   
   if (response.success) {
     return response.data!;
+  } else if (response.error?.contains('not found') == true || response.error?.contains('Workflow resource not found') == true) {
+    // Gracefully handle missing workflow - return null instead of throwing
+    return null;
   } else {
     throw Exception('Failed to load processing status: ${response.error}');
   }
 });
 
 /// Provider for optimal playback mode
-final optimalPlaybackModeProvider = FutureProvider.family<PlaybackMode, String>((ref, mediaUuid) async {
-  final client = ref.watch(workflowApiClientProvider);
-  final response = await client.getOptimalPlaybackMode(mediaUuid);
+final optimalPlaybackModeProvider = FutureProvider.family<PlaybackMode?, String>((ref, mediaUuid) async {
+  // Get the processing status which includes optimal playback mode
+  final processingStatus = await ref.watch(processingStatusProvider(mediaUuid).future);
   
-  if (response.success) {
-    return response.data!;
-  } else {
-    throw Exception('Failed to load playback mode: ${response.error}');
+  if (processingStatus?.optimalPlaybackMode != null) {
+    // Convert string to PlaybackMode enum/model
+    return PlaybackMode.fromString(processingStatus!.optimalPlaybackMode!);
   }
+  
+  return null; // Gracefully handle missing playback mode
 });
 
 /// Provider for stored face data (optimized for Workflow 5)
@@ -282,7 +286,7 @@ final workflowCapabilitiesProvider = FutureProvider<Map<String, dynamic>>((ref) 
 // -----------------------------------------------------------------------------
 
 /// Cached provider for processing status (5-minute cache)
-final cachedProcessingStatusProvider = FutureProvider.family<ProcessingStatus, String>((ref, mediaUuid) async {
+final cachedProcessingStatusProvider = FutureProvider.family<ProcessingStatus?, String>((ref, mediaUuid) async {
   // Keep cache alive for 5 minutes
   final timer = Timer(const Duration(minutes: 5), () {
     ref.invalidateSelf();

@@ -164,6 +164,129 @@ class FaceDetectionWorkflowOrchestrator:
 
         return workflow
 
+    async def start_media_bulk_processing(
+        self,
+        media_ids: List[str],
+        detection_method: str = "haar",
+        user_id: Optional[str] = None,
+        processing_options: Optional[Dict] = None,
+        priority: str = "normal",
+    ) -> WorkflowExecution:
+        """Start bulk face detection processing via Media Service workflow - Phase 2."""
+        workflow = await self.create_workflow(
+            WorkflowType.BULK_PROCESSING,
+            user_id=user_id,
+            metadata={
+                "media_ids": media_ids,
+                "detection_method": detection_method,
+                "processing_options": processing_options or {},
+                "priority": priority,
+                "enhanced_mode": True,  # Phase 2 enhancement flag
+            },
+        )
+
+        workflow.total_media_count = len(media_ids)
+        workflow.status = WorkflowStatus.PROCESSING
+        workflow.started_at = datetime.now()
+
+        # Create traceability context
+        trace_ctx = self.service_manager.create_trace_context(
+            workflow_id=workflow.workflow_id,
+            operation="bulk_face_detection_processing",
+            user_id=user_id,
+            metadata={
+                "media_count": len(media_ids),
+                "detection_method": detection_method,
+                "processing_options": processing_options or {},
+            },
+        )
+
+        # Start bulk processing via Media Service
+        response = await self.service_manager.media.bulk_face_detection_workflow(
+            trace_ctx=trace_ctx,
+            media_ids=media_ids,
+            detection_method=detection_method,
+            options=processing_options,
+        )
+
+        if not response.success:
+            workflow.status = WorkflowStatus.FAILED
+            workflow.error_message = (
+                f"Failed to start bulk processing: {response.error_message}"
+            )
+            return workflow
+
+        # Get bulk workflow ID from response
+        bulk_workflow_id = response.data.get("workflow_id")
+        if bulk_workflow_id:
+            workflow.metadata["media_workflow_id"] = bulk_workflow_id
+
+        # Start monitoring asynchronously
+        asyncio.create_task(
+            self._monitor_media_bulk_processing(workflow, bulk_workflow_id)
+        )
+
+        return workflow
+
+    async def _monitor_media_bulk_processing(
+        self, workflow: WorkflowExecution, media_workflow_id: str
+    ) -> None:
+        """Monitor Media Service bulk processing workflow."""
+        try:
+            trace_ctx = self.service_manager.create_trace_context(
+                workflow_id=workflow.workflow_id,
+                operation="monitor_bulk_processing",
+                user_id=workflow.user_id,
+            )
+
+            # Poll for completion
+            max_wait_minutes = 60  # Longer timeout for bulk processing
+            start_time = datetime.now()
+            max_wait_time = start_time + timedelta(minutes=max_wait_minutes)
+
+            while datetime.now() < max_wait_time:
+                status_response = await self.service_manager.media.get_workflow_status(
+                    trace_ctx=trace_ctx, workflow_id=media_workflow_id
+                )
+
+                if status_response.success:
+                    status_data = status_response.data
+                    media_status = status_data.get("status", "unknown")
+                    processed_count = status_data.get("processed_count", 0)
+
+                    # Update workflow progress
+                    workflow.processed_media_count = processed_count
+
+                    if media_status in ["completed", "failed"]:
+                        if media_status == "failed":
+                            workflow.status = WorkflowStatus.FAILED
+                            workflow.error_message = status_data.get(
+                                "error_message", "Bulk processing failed"
+                            )
+                        else:
+                            workflow.status = WorkflowStatus.COMPLETED
+                            workflow.processed_media_count = workflow.total_media_count
+
+                        workflow.completed_at = datetime.now()
+                        break
+
+                await asyncio.sleep(10)  # Check every 10 seconds for bulk processing
+
+            if workflow.status == WorkflowStatus.PROCESSING:
+                workflow.status = WorkflowStatus.FAILED
+                workflow.error_message = (
+                    f"Bulk processing timeout after {max_wait_minutes} minutes"
+                )
+
+        except Exception as e:
+            logger.error(f"Error monitoring bulk processing: {e}")
+            workflow.status = WorkflowStatus.FAILED
+            workflow.error_message = str(e)
+        finally:
+            # Move to history
+            self.active_workflows.pop(workflow.workflow_id, None)
+            self.workflow_history.append(workflow)
+
     async def _execute_bulk_processing(self, workflow: WorkflowExecution) -> None:
         """Execute bulk processing workflow with full traceability."""
         try:
@@ -210,7 +333,7 @@ class FaceDetectionWorkflowOrchestrator:
     async def _process_method_lifecycle(
         self, workflow: WorkflowExecution, lifecycle: MethodLifecycle
     ) -> None:
-        """Process individual method lifecycle with traceability."""
+        """Process individual method lifecycle with traceability - Phase 2 Enhanced."""
         lifecycle.status = WorkflowStatus.PROCESSING
         lifecycle.started_at = datetime.now()
 
@@ -226,26 +349,78 @@ class FaceDetectionWorkflowOrchestrator:
             },
         )
 
-        # Start face detection processing
-        response = await self.service_manager.vision.start_face_detection(
+        # Phase 2: Start face detection workflow via Media Service
+        response = await self.service_manager.media.start_face_detection_workflow(
             trace_ctx=trace_ctx,
             media_id=lifecycle.media_id,
-            method=lifecycle.method,
-            camera_device_id=lifecycle.camera_device_id,
-            processing_options=lifecycle.processing_options,
+            detection_method=lifecycle.method,
+            options=lifecycle.processing_options,
         )
 
         if not response.success:
             raise Exception(f"Failed to start face detection: {response.error_message}")
 
-        # Wait for processing completion (simplified polling)
-        vision_lifecycle_id = response.data.get("lifecycle_id")
-        await self._wait_for_processing_completion(
-            trace_ctx, vision_lifecycle_id, lifecycle
+        # Get workflow ID from response for status tracking
+        media_workflow_id = response.data.get("workflow_id")
+        if not media_workflow_id:
+            raise Exception("No workflow ID returned from Media Service")
+
+        # Wait for processing completion using Media Service status
+        await self._wait_for_media_workflow_completion(
+            trace_ctx, media_workflow_id, lifecycle
         )
 
         lifecycle.status = WorkflowStatus.COMPLETED
         lifecycle.completed_at = datetime.now()
+
+    async def _wait_for_media_workflow_completion(
+        self,
+        trace_ctx: TraceabilityContext,
+        media_workflow_id: str,
+        lifecycle: MethodLifecycle,
+        max_wait_minutes: int = 30,
+    ) -> None:
+        """Wait for media service workflow completion with timeout."""
+        start_time = datetime.now()
+        max_wait_time = start_time + timedelta(minutes=max_wait_minutes)
+
+        while datetime.now() < max_wait_time:
+            # Check workflow status via Media Service
+            status_response = await self.service_manager.media.get_workflow_status(
+                trace_ctx=trace_ctx, workflow_id=media_workflow_id
+            )
+
+            if status_response.success:
+                status_data = status_response.data
+                workflow_status = status_data.get("status", "unknown")
+
+                if workflow_status in ["completed", "failed"]:
+                    if workflow_status == "failed":
+                        raise Exception(
+                            f"Media workflow failed: {status_data.get('error_message')}"
+                        )
+
+                    # Get final results via Media Service
+                    results_response = (
+                        await self.service_manager.media.get_face_detection_results(
+                            trace_ctx=trace_ctx,
+                            media_id=lifecycle.media_id,
+                        )
+                    )
+
+                    if results_response.success:
+                        results = results_response.data.get("faces", [])
+                        lifecycle.results_count = len(results)
+                        lifecycle.confidence_scores = [
+                            face.get("confidence", 0.0) for face in results
+                        ]
+
+                    return
+
+            # Wait before next check
+            await asyncio.sleep(5)
+
+        raise Exception(f"Processing timeout after {max_wait_minutes} minutes")
 
     async def _wait_for_processing_completion(
         self,
@@ -254,7 +429,9 @@ class FaceDetectionWorkflowOrchestrator:
         lifecycle: MethodLifecycle,
         max_wait_minutes: int = 30,
     ) -> None:
-        """Wait for vision service processing completion with timeout."""
+        """Legacy method - kept for backward compatibility."""
+        # This method is kept for backward compatibility with existing code
+        # Phase 2: Most workflows should use _wait_for_media_workflow_completion
         start_time = datetime.now()
         max_wait_time = start_time + timedelta(minutes=max_wait_minutes)
 

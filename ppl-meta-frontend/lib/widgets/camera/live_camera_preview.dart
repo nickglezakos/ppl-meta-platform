@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../models/camera_device.dart';
-import '../../providers/camera_providers.dart';
+import '../../core/models/camera.dart';
+import '../../core/providers/camera_providers.dart';
 
 /// Live camera preview widget with streaming capabilities
 /// Shows real-time video feed from selected camera with control overlay

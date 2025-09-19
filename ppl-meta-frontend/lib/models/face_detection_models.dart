@@ -116,58 +116,63 @@ class ProcessingStatus {
   @JsonKey(name: 'media_uuid')
   final String mediaUuid;
   
+  /// Processing status: 'not_started', 'processing', 'completed', 'error'
+  @JsonKey(name: 'status')
+  final String status;
+  
   /// Whether face detection has been processed for this media
   @JsonKey(name: 'face_detection_processed')
   final bool faceDetectionProcessed;
   
-  /// UUID of the session that processed this media (if applicable)
-  @JsonKey(name: 'session_uuid')
-  final String? sessionUuid;
+  /// Current active session UUID (if processing)
+  @JsonKey(name: 'current_session')
+  final String? currentSession;
   
-  /// When the processing was completed
-  @JsonKey(name: 'processing_completed_at')
-  final DateTime? processingCompletedAt;
-  
-  /// Total frames processed during the session
-  @JsonKey(name: 'total_frames_processed')
-  final int? totalFramesProcessed;
-  
-  /// Estimated total number of frames in the media
-  @JsonKey(name: 'estimated_total_frames')
-  final int? estimatedTotalFrames;
+  /// Processing progress information
+  @JsonKey(name: 'processing_progress')
+  final Map<String, dynamic>? processingProgress;
   
   /// Total faces detected during processing
   @JsonKey(name: 'total_faces_detected')
   final int? totalFacesDetected;
   
-  /// Method used for processing: 'workflow4', 'workflow5', 'realtime'
+  /// Total frames processed during the session
+  @JsonKey(name: 'total_frames_processed')
+  final int? totalFramesProcessed;
+  
+  /// Method used for processing
   @JsonKey(name: 'processing_method')
-  final String processingMethod;
+  final String? processingMethod;
   
-  /// Quality score of the processing (0.0 to 1.0)
-  @JsonKey(name: 'quality_score')
-  final double? qualityScore;
+  /// Optimal playback mode for this media
+  @JsonKey(name: 'optimal_playback_mode')
+  final String? optimalPlaybackMode;
   
-  /// Processing duration in seconds
-  @JsonKey(name: 'processing_duration_seconds')
-  final double? processingDurationSeconds;
+  /// Whether cache is available for optimized playback
+  @JsonKey(name: 'cache_available')
+  final bool? cacheAvailable;
   
-  /// Database table where face data is stored
-  @JsonKey(name: 'storage_table')
-  final String? storageTable;
+  /// When the status was last updated
+  @JsonKey(name: 'last_updated')
+  final DateTime? lastUpdated;
+  
+  /// Error message if processing failed
+  @JsonKey(name: 'error_message')
+  final String? errorMessage;
 
   const ProcessingStatus({
     required this.mediaUuid,
+    required this.status,
     required this.faceDetectionProcessed,
-    this.sessionUuid,
-    this.processingCompletedAt,
-    this.totalFramesProcessed,
-    this.estimatedTotalFrames,
+    this.currentSession,
+    this.processingProgress,
     this.totalFacesDetected,
-    required this.processingMethod,
-    this.qualityScore,
-    this.processingDurationSeconds,
-    this.storageTable,
+    this.totalFramesProcessed,
+    this.processingMethod,
+    this.optimalPlaybackMode,
+    this.cacheAvailable,
+    this.lastUpdated,
+    this.errorMessage,
   });
 
   factory ProcessingStatus.fromJson(Map<String, dynamic> json) =>
@@ -177,10 +182,11 @@ class ProcessingStatus {
 
   /// Check if this media is ready for optimized playback
   bool get isOptimizedPlaybackReady => 
-      faceDetectionProcessed && processingMethod == 'workflow5';
+      faceDetectionProcessed && optimalPlaybackMode == 'optimized';
 
   /// Get display-friendly processing method name
   String get displayProcessingMethod {
+    if (processingMethod == null) return 'Not Started';
     switch (processingMethod) {
       case 'workflow4':
         return 'Session-Based';
@@ -189,14 +195,30 @@ class ProcessingStatus {
       case 'realtime':
         return 'Real-time';
       default:
-        return processingMethod;
+        return processingMethod!;
     }
   }
 
-  /// Get processing efficiency (faces per second)
+  /// Get display-friendly status
+  String get displayStatus {
+    switch (status) {
+      case 'not_started':
+        return 'Not Started';
+      case 'processing':
+        return 'Processing';
+      case 'completed':
+        return 'Completed';
+      case 'error':
+        return 'Error';
+      default:
+        return status;
+    }
+  }
+
+  /// Get processing efficiency (faces per frame if available)
   double? get processingEfficiency {
-    if (totalFacesDetected != null && processingDurationSeconds != null && processingDurationSeconds! > 0) {
-      return totalFacesDetected! / processingDurationSeconds!;
+    if (totalFacesDetected != null && totalFramesProcessed != null && totalFramesProcessed! > 0) {
+      return totalFacesDetected! / totalFramesProcessed!;
     }
     return null;
   }
@@ -287,6 +309,43 @@ class PlaybackMode {
       return '$percentage% CPU reduction';
     }
     return cpuOptimized ? 'CPU optimized' : 'Standard performance';
+  }
+
+  /// Create PlaybackMode from string mode
+  factory PlaybackMode.fromString(String modeString) {
+    switch (modeString) {
+      case 'stored_data':
+      case 'optimized':
+        return const PlaybackMode(
+          mode: 'stored_data',
+          description: 'Use pre-processed face detection data for optimal performance',
+          cpuOptimized: true,
+          expectedCpuReduction: 0.7,
+          memoryOptimized: true,
+          expectedMemoryReduction: 0.5,
+          recommendationReason: 'Face detection has been pre-processed and cached',
+          performanceScore: 0.9,
+        );
+      case 'realtime_with_session':
+        return const PlaybackMode(
+          mode: 'realtime_with_session',
+          description: 'Real-time processing with session context',
+          cpuOptimized: false,
+          memoryOptimized: false,
+          recommendationReason: 'Session is active, processing in real-time',
+          performanceScore: 0.6,
+        );
+      case 'realtime_only':
+      default:
+        return const PlaybackMode(
+          mode: 'realtime_only',
+          description: 'Real-time face detection processing',
+          cpuOptimized: false,
+          memoryOptimized: false,
+          recommendationReason: 'No cached data available, processing in real-time',
+          performanceScore: 0.3,
+        );
+    }
   }
 }
 

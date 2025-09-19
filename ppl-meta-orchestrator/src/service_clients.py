@@ -366,6 +366,120 @@ class MediaServiceClient:
             data=metadata_updates,
         )
 
+    # Phase 2: Enhanced workflow methods for face detection integration
+    async def start_face_detection_workflow(
+        self,
+        trace_ctx: TraceabilityContext,
+        media_id: str,
+        detection_method: str = "haar",
+        options: Optional[Dict[str, Any]] = None,
+    ) -> ServiceResponse:
+        """Start face detection workflow for a specific media file."""
+        trace_ctx.operation = "start_face_detection_workflow"
+        trace_ctx.metadata.update(
+            {
+                "media_id": media_id,
+                "detection_method": detection_method,
+                "workflow_options": options or {},
+            }
+        )
+
+        workflow_data = {
+            "media_id": media_id,
+            "detection_method": detection_method,
+            "options": options or {},
+        }
+
+        return await self._make_request(
+            "POST",
+            f"/api/v1/workflow/face-detection/process/{media_id}",
+            trace_ctx,
+            data=workflow_data,
+        )
+
+    async def bulk_face_detection_workflow(
+        self,
+        trace_ctx: TraceabilityContext,
+        media_ids: List[str],
+        detection_method: str = "haar",
+        options: Optional[Dict[str, Any]] = None,
+    ) -> ServiceResponse:
+        """Start bulk face detection workflow for multiple media files."""
+        trace_ctx.operation = "bulk_face_detection_workflow"
+        trace_ctx.metadata.update(
+            {
+                "media_count": len(media_ids),
+                "detection_method": detection_method,
+                "workflow_options": options or {},
+            }
+        )
+
+        bulk_data = {
+            "media_ids": media_ids,
+            "detection_method": detection_method,
+            "options": options or {},
+        }
+
+        return await self._make_request(
+            "POST",
+            "/api/v1/workflow/face-detection/bulk-process",
+            trace_ctx,
+            data=bulk_data,
+        )
+
+    async def get_workflow_status(
+        self,
+        trace_ctx: TraceabilityContext,
+        workflow_id: str,
+    ) -> ServiceResponse:
+        """Get workflow processing status."""
+        trace_ctx.operation = "get_workflow_status"
+        trace_ctx.metadata.update({"workflow_id": workflow_id})
+
+        return await self._make_request(
+            "GET",
+            f"/api/v1/workflow/face-detection/status/{workflow_id}",
+            trace_ctx,
+        )
+
+    async def list_workflows(
+        self,
+        trace_ctx: TraceabilityContext,
+        status_filter: Optional[str] = None,
+        limit: int = 50,
+    ) -> ServiceResponse:
+        """List face detection workflows with optional filtering."""
+        trace_ctx.operation = "list_workflows"
+        trace_ctx.metadata.update({"status_filter": status_filter, "limit": limit})
+
+        params = {"limit": limit}
+        if status_filter:
+            params["status"] = status_filter
+
+        return await self._make_request(
+            "GET",
+            "/api/v1/workflow/face-detection/workflows",
+            trace_ctx,
+            params=params,
+        )
+
+    async def get_face_detection_results(
+        self,
+        trace_ctx: TraceabilityContext,
+        media_id: str,
+        frame_number: Optional[int] = None,
+    ) -> ServiceResponse:
+        """Get face detection results for media file."""
+        trace_ctx.operation = "get_face_detection_results"
+        trace_ctx.metadata.update({"media_id": media_id, "frame_number": frame_number})
+
+        if frame_number is not None:
+            endpoint = f"/api/v1/stream/faces/{media_id}/frame/{frame_number}"
+        else:
+            endpoint = f"/api/v1/stream/info/{media_id}/faces"
+
+        return await self._make_request("GET", endpoint, trace_ctx)
+
 
 class VisionServiceClient:
     """HTTP client for Vision Service integration with method-specific lifecycle tracking."""

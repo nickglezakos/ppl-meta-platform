@@ -23,10 +23,11 @@ This document outlines the implementation roadmap for integrating the existing c
 - **Orchestrator Service (8002)**: Basic service coordination and health management
 
 ### 🔧 **What Needs Integration**
-- **Automated Workflows**: Camera recording events → Face detection processing
-- **Cross-Service Communication**: Orchestrator coordination between camera, media, vision
-- **Frontend Integration**: Enhanced camera controls with workflow triggers
-- **Real-time Status**: Processing status updates in camera interface
+- **Automated Workflows**: Camera recording events → Face detection processing via embedded media service
+- **Cross-Service Communication**: Orchestrator coordination between camera, media (embedded face detection), vision
+- **Frontend Integration**: Enhanced camera controls with workflow triggers for all video sources
+- **Real-time Status**: Processing status updates in camera and media interfaces
+- **Source-Agnostic Processing**: Face detection for camera recordings AND user uploads
 - **Error Handling**: Comprehensive error management across services
 
 ---
@@ -37,9 +38,10 @@ This document outlines the implementation roadmap for integrating the existing c
 
 #### **1.1 Orchestrator Service Enhancements**
 - [ ] **Camera Event Endpoints**: Add endpoints to receive camera recording completion events
-- [ ] **Workflow Coordination**: Implement face detection workflow orchestration
+- [ ] **Workflow Coordination**: Implement face detection workflow orchestration via media service
 - [ ] **Service Communication**: Create HTTP clients for Camera, Media, Vision services
-- [ ] **Status Tracking**: Add workflow status tracking and progress monitoring
+- [ ] **Media Service Integration**: Coordinate embedded face detection at media service level
+- [ ] **Status Tracking**: Add workflow status tracking and progress monitoring across services
 - [ ] **Error Handling**: Comprehensive error management and retry logic
 
 #### **1.2 Camera Service Integration**
@@ -81,12 +83,13 @@ This document outlines the implementation roadmap for integrating the existing c
 
 ### **Phase 3: Advanced Workflow Features**
 
-#### **3.1 Automated Processing**
-- [ ] **Scheduled Workflows**: Time-based automated face detection processing
-- [ ] **Event-Driven Processing**: Automatic workflow triggers based on camera events
-- [ ] **Batch Processing**: Bulk face detection across multiple camera recordings
-- [ ] **Priority Queues**: Processing priority management for different camera types
-- [ ] **Resource Management**: Optimal resource allocation for concurrent processing
+#### **3.1 Automated Processing (Source-Agnostic)**
+- [ ] **Scheduled Workflows**: Time-based automated face detection processing for all video sources
+- [ ] **Event-Driven Processing**: Automatic workflow triggers based on camera events OR user uploads
+- [ ] **Batch Processing**: Bulk face detection across camera recordings AND uploaded videos
+- [ ] **User Upload Integration**: Face detection workflows for user-uploaded videos
+- [ ] **Source-Agnostic Queue**: Processing priority management regardless of video source
+- [ ] **Resource Management**: Optimal resource allocation for concurrent processing of mixed sources
 
 #### **3.2 Analytics & Reporting**
 - [ ] **Camera Performance**: Per-camera face detection performance metrics
@@ -135,30 +138,37 @@ This document outlines the implementation roadmap for integrating the existing c
 2. Camera records video (manual or scheduled)
 3. Camera completes recording → publishes event to orchestrator
 4. Orchestrator receives event → initiates face detection workflow
-5. Orchestrator coordinates: Media registration → Vision processing
-6. Vision service processes video → detects faces → stores results
-7. Orchestrator updates workflow status → notifies camera service
-8. Camera interface updates with processing results
-9. User sees face detection results in camera media collection
+5. Orchestrator coordinates: Media registration → Media service embedded face detection
+6. Media service processes video → detects faces with embedded feature
+7. Media service stores detected faces to Vision service database
+8. Vision service handles advanced analytics and cross-video processing
+9. Orchestrator updates workflow status → notifies camera service
+10. Camera interface updates with processing results from vision service
+11. User sees face detection results in camera media collection
 ```
 
-### **Example 2: Manual Workflow Trigger**
+### **Example 2: Manual Workflow Trigger (Source-Agnostic)**
 ```
-1. User views camera in /cameras page
-2. User clicks "Analyze Faces" on specific recording
+1. User views camera/uploaded media in /cameras or /media-preview page
+2. User clicks "Analyze Faces" on specific recording/video
 3. Frontend calls orchestrator workflow endpoint
-4. Orchestrator initiates immediate face detection workflow
-5. Real-time status updates shown in camera interface
-6. Results displayed upon completion
+4. Orchestrator initiates face detection workflow at media service
+5. Media service embedded face detection processes video
+6. Media service stores detected faces to Vision service database
+7. Real-time status updates shown in interface from vision service
+8. Results displayed upon completion (source-agnostic)
 ```
 
-### **Example 3: Bulk Camera Processing**
+### **Example 3: Bulk Processing (Source-Agnostic)**
 ```
-1. User selects multiple cameras for batch face detection
-2. Orchestrator coordinates parallel processing workflows
-3. Processing queue manages resource allocation
-4. Results aggregated across all selected cameras
-5. Analytics dashboard shows cross-camera insights
+1. User selects multiple videos for batch face detection (camera recordings OR uploaded videos)
+2. Videos can be from: Camera recordings, User uploads, Mixed sources
+3. Orchestrator coordinates source-agnostic batch processing workflows
+4. Media service embedded face detection processes all videos regardless of source
+5. Processing queue manages resource allocation across all video sources
+6. Detected faces stored to Vision service database with source attribution
+7. Results aggregated across all selected videos (camera + uploaded)
+8. Analytics dashboard shows cross-video insights regardless of video source
 ```
 
 ---
@@ -235,3 +245,19 @@ This roadmap provides a comprehensive plan for integrating the existing, functio
 - **Enhance existing functionality** (camera page workflow integration)
 - **Add orchestration layer** (automated workflows and cross-service communication)
 - **Optimize user experience** (real-time updates and comprehensive analytics)
+
+---
+
+## 🏗️ **Key Architectural Notes**
+
+### **Face Detection Architecture**
+- **Embedded Processing**: Face detection happens as an embedded feature at the Media Service (8000)
+- **Optimal Network Management**: Processing occurs where videos are stored to minimize data transfer
+- **Vision Service Role**: Receives detected face data from Media Service for advanced analytics and cross-video processing
+- **Source Agnostic**: Face detection works identically for camera recordings AND user uploads
+
+### **Workflow Coordination**
+- **Media Service**: Handles embedded face detection for ALL videos regardless of source
+- **Vision Service**: Manages face data storage, analytics, and cross-video insights
+- **Orchestrator Service**: Coordinates workflows between Camera, Media, and Vision services
+- **User Upload Integration**: Existing user upload functionality seamlessly integrates with face detection workflows

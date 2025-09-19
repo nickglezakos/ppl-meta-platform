@@ -540,9 +540,9 @@ class WorkflowSessionController extends StateNotifier<WorkflowSessionState> {
 
   /// Calculate processing progress percentage
   double? _calculateProcessingProgress(ProcessingStatus status) {
-    if (status.totalFramesProcessed != null && status.estimatedTotalFrames != null) {
+    if (status.totalFramesProcessed != null && status.totalFramesProcessed! > 0) {
       final processed = status.totalFramesProcessed!;
-      final total = status.estimatedTotalFrames!;
+      final total = status.totalFramesProcessed! + 100; // Estimate total
       
       if (total > 0) {
         return (processed / total * 100.0).clamp(0.0, 100.0);

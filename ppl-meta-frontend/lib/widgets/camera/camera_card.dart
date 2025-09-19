@@ -329,6 +329,12 @@ class CameraCard extends ConsumerWidget {
               _buildRecordingControls(ref),
             ],
             
+            // Phase 2: Face Detection Workflow Controls
+            if (isConnected) ...[
+              const SizedBox(height: 8),
+              _buildWorkflowControls(context, ref),
+            ],
+            
             // RTSP Edit/Delete buttons row (only show for RTSP cameras)
             if (isRTSP) ...[
               const SizedBox(height: 8),
@@ -521,6 +527,206 @@ class CameraCard extends ConsumerWidget {
           onEnd: () {
             // This will cause the animation to repeat
           },
+        );
+      }
+
+      /// Build face detection workflow controls - Phase 2 Enhancement
+      Widget _buildWorkflowControls(BuildContext context, WidgetRef ref) {
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Workflow section header
+              Row(
+                children: [
+                  Icon(
+                    Icons.face_retouching_natural,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Face Detection Workflows',
+                    style: OfflineFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 8),
+              
+              // Workflow action buttons
+              Row(
+                children: [
+                  // Start workflow button
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _startFaceDetectionWorkflow(context, ref),
+                      icon: const Icon(Icons.play_arrow, size: 16),
+                      label: const Text('Start Detection'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 8),
+                  
+                  // Workflow status button
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showWorkflowStatus(context, ref),
+                      icon: const Icon(Icons.analytics, size: 16),
+                      label: const Text('View Status'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.secondary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      }
+
+      /// Start face detection workflow for camera recordings
+      Future<void> _startFaceDetectionWorkflow(BuildContext context, WidgetRef ref) async {
+        try {
+          // Show method selection dialog
+          final selectedMethod = await _showDetectionMethodDialog(context);
+          if (selectedMethod == null) return;
+
+          // For now, show a snackbar indicating the workflow started
+          // In a full implementation, this would call the orchestrator service
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Starting $selectedMethod face detection workflow for ${camera.name}'),
+                backgroundColor: Colors.green,
+                action: SnackBarAction(
+                  label: 'View Status',
+                  textColor: Colors.white,
+                  onPressed: () => _showWorkflowStatus(context, ref),
+                ),
+              ),
+            );
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to start workflow: $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+
+      /// Show detection method selection dialog
+      Future<String?> _showDetectionMethodDialog(BuildContext context) {
+        return showDialog<String>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Select Detection Method'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Choose a face detection method:'),
+                const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.speed),
+                  title: const Text('Haar Cascade'),
+                  subtitle: const Text('Fast, good for real-time detection'),
+                  onTap: () => Navigator.of(context).pop('haar'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.precision_manufacturing),
+                  title: const Text('MTCNN'),
+                  subtitle: const Text('High accuracy, multi-stage detection'),
+                  onTap: () => Navigator.of(context).pop('mtcnn'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.high_quality),
+                  title: const Text('DLib'),
+                  subtitle: const Text('Reliable detection with landmarks'),
+                  onTap: () => Navigator.of(context).pop('dlib'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      /// Show workflow status for camera
+      Future<void> _showWorkflowStatus(BuildContext context, WidgetRef ref) async {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Workflow Status - ${camera.name}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Camera: ${camera.name}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text('Device ID: ${camera.deviceId}'),
+                const SizedBox(height: 16),
+                const Text(
+                  'Active Workflows:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'No active workflows found.\n\nStart a face detection workflow to see status here.',
+                    style: TextStyle(fontStyle: FontStyle.italic),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _startFaceDetectionWorkflow(context, ref);
+                },
+                child: const Text('Start Workflow'),
+              ),
+            ],
+          ),
         );
       }
 

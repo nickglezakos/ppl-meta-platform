@@ -447,8 +447,8 @@ class _WorkflowSessionControlsWidgetState
   Widget _buildProcessingControlsSection(
     WorkflowSessionState sessionState,
     WorkflowSessionController sessionController,
-    AsyncValue<ProcessingStatus> processingStatusAsync,
-    AsyncValue<PlaybackMode> playbackModeAsync,
+    AsyncValue<ProcessingStatus?> processingStatusAsync,
+    AsyncValue<PlaybackMode?> playbackModeAsync,
   ) {
     return Card(
       color: Colors.grey[800],
@@ -484,10 +484,10 @@ class _WorkflowSessionControlsWidgetState
                   playbackMode,
                 ),
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (error, stack) => _buildErrorDisplay('Failed to load playback mode: $error'),
+                error: (error, stack) => _buildNoWorkflowDisplay('No workflow data available'),
               ),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, stack) => _buildErrorDisplay('Failed to load processing status: $error'),
+              error: (error, stack) => _buildNoWorkflowDisplay('No workflow data available'),
             ),
           ],
         ),
@@ -499,10 +499,19 @@ class _WorkflowSessionControlsWidgetState
   Widget _buildProcessingControls(
     WorkflowSessionState sessionState,
     WorkflowSessionController sessionController,
-    ProcessingStatus processingStatus,
-    PlaybackMode playbackMode,
+    ProcessingStatus? processingStatus,
+    PlaybackMode? playbackMode,
   ) {
-    final isOptimized = processingStatus.isOptimizedPlaybackReady;
+    // Provide default values if workflow data is missing
+    final effectiveProcessingStatus = processingStatus ?? ProcessingStatus(
+      mediaUuid: 'unknown',
+      status: 'not_started',
+      faceDetectionProcessed: false,
+      currentSession: null,
+    );
+    final effectivePlaybackMode = playbackMode ?? PlaybackMode.fromString('realtime_only');
+    
+    final isOptimized = effectiveProcessingStatus.isOptimizedPlaybackReady;
     final processingActions = ref.read(processingActionsProvider);
 
     return Column(
@@ -537,7 +546,7 @@ class _WorkflowSessionControlsWidgetState
                     const SizedBox(height: 4),
                     Text(
                       isOptimized
-                          ? 'Video uses pre-processed face data (${playbackMode.mode} mode)'
+                          ? 'Video uses pre-processed face data (${playbackMode?.mode ?? 'realtime'} mode)'
                           : 'Process this video to enable 90% CPU reduction during playback',
                       style: const TextStyle(
                         color: Colors.white70,
@@ -808,6 +817,40 @@ class _WorkflowSessionControlsWidgetState
         content: Text(message),
         backgroundColor: Colors.red[600],
         duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  /// Build display for when no workflow data is available
+  Widget _buildNoWorkflowDisplay(String message) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: Colors.grey[400],
+            size: 32,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: TextStyle(
+              color: Colors.grey[400],
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'This media item is not part of a workflow session.',
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 12,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

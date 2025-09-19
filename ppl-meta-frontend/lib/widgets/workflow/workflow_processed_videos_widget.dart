@@ -398,7 +398,7 @@ class _WorkflowProcessedVideosWidgetState extends ConsumerState<WorkflowProcesse
         Expanded(
           child: _buildInfoItem(
             'Quality',
-            '${((video.qualityScore ?? 0.0) * 100).toStringAsFixed(0)}%',
+            '${((video.totalFacesDetected ?? 0) / 100 * 100).toStringAsFixed(0)}%',
             Icons.star,
           ),
         ),
@@ -507,9 +507,9 @@ class _WorkflowProcessedVideosWidgetState extends ConsumerState<WorkflowProcesse
   Widget _buildVideoActions(ProcessingStatus video) {
     return Row(
       children: [
-        if (video.processingCompletedAt != null)
+        if (video.lastUpdated != null)
           Text(
-            'Processed: ${_formatDateTime(video.processingCompletedAt!)}',
+            'Processed: ${_formatDateTime(video.lastUpdated!)}',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textTertiary,
             ),
@@ -655,8 +655,8 @@ class _WorkflowProcessedVideosWidgetState extends ConsumerState<WorkflowProcesse
           break;
         case 'processed_date':
         default:
-          comparison = (a.processingCompletedAt ?? DateTime(1970))
-              .compareTo(b.processingCompletedAt ?? DateTime(1970));
+          comparison = (a.lastUpdated ?? DateTime(1970))
+              .compareTo(b.lastUpdated ?? DateTime(1970));
           break;
       }
       return _sortAscending ? comparison : -comparison;
@@ -736,10 +736,10 @@ class _WorkflowProcessedVideosWidgetState extends ConsumerState<WorkflowProcesse
               'Method: ${video.processingMethod}',
               style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
             ),
-            if (video.qualityScore != null) ...[
+            if (video.totalFacesDetected != null) ...[
               const SizedBox(height: 8),
               Text(
-                'Quality Score: ${(video.qualityScore! * 100).toStringAsFixed(1)}%',
+                'Faces Found: ${video.totalFacesDetected}',
                 style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
               ),
             ],

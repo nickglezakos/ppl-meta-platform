@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.config import get_config
 from src.database import get_db
 from src.models.camera import Camera, CameraStatus, CameraType
+from src.services.orchestrator_client import OrchestratorClient
 
 logger = logging.getLogger(__name__)
 config = get_config()
@@ -28,6 +29,7 @@ class CameraDetectionService:
         self.detected_cameras: Dict[str, Dict] = {}
         self.active_connections: Dict[str, cv2.VideoCapture] = {}
         self.active_recordings: Dict[str, Dict] = {}  # Track active recordings
+        self.orchestrator_client = OrchestratorClient()  # Phase 5: Event publishing
         # Store latest frames for each camera (device_id -> (ret, frame))
         self.latest_frames: Dict[str, Tuple] = {}
 
@@ -869,6 +871,29 @@ class CameraDetectionService:
             logger.info(
                 f"🎬 [DEBUG] ✅ Stop recording complete for {device_id}: {result}"
             )
+
+            # Phase 5: Publish recording completion event to Orchestrator
+            try:
+                event_published = (
+                    await self.orchestrator_client.publish_recording_completed_event(
+                        camera_device_id=device_id,
+                        recording_result=result,
+                        user_id=user_id,
+                    )
+                )
+                if event_published:
+                    logger.info(
+                        f"📡 [DEBUG] ✅ Published recording completion event for {device_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"📡 [DEBUG] ⚠️ Failed to publish event for {device_id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"📡 [DEBUG] ❌ Error publishing event for {device_id}: {e}"
+                )
+
             return result
 
         except Exception as e:

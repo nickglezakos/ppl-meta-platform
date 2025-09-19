@@ -5,6 +5,7 @@ API v1 routes aggregation.
 from fastapi import APIRouter
 
 from .core import router as core_router
+from .face_detection_workflows import workflow_router
 from .health import router as health_router
 from .media import router as media_router
 from .security import router as security_router
@@ -23,5 +24,6 @@ v1_router.include_router(media_router)
 v1_router.include_router(security_router)
 v1_router.include_router(streaming_router)
 v1_router.include_router(storage_router)
+v1_router.include_router(workflow_router)  # Phase 2: Enhanced workflows
 
 __all__ = ["v1_router"]

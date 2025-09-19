@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import '../services/vision_api_client.dart';
 import '../services/media_api_client.dart';
+import '../models/api_models.dart';
+import '../core/providers/features_providers.dart';
 import '../core/providers/features_provider.dart';
 import '../core/theme/app_theme.dart';
 

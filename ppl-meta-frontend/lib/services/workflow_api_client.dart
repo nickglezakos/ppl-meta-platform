@@ -218,7 +218,7 @@ class WorkflowApiClient {
   Future<ApiResponse<ProcessingStatus>> getProcessingStatus(String mediaUuid) async {
     try {
       final response = await _apiClient.dio.get(
-        '$_workflowBaseUrl/api/v1/processing-status/$mediaUuid',
+        '$_workflowBaseUrl/api/v1/processing-status/$mediaUuid/widget',
       );
 
       final status = ProcessingStatus.fromJson(response.data);

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
-import '../../models/recording_state.dart';
-import '../../providers/camera_providers.dart';
-import '../../widgets/common/status_indicator.dart';
+import '../../core/models/camera.dart';
+import '../../core/providers/camera_providers.dart';
+// import '../../widgets/common/status_indicator.dart';
 
 /// Widget for manual camera recording controls
 /// Provides start/stop recording functionality with real-time status

@@ -269,7 +269,12 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               
               // Processing Status Indicator
               processingStatus.when(
-                data: (status) => _buildProcessingStatusWidget(status, ref),
+                data: (status) => status != null 
+                    ? _buildProcessingStatusWidget(status, ref)
+                    : Container(
+                        padding: const EdgeInsets.all(12),
+                        child: const Text('No processing status available'),
+                      ),
                 loading: () => _buildLoadingStatusWidget(),
                 error: (error, stack) => _buildErrorStatusWidget(error),
               ),
@@ -295,7 +300,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   }
 
   /// Build enhanced status header with workflow information
-  Widget _buildEnhancedStatusHeader(AsyncValue<ProcessingStatus> processingStatus, AsyncValue<PlaybackMode> playbackMode) {
+  Widget _buildEnhancedStatusHeader(AsyncValue<ProcessingStatus?> processingStatus, AsyncValue<PlaybackMode?> playbackMode) {
     return Row(
       children: [
         const Icon(Icons.settings_applications, color: Colors.white, size: 18),
@@ -315,11 +320,11 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           data: (mode) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: _getPlaybackModeColor(mode.mode),
+              color: _getPlaybackModeColor(mode?.mode ?? 'standard'),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              _getPlaybackModeDisplayName(mode.mode),
+              _getPlaybackModeDisplayName(mode?.mode ?? 'standard'),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 10,
@@ -382,7 +387,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   /// Build enhanced processing status widget
   Widget _buildProcessingStatusWidget(ProcessingStatus status, WidgetRef ref) {
     final isProcessed = status.faceDetectionProcessed;
-    final hasActiveSession = status.sessionUuid != null;
+    final hasActiveSession = status.currentSession != null;
     final faceCount = status.totalFacesDetected ?? 0;
     
     return Container(
@@ -438,18 +443,18 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           ),
           
           // Additional status details
-          if (status.processingCompletedAt != null) ...[
+          if (status.lastUpdated != null) ...[
             const SizedBox(height: 4),
             Text(
-              'Last processed: ${_formatDateTime(status.processingCompletedAt!)}',
+              'Last updated: ${_formatDateTime(status.lastUpdated!)}',
               style: const TextStyle(color: Colors.white70, fontSize: 10),
             ),
           ],
           
-          if (status.sessionUuid != null) ...[
+          if (status.currentSession != null) ...[
             const SizedBox(height: 4),
             Text(
-              'Session: ${status.sessionUuid!.substring(0, 8)}...',
+              'Session: ${status.currentSession!.substring(0, 8)}...',
               style: const TextStyle(color: Colors.white70, fontSize: 10),
             ),
           ],
@@ -608,7 +613,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               onTap: () => _startFaceDetection(ref),
               color: Colors.blue,
               enabled: processingStatus.when(
-                data: (status) => status.sessionUuid == null,
+                data: (status) => status?.currentSession == null,
                 loading: () => false,
                 error: (error, stack) => true,
               ),
@@ -621,7 +626,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               onTap: () => _triggerOptimization(ref),
               color: Colors.purple,
               enabled: processingStatus.when(
-                data: (status) => !status.faceDetectionProcessed,
+                data: (status) => !(status?.faceDetectionProcessed ?? false),
                 loading: () => false,
                 error: (error, stack) => true,
               ),
@@ -653,11 +658,11 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           children: [
             // Stop/Reset Session
             processingStatus.when(
-              data: (status) => status.sessionUuid != null
+              data: (status) => status?.currentSession != null
                   ? _buildSecondaryControlButton(
                       icon: Icons.stop,
                       label: 'Stop Session',
-                      onTap: () => _stopSession(ref, status.sessionUuid!),
+                      onTap: () => _stopSession(ref, status!.currentSession!),
                       color: Colors.red,
                     )
                   : const SizedBox.shrink(),
@@ -1012,8 +1017,13 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             child: metricsAsync.when(
               data: (metrics) {
                 final efficiency = _calculateEfficiencyScore(metrics);
+                final processingStatus = processingStatusAsync.when(
+                  data: (status) => _getProcessingStatus(status),
+                  loading: () => 'Loading...',
+                  error: (_, __) => 'Idle', // Gracefully handle missing workflow
+                );
                 return Text(
-                  'Performance: ${efficiency.toStringAsFixed(0)}% • Processing: ${_getProcessingStatus(processingStatusAsync.value)}',
+                  'Performance: ${efficiency.toStringAsFixed(0)}% • Processing: $processingStatus',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -1071,13 +1081,8 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   String _getProcessingStatus(ProcessingStatus? status) {
     if (status == null) return 'Idle';
     
-    if (status.faceDetectionProcessed) {
-      return 'Complete';
-    } else if (status.sessionUuid != null) {
-      return 'Processing';
-    } else {
-      return 'Queued';
-    }
+    // Use the displayStatus getter from the updated ProcessingStatus model
+    return status.displayStatus;
   }
 
   @override

@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/vision_api_client.dart';
 import '../services/media_api_client.dart';
-import '../core/providers/features_provider.dart';
+import '../models/api_models.dart';
+import '../core/providers/features_providers.dart';
 
 /// Face detection overlay for static images
 /// Overlays yellow rectangles on detected faces in static images

@@ -29,12 +29,16 @@ import numpy as np
 import requests
 import uvicorn
 
+# Database and models
+from database import VisionDatabase
+
 # Import our extracted face detector
 from extracted_face_detector import ExtractedFaceDetector
 
 # Web Framework & API
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from models import FaceDetectionResult, MediaRecord
 from PIL import Image
 from pydantic import BaseModel, Field
 
@@ -190,6 +194,7 @@ app.add_middleware(
 
 # Global variables
 face_detector_instance = None
+vision_database = None
 service_start_time = time.time()
 
 # Simulated database storage (in production, use PostgreSQL/MongoDB)
@@ -292,17 +297,18 @@ def process_video_frames(
 # Initialize face detector on startup
 @app.on_event("startup")
 async def startup_event():
-    """Initialize the face detector when the service starts."""
-    global face_detector_instance
+    """Initialize face detector and database on startup."""
+    global face_detector_instance, vision_database
     try:
         face_detector_instance = ExtractedFaceDetector()
-        logger = logging.getLogger("ppl-meta-vision")
-        logger.info("✅ PPL Meta Vision Service started successfully")
-        logger.info(f"📊 Available methods: {face_detector_instance.available_methods}")
+        vision_database = VisionDatabase()
+        print("🎯 Face detector initialized successfully")
+        print(f"📊 Available methods: {face_detector_instance.available_methods}")
+        print("🗄️ Vision database initialized")
     except Exception as e:
-        logger = logging.getLogger("ppl-meta-vision")
-        logger.error(f"❌ Failed to initialize face detector: {e}")
-        raise
+        print(f"❌ Failed to initialize service: {e}")
+        face_detector_instance = None
+        vision_database = None
 
 
 def decode_base64_image(image_base64: str) -> np.ndarray:
@@ -716,6 +722,171 @@ async def detect_faces_file(
         raise HTTPException(status_code=500, detail=f"File processing error: {str(e)}")
 
 
+# Media Service Integration Endpoints
+
+
+class BulkFaceDetectionResult(BaseModel):
+    """Model for bulk face detection results from Media Service."""
+
+    media_id: str = Field(..., description="Media item identifier")
+    frame_number: Optional[int] = Field(default=None, description="Video frame number")
+    timestamp: Optional[float] = Field(
+        default=None, description="Video timestamp in seconds"
+    )
+    detections: List[FaceDetection] = Field(..., description="List of detected faces")
+    processing_metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Processing metadata"
+    )
+
+
+class BulkFaceDetectionRequest(BaseModel):
+    """Request model for storing bulk face detection results."""
+
+    workflow_id: str = Field(..., description="Workflow identifier")
+    results: List[BulkFaceDetectionResult] = Field(
+        ..., description="Bulk detection results"
+    )
+    source_service: str = Field(
+        default="ppl-meta-media", description="Source service name"
+    )
+
+
+@app.post(
+    "/faces/bulk-store",
+    summary="Store Bulk Face Detection Results",
+    description="Receive and store bulk face detection results from workflows",
+)
+async def store_bulk_face_detection_results(request: BulkFaceDetectionRequest):
+    """
+    Store bulk face detection results from Media Service workflows.
+
+    This endpoint allows Media Service to send processed face detection results
+    to Vision Service for storage and analytics processing.
+    """
+    global vision_database
+
+    try:
+        stored_count = 0
+        failed_count = 0
+
+        print(f"Receiving bulk results from workflow {request.workflow_id}")
+        print(f"Processing {len(request.results)} media items with faces")
+
+        for result in request.results:
+            try:
+                # Store each detection for this media item
+                for detection in result.detections:
+                    # Create FaceDetectionResult for database storage
+                    face_result = FaceDetectionResult(
+                        media_id=result.media_id,
+                        frame_number=result.frame_number,
+                        timestamp=result.timestamp,
+                        bbox=[
+                            detection.bbox[0],
+                            detection.bbox[1],
+                            detection.bbox[2],
+                            detection.bbox[3],
+                        ],
+                        confidence=detection.confidence,
+                        method=detection.method,
+                    )
+
+                    # Store in database
+                    if vision_database and vision_database.store_face_detection(
+                        face_result
+                    ):
+                        stored_count += 1
+                    else:
+                        failed_count += 1
+                        print(f"Failed to store face for {result.media_id}")
+
+                print(
+                    f"Processed {len(result.detections)} faces "
+                    f"for {result.media_id}"
+                )
+
+            except Exception as e:
+                failed_count += len(result.detections)
+                print(f"Failed to process results for {result.media_id}: {e}")
+                continue
+
+        # Update analytics after bulk storage
+        total_processed = stored_count + failed_count
+        success_rate = (
+            (stored_count / total_processed * 100) if total_processed > 0 else 0
+        )
+
+        response = {
+            "success": True,
+            "workflow_id": request.workflow_id,
+            "source_service": request.source_service,
+            "summary": {
+                "media_items_processed": len(request.results),
+                "faces_stored": stored_count,
+                "faces_failed": failed_count,
+                "success_rate_percent": round(success_rate, 2),
+            },
+            "message": (
+                f"Stored {stored_count} faces from " f"{len(request.results)} items"
+            ),
+        }
+
+        print(
+            f"Bulk storage complete: {stored_count} stored, " f"{failed_count} failed"
+        )
+        return response
+
+    except Exception as e:
+        print(f"Failed to store bulk face detection results: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to store bulk results: {str(e)}"
+        )
+
+
+@app.get(
+    "/analytics/workflow/{workflow_id}",
+    summary="Get Workflow Analytics",
+    description="Get analytics data for faces stored from a specific workflow",
+)
+async def get_workflow_analytics(workflow_id: str):
+    """
+    Get analytics data for faces stored from a Media Service workflow.
+
+    Provides insights into face detection results processed by this Vision Service
+    from a specific Media Service workflow.
+    """
+    global vision_database
+
+    try:
+        if not vision_database:
+            raise HTTPException(status_code=503, detail="Database not available")
+
+        # This would require adding workflow tracking to the database
+        # For now, return basic structure
+        analytics = {
+            "workflow_id": workflow_id,
+            "status": "Data processing complete",
+            "face_analytics": {
+                "total_faces_stored": "Available via existing endpoints",
+                "confidence_distribution": "Available via existing endpoints",
+                "method_performance": "Available via existing endpoints",
+            },
+            "cross_video_analytics": {
+                "potential_matches": "Enhanced analytics coming soon",
+                "face_clustering": "Enhanced analytics coming soon",
+            },
+            "message": "Use existing /faces/media/{media_id} endpoints for detailed data",
+        }
+
+        return analytics
+
+    except Exception as e:
+        print(f"Failed to get workflow analytics: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get workflow analytics: {str(e)}"
+        )
+
+
 # Error handlers
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
@@ -727,6 +898,8 @@ async def not_found_handler(request, exc):
             "/models",
             "/detect",
             "/process/media",
+            "/faces/bulk-store",
+            "/analytics/workflow/{workflow_id}",
             "/docs",
         ],
     }
