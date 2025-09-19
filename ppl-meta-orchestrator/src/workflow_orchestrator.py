@@ -812,3 +812,124 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
         )
 
         return total_time / len(completed_workflows)
+
+    # ========================================================================
+    # SESSION MANAGEMENT METHODS
+    # ========================================================================
+
+    async def get_workflow_by_id(self, workflow_id: str) -> Optional[WorkflowExecution]:
+        """Get a specific workflow by ID."""
+        # Check active workflows first
+        if workflow_id in self.active_workflows:
+            return self.active_workflows[workflow_id]
+
+        # Check workflow history
+        for workflow in self.workflow_history:
+            if workflow.workflow_id == workflow_id:
+                return workflow
+
+        return None
+
+    async def get_workflows(
+        self,
+        status: Optional[str] = None,
+        user_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[WorkflowExecution]:
+        """Get workflows with optional filtering."""
+        all_workflows = list(self.active_workflows.values()) + self.workflow_history
+
+        # Apply filters
+        filtered_workflows = all_workflows
+        if status:
+            filtered_workflows = [
+                w for w in filtered_workflows if w.status.value == status
+            ]
+        if user_id:
+            filtered_workflows = [w for w in filtered_workflows if w.user_id == user_id]
+
+        # Sort by created_at descending
+        filtered_workflows.sort(key=lambda w: w.created_at, reverse=True)
+
+        # Apply pagination
+        return filtered_workflows[offset : offset + limit]
+
+    async def get_method_lifecycle_by_id(
+        self, lifecycle_id: str
+    ) -> Optional[MethodLifecycle]:
+        """Get a specific method lifecycle by ID."""
+        all_workflows = list(self.active_workflows.values()) + self.workflow_history
+
+        for workflow in all_workflows:
+            for lifecycle in workflow.method_lifecycles:
+                if lifecycle.lifecycle_id == lifecycle_id:
+                    return lifecycle
+
+        return None
+
+    async def get_method_lifecycles_by_workflow(
+        self, workflow_id: str
+    ) -> List[MethodLifecycle]:
+        """Get all method lifecycles for a specific workflow."""
+        workflow = await self.get_workflow_by_id(workflow_id)
+        if workflow:
+            return workflow.method_lifecycles
+        return []
+
+    async def update_method_lifecycle(
+        self,
+        lifecycle_id: str,
+        status: Optional[str] = None,
+        results_count: Optional[int] = None,
+        error_message: Optional[str] = None,
+    ) -> Optional[MethodLifecycle]:
+        """Update a method lifecycle."""
+        all_workflows = list(self.active_workflows.values()) + self.workflow_history
+
+        for workflow in all_workflows:
+            for lifecycle in workflow.method_lifecycles:
+                if lifecycle.lifecycle_id == lifecycle_id:
+                    if status:
+                        try:
+                            lifecycle.status = WorkflowStatus(status)
+                        except ValueError:
+                            logger.warning(f"Invalid status: {status}")
+
+                    if results_count is not None:
+                        lifecycle.results_count = results_count
+
+                    if error_message is not None:
+                        lifecycle.error_message = error_message
+
+                    if status == "completed":
+                        lifecycle.completed_at = datetime.now()
+                    elif status in ["processing"]:
+                        lifecycle.started_at = datetime.now()
+
+                    return lifecycle
+
+        return None
+
+    async def update_workflow_status(
+        self, workflow_id: str, status: str, error_message: Optional[str] = None
+    ) -> Optional[WorkflowExecution]:
+        """Update workflow status."""
+        workflow = await self.get_workflow_by_id(workflow_id)
+        if workflow:
+            try:
+                workflow.status = WorkflowStatus(status)
+
+                if error_message is not None:
+                    workflow.error_message = error_message
+
+                if status == "completed":
+                    workflow.completed_at = datetime.now()
+                elif status == "processing":
+                    workflow.started_at = datetime.now()
+
+                return workflow
+            except ValueError:
+                logger.warning(f"Invalid workflow status: {status}")
+
+        return None

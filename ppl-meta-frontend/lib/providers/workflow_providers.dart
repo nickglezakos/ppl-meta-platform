@@ -5,7 +5,6 @@ import '../services/media_api_client.dart';
 import '../models/face_detection_models.dart';
 import '../models/workflow_widget_models.dart' hide PlaybackMode; // Avoid conflict
 import '../core/api/api_client.dart';
-import '../core/config/app_config.dart';
 import '../widgets/workflow/authenticated_workflow_wrapper.dart';
 
 // =============================================================================
@@ -104,7 +103,7 @@ final sessionStatisticsProvider = FutureProvider.family<SessionStatistics, Strin
   final response = await client.getSessionStatistics(sessionUuid);
   
   if (response.success) {
-    return response.data!;
+    return SessionStatistics.fromJson(response.data!);
   } else {
     throw Exception('Failed to load session statistics: ${response.error}');
   }
@@ -112,20 +111,13 @@ final sessionStatisticsProvider = FutureProvider.family<SessionStatistics, Strin
 
 /// Auto-refreshing provider for session statistics (updates every 2 seconds)
 final autoRefreshSessionStatisticsProvider = FutureProvider.family<SessionStatistics, String>((ref, sessionUuid) async {
-  // Auto-refresh every 2 seconds for active sessions
-  final timer = Timer.periodic(const Duration(seconds: 2), (timer) {
-    ref.invalidateSelf();
-  });
-  
-  ref.onDispose(() => timer.cancel());
-  
   final client = ref.watch(workflowApiClientProvider);
   final response = await client.getSessionStatistics(sessionUuid);
-  
+
   if (response.success) {
-    return response.data!;
+    return SessionStatistics.fromJson(response.data!);
   } else {
-    throw Exception('Failed to load session statistics: ${response.error}');
+    throw Exception(response.error);
   }
 });
 
@@ -166,9 +158,8 @@ final storedFaceDataProvider = FutureProvider.family<List<FaceDetection>, Stored
   final client = ref.watch(workflowApiClientProvider);
   final response = await client.getStoredFaceData(
     mediaUuid: params.mediaUuid,
-    startFrame: params.startFrame,
-    endFrame: params.endFrame,
-    confidenceThreshold: params.confidenceThreshold,
+    enableCaching: true,
+    maxFaces: params.maxFaces,
   );
   
   if (response.success) {
@@ -241,9 +232,8 @@ final livePerformanceMetricsProvider = FutureProvider<WorkflowPerformanceMetrics
 final performanceHistoryProvider = FutureProvider.family<List<WorkflowPerformanceMetrics>, PerformanceHistoryParams>((ref, params) async {
   final client = ref.watch(workflowApiClientProvider);
   final response = await client.getPerformanceHistory(
-    startDate: params.startDate,
-    endDate: params.endDate,
-    interval: params.interval,
+    days: params.days ?? 7,
+    sessionType: params.sessionType,
   );
   
   if (response.success) {
@@ -430,13 +420,13 @@ final deleteSessionProvider = Provider<Future<void> Function(String)>((ref) {
 });
 
 /// Provider for starting video optimization processing
-final startOptimizationProvider = Provider<Future<FaceDetectionSession> Function(String, double?, List<String>?)>((ref) {
-  return (mediaUuid, confidenceThreshold, detectionMethods) async {
+final startOptimizationProvider = Provider<Future<FaceDetectionSession> Function(String, bool?, String?)>((ref) {
+  return (mediaUuid, enableCaching, priority) async {
     final client = ref.read(workflowApiClientProvider);
     final response = await client.processVideoForOptimization(
       mediaUuid: mediaUuid,
-      confidenceThreshold: confidenceThreshold,
-      detectionMethods: detectionMethods,
+      enableCaching: enableCaching ?? true,
+      priority: priority,
     );
     
     if (response.success) {
@@ -508,12 +498,14 @@ class StoredFaceDataParams {
   final int? startFrame;
   final int? endFrame;
   final double? confidenceThreshold;
+  final int? maxFaces;
 
   const StoredFaceDataParams({
     required this.mediaUuid,
     this.startFrame,
     this.endFrame,
     this.confidenceThreshold,
+    this.maxFaces,
   });
 
   @override
@@ -524,14 +516,16 @@ class StoredFaceDataParams {
           mediaUuid == other.mediaUuid &&
           startFrame == other.startFrame &&
           endFrame == other.endFrame &&
-          confidenceThreshold == other.confidenceThreshold;
+          confidenceThreshold == other.confidenceThreshold &&
+          maxFaces == other.maxFaces;
 
   @override
   int get hashCode =>
       mediaUuid.hashCode ^
       startFrame.hashCode ^
       endFrame.hashCode ^
-      confidenceThreshold.hashCode;
+      confidenceThreshold.hashCode ^
+      maxFaces.hashCode;
 }
 
 /// Parameters for performance history provider
@@ -539,11 +533,15 @@ class PerformanceHistoryParams {
   final DateTime? startDate;
   final DateTime? endDate;
   final String? interval;
+  final int? days;
+  final String? sessionType;
 
   const PerformanceHistoryParams({
     this.startDate,
     this.endDate,
     this.interval,
+    this.days,
+    this.sessionType,
   });
 
   @override
@@ -553,13 +551,17 @@ class PerformanceHistoryParams {
           runtimeType == other.runtimeType &&
           startDate == other.startDate &&
           endDate == other.endDate &&
-          interval == other.interval;
+          interval == other.interval &&
+          days == other.days &&
+          sessionType == other.sessionType;
 
   @override
   int get hashCode =>
       startDate.hashCode ^
       endDate.hashCode ^
-      interval.hashCode;
+      interval.hashCode ^
+      days.hashCode ^
+      sessionType.hashCode;
 }
 
 /// Combined workflow data for a media item

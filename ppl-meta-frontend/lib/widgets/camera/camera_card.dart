@@ -608,14 +608,15 @@ class CameraCard extends ConsumerWidget {
         try {
           // Show method selection dialog
           final selectedMethod = await _showDetectionMethodDialog(context);
-          if (selectedMethod == null) return;
+          // Default to two_stage if no method selected
+          final method = selectedMethod ?? 'two_stage';
 
           // For now, show a snackbar indicating the workflow started
           // In a full implementation, this would call the orchestrator service
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Starting $selectedMethod face detection workflow for ${camera.name}'),
+                content: Text('Starting $method face detection workflow for ${camera.name}'),
                 backgroundColor: Colors.green,
                 action: SnackBarAction(
                   label: 'View Status',
@@ -648,6 +649,18 @@ class CameraCard extends ConsumerWidget {
               children: [
                 const Text('Choose a face detection method:'),
                 const SizedBox(height: 16),
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome),
+                  title: const Text('Two-Stage Detection'),
+                  subtitle: const Text('Best accuracy - Haar + DLib validation (Recommended)'),
+                  onTap: () => Navigator.of(context).pop('two_stage'),
+                  tileColor: Colors.blue.shade50,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: Colors.blue.shade200),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 ListTile(
                   leading: const Icon(Icons.speed),
                   title: const Text('Haar Cascade'),

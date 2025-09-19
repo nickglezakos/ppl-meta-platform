@@ -349,9 +349,12 @@ class WorkflowSessionController extends StateNotifier<WorkflowSessionState> {
     try {
       final response = await _apiClient.triggerVideoAnalysis(
         mediaUuid: params.mediaUuid,
-        confidenceThreshold: params.confidenceThreshold,
-        detectionMethods: params.detectionMethods,
-        forceReprocess: params.forceReprocess,
+        workflowType: 'face_detection',
+        parameters: {
+          'confidence_threshold': params.confidenceThreshold,
+          'detection_methods': params.detectionMethods,
+          'force_reprocess': params.forceReprocess,
+        },
       );
 
       if (response.success) {
@@ -396,7 +399,10 @@ class WorkflowSessionController extends StateNotifier<WorkflowSessionState> {
     try {
       final response = await _apiClient.markVideoAsProcessed(
         mediaUuid: mediaUuid,
-        sessionUuid: sessionUuid,
+        metadata: {
+          'session_uuid': sessionUuid,
+          'completed_by': 'workflow_session_controller',
+        },
       );
 
       if (response.success) {

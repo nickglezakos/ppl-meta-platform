@@ -108,6 +108,17 @@ async def lifespan(_app: FastAPI):
         app.include_router(workflow_router)
         logger.info("✅ Camera workflow endpoints registered")
 
+        # Include session endpoints for tracking workflow status
+        try:
+            from session_endpoints import create_session_endpoints
+
+            session_router = create_session_endpoints(workflow_orchestrator)
+            app.include_router(session_router)
+            logger.info("✅ Session endpoints registered")
+        except Exception as session_error:
+            logger.error(f"Failed to initialize session endpoints: {session_error}")
+            logger.warning("Continuing without session endpoints")
+
     except Exception as e:
         logger.error(f"Failed to initialize workflow orchestrator: {e}")
         raise RuntimeError("Critical component initialization failed")

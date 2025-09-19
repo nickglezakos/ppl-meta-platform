@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../models/face_detection_models.dart';
+
 import '../models/api_response.dart';
 import '../core/api/api_client.dart';
 import '../core/config/app_config.dart';
@@ -49,17 +50,17 @@ class WorkflowApiClient {
     bool? enableProgressUpdates,
   }) async {
     try {
-      final requestData = {
-        'media_uuid': mediaUuid,
-        'confidence_threshold': confidenceThreshold ?? 0.7,
-        'detection_methods': detectionMethods ?? ['two_stage'],
-        'priority': priority ?? 'normal',
-        'enable_progress_updates': enableProgressUpdates ?? true,
-      };
+      final request = SessionCreationRequest(
+        mediaUuid: mediaUuid,
+        confidenceThreshold: confidenceThreshold,
+        detectionMethods: detectionMethods,
+        priority: priority,
+        enableProgressUpdates: enableProgressUpdates,
+      );
 
       final response = await _apiClient.dio.post(
         '$_workflowBaseUrl/sessions/',
-        data: requestData,
+        data: request.toJson(),
       );
 
       final session = FaceDetectionSession.fromJson(response.data);
@@ -143,16 +144,17 @@ class WorkflowApiClient {
   }
 
   /// Get real-time statistics for an active session
-  Future<ApiResponse<Map<String, dynamic>>> getSessionStatistics(String sessionUuid) async {
+  Future<ApiResponse<SessionStatistics>> getSessionStatistics(String sessionUuid) async {
     try {
       final response = await _apiClient.dio.get(
         '$_workflowBaseUrl/sessions/stats',
         queryParameters: {'session_uuid': sessionUuid},
       );
 
-      return ApiResponse.success(response.data as Map<String, dynamic>);
+      final statistics = SessionStatistics.fromJson(response.data);
+      return ApiResponse.success(statistics);
     } on DioException catch (e) {
-      return _handleApiError<Map<String, dynamic>>(e);
+      return _handleApiError<SessionStatistics>(e);
     } catch (e) {
       return ApiResponse.error('Failed to get session statistics: $e');
     }
@@ -189,10 +191,10 @@ class WorkflowApiClient {
   }
 
   // =====================================================
-  // WORKFLOW 5 - PROCESSING STATUS & PLAYBACK
+  // WORKFLOW 5 - PROCESSING STATUS & SMART PLAYBACK
   // =====================================================
 
-  /// Get processing status with widget optimization for a media file
+  /// Get the processing status for a media item
   Future<ApiResponse<ProcessingStatus>> getProcessingStatus(String mediaUuid) async {
     try {
       final response = await _apiClient.dio.get(
@@ -208,15 +210,15 @@ class WorkflowApiClient {
     }
   }
 
-  /// Get optimal playback mode for a media file
-  Future<ApiResponse<PlaybackMode>> getPlaybackMode(String mediaUuid) async {
+  /// Get the optimal playback mode for a media item
+  Future<ApiResponse<PlaybackMode>> getOptimalPlaybackMode(String mediaUuid) async {
     try {
       final response = await _apiClient.dio.get(
         '$_workflowBaseUrl/api/v1/playback-mode/$mediaUuid',
       );
 
-      final playbackMode = PlaybackMode.fromJson(response.data);
-      return ApiResponse.success(playbackMode);
+      final mode = PlaybackMode.fromJson(response.data);
+      return ApiResponse.success(mode);
     } on DioException catch (e) {
       return _handleApiError<PlaybackMode>(e);
     } catch (e) {
@@ -224,20 +226,18 @@ class WorkflowApiClient {
     }
   }
 
-  // =====================================================
-  // PERFORMANCE & ANALYTICS
-  // =====================================================
-
-  /// Get stored face detection data for a media file with optimizations
+  /// Get stored face data for a media item (Workflow 5 optimization)
   Future<ApiResponse<List<FaceDetection>>> getStoredFaceData({
     required String mediaUuid,
-    bool enableCaching = true,
-    int? maxFaces,
+    int? startFrame,
+    int? endFrame,
+    double? confidenceThreshold,
   }) async {
     try {
       final queryParams = <String, dynamic>{
-        'enable_caching': enableCaching,
-        if (maxFaces != null) 'max_faces': maxFaces,
+        if (startFrame != null) 'start_frame': startFrame,
+        if (endFrame != null) 'end_frame': endFrame,
+        if (confidenceThreshold != null) 'confidence_threshold': confidenceThreshold,
       };
 
       final response = await _apiClient.dio.get(
@@ -257,17 +257,18 @@ class WorkflowApiClient {
     }
   }
 
-  /// Mark a video as completely processed
+  /// Mark a video as processed for optimized playback
   Future<ApiResponse<void>> markVideoAsProcessed({
     required String mediaUuid,
-    Map<String, dynamic>? metadata,
+    required String sessionUuid,
+    double? qualityScore,
   }) async {
     try {
       await _apiClient.dio.post(
         '$_workflowBaseUrl/api/v1/processing-status/$mediaUuid/complete',
         data: {
-          'completed_at': DateTime.now().toIso8601String(),
-          if (metadata != null) 'metadata': metadata,
+          'session_uuid': sessionUuid,
+          if (qualityScore != null) 'quality_score': qualityScore,
         },
       );
 
@@ -279,19 +280,21 @@ class WorkflowApiClient {
     }
   }
 
-  /// Trigger video analysis workflow
+  /// Trigger video analysis for Workflow 5 optimization
   Future<ApiResponse<void>> triggerVideoAnalysis({
     required String mediaUuid,
-    String? workflowType,
-    Map<String, dynamic>? parameters,
+    double? confidenceThreshold,
+    List<String>? detectionMethods,
+    bool forceReprocess = false,
   }) async {
     try {
       await _apiClient.dio.post(
         '$_workflowBaseUrl/api/v1/trigger-analysis',
         data: {
           'media_uuid': mediaUuid,
-          'workflow_type': workflowType ?? 'face_detection',
-          if (parameters != null) 'parameters': parameters,
+          if (confidenceThreshold != null) 'confidence_threshold': confidenceThreshold,
+          if (detectionMethods != null) 'detection_methods': detectionMethods,
+          'force_reprocess': forceReprocess,
         },
       );
 
@@ -303,19 +306,19 @@ class WorkflowApiClient {
     }
   }
 
-  /// Process video with optimization features
+  /// Trigger processing for a video to enable optimized playback
   Future<ApiResponse<FaceDetectionSession>> processVideoForOptimization({
     required String mediaUuid,
-    bool enableCaching = true,
-    String? priority,
+    double? confidenceThreshold,
+    List<String>? detectionMethods,
   }) async {
     try {
       final response = await _apiClient.dio.post(
         '$_workflowBaseUrl/api/v1/process-for-optimization',
         data: {
           'media_uuid': mediaUuid,
-          'enable_caching': enableCaching,
-          'priority': priority ?? 'normal',
+          if (confidenceThreshold != null) 'confidence_threshold': confidenceThreshold,
+          if (detectionMethods != null) 'detection_methods': detectionMethods,
         },
       );
 
@@ -324,15 +327,15 @@ class WorkflowApiClient {
     } on DioException catch (e) {
       return _handleApiError<FaceDetectionSession>(e);
     } catch (e) {
-      return ApiResponse.error('Failed to process video for optimization: $e');
+      return ApiResponse.error('Failed to start optimization processing: $e');
     }
   }
 
-  /// Get all processed videos list
+  /// Get all processed videos across the system
   Future<ApiResponse<List<ProcessingStatus>>> getAllProcessedVideos() async {
     try {
-      // Mock implementation - replace with real endpoint when available
-      await Future.delayed(const Duration(milliseconds: 500));
+      // TODO: Find appropriate backend endpoint for processed videos
+      // Backend doesn't have /api/v1/processed-videos endpoint
       return ApiResponse.success(<ProcessingStatus>[]);
     } on DioException catch (e) {
       return _handleApiError<List<ProcessingStatus>>(e);
@@ -341,30 +344,40 @@ class WorkflowApiClient {
     }
   }
 
-  /// Get workflow performance metrics
+  // =====================================================
+  // PERFORMANCE METRICS & ANALYTICS
+  // =====================================================
+
+  /// Get current workflow performance metrics
   Future<ApiResponse<WorkflowPerformanceMetrics>> getPerformanceMetrics() async {
     try {
       final response = await _apiClient.dio.get(
         '$_workflowBaseUrl/analytics/performance',
       );
 
-      // Parse the response data into performance metrics
-      final data = response.data as Map<String, dynamic>;
-      final metrics = WorkflowPerformanceMetrics(
-        cpuUsageReduction: (data['cpu_usage_reduction'] ?? 0.0).toDouble(),
-        memoryUsageReduction: (data['memory_usage_reduction'] ?? 0.0).toDouble(),
-        activeSessionsCount: data['active_sessions_count'] ?? 0,
-        processedVideosCount: data['processed_videos_count'] ?? 0,
-        lastUpdated: data['last_updated'] != null 
-            ? DateTime.parse(data['last_updated'])
-            : DateTime.now(),
-        avgProcessingTimeSeconds: data['avg_processing_time_seconds']?.toDouble(),
-        totalFacesDetected: data['total_faces_detected'],
-        systemCpuUsage: data['system_cpu_usage']?.toDouble(),
-        systemMemoryUsage: data['system_memory_usage']?.toDouble(),
-        processingThroughput: data['processing_throughput']?.toDouble(),
-      );
+      // Legacy error handling - if analytics contains error field (old format)
+      if (response.data['analytics'] != null && 
+          response.data['analytics']['error'] != null) {
+        return ApiResponse.error(
+          'No analytics found: ${response.data['analytics']['error']}'
+        );
+      }
 
+      // Handle new format with status indicator
+      if (response.data['analytics'] != null && 
+          response.data['analytics']['status'] == 'no_data') {
+        // Create empty metrics with the helpful message
+        final noDataMetrics = WorkflowPerformanceMetrics(
+          cpuUsageReduction: 0.0,
+          memoryUsageReduction: 0.0,
+          activeSessionsCount: 0,
+          processedVideosCount: 0,
+          lastUpdated: DateTime.now(),
+        );
+        return ApiResponse.success(noDataMetrics);
+      }
+
+      final metrics = WorkflowPerformanceMetrics.fromJson(response.data);
       return ApiResponse.success(metrics);
     } on DioException catch (e) {
       return _handleApiError<WorkflowPerformanceMetrics>(e);
@@ -375,13 +388,15 @@ class WorkflowApiClient {
 
   /// Get historical performance data
   Future<ApiResponse<List<WorkflowPerformanceMetrics>>> getPerformanceHistory({
-    required int days,
-    String? sessionType,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? interval, // 'hour', 'day', 'week'
   }) async {
     try {
       final queryParams = <String, dynamic>{
-        'days': days,
-        if (sessionType != null) 'session_type': sessionType,
+        if (startDate != null) 'start_date': startDate.toIso8601String(),
+        if (endDate != null) 'end_date': endDate.toIso8601String(),
+        if (interval != null) 'interval': interval,
       };
 
       final response = await _apiClient.dio.get(
@@ -389,11 +404,11 @@ class WorkflowApiClient {
         queryParameters: queryParams,
       );
 
-      final historyList = (response.data as List)
+      final history = (response.data as List)
           .map((json) => WorkflowPerformanceMetrics.fromJson(json))
           .toList();
       
-      return ApiResponse.success(historyList);
+      return ApiResponse.success(history);
     } on DioException catch (e) {
       return _handleApiError<List<WorkflowPerformanceMetrics>>(e);
     } catch (e) {
@@ -401,11 +416,7 @@ class WorkflowApiClient {
     }
   }
 
-  // =====================================================
-  // SYSTEM STATUS & ANALYTICS
-  // =====================================================
-
-  /// Get analytics summary
+  /// Get analytics summary for dashboard widgets
   Future<ApiResponse<Map<String, dynamic>>> getAnalyticsSummary({
     int days = 7,
   }) async {
@@ -414,8 +425,8 @@ class WorkflowApiClient {
         '$_workflowBaseUrl/analytics/summary',
         queryParameters: {'days': days},
       );
-
-      return ApiResponse.success(response.data as Map<String, dynamic>);
+      
+      return ApiResponse.success(response.data);
     } on DioException catch (e) {
       return _handleApiError<Map<String, dynamic>>(e);
     } catch (e) {
@@ -423,14 +434,14 @@ class WorkflowApiClient {
     }
   }
 
-  /// Get database status
+  /// Get database status and statistics
   Future<ApiResponse<Map<String, dynamic>>> getDatabaseStatus() async {
     try {
       final response = await _apiClient.dio.get(
         '$_workflowBaseUrl/database/status',
       );
-
-      return ApiResponse.success(response.data as Map<String, dynamic>);
+      
+      return ApiResponse.success(response.data);
     } on DioException catch (e) {
       return _handleApiError<Map<String, dynamic>>(e);
     } catch (e) {
@@ -439,17 +450,17 @@ class WorkflowApiClient {
   }
 
   // =====================================================
-  // SYSTEM HEALTH & MONITORING
+  // HEALTH & STATUS ENDPOINTS
   // =====================================================
 
-  /// Check workflow service health
+  /// Check if workflow services are healthy and available
   Future<ApiResponse<Map<String, dynamic>>> checkWorkflowHealth() async {
     try {
       final response = await _apiClient.dio.get(
         '$_workflowBaseUrl/health',
       );
 
-      return ApiResponse.success(response.data as Map<String, dynamic>);
+      return ApiResponse.success(response.data);
     } on DioException catch (e) {
       return _handleApiError<Map<String, dynamic>>(e);
     } catch (e) {
@@ -457,14 +468,14 @@ class WorkflowApiClient {
     }
   }
 
-  /// Get workflow service capabilities
+  /// Get workflow service capabilities and available methods
   Future<ApiResponse<Map<String, dynamic>>> getWorkflowCapabilities() async {
     try {
       final response = await _apiClient.dio.get(
         '$_workflowBaseUrl/api/v1/capabilities',
       );
 
-      return ApiResponse.success(response.data as Map<String, dynamic>);
+      return ApiResponse.success(response.data);
     } on DioException catch (e) {
       return _handleApiError<Map<String, dynamic>>(e);
     } catch (e) {

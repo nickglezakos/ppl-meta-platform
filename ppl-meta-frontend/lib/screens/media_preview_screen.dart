@@ -800,8 +800,8 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       final client = ref.read(workflowApiClientProvider);
       final response = await client.processVideoForOptimization(
         mediaUuid: widget.mediaItem.uuid,
-        confidenceThreshold: 0.5,
-        detectionMethods: ['opencv', 'dlib'],
+        enableCaching: true,
+        priority: 'normal',
       );
       
       if (response.success && mounted) {
