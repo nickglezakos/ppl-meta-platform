@@ -122,66 +122,79 @@ class HomeScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Welcome message
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.waving_hand,
-                          color: Colors.orange,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Welcome back!',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (currentUser != null) ...[
-                      Text(
-                        'Hello, ${currentUser.username}',
-                        style: Theme.of(context).textTheme.bodyLarge,
+            // Compact welcome header
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.waving_hand,
+                    color: Colors.orange,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  if (currentUser != null) ...[
+                    Text(
+                      'Welcome back, ${currentUser.username}',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '•',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
                         currentUser.email,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      if (!currentUser.emailVerified) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'Email not verified',
-                            style: TextStyle(
-                              color: Colors.orange,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
+                    ),
+                    if (!currentUser.emailVerified) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Unverified',
+                          style: TextStyle(
+                            color: Colors.orange,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ],
+                      ),
                     ],
+                  ] else ...[
+                    Text(
+                      'Welcome back!',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // Quick actions
             Text(
@@ -245,15 +258,6 @@ class HomeScreen extends ConsumerWidget {
                         subtitle: 'Manage live cameras',
                         onTap: () {
                           context.go('/cameras');
-                        },
-                      ),
-                      _ActionCard(
-                        icon: Icons.camera_alt,
-                        iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Snapshots',
-                        subtitle: 'Camera snapshot gallery',
-                        onTap: () {
-                          context.go('/snapshots');
                         },
                       ),
                       _ActionCard(

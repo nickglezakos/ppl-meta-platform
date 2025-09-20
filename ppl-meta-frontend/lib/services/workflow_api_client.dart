@@ -15,7 +15,7 @@ class WorkflowApiClient {
   WorkflowApiClient({
     String? baseUrl,
     ApiClient? apiClient,
-  }) : baseUrl = baseUrl ?? 'http://localhost:8002' {
+  }) : baseUrl = baseUrl ?? 'http://localhost:8080' {
     // Use provided ApiClient or create new one
     _apiClient = apiClient ?? ApiClient(AppConfig.instance);
     
@@ -111,8 +111,7 @@ class WorkflowApiClient {
   Future<ApiResponse<List<FaceDetectionSession>>> getAllActiveSessions() async {
     try {
       final response = await _apiClient.dio.get(
-        '$_workflowBaseUrl/sessions/',
-        queryParameters: {'status': 'active'},
+        '/api/v1/sessions/active/overview',
       );
 
       final sessions = (response.data as List)

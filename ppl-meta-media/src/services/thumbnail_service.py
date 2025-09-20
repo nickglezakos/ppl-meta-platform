@@ -395,3 +395,69 @@ class ThumbnailService:
                 pass
 
         return cleared_count
+
+    def get_default_video_thumbnail(self, size: str = "medium") -> Optional[bytes]:
+        """
+        Generate a default video thumbnail for when thumbnail generation fails.
+
+        Args:
+            size: Thumbnail size (small, medium, large)
+
+        Returns:
+            Default thumbnail as bytes, or None if unable to create
+        """
+        try:
+            # Define size dimensions
+            size_map = {"small": (160, 120), "medium": (320, 240), "large": (640, 480)}
+
+            width, height = size_map.get(size, size_map["medium"])
+
+            # Create a simple dark gray image with a play icon
+            try:
+                from PIL import ImageDraw
+            except ImportError:
+                # PIL not available, return None
+                return None
+
+            # Create base image with dark gray background
+            img = Image.new("RGB", (width, height), color="#2d2d2d")
+            draw = ImageDraw.Draw(img)
+
+            # Draw a simple play button in the center
+            center_x, center_y = width // 2, height // 2
+            play_size = min(width, height) // 6
+
+            # Calculate triangle points for play button
+            triangle = [
+                (center_x - play_size // 2, center_y - play_size // 2),
+                (center_x + play_size // 2, center_y),
+                (center_x - play_size // 2, center_y + play_size // 2),
+            ]
+
+            # Draw play button
+            draw.polygon(triangle, fill="#ffffff", outline="#cccccc")
+
+            # Add text indicating it's a video thumbnail
+            try:
+                # Try to add small text
+                text = "Video"
+                text_bbox = draw.textbbox((0, 0), text)
+                text_width = text_bbox[2] - text_bbox[0]
+                text_height = text_bbox[3] - text_bbox[1]
+                text_x = (width - text_width) // 2
+                text_y = center_y + play_size
+
+                if text_y + text_height < height - 10:
+                    draw.text((text_x, text_y), text, fill="#cccccc")
+            except Exception:  # pylint: disable=broad-except
+                # Font handling might fail, continue without text
+                pass
+
+            # Convert to JPEG bytes
+            buffer = BytesIO()
+            img.save(buffer, format="JPEG", quality=85)
+            return buffer.getvalue()
+
+        except Exception as e:  # pylint: disable=broad-except
+            print(f"Error creating default video thumbnail: {e}")
+            return None

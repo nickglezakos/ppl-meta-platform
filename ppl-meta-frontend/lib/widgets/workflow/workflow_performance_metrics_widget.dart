@@ -25,8 +25,9 @@ class WorkflowPerformanceMetricsWidget extends ConsumerWidget {
       children: [
         // Primary metrics row
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 title: 'CPU Savings',
                 value: '${metrics.cpuUsageReduction.toStringAsFixed(1)}%',
@@ -37,7 +38,7 @@ class WorkflowPerformanceMetricsWidget extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 title: 'Memory Efficiency',
                 value: '${metrics.memoryUsageReduction.toStringAsFixed(1)}%',
@@ -54,8 +55,9 @@ class WorkflowPerformanceMetricsWidget extends ConsumerWidget {
         
         // Secondary metrics row
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 title: 'Active Sessions',
                 value: '${metrics.activeSessionsCount}',
@@ -66,7 +68,7 @@ class WorkflowPerformanceMetricsWidget extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 title: 'Processed Videos',
                 value: '${metrics.processedVideosCount}',

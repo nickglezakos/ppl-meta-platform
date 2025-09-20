@@ -8,6 +8,7 @@ import logging
 import os
 import platform
 import subprocess
+import time
 import uuid
 from typing import Dict, List, Optional, Tuple
 
@@ -674,9 +675,16 @@ class CameraDetectionService:
         # Get recording parameters based on current stream settings
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+        raw_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+
+        # Cap FPS for USB/RTSP cameras to prevent fast playback
+        # USB cameras often report 60-90+ FPS which causes fast playback
+        # Cap to 30 FPS for consistent playback speed
+        fps = min(raw_fps, 30) if raw_fps > 0 else 30
+
         logger.info(
-            f"🎬 [DEBUG] Camera properties - Width: {width}, Height: {height}, FPS: {fps}"
+            f"🎬 [DEBUG] Camera properties - Width: {width}, Height: {height}, "
+            f"Raw FPS: {raw_fps}, Capped FPS: {fps}"
         )
 
         # Generate recording file path
@@ -948,13 +956,30 @@ class CameraDetectionService:
             video_writer = recording_info["video_writer"]
             target_fps = recording_info["fps"]
             cap = self.active_connections[device_id]
-            frame_interval = 1.0 / target_fps  # Target time between frames
+
+            # Get camera's actual FPS for frame skipping calculation
+            camera_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+
+            # Calculate frame skipping ratio
+            # If camera is 90fps and target is 30fps, skip every 3rd frame (90/30=3)
+            skip_ratio = max(1, camera_fps // target_fps)
+            frame_counter = 0
+
+            # Frame timing control for consistent FPS
+            target_frame_interval = 1.0 / target_fps  # Seconds between frames
+            start_time = time.time()
+            next_frame_time = start_time
+
             max_consecutive_failures = 10
             failure_count = 0
 
             logger.info(f"🎬 [DEBUG] Recording loop initialized for {device_id}")
             logger.info(
-                f"🎬 [DEBUG] Target FPS: {target_fps}, Frame interval: {frame_interval:.3f}s"
+                f"🎬 [DEBUG] Camera FPS: {camera_fps}, Target FPS: {target_fps}, "
+                f"Skip ratio: {skip_ratio} (write every {skip_ratio} frames)"
+            )
+            logger.info(
+                f"🎬 [DEBUG] Target frame interval: {target_frame_interval:.3f}s"
             )
 
             logger.info(
@@ -988,20 +1013,40 @@ class CameraDetectionService:
 
                     # Reset failure count on successful read
                     failure_count = 0
-                    frame_write_count += 1
+                    frame_counter += 1
 
-                    # Write frame immediately for continuous stream
-                    video_writer.write(frame)
-                    recording_info["frame_count"] += 1
+                    # Only write frames based on skip ratio to achieve target FPS
+                    if frame_counter % skip_ratio == 0:
+                        # Check if it's time to write the next frame
+                        current_time = time.time()
+                        if current_time >= next_frame_time:
+                            video_writer.write(frame)
+                            recording_info["frame_count"] += 1
+                            frame_write_count += 1
 
-                    # Log progress every 30 frames (about 1 second at 30fps)
-                    if frame_write_count % 30 == 0:
-                        logger.info(
-                            f"🎬 [DEBUG] ✅ Wrote {frame_write_count} frames for {device_id}"
-                        )
+                            # Schedule next frame time
+                            next_frame_time = current_time + target_frame_interval
 
-                    # Use async sleep for proper event loop handling
-                    await asyncio.sleep(frame_interval)
+                            # Log progress every 30 written frames
+                            if frame_write_count % 30 == 0:
+                                elapsed = current_time - start_time
+                                expected_frames = elapsed * target_fps
+                                timing_accuracy = (
+                                    (frame_write_count / expected_frames) * 100
+                                    if expected_frames > 0
+                                    else 100
+                                )
+                                logger.info(
+                                    f"🎬 [DEBUG] ✅ Wrote {frame_write_count} frames for {device_id} "
+                                    f"(read {frame_counter} total, timing: {timing_accuracy:.1f}%)"
+                                )
+
+                    # Calculate sleep time to maintain proper frame timing
+                    current_time = time.time()
+                    sleep_time = max(
+                        0.001, min(0.033, next_frame_time - current_time)
+                    )  # Cap between 1ms and 33ms
+                    await asyncio.sleep(sleep_time)
 
                 except Exception as frame_error:
                     logger.warning(

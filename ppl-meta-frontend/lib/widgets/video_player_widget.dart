@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'dart:async';
 import '../core/theme/app_theme.dart';
 
 /// Video player widget with controls for displaying video content
@@ -28,6 +29,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   String? _errorMessage;
   bool _isDisposed = false; // Track disposal state
   VoidCallback? _controllerListener; // Store listener reference
+  
+  // Playback monitoring variables
+  Timer? _playbackMonitorTimer;
+  DateTime? _playbackStartTime;
+  Duration? _lastPosition;
+  int _speedCheckCount = 0;
 
   @override
   void initState() {
@@ -49,6 +56,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     }
     
     _isDisposed = true;
+    
+    // Cancel playback monitoring timer
+    _playbackMonitorTimer?.cancel();
+    _playbackMonitorTimer = null;
     
     // Safely dispose controller
     if (_controller != null) {
@@ -141,9 +152,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       
       print('✅ Video initialized successfully');
       print('📹 Video info: ${_controller!.value.duration}, ${_controller!.value.size}');
+      print('🎬 Initial playback speed: ${_controller!.value.playbackSpeed}x');
       
       // Mobile camera frame rate correction
       await _applyMobileCameraSpeedCorrection();
+      
+      print('🎬 Final playback speed: ${_controller!.value.playbackSpeed}x');
+      
+      // Start playback monitoring to detect speed issues
+      _startPlaybackMonitoring();
       
       if (mounted && !_isDisposed) {
         setState(() {
@@ -327,6 +344,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       
       if (!isMobileCollection) {
         print('📱 Not from mobile camera collection, skipping speed correction');
+        // Ensure playback speed is set to normal for non-mobile videos
+        await _controller!.setPlaybackSpeed(1.0);
+        print('🎬 Set playback speed to 1.0x for USB/RTSP camera video');
         return;
       }
       
@@ -386,10 +406,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         final tokenMatch = RegExp(r'/stream-token/([a-f0-9-]+)').firstMatch(widget.videoUrl);
         if (tokenMatch != null) {
           final mediaUuid = tokenMatch.group(1);
-          print('📱 Found media UUID: $mediaUuid - assuming mobile for now');
-          // For now, assume all stream-token videos from our test are mobile
-          // TODO: Implement proper media-to-collection lookup
-          return true;
+          print('📱 Found media UUID: $mediaUuid');
+          
+          // Only apply mobile correction if we have clear mobile indicators
+          // Don't assume all stream-token videos are mobile
+          print('📱 ❌ Stream token found but no mobile indicators - treating as regular camera');
+          return false;
         }
       }
       
@@ -428,5 +450,64 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     print('   Correction ratio: ${correction.toStringAsFixed(3)}');
     
     return correction;
+  }
+  
+  /// Start monitoring playback speed to detect timing issues
+  void _startPlaybackMonitoring() {
+    if (_controller == null) return;
+    
+    print('⏱️ Starting playback speed monitoring...');
+    _playbackMonitorTimer?.cancel();
+    
+    _playbackMonitorTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (_controller == null || !_controller!.value.isInitialized || _isDisposed) {
+        timer.cancel();
+        return;
+      }
+      
+      _speedCheckCount++;
+      final currentPosition = _controller!.value.position;
+      final now = DateTime.now();
+      
+      if (_playbackStartTime == null && _controller!.value.isPlaying) {
+        _playbackStartTime = now;
+        _lastPosition = currentPosition;
+        print('⏱️ Playback started - monitoring initialized');
+        return;
+      }
+      
+      if (_playbackStartTime != null && _lastPosition != null && _controller!.value.isPlaying) {
+        final realTimeElapsed = now.difference(_playbackStartTime!).inMilliseconds / 1000.0;
+        final videoTimeElapsed = (currentPosition.inMilliseconds - _lastPosition!.inMilliseconds) / 1000.0;
+        
+        if (realTimeElapsed > 0.1) { // Avoid division by zero
+          final actualPlaybackSpeed = videoTimeElapsed / realTimeElapsed;
+          final expectedSpeed = _controller!.value.playbackSpeed;
+          final speedRatio = actualPlaybackSpeed / expectedSpeed;
+          
+          print('⏱️ Playback monitoring (#$_speedCheckCount):');
+          print('   Real time elapsed: ${realTimeElapsed.toStringAsFixed(2)}s');
+          print('   Video time elapsed: ${videoTimeElapsed.toStringAsFixed(2)}s');
+          print('   Actual playback speed: ${actualPlaybackSpeed.toStringAsFixed(3)}x');
+          print('   Expected speed: ${expectedSpeed.toStringAsFixed(3)}x');
+          print('   Speed ratio: ${speedRatio.toStringAsFixed(3)}x');
+          
+          if (speedRatio > 1.2) {
+            print('🚨 FAST PLAYBACK DETECTED! Video playing ${speedRatio.toStringAsFixed(2)}x faster than expected!');
+          } else if (speedRatio < 0.8) {
+            print('🐌 SLOW PLAYBACK DETECTED! Video playing ${speedRatio.toStringAsFixed(2)}x slower than expected!');
+          }
+          
+          _playbackStartTime = now;
+          _lastPosition = currentPosition;
+        }
+      }
+      
+      // Stop monitoring after 30 seconds to avoid spam
+      if (_speedCheckCount >= 15) {
+        print('⏱️ Playback monitoring completed after ${_speedCheckCount} checks');
+        timer.cancel();
+      }
+    });
   }
 }

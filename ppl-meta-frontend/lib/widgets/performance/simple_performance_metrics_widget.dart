@@ -65,8 +65,9 @@ class PerformanceMetricsDisplayWidget extends ConsumerWidget {
       children: [
         // Performance summary cards
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 'CPU Reduction',
                 '${(metrics.cpuUsageReduction * 100).toStringAsFixed(1)}%',
@@ -75,7 +76,7 @@ class PerformanceMetricsDisplayWidget extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 'Memory Reduction',
                 '${(metrics.memoryUsageReduction * 100).toStringAsFixed(1)}%',
@@ -87,8 +88,9 @@ class PerformanceMetricsDisplayWidget extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 'Active Sessions',
                 '${metrics.activeSessionsCount}',
@@ -97,7 +99,7 @@ class PerformanceMetricsDisplayWidget extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(
+            Flexible(
               child: _buildMetricCard(
                 'Videos Processed',
                 '${metrics.processedVideosCount}',

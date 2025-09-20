@@ -1200,9 +1200,25 @@ async def get_thumbnail(
     )
 
     if not thumbnail_bytes:
-        raise HTTPException(
-            status_code=422, detail="Unable to generate thumbnail for this media type"
-        )
+        # Return a default video thumbnail instead of 422 error
+        # This prevents UI failures when thumbnail generation fails
+        default_thumbnail = thumbnail_service.get_default_video_thumbnail(size)
+        if default_thumbnail:
+            return Response(
+                content=default_thumbnail,
+                media_type="image/jpeg",
+                headers={
+                    "Content-Disposition": (
+                        f"inline; filename=default_thumbnail_{size}.jpg"
+                    ),
+                    "Cache-Control": "public, max-age=86400",
+                },
+            )
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="Unable to generate thumbnail for this media type",
+            )
 
     # Return thumbnail with proper headers
     return Response(

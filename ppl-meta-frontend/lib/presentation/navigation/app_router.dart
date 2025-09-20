@@ -155,13 +155,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
-        path: '/snapshots',
-        name: 'snapshots',
-        builder: (context, state) => const ProviderScreenWrapper(
-          child: SnapshotGalleryScreen(),
-        ),
-      ),
-      GoRoute(
         path: '/cameras/:cameraId/snapshots',
         name: 'camera-snapshots',
         builder: (context, state) {
