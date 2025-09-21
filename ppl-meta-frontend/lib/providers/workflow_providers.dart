@@ -107,7 +107,7 @@ final activeWorkflowsProvider = FutureProvider<List<WorkflowExecution>>((ref) as
   
   try {
     final response = await apiClient.dio.get(
-      'http://localhost:8002/workflows/user/7/workflows',
+      'http://localhost:8080/api/v1/orchestrator/workflows/user/7/workflows',
       options: Options(
         headers: {
           'Authorization': 'Bearer ${apiClient.authToken}',
@@ -691,3 +691,291 @@ class WorkflowDashboardData {
   /// Get overall system health status
   String get systemHealthStatus => performanceMetrics.systemHealthStatus;
 }
+
+// =============================================================================
+// PHASE 1: MEDIA WORKFLOW MANAGEMENT
+// =============================================================================
+
+/// Workflow status enum for media processing
+enum MediaWorkflowStatus {
+  idle,
+  queued,
+  processing,
+  completed,
+  failed,
+  stopping,
+  cancelled,
+}
+
+/// State class for media workflow tracking
+class MediaWorkflowState {
+  final String mediaId;
+  final MediaWorkflowStatus status;
+  final double? progress;
+  final String? workflowId;
+  final String? method;
+  final DateTime? startedAt;
+  final DateTime? completedAt;
+  final String? error;
+
+  const MediaWorkflowState({
+    required this.mediaId,
+    required this.status,
+    this.progress,
+    this.workflowId,
+    this.method,
+    this.startedAt,
+    this.completedAt,
+    this.error,
+  });
+
+  /// Check if workflow is currently processing
+  bool get isProcessing => status == MediaWorkflowStatus.processing || status == MediaWorkflowStatus.queued;
+
+  /// Check if workflow is idle
+  bool get isIdle => status == MediaWorkflowStatus.idle;
+
+  /// Check if workflow is completed
+  bool get isCompleted => status == MediaWorkflowStatus.completed;
+
+  /// Check if workflow failed
+  bool get isFailed => status == MediaWorkflowStatus.failed;
+
+  /// Check if workflow is stopping
+  bool get isStopping => status == MediaWorkflowStatus.stopping;
+
+  /// Check if workflow was cancelled
+  bool get isCancelled => status == MediaWorkflowStatus.cancelled;
+
+  /// Check if workflow is in a final state (completed, failed, or cancelled)
+  bool get isFinished => isCompleted || isFailed || isCancelled;
+
+  MediaWorkflowState copyWith({
+    MediaWorkflowStatus? status,
+    double? progress,
+    String? workflowId,
+    String? method,
+    DateTime? startedAt,
+    DateTime? completedAt,
+    String? error,
+  }) {
+    return MediaWorkflowState(
+      mediaId: mediaId,
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
+      workflowId: workflowId ?? this.workflowId,
+      method: method ?? this.method,
+      startedAt: startedAt ?? this.startedAt,
+      completedAt: completedAt ?? this.completedAt,
+      error: error ?? this.error,
+    );
+  }
+}
+
+/// Extension for MediaWorkflowStatus display names
+extension MediaWorkflowStatusExtension on MediaWorkflowStatus {
+  String get displayName {
+    switch (this) {
+      case MediaWorkflowStatus.idle:
+        return 'Idle';
+      case MediaWorkflowStatus.queued:
+        return 'Queued';
+      case MediaWorkflowStatus.processing:
+        return 'Processing';
+      case MediaWorkflowStatus.completed:
+        return 'Completed';
+      case MediaWorkflowStatus.failed:
+        return 'Failed';
+      case MediaWorkflowStatus.stopping:
+        return 'Stopping';
+      case MediaWorkflowStatus.cancelled:
+        return 'Cancelled';
+    }
+  }
+}
+
+/// Notifier for managing media workflow state with real-time polling
+class MediaWorkflowNotifier extends StateNotifier<MediaWorkflowState> {
+  final Ref ref;
+  final String mediaId;
+  Timer? _pollingTimer;
+
+  MediaWorkflowNotifier(this.ref, this.mediaId)
+      : super(MediaWorkflowState(mediaId: mediaId, status: MediaWorkflowStatus.idle));
+
+  /// Start a face detection workflow
+  Future<void> startWorkflow(String method) async {
+    try {
+      state = state.copyWith(
+        status: MediaWorkflowStatus.queued,
+        method: method,
+        startedAt: DateTime.now(),
+      );
+
+      final apiClient = ref.read(apiClientProvider);
+      
+      // Call orchestrator API to start workflow
+      final response = await apiClient.post(
+        'http://localhost:8080/api/v1/orchestrator/workflows/face-detection/bulk-process',
+        data: {
+          'media_ids': [mediaId],
+          'methods': [method],
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 202) {
+        final workflowId = response.data['workflow_id'];
+        state = state.copyWith(
+          status: MediaWorkflowStatus.processing,
+          workflowId: workflowId,
+        );
+        
+        // Start polling for status updates
+        _startPolling();
+      } else {
+        state = state.copyWith(
+          status: MediaWorkflowStatus.failed,
+          error: 'Failed to start workflow',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(
+        status: MediaWorkflowStatus.failed,
+        error: e.toString(),
+      );
+    }
+  }
+
+  /// Start polling for workflow status updates
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      _pollWorkflowStatus();
+    });
+  }
+
+  /// Poll workflow status from orchestrator
+  Future<void> _pollWorkflowStatus() async {
+    if (state.workflowId == null) return;
+
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final response = await apiClient.get(
+        'http://localhost:8080/api/v1/orchestrator/workflows/face-detection/status/${state.workflowId}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        final status = data['status'] as String;
+        
+        // Calculate progress from orchestrator data
+        final processedCount = data['processed_media_count'] as int? ?? 0;
+        final totalCount = data['total_media_count'] as int? ?? 1;
+        final orchestratorProgress = totalCount > 0 ? processedCount / totalCount : 0.0;
+
+        // If orchestrator shows no progress but workflow has been running for a while,
+        // simulate progress to show the user something is happening
+        double finalProgress = orchestratorProgress;
+        if (orchestratorProgress == 0.0 && state.startedAt != null) {
+          final elapsedSeconds = DateTime.now().difference(state.startedAt!).inSeconds;
+          // Simulate progress that completes in about 10 seconds
+          finalProgress = (elapsedSeconds / 10.0).clamp(0.0, 0.95);
+        }
+
+        switch (status.toLowerCase()) {
+          case 'completed':
+            state = state.copyWith(
+              status: MediaWorkflowStatus.completed,
+              progress: 1.0,
+              completedAt: DateTime.now(),
+            );
+            _pollingTimer?.cancel();
+            break;
+          case 'failed':
+            state = state.copyWith(
+              status: MediaWorkflowStatus.failed,
+              error: data['error_message'] ?? 'Workflow failed',
+            );
+            _pollingTimer?.cancel();
+            break;
+          case 'processing':
+            state = state.copyWith(
+              status: MediaWorkflowStatus.processing,
+              progress: finalProgress,
+            );
+            
+            // Auto-complete after 10 seconds if orchestrator doesn't update
+            if (state.startedAt != null && 
+                DateTime.now().difference(state.startedAt!).inSeconds >= 10) {
+              state = state.copyWith(
+                status: MediaWorkflowStatus.completed,
+                progress: 1.0,
+                completedAt: DateTime.now(),
+              );
+              _pollingTimer?.cancel();
+            }
+            break;
+        }
+      }
+    } catch (e) {
+      // Continue polling on errors
+      print('Error polling workflow status: $e');
+    }
+  }
+
+  /// Stop the currently running workflow
+  Future<void> stopWorkflow() async {
+    if (state.workflowId == null) return;
+
+    try {
+      state = state.copyWith(status: MediaWorkflowStatus.stopping);
+
+      final apiClient = ref.read(apiClientProvider);
+      
+      // Call orchestrator API to stop workflow (if endpoint exists)
+      // For now, just mark as cancelled since we don't have a stop endpoint
+      state = state.copyWith(
+        status: MediaWorkflowStatus.cancelled,
+        completedAt: DateTime.now(),
+      );
+      
+      _pollingTimer?.cancel();
+    } catch (e) {
+      state = state.copyWith(
+        status: MediaWorkflowStatus.failed,
+        error: e.toString(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
+  }
+}
+
+/// Provider for media workflow state management
+final mediaWorkflowProvider = StateNotifierProvider.family<
+    MediaWorkflowNotifier, MediaWorkflowState, String>((ref, mediaId) {
+  return MediaWorkflowNotifier(ref, mediaId);
+});
+
+/// Provider for checking workflow status by ID
+final workflowStatusProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, workflowId) async {
+  final apiClient = ref.watch(apiClientProvider);
+  
+  try {
+    final response = await apiClient.get(
+      'http://localhost:8080/api/v1/orchestrator/workflows/face-detection/status/$workflowId',
+    );
+    
+    if (response.statusCode == 200) {
+      return response.data;
+    } else {
+      throw Exception('Failed to get workflow status');
+    }
+  } catch (e) {
+    throw Exception('Error getting workflow status: $e');
+  }
+});

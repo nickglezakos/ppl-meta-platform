@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
 import '../core/api/api_client.dart';
+import '../providers/workflow_providers.dart';
 
 /// Responsive media gallery with thumbnail views and infinite scroll
 class ResponsiveMediaGallery extends StatefulWidget {
@@ -455,7 +457,7 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
 }
 
 /// Individual media grid item
-class _MediaGridItem extends StatelessWidget {
+class _MediaGridItem extends ConsumerWidget {
   final MediaItem item;
   final bool isSelected;
   final bool enableSelection;
@@ -475,7 +477,10 @@ class _MediaGridItem extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Get workflow status for this media item
+    final workflowState = ref.watch(mediaWorkflowProvider(item.id));
+    
     return GestureDetector(
       onTap: () {
         if (enableSelection) {
@@ -484,7 +489,13 @@ class _MediaGridItem extends StatelessWidget {
           onTap?.call();
         }
       },
-      onLongPress: onLongPress,
+      onLongPress: () {
+        // Call original long press if provided
+        onLongPress?.call();
+        
+        // Show workflow trigger dialog for testing
+        _showWorkflowDialog(context, ref);
+      },
       child: AnimatedContainer(
         duration: AppDurations.fast,
         decoration: BoxDecoration(
@@ -514,6 +525,12 @@ class _MediaGridItem extends StatelessWidget {
               // Duration indicator (for videos)
               if (item.mediaType == MediaType.video && item.duration != null)
                 _buildDurationIndicator(),
+              
+              // NEW: Workflow progress overlay
+              _buildWorkflowProgressOverlay(workflowState),
+              
+              // NEW: Processing status badge
+              _buildProcessingStatusBadge(workflowState),
             ],
           ),
         ),
@@ -720,6 +737,150 @@ class _MediaGridItem extends StatelessWidget {
             fontSize: 10,
           ),
         ),
+      ),
+    );
+  }
+
+  /// Build workflow progress overlay
+  Widget _buildWorkflowProgressOverlay(MediaWorkflowState workflowState) {
+    if (!workflowState.isProcessing) return const SizedBox.shrink();
+    
+    return Positioned.fill(
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.black.withOpacity(0.5),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(
+                value: workflowState.progress,
+                color: AppColors.primary,
+                strokeWidth: 3,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                '${((workflowState.progress ?? 0.0) * 100).toInt()}%',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build processing status badge
+  Widget _buildProcessingStatusBadge(MediaWorkflowState workflowState) {
+    if (workflowState.isIdle) return const SizedBox.shrink();
+    
+    return Positioned(
+      bottom: AppSpacing.sm,
+      left: AppSpacing.sm,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.xs,
+          vertical: 2,
+        ),
+        decoration: BoxDecoration(
+          color: _getWorkflowStatusColor(workflowState.status),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _getWorkflowStatusIcon(workflowState.status),
+              size: 12,
+              color: AppColors.white,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              workflowState.status.displayName,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.white,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Get workflow status color
+  Color _getWorkflowStatusColor(MediaWorkflowStatus status) {
+    switch (status) {
+      case MediaWorkflowStatus.idle:
+        return AppColors.gray500;
+      case MediaWorkflowStatus.queued:
+        return AppColors.warning;
+      case MediaWorkflowStatus.processing:
+        return AppColors.primary;
+      case MediaWorkflowStatus.completed:
+        return AppColors.success;
+      case MediaWorkflowStatus.failed:
+        return AppColors.error;
+      case MediaWorkflowStatus.stopping:
+        return AppColors.warning;
+      case MediaWorkflowStatus.cancelled:
+        return Colors.grey;
+    }
+  }
+
+  /// Get workflow status icon
+  IconData _getWorkflowStatusIcon(MediaWorkflowStatus status) {
+    switch (status) {
+      case MediaWorkflowStatus.idle:
+        return Icons.hourglass_empty;
+      case MediaWorkflowStatus.queued:
+        return Icons.queue;
+      case MediaWorkflowStatus.processing:
+        return Icons.psychology;
+      case MediaWorkflowStatus.completed:
+        return Icons.check_circle;
+      case MediaWorkflowStatus.failed:
+        return Icons.error;
+      case MediaWorkflowStatus.stopping:
+        return Icons.stop_circle;
+      case MediaWorkflowStatus.cancelled:
+        return Icons.cancel;
+    }
+  }
+
+  /// Show workflow trigger dialog for testing
+  void _showWorkflowDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Start Face Detection'),
+        content: Text('Start face detection workflow for:\n${item.originalFilename}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Start workflow with default "two_stage" method
+              ref.read(mediaWorkflowProvider(item.id).notifier).startWorkflow('two_stage');
+              Navigator.of(context).pop();
+              
+              // Show success snackbar
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Started face detection for ${item.originalFilename}'),
+                  backgroundColor: AppColors.success,
+                ),
+              );
+            },
+            child: const Text('Start Workflow'),
+          ),
+        ],
       ),
     );
   }

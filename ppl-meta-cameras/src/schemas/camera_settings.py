@@ -14,7 +14,7 @@ class CameraSettingsBase(BaseModel):
         default=False, description="Enable automatic face detection"
     )
     detection_methods: List[str] = Field(
-        default=["mtcnn"], description="Face detection methods to use"
+        default=["two_stage"], description="Face detection methods to use"
     )
     processing_options: Dict[str, Any] = Field(
         default_factory=dict, description="Processing options"

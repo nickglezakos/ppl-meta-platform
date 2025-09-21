@@ -886,3 +886,361 @@ async def post_streaming_snapshot(request: Request):
 async def get_streaming_video(request: Request):
     """Proxy get streaming video to Cameras service."""
     return await _proxy_to_cameras_service(request)
+
+
+async def _proxy_to_orchestrator_service(request: Request) -> Response:
+    """Helper function to proxy requests to the Orchestrator service."""
+    try:
+        # Get the original path and method
+        path = str(request.url.path)
+        method = request.method
+
+        # Remove the /api/orchestrator prefix and forward to orchestrator service
+        # Transform /api/orchestrator/workflows/... to /workflows/...
+        if path.startswith("/api/v1/orchestrator/"):
+            orchestrator_path = path.replace("/api/v1/orchestrator", "")
+        elif path.startswith("/api/orchestrator/"):
+            orchestrator_path = path.replace("/api/orchestrator", "")
+        else:
+            orchestrator_path = path
+
+        # Construct the target URL
+        target_url = f"{SERVICES['orchestrator']}{orchestrator_path}"
+
+        # Get request body if present
+        body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
+            body = await request.body()
+
+        # Get headers (exclude host to avoid conflicts)
+        headers = dict(request.headers)
+        headers.pop("host", None)
+
+        # Make the proxy request
+        async with httpx.AsyncClient(
+            timeout=60.0
+        ) as client:  # Longer timeout for workflow operations
+            response = await client.request(
+                method=method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                params=dict(request.query_params),
+            )
+
+            # Determine response content type
+            content_type = response.headers.get("content-type", "")
+            if content_type.startswith("application/json"):
+                response_content = response.json()
+            else:
+                response_content = {"data": response.text}
+
+            # Return the response from the Orchestrator service
+            return JSONResponse(
+                content=response_content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Orchestrator service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal orchestrator proxy error: {str(e)}"
+        )
+
+
+# Orchestrator Service Routes
+@api_router.post("/orchestrator/orchestrate")
+async def orchestrate_workflow(request: Request):
+    """Proxy orchestrate workflow to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/validate")
+async def validate_orchestrator(request: Request):
+    """Proxy validate to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Workflow Management Routes
+@api_router.post("/orchestrator/workflows/camera/events")
+async def create_camera_workflow_event(request: Request):
+    """Proxy camera workflow events to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/workflows/face-detection/bulk-process")
+async def start_face_detection_workflow(request: Request):
+    """Proxy face detection bulk process to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/workflows/face-detection/status/{workflow_id}")
+async def get_face_detection_status(request: Request):
+    """Proxy face detection status to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/workflows/face-detection/lifecycles/{workflow_id}")
+async def get_face_detection_lifecycles(request: Request):
+    """Proxy face detection lifecycles to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/workflows/user/{user_id}/workflows")
+async def get_user_workflows(request: Request):
+    """Proxy user workflows to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/workflows/camera/{camera_device_id}/workflows")
+async def get_camera_workflows(request: Request):
+    """Proxy camera workflows to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/workflows/camera/{camera_device_id}/analytics")
+async def get_camera_workflow_analytics(request: Request):
+    """Proxy camera workflow analytics to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/workflows/analytics")
+async def get_workflow_analytics(request: Request):
+    """Proxy workflow analytics to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/workflows/health")
+async def get_workflows_health(request: Request):
+    """Proxy workflows health to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Session Management Routes
+@api_router.get("/orchestrator/sessions/")
+async def get_sessions(request: Request):
+    """Proxy get sessions to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/sessions/")
+async def create_session(request: Request):
+    """Proxy create session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/sessions/overview")
+async def get_sessions_overview(request: Request):
+    """Proxy sessions overview to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/sessions/{session_id}")
+async def get_session(request: Request):
+    """Proxy get session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.put("/orchestrator/sessions/{session_id}")
+async def update_session(request: Request):
+    """Proxy update session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.delete("/orchestrator/sessions/{session_id}")
+async def delete_session(request: Request):
+    """Proxy delete session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Camera Events Routes
+@api_router.post(
+    "/orchestrator/camera-events/cameras/{camera_device_id}/webhook/register"
+)
+async def register_camera_webhook(request: Request):
+    """Proxy register camera webhook to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.delete(
+    "/orchestrator/camera-events/cameras/{camera_device_id}/webhook/unregister"
+)
+async def unregister_camera_webhook(request: Request):
+    """Proxy unregister camera webhook to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/camera-events/webhook")
+async def camera_events_webhook(request: Request):
+    """Proxy camera events webhook to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/camera-events/cameras/{camera_device_id}/stats")
+async def get_camera_events_stats(request: Request):
+    """Proxy camera events stats to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/camera-events/users/{user_id}/cameras/register-all")
+async def register_all_user_cameras(request: Request):
+    """Proxy register all user cameras to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/camera-events/cameras/{camera_device_id}/polling/start")
+async def start_camera_polling(request: Request):
+    """Proxy start camera polling to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/camera-events/cameras/{camera_device_id}/polling/stop")
+async def stop_camera_polling(request: Request):
+    """Proxy stop camera polling to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/camera-events/health")
+async def get_camera_events_health(request: Request):
+    """Proxy camera events health to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Methods Routes
+@api_router.post("/orchestrator/methods/cameras/{camera_device_id}/initialize")
+async def initialize_camera_methods(request: Request):
+    """Proxy initialize camera methods to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/methods/cameras/{camera_device_id}/execute")
+async def execute_camera_method(request: Request):
+    """Proxy execute camera method to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/methods/cameras/{camera_device_id}/status")
+async def get_camera_methods_status(request: Request):
+    """Proxy camera methods status to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get(
+    "/orchestrator/methods/cameras/{camera_device_id}/methods/{method_name}/status"
+)
+async def get_camera_method_status(request: Request):
+    """Proxy camera method status to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/methods/cameras/{camera_device_id}/analytics")
+async def get_camera_methods_analytics(request: Request):
+    """Proxy camera methods analytics to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.put(
+    "/orchestrator/methods/cameras/{camera_device_id}/methods/{method_name}/config"
+)
+async def update_camera_method_config(request: Request):
+    """Proxy update camera method config to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post(
+    "/orchestrator/methods/cameras/{camera_device_id}/methods/{method_name}/reset"
+)
+async def reset_camera_method(request: Request):
+    """Proxy reset camera method to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/methods/health")
+async def get_methods_health(request: Request):
+    """Proxy methods health to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get(
+    "/orchestrator/methods/cameras/{camera_device_id}/methods/{method_name}/logs"
+)
+async def get_camera_method_logs(request: Request):
+    """Proxy camera method logs to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Automation Routes
+@api_router.get("/orchestrator/automation/health")
+async def get_automation_health(request: Request):
+    """Proxy automation health to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/automation/rules")
+async def create_automation_rule(request: Request):
+    """Proxy create automation rule to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/automation/rules")
+async def get_automation_rules(request: Request):
+    """Proxy get automation rules to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/automation/rules/{rule_id}")
+async def get_automation_rule(request: Request):
+    """Proxy get automation rule to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.put("/orchestrator/automation/rules/{rule_id}")
+async def update_automation_rule(request: Request):
+    """Proxy update automation rule to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.delete("/orchestrator/automation/rules/{rule_id}")
+async def delete_automation_rule(request: Request):
+    """Proxy delete automation rule to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/automation/rules/{rule_id}/execute")
+async def execute_automation_rule(request: Request):
+    """Proxy execute automation rule to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/automation/rules/{rule_id}/pause")
+async def pause_automation_rule(request: Request):
+    """Proxy pause automation rule to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/orchestrator/automation/rules/{rule_id}/resume")
+async def resume_automation_rule(request: Request):
+    """Proxy resume automation rule to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/automation/executions")
+async def get_automation_executions(request: Request):
+    """Proxy get automation executions to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/automation/status")
+async def get_automation_status(request: Request):
+    """Proxy get automation status to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/automation/analytics")
+async def get_automation_analytics(request: Request):
+    """Proxy get automation analytics to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)

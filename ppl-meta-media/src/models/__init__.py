@@ -20,6 +20,7 @@ from .media import (
     ProcessingStatus,
     StorageProvider,
 )
+from .workflow import MediaWorkflow
 
 __all__ = [
     "Base",
@@ -37,4 +38,5 @@ __all__ = [
     "CollectionStorageUsage",
     "MediaArchiveStatus",
     "UserStoragePreferences",
+    "MediaWorkflow",
 ]

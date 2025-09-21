@@ -62,7 +62,7 @@ class CameraAutomationConfig:
     custom_interval_minutes: Optional[int] = None
 
     # Face detection settings
-    detection_methods: List[str] = field(default_factory=lambda: ["mtcnn"])
+    detection_methods: List[str] = field(default_factory=lambda: ["two_stage"])
     confidence_threshold: float = 0.8
     max_faces_per_frame: int = 10
 

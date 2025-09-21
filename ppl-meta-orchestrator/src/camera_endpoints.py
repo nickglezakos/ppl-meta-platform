@@ -38,7 +38,7 @@ class BulkProcessingRequest(BaseModel):
     """Request model for bulk processing."""
 
     media_ids: List[str]
-    methods: List[str] = ["mtcnn"]
+    methods: List[str] = ["two_stage"]
     processing_options: Optional[Dict[str, Any]] = None
     priority: str = "normal"
 

@@ -168,14 +168,14 @@ class MethodLifecycleManager:
                 method_name="dlib",
                 priority=MethodPriority.NORMAL,
                 timeout_seconds=25.0,
-                fallback_methods=["haar", "mtcnn"],
+                fallback_methods=["two_stage", "haar"],
                 quality_threshold=0.7,
             ),
             "mtcnn": MethodConfiguration(
                 method_name="mtcnn",
                 priority=MethodPriority.NORMAL,
                 timeout_seconds=35.0,
-                fallback_methods=["dlib", "haar"],
+                fallback_methods=["two_stage", "dlib"],
                 quality_threshold=0.8,
             ),
             "two_stage": MethodConfiguration(

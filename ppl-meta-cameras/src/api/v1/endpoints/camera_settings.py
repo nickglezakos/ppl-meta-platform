@@ -48,7 +48,7 @@ async def get_camera_settings(
                 camera_device_id=device_id,
                 user_id=target_user_id,
                 auto_face_detection=False,
-                detection_methods=["mtcnn"],
+                detection_methods=["two_stage"],
                 processing_options={},
                 auto_recording=False,
                 recording_duration=30,

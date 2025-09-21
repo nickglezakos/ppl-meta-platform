@@ -288,6 +288,9 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
                 error: (error, stack) => const SizedBox.shrink(),
               ),
               
+              // MediaWorkflow Progress (New Orchestrator-based workflows)
+              _buildMediaWorkflowProgress(ref),
+              
               const SizedBox(height: 12),
               
               // Enhanced Workflow Controls
@@ -577,6 +580,126 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     );
   }
 
+  /// Build MediaWorkflow progress widget for orchestrator-based workflows
+  Widget _buildMediaWorkflowProgress(WidgetRef ref) {
+    final workflowState = ref.watch(mediaWorkflowProvider(widget.mediaItem.uuid));
+    
+    // Only show if workflow is active (not idle)
+    if (workflowState.status == MediaWorkflowStatus.idle) {
+      return const SizedBox.shrink();
+    }
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.black45,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.blue.withOpacity(0.3), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Workflow status header
+          Row(
+            children: [
+              Icon(
+                _getWorkflowStatusIcon(workflowState.status),
+                color: _getWorkflowStatusColor(workflowState.status),
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Workflow: ${workflowState.status.displayName} ${workflowState.method != null ? "(${workflowState.method})" : ""}',
+                  style: TextStyle(
+                    color: _getWorkflowStatusColor(workflowState.status),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (workflowState.workflowId != null) ...[
+                Text(
+                  workflowState.workflowId!.substring(0, 8),
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 9,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ],
+          ),
+          
+          if (workflowState.status == MediaWorkflowStatus.processing || 
+              workflowState.status == MediaWorkflowStatus.queued) ...[
+            const SizedBox(height: 6),
+            LinearProgressIndicator(
+              value: workflowState.progress ?? 0.0,
+              backgroundColor: Colors.white24,
+              valueColor: AlwaysStoppedAnimation<Color>(_getWorkflowStatusColor(workflowState.status)),
+              minHeight: 2,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${((workflowState.progress ?? 0.0) * 100).toStringAsFixed(1)}%',
+              style: const TextStyle(color: Colors.white70, fontSize: 10),
+            ),
+          ],
+          
+          if (workflowState.error != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Error: ${workflowState.error}',
+              style: const TextStyle(color: Colors.red, fontSize: 9),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  IconData _getWorkflowStatusIcon(MediaWorkflowStatus status) {
+    switch (status) {
+      case MediaWorkflowStatus.idle:
+        return Icons.radio_button_unchecked;
+      case MediaWorkflowStatus.queued:
+        return Icons.schedule;
+      case MediaWorkflowStatus.processing:
+        return Icons.pending;
+      case MediaWorkflowStatus.completed:
+        return Icons.check_circle;
+      case MediaWorkflowStatus.failed:
+        return Icons.error;
+      case MediaWorkflowStatus.stopping:
+        return Icons.stop_circle;
+      case MediaWorkflowStatus.cancelled:
+        return Icons.cancel;
+    }
+  }
+
+  Color _getWorkflowStatusColor(MediaWorkflowStatus status) {
+    switch (status) {
+      case MediaWorkflowStatus.idle:
+        return Colors.grey;
+      case MediaWorkflowStatus.queued:
+        return Colors.orange;
+      case MediaWorkflowStatus.processing:
+        return Colors.blue;
+      case MediaWorkflowStatus.completed:
+        return Colors.green;
+      case MediaWorkflowStatus.failed:
+        return Colors.red;
+      case MediaWorkflowStatus.stopping:
+        return Colors.orange;
+      case MediaWorkflowStatus.cancelled:
+        return Colors.grey;
+    }
+  }
+
   /// Build enhanced workflow control buttons
   Widget _buildEnhancedWorkflowControls(WidgetRef ref) {
     final processingStatus = ref.watch(processingStatusProvider(widget.mediaItem.uuid));
@@ -761,20 +884,13 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   /// Start face detection for current media (Workflow 4)
   void _startFaceDetection(WidgetRef ref) async {
     try {
-      final request = SessionCreationRequest(
-        mediaUuid: widget.mediaItem.uuid,
-        confidenceThreshold: 0.5,
-        detectionMethods: ['opencv', 'dlib'],
-        priority: 'normal',
-        enableProgressUpdates: true,
-      );
-      
-      await ref.read(createSessionProvider)(request);
+      // Use the new MediaWorkflowNotifier for orchestrator-based workflows
+      await ref.read(mediaWorkflowProvider(widget.mediaItem.uuid).notifier).startWorkflow('two_stage');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Workflow 4: Face detection session started'),
+            content: Text('Workflow 4: Face detection workflow started'),
             backgroundColor: Colors.blue,
             duration: Duration(seconds: 2),
           ),
@@ -796,15 +912,10 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   /// Trigger optimization processing (Workflow 5)
   void _triggerOptimization(WidgetRef ref) async {
     try {
-      // Use the API client directly for now
-      final client = ref.read(workflowApiClientProvider);
-      final response = await client.processVideoForOptimization(
-        mediaUuid: widget.mediaItem.uuid,
-        enableCaching: true,
-        priority: 'normal',
-      );
+      // Use the new MediaWorkflowNotifier for orchestrator-based workflows
+      await ref.read(mediaWorkflowProvider(widget.mediaItem.uuid).notifier).startWorkflow('two_stage');
       
-      if (response.success && mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Workflow 5: Optimization processing started'),
@@ -812,8 +923,6 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             duration: Duration(seconds: 2),
           ),
         );
-      } else {
-        throw Exception(response.error ?? 'Unknown error');
       }
     } catch (e) {
       if (mounted) {
@@ -831,25 +940,23 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   /// Stop active session
   void _stopSession(WidgetRef ref, String sessionUuid) async {
     try {
-      final client = ref.read(workflowApiClientProvider);
-      final response = await client.deleteSession(sessionUuid);
+      // Use the new MediaWorkflowNotifier to stop workflow
+      await ref.read(mediaWorkflowProvider(widget.mediaItem.uuid).notifier).stopWorkflow();
       
-      if (response.success && mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Session stopped successfully'),
+            content: Text('Workflow stopped successfully'),
             backgroundColor: Colors.orange,
             duration: Duration(seconds: 2),
           ),
         );
-      } else {
-        throw Exception(response.error ?? 'Unknown error');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to stop session: $e'),
+            content: Text('Failed to stop workflow: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),

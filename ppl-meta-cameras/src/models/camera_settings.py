@@ -22,7 +22,7 @@ class CameraSettings(Base):
 
     # Face detection settings
     auto_face_detection = Column(Boolean, default=False, nullable=False)
-    detection_methods = Column(JSON, default=lambda: ["mtcnn"], nullable=False)
+    detection_methods = Column(JSON, default=lambda: ["two_stage"], nullable=False)
 
     # Processing options
     processing_options = Column(JSON, default=dict, nullable=False)

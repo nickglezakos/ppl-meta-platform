@@ -12,12 +12,13 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from src.auth import AuthUser, get_current_user
 from src.database import get_db
 from src.models.media import Media
+from src.models.workflow import MediaWorkflow
 from src.services.face_detection_service import MediaFaceDetectionService
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ class WorkflowFaceDetectionRequest(BaseModel):
     """Request model for workflow-enabled face detection."""
 
     media_ids: List[str]
-    method: str = "mtcnn"
+    method: str = "two_stage"
     confidence_threshold: float = 0.5
     store_results: bool = True
     workflow_metadata: Optional[Dict[str, Any]] = {}
@@ -71,7 +72,6 @@ class WorkflowStatusResponse(BaseModel):
 )
 async def start_bulk_face_detection_workflow(
     request: WorkflowFaceDetectionRequest,
-    background_tasks: BackgroundTasks,
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -94,7 +94,24 @@ async def start_bulk_face_detection_workflow(
             # TODO: Add media access validation logic
             validated_media.append(media_id)
 
-        # Create workflow execution context
+        # Create workflow record in database
+        workflow = MediaWorkflow(
+            workflow_id=workflow_id,
+            user_id=current_user.user_id,
+            method=request.method,
+            confidence_threshold=request.confidence_threshold,
+            processing_priority=request.processing_priority,
+            total_count=len(validated_media),
+            media_ids=validated_media,
+            workflow_metadata=request.workflow_metadata,
+            status="queued",
+        )
+
+        db.add(workflow)
+        db.commit()
+        db.refresh(workflow)
+
+        # Create workflow execution context for background task
         workflow_context = {
             "workflow_id": workflow_id,
             "user_id": current_user.user_id,
@@ -108,10 +125,8 @@ async def start_bulk_face_detection_workflow(
             "status": "queued",
         }
 
-        # Start background processing
-        background_tasks.add_task(
-            process_bulk_face_detection_workflow, workflow_context, db
-        )
+        # Start background processing using asyncio instead of FastAPI BackgroundTasks
+        asyncio.create_task(process_bulk_face_detection_workflow(workflow_context))
 
         return WorkflowFaceDetectionResponse(
             workflow_id=workflow_id,
@@ -145,22 +160,30 @@ async def get_workflow_status(
     Provides real-time progress tracking for bulk processing workflows.
     """
     try:
-        # TODO: Implement workflow status retrieval from database/cache
-        # For now, return a placeholder response
+        # Retrieve workflow from database
+        workflow = (
+            db.query(MediaWorkflow)
+            .filter(
+                MediaWorkflow.workflow_id == workflow_id,
+                MediaWorkflow.user_id == current_user.user_id,
+            )
+            .first()
+        )
+
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+
         return WorkflowStatusResponse(
-            workflow_id=workflow_id,
-            status="processing",
-            progress=0.5,
-            processed_count=5,
-            total_count=10,
-            current_media_id="sample-media-id",
-            started_at=datetime.now(),
-            results_summary={
-                "total_faces_detected": 25,
-                "processing_time_seconds": 120.5,
-                "successful_media": 5,
-                "failed_media": 0,
-            },
+            workflow_id=workflow.workflow_id,
+            status=workflow.status,
+            progress=workflow.progress,
+            processed_count=workflow.processed_count,
+            total_count=workflow.total_count,
+            current_media_id=workflow.current_media_id,
+            started_at=workflow.started_at,
+            completed_at=workflow.completed_at,
+            error_message=workflow.error_message,
+            results_summary=workflow.results_summary or {},
         )
 
     except Exception as e:
@@ -207,9 +230,7 @@ async def list_user_workflows(
         raise HTTPException(status_code=500, detail="Failed to list workflows")
 
 
-async def process_bulk_face_detection_workflow(
-    workflow_context: Dict[str, Any], db: Session
-):
+async def process_bulk_face_detection_workflow(workflow_context: Dict[str, Any]):
     """
     Background task to process bulk face detection workflow.
 
@@ -219,29 +240,47 @@ async def process_bulk_face_detection_workflow(
     3. Sends results to Vision Service for storage and analytics
     4. Updates workflow status and progress
     """
-    from services.vision_service_client import VisionServiceClient
     from src.services.face_detection_service import (
         CameraRecordingFaceDetectionService,
         FaceDetectionService,
     )
+    from src.services.vision_service_client import VisionServiceClient
 
     workflow_id = workflow_context["workflow_id"]
     media_ids = workflow_context["media_ids"]
+    detection_method = workflow_context.get("method", "two_stage")
+    confidence_threshold = workflow_context.get("confidence_threshold", 0.5)
     workflow_metadata = workflow_context.get("workflow_metadata", {})
+
+    # Create new database session for background task
+    from src.database import SessionLocal
+
+    db = SessionLocal()
 
     try:
         logger.info(
             f"Starting bulk face detection workflow {workflow_id} for {len(media_ids)} media items"
         )
 
+        # Get workflow from database
+        workflow = (
+            db.query(MediaWorkflow)
+            .filter(MediaWorkflow.workflow_id == workflow_id)
+            .first()
+        )
+
+        if not workflow:
+            logger.error(f"Workflow {workflow_id} not found in database")
+            return
+
+        # Mark workflow as started
+        workflow.mark_started()
+        db.commit()
+
         # Initialize services
         face_detector = FaceDetectionService()
         camera_face_detector = CameraRecordingFaceDetectionService()
         vision_client = VisionServiceClient()
-
-        # Update workflow status to processing
-        workflow_context["status"] = "processing"
-        workflow_context["started_at"] = datetime.now()
 
         processed_count = 0
         total_faces_detected = 0
@@ -266,16 +305,16 @@ async def process_bulk_face_detection_workflow(
                     detection_results = (
                         await face_detector.process_video_face_detection(
                             media_record.file_path,
-                            method="mtcnn",
-                            confidence_threshold=0.5,
+                            method=detection_method,
+                            confidence_threshold=confidence_threshold,
                         )
                     )
                 elif media_record.media_type == "image":
                     detection_results = (
                         await face_detector.process_image_face_detection(
                             media_record.file_path,
-                            method="mtcnn",
-                            confidence_threshold=0.5,
+                            method=detection_method,
+                            confidence_threshold=confidence_threshold,
                         )
                     )
                 else:
@@ -296,15 +335,15 @@ async def process_bulk_face_detection_workflow(
                     "metadata": {
                         "workflow_id": workflow_id,
                         "media_type": media_record.media_type,
-                        "processing_method": "mtcnn",
-                        "confidence_threshold": 0.5,
+                        "processing_method": detection_method,
+                        "confidence_threshold": confidence_threshold,
                     },
                 }
                 vision_results.append(vision_result)
 
-                # Update progress
-                progress = processed_count / len(media_ids)
-                workflow_context["progress"] = progress
+                # Update workflow progress in database
+                workflow.update_progress(processed_count, media_id)
+                db.commit()
 
                 logger.info(
                     f"Completed face detection for media {media_id}, found {faces_detected} faces"
@@ -338,32 +377,40 @@ async def process_bulk_face_detection_workflow(
             except Exception as e:
                 logger.error(f"Failed to communicate with Vision Service: {e}")
 
-        # Update final workflow status
-        workflow_context["status"] = "completed"
-        workflow_context["completed_at"] = datetime.now()
-        workflow_context["results_summary"] = {
+        # Mark workflow as completed in database
+        results_summary = {
             "total_faces_detected": total_faces_detected,
             "successful_media": processed_count,
             "failed_media": len(media_ids) - processed_count,
             "vision_service_integration": len(vision_results) > 0,
             "processing_time_seconds": (
-                workflow_context["completed_at"] - workflow_context["started_at"]
-            ).total_seconds(),
+                (datetime.utcnow() - workflow.started_at).total_seconds()
+                if workflow.started_at
+                else 0
+            ),
         }
+        workflow.mark_completed(results_summary)
+        db.commit()
 
         logger.info(f"Completed bulk face detection workflow {workflow_id}")
 
     except Exception as e:
         logger.error(f"Bulk face detection workflow {workflow_id} failed: {e}")
-        workflow_context["status"] = "failed"
-        workflow_context["error_message"] = str(e)
+
+        # Mark workflow as failed in database
+        workflow.mark_failed(str(e))
+        db.commit()
+
+    finally:
+        # Always close the database session
+        db.close()
 
 
 # Add enhanced single media processing endpoint
 @workflow_router.post("/face-detection/process/{media_id}")
 async def process_single_media_workflow(
     media_id: str,
-    method: str = "mtcnn",
+    method: str = "two_stage",
     confidence_threshold: float = 0.5,
     store_results: bool = True,
     workflow_metadata: Optional[Dict[str, Any]] = None,
@@ -389,9 +436,8 @@ async def process_single_media_workflow(
         )
 
         # Use existing bulk processing workflow
-        background_tasks = BackgroundTasks()
         response = await start_bulk_face_detection_workflow(
-            workflow_request, background_tasks, current_user, db
+            workflow_request, current_user, db
         )
 
         return {

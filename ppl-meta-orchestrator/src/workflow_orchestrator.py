@@ -600,7 +600,7 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
             workflow.camera_device_ids = [event_data.camera_device_id]
 
             # Get detection methods from camera settings
-            detection_methods = camera_settings.get("detection_methods", ["mtcnn"])
+            detection_methods = camera_settings.get("detection_methods", ["two_stage"])
             processing_options = camera_settings.get("processing_options", {})
 
             # Start automated processing
@@ -777,7 +777,9 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
             # Extract relevant settings from camera data
             settings = {
                 "auto_face_detection": camera_data.get("auto_face_detection", False),
-                "detection_methods": camera_data.get("detection_methods", ["mtcnn"]),
+                "detection_methods": camera_data.get(
+                    "detection_methods", ["two_stage"]
+                ),
                 "processing_options": camera_data.get("processing_options", {}),
                 "auto_recording": camera_data.get("auto_recording", False),
                 "recording_duration": camera_data.get("recording_duration", 30),

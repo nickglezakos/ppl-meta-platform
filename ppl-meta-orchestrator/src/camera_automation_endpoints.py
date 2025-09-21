@@ -32,7 +32,7 @@ class CameraSettingsRequest(BaseModel):
     custom_interval_minutes: Optional[int] = None
 
     # Face detection settings
-    detection_methods: List[str] = Field(default_factory=lambda: ["mtcnn"])
+    detection_methods: List[str] = Field(default_factory=lambda: ["two_stage"])
     confidence_threshold: float = Field(default=0.8, ge=0.1, le=1.0)
     max_faces_per_frame: int = Field(default=10, ge=1, le=100)
 

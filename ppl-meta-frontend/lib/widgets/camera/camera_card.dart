@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/offline_fonts.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:convert';
 import '../../core/models/camera.dart';
 import '../../core/models/rtsp_camera.dart';
 import '../../core/models/snapshot_result.dart';
@@ -9,8 +10,13 @@ import '../../core/providers/camera_providers.dart';
 import '../../core/providers/multi_camera_providers.dart';
 import '../../core/theme/app_theme.dart';
 import '../../features/cameras/widgets/rtsp_camera_dialog.dart';
+import '../../models/api_models.dart';
 import '../../models/media_models.dart';
 import '../../presentation/widgets/camera/camera_stream_player_simple.dart';
+import '../../providers/workflow_providers.dart';
+import '../../models/workflow_widget_models.dart';
+import '../../services/orchestrator_api_client.dart';
+import '../../services/media_api_client.dart';
 
 /// Enhanced camera card with integrated status monitoring
 class CameraCard extends ConsumerWidget {
@@ -603,35 +609,141 @@ class CameraCard extends ConsumerWidget {
         );
       }
 
-      /// Start face detection workflow for camera recordings
+            /// Start face detection workflow for camera recordings
       Future<void> _startFaceDetectionWorkflow(BuildContext context, WidgetRef ref) async {
         try {
           // Show method selection dialog
           final selectedMethod = await _showDetectionMethodDialog(context);
-          // Default to two_stage if no method selected
-          final method = selectedMethod ?? 'two_stage';
-
-          // For now, show a snackbar indicating the workflow started
-          // In a full implementation, this would call the orchestrator service
+          if (selectedMethod == null) return; // User cancelled
+          
+          // Always default to two_stage if somehow null is returned
+          final method = selectedMethod == 'null' ? 'two_stage' : selectedMethod;
+          
+          // Show loading indicator
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Starting $method face detection workflow for ${camera.name}'),
-                backgroundColor: Colors.green,
-                action: SnackBarAction(
-                  label: 'View Status',
-                  textColor: Colors.white,
-                  onPressed: () => _showWorkflowStatus(context, ref),
+                content: Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text('Starting face detection workflow...'),
+                  ],
                 ),
+                backgroundColor: AppColors.primary,
+                duration: Duration(seconds: 10),
               ),
             );
           }
+
+          // Get orchestrator API client
+          final orchestratorClient = ref.read(orchestratorApiClientProvider);
+          
+          // Instead of using generic workflow creation, use the specific bulk-process endpoint
+          // First get recent media files from this camera to process
+          final mediaClient = ref.read(mediaApiClientProvider);
+          final mediaResponse = await mediaClient.searchMedia(
+            query: camera.name,
+            mediaType: MediaType.video,
+            limit: 5, // Get last 5 videos from this camera
+          );
+
+          List<String> mediaIds = [];
+          if (mediaResponse.success && mediaResponse.data != null) {
+            // Get media IDs from recent recordings
+            mediaIds = mediaResponse.data!.items
+                .where((media) => media.originalFilename?.contains(camera.deviceId) == true)
+                .take(3) // Process last 3 recordings
+                .map((media) => media.uuid)
+                .toList();
+          }
+
+          if (mediaIds.isEmpty) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('No recent recordings found for this camera. Please record some video first.'),
+                  backgroundColor: AppColors.warning,
+                ),
+              );
+            }
+            return;
+          }
+
+          // Create bulk processing request directly using HTTP client
+          try {
+            final response = await orchestratorClient.client.post(
+              Uri.parse('${orchestratorClient.config.baseUrl}/workflows/face-detection/bulk-process'),
+              headers: {
+                'Content-Type': 'application/json',
+                // Note: In a real implementation, you'd get the auth token from a proper auth provider
+              },
+              body: json.encode({
+                'media_ids': mediaIds,
+                'methods': [method], // Use the validated method
+                'processing_options': {
+                  'confidence_threshold': 0.7,
+                  'store_results': true,
+                },
+                'priority': 'normal',
+              }),
+            );
+
+            if (response.statusCode == 200 && context.mounted) {
+              // Success - refresh workflow status and show success message
+              ref.invalidate(activeWorkflowsProvider);
+              
+              final responseData = json.decode(response.body);
+              final workflowId = responseData['workflow_id'];
+              
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Face detection workflow started! Processing ${mediaIds.length} videos.'),
+                  backgroundColor: AppColors.success,
+                  action: SnackBarAction(
+                    label: 'View Status',
+                    textColor: Colors.white,
+                    onPressed: () => _showWorkflowStatus(context, ref),
+                  ),
+                ),
+              );
+            } else if (context.mounted) {
+              // Error - show error message
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to start workflow: ${response.statusCode}'),
+                  backgroundColor: AppColors.error,
+                ),
+              );
+            }
+          } catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Network error: $e'),
+                  backgroundColor: AppColors.error,
+                ),
+              );
+            }
+          }
         } catch (e) {
           if (context.mounted) {
+            ScaffoldMessenger.of(context).clearSnackBars();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Failed to start workflow: $e'),
-                backgroundColor: Colors.red,
+                backgroundColor: AppColors.error,
               ),
             );
           }
@@ -686,6 +798,14 @@ class CameraCard extends ConsumerWidget {
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('Cancel'),
               ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop('two_stage'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Use Recommended'),
+              ),
             ],
           ),
         );
@@ -713,16 +833,90 @@ class CameraCard extends ConsumerWidget {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Text(
-                    'No active workflows found.\n\nStart a face detection workflow to see status here.',
-                    style: TextStyle(fontStyle: FontStyle.italic),
-                  ),
+                
+                // Use activeWorkflowsProvider to show real workflow status
+                Consumer(
+                  builder: (context, ref, child) {
+                    final workflowsAsync = ref.watch(activeWorkflowsProvider);
+                    
+                    return workflowsAsync.when(
+                      data: (workflows) {
+                        if (workflows.isEmpty) {
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'No active workflows found.\n\nStart a face detection workflow to see status here.',
+                              style: TextStyle(fontStyle: FontStyle.italic),
+                            ),
+                          );
+                        } else {
+                          // Show active workflows
+                          return Column(
+                            children: workflows.map((workflow) => Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: _getWorkflowStatusColor(workflow.status),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _getWorkflowStatusIcon(workflow.status),
+                                    size: 20,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          workflow.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Status: ${workflow.status.name}',
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )).toList(),
+                          );
+                        }
+                      },
+                      loading: () => const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                      error: (error, stack) => Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red[50],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Error loading workflows: ${error.toString()}',
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -755,6 +949,40 @@ class CameraCard extends ConsumerWidget {
         return Colors.orange;
       default:
         return Colors.grey;
+    }
+  }
+
+  /// Get color for workflow status
+  Color _getWorkflowStatusColor(WorkflowStatus status) {
+    switch (status) {
+      case WorkflowStatus.running:
+        return Colors.blue;
+      case WorkflowStatus.completed:
+        return Colors.green;
+      case WorkflowStatus.failed:
+        return Colors.red;
+      case WorkflowStatus.cancelled:
+        return Colors.orange;
+      case WorkflowStatus.pending:
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// Get icon for workflow status
+  IconData _getWorkflowStatusIcon(WorkflowStatus status) {
+    switch (status) {
+      case WorkflowStatus.running:
+        return Icons.sync;
+      case WorkflowStatus.completed:
+        return Icons.check_circle;
+      case WorkflowStatus.failed:
+        return Icons.error;
+      case WorkflowStatus.cancelled:
+        return Icons.cancel;
+      case WorkflowStatus.pending:
+      default:
+        return Icons.schedule;
     }
   }
 
