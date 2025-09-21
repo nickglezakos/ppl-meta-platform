@@ -37,7 +37,7 @@ async def _stream_proxy_response(target_url: str, headers: dict, query_params):
                     status_code=response.status_code,
                     headers=response_headers,
                     media_type=response.headers.get(
-                        "content-type", "multipart/x-mixed-replace"
+                        "content-type", "application/octet-stream"
                     ),
                 )
     except httpx.RequestError as e:

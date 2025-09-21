@@ -81,6 +81,96 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/media", tags=["media"])
 
 
+@router.post("/register", response_model=MediaResponse)
+async def register_media(
+    request: Dict[str, Any],
+    db: Session = Depends(get_db),
+):
+    """Register an existing camera video file with the media service."""
+    try:
+        # Import required modules at the top
+        import hashlib
+        import secrets
+        from pathlib import Path
+        from uuid import UUID
+
+        from src.models.media import Media, MediaType
+
+        # Extract required fields
+        file_path = request.get("file_path")
+        if not file_path:
+            raise HTTPException(status_code=400, detail="file_path is required")
+
+        # Determine user ID (use a default for camera recordings)
+        user_id_input = request.get("user_id", "1")  # Default camera user
+
+        # Handle user_id: convert string to UUID if needed
+        try:
+            if isinstance(user_id_input, str) and len(user_id_input) < 36:
+                # For simple user IDs, create a deterministic UUID v5
+                import uuid
+
+                namespace = uuid.UUID("12345678-1234-5678-1234-567812345678")
+                user_id_uuid = uuid.uuid5(namespace, f"user_{user_id_input}")
+            else:
+                # Try to parse as UUID directly
+                user_id_uuid = UUID(user_id_input)
+        except (ValueError, TypeError):
+            # Fallback to a random UUID v4 for camera recordings
+            import uuid
+
+            user_id_uuid = uuid.uuid4()
+
+        file_path_obj = Path(file_path)
+
+        # Create media entry directly
+        media = Media(
+            filename=file_path_obj.name,
+            original_filename=file_path_obj.name,
+            media_type=MediaType.VIDEO,
+            mime_type="video/mp4",  # Default for camera recordings
+            file_extension=file_path_obj.suffix.lower(),
+            file_size=0,  # Will be updated when file is processed
+            file_path=file_path,
+            checksum=secrets.token_hex(16),  # Placeholder
+            uploaded_by=user_id_uuid,
+            title=f"Camera Recording - {file_path_obj.name}",
+            description="Camera recording from automated workflow",
+            is_public=False,
+            # Camera-specific metadata
+            device_name=request.get("camera_device_id", "Camera"),
+        )
+
+        # Add camera-specific fields if present in metadata
+        metadata = request.get("metadata", {})
+        if "camera_device_id" in request:
+            # Store camera device ID in metadata for now
+            metadata["camera_device_id"] = request["camera_device_id"]
+        if "recording_session_id" in request:
+            metadata["recording_session_id"] = request["recording_session_id"]
+
+        # Store the metadata
+        media.categories = ["camera_recording"]
+        media.tags = [f"camera_{request.get('camera_device_id', 'unknown')}"]
+
+        # Save to database
+        db.add(media)
+        db.commit()
+        db.refresh(media)
+
+        logging.getLogger(__name__).info(
+            f"Registered camera video: {file_path} for user {user_id_input}"
+        )
+
+        return MediaResponse.model_validate(media)
+
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Failed to register media: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to register media: {str(e)}"
+        )
+
+
 @router.post("/upload", response_model=MediaResponse)
 async def upload_media(
     file: UploadFile = File(...),

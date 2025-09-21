@@ -19,6 +19,9 @@ from src.database import get_db
 from src.models.camera import Camera, CameraStatus, CameraType
 from src.services.orchestrator_client import OrchestratorClient
 
+# Import streaming session manager for session completion
+from src.services.streaming_session_manager import streaming_session_manager
+
 logger = logging.getLogger(__name__)
 config = get_config()
 
@@ -880,6 +883,29 @@ class CameraDetectionService:
                 f"🎬 [DEBUG] ✅ Stop recording complete for {device_id}: {result}"
             )
 
+            # Phase 4.5: Complete face detection session and persist to database
+            try:
+                session_completed = (
+                    await streaming_session_manager.complete_streaming_session(
+                        device_id=device_id, completion_reason="recording_completed"
+                    )
+                )
+                if session_completed:
+                    logger.info(
+                        f"✅ [SESSION] Completed face detection session for "
+                        f"{device_id} - live detections persisted to database"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️ [SESSION] No active face detection session to "
+                        f"complete for {device_id}"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"❌ [SESSION] Error completing face detection session "
+                    f"for {device_id}: {e}"
+                )
+
             # Phase 5: Publish recording completion event to Orchestrator
             try:
                 event_published = (
@@ -1347,17 +1373,25 @@ class CameraDetectionService:
                                     f"🎬 [DEBUG] ⚠️ Could not find or create collection for camera {device_id}"
                                 )
 
-                            # Clean up local file after successful upload
-                            try:
-                                logger.info(f"🎬 [DEBUG] Cleaning up local file...")
-                                path_obj.unlink()
-                                logger.info(
-                                    f"🎬 [DEBUG] ✅ Local file cleaned up: {file_path}"
-                                )
-                            except Exception as cleanup_error:
-                                logger.warning(
-                                    f"🎬 [DEBUG] ⚠️ Failed to clean up file {file_path}: {cleanup_error}"
-                                )
+                            # TODO: Clean up local file after successful upload
+                            # DISABLED: Gateway embedded streaming needs local
+                            # files for face detection overlay
+                            # try:
+                            #     logger.info("🎬 Cleaning up local file")
+                            #     path_obj.unlink()
+                            #     logger.info(
+                            #         f"🎬 [DEBUG] ✅ Local file cleaned up: "
+                            #         f"{file_path}"
+                            #     )
+                            # except Exception as cleanup_error:
+                            #     logger.warning(
+                            #         f"🎬 [DEBUG] ⚠️ Failed to clean up file "
+                            #         f"{file_path}: {cleanup_error}"
+                            #     )
+                            logger.info(
+                                f"🎬 [DEBUG] ✅ Local file preserved for Gateway "
+                                f"streaming: {file_path}"
+                            )
 
                             return collection_id
                         else:

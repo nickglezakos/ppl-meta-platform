@@ -219,11 +219,15 @@ async def process_bulk_face_detection_workflow(
     3. Sends results to Vision Service for storage and analytics
     4. Updates workflow status and progress
     """
-    from services.face_detection_service import FaceDetectionService
     from services.vision_service_client import VisionServiceClient
+    from src.services.face_detection_service import (
+        CameraRecordingFaceDetectionService,
+        FaceDetectionService,
+    )
 
     workflow_id = workflow_context["workflow_id"]
     media_ids = workflow_context["media_ids"]
+    workflow_metadata = workflow_context.get("workflow_metadata", {})
 
     try:
         logger.info(
@@ -232,6 +236,7 @@ async def process_bulk_face_detection_workflow(
 
         # Initialize services
         face_detector = FaceDetectionService()
+        camera_face_detector = CameraRecordingFaceDetectionService()
         vision_client = VisionServiceClient()
 
         # Update workflow status to processing

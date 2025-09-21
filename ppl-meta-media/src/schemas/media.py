@@ -5,6 +5,7 @@ Pydantic schemas for Media API requests and responses.
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
 from pydantic import UUID4, BaseModel, ConfigDict, Field
 
@@ -205,7 +206,7 @@ class MediaResponse(MediaBase):
     storage_provider: StorageProvider
     processing_status: ProcessingStatus
     processing_error: Optional[str] = None
-    uploaded_by: UUID4
+    uploaded_by: UUID
     technical_metadata: Optional[Dict[str, Any]] = None
     access_permissions: Optional[Dict[str, Any]] = None
     is_archived: bool

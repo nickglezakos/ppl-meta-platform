@@ -77,6 +77,7 @@ class Settings(BaseSettings):
         env_file=".env",
         case_sensitive=False,
         env_prefix="",
+        extra="ignore",  # Allow extra fields to be ignored
     )
 
     # Application configuration
@@ -107,6 +108,11 @@ class Settings(BaseSettings):
         default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES"
     )
 
+    # Service Authentication - for inter-service calls
+    NODE_SERVICE_SECRET: Optional[str] = Field(
+        default="default-secret-key-change-in-production", env="NODE_SERVICE_SECRET"
+    )
+
     # External services
     USER_SERVICE_URL: str = Field(
         default="http://localhost:8001", env="USER_SERVICE_URL"
@@ -116,6 +122,9 @@ class Settings(BaseSettings):
     )
     GATEWAY_SERVICE_URL: str = Field(
         default="http://localhost:8080", env="GATEWAY_SERVICE_URL"
+    )
+    CAMERA_SERVICE_URL: str = Field(
+        default="http://localhost:8005", env="CAMERA_SERVICE_URL"
     )
 
     # Redis Configuration

@@ -581,6 +581,20 @@ class CameraService {
     }
   }
 
+  /// Update camera auto face detection setting
+  Future<void> updateAutoFaceDetection(String deviceId, bool enabled) async {
+    try {
+      await _cameraApiClient.put(
+        '/api/v1/cameras/$deviceId/settings',
+        data: {
+          'auto_face_detection': enabled,
+        },
+      );
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
   /// Stop recording for a camera
   Future<RecordingResult> stopRecording(String deviceId) async {
     try {

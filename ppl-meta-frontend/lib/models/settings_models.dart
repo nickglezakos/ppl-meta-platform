@@ -239,6 +239,8 @@ class AutomationSettings {
   final bool logExecutions;
   final int maxHistoryEntries;
   final bool enableNotifications;
+  final bool autoFaceDetectionEnabled;
+  final bool notificationsEnabled;
 
   AutomationSettings({
     required this.enableEngine,
@@ -250,6 +252,8 @@ class AutomationSettings {
     required this.logExecutions,
     required this.maxHistoryEntries,
     required this.enableNotifications,
+    required this.autoFaceDetectionEnabled,
+    required this.notificationsEnabled,
   });
 
   factory AutomationSettings.fromJson(Map<String, dynamic> json) =>
@@ -268,6 +272,8 @@ class AutomationSettings {
       logExecutions: true,
       maxHistoryEntries: 1000,
       enableNotifications: true,
+      autoFaceDetectionEnabled: false,
+      notificationsEnabled: true,
     );
   }
 
@@ -281,6 +287,8 @@ class AutomationSettings {
     bool? logExecutions,
     int? maxHistoryEntries,
     bool? enableNotifications,
+    bool? autoFaceDetectionEnabled,
+    bool? notificationsEnabled,
   }) {
     return AutomationSettings(
       enableEngine: enableEngine ?? this.enableEngine,
@@ -292,6 +300,8 @@ class AutomationSettings {
       logExecutions: logExecutions ?? this.logExecutions,
       maxHistoryEntries: maxHistoryEntries ?? this.maxHistoryEntries,
       enableNotifications: enableNotifications ?? this.enableNotifications,
+      autoFaceDetectionEnabled: autoFaceDetectionEnabled ?? this.autoFaceDetectionEnabled,
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
     );
   }
 }

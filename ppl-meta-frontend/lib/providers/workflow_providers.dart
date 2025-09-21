@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
 import '../services/workflow_api_client.dart';
 import '../services/media_api_client.dart';
+import '../services/vision_api_client.dart';
 import '../models/face_detection_models.dart';
 import '../models/workflow_widget_models.dart' hide PlaybackMode; // Avoid conflict
+import '../models/api_models.dart';
 import '../core/api/api_client.dart';
 import '../widgets/workflow/authenticated_workflow_wrapper.dart';
 
@@ -97,6 +101,59 @@ final sessionStatusProvider = FutureProvider.family<FaceDetectionSession, String
   }
 });
 
+/// Provider for active workflows from orchestrator service
+final activeWorkflowsProvider = FutureProvider<List<WorkflowExecution>>((ref) async {
+  final apiClient = ref.watch(apiClientProvider);
+  
+  try {
+    final response = await apiClient.dio.get(
+      'http://localhost:8002/workflows/user/7/workflows',
+      options: Options(
+        headers: {
+          'Authorization': 'Bearer ${apiClient.authToken}',
+        },
+      ),
+    );
+    
+    if (response.statusCode == 200) {
+      final List<dynamic> data = response.data;
+      return data.map((json) => WorkflowExecution.fromJson({
+        'id': json['workflow_id'] ?? '',
+        'templateId': json['workflow_type'] ?? '',
+        'name': json['workflow_type'] ?? 'Unknown Workflow',
+        'status': _mapOrchestratorStatusToWorkflowStatus(json['status']),
+        'createdAt': DateTime.parse(json['created_at']),
+        'startedAt': json['started_at'] != null ? DateTime.parse(json['started_at']) : null,
+        'completedAt': json['completed_at'] != null ? DateTime.parse(json['completed_at']) : null,
+        'steps': <StepExecution>[],
+        'result': json['metadata'],
+        'error': json['error_message'],
+      })).toList();
+    } else {
+      throw Exception('Failed to load workflows: ${response.statusCode}');
+    }
+  } catch (e) {
+    throw Exception('Failed to load active workflows: $e');
+  }
+});
+
+/// Helper function to map orchestrator status to frontend WorkflowStatus
+WorkflowStatus _mapOrchestratorStatusToWorkflowStatus(String status) {
+  switch (status.toLowerCase()) {
+    case 'processing':
+    case 'running':
+      return WorkflowStatus.running;
+    case 'completed':
+      return WorkflowStatus.completed;
+    case 'failed':
+      return WorkflowStatus.failed;
+    case 'cancelled':
+      return WorkflowStatus.cancelled;
+    default:
+      return WorkflowStatus.pending;
+  }
+}
+
 /// Provider for real-time session statistics
 final sessionStatisticsProvider = FutureProvider.family<SessionStatistics, String>((ref, sessionUuid) async {
   final client = ref.watch(workflowApiClientProvider);
@@ -154,18 +211,43 @@ final optimalPlaybackModeProvider = FutureProvider.family<PlaybackMode?, String>
 });
 
 /// Provider for stored face data (optimized for Workflow 5)
+/// Uses Vision Service API directly for stored face detections
 final storedFaceDataProvider = FutureProvider.family<List<FaceDetection>, StoredFaceDataParams>((ref, params) async {
-  final client = ref.watch(workflowApiClientProvider);
-  final response = await client.getStoredFaceData(
-    mediaUuid: params.mediaUuid,
-    enableCaching: true,
-    maxFaces: params.maxFaces,
+  // Use VisionApiClient to get stored face data directly from Vision Service
+  final visionClient = VisionApiClient(
+    authToken: ref.watch(workflowAuthTokenProvider).asData?.value,
   );
   
-  if (response.success) {
-    return response.data!;
-  } else {
-    throw Exception('Failed to load stored face data: ${response.error}');
+  try {
+    final response = await visionClient.getAllMediaFaces(
+      mediaId: params.mediaUuid,
+      confidenceThreshold: 0.5,
+    );
+    
+    // Convert Vision API response to FaceDetection list
+    final List<FaceDetection> faces = [];
+    if (response.hasStoredFaces && response.facesByFrame.isNotEmpty) {
+      for (final frameEntry in response.facesByFrame.entries) {
+        for (final face in frameEntry.value) {
+          faces.add(face); // FaceDetection objects are already correctly parsed
+          
+          // Limit to maxFaces if specified
+          if (params.maxFaces != null && faces.length >= params.maxFaces!) {
+            break;
+          }
+        }
+        if (params.maxFaces != null && faces.length >= params.maxFaces!) {
+          break;
+        }
+      }
+    }
+    
+    return faces;
+  } catch (e) {
+    // For videos without stored face data, return empty list instead of throwing error
+    // This prevents UI crashes when videos don't have processed face detections
+    print('💡 StoredFaceDataProvider: No stored face data available for ${params.mediaUuid}: $e');
+    return <FaceDetection>[];
   }
 });
 

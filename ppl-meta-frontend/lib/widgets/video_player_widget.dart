@@ -84,8 +84,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   Future<void> _initializeVideo() async {
     if (!mounted || _isDisposed) return;
     
+    String? videoUrl; // Declare outside try block for error logging
+    
     try {
-      String videoUrl;
+      // Debug: Log initial inputs
+      debugPrint('🎥 VideoPlayerWidget._initializeVideo() started');
+      debugPrint('🎥 Input URL: ${widget.videoUrl}');
+      debugPrint('🎥 Input Headers: ${widget.headers}');
       
       // Check if this is an embedded streaming URL (no token conversion needed)
       if (widget.videoUrl.contains('/stream/video/')) {
@@ -94,6 +99,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             ? widget.videoUrl 
             : '/api/v1${widget.videoUrl.startsWith('/') ? widget.videoUrl : '/' + widget.videoUrl}';
         videoUrl = 'http://localhost:8080${correctedPath}';
+        debugPrint('🎥 Detected GATEWAY embedded streaming URL: $videoUrl');
       } else {
         // Legacy media streaming - check if we have an authorization header and construct token-based URL for web compatibility
         final authHeader = widget.headers?['Authorization'];
@@ -107,6 +113,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             videoUrl = widget.videoUrl.startsWith('/') 
                 ? 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token'
                 : 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token';
+            debugPrint('🎥 Detected MEDIA SERVICE token-based streaming URL: $videoUrl');
           } else {
             throw Exception('Could not extract media ID from URL: ${widget.videoUrl}');
           }
@@ -115,16 +122,20 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           videoUrl = widget.videoUrl.startsWith('/') 
               ? 'http://localhost:8080${widget.videoUrl}' 
               : widget.videoUrl;
+          debugPrint('🎥 Detected FALLBACK URL: $videoUrl');
         }
       }
-      
-      print('🎥 Initializing video player with URL: $videoUrl');
-      print('🔑 Headers: ${widget.headers}');
       
       // Use appropriate headers based on streaming type
       final httpHeaders = widget.videoUrl.contains('/stream/video/') 
           ? widget.headers ?? {} // Embedded streaming uses Authorization header
           : <String, String>{}; // Token-based streaming doesn't need headers
+      
+      debugPrint('🎥 Final Video URL: $videoUrl');
+      debugPrint('🎥 Final Headers: $httpHeaders');
+      
+      print('🎥 Initializing video player with URL: $videoUrl');
+      print('🔑 Headers: ${widget.headers}');
       
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(videoUrl),
@@ -136,6 +147,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         if (_isDisposed || !mounted) return;
         
         if (_controller!.value.hasError) {
+          debugPrint('❌ VideoPlayerWidget ERROR DETECTED:');
+          debugPrint('❌ Error Description: ${_controller!.value.errorDescription}');
+          debugPrint('❌ Video URL: $videoUrl');
+          debugPrint('❌ Headers Used: $httpHeaders');
+          debugPrint('❌ Controller State: isInitialized=${_controller!.value.isInitialized}, hasError=${_controller!.value.hasError}');
           print('❌ Video controller error: ${_controller!.value.errorDescription}');
           if (mounted && !_isDisposed) {
             setState(() {
@@ -149,6 +165,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       _controller!.addListener(_controllerListener!);
 
       await _controller!.initialize();
+      
+      debugPrint('✅ VideoPlayerWidget INITIALIZATION SUCCESS:');
+      debugPrint('✅ Video URL: $videoUrl');
+      debugPrint('✅ Headers Used: $httpHeaders');
+      debugPrint('✅ Duration: ${_controller!.value.duration}');
+      debugPrint('✅ Size: ${_controller!.value.size}');
+      debugPrint('✅ Initial Speed: ${_controller!.value.playbackSpeed}x');
       
       print('✅ Video initialized successfully');
       print('📹 Video info: ${_controller!.value.duration}, ${_controller!.value.size}');
@@ -170,6 +193,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         widget.onControllerReady?.call(_controller);
       }
     } catch (e) {
+      debugPrint('❌ VideoPlayerWidget INITIALIZATION EXCEPTION:');
+      debugPrint('❌ Exception: $e');
+      debugPrint('❌ Exception Type: ${e.runtimeType}');
+      debugPrint('❌ Video URL: ${videoUrl ?? 'Unknown'}');
+      debugPrint('❌ Input URL: ${widget.videoUrl}');
+      debugPrint('❌ Headers: ${widget.headers}');
+      
       print('❌ Video initialization failed: $e');
       if (mounted && !_isDisposed) {
         setState(() {

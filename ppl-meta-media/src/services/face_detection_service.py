@@ -20,9 +20,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
 # Import shared face detector
 try:
-    from shared.face_detection import SharedFaceDetector
+    from shared.face_detection import SessionAwareFaceDetector, SharedFaceDetector
 except ImportError:
     SharedFaceDetector = None
+    SessionAwareFaceDetector = None
 
 logger = logging.getLogger(__name__)
 
@@ -406,3 +407,99 @@ class MediaFaceDetectionService:
         except Exception as e:
             logger.warning("Vision-compatible face detection error: %s", str(e))
             return []
+
+
+class CameraRecordingFaceDetectionService:
+    """
+    Session-aware face detection service for camera recordings.
+
+    Provides memory storage during recording sessions and persistence
+    after recording completion for automatic face detection workflows.
+    """
+
+    def __init__(self):
+        """Initialize session-aware face detection service."""
+        self.session_detector = None
+        try:
+            if SessionAwareFaceDetector:
+                self.session_detector = SessionAwareFaceDetector()
+                logger.info("✅ Camera Recording Face Detection Service initialized")
+        except Exception as e:
+            logger.error("❌ Failed to initialize session detector: %s", str(e))
+            self.session_detector = None
+
+    def is_session_detection_enabled(self) -> bool:
+        """Check if session-aware face detection is available."""
+        return (
+            self.session_detector is not None
+            and hasattr(self.session_detector, "models_loaded")
+            and self.session_detector.models_loaded
+        )
+
+    def start_recording_session(
+        self, recording_session_id: str, metadata: Optional[Dict] = None
+    ) -> bool:
+        """Start a new recording session for face detection."""
+        if not self.is_session_detection_enabled():
+            logger.warning("Session detection not enabled")
+            return False
+
+        return self.session_detector.start_recording_session(
+            recording_session_id, metadata
+        )
+
+    def process_recording_frame(
+        self,
+        recording_session_id: str,
+        frame: np.ndarray,
+        timestamp: Optional[str] = None,
+        detection_method: str = "haar",
+    ) -> List[Dict[str, Any]]:
+        """Process a frame during recording and store faces in session memory."""
+        if not self.is_session_detection_enabled():
+            return []
+
+        # Convert timestamp string to datetime if provided
+        timestamp_dt = None
+        if timestamp:
+            try:
+                from datetime import datetime
+
+                timestamp_dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            except Exception:
+                timestamp_dt = None
+
+        return self.session_detector.detect_and_store_faces(
+            recording_session_id, frame, timestamp_dt, detection_method
+        )
+
+    def get_session_statistics(self, recording_session_id: str) -> Dict[str, Any]:
+        """Get face detection statistics for a recording session."""
+        if not self.is_session_detection_enabled():
+            return {"error": "Session detection not enabled"}
+
+        return self.session_detector.get_session_stats(recording_session_id)
+
+    def complete_recording_session(self, recording_session_id: str) -> Dict[str, Any]:
+        """Complete recording session and return faces for database persistence."""
+        if not self.is_session_detection_enabled():
+            return {"success": False, "error": "Session detection not enabled"}
+
+        result = self.session_detector.complete_recording_session(recording_session_id)
+
+        # Clean up memory after completion
+        if result.get("success"):
+            self.session_detector.cleanup_session_memory(recording_session_id)
+
+        return result
+
+    def get_memory_usage_info(self) -> Dict[str, Any]:
+        """Get memory usage information for all active sessions."""
+        if not self.is_session_detection_enabled():
+            return {"error": "Session detection not enabled"}
+
+        return self.session_detector.get_memory_usage_stats()
+
+
+# Alias for backward compatibility
+FaceDetectionService = MediaFaceDetectionService

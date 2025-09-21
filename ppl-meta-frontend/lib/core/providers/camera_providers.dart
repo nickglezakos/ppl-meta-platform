@@ -10,6 +10,7 @@ import '../models/snapshot_result.dart';
 import '../models/collection_models.dart';
 import '../api/api_client.dart';
 import '../../services/media_api_client.dart';
+import '../../providers/settings_providers.dart';
 
 /// Provider for camera service
 final cameraServiceProvider = Provider<CameraService>((ref) {
@@ -619,9 +620,10 @@ class CameraRecordingState {
 /// State notifier for managing camera recording
 class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
   final CameraService _cameraService;
+  final Ref _ref;
   Timer? _statusTimer;
 
-  CameraRecordingNotifier(this._cameraService, String cameraId)
+  CameraRecordingNotifier(this._cameraService, this._ref, String cameraId)
       : super(CameraRecordingState(cameraId: cameraId));
 
   /// Start recording for this camera
@@ -631,6 +633,20 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
+      // Update camera auto face detection setting based on automation preferences
+      try {
+        final automationSettings = _ref.read(automationSettingsProvider).valueOrNull;
+        if (automationSettings != null) {
+          await _cameraService.updateAutoFaceDetection(
+            state.cameraId,
+            automationSettings.autoFaceDetectionEnabled,
+          );
+        }
+      } catch (e) {
+        // Don't fail recording if settings update fails
+        print('Warning: Failed to update camera auto face detection setting: $e');
+      }
+
       final result = await _cameraService.startRecording(state.cameraId);
       
       if (result != null && result.isSuccess) {
@@ -753,5 +769,8 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
 /// Provider for camera recording state
 final cameraRecordingProvider = StateNotifierProvider.family<CameraRecordingNotifier, CameraRecordingState, String>((ref, cameraId) {
   final cameraService = ref.watch(cameraServiceProvider);
-  return CameraRecordingNotifier(cameraService, cameraId);
+  return CameraRecordingNotifier(cameraService, ref, cameraId);
 });
+
+/// Alias for backward compatibility
+final recordingStateProvider = cameraRecordingProvider;

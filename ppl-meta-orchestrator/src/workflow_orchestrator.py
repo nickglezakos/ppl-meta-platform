@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
+from service_auth import service_auth
 from service_clients import ServiceClientManager, ServiceResponse, TraceabilityContext
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,7 @@ class WorkflowExecution(BaseModel):
     workflow_type: WorkflowType
     status: WorkflowStatus = WorkflowStatus.CREATED
     user_id: Optional[str] = None
+    auth_token: Optional[str] = None
     created_at: datetime
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -103,6 +105,7 @@ class FaceDetectionWorkflowOrchestrator:
         self,
         workflow_type: WorkflowType,
         user_id: Optional[str] = None,
+        auth_token: Optional[str] = None,
         metadata: Optional[Dict] = None,
     ) -> WorkflowExecution:
         """Create new workflow execution with traceability."""
@@ -112,6 +115,7 @@ class FaceDetectionWorkflowOrchestrator:
             workflow_id=workflow_id,
             workflow_type=workflow_type,
             user_id=user_id,
+            auth_token=auth_token,
             created_at=datetime.now(),
             metadata=metadata or {},
         )
@@ -128,11 +132,13 @@ class FaceDetectionWorkflowOrchestrator:
         user_id: Optional[str] = None,
         processing_options: Optional[Dict] = None,
         priority: str = "normal",
+        auth_token: Optional[str] = None,
     ) -> WorkflowExecution:
         """Start bulk face detection processing workflow."""
         workflow = await self.create_workflow(
             WorkflowType.BULK_PROCESSING,
             user_id=user_id,
+            auth_token=auth_token,
             metadata={
                 "media_ids": media_ids,
                 "methods": methods,
@@ -246,7 +252,9 @@ class FaceDetectionWorkflowOrchestrator:
 
             while datetime.now() < max_wait_time:
                 status_response = await self.service_manager.media.get_workflow_status(
-                    trace_ctx=trace_ctx, workflow_id=media_workflow_id
+                    trace_ctx=trace_ctx,
+                    workflow_id=media_workflow_id,
+                    auth_token=workflow.auth_token,
                 )
 
                 if status_response.success:
@@ -350,11 +358,20 @@ class FaceDetectionWorkflowOrchestrator:
         )
 
         # Phase 2: Start face detection workflow via Media Service
+        session_metadata = {
+            "recording_session_id": workflow.metadata.get("recording_session_id"),
+            "camera_device_id": workflow.metadata.get("camera_device_id"),
+            "user_id": workflow.user_id,
+            "source": "camera_recording_completion",
+        }
+
         response = await self.service_manager.media.start_face_detection_workflow(
             trace_ctx=trace_ctx,
             media_id=lifecycle.media_id,
             detection_method=lifecycle.method,
             options=lifecycle.processing_options,
+            auth_token=workflow.auth_token,
+            workflow_metadata=session_metadata,
         )
 
         if not response.success:
@@ -367,7 +384,7 @@ class FaceDetectionWorkflowOrchestrator:
 
         # Wait for processing completion using Media Service status
         await self._wait_for_media_workflow_completion(
-            trace_ctx, media_workflow_id, lifecycle
+            trace_ctx, media_workflow_id, lifecycle, workflow.auth_token
         )
 
         lifecycle.status = WorkflowStatus.COMPLETED
@@ -378,6 +395,7 @@ class FaceDetectionWorkflowOrchestrator:
         trace_ctx: TraceabilityContext,
         media_workflow_id: str,
         lifecycle: MethodLifecycle,
+        auth_token: Optional[str] = None,
         max_wait_minutes: int = 30,
     ) -> None:
         """Wait for media service workflow completion with timeout."""
@@ -387,7 +405,9 @@ class FaceDetectionWorkflowOrchestrator:
         while datetime.now() < max_wait_time:
             # Check workflow status via Media Service
             status_response = await self.service_manager.media.get_workflow_status(
-                trace_ctx=trace_ctx, workflow_id=media_workflow_id
+                trace_ctx=trace_ctx,
+                workflow_id=media_workflow_id,
+                auth_token=auth_token,
             )
 
             if status_response.success:
@@ -551,7 +571,16 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
                 )
                 return None
 
-            media_id = media_response.data.get("media_id")
+            if not media_response.data or "id" not in media_response.data:
+                logger.error("Media registration succeeded but no media ID returned")
+                return None
+
+            media_id = str(media_response.data["id"])
+
+            # Create service token for workflow operations
+            workflow_service_token = service_auth.create_service_token(
+                event_data.user_id
+            )
 
             # Create camera-triggered workflow
             workflow = await self.create_workflow(
@@ -564,6 +593,9 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
                     "event_data": event_data.dict(),
                 },
             )
+
+            # Set the auth token for service calls
+            workflow.auth_token = workflow_service_token
 
             workflow.camera_device_ids = [event_data.camera_device_id]
 
@@ -671,11 +703,18 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
             },
         )
 
+        # Create service token for media service authentication
+        service_token = service_auth.create_service_token(event_data.user_id)
+        logger.info(
+            f"Created service token for media registration: {service_token[:50]}..."
+        )
+
         return await self.service_manager.media.register_video(
             trace_ctx=trace_ctx,
             file_path=event_data.video_file_path,
             camera_device_id=event_data.camera_device_id,
             recording_session_id=event_data.recording_session_id,
+            auth_token=service_token,
             metadata={
                 "duration_seconds": event_data.recording_duration_seconds,
                 "file_size_bytes": event_data.file_size_bytes,
@@ -696,7 +735,7 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
             if (datetime.now() - cached_settings["cached_at"]).seconds < 300:
                 return cached_settings["settings"]
 
-        # Fetch fresh settings
+        # Fetch fresh settings with service authentication
         trace_ctx = self.service_manager.create_trace_context(
             workflow_id=str(uuid.uuid4()),
             operation="get_camera_settings",
@@ -704,12 +743,55 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
             metadata={"camera_device_id": camera_device_id},
         )
 
+        # Create service token for inter-service authentication
+        try:
+            service_token = service_auth.create_service_token(user_id)
+            logger.info(
+                "Created service token for user %s: %s...",
+                user_id,
+                service_token[:50] if service_token else "None",
+            )
+        except Exception as e:
+            logger.error("Failed to create service token: %s", e)
+            service_token = None
+
         response = await self.service_manager.camera.get_camera_settings(
-            trace_ctx=trace_ctx, camera_device_id=camera_device_id, user_id=user_id
+            trace_ctx=trace_ctx,
+            camera_device_id=camera_device_id,
+            user_id=user_id,
+            auth_token=service_token,
         )
 
         if response.success:
-            settings = response.data.get("settings", {})
+            # The camera service returns the camera object directly, not wrapped in "settings"
+            camera_data = response.data
+
+            # Debug logging for camera settings
+            logger.info(
+                "Camera settings response for %s: success=%s, data=%s",
+                camera_device_id,
+                response.success,
+                camera_data,
+            )
+
+            # Extract relevant settings from camera data
+            settings = {
+                "auto_face_detection": camera_data.get("auto_face_detection", False),
+                "detection_methods": camera_data.get("detection_methods", ["mtcnn"]),
+                "processing_options": camera_data.get("processing_options", {}),
+                "auto_recording": camera_data.get("auto_recording", False),
+                "recording_duration": camera_data.get("recording_duration", 30),
+                "store_faces_in_memory": camera_data.get("store_faces_in_memory", True),
+                "persist_after_recording": camera_data.get(
+                    "persist_after_recording", True
+                ),
+            }
+
+            logger.info("Extracted settings for %s: %s", camera_device_id, settings)
+            logger.info(
+                "Auto face detection enabled: %s",
+                settings.get("auto_face_detection", False),
+            )
 
             # Cache settings
             self.camera_settings_cache[cache_key] = {
@@ -719,10 +801,10 @@ class CameraFaceDetectionWorkflowOrchestrator(FaceDetectionWorkflowOrchestrator)
 
             return settings
         else:
-            logger.warning(f"Failed to get camera settings: {response.error_message}")
-            # Return default settings
+            logger.warning("Failed to get camera settings: %s", response.error_message)
+            # Return default settings that will NOT trigger workflow
             return {
-                "auto_face_detection": True,
+                "auto_face_detection": False,  # Changed to False to prevent infinite loops
                 "detection_methods": ["mtcnn"],
                 "processing_options": {},
             }

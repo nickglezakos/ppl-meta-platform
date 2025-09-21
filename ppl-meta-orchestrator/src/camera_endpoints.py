@@ -7,7 +7,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from workflow_orchestrator import (
     CameraEventData,
@@ -17,6 +18,17 @@ from workflow_orchestrator import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Security setup
+security = HTTPBearer()
+
+
+def get_auth_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    """Extract and validate authentication token."""
+    return credentials.credentials
+
 
 # Create router for workflow endpoints
 workflow_router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -166,7 +178,10 @@ class CameraWorkflowEndpoints:
             )
 
     async def start_bulk_processing(
-        self, request: BulkProcessingRequest, user_id: Optional[str] = None
+        self,
+        request: BulkProcessingRequest,
+        user_id: Optional[str] = None,
+        auth_token: Optional[str] = None,
     ) -> WorkflowStatusResponse:
         """Start bulk face detection processing workflow."""
         try:
@@ -181,6 +196,7 @@ class CameraWorkflowEndpoints:
                 user_id=user_id,
                 processing_options=request.processing_options,
                 priority=request.priority,
+                auth_token=auth_token,
             )
 
             return self._workflow_to_response(workflow)
@@ -351,6 +367,7 @@ async def handle_camera_event_endpoint(
 @workflow_router.post("/face-detection/bulk-process")
 async def start_bulk_processing_endpoint(
     request: BulkProcessingRequest,
+    auth_token: str = Depends(get_auth_token),
     user_id: Optional[str] = None,
 ) -> WorkflowStatusResponse:
     """
@@ -365,7 +382,7 @@ async def start_bulk_processing_endpoint(
         raise HTTPException(
             status_code=503, detail="Workflow orchestrator not initialized"
         )
-    return await workflow_endpoints.start_bulk_processing(request, user_id)
+    return await workflow_endpoints.start_bulk_processing(request, user_id, auth_token)
 
 
 @workflow_router.get("/face-detection/status/{workflow_id}")

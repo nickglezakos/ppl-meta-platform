@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
 import '../../core/models/camera.dart';
 import '../../core/providers/camera_providers.dart';
-// import '../../widgets/common/status_indicator.dart';
+import '../../providers/settings_providers.dart';
+import '../../models/settings_models.dart';
 
 /// Widget for manual camera recording controls
 /// Provides start/stop recording functionality with real-time status
@@ -54,7 +55,30 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
 
   @override
   Widget build(BuildContext context) {
-    final recordingState = ref.watch(recordingStateProvider(widget.selectedDeviceId));
+    if (widget.selectedDeviceId == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            children: [
+              Icon(Icons.info_outline, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(
+                'No Camera Selected',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please select a camera to begin recording',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final recordingState = ref.watch(recordingStateProvider(widget.selectedDeviceId!));
     final automationSettings = ref.watch(automationSettingsProvider);
 
     // Start/stop pulse animation based on recording state
@@ -99,7 +123,7 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
     );
   }
 
-  Widget _buildRecordingButton(BuildContext context, RecordingState recordingState) {
+  Widget _buildRecordingButton(BuildContext context, CameraRecordingState recordingState) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDisabled = widget.selectedDeviceId == null || recordingState.isConnecting;
@@ -138,7 +162,7 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
     );
   }
 
-  Widget _buildStatusSection(BuildContext context, RecordingState recordingState) {
+  Widget _buildStatusIndicator(BuildContext context, CameraRecordingState recordingState) {
     final theme = Theme.of(context);
 
     return Column(
@@ -147,13 +171,19 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            StatusIndicator(
-              status: recordingState.status,
-              size: 12,
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: recordingState.isRecording ? Colors.red : 
+                       recordingState.isLoading ? Colors.orange : Colors.green,
+              ),
             ),
             const SizedBox(width: 8),
             Text(
-              recordingState.statusText,
+              recordingState.isRecording ? 'Recording' :
+              recordingState.isLoading ? 'Loading...' : 'Ready',
               style: theme.textTheme.titleMedium,
             ),
           ],
@@ -233,8 +263,11 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
   void _toggleRecording() async {
     if (widget.selectedDeviceId == null) return;
 
-    final recordingNotifier = ref.read(recordingStateProvider(widget.selectedDeviceId).notifier);
-    final currentState = ref.read(recordingStateProvider(widget.selectedDeviceId));
+    void _toggleRecording() async {
+    if (widget.selectedDeviceId == null) return;
+    
+    final recordingNotifier = ref.read(recordingStateProvider(widget.selectedDeviceId!).notifier);
+    final currentState = ref.read(recordingStateProvider(widget.selectedDeviceId!));
 
     try {
       if (currentState.isRecording) {

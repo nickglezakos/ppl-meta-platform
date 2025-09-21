@@ -105,6 +105,8 @@ AutomationSettings _$AutomationSettingsFromJson(Map<String, dynamic> json) =>
       logExecutions: json['logExecutions'] as bool,
       maxHistoryEntries: (json['maxHistoryEntries'] as num).toInt(),
       enableNotifications: json['enableNotifications'] as bool,
+      autoFaceDetectionEnabled: json['autoFaceDetectionEnabled'] as bool,
+      notificationsEnabled: json['notificationsEnabled'] as bool,
     );
 
 Map<String, dynamic> _$AutomationSettingsToJson(AutomationSettings instance) =>
@@ -118,6 +120,8 @@ Map<String, dynamic> _$AutomationSettingsToJson(AutomationSettings instance) =>
       'logExecutions': instance.logExecutions,
       'maxHistoryEntries': instance.maxHistoryEntries,
       'enableNotifications': instance.enableNotifications,
+      'autoFaceDetectionEnabled': instance.autoFaceDetectionEnabled,
+      'notificationsEnabled': instance.notificationsEnabled,
     };
 
 ImportExportState _$ImportExportStateFromJson(Map<String, dynamic> json) =>

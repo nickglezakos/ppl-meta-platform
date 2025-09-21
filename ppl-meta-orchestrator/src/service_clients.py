@@ -58,6 +58,7 @@ class CameraServiceClient:
         trace_ctx: TraceabilityContext,
         data: Optional[Dict] = None,
         params: Optional[Dict] = None,
+        auth_token: Optional[str] = None,
     ) -> ServiceResponse:
         """Make HTTP request with traceability tracking."""
         start_time = datetime.now()
@@ -77,6 +78,10 @@ class CameraServiceClient:
             headers["X-Session-ID"] = trace_ctx.session_id
         if trace_ctx.parent_trace_id:
             headers["X-Parent-Trace-ID"] = trace_ctx.parent_trace_id
+
+        # Add authentication header if auth_token is provided
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
 
         try:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
@@ -157,7 +162,11 @@ class CameraServiceClient:
         )
 
     async def get_camera_settings(
-        self, trace_ctx: TraceabilityContext, camera_device_id: str, user_id: str
+        self,
+        trace_ctx: TraceabilityContext,
+        camera_device_id: str,
+        user_id: str,
+        auth_token: Optional[str] = None,
     ) -> ServiceResponse:
         """Get user camera settings with traceability."""
         trace_ctx.operation = "get_camera_settings"
@@ -170,6 +179,7 @@ class CameraServiceClient:
             f"/api/v1/cameras/{camera_device_id}/settings",
             trace_ctx,
             params={"user_id": user_id},
+            auth_token=auth_token,
         )
 
     async def update_camera_settings(
@@ -228,6 +238,7 @@ class MediaServiceClient:
         trace_ctx: TraceabilityContext,
         data: Optional[Dict] = None,
         params: Optional[Dict] = None,
+        auth_token: Optional[str] = None,
     ) -> ServiceResponse:
         """Make HTTP request with traceability tracking."""
         start_time = datetime.now()
@@ -240,6 +251,10 @@ class MediaServiceClient:
             "X-Source-Service": trace_ctx.source_service,
             "X-Operation": trace_ctx.operation,
         }
+
+        # Add authentication header if auth_token is provided
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
 
         if trace_ctx.user_id:
             headers["X-User-ID"] = trace_ctx.user_id
@@ -295,6 +310,7 @@ class MediaServiceClient:
         camera_device_id: Optional[str] = None,
         recording_session_id: Optional[str] = None,
         metadata: Optional[Dict] = None,
+        auth_token: Optional[str] = None,
     ) -> ServiceResponse:
         """Register video with Media Service including camera attribution."""
         trace_ctx.operation = "register_video"
@@ -319,7 +335,11 @@ class MediaServiceClient:
             registration_data["recording_session_id"] = recording_session_id
 
         return await self._make_request(
-            "POST", "/api/v1/media/register", trace_ctx, data=registration_data
+            "POST",
+            "/api/v1/media/register",
+            trace_ctx,
+            data=registration_data,
+            auth_token=auth_token,
         )
 
     async def get_media_info(
@@ -373,6 +393,8 @@ class MediaServiceClient:
         media_id: str,
         detection_method: str = "haar",
         options: Optional[Dict[str, Any]] = None,
+        auth_token: Optional[str] = None,
+        workflow_metadata: Optional[Dict[str, Any]] = None,
     ) -> ServiceResponse:
         """Start face detection workflow for a specific media file."""
         trace_ctx.operation = "start_face_detection_workflow"
@@ -381,6 +403,7 @@ class MediaServiceClient:
                 "media_id": media_id,
                 "detection_method": detection_method,
                 "workflow_options": options or {},
+                "workflow_metadata": workflow_metadata or {},
             }
         )
 
@@ -388,6 +411,7 @@ class MediaServiceClient:
             "media_id": media_id,
             "detection_method": detection_method,
             "options": options or {},
+            "workflow_metadata": workflow_metadata or {},
         }
 
         return await self._make_request(
@@ -395,6 +419,7 @@ class MediaServiceClient:
             f"/api/v1/workflow/face-detection/process/{media_id}",
             trace_ctx,
             data=workflow_data,
+            auth_token=auth_token,
         )
 
     async def bulk_face_detection_workflow(
@@ -431,6 +456,7 @@ class MediaServiceClient:
         self,
         trace_ctx: TraceabilityContext,
         workflow_id: str,
+        auth_token: Optional[str] = None,
     ) -> ServiceResponse:
         """Get workflow processing status."""
         trace_ctx.operation = "get_workflow_status"
@@ -440,6 +466,7 @@ class MediaServiceClient:
             "GET",
             f"/api/v1/workflow/face-detection/status/{workflow_id}",
             trace_ctx,
+            auth_token=auth_token,
         )
 
     async def list_workflows(

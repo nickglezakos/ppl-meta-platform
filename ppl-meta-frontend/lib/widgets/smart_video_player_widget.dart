@@ -268,8 +268,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
             }
           },
         ),
-        // Stored face data overlay (only show if video controller is available)
-        if (_videoController != null)
+        // Stored face data overlay (only show if video controller is available AND stored data exists)
+        if (_videoController != null && _storedFaceData != null && _storedFaceData!.isNotEmpty)
           OptimizedFaceDataOverlay(
             videoController: _videoController,
             storedFaceData: _storedFaceData!,
@@ -281,11 +281,15 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
 
   /// Build session-based video player for Workflow 4
   Widget _buildSessionBasedVideoPlayer(String videoUrl) {
+    // For realtime modes, enable face detection overlay since we're using Media Service URL
+    final enableOverlay = _currentPlaybackMode?.mode == 'realtime_with_session' || 
+                         _currentPlaybackMode?.mode == 'realtime_only';
+    
     return SimpleFaceDetectionOverlay(
       videoController: _videoController,
       videoUrl: videoUrl,
-      enabled: true,
-      useEmbeddedFaceDetection: false,
+      enabled: enableOverlay,
+      useEmbeddedFaceDetection: false, // Use overlay system, not embedded
       child: VideoPlayerWidget(
         videoUrl: videoUrl,
         headers: widget.headers,
@@ -319,24 +323,38 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
 
   /// Build optimal video URL based on playback mode
   String _buildOptimalVideoUrl() {
+    String url;
+    
     if (_currentPlaybackMode == null) {
-      return '/api/v1/media/stream/${widget.mediaItem.uuid}';
+      // Default to Media Service streaming for better compatibility
+      url = '/api/v1/media/stream/${widget.mediaItem.uuid}';
+      debugPrint('🎯 SmartVideoPlayer: Using default Media Service URL: $url');
+      return url;
     }
 
     switch (_currentPlaybackMode!.mode) {
       case 'stored_data':
-        // Workflow 5: Use processed video stream
-        return '/api/v1/stream/video/${widget.mediaItem.uuid}?mode=optimized';
+        // Workflow 5: Use Media Service direct streaming (no live face detection)
+        // Face data will come from stored detections in database
+        url = '/api/v1/media/stream/${widget.mediaItem.uuid}';
+        debugPrint('🎯 SmartVideoPlayer: Using stored_data Media Service URL: $url');
+        break;
       
       case 'realtime_with_session':
-        // Workflow 4: Use session-based stream
-        return '/api/v1/stream/video/${widget.mediaItem.uuid}?face_detection=true&confidence_threshold=0.5';
+        // Workflow 4: Use Media Service for video + overlay for face detection (Flutter compatibility)
+        url = '/api/v1/media/stream/${widget.mediaItem.uuid}';
+        debugPrint('🎯 SmartVideoPlayer: Using realtime_with_session Media Service URL with overlay: $url');
+        break;
       
       case 'realtime_only':
       default:
-        // Basic real-time stream
-        return '/api/v1/media/stream/${widget.mediaItem.uuid}';
+        // Basic real-time: Use Media Service for video + overlay for face detection (Flutter compatibility)
+        url = '/api/v1/media/stream/${widget.mediaItem.uuid}';
+        debugPrint('🎯 SmartVideoPlayer: Using realtime_only Media Service URL with overlay (fixed): $url');
+        break;
     }
+    
+    return url;
   }
 
   /// Build playback mode indicator

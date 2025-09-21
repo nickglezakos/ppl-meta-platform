@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:dio/dio.dart';
 import '../models/settings_models.dart';
+import '../core/services/multi_camera_service.dart';
+import 'api_providers.dart';
 
 // ====================
 // Settings Storage Service
@@ -496,6 +499,18 @@ class AutomationSettingsNotifier extends StateNotifier<AsyncValue<AutomationSett
     final currentSettings = state.valueOrNull;
     if (currentSettings != null) {
       await _saveSettings(currentSettings.copyWith(retryOnFailure: retryOnFailure));
+    }
+  }
+
+  Future<void> updateAutoFaceDetection(bool autoFaceDetectionEnabled) async {
+    final currentSettings = state.valueOrNull;
+    if (currentSettings != null) {
+      // Save local automation settings
+      await _saveSettings(currentSettings.copyWith(autoFaceDetectionEnabled: autoFaceDetectionEnabled));
+      
+      // Note: Camera-specific auto_face_detection settings should be updated
+      // when recording starts/stops via the camera service integration
+      // This provides a global default preference for new cameras
     }
   }
 
