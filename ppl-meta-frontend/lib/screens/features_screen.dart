@@ -64,6 +64,11 @@ class FeaturesScreen extends ConsumerWidget {
                       featuresState: features,
                       featuresNotifier: featuresNotifier,
                     ),
+                    const SizedBox(height: 16),
+                    _FaceDetectionOnSaveSettings(
+                      featuresState: features,
+                      featuresNotifier: featuresNotifier,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -433,7 +438,7 @@ class _FaceDetectionSettings extends StatelessWidget {
                       Row(
                         children: [
                           Text(
-                            'Face Detection',
+                            'Face Detection on Stream',
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -697,5 +702,141 @@ class _FaceDetectionSettings extends StatelessWidget {
       default:
         return 'Advanced face detection method with configurable confidence.';
     }
+  }
+}
+
+/// NEW: Face Detection on Save Settings Widget
+class _FaceDetectionOnSaveSettings extends StatelessWidget {
+  final FeaturesState featuresState;
+  final FeaturesNotifier featuresNotifier;
+
+  const _FaceDetectionOnSaveSettings({
+    required this.featuresState,
+    required this.featuresNotifier,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Face Detection on Save',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'AUTO',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green[700],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Automatically detect faces in camera recordings when videos are saved to the media service',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: featuresState.faceDetectionOnSaveEnabled,
+                  onChanged: (value) {
+                    featuresNotifier.toggleFaceDetectionOnSave(value);
+                  },
+                  activeColor: AppColors.primary,
+                ),
+              ],
+            ),
+            
+            // Status message (shown when enabled)
+            if (featuresState.faceDetectionOnSaveEnabled) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.green.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle,
+                      color: Colors.green[700],
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Automatic face detection is enabled. All camera recordings will be processed for face detection when saved.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.green[700],
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              // Disabled description
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Colors.grey.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  'Enable to automatically process camera recordings with face detection when they are saved to the media service.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[600],
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

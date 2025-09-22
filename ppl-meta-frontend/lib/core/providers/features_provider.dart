@@ -1,11 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
-import '../config/app_config.dart';
 
 // Features state model
 class FeaturesState {
   final bool hasVisionCapability;
   final bool faceDetectionEnabled;
+  final bool faceDetectionOnSaveEnabled; // NEW: Face detection on save
   final String selectedDetectionMethod;
   final double confidenceThreshold;
   final int frameInterval;
@@ -17,6 +18,7 @@ class FeaturesState {
   const FeaturesState({
     this.hasVisionCapability = false,
     this.faceDetectionEnabled = false,
+    this.faceDetectionOnSaveEnabled = false, // NEW: Default to false
     this.selectedDetectionMethod = 'two_stage',
     this.confidenceThreshold = 0.5,
     this.frameInterval = 15,
@@ -29,6 +31,7 @@ class FeaturesState {
   FeaturesState copyWith({
     bool? hasVisionCapability,
     bool? faceDetectionEnabled,
+    bool? faceDetectionOnSaveEnabled, // NEW: Add to copyWith
     String? selectedDetectionMethod,
     double? confidenceThreshold,
     int? frameInterval,
@@ -40,6 +43,7 @@ class FeaturesState {
     return FeaturesState(
       hasVisionCapability: hasVisionCapability ?? this.hasVisionCapability,
       faceDetectionEnabled: faceDetectionEnabled ?? this.faceDetectionEnabled,
+      faceDetectionOnSaveEnabled: faceDetectionOnSaveEnabled ?? this.faceDetectionOnSaveEnabled, // NEW
       selectedDetectionMethod: selectedDetectionMethod ?? this.selectedDetectionMethod,
       confidenceThreshold: confidenceThreshold ?? this.confidenceThreshold,
       frameInterval: frameInterval ?? this.frameInterval,
@@ -70,6 +74,7 @@ class FeaturesNotifier extends AsyncNotifier<FeaturesState> {
       return FeaturesState(
         hasVisionCapability: hasVision,
         faceDetectionEnabled: hasVision ? savedPreferences['faceDetection'] ?? true : false,
+        faceDetectionOnSaveEnabled: hasVision ? savedPreferences['faceDetectionOnSave'] ?? false : false, // NEW: Load setting
         selectedDetectionMethod: savedPreferences['detectionMethod'] ?? 'two_stage',
         confidenceThreshold: savedPreferences['confidenceThreshold'] ?? 0.5,
         frameInterval: savedPreferences['frameInterval'] ?? 15,
@@ -104,21 +109,61 @@ class FeaturesNotifier extends AsyncNotifier<FeaturesState> {
   }
 
   Future<Map<String, dynamic>> _loadSavedPreferences() async {
-    // In a real app, this would load from SharedPreferences or similar
-    // For now, return defaults
-    return {
-      'faceDetection': true,
-      'detectionMethod': 'two_stage',
-      'confidenceThreshold': 0.5,
-      'frameInterval': 15,
-      'smartOrganization': true,
-      'autoSync': false,
-    };
+    // Load global settings from backend API
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      
+      // Try to get face detection on save setting from backend
+      bool faceDetectionOnSave = false;
+      try {
+        final response = await apiClient.get('/api/v1/settings/face_detection_on_save');
+        if (response.data != null) {
+          faceDetectionOnSave = response.data['value'] == 'true';
+        }
+      } catch (e) {
+        // Setting doesn't exist yet, use default
+        debugPrint('Face detection on save setting not found, using default: $e');
+      }
+      
+      return {
+        'faceDetection': true,
+        'faceDetectionOnSave': faceDetectionOnSave, // Load from backend
+        'detectionMethod': 'two_stage',
+        'confidenceThreshold': 0.5,
+        'frameInterval': 15,
+        'smartOrganization': true,
+        'autoSync': false,
+      };
+    } catch (e) {
+      debugPrint('Error loading settings from backend: $e');
+      // Fallback to defaults
+      return {
+        'faceDetection': true,
+        'faceDetectionOnSave': false,
+        'detectionMethod': 'two_stage',
+        'confidenceThreshold': 0.5,
+        'frameInterval': 15,
+        'smartOrganization': true,
+        'autoSync': false,
+      };
+    }
   }
 
   Future<void> _savePreferences(Map<String, dynamic> preferences) async {
-    // In a real app, this would save to SharedPreferences or similar
-    // For now, we'll just log the preferences
+    // Save face detection on save setting to backend API (global setting)
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      
+      // Save the global face detection on save setting
+      await apiClient.post('/api/v1/settings/', data: {
+        'key': 'face_detection_on_save',
+        'value': preferences['faceDetectionOnSave'].toString(),
+      });
+      
+      debugPrint('✅ Global face detection on save setting saved: ${preferences['faceDetectionOnSave']}');
+    } catch (e) {
+      debugPrint('❌ Error saving face detection on save setting: $e');
+    }
   }
 
   Future<void> toggleFaceDetection(bool enabled) async {
@@ -132,6 +177,28 @@ class FeaturesNotifier extends AsyncNotifier<FeaturesState> {
     // Save preference
     await _savePreferences({
       'faceDetection': enabled,
+      'faceDetectionOnSave': currentState.faceDetectionOnSaveEnabled, // NEW: Include in save
+      'detectionMethod': currentState.selectedDetectionMethod,
+      'confidenceThreshold': currentState.confidenceThreshold,
+      'frameInterval': currentState.frameInterval,
+      'smartOrganization': currentState.smartOrganizationEnabled,
+      'autoSync': currentState.autoSyncEnabled,
+    });
+  }
+
+  /// NEW: Toggle face detection on save feature
+  Future<void> toggleFaceDetectionOnSave(bool enabled) async {
+    final currentState = state.value;
+    if (currentState == null || !currentState.hasVisionCapability) return;
+
+    state = AsyncValue.data(
+      currentState.copyWith(faceDetectionOnSaveEnabled: enabled),
+    );
+
+    // Save preference
+    await _savePreferences({
+      'faceDetection': currentState.faceDetectionEnabled,
+      'faceDetectionOnSave': enabled, // NEW: Save the new setting
       'detectionMethod': currentState.selectedDetectionMethod,
       'confidenceThreshold': currentState.confidenceThreshold,
       'frameInterval': currentState.frameInterval,
@@ -151,6 +218,7 @@ class FeaturesNotifier extends AsyncNotifier<FeaturesState> {
     // Save preference
     await _savePreferences({
       'faceDetection': currentState.faceDetectionEnabled,
+      'faceDetectionOnSave': currentState.faceDetectionOnSaveEnabled, // NEW: Include in save
       'detectionMethod': method,
       'confidenceThreshold': currentState.confidenceThreshold,
       'frameInterval': currentState.frameInterval,
@@ -170,6 +238,7 @@ class FeaturesNotifier extends AsyncNotifier<FeaturesState> {
     // Save preference
     await _savePreferences({
       'faceDetection': currentState.faceDetectionEnabled,
+      'faceDetectionOnSave': currentState.faceDetectionOnSaveEnabled, // NEW: Include in save
       'detectionMethod': currentState.selectedDetectionMethod,
       'confidenceThreshold': threshold,
       'frameInterval': currentState.frameInterval,
@@ -189,6 +258,7 @@ class FeaturesNotifier extends AsyncNotifier<FeaturesState> {
     // Save preference
     await _savePreferences({
       'faceDetection': currentState.faceDetectionEnabled,
+      'faceDetectionOnSave': currentState.faceDetectionOnSaveEnabled, // NEW: Include in save
       'detectionMethod': currentState.selectedDetectionMethod,
       'confidenceThreshold': currentState.confidenceThreshold,
       'frameInterval': interval,

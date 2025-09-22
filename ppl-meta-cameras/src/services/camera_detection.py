@@ -1335,6 +1335,11 @@ class CameraDetectionService:
                                 media_id,
                             )
 
+                            # Check if automatic face detection on save is enabled
+                            await self._check_and_trigger_face_detection(
+                                media_uuid, session, headers
+                            )
+
                             # Find or create camera collection and assign video
                             logger.info(
                                 f"🎬 [DEBUG] Finding/creating camera collection..."
@@ -1536,6 +1541,98 @@ class CameraDetectionService:
                 e,
             )
             return False
+
+    async def _check_and_trigger_face_detection(
+        self, media_uuid: str, session, headers: Dict
+    ):
+        """Check global setting and trigger face detection if enabled."""
+        try:
+            # Service URLs
+            NODE_SERVICE_URL = "http://localhost:8001"
+
+            # Check the global face detection on save setting
+            setting_url = f"{NODE_SERVICE_URL}/api/v1/settings/face_detection_on_save"
+
+            async with session.get(setting_url, headers=headers) as response:
+                if response.status == 200:
+                    setting_data = await response.json()
+                    is_enabled = setting_data.get("value") == "true"
+
+                    if is_enabled:
+                        logger.info(
+                            f"🎯 Face detection on save is enabled, "
+                            f"triggering workflow for media {media_uuid}"
+                        )
+                        await self._trigger_face_detection_workflow(
+                            media_uuid, session, headers
+                        )
+                    else:
+                        logger.info(
+                            f"🎯 Face detection on save is disabled, "
+                            f"skipping workflow for media {media_uuid}"
+                        )
+                elif response.status == 404:
+                    # Setting doesn't exist, assume disabled
+                    logger.info(
+                        f"🎯 Face detection setting not found, "
+                        f"assuming disabled for media {media_uuid}"
+                    )
+                else:
+                    logger.warning(
+                        f"🎯 Failed to check face detection setting: "
+                        f"{response.status}"
+                    )
+
+        except Exception as e:
+            logger.error(f"🎯 Error checking face detection setting: {e}")
+
+    async def _trigger_face_detection_workflow(
+        self, media_uuid: str, session, headers: Dict
+    ):
+        """Trigger face detection workflow for uploaded media."""
+        try:
+            # Service URLs
+            ORCHESTRATOR_SERVICE_URL = "http://localhost:8002"
+
+            # Trigger face detection via orchestrator
+            orchestrator_url = (
+                f"{ORCHESTRATOR_SERVICE_URL}/api/v1/workflows/bulk-process"
+            )
+
+            workflow_data = {
+                "media_ids": [media_uuid],
+                "methods": ["two_stage"],
+                "processing_options": {
+                    "confidence_threshold": 0.7,
+                    "store_results": True,
+                },
+                "priority": "normal",
+                "auto_triggered": True,  # Mark as automatically triggered
+            }
+
+            async with session.post(
+                orchestrator_url, json=workflow_data, headers=headers
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    workflow_id = result.get("workflow_id")
+                    logger.info(
+                        f"🎯 ✅ Face detection workflow triggered "
+                        f"for media {media_uuid} (workflow: {workflow_id})"
+                    )
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"🎯 ❌ Failed to trigger face detection workflow "
+                        f"for media {media_uuid}: {response.status} - "
+                        f"{error_text}"
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"🎯 Error triggering face detection workflow "
+                f"for media {media_uuid}: {e}"
+            )
 
 
 # Global camera detection service instance

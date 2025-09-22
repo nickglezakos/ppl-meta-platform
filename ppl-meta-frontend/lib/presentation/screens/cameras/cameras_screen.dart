@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../widgets/camera/camera_card.dart';
 import '../../../widgets/camera/camera_monitoring_dashboard.dart';
 import '../../../widgets/custom_app_bar.dart';
+import '../../../widgets/automatic_face_detection_status.dart'; // NEW: Import automatic face detection status
 
 /// Enhanced cameras screen with real-time status monitoring
 class CamerasScreen extends ConsumerStatefulWidget {
@@ -95,10 +96,13 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           // Monitoring dashboard
           if (_showMonitoringDashboard) ...[
             Container(
-              color: AppColors.surface,
+              height: 240,
               child: const CameraMonitoringDashboard(),
             ),
             const Divider(height: 1),
+            
+            // NEW: Automatic Face Detection Status
+            const AutomaticFaceDetectionStatus(),
           ],
           
           // Cameras list
