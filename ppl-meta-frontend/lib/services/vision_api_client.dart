@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'media_api_client.dart'; // Import FaceDetection and related models
+import '../models/api_response.dart';
 
 /// Vision API client for face detection services
 class VisionApiClient {
@@ -112,6 +113,21 @@ class VisionApiClient {
         'Failed to get media faces: ${e.message}',
         statusCode: e.response?.statusCode,
       );
+    }
+  }
+
+  /// Get face detections for media (simplified for face data provider)
+  Future<ApiResponse<List<FaceDetection>>> getMediaFaces(String mediaId) async {
+    try {
+      final response = await getAllMediaFaces(mediaId: mediaId);
+      // Convert facesByFrame to a flat list of FaceDetection
+      final List<FaceDetection> allFaces = [];
+      response.facesByFrame.forEach((frameNumber, faces) {
+        allFaces.addAll(faces);
+      });
+      return ApiResponse.success(allFaces);
+    } catch (e) {
+      return ApiResponse.error('Failed to load faces: $e');
     }
   }
 

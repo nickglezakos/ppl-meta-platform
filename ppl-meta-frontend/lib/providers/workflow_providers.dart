@@ -955,8 +955,8 @@ class MediaWorkflowNotifier extends StateNotifier<MediaWorkflowState> {
   }
 }
 
-/// Provider for media workflow state management
-final mediaWorkflowProvider = StateNotifierProvider.family<
+/// Provider for media workflow state management with auto-disposal
+final mediaWorkflowProvider = StateNotifierProvider.autoDispose.family<
     MediaWorkflowNotifier, MediaWorkflowState, String>((ref, mediaId) {
   return MediaWorkflowNotifier(ref, mediaId);
 });

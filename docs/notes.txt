@@ -48,6 +48,13 @@ http://192.168.1.68:8001
     }
 
 
+Lets rearrange the screen:
+In the enhanced appbar i just need the back button the title and the home button - nothing else
+The elements of the overlay widgets panel should be moved to the performance status bar and the bottom bar below the media content area. After the move we dont need the overlay widgets planel:
+In the  performance status bar I just need from the overlay widgets planel the following: The playback mode indicator, the processing status display, the active sessions status. Also the widget that shows the cased faces
+In the bottom bar below the below the media content area I need the Enhanced workflow control widgets and the button that expands to show the workflows and nothing else.
+
+
 
 echo "📱 Reconnecting Redmi Note 11 via WiFi Debugging"
 echo "=============================================="

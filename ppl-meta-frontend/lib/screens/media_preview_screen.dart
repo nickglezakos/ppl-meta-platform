@@ -6,12 +6,13 @@ import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
 import '../models/face_detection_models.dart';
 import '../widgets/smart_video_player_widget.dart';
-import '../widgets/workflow/workflow_session_controls_widget.dart';
 import '../widgets/performance/performance_metrics_dialog.dart';
-import '../widgets/performance/simple_performance_metrics_widget.dart';
 import '../core/api/api_client.dart';
 import '../widgets/custom_app_bar.dart';
 import '../providers/workflow_providers.dart';
+import '../providers/face_memory_manager.dart';
+import '../widgets/face_count_widget.dart';
+import '../providers/face_data_providers.dart';
 
 
 /// Enhanced Media Preview Screen with integrated Workflows 4 & 5 support
@@ -33,37 +34,90 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   bool _showWorkflowControls = false;
 
   @override
+  void initState() {
+    super.initState();
+    
+    // Automatically load face data when media loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      EnhancedAutoFaceLoader.loadFacesForMedia(ref, widget.mediaItem.uuid);
+    });
+  }
+
+  @override
+  void dispose() {
+    // Clean up video controller
+    _videoController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: _buildEnhancedAppBar(context, ref),
       backgroundColor: Colors.black,
       body: Column(
         children: [
-          // Performance status bar
+          // Enhanced performance status bar with overlay widgets
           _buildPerformanceStatusBar(ref),
           
           // Main media content
           Expanded(
-            child: Stack(
-              children: [
-                _buildMediaContent(context, ref),
-                // Workflow Status Overlay
-                _buildWorkflowStatusOverlay(ref),
-              ],
-            ),
+            child: _buildMediaContent(context, ref),
           ),
           
-          // Workflow Session Controls
-          if (widget.mediaItem.uuid != null)
-            WorkflowSessionControlsWidget(
-              mediaUuid: widget.mediaItem.uuid!,
-              showExpanded: _showWorkflowControls,
-              onToggleExpanded: () {
-                setState(() {
-                  _showWorkflowControls = !_showWorkflowControls;
-                });
-              },
-            ),
+          // Bottom control bar with workflow controls
+          _buildBottomControlBar(ref),
+        ],
+      ),
+    );
+  }
+
+  /// Build bottom control bar with workflow controls
+  Widget _buildBottomControlBar(WidgetRef ref) {
+    return Container(
+      color: Colors.grey[850],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Toggle button for expanded controls
+          Row(
+            children: [
+              Icon(
+                Icons.tune,
+                color: Colors.white70,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Workflow Controls',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(
+                  _showWorkflowControls ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.white70,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _showWorkflowControls = !_showWorkflowControls;
+                  });
+                },
+                tooltip: _showWorkflowControls ? 'Collapse' : 'Expand',
+              ),
+            ],
+          ),
+          
+          // Expandable workflow controls
+          if (_showWorkflowControls) ...[
+            const SizedBox(height: 8),
+            _buildEnhancedWorkflowControls(ref),
+          ],
         ],
       ),
     );
@@ -244,6 +298,8 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   }
 
   /// Build enhanced workflow status overlay for Workflows 4 & 5
+  // COMMENTED OUT - Overlay widgets moved to performance bar and bottom bar
+  /*
   Widget _buildWorkflowStatusOverlay(WidgetRef ref) {
     final processingStatus = ref.watch(processingStatusProvider(widget.mediaItem.uuid));
     final activeSessions = ref.watch(activeSessionsProvider);
@@ -301,6 +357,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       ),
     );
   }
+  */
 
   /// Build enhanced status header with workflow information
   Widget _buildEnhancedStatusHeader(AsyncValue<ProcessingStatus?> processingStatus, AsyncValue<PlaybackMode?> playbackMode) {
@@ -707,23 +764,6 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Control section header
-        const Row(
-          children: [
-            Icon(Icons.tune, color: Colors.white70, size: 14),
-            SizedBox(width: 6),
-            Text(
-              'Workflow Controls',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        
         // Primary controls
         Wrap(
           spacing: 8,
@@ -1073,30 +1113,11 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         }
       },
       actions: [
-        // Performance metrics access button
-        Consumer(
-          builder: (context, ref, child) {
-            final metricsAsync = ref.watch(performanceMetricsProvider);
-            
-            return IconButton(
-              icon: Icon(
-                Icons.analytics,
-                color: metricsAsync.hasValue 
-                    ? Colors.green[400] 
-                    : Colors.white70,
-              ),
-              onPressed: () => _showPerformanceMetrics(context),
-              tooltip: 'Performance Analytics',
-            );
-          },
-        ),
-        
-        // Compact performance display
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: CompactPerformanceMetricsWidget(
-            onTap: () => _showPerformanceMetrics(context),
-          ),
+        // Gallery button
+        IconButton(
+          icon: const Icon(Icons.photo_library),
+          onPressed: () => context.go('/gallery'),
+          tooltip: 'Go to Gallery',
         ),
       ],
     );
@@ -1104,58 +1125,129 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
   /// Build performance status bar showing key metrics
   Widget _buildPerformanceStatusBar(WidgetRef ref) {
-    final metricsAsync = ref.watch(performanceMetricsProvider);
-    final processingStatusAsync = ref.watch(processingStatusProvider(widget.mediaItem.uuid!));
+    final processingStatus = ref.watch(processingStatusProvider(widget.mediaItem.uuid));
+    final activeSessions = ref.watch(activeSessionsProvider);
+    final playbackMode = ref.watch(optimalPlaybackModeProvider(widget.mediaItem.uuid));
+    final workflowState = ref.watch(mediaWorkflowProvider(widget.mediaItem.uuid));
     
     return Container(
-      height: 40,
+      height: 50, // Fixed height to prevent vertical stacking
       color: Colors.grey[900],
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center, // Ensure horizontal alignment
         children: [
-          Icon(
-            Icons.analytics,
-            size: 16,
-            color: Colors.green[400],
+          // 1. Playback mode indicator
+          Flexible(
+            flex: 1,
+            child: playbackMode.when(
+              data: (mode) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getPlaybackModeColor(mode?.mode ?? 'standard'),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _getPlaybackModeDisplayName(mode?.mode ?? 'standard'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              loading: () => const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 1),
+              ),
+              error: (error, stack) => const Icon(Icons.error, color: Colors.red, size: 12),
+            ),
           ),
+          
           const SizedBox(width: 8),
           
-          Expanded(
-            child: metricsAsync.when(
-              data: (metrics) {
-                final efficiency = _calculateEfficiencyScore(metrics);
-                final processingStatus = processingStatusAsync.when(
-                  data: (status) => _getProcessingStatus(status),
-                  loading: () => 'Loading...',
-                  error: (_, __) => 'Idle', // Gracefully handle missing workflow
-                );
-                return Text(
-                  'Performance: ${efficiency.toStringAsFixed(0)}% • Processing: $processingStatus',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
+          // 2. Processing status display
+          Flexible(
+            flex: 2,
+            child: processingStatus.when(
+              data: (status) => status != null 
+                  ? _buildCompactProcessingStatus(status, ref)
+                  : const Text(
+                      'No processing status',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+              loading: () => const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
                   ),
-                );
-              },
-              loading: () => const Text(
-                'Loading performance data...',
-                style: TextStyle(color: Colors.white70, fontSize: 12),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text('Loading...', style: TextStyle(color: Colors.white70, fontSize: 12), overflow: TextOverflow.ellipsis),
+                  ),
+                ],
               ),
-              error: (error, stack) => Text(
-                'Performance data unavailable',
-                style: TextStyle(color: Colors.red[400], fontSize: 12),
+              error: (error, stack) => const Text(
+                'Status error',
+                style: TextStyle(color: Colors.red, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
           
-          // Quick action button
-          IconButton(
-            icon: const Icon(Icons.tune, size: 16, color: Colors.white70),
-            onPressed: () => _showPerformanceMetrics(context),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(
-              minWidth: 32,
-              minHeight: 32,
+          const SizedBox(width: 8),
+          
+          // 3. Active sessions display
+          Flexible(
+            flex: 1,
+            child: activeSessions.when(
+              data: (sessions) => _buildCompactActiveSessionsStatus(sessions),
+              loading: () => const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 1, color: Colors.orange),
+                  ),
+                  SizedBox(width: 4),
+                  Text('Sessions...', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                ],
+              ),
+              error: (error, stack) => const Icon(Icons.error, color: Colors.red, size: 12),
+            ),
+          ),
+          
+          const SizedBox(width: 8),
+          
+          // 4. Media workflow progress
+          Flexible(
+            flex: 2,
+            child: _buildCompactMediaWorkflowProgress(workflowState),
+          ),
+          
+          const SizedBox(width: 8),
+          
+          // 5. Workflow status display 
+          Flexible(
+            flex: 1,
+            child: _buildCompactWorkflowProgress(workflowState),
+          ),
+
+          const SizedBox(width: 8),
+          
+          // 6. Face count display (NEW)
+          Flexible(
+            flex: 1,
+            child: CompactFaceCountWidget(
+              mediaId: widget.mediaItem.uuid,
+              color: Colors.white70,
             ),
           ),
         ],
@@ -1163,42 +1255,190 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     );
   }
 
+  /// Build compact workflow progress for performance bar
+  Widget _buildCompactWorkflowProgress(MediaWorkflowState workflowState) {
+    // Only show if workflow is active
+    if (workflowState.status == MediaWorkflowStatus.idle) {
+      return const SizedBox.shrink();
+    }
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          _getWorkflowStatusIcon(workflowState.status),
+          color: _getWorkflowStatusColor(workflowState.status),
+          size: 14,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            workflowState.status == MediaWorkflowStatus.completed 
+                ? 'Workflow Done'
+                : 'Workflow ${workflowState.status.displayName}',
+            style: TextStyle(
+              color: _getWorkflowStatusColor(workflowState.status),
+              fontSize: 11,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (workflowState.progress != null && workflowState.status == MediaWorkflowStatus.processing) ...[
+          const SizedBox(width: 4),
+          Text(
+            '${(workflowState.progress! * 100).toStringAsFixed(0)}%',
+            style: TextStyle(
+              color: _getWorkflowStatusColor(workflowState.status),
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Build compact active sessions status for performance bar
+  Widget _buildCompactActiveSessionsStatus(List<FaceDetectionSession> sessions) {
+    final relevantSessions = sessions.where((s) => s.mediaUuid == widget.mediaItem.uuid).toList();
+    
+    if (relevantSessions.isEmpty) {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.schedule, color: Colors.grey, size: 12),
+          SizedBox(width: 4),
+          Text('No sessions', style: TextStyle(color: Colors.grey, fontSize: 10)),
+        ],
+      );
+    }
+    
+    final activeSession = relevantSessions.firstWhere(
+      (s) => s.status == 'running',
+      orElse: () => relevantSessions.first,
+    );
+    
+    final progress = activeSession.progress ?? 0.0;
+    final isRunning = activeSession.status == 'running';
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          isRunning ? Icons.play_circle : Icons.check_circle,
+          color: isRunning ? Colors.blue : Colors.green,
+          size: 12,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            isRunning ? '${(progress * 100).toInt()}%' : 'Done',
+            style: TextStyle(
+              color: isRunning ? Colors.blue : Colors.green,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build compact media workflow progress for performance bar
+  Widget _buildCompactMediaWorkflowProgress(MediaWorkflowState workflowState) {
+    // Only show if workflow is active
+    if (workflowState.status == MediaWorkflowStatus.idle) {
+      return const SizedBox.shrink();
+    }
+    
+    final progress = workflowState.progress ?? 0.0;
+    final isProcessing = workflowState.status == MediaWorkflowStatus.processing;
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          isProcessing ? Icons.autorenew : _getWorkflowStatusIcon(workflowState.status),
+          color: _getWorkflowStatusColor(workflowState.status),
+          size: 12,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            isProcessing ? '${(progress * 100).toInt()}%' : workflowState.status.toString().split('.').last,
+            style: TextStyle(
+              color: _getWorkflowStatusColor(workflowState.status),
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build compact processing status for performance bar
+  Widget _buildCompactProcessingStatus(ProcessingStatus status, WidgetRef ref) {
+    final isProcessed = status.faceDetectionProcessed;
+    final faceCount = status.totalFacesDetected ?? 0;
+    final hasActiveSession = status.currentSession != null;
+    
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          isProcessed ? Icons.check_circle : (hasActiveSession ? Icons.play_circle : Icons.face),
+          color: isProcessed ? Colors.green : (hasActiveSession ? Colors.blue : Colors.grey),
+          size: 14,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            isProcessed 
+                ? '$faceCount faces detected'
+                : hasActiveSession 
+                    ? 'Processing...'
+                    : 'Ready',
+            style: TextStyle(
+              color: isProcessed ? Colors.green : (hasActiveSession ? Colors.blue : Colors.white70),
+              fontSize: 12,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Calculate efficiency score from performance metrics
-  double _calculateEfficiencyScore(WorkflowPerformanceMetrics metrics) {
-    // Base score from CPU and memory usage reductions
-    double score = 0.0;
-    
-    if (metrics.cpuUsageReduction > 0) {
-      score += metrics.cpuUsageReduction * 50; // Up to 50 points
-    }
-    
-    if (metrics.memoryUsageReduction > 0) {
-      score += metrics.memoryUsageReduction * 30; // Up to 30 points
-    }
-    
-    // Bonus for processing speed
-    if (metrics.avgProcessingTimeSeconds != null && metrics.avgProcessingTimeSeconds! < 10) {
-      score += 20; // Speed bonus
-    }
-    
-    return (score * 100).clamp(0, 100);
-  }
+  // double _calculateEfficiencyScore(WorkflowPerformanceMetrics metrics) {
+  //   // Base score from CPU and memory usage reductions
+  //   double score = 0.0;
+  //   
+  //   if (metrics.cpuUsageReduction > 0) {
+  //     score += metrics.cpuUsageReduction * 50; // Up to 50 points
+  //   }
+  //   
+  //   if (metrics.memoryUsageReduction > 0) {
+  //     score += metrics.memoryUsageReduction * 30; // Up to 30 points
+  //   }
+  //   
+  //   // Bonus for processing speed
+  //   if (metrics.avgProcessingTimeSeconds != null && metrics.avgProcessingTimeSeconds! < 10) {
+  //     score += 20; // Speed bonus
+  //   }
+  //   
+  //   return (score * 100).clamp(0, 100);
+  // }
 
-  /// Get human-readable processing status
-  String _getProcessingStatus(ProcessingStatus? status) {
-    if (status == null) return 'Idle';
-    
-    // Use the displayStatus getter from the updated ProcessingStatus model
-    return status.displayStatus;
-  }
-
-  @override
-  void dispose() {
-    // Clear video controller reference without disposing
-    // (the VideoPlayerWidget will handle its own disposal)
-    _videoController = null;
-    super.dispose();
-  }
+  // /// Get human-readable processing status
+  // String _getProcessingStatus(ProcessingStatus? status) {
+  //   if (status == null) return 'Idle';
+  //   
+  //   // Use the displayStatus getter from the updated ProcessingStatus model
+  //   return status.displayStatus;
+  // }
 }
 
 /// Workflow Settings Content Widget
