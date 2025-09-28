@@ -384,7 +384,7 @@ class FaceDetectionWorkflowOrchestrator:
 
         # Wait for processing completion using Media Service status
         await self._wait_for_media_workflow_completion(
-            trace_ctx, media_workflow_id, lifecycle, workflow.auth_token
+            trace_ctx, media_workflow_id, lifecycle, workflow, workflow.auth_token
         )
 
         lifecycle.status = WorkflowStatus.COMPLETED
@@ -395,6 +395,7 @@ class FaceDetectionWorkflowOrchestrator:
         trace_ctx: TraceabilityContext,
         media_workflow_id: str,
         lifecycle: MethodLifecycle,
+        workflow: WorkflowExecution,
         auth_token: Optional[str] = None,
         max_wait_minutes: int = 30,
     ) -> None:
@@ -435,12 +436,78 @@ class FaceDetectionWorkflowOrchestrator:
                             face.get("confidence", 0.0) for face in results
                         ]
 
+                    # 🎯 NEW: Auto-trigger PPL Thread workflow after successful face detection
+                    if workflow_status == "completed" and lifecycle.results_count > 0:
+                        await self._auto_trigger_ppl_thread_workflow(
+                            trace_ctx=trace_ctx,
+                            media_id=lifecycle.media_id,
+                            workflow=workflow,
+                            auth_token=auth_token,
+                        )
+
                     return
 
             # Wait before next check
             await asyncio.sleep(5)
 
         raise Exception(f"Processing timeout after {max_wait_minutes} minutes")
+
+    async def _auto_trigger_ppl_thread_workflow(
+        self,
+        trace_ctx: TraceabilityContext,
+        media_id: str,
+        workflow: WorkflowExecution,
+        auth_token: Optional[str] = None,
+    ) -> None:
+        """Auto-trigger PPL Thread workflow after face detection completion."""
+        try:
+            logger.info(
+                f"🎯 AUTO-TRIGGER: Starting PPL Thread workflow for media {media_id}"
+            )
+
+            # Check if automatic PPL Thread processing is enabled
+            ppl_enabled = await self._check_ppl_thread_auto_processing_enabled(
+                workflow.user_id
+            )
+
+            if not ppl_enabled:
+                logger.info(
+                    f"🎯 AUTO-TRIGGER: PPL Thread auto-processing disabled for user {workflow.user_id}"
+                )
+                return
+
+            # Trigger PPL Thread workflow via Vision Service
+            ppl_response = (
+                await self.service_manager.vision.trigger_person_objects_workflow(
+                    trace_ctx=trace_ctx,
+                    media_id=media_id,
+                    auth_token=auth_token,
+                )
+            )
+
+            if ppl_response.success:
+                logger.info(
+                    f"🎯 AUTO-TRIGGER: ✅ PPL Thread workflow started for media {media_id}"
+                )
+            else:
+                logger.warning(
+                    f"🎯 AUTO-TRIGGER: ❌ Failed to start PPL Thread workflow: {ppl_response.error_message}"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"🎯 AUTO-TRIGGER: Error triggering PPL Thread workflow for media {media_id}: {e}"
+            )
+
+    async def _check_ppl_thread_auto_processing_enabled(
+        self, user_id: Optional[str]
+    ) -> bool:
+        """Check if automatic PPL Thread processing is enabled."""
+        try:
+            # For now, default to enabled. In future, add user setting
+            return True
+        except Exception:
+            return False
 
     async def _wait_for_processing_completion(
         self,

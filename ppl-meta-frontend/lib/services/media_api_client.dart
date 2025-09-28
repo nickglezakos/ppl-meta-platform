@@ -10,6 +10,7 @@ import '../core/models/collection_models.dart';
 import '../models/device_info.dart';
 import '../core/config/app_config.dart';
 import '../core/api/api_client.dart';
+import '../services/discovery_service_client.dart';
 import '../utils/download_helper_web.dart' if (dart.library.io) '../utils/download_helper_stub.dart';
 
 /// API client for media operations
@@ -448,7 +449,14 @@ class MediaApiClient {
       };
 
       print('DEBUG: MediaApiClient searchMedia - general search queryParams: $queryParams');
-      final response = await _apiClient.get('/api/v1/media/search', queryParameters: queryParams);
+      
+      // TEMPORARY FIX: Explicitly get Media Service URL to avoid Vision Service confusion
+      final discoveryService = DiscoveryServiceClient();
+      final mediaServiceUrl = await discoveryService.getServiceUrl('ppl-meta-media');
+      final fullUrl = '$mediaServiceUrl/api/v1/media/search';
+      
+      print('DEBUG: MediaApiClient searchMedia - using explicit Media Service URL: $fullUrl');
+      final response = await _apiClient.dio.get(fullUrl, queryParameters: queryParams);
       print('DEBUG: MediaApiClient searchMedia - response received, status: ${response.statusCode}');
       print('DEBUG: MediaApiClient searchMedia - response data type: ${response.data.runtimeType}');
       print('DEBUG: MediaApiClient searchMedia - first item sample: ${(response.data as List).isNotEmpty ? (response.data as List)[0] : 'empty'}');

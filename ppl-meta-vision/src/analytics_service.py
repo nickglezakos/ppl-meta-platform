@@ -7,12 +7,20 @@ sessions, including cross-session analysis, device traceability, and
 advanced querying functionality.
 """
 
+# Import database.py file directly
+import importlib.util
 import logging
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from database import VisionDatabase
+db_spec = importlib.util.spec_from_file_location(
+    "database", os.path.join(os.path.dirname(__file__), "database.py")
+)
+db_module = importlib.util.module_from_spec(db_spec)
+db_spec.loader.exec_module(db_module)
+VisionDatabase = db_module.VisionDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -1276,7 +1284,16 @@ def get_analytics_service() -> Optional[AdvancedAnalyticsService]:
 
     if _analytics_service_instance is None:
         try:
-            from database import vision_db
+            # Import database.py file directly
+            import importlib.util
+            import os
+
+            db_spec = importlib.util.spec_from_file_location(
+                "database", os.path.join(os.path.dirname(__file__), "database.py")
+            )
+            db_module = importlib.util.module_from_spec(db_spec)
+            db_spec.loader.exec_module(db_module)
+            vision_db = db_module.vision_db
 
             if vision_db:
                 _analytics_service_instance = AdvancedAnalyticsService(vision_db)

@@ -1,0 +1,8 @@
+{
+  "media_id": "e9681a10-7e5f-4d05-ad74-b025cc25bc78",
+  "status": "completed",
+  "total_persons": 2,
+  "total_faces": 4,
+  "processed_at": 1758962538.75739,
+  "method": "ppl_thread_simulation"
+}

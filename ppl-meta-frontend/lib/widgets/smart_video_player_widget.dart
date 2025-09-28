@@ -366,6 +366,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         debugPrint('MediaFaceDataProvider faces count: ${faceDataState.faces.length}');
       }
       
+      // Debug the condition check
+      debugPrint('CONDITION CHECK: hasData=${faceDataState.hasData}, faces.isNotEmpty=${faceDataState.faces.isNotEmpty}, faces.length=${faceDataState.faces.length}');
+      
       if (faceDataState.hasData && faceDataState.faces.isNotEmpty) {
         // Use cached face data from our new provider
         _storedFaceData = faceDataState.faces;

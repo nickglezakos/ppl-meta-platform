@@ -694,6 +694,55 @@ async def get_video_frame_faces(request: Request):
     return await _proxy_to_vision_service(request)
 
 
+# Person Objects API Routes
+@api_router.get("/person-objects/health")
+async def get_person_objects_health(request: Request):
+    """Proxy person objects health to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.post("/person-objects/workflows/start")
+async def start_person_objects_workflow(request: Request):
+    """Proxy person objects workflow start to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/person-objects/sessions/{session_uuid}")
+async def get_person_objects_session(request: Request):
+    """Proxy person objects session retrieval to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/person-objects/workflows/{workflow_id}/status")
+async def get_person_objects_workflow_status(request: Request):
+    """Proxy person objects workflow status to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/person-objects/sessions/{session_uuid}/statistics")
+async def get_person_objects_statistics(request: Request):
+    """Proxy person objects statistics to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/person-objects/sessions/{session_uuid}/summary")
+async def get_person_objects_summary(request: Request):
+    """Proxy person objects summary to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.delete("/person-objects/sessions/{session_uuid}")
+async def delete_person_objects_session(request: Request):
+    """Proxy person objects session deletion to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/person-objects/media/{media_uuid}/session")
+async def find_session_by_media_uuid(request: Request):
+    """Proxy session discovery by media UUID to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
 # Enhanced Workflow Widget API Routes for Vision Service
 @api_router.get("/processing-status/{media_uuid}/widget")
 async def get_widget_processing_status(request: Request):
@@ -716,6 +765,12 @@ async def get_processing_system_health(request: Request):
 @api_router.get("/sessions/active/overview")
 async def get_active_sessions_overview(request: Request):
     """Proxy active sessions overview to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
+@api_router.get("/sessions")
+async def query_sessions(request: Request):
+    """Proxy session queries to Vision service."""
     return await _proxy_to_vision_service(request)
 
 
@@ -1243,4 +1298,17 @@ async def get_automation_status(request: Request):
 @api_router.get("/orchestrator/automation/analytics")
 async def get_automation_analytics(request: Request):
     """Proxy get automation analytics to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# PPL Thread (Person Objects) Routes
+@api_router.post("/orchestrator/person-objects/trigger")
+async def trigger_ppl_thread_workflow(request: Request):
+    """Proxy PPL Thread workflow trigger to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/person-objects/{media_id}")
+async def get_person_objects_for_media(request: Request):
+    """Proxy get person objects data to Orchestrator service."""
     return await _proxy_to_orchestrator_service(request)

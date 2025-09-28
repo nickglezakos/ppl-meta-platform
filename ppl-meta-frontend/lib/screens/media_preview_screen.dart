@@ -11,8 +11,12 @@ import '../core/api/api_client.dart';
 import '../widgets/custom_app_bar.dart';
 import '../providers/workflow_providers.dart';
 import '../providers/face_memory_manager.dart';
-import '../widgets/face_count_widget.dart';
-import '../providers/face_data_providers.dart';
+import '../widgets/face_and_person_count_widget.dart';
+import '../widgets/ppl_thread_test_widget.dart';
+// Phase 6: Person Objects Integration
+import '../providers/person_objects_provider.dart';
+import '../widgets/person_objects_components.dart';
+import 'person_objects_detail_screen.dart';
 
 
 /// Enhanced Media Preview Screen with integrated Workflows 4 & 5 support
@@ -38,6 +42,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     super.initState();
     
     // Automatically load face data when media loads
+    // Note: Person objects workflow is now auto-triggered by FaceAndPersonCountWidget
     WidgetsBinding.instance.addPostFrameCallback((_) {
       EnhancedAutoFaceLoader.loadFacesForMedia(ref, widget.mediaItem.uuid);
     });
@@ -573,14 +578,45 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: relevantSessions.map((session) {
-        final sessionStats = ref.watch(sessionStatisticsProvider(session.sessionUuid));
+        final sessionStats = ref.watch(personObjectsSessionStatisticsProvider(session.sessionUuid));
         
         return sessionStats.when(
-          data: (stats) => _buildSessionProgressWidget(session, stats),
-          loading: () => _buildSessionProgressWidget(session, null),
-          error: (error, stack) => _buildSessionProgressWidget(session, null),
+          data: (stats) => _buildPersonObjectsSessionWidget(session, stats),
+          loading: () => _buildPersonObjectsSessionWidget(session, null),
+          error: (error, stack) => _buildPersonObjectsSessionWidget(session, null),
         );
       }).toList(),
+    );
+  }
+
+  /// Build person objects session widget
+  Widget _buildPersonObjectsSessionWidget(FaceDetectionSession session, Map<String, dynamic>? stats) {
+    final isCompleted = session.status == 'completed';
+    final hasError = session.status == 'failed' || session.errorMessage != null;
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Icon(
+            isCompleted ? Icons.check_circle : (hasError ? Icons.error : Icons.play_circle),
+            color: isCompleted ? Colors.green : (hasError ? Colors.red : Colors.blue),
+            size: 14,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Person Objects: ${session.sessionUuid.substring(0, 8)}...',
+            style: const TextStyle(color: Colors.white, fontSize: 10),
+          ),
+          if (stats != null) ...[
+            const SizedBox(width: 4),
+            Text(
+              '(${stats['total_person_objects'] ?? 0} persons)',
+              style: const TextStyle(color: Colors.white70, fontSize: 9),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -782,6 +818,32 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               ),
             ),
             
+            // Phase 6: Person Objects Workflow
+            _buildEnhancedControlButton(
+              icon: Icons.groups,
+              label: 'Group Persons',
+              onTap: () => _triggerPersonObjects(ref),
+              color: Colors.indigo,
+              enabled: processingStatus.when(
+                data: (status) => status?.faceDetectionProcessed ?? false,
+                loading: () => false,
+                error: (error, stack) => false,
+              ),
+            ),
+            
+            // PPL Thread: Manual Legacy Media Processing
+            _buildEnhancedControlButton(
+              icon: Icons.psychology,
+              label: 'PPL Thread',
+              onTap: () => _triggerPPLThreadForLegacy(ref),
+              color: Colors.deepOrange,
+              enabled: processingStatus.when(
+                data: (status) => status?.currentSession == null, // Available when no active session
+                loading: () => false,
+                error: (error, stack) => true,
+              ),
+            ),
+            
             // Workflow 5: Stored Face Data Processing
             _buildEnhancedControlButton(
               icon: Icons.flash_on,
@@ -813,6 +875,17 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               enabled: true,
             ),
           ],
+        ),
+        
+        // Phase 6: Person Objects Information Panel
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          child: PersonObjectsInfoPanel(
+            mediaUuid: widget.mediaItem.uuid,
+            showTriggerButton: false, // Handled by button above
+            onViewDetails: () => _navigateToPersonObjectsDetail(),
+          ),
         ),
         
         // Secondary controls
@@ -975,6 +1048,132 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         );
       }
     }
+  }
+
+  /// Trigger person objects grouping workflow
+  void _triggerPersonObjects(WidgetRef ref) async {
+    try {
+      // Use the PersonObjectsWorkflowController for PPL Thread operations
+      final controller = ref.read(personObjectsWorkflowControllerProvider.notifier);
+      await controller.autoTriggerWorkflow(widget.mediaItem.uuid);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PPL Thread: Person grouping workflow started'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start person grouping: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  void _triggerPPLThreadForLegacy(WidgetRef ref) async {
+    try {
+      // Show confirmation dialog for legacy media processing
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('PPL Thread - Legacy Media'),
+            content: const Text(
+              'This will process legacy media with face detections but no active session. '
+              'This creates a new session and processes person objects. Continue?'
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Process'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      // Call the PPL Thread workflow API for legacy media
+      final controller = ref.read(personObjectsWorkflowControllerProvider.notifier);
+      await controller.triggerLegacyMediaWorkflow(widget.mediaItem.uuid);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PPL Thread: Legacy media processing started'),
+            backgroundColor: Colors.deepOrange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        
+        // Refresh the processing status
+        ref.refresh(processingStatusProvider(widget.mediaItem.uuid));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to process legacy media: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Check if person objects workflow should be available
+  bool _shouldShowPersonObjectsButton(WidgetRef ref) {
+    final detectionResult = ref.watch(personObjectsDataProvider(widget.mediaItem.uuid));
+    return detectionResult.when(
+                           data: (result) => result?.classifiedFaces.isNotEmpty ?? false,
+      loading: () => false,
+      error: (_, __) => false,
+    );
+  }
+
+  /// Get person objects workflow button color based on state
+  Color _getPersonObjectsButtonColor(WidgetRef ref) {
+    final workflow = ref.watch(personObjectsWorkflowControllerProvider);
+    switch (workflow) {
+      case PersonObjectsWorkflowState.idle:
+        return Colors.green;
+      case PersonObjectsWorkflowState.checking:
+      case PersonObjectsWorkflowState.triggering:
+      case PersonObjectsWorkflowState.processing:
+        return Colors.orange;
+      case PersonObjectsWorkflowState.completed:
+        return Colors.blue;
+      case PersonObjectsWorkflowState.failed:
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  /// Navigate to person objects detail screen
+  void _navigateToPersonObjectsDetail() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => PersonObjectsDetailScreen(
+          mediaItem: widget.mediaItem,
+        ),
+      ),
+    );
   }
 
   /// Stop active session
@@ -1228,11 +1427,11 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           
           // 4. Media workflow progress
           Flexible(
-            flex: 2,
+            flex: 1,
             child: _buildCompactMediaWorkflowProgress(workflowState),
           ),
           
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           
           // 5. Workflow status display 
           Flexible(
@@ -1240,14 +1439,24 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             child: _buildCompactWorkflowProgress(workflowState),
           ),
 
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           
-          // 6. Face count display (NEW)
+          // 6. Face and person count display (Enhanced with PPL Thread integration)
           Flexible(
             flex: 1,
-            child: CompactFaceCountWidget(
+            child: CompactFaceAndPersonCountWidget(
               mediaId: widget.mediaItem.uuid,
               color: Colors.white70,
+            ),
+          ),
+          
+          const SizedBox(width: 4),
+          
+          // DEBUG: PPL Thread test widget (horizontal layout)
+          Flexible(
+            flex: 1,
+            child: PPLThreadTestWidget(
+              mediaId: widget.mediaItem.uuid,
             ),
           ),
         ],
@@ -1378,11 +1587,15 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     );
   }
 
-  /// Build compact processing status for performance bar
+  /// Build compact processing status for performance bar with person objects integration
   Widget _buildCompactProcessingStatus(ProcessingStatus status, WidgetRef ref) {
     final isProcessed = status.faceDetectionProcessed;
     final faceCount = status.totalFacesDetected ?? 0;
     final hasActiveSession = status.currentSession != null;
+    
+    // Phase 6: Get person objects data
+    final personObjectsAsync = ref.watch(personObjectsDataProvider(widget.mediaItem.uuid));
+    final workflowState = ref.watch(personObjectsWorkflowControllerProvider);
     
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1394,17 +1607,69 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         ),
         const SizedBox(width: 4),
         Flexible(
-          child: Text(
-            isProcessed 
-                ? '$faceCount faces detected'
-                : hasActiveSession 
-                    ? 'Processing...'
-                    : 'Ready',
-            style: TextStyle(
-              color: isProcessed ? Colors.green : (hasActiveSession ? Colors.blue : Colors.white70),
-              fontSize: 12,
-            ),
-            overflow: TextOverflow.ellipsis,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Faces detected line
+              Text(
+                isProcessed 
+                    ? '$faceCount faces detected'
+                    : hasActiveSession 
+                        ? 'Processing...'
+                        : 'Ready',
+                style: TextStyle(
+                  color: isProcessed ? Colors.green : (hasActiveSession ? Colors.blue : Colors.white70),
+                  fontSize: 12,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+              
+              // Phase 6: Person objects line
+              if (isProcessed)
+                personObjectsAsync.when(
+                  data: (data) {
+                    if (data != null) {
+                      return Text(
+                        '${data.totalPersons} persons grouped',
+                        style: TextStyle(
+                          color: Colors.blue.shade300,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    } else if (workflowState == PersonObjectsWorkflowState.processing ||
+                               workflowState == PersonObjectsWorkflowState.triggering) {
+                      return Text(
+                        'Grouping persons...',
+                        style: TextStyle(
+                          color: Colors.orange.shade300,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    } else {
+                      return Text(
+                        'Person grouping available',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontSize: 11,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    }
+                  },
+                  loading: () => Text(
+                    'Loading persons...',
+                    style: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 11,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  error: (error, stack) => const SizedBox.shrink(),
+                ),
+            ],
           ),
         ),
       ],

@@ -18,44 +18,6 @@ rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.76:554/stream1
 
 http://192.168.1.68:8001
 
-
-
-    {
-        "id": 63,
-        "name": "mcam-201117ty-2d7ee4",
-        "device_id": "mobile_TKQ1.221114.001_1756878026959",
-        "camera_type": "MOBILE",
-        "status": "connected",
-        "resolution": "1920x1080",
-        "max_fps": 30,
-        "supports_streaming": true,
-        "supports_recording": false,
-        "last_seen": "2025-09-03T08:40:26.594965",
-        "created_at": "2025-09-03T08:40:26.594965"
-    }
-    {
-        "id": 59,
-        "name": "mcam-201117ty-2d7ee4",
-        "device_id": "mobile_TKQ1.221114.001_1756843195421",
-        "camera_type": "MOBILE",
-        "status": "connected",
-        "resolution": "1920x1080",
-        "max_fps": 30,
-        "supports_streaming": true,
-        "supports_recording": false,
-        "last_seen": "2025-09-02T22:59:55.924403",
-        "created_at": "2025-09-02T22:59:55.924403"
-    }
-
-
-Lets rearrange the screen:
-In the enhanced appbar i just need the back button the title and the home button - nothing else
-The elements of the overlay widgets panel should be moved to the performance status bar and the bottom bar below the media content area. After the move we dont need the overlay widgets planel:
-In the  performance status bar I just need from the overlay widgets planel the following: The playback mode indicator, the processing status display, the active sessions status. Also the widget that shows the cased faces
-In the bottom bar below the below the media content area I need the Enhanced workflow control widgets and the button that expands to show the workflows and nothing else.
-
-
-
 echo "📱 Reconnecting Redmi Note 11 via WiFi Debugging"
 echo "=============================================="
 echo ""
@@ -80,46 +42,6 @@ Scenario 2: Mobile Carrier + Tailscale VPN
 🔗 Connection: Via Tailscale mesh VPN tunnel 
 ✅ Expected: App discovers platform at 100.102.56.67, network type: vpn_tailscale
 
-@app.websocket("/ws/camera_stream/")
-async def websocket_camera_stream(
-    websocket: WebSocket,
-    rtsp_url: str,
-    resize_percentage: int = 100,
-    record: bool = False,
-    cameraRequest: Optional[str] = None
-):
-
-    await websocket.accept()
-    logger.info(f"WebSocket connection accepted for RTSP URL: {rtsp_url}")
-
-    # Manually create a BackgroundTasks instance
-    background_tasks = BackgroundTasks()
-
-    try:
-        async for frame in generate_frames(
-            rtsp_url=rtsp_url,
-            resize_percentage=resize_percentage,
-            record=record,
-            cameraRequest=cameraRequest,
-            background_tasks=background_tasks
-        ):
-            try:
-                # Send the frame to the client
-                await websocket.send_bytes(frame)
-            except WebSocketDisconnect:
-                logger.info("WebSocket client disconnected.")
-                break
-            except Exception as e:
-                logger.error(f"Error sending frame via WebSocket: {e}")
-                break
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected.")
-    except Exception as e:
-        logger.error(f"Error in WebSocket stream: {e}")
-    finally:
-        logger.info("WebSocket connection closed.")
-
-
 Start Ollama: brew services start ollama
 Stop Ollama: brew services stop ollama
 Chat with models: Use: ollama run llama3.1 or ollama run codellama:7b in terminal
@@ -135,6 +57,106 @@ llama3.1:latest            46e0c10c039e    4.9 GB    3 days ago
 
 
 
-Disconnect all cameras first (/api/v1/cameras/disconnect-all)
-Re-detect cameras (/api/v1/cameras/detect?save_to_db=true)
-Then connect to the specific camera (/api/v1/cameras/{device_id}/connect)
+
+CAMERA RECORDINGS PIPELIJNE
+
+A camera recording workflow is executed to set which are the conditions a camera
+starts and stops recordings.
+
+A group of cameras recording workflow is executed to set which are the conditions a group of
+cameras starts and stops recordings.
+
+
+
+PEOPLE META DATA PIPELINE
+
+ppl_thread UUID
+ppl_thread START
+ppl_thread STOP
+ppl_thread CREATED
+ppl_thread MODIFIED
+
+person UUID
+person CREATED
+person MODIFIED
+
+personprint UUID
+personprint CREATED
+personprint MODIFIED
+
+Single collection ppl_thread workflows
+
+First level ppl_thread workflow for a single collection.
+
+The first level ppl_thread workflow detects person objects for a single camera or user collection. 
+It is executed automatically each time faces are stored for this collection 
+from a face detection workflow.
+After processing the faces to result to person objects the ppl_thread workflow
+stores the person objects in the vision service database. The person objects can be traced
+back to which face objects they were produced by.
+
+Second level ppl_thread workflow for a single collection.
+
+The second level ppl_thread workflow conducts the following:
+1. Its detection end time is equal to the end time of the most recent first level workflow's 
+   end time for the same collection.
+2. Its detection start time is its detection end time minus the detect duration as it is declared 
+   at settings.
+3. It results to persons objects detected within its detect time and end time.
+4. It relates the person object detected to the face objects it detected them from. 
+5. After finishing the person object detection it finds possible person object duplicates based on 
+   settings criteria. Duplicates found are merged in the sense that they refer to the one person
+   object UUID. Also relations to faces for person object merged are updated.
+6. It updates the ppl_thread time start and time end second level status.
+7. It stores the person object results to a dedicated person object collection created if it
+   does not exists that is related to the source collection.
+
+Third level ppl_thread workflow for a single collection.
+
+1. The third level ppl_thread workflows are executed in idle time as it is set in settings.
+2. Third level ppl_thread workflows find person object duplicates follwing the exact same
+   duplicate criteria applied for the seond level workflows but for a more extended detection
+   time. Their detection time is set in the settings.
+3. It stores the merged person objects in the same dedicated person object collection created if it
+   does not exists that is related to the source collection.
+
+ppl_thread workflows for multiple collections (groups of camera and/or user collections)
+
+1. For the required time period the ppl_thread workflow for a group of collections detects if there
+   are second or third level person objects produced by previous second or third level singe 
+   collection workflows. For the time spans that there are not any it executed second level 
+   workflows for each single member collection of the group.
+2. After all member collections of the group have been processed for person object it finds Additional
+   merges duplicates for any member collection that has not been processed by a third level
+   workflow separatelly.
+3. After all member collections are processed for second level the workflow processes the person 
+   objects of the group for duplicates and merges the person objects accordingly.
+4. It stores its results to a dedicated ppl_thread person object collection.
+5. It stores the person object results to a dedicated person object collection created if it
+   does not exists that is related to the source member collections.
+
+
+User defined person object searches
+
+When a user asks for person objects for a collection or a group of collections 
+for a specific time span the system carries out the following:
+1. It checks if there are thrid level workflows results for the entire this time period or the
+   required search. If there are then it simply returns the person objects.
+2. If there are time spans that are part of the required search time span with no third
+   level workflows results but with second level ones that it again returns the person
+   objects with a notification mesasage that more process it due on the returned results.
+3. If there are time spans that are part of the required search time span with no second level
+   level workflows results it first carries out the missing second level workflows and then 
+   return the person object results with a notification mesasage that more process it due on 
+   the returned results.
+
+
+
+
+
+
+
+
+
+
+

@@ -11,6 +11,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import asyncpg
+import psycopg2
+import psycopg2.extras
 from models import FaceDetectionResult, MediaRecord
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,7 @@ class VisionDatabase:
         """Initialize database connection."""
         self.database_url = database_url or self._get_database_url()
         self.connection_pool = None
+        self._sync_connection = None
 
     def _get_database_url(self) -> str:
         """Get database URL from environment or default."""
@@ -75,6 +78,19 @@ class VisionDatabase:
             logger.error(f"Sync database init failed: {e}")
             raise
 
+    @property
+    def connection(self):
+        """Get synchronous database connection for PPL Thread workflow."""
+        if self._sync_connection is None or self._sync_connection.closed:
+            try:
+                self._sync_connection = psycopg2.connect(self.database_url)
+                self._sync_connection.autocommit = False  # Enable transactions
+                logger.info("Synchronous database connection established")
+            except Exception as e:
+                logger.error(f"Failed to create sync connection: {e}")
+                raise
+        return self._sync_connection
+
     async def create_tables(self, conn):
         """Create database tables."""
 
@@ -116,7 +132,86 @@ class VisionDatabase:
         """
         )
 
-        # Create indexes
+        # Face detection sessions table (for PPL Thread workflow)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS face_detection_sessions (
+                session_uuid TEXT PRIMARY KEY,
+                media_uuid TEXT NOT NULL,
+                workflow_id TEXT,
+                status TEXT DEFAULT 'active',
+                face_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                completed_at TIMESTAMP,
+                FOREIGN KEY (media_uuid) REFERENCES media_records (media_id)
+            )
+        """
+        )
+
+        # Person workflows table (for PPL Thread workflow)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS person_workflows (
+                workflow_id TEXT PRIMARY KEY,
+                session_uuid TEXT NOT NULL,
+                status TEXT DEFAULT 'running',
+                input_face_count INTEGER NOT NULL,
+                output_person_count INTEGER DEFAULT 0,
+                tolerance_percent REAL NOT NULL,
+                enable_quality_analysis BOOLEAN DEFAULT TRUE,
+                enable_age_detection BOOLEAN DEFAULT FALSE,
+                metadata JSONB DEFAULT '{}',
+                created_at TIMESTAMP DEFAULT NOW(),
+                completed_at TIMESTAMP,
+                FOREIGN KEY (session_uuid) REFERENCES face_detection_sessions (session_uuid)
+            )
+        """
+        )
+
+        # Person objects table (for PPL Thread workflow results)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS person_objects (
+                person_id TEXT PRIMARY KEY,
+                session_uuid TEXT NOT NULL,
+                workflow_id TEXT NOT NULL,
+                face_count INTEGER NOT NULL,
+                average_position_x REAL NOT NULL,
+                average_position_y REAL NOT NULL,
+                quality_score REAL DEFAULT 0.0,
+                best_face_id TEXT,
+                estimated_age TEXT DEFAULT 'Unknown',
+                distance_from_camera REAL DEFAULT 0.0,
+                tracking_algorithm TEXT NOT NULL,
+                tolerance_percent REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                FOREIGN KEY (session_uuid) REFERENCES face_detection_sessions (session_uuid),
+                FOREIGN KEY (workflow_id) REFERENCES person_workflows (workflow_id)
+            )
+        """
+        )
+
+        # Person face mappings table (for PPL Thread workflow)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS person_face_mappings (
+                id SERIAL PRIMARY KEY,
+                person_id TEXT NOT NULL,
+                face_detection_id TEXT NOT NULL,
+                match_type TEXT NOT NULL,
+                match_distance REAL NOT NULL,
+                frame_number INTEGER NOT NULL,
+                position_x REAL NOT NULL,
+                position_y REAL NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                FOREIGN KEY (person_id) REFERENCES person_objects (person_id),
+                FOREIGN KEY (face_detection_id) REFERENCES face_detections (id)
+            )
+        """
+        )
+
+        # Create indexes for face_detections
         await conn.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_face_detections_media_id 
@@ -135,6 +230,42 @@ class VisionDatabase:
             """
             CREATE INDEX IF NOT EXISTS idx_face_detections_frame 
             ON face_detections (frame_number)
+        """
+        )
+
+        # Create indexes for PPL Thread workflow tables
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_face_detection_sessions_media 
+            ON face_detection_sessions (media_uuid)
+        """
+        )
+
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_person_workflows_session 
+            ON person_workflows (session_uuid)
+        """
+        )
+
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_person_objects_session 
+            ON person_objects (session_uuid)
+        """
+        )
+
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_person_face_mappings_person 
+            ON person_face_mappings (person_id)
+        """
+        )
+
+        await conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_person_face_mappings_face 
+            ON person_face_mappings (face_detection_id)
         """
         )
 

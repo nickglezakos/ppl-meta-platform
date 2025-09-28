@@ -115,6 +115,29 @@ class VisionDatabase:
         """
         )
 
+        # Face detection sessions table (for PPL Thread workflow)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS face_detection_sessions (
+                session_uuid TEXT PRIMARY KEY,
+                media_uuid TEXT NOT NULL,
+                workflow_id TEXT,
+                status TEXT DEFAULT 'active',
+                face_count INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                completed_at TIMESTAMP
+            )
+        """
+        )
+
+        # Create index for face_detection_sessions
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_face_detection_sessions_media 
+            ON face_detection_sessions (media_uuid)
+        """
+        )
+
         cursor.close()
 
     def store_media_record(self, media_record: MediaRecord) -> bool:
@@ -390,6 +413,13 @@ class VisionDatabase:
 
 # Global instance
 vision_db = VisionDatabase()
+
+
+# Dependency function for FastAPI
+def get_vision_database():
+    """Get the global vision database instance for FastAPI dependency injection."""
+    return vision_db
+
 
 # Alias for compatibility
 DatabaseManager = VisionDatabase

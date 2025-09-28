@@ -3,6 +3,7 @@ PPL Meta Vision Service - Media Processing Service
 Enhanced media processing with database integration and overlay generation
 """
 
+import importlib.util
 import logging
 import os
 import tempfile
@@ -13,7 +14,15 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 import requests
-from database import vision_db
+
+# Import database.py file directly (not the database/ directory)
+db_spec = importlib.util.spec_from_file_location(
+    "database", os.path.join(os.path.dirname(__file__), "database.py")
+)
+db_module = importlib.util.module_from_spec(db_spec)
+db_spec.loader.exec_module(db_module)
+vision_db = db_module.vision_db
+
 from extracted_face_detector import ExtractedFaceDetector
 from models import (
     FaceDetectionResult,

@@ -40,7 +40,14 @@ except ImportError:
 
 
 import base64
+
+# Import database.py file directly (not the database/ directory)
+import importlib.util
 import io
+import os
+
+# Import database directly from the file (not the directory)
+import sys
 
 # Image Processing & ML
 import cv2
@@ -50,7 +57,14 @@ import uvicorn
 
 # Import API models
 from api_models import SessionQueryRequest
-from database import vision_db
+
+db_spec = importlib.util.spec_from_file_location(
+    "database", os.path.join(os.path.dirname(__file__), "database.py")
+)
+db_module = importlib.util.module_from_spec(db_spec)
+db_spec.loader.exec_module(db_module)
+
+vision_db = db_module.vision_db
 
 # Import our services and models
 from extracted_face_detector import ExtractedFaceDetector
@@ -215,6 +229,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include PPL Thread (Person Objects) API router immediately after app creation
+try:
+    from person_objects.person_objects_api import router as person_objects_router
+
+    app.include_router(person_objects_router)
+    print("✅ PPL Thread (Person Objects) router included successfully")
+except Exception as router_error:
+    print(f"⚠️ Failed to include PPL Thread router: {router_error}")
+    # Continue without person objects functionality
+
 # Global variables
 face_detector_instance = None
 media_processor_instance = None
@@ -272,6 +296,21 @@ async def startup_event():
             logger.info("✅ Advanced Analytics Service initialized")
         except Exception as e:
             logger.warning(f"⚠️ Advanced Analytics Service failed: {e}")
+
+        # Initialize PPL Thread (Person Objects) functionality - Phase 4
+        try:
+            from database.person_objects_migrations import PersonObjectsMigration
+
+            # Initialize database schema (router already included at app startup)
+            migration = PersonObjectsMigration(vision_db.connection)
+            await migration.migrate_schema()
+
+            logger.info("✅ PPL Thread (Person Objects) functionality initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ PPL Thread initialization failed: {e}")
+            import traceback
+
+            logger.error("PPL Thread error details: %s", traceback.format_exc())
 
         # Register with discovery service
         try:
@@ -744,6 +783,77 @@ async def process_media_from_service(
                             }
                         ),
                     )
+
+                    # 🎯 AUTO-TRIGGER: Start PPL Thread workflow after completion
+                    if len(all_detections) > 0:  # Only trigger if faces detected
+                        try:
+                            logger.info(
+                                f"🎯 Face detection completed for media {media_id} "
+                                f"with {len(all_detections)} faces. "
+                                f"Starting PPL Thread workflow..."
+                            )
+
+                            # Trigger PPL Thread workflow via internal API call
+                            import aiohttp
+
+                            async def trigger_ppl_thread_workflow():
+                                try:
+                                    async with aiohttp.ClientSession() as sess:
+                                        # Call the correct PPL Thread trigger endpoint
+                                        url = (
+                                            "http://localhost:8003/api/v1/"
+                                            "person-objects/workflow/trigger"
+                                        )
+
+                                        # Prepare payload with all required data
+                                        payload = {
+                                            "media_id": media_id,
+                                            "session_uuid": session_uuid,
+                                            "face_count": len(all_detections),
+                                            "processing_time": processing_time,
+                                        }
+
+                                        async with sess.post(
+                                            url, json=payload, timeout=30
+                                        ) as response:
+                                            if response.status == 200:
+                                                result = await response.json()
+                                                persons = result.get(
+                                                    "total_persons", "unknown"
+                                                )
+                                                logger.info(
+                                                    f"🎯 ✅ PPL Thread workflow "
+                                                    f"completed for media {media_id}: "
+                                                    f"{len(all_detections)} faces → "
+                                                    f"{persons} persons"
+                                                )
+                                            else:
+                                                resp_text = await response.text()
+                                                logger.warning(
+                                                    f"🎯 PPL Thread workflow "
+                                                    f"returned status "
+                                                    f"{response.status}: {resp_text[:200]}"
+                                                )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"🎯 Failed to trigger PPL Thread "
+                                        f"workflow for media {media_id}: {e}"
+                                    )
+
+                            # Execute trigger in background task
+                            asyncio.create_task(trigger_ppl_thread_workflow())
+
+                        except Exception as e:
+                            logger.warning(
+                                f"🎯 Failed to initiate PPL Thread "
+                                f"workflow for media {media_id}: {e}"
+                            )
+                    else:
+                        logger.info(
+                            f"🎯 No faces detected for media {media_id}, "
+                            f"skipping PPL Thread workflow"
+                        )
+
                 except Exception as e:
                     logger.warning(f"Failed to complete session: {e}")
 
@@ -1855,6 +1965,55 @@ async def get_session_statistics():
         logger.error(f"Error getting session statistics: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to get session statistics: {str(e)}"
+        )
+
+
+@app.get("/sessions/media/{media_uuid}", summary="Find Session by Media UUID")
+async def find_session_by_media_uuid(
+    media_uuid: str,
+    authorization: str = Header(None),
+):
+    """
+    Find session UUID by media UUID for person objects processing.
+
+    This endpoint provides dynamic session discovery functionality that allows
+    the frontend to find the appropriate session UUID for a given media UUID
+    to enable person objects processing and statistics.
+    """
+    # Validate authentication
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401, detail="Missing or invalid authorization header"
+        )
+
+    try:
+        # Import and use the person objects controller for session discovery
+        from person_objects.ppl_thread_workflow import PPLThreadWorkflowController
+
+        # Initialize controller with database
+        controller = PPLThreadWorkflowController(vision_db)
+
+        # Use the dynamic discovery method
+        session_uuid = controller.find_session_uuid_by_media_uuid(media_uuid)
+
+        if session_uuid:
+            return {
+                "success": True,
+                "media_uuid": media_uuid,
+                "session_uuid": session_uuid,
+                "message": f"Found session {session_uuid} for media {media_uuid}",
+            }
+        else:
+            raise HTTPException(
+                status_code=404, detail=f"No session found for media UUID {media_uuid}"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error finding session for media UUID {media_uuid}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to find session for media UUID: {str(e)}"
         )
 
 
@@ -2993,44 +3152,42 @@ async def get_analytics_dashboard_summary(
         )
 
 
-# Error handlers
-@app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={
-            "error": "Endpoint not found",
-            "available_endpoints": [
-                "/",
-                "/health",
-                "/models",
-                "/detect",
-                "/process/media",
-                "/process/media/enhanced",
-                "/overlay/generate",
-                "/timeline/generate",
-                "/media/{media_id}/analytics",
-                "/faces/media/{media_id}/frame/{frame_number}",
-                "/faces/media/{media_id}/bulk-process",
-                "/sessions/start",
-                "/sessions/{session_uuid}/status",
-                "/sessions/{session_uuid}/complete",
-                "/sessions",
-                "/sessions/stats",
-                "/analytics/cross-session",
-                "/analytics/device/{camera_device_uuid}",
-                "/analytics/media/{media_uuid}/timeline",
-                "/analytics/query",
-                "/analytics/performance",
-                "/analytics/summary",
-                "/database/status",
-                "/debug/auth",
-                "/docs",
-            ],
-        },
-    )
-
-
+# Error handlers - Don't interfere with person-objects router responses
+# @app.exception_handler(404)  # Disabled to allow person-objects router to handle its own 404s
+# async def not_found_handler(request, exc):
+#     return JSONResponse(
+#         status_code=404,
+#         content={
+#             "error": "Endpoint not found",
+#             "available_endpoints": [
+#                 "/",
+#                 "/health",
+#                 "/models",
+#                 "/detect",
+#                 "/process/media",
+#                 "/process/media/enhanced",
+#                 "/overlay/generate",
+#                 "/timeline/generate",
+#                 "/media/{media_id}/analytics",
+#                 "/faces/media/{media_id}/frame/{frame_number}",
+#                 "/faces/media/{media_id}/bulk-process",
+#                 "/sessions/start",
+#                 "/sessions/{session_uuid}/status",
+#                 "/sessions/{session_uuid}/complete",
+#                 "/sessions",
+#                 "/sessions/stats",
+#                 "/analytics/cross-session",
+#                 "/analytics/device/{camera_device_uuid}",
+#                 "/analytics/media/{media_uuid}/timeline",
+#                 "/analytics/query",
+#                 "/analytics/performance",
+#                 "/analytics/summary",
+#                 "/database/status",
+#                 "/debug/auth",
+#                 "/docs",
+#             ],
+#         },
+#     )
 if __name__ == "__main__":
     # Configure info logging to reduce debug flood
     logging.basicConfig(

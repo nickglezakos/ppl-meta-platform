@@ -204,6 +204,23 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to initialize automation engine: {e}")
         logger.warning("Continuing without Phase 2.4 automation features")
 
+    # Initialize PPL Thread (Person Objects) endpoints
+    try:
+        logger.info("Initializing PPL Thread (Person Objects) endpoints...")
+
+        from ppl_thread_endpoints import create_ppl_thread_endpoints
+
+        ppl_thread_router = create_ppl_thread_endpoints(
+            workflow_orchestrator, service_manager
+        )
+        app.include_router(ppl_thread_router)
+
+        logger.info("✅ PPL Thread endpoints initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize PPL Thread endpoints: {e}")
+        logger.warning("Continuing without PPL Thread features")
+
     # Initialize service discovery if available
     try:
         import socket
