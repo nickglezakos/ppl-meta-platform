@@ -29,7 +29,6 @@ class ExtractedFaceDetector:
             "confidence_thresholds": {
                 "haar": 0.5,  # Default confidence for Haar cascade detections
                 "dlib": 0.5,  # Default confidence for Dlib detections
-                "mtcnn": 0.5,  # Default confidence threshold for MTCNN
                 "two_stage": 0.5,  # Default confidence for two-stage faces
             }
         }
@@ -75,16 +74,12 @@ class ExtractedFaceDetector:
         self.logger.info("🔧 Initializing face detection methods...")
 
         # Check for ML libraries availability
-        ml_libraries = {"dlib": False, "mtcnn": False}
+        ml_libraries = {"dlib": False}
 
         for lib in ml_libraries:
             try:
                 if lib == "dlib":
                     import dlib
-
-                    ml_libraries[lib] = True
-                elif lib == "mtcnn":
-                    from mtcnn import MTCNN
 
                     ml_libraries[lib] = True
             except ImportError:
@@ -134,20 +129,7 @@ class ExtractedFaceDetector:
         except Exception as e:
             self.logger.error(f"❌ Error initializing dlib: {e}")
 
-        # 3. MTCNN (if available)
-        try:
-            if ml_libraries["mtcnn"]:
-                from mtcnn import MTCNN
-
-                self.mtcnn_detector = MTCNN()
-                self.available_methods.append("mtcnn")
-                self.logger.info("✅ MTCNN detector initialized")
-            else:
-                self.logger.warning("❌ MTCNN not available")
-        except Exception as e:
-            self.logger.error(f"❌ Error initializing MTCNN: {e}")
-
-        # 4. Two-Stage Detection (Haar + Dlib validation - proven method)
+        # 3. Two-Stage Detection (Haar + Dlib validation - proven method)
         if "haar" in self.available_methods and "dlib" in self.available_methods:
             self.available_methods.append("two_stage")
             self.logger.info("✅ Two-stage detection enabled (Haar + Dlib validation)")
@@ -235,42 +217,6 @@ class ExtractedFaceDetector:
 
         except Exception as e:
             self.logger.error(f"Dlib detection error: {e}")
-            return {"success": False, "error": str(e), "detections": []}
-
-    def detect_faces_mtcnn(self, image):
-        """MTCNN face detection"""
-        if "mtcnn" not in self.available_methods:
-            return {"success": False, "error": "MTCNN not available", "detections": []}
-
-        try:
-            if len(image.shape) == 3:
-                rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            else:
-                rgb_image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-
-            result = self.mtcnn_detector.detect_faces(rgb_image)
-
-            detections = []
-            for face in result:
-                bbox = face["box"]
-                x, y, w, h = bbox
-                detections.append(
-                    {
-                        "bbox": [x, y, x + w, y + h],
-                        "confidence": face["confidence"],
-                        "method": "mtcnn",
-                    }
-                )
-
-            return {
-                "success": True,
-                "detections": detections,
-                "method": "mtcnn",
-                "processing_time": 0,
-            }
-
-        except Exception as e:
-            self.logger.error(f"MTCNN detection error: {e}")
             return {"success": False, "error": str(e), "detections": []}
 
     def detect_faces_two_stage(self, image, confidence_threshold=0.5):
@@ -380,8 +326,6 @@ class ExtractedFaceDetector:
                 result = self.detect_faces_haar(image)
             elif method == "dlib":
                 result = self.detect_faces_dlib(image)
-            elif method == "mtcnn":
-                result = self.detect_faces_mtcnn(image)
             elif method == "two_stage":
                 result = self.detect_faces_two_stage(image)
             else:
