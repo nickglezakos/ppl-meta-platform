@@ -24,13 +24,12 @@ from src.services.face_detection_service import MediaFaceDetectionService
 
 # Queue-based PPL Thread triggering
 try:
-    import redis
     from celery import Celery
-
+    import redis
     QUEUE_AVAILABLE = True
     # Initialize queue connection
-    redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
-    celery_app = Celery("ppl_workflows", broker="redis://localhost:6379/0")
+    redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+    celery_app = Celery('ppl_workflows', broker='redis://localhost:6379/0')
 except ImportError:
     QUEUE_AVAILABLE = False
     redis_client = None
@@ -54,7 +53,6 @@ class WorkflowFaceDetectionRequest(BaseModel):
     store_results: bool = True
     workflow_metadata: Optional[Dict[str, Any]] = {}
     processing_priority: str = "normal"  # "low", "normal", "high"
-    frames_per_second: int = 3  # Frames to process per second (default: 3 fps)
 
 
 class WorkflowFaceDetectionResponse(BaseModel):
@@ -371,9 +369,6 @@ async def process_bulk_face_detection_workflow(workflow_context: Dict[str, Any])
                                 media_record.file_path,
                                 method=detection_method,
                                 confidence_threshold=confidence_threshold,
-                                frames_per_second=workflow_context.get(
-                                    "frames_per_second", 3
-                                ),
                             )
                         )
                     elif media_record.media_type == "image":
@@ -560,7 +555,6 @@ async def process_single_media_workflow(
     method: str = "two_stage",
     confidence_threshold: float = 0.5,
     store_results: bool = True,
-    frames_per_second: int = 3,
     workflow_metadata: Optional[Dict[str, Any]] = None,
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -572,7 +566,6 @@ async def process_single_media_workflow(
     - Workflow metadata and tracking
     - Direct Vision Service integration
     - Source-agnostic processing (camera recordings + user uploads)
-    - Frame rate optimization (frames_per_second parameter)
     """
     try:
         # Create single-item workflow
@@ -581,7 +574,6 @@ async def process_single_media_workflow(
             method=method,
             confidence_threshold=confidence_threshold,
             store_results=store_results,
-            frames_per_second=frames_per_second,
             workflow_metadata=workflow_metadata or {},
         )
 
@@ -616,9 +608,9 @@ async def trigger_automatic_ppl_thread_workflow(
 
     This function uses Redis/Celery queue for reliable, asynchronous triggering
     of PPL Thread workflows when face detection completes.
-
+    
     Benefits:
-    - Reliable: Tasks survive service restarts
+    - Reliable: Tasks survive service restarts  
     - Decoupled: No direct service-to-service API calls
     - Scalable: Multiple workers can process triggers
     - Monitored: Queue status visible via Celery tools
@@ -631,9 +623,7 @@ async def trigger_automatic_ppl_thread_workflow(
     )
 
     if not QUEUE_AVAILABLE:
-        logger.error(
-            "❌ QUEUE UNAVAILABLE: Redis/Celery not available, falling back to direct trigger"
-        )
+        logger.error("❌ QUEUE UNAVAILABLE: Redis/Celery not available, falling back to direct trigger")
         return await _legacy_direct_trigger(workflow_id, media_ids, total_faces)
 
     try:
@@ -643,50 +633,49 @@ async def trigger_automatic_ppl_thread_workflow(
             try:
                 # Queue the task using Celery
                 task = celery_app.send_task(
-                    "trigger_ppl_thread",
+                    'trigger_ppl_thread',
                     args=[media_id, total_faces, workflow_id],
-                    kwargs={"trigger_reason": "automatic_face_detection_completion"},
-                    queue="ppl_thread_queue",
+                    kwargs={
+                        'trigger_reason': 'automatic_face_detection_completion'
+                    },
+                    queue='ppl_thread_queue'
                 )
-
-                queued_tasks.append(
-                    {"media_id": media_id, "task_id": task.id, "status": "queued"}
-                )
-
+                
+                queued_tasks.append({
+                    'media_id': media_id,
+                    'task_id': task.id,
+                    'status': 'queued'
+                })
+                
                 logger.info(
                     "✅ QUEUED: PPL Thread trigger for media %s (task: %s)",
-                    media_id,
-                    task.id,
+                    media_id, task.id
                 )
-
+                
             except Exception as queue_error:
                 logger.error(
                     "❌ QUEUE ERROR: Failed to queue PPL trigger for %s: %s",
-                    media_id,
-                    queue_error,
+                    media_id, queue_error
                 )
-                queued_tasks.append(
-                    {
-                        "media_id": media_id,
-                        "task_id": None,
-                        "status": "failed",
-                        "error": str(queue_error),
-                    }
-                )
+                queued_tasks.append({
+                    'media_id': media_id,
+                    'task_id': None,
+                    'status': 'failed',
+                    'error': str(queue_error)
+                })
 
         # Log summary
-        successful_queues = len([t for t in queued_tasks if t["status"] == "queued"])
+        successful_queues = len([t for t in queued_tasks if t['status'] == 'queued'])
         logger.info(
             "📋 QUEUE SUMMARY: %d/%d tasks queued successfully",
-            successful_queues,
-            len(media_ids),
+            successful_queues, len(media_ids)
         )
 
         return {
-            "queued_tasks": queued_tasks,
-            "successful_queues": successful_queues,
-            "total_media": len(media_ids),
-            "method": "queue_based",
+            'queued_tasks': queued_tasks,
+            'successful_queues': successful_queues,
+            'total_media': len(media_ids),
+            'method': 'queue_based'
         }
 
     except Exception as e:
@@ -697,58 +686,153 @@ async def trigger_automatic_ppl_thread_workflow(
 
 
 async def _legacy_direct_trigger(
-    workflow_id: str, media_ids: List[str], total_faces: int
+    workflow_id: str, 
+    media_ids: List[str], 
+    total_faces: int
 ) -> Dict[str, Any]:
     """
     Legacy direct API trigger as fallback when queue is unavailable.
     This is the old implementation kept for reliability.
     """
     logger.info("🔄 LEGACY TRIGGER: Using direct API calls as fallback")
-
+    
     try:
         successful_triggers = 0
         async with httpx.AsyncClient() as client:
             # Use the PPL Thread workflow trigger endpoint
             ppl_trigger_payload = {
-                "media_ids": (
-                    media_ids[0] if media_ids else ""
-                ),  # Single string, not array
+                "media_ids": media_ids[0] if media_ids else "",  # Single string, not array
                 "workflow_type": "automatic_face_detection_trigger",
                 "source_workflow_id": workflow_id,
                 "total_faces": str(total_faces),  # Convert to string
-                "trigger_reason": "legacy_fallback_trigger",
+                "trigger_reason": "legacy_fallback_trigger"
             }
-
+            
             response = await client.post(
                 "http://localhost:8003/api/v1/person-objects/workflow/trigger",
                 json=ppl_trigger_payload,
-                timeout=30.0,
+                timeout=30.0
+            )
+                    result = response.json()
+                    successful_triggers = len(media_ids)
+                    logger.info(
+                        "✅ AUTO PPL TRIGGER: Successfully triggered PPL Thread workflow: %s",
+                        result
+                    )
+                else:
+                    logger.error(
+                        "❌ AUTO PPL TRIGGER: Failed to trigger PPL Thread (status %d): %s",
+                        response.status_code,
+                        response.text
+                    )
+                    
+                    # Fallback: Try the alternative workflow start endpoint
+                    logger.info("� AUTO PPL TRIGGER: Trying alternative workflow start endpoint...")
+                    fallback_payload = {
+                        "media_ids": media_ids[0] if media_ids else "",  # Single string
+                        "workflow_type": "ppl_thread_automatic",
+                        "session_uuid": "auto-generated-session"  # Required field
+                    }
+                    
+                    fallback_response = await client.post(
+                        "http://localhost:8003/api/v1/person-objects/workflows/start",
+                        json=fallback_payload,
+                        timeout=30.0
+                    )
+                    
+                    if fallback_response.status_code == 200:
+                        successful_triggers = len(media_ids)
+                        logger.info(
+                            "✅ AUTO PPL TRIGGER: Fallback workflow start succeeded: %s",
+                            fallback_response.json()
+                        )
+                    else:
+                        logger.error(
+                            "❌ AUTO PPL TRIGGER: Fallback also failed (status %d): %s",
+                            fallback_response.status_code,
+                            fallback_response.text
+                        )
+                        
+            except httpx.RequestError as e:
+                logger.error(
+                    "❌ AUTO PPL TRIGGER: Network error during PPL Thread trigger: %s",
+                    e
+                )
+            except Exception as e:
+                logger.error(
+                    "❌ AUTO PPL TRIGGER: Unexpected error during PPL Thread trigger: %s",
+                    e
+                )
+
+                # Trigger PPL Thread workflow
+                async with httpx.AsyncClient() as client:
+                    ppl_payload = {
+                        "media_id": media_id,
+                        "session_uuid": session_uuid,
+                        "automatic_trigger": True,
+                        "triggered_by": (f"face_detection_workflow_{workflow_id}"),
+                        "face_count": (
+                            total_faces // len(media_ids)
+                            if len(media_ids) > 0
+                            else total_faces
+                        ),
+                    }
+
+                    ppl_url = (
+                        "http://localhost:8003/api/v1/person-objects/"
+                        "workflow/trigger"
+                    )
+                    response = await client.post(
+                        ppl_url, json=ppl_payload, timeout=30.0
+                    )
+
+                    if response.status_code == 200:
+                        ppl_result = response.json()
+                        if ppl_result.get("success"):
+                            successful_triggers += 1
+                            logger.info(
+                                "✅ AUTO PPL TRIGGER: Success for %s - "
+                                "%d persons from %d faces",
+                                media_id,
+                                ppl_result.get("merged_groups", 0),
+                                ppl_result.get("original_groups", 0),
+                            )
+                        else:
+                            logger.error(
+                                "❌ AUTO PPL TRIGGER: Failed for %s: %s",
+                                media_id,
+                                ppl_result,
+                            )
+                    else:
+                        logger.error(
+                            "❌ AUTO PPL TRIGGER: HTTP %d for %s",
+                            response.status_code,
+                            media_id,
+                        )
+
+            except httpx.RequestError as e:
+                logger.error(
+                    "❌ AUTO PPL TRIGGER: Error processing %s: %s", media_id, e
+                )
+
+        # Summary
+        if successful_triggers > 0:
+            logger.info(
+                "🎉 AUTO PPL TRIGGER COMPLETE: %d/%d media successfully "
+                "processed for workflow %s",
+                successful_triggers,
+                len(media_ids),
+                workflow_id,
+            )
+        else:
+            logger.error(
+                "💥 AUTO PPL TRIGGER FAILED: No media successfully "
+                "processed for workflow %s",
+                workflow_id,
             )
 
-            if response.status_code == 200:
-                result = response.json()
-                successful_triggers = len(media_ids)
-                logger.info(
-                    "✅ LEGACY TRIGGER: Successfully triggered PPL Thread workflow: %s",
-                    result,
-                )
-            else:
-                logger.error(
-                    "❌ LEGACY TRIGGER: Failed to trigger PPL Thread (status %d): %s",
-                    response.status_code,
-                    response.text,
-                )
-
     except httpx.RequestError as e:
-        logger.error("❌ LEGACY TRIGGER: Network error during trigger: %s", e)
-    except Exception as e:
-        logger.error("❌ LEGACY TRIGGER: Unexpected error during trigger: %s", e)
-
-    return {
-        "successful_triggers": successful_triggers,
-        "total_media": len(media_ids),
-        "method": "legacy_direct",
-    }
+        logger.error("💥 AUTO PPL TRIGGER ERROR: %s", e)
 
 
 # Export the router to be included in main API

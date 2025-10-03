@@ -48,6 +48,15 @@ class Config:
     DEFAULT_CAMERA_RESOLUTION: str = os.getenv("DEFAULT_CAMERA_RESOLUTION", "1280x720")
     DEFAULT_CAMERA_FPS: int = int(os.getenv("DEFAULT_CAMERA_FPS", "30"))
 
+    # Face detection optimization configuration
+    FACE_DETECTION_TARGET_FPS: int = int(os.getenv("FACE_DETECTION_TARGET_FPS", "3"))
+    FACE_DETECTION_MIN_SKIP_FRAMES: int = int(
+        os.getenv("FACE_DETECTION_MIN_SKIP_FRAMES", "1")
+    )
+    FACE_DETECTION_MAX_SKIP_FRAMES: int = int(
+        os.getenv("FACE_DETECTION_MAX_SKIP_FRAMES", "30")
+    )
+
     # Video streaming configuration
     STREAM_BUFFER_SIZE: int = int(os.getenv("STREAM_BUFFER_SIZE", "1024"))
     STREAM_QUALITY: str = os.getenv("STREAM_QUALITY", "medium")  # low, medium, high

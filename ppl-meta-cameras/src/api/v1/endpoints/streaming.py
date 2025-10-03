@@ -222,8 +222,24 @@ async def video_stream(
                 # Cache the frame for recording use
                 camera_service.latest_frames[device_id] = (ret, frame.copy())
 
-                # Perform session-aware face detection on every 5th frame to balance performance
-                if frame_count % 5 == 0 and session_uuid:
+                # Calculate dynamic frame skip based on configuration
+                from src.config import get_config
+
+                config = get_config()
+                video_fps = config.DEFAULT_CAMERA_FPS
+                target_detection_fps = config.FACE_DETECTION_TARGET_FPS
+                frame_skip_interval = max(1, video_fps // target_detection_fps)
+
+                # Log frame rate optimization settings once per session
+                if frame_count == 1:
+                    logger.info(
+                        f"🎯 Face detection frame rate optimization: "
+                        f"processing every {frame_skip_interval} frames "
+                        f"({target_detection_fps} FPS target from {video_fps} FPS video)"
+                    )
+
+                # Perform face detection with configurable frame skipping
+                if frame_count % frame_skip_interval == 0 and session_uuid:
                     try:
                         detection_result = (
                             await session_aware_face_detector.detect_faces_with_session(

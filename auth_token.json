@@ -1,4 +1,1 @@
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3IiwiZXhwIjoxNzU4OTk2NzU3fQ.XPKB3-rXbtunYhvfdxPSaj7L5DBTr2cTy9lDDw3QdX0",
-  "token_type": "bearer"
-}
+{"access_token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3IiwiZXhwIjoxNzU5MzI2OTE0fQ.wB_NuhYXML2EEUp4uxGr8xcFo8FnwigWxIhbZy8i0HQ","token_type":"bearer"}

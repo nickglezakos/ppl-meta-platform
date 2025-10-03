@@ -1417,6 +1417,8 @@ class PPLThreadWorkflowController:
                 "success": True,
                 "original_groups": total_faces,
                 "merged_groups": len(person_objects),
+                "total_persons": len(person_objects),  # Explicit person count
+                "total_faces": total_faces,  # Fixed: explicit face count
                 "group_tracking": group_tracking_list,
                 "summary": summary,
                 "statistics": summary,

@@ -102,6 +102,78 @@ from pydantic import BaseModel, Field
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ppl-meta-vision")
 
+
+# 🎯 PPL Thread Auto-Trigger Function
+async def trigger_ppl_thread_workflow_auto(
+    media_id: str, session_uuid: str, face_count: int, processing_time: float
+):
+    """
+    Auto-trigger PPL Thread workflow after face detection completion.
+
+    This function should be called by all face detection endpoints that store
+    faces with session UUIDs to ensure person objects are created automatically.
+    """
+    if face_count <= 0:
+        return  # No faces detected, skip trigger
+
+    try:
+        logger.info(
+            f"🎯 AUTO-TRIGGER: Face detection completed for media {media_id} "
+            f"with {face_count} faces. Starting PPL Thread workflow..."
+        )
+
+        # Trigger PPL Thread workflow via internal API call
+        import aiohttp
+
+        async def trigger_workflow():
+            try:
+                async with aiohttp.ClientSession() as sess:
+                    # Call the correct PPL Thread trigger endpoint
+                    url = (
+                        "http://localhost:8003/api/v1/"
+                        "person-objects/workflow/trigger"
+                    )
+
+                    # Prepare payload with all required data
+                    payload = {
+                        "media_id": media_id,
+                        "session_uuid": session_uuid,
+                        "face_count": face_count,
+                        "processing_time": processing_time,
+                    }
+
+                    async with sess.post(url, json=payload, timeout=30) as response:
+                        if response.status == 200:
+                            result = await response.json()
+                            persons = result.get("total_persons", "unknown")
+                            logger.info(
+                                f"🎯 ✅ AUTO-TRIGGER: PPL Thread workflow "
+                                f"completed for media {media_id}: "
+                                f"{face_count} faces → {persons} persons"
+                            )
+                        else:
+                            resp_text = await response.text()
+                            logger.warning(
+                                f"🎯 ❌ AUTO-TRIGGER: PPL Thread workflow "
+                                f"returned status {response.status}: "
+                                f"{resp_text[:200]}"
+                            )
+            except Exception as e:
+                logger.warning(
+                    f"🎯 ❌ AUTO-TRIGGER: Failed to trigger PPL Thread "
+                    f"workflow for media {media_id}: {e}"
+                )
+
+        # Execute trigger in background task
+        asyncio.create_task(trigger_workflow())
+
+    except Exception as e:
+        logger.warning(
+            f"🎯 ❌ AUTO-TRIGGER: Failed to initiate PPL Thread "
+            f"workflow for media {media_id}: {e}"
+        )
+
+
 # PPL Meta Platform Configuration
 PPL_META_CONFIG = {
     "vision_service": {
@@ -785,69 +857,13 @@ async def process_media_from_service(
                     )
 
                     # 🎯 AUTO-TRIGGER: Start PPL Thread workflow after completion
-                    if len(all_detections) > 0:  # Only trigger if faces detected
-                        try:
-                            logger.info(
-                                f"🎯 Face detection completed for media {media_id} "
-                                f"with {len(all_detections)} faces. "
-                                f"Starting PPL Thread workflow..."
-                            )
-
-                            # Trigger PPL Thread workflow via internal API call
-                            import aiohttp
-
-                            async def trigger_ppl_thread_workflow():
-                                try:
-                                    async with aiohttp.ClientSession() as sess:
-                                        # Call the correct PPL Thread trigger endpoint
-                                        url = (
-                                            "http://localhost:8003/api/v1/"
-                                            "person-objects/workflow/trigger"
-                                        )
-
-                                        # Prepare payload with all required data
-                                        payload = {
-                                            "media_id": media_id,
-                                            "session_uuid": session_uuid,
-                                            "face_count": len(all_detections),
-                                            "processing_time": processing_time,
-                                        }
-
-                                        async with sess.post(
-                                            url, json=payload, timeout=30
-                                        ) as response:
-                                            if response.status == 200:
-                                                result = await response.json()
-                                                persons = result.get(
-                                                    "total_persons", "unknown"
-                                                )
-                                                logger.info(
-                                                    f"🎯 ✅ PPL Thread workflow "
-                                                    f"completed for media {media_id}: "
-                                                    f"{len(all_detections)} faces → "
-                                                    f"{persons} persons"
-                                                )
-                                            else:
-                                                resp_text = await response.text()
-                                                logger.warning(
-                                                    f"🎯 PPL Thread workflow "
-                                                    f"returned status "
-                                                    f"{response.status}: {resp_text[:200]}"
-                                                )
-                                except Exception as e:
-                                    logger.warning(
-                                        f"🎯 Failed to trigger PPL Thread "
-                                        f"workflow for media {media_id}: {e}"
-                                    )
-
-                            # Execute trigger in background task
-                            asyncio.create_task(trigger_ppl_thread_workflow())
-
-                        except Exception as e:
-                            logger.warning(
-                                f"🎯 Failed to initiate PPL Thread "
-                                f"workflow for media {media_id}: {e}"
-                            )
+                    if session_uuid:  # Only trigger if session UUID exists
+                        await trigger_ppl_thread_workflow_auto(
+                            media_id,
+                            session_uuid,
+                            len(all_detections),
+                            processing_time,
+                        )
                     else:
                         logger.info(
                             f"🎯 No faces detected for media {media_id}, "
@@ -1041,6 +1057,32 @@ async def store_bulk_faces(
 ):
     """Store multiple face detections for a media file with session tracking."""
     try:
+        # 🔒 DUPLICATE PREVENTION: Check if faces already exist for this media
+        if vision_db and vision_db.connection:
+            try:
+                with vision_db.connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM face_detections WHERE media_id = %s",
+                        (media_id,),
+                    )
+                    existing_count = cursor.fetchone()[0]
+
+                    if existing_count > 0:
+                        logger.info(
+                            f"🛡️ DUPLICATE PREVENTION: Found {existing_count} existing faces for media {media_id}, skipping bulk storage"
+                        )
+                        return {
+                            "success": True,
+                            "duplicate_prevention": True,
+                            "skipped_storage": True,
+                            "media_id": media_id,
+                            "existing_faces": existing_count,
+                            "message": f"Skipped storage - {existing_count} faces already exist for this media",
+                        }
+            except Exception as e:
+                logger.error(f"❌ Duplicate prevention check failed: {e}")
+                # Continue with storage if check fails - better to store than lose data
+
         session_uuid = None
         session_mgr = None
 
@@ -1146,6 +1188,12 @@ async def store_bulk_faces(
                         }
                     ),
                 )
+
+                # 🎯 AUTO-TRIGGER: PPL Thread workflow after completion
+                await trigger_ppl_thread_workflow_auto(
+                    media_id, session_uuid, stored_count, 0.0
+                )
+
             except Exception as e:
                 logger.warning(f"Failed to complete session: {e}")
 
@@ -1405,6 +1453,9 @@ async def bulk_process_video_faces(
     max_frames: int = Query(1000, description="Max frames to process"),
     camera_device_uuid: Optional[str] = None,
     create_session: bool = True,
+    force_process: bool = Query(
+        False, description="Force processing even if existing session found"
+    ),
 ):
     """
     Bulk process entire video for face detection in memory with session tracking.
@@ -1415,10 +1466,86 @@ async def bulk_process_video_faces(
 
     ALWAYS uses two_stage method with 0.5 confidence threshold for consistency.
     Now includes automatic session management for Workflow 4 traceability.
+
+    DUPLICATE PREVENTION: Checks for existing face detection sessions to prevent
+    duplicate processing from multiple workflows (Orchestrator vs Direct calls).
     """
     try:
         if not face_detector_instance:
             raise HTTPException(status_code=503, detail="Face detector not initialized")
+
+        # DUPLICATE PREVENTION: Check for existing face detection results
+        # FIXED: Use direct SQL count query instead of failing ORM methods
+        if not force_process:
+            try:
+                logger.info(
+                    f"DUPLICATE PREVENTION: Starting check for media {media_id}"
+                )
+
+                # FIXED: Use direct SQL query that works in bulk-process context
+                existing_count = 0
+                try:
+                    # Get database connection and execute direct count query
+                    if vision_db and vision_db.connection:
+                        with vision_db.connection.cursor() as cursor:
+                            cursor.execute(
+                                "SELECT COUNT(*) FROM face_detections WHERE media_id = %s",
+                                (media_id,),
+                            )
+                            existing_count = cursor.fetchone()[0]
+                    else:
+                        raise Exception("Database connection not available")
+
+                    logger.info(
+                        f"DUPLICATE PREVENTION: Direct SQL query found {existing_count} existing faces"
+                    )
+                except Exception as sql_error:
+                    logger.error(
+                        f"DUPLICATE PREVENTION: Direct SQL query failed: {sql_error}"
+                    )
+                    # Try fallback to ORM methods if direct SQL fails
+                    try:
+                        existing_faces = vision_db.get_face_detections(media_id)
+                        existing_count = len(existing_faces) if existing_faces else 0
+                        logger.info(
+                            f"DUPLICATE PREVENTION: ORM fallback found {existing_count} faces"
+                        )
+                    except Exception as orm_error:
+                        logger.error(
+                            f"DUPLICATE PREVENTION: ORM fallback failed: {orm_error}"
+                        )
+                        existing_count = 0
+
+                if existing_count > 0:
+                    logger.info(
+                        f"DUPLICATE PREVENTION SUCCESS: Found {existing_count} existing faces for media {media_id}. "
+                        f"Skipping duplicate processing. Use force_process=true to override."
+                    )
+                    return {
+                        "success": True,
+                        "message": f"Face detection already completed for media {media_id}",
+                        "existing_results": {
+                            "total_faces": existing_count,
+                            "processing_method": "existing_data_reused",
+                        },
+                        "duplicate_prevention": True,
+                        "skipped_processing": True,
+                    }
+                else:
+                    logger.info(
+                        f"DUPLICATE PREVENTION: No existing faces found for media {media_id}, proceeding with processing"
+                    )
+
+            except Exception as check_error:
+                logger.error(
+                    f"DUPLICATE PREVENTION CRITICAL FAILURE for {media_id}: {check_error}"
+                )
+                # FIXED: Safely abort instead of continuing with potential duplicates
+                raise HTTPException(
+                    status_code=409,  # Conflict
+                    detail=f"Cannot verify duplicate status for media {media_id}: {check_error}. "
+                    f"Aborting to prevent duplicate face storage. Use force_process=true to override.",
+                )
 
         start_time = time.time()
         session_uuid = None
@@ -1668,6 +1795,15 @@ async def bulk_process_video_faces(
                             }
                         ),
                     )
+
+                    # 🎯 AUTO-TRIGGER: PPL Thread workflow after completion
+                    await trigger_ppl_thread_workflow_auto(
+                        media_id,
+                        session_uuid,
+                        int(total_faces),
+                        processing_time,
+                    )
+
                 except Exception as e:
                     logger.warning(f"Failed to complete session: {e}")
 

@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  vmeta:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: ppl-meta-vmeta
+    ports:
+      - "8008:8008"
+    environment:
+      - DB_HOST=localhost
+      - DB_PORT=5432
+      - DB_NAME=ppl_meta
+      - DB_USER=ppl_user
+      - DB_PASSWORD=ppl_password
+      - VMETA_HOST=0.0.0.0
+      - VMETA_PORT=8008
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - postgres
+    networks:
+      - ppl-meta-network
+
+  postgres:
+    image: pgvector/pgvector:pg14
+    container_name: ppl-meta-postgres
+    environment:
+      - POSTGRES_DB=ppl_meta
+      - POSTGRES_USER=ppl_user
+      - POSTGRES_PASSWORD=ppl_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ppl-meta-network
+
+volumes:
+  postgres_data:
+
+networks:
+  ppl-meta-network:
+    driver: bridge

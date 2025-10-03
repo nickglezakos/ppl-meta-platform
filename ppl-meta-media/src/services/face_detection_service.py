@@ -408,6 +408,159 @@ class MediaFaceDetectionService:
             logger.warning("Vision-compatible face detection error: %s", str(e))
             return []
 
+    async def process_video_face_detection(
+        self,
+        video_path: str,
+        method: str = "two_stage",
+        confidence_threshold: float = 0.5,
+        frames_per_second: int = 3,
+    ) -> Dict[str, Any]:
+        """
+        Process a video file for bulk face detection.
+
+        Args:
+            video_path: Path to the video file
+            method: Face detection method to use
+            confidence_threshold: Minimum confidence threshold
+            frames_per_second: Target FPS for processing (default 3)
+
+        Returns:
+            Dictionary with detection results
+        """
+        try:
+            import cv2
+
+            # Open video file
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                logger.error(f"Failed to open video file: {video_path}")
+                return {
+                    "detections": [],
+                    "metadata": {
+                        "error": "Failed to open video file",
+                        "video_path": video_path,
+                    },
+                }
+
+            # Get video properties for frame rate calculation
+            video_fps = cap.get(cv2.CAP_PROP_FPS)
+            if video_fps <= 0:
+                video_fps = 30  # Default fallback
+
+            # Calculate frame skip interval for target FPS
+            frame_skip = max(1, int(video_fps / frames_per_second))
+
+            detections = []
+            frame_number = 0
+            processed_frames = 0
+
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                # Skip frames to achieve target FPS
+                if frame_number % frame_skip == 0:
+                    # Detect faces in this frame
+                    faces = self.detect_faces_only(frame, confidence_threshold)
+
+                    # Add frame number to each detection
+                    for face in faces:
+                        face["frame_number"] = frame_number
+                        detections.append(face)
+
+                    processed_frames += 1
+
+                frame_number += 1
+
+            cap.release()
+
+            logger.info(
+                f"Video processing complete: {frame_number} total frames, "
+                f"processed {processed_frames} frames at {frames_per_second} fps, "
+                f"found {len(detections)} faces"
+            )
+
+            return {
+                "detections": detections,
+                "metadata": {
+                    "total_frames": frame_number,
+                    "processed_frames": processed_frames,
+                    "target_fps": frames_per_second,
+                    "actual_skip_interval": frame_skip,
+                    "total_faces": len(detections),
+                    "method": method,
+                    "confidence_threshold": confidence_threshold,
+                    "video_path": video_path,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Video face detection failed: {e}")
+            return {
+                "detections": [],
+                "metadata": {"error": str(e), "video_path": video_path},
+            }
+
+    async def process_image_face_detection(
+        self,
+        image_path: str,
+        method: str = "two_stage",
+        confidence_threshold: float = 0.5,
+    ) -> Dict[str, Any]:
+        """
+        Process an image file for face detection.
+
+        Args:
+            image_path: Path to the image file
+            method: Face detection method to use
+            confidence_threshold: Minimum confidence threshold
+
+        Returns:
+            Dictionary with detection results
+        """
+        try:
+            import cv2
+
+            # Load image
+            image = cv2.imread(image_path)
+            if image is None:
+                logger.error(f"Failed to load image file: {image_path}")
+                return {
+                    "detections": [],
+                    "metadata": {
+                        "error": "Failed to load image file",
+                        "image_path": image_path,
+                    },
+                }
+
+            # Detect faces
+            faces = self.detect_faces_only(image, confidence_threshold)
+
+            # Add frame number 0 for consistency with video processing
+            for face in faces:
+                face["frame_number"] = 0
+
+            logger.info(f"Processed image, found {len(faces)} faces")
+
+            return {
+                "detections": faces,
+                "metadata": {
+                    "total_frames": 1,
+                    "total_faces": len(faces),
+                    "method": method,
+                    "confidence_threshold": confidence_threshold,
+                    "image_path": image_path,
+                },
+            }
+
+        except Exception as e:
+            logger.error(f"Image face detection failed: {e}")
+            return {
+                "detections": [],
+                "metadata": {"error": str(e), "image_path": image_path},
+            }
+
 
 class CameraRecordingFaceDetectionService:
     """

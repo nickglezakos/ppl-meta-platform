@@ -815,66 +815,28 @@ class VisionServiceClient:
                         },
                     )
 
-                # Legacy media has faces - create temporary session and trigger PPL processing
+                # DUPLICATE PREVENTION: If faces exist, return existing data
+                # DO NOT trigger new processing to prevent duplicates
                 face_count = face_check_response.data.get("total_faces", 0)
                 logger.info(
-                    f"Legacy media {media_id} has {face_count} faces, creating temporary session"
+                    f"DUPLICATE PREVENTION: Media {media_id} has {face_count} faces. "
+                    f"Returning existing data without triggering new processing."
                 )
 
-                # Create temporary session for legacy media
-                temp_session_uuid = str(uuid.uuid4())
-                create_session_data = {
-                    "media_uuid": media_id,
-                    "session_uuid": temp_session_uuid,
-                    "face_count": face_count,
-                    "created_by": "orchestrator_legacy_processor",
-                }
-
-                session_create_response = await self._make_request(
-                    "POST",
-                    "/sessions/create",
-                    trace_ctx,
-                    data=create_session_data,
-                    additional_headers=headers,
-                )
-
-                if not session_create_response.success:
-                    logger.warning(
-                        f"Failed to create session for legacy media {media_id}: {session_create_response.error_message}"
-                    )
-                    # Fall back to direct processing attempt
-                    return await self._process_legacy_media_directly(
-                        media_id, face_count, trace_ctx, headers
-                    )
-
-                # Trigger PPL Thread workflow for the new session
-                trigger_data = {
-                    "media_id": media_id,
-                    "session_uuid": temp_session_uuid,
-                    "face_count": str(face_count),
-                }
-
-                trigger_response = await self._make_request(
-                    "POST",
-                    "/api/v1/person-objects/workflow/trigger",
-                    trace_ctx,
-                    data=trigger_data,
-                    additional_headers=headers,
-                )
-
-                if not trigger_response.success:
-                    logger.warning(
-                        f"Failed to trigger PPL workflow for legacy media {media_id}: {trigger_response.error_message}"
-                    )
-                    # Continue to try reading results anyway
-
-                # Wait a moment for processing
-                await asyncio.sleep(2)
-
-                # Now try to get person objects using the new session
-                session_uuid = temp_session_uuid
-                trace_ctx.metadata.update(
-                    {"session_uuid": session_uuid, "legacy_processing": True}
+                # Return the existing face data without triggering workflows
+                return ServiceResponse(
+                    success=True,
+                    status_code=200,
+                    service_name="vision",
+                    endpoint=f"/faces/media/{media_id}",
+                    timestamp=datetime.now(),
+                    data={
+                        "success": True,
+                        "total_persons": 0,  # No person objects processed yet
+                        "total_faces": face_count,
+                        "status": "faces_only",
+                        "message": f"Found {face_count} faces, person objects not processed yet",
+                    },
                 )
 
             else:
@@ -898,10 +860,6 @@ class VisionServiceClient:
                 session_uuid = session_data["session_uuid"]
                 trace_ctx.metadata.update({"session_uuid": session_uuid})
 
-            # Get the session UUID from direct response
-            session_uuid = session_data["session_uuid"]
-            trace_ctx.metadata.update({"session_uuid": session_uuid})
-
             # Step 2: Call the working session endpoint
             session_response = await self._make_request(
                 "GET",
@@ -919,9 +877,11 @@ class VisionServiceClient:
                 "success": True,
                 "media_id": media_id,
                 "total_persons": session_result.get(
-                    "merged_groups", 0
-                ),  # Key transformation!
-                "total_faces": session_result.get("original_groups", 0),
+                    "total_persons", session_result.get("merged_groups", 0)
+                ),  # Try total_persons first, fallback to merged_groups
+                "total_faces": session_result.get(
+                    "total_faces", session_result.get("original_groups", 0)
+                ),  # Try total_faces first, fallback to original_groups
                 "status": "completed" if session_result.get("success") else "pending",
                 "message": "Person objects data retrieved successfully",
                 "session_uuid": session_uuid,  # Include for debugging
