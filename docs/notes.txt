@@ -27,8 +27,6 @@ http://192.168.1.68:8001
 
 
 
-
-
 INFO: 127.0.0.1:54681 - "GET /api/v1/media/60aa5a20-c161-457b-8f44-5fb63bb1c7c1?user_id=user123 HTTP/1.1" 400 Bad Request
 The Vision Service is trying to access the media with user_id=user123 (a dummy test user), but the media was uploaded by a real user, causing a 400 Bad Request.
 

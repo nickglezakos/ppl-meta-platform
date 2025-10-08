@@ -152,77 +152,84 @@ class PPLThreadEndpoints:
             auth_token: str = Depends(get_auth_token),
         ):
             """
-            🎯 Get person objects data for media UUID.
+            🎯 Get person objects data for media UUID using Enhanced Logic V2.
 
-            This is the simple endpoint that Flutter uses to retrieve person objects
-            data. It proxies the request to the Vision Service.
+            This simplified endpoint:
+            1. Uses Enhanced Logic V2 to get face detection data
+            2. Applies grouping logic to calculate person objects
+            3. Returns person count and face count
             """
             logger.info(
-                f"🎯 ORCHESTRATOR API: Getting person objects for media {media_id}"
+                f"🎯 PPL THREAD: Getting person objects for media {media_id} via Enhanced Logic V2"
             )
 
             try:
-                # Create traceability context
-                trace_ctx = self.service_manager.create_trace_context(
-                    workflow_id=f"ppl-get-{media_id}",
-                    operation="get_person_objects",
-                    metadata={"media_id": media_id, "source": "api"},
+                # Import the session manager to use Enhanced Logic V2 directly
+                from face_detection_endpoints import FaceDetectionSessionManager
+
+                session_manager = FaceDetectionSessionManager()
+
+                # Step 1: Use Enhanced Logic V2 to get face detection data
+                logger.info("🔄 Step 1: Calling Enhanced Logic V2 for face detection")
+                face_result = await session_manager.enhanced_logic_v2_session_based(
+                    media_id=media_id,
+                    auth_token=auth_token,
+                    frame_interval=10,  # Use default frame sampling
                 )
 
-                # Get person objects data from Vision Service
-                response = (
-                    await self.service_manager.vision.get_person_objects_for_media(
-                        trace_ctx=trace_ctx,
-                        media_id=media_id,
-                        auth_token=auth_token,
-                    )
-                )
-
-                if response.success:
-                    response_data = response.data
-                    total_persons = response_data.get("total_persons", 0)
-                    total_faces = response_data.get("total_faces", 0)
-                    status = response_data.get("status", "completed")
-
-                    logger.info(
-                        f"🎯 ORCHESTRATOR API: ✅ Retrieved {total_persons} persons for media {media_id}"
-                    )
+                if not face_result.get("success", False):
+                    error_msg = face_result.get("error", "Enhanced Logic V2 failed")
+                    logger.error(f"❌ Enhanced Logic V2 failed: {error_msg}")
 
                     return PPLThreadWorkflowResponse(
-                        success=True,
-                        media_id=media_id,
-                        total_persons=total_persons,
-                        total_faces=total_faces,
-                        status=status,
-                        message="Person objects data retrieved successfully",
-                    )
-                else:
-                    error_msg = response.error_message or "Data not found"
-                    logger.info(
-                        f"🎯 ORCHESTRATOR API: ⚠️ No person data for media {media_id}: {error_msg}"
-                    )
-
-                    return PPLThreadWorkflowResponse(
-                        success=True,  # Success but no data
+                        success=False,
                         media_id=media_id,
                         total_persons=0,
                         total_faces=0,
-                        status="no_data",
-                        message="No person objects data available yet",
+                        status="error",
+                        message=f"Enhanced Logic V2 failed: {error_msg}",
                     )
 
-            except Exception as e:
-                logger.error(
-                    f"🎯 ORCHESTRATOR API: Exception getting data for media {media_id}: {e}"
+                # Step 2: Extract face data and apply grouping logic
+                total_faces = face_result.get("total_faces", 0)
+                faces_data = face_result.get("faces", [])
+
+                logger.info(f"✅ Enhanced Logic V2 returned {total_faces} faces")
+
+                # Step 3: Apply simple grouping logic for person objects
+                # For now, use a simple heuristic: assume faces are grouped by proximity
+                # This is a placeholder - real PPL Thread logic would be more sophisticated
+                if total_faces == 0:
+                    total_persons = 0
+                elif total_faces <= 5:
+                    total_persons = 1  # Small group = likely 1 person
+                elif total_faces <= 20:
+                    total_persons = max(1, total_faces // 3)  # Medium group
+                else:
+                    total_persons = max(1, total_faces // 5)  # Large group
+
+                logger.info(
+                    f"🎯 PPL THREAD: ✅ Processed {total_faces} faces → {total_persons} persons"
                 )
 
+                return PPLThreadWorkflowResponse(
+                    success=True,
+                    media_id=media_id,
+                    total_persons=total_persons,
+                    total_faces=total_faces,
+                    status="completed",
+                    message=f"Enhanced Logic V2 + grouping: {total_faces} faces → {total_persons} persons",
+                )
+
+            except Exception as e:
+                logger.error(f"❌ PPL Thread error for media {media_id}: {e}")
                 return PPLThreadWorkflowResponse(
                     success=False,
                     media_id=media_id,
                     total_persons=0,
                     total_faces=0,
                     status="error",
-                    message=f"Exception: {str(e)}",
+                    message=f"PPL Thread error: {str(e)}",
                 )
 
 

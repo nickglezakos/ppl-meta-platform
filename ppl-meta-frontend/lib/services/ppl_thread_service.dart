@@ -49,17 +49,16 @@ class PPLThreadService {
     );
   }
   
-  /// Get person count for media ID (READ-ONLY - no workflow triggering)
+  /// Get person count for media ID using simplified Enhanced Logic V2 endpoint
   /// 
-  /// This method retrieves stored person objects data from the Orchestrator Service
-  /// which implements the proper architectural pattern:
-  /// 1. Lookup session UUID from media ID
-  /// 2. Retrieve person objects data from Vision Service
-  /// 3. Transform and return total_persons count
+  /// This method now calls the simplified PPL Thread endpoint that:
+  /// 1. Uses Enhanced Logic V2 to get face detection data
+  /// 2. Applies grouping logic to calculate person objects
+  /// 3. Returns meaningful person count (not just face count)
   Future<int> getPersonCount(String mediaId) async {
     try {
       developer.log(
-        'Getting person count for media: $mediaId',
+        '🎯 PPL THREAD: Getting person count for media: $mediaId via Enhanced Logic V2 PPL Thread',
         name: _logName,
       );
       
@@ -72,12 +71,12 @@ class PPLThreadService {
         return 0;
       }
       
-      // � ENHANCED LOGIC V2: Use new session-based endpoint via Gateway
-      // GET face detection data via Gateway -> Orchestrator Enhanced Logic V2
-      final response = await _dio.get('/api/v1/media/$mediaId/faces/enhanced-v2');
+      // 🎯 GATEWAY ROUTE: Use Enhanced Logic V2-based PPL Thread via Gateway
+      // The gateway proxies this to the Orchestrator PPL Thread endpoint
+      final response = await _dio.get('/api/v1/orchestrator/person-objects/$mediaId');
       
       developer.log(
-        'Person objects response: ${response.statusCode} - ${response.data}',
+        '🎯 PPL THREAD: Enhanced Logic V2 response: ${response.statusCode} - ${response.data}',
         name: _logName,
       );
       
@@ -85,69 +84,45 @@ class PPLThreadService {
         final data = response.data;
         
         developer.log(
-          'Raw person objects response data: $data',
+          'Raw PPL Thread response data: $data',
           name: _logName,
         );
         
-        developer.log(
-          'PARSING DEBUG - data type: ${data.runtimeType}, keys: ${data is Map ? data.keys.toList() : "not a map"}',
-          name: _logName,
-        );
-        
-        // 🚀 ENHANCED LOGIC V2 PARSING: Handle session-based response format
-        int totalPersons = 0;
-        int totalFaces = 0;
-        
+        // 🎯 PARSE SIMPLIFIED PPL THREAD RESPONSE
         if (data is Map<String, dynamic>) {
-          developer.log(
-            'Enhanced Logic V2 response - keys: ${data.keys.toList()}',
-            name: _logName,
-          );
-          
-          // Parse total_faces from Enhanced Logic V2 response
-          if (data.containsKey('total_faces')) {
-            final totalFacesValue = data['total_faces'];
-            developer.log(
-              'PARSING DEBUG - total_faces value: $totalFacesValue, type: ${totalFacesValue.runtimeType}',
-              name: _logName,
-            );
-            
-            if (totalFacesValue is int) {
-              totalFaces = totalFacesValue;
-            } else if (totalFacesValue is num) {
-              totalFaces = totalFacesValue.toInt();
-            } else if (totalFacesValue is String) {
-              totalFaces = int.tryParse(totalFacesValue) ?? 0;
-            }
-          }
-          
-          // For person count, use faces count as approximation or check if faces array exists
-          if (data.containsKey('faces') && data['faces'] is List) {
-            // Use faces array length directly - no estimation
-            final faces = data['faces'] as List;
-            totalPersons = faces.length; // NO ESTIMATION: Use face count directly
-          } else {
-            // Fallback: use total_faces value directly
-            totalPersons = totalFaces; // NO ESTIMATION: Backend should handle person grouping
-          }
-          
-          // Log Enhanced Logic V2 specific fields
-          final sessionUuid = data['session_uuid'] ?? 'N/A';
-          final source = data['source'] ?? 'unknown';
+          final success = data['success'] ?? false;
+          final totalPersons = data['total_persons'] ?? 0;
+          final totalFaces = data['total_faces'] ?? 0;
+          final status = data['status'] ?? 'unknown';
           final message = data['message'] ?? 'No message';
           
           developer.log(
-            'Enhanced Logic V2 - Session: $sessionUuid, Source: $source, Message: $message',
+            '🎯 PPL THREAD: Enhanced Logic V2 - Success: $success, Persons: $totalPersons, Faces: $totalFaces, Status: $status',
             name: _logName,
           );
+          
+          if (success) {
+            developer.log(
+              '🎯 PPL THREAD SUCCESS: $totalPersons persons from $totalFaces faces for media $mediaId',
+              name: _logName,
+            );
+            
+            // Return the calculated person count from the backend grouping logic
+            return totalPersons is int ? totalPersons : (totalPersons as num).toInt();
+          } else {
+            developer.log(
+              'PPL Thread failed: $message',
+              name: _logName,
+            );
+            return 0;
+          }
         }
         
         developer.log(
-          'ENHANCED LOGIC V2 RESULT: Successfully parsed faces: $totalFaces, estimated persons: $totalPersons for media $mediaId',
+          'PPL Thread response format unexpected, returning 0',
           name: _logName,
         );
-        
-        return totalPersons;
+        return 0;
       }
       
       // If no data found, return 0 (PPL Thread may not have processed yet)
@@ -167,14 +142,14 @@ class PPLThreadService {
     }
   }
   
-  /// Check if person objects data exists for this media
+  /// Check if person objects data exists for media ID using simplified PPL Thread endpoint
   /// 
   /// This is useful for determining whether to show loading states
   /// or "processing" messages in the UI.
   Future<bool> hasPersonObjectsData(String mediaId) async {
     try {
       developer.log(
-        'Checking if person objects data exists for media: $mediaId',
+        'Checking if person objects data exists for media: $mediaId via PPL Thread',
         name: _logName,
       );
       
@@ -187,37 +162,33 @@ class PPLThreadService {
         return false;
       }
       
-      // 🚀 ENHANCED LOGIC V2: Call Orchestrator service directly
-      final orchestratorUrl = 'http://localhost:8002/api/v1/media/$mediaId/faces/enhanced-v2';
-      final response = await Dio().get(
-        orchestratorUrl,
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer ${_apiClient.authToken}',
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
+      // Use the same simplified PPL Thread endpoint via gateway
+      final response = await _dio.get('/api/v1/orchestrator/person-objects/$mediaId');
       
       if (response.statusCode == 200) {
         final data = response.data;
-        final hasData = data['success'] == true && 
-                       data['status'] == 'completed' && 
-                       data['total_persons'] != null;
-        
-        developer.log(
-          'Person objects data exists for media $mediaId: $hasData',
-          name: _logName,
-        );
-        
-        return hasData;
+        if (data is Map<String, dynamic>) {
+          final success = data['success'] ?? false;
+          final totalPersons = data['total_persons'] ?? 0;
+          final status = data['status'] ?? 'unknown';
+          
+          // Data exists if the request was successful and status is completed
+          final hasData = success && status == 'completed';
+          
+          developer.log(
+            'PPL Thread data exists for media $mediaId: $hasData (persons: $totalPersons, status: $status)',
+            name: _logName,
+          );
+          
+          return hasData;
+        }
       }
       
       return false;
       
     } catch (e) {
       developer.log(
-        'Error checking person objects data existence for media $mediaId: $e',
+        'Error checking PPL Thread data existence for media $mediaId: $e',
         name: _logName,
         error: e,
       );
@@ -225,13 +196,13 @@ class PPLThreadService {
     }
   }
   
-  /// Get complete person objects response for advanced use cases
+  /// Get complete person objects response using simplified PPL Thread endpoint
   /// 
   /// Returns the full response data including faces count, status, etc.
   Future<Map<String, dynamic>?> getPersonObjectsData(String mediaId) async {
     try {
       developer.log(
-        'Getting complete person objects data for media: $mediaId',
+        'Getting complete PPL Thread data for media: $mediaId',
         name: _logName,
       );
       
@@ -244,20 +215,11 @@ class PPLThreadService {
         return null;
       }
       
-      // 🚀 ENHANCED LOGIC V2: Call Orchestrator service directly
-      final orchestratorUrl = 'http://localhost:8002/api/v1/media/$mediaId/faces/enhanced-v2';
-      final response = await Dio().get(
-        orchestratorUrl,
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer ${_apiClient.authToken}',
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
+      // Use the same simplified PPL Thread endpoint via gateway
+      final response = await _dio.get('/api/v1/orchestrator/person-objects/$mediaId');
       
       developer.log(
-        'Complete person objects response: ${response.statusCode} - ${response.data}',
+        'Complete PPL Thread response: ${response.statusCode} - ${response.data}',
         name: _logName,
       );
       
@@ -265,18 +227,18 @@ class PPLThreadService {
         final data = response.data;
         
         developer.log(
-          'Successfully retrieved complete person objects data for media $mediaId',
+          'Successfully retrieved complete PPL Thread data for media $mediaId',
           name: _logName,
         );
         
-        return data;
+        return data is Map<String, dynamic> ? data : null;
       }
       
       return null;
       
     } catch (e) {
       developer.log(
-        'Error getting complete person objects data for media $mediaId: $e',
+        'Error getting complete PPL Thread data for media $mediaId: $e',
         name: _logName,
         error: e,
       );

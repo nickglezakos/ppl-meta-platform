@@ -612,9 +612,7 @@ async def get_media_face_detection(
 async def get_media_face_detection_enhanced_v2(
     media_id: str,
     auth_token: str = Depends(get_auth_token),
-    frame_interval: int = Query(
-        10, description="Process every N frames (default: 10)"
-    )
+    frame_interval: int = Query(10, description="Process every N frames (default: 10)"),
 ):
     """
     Enhanced Logic V2: Session-based face detection with frame sampling.

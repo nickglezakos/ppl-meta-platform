@@ -680,26 +680,23 @@ class CompactFaceAndPersonCountWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final faceData = ref.watch(mediaFaceDataProvider(mediaId));
-    final personObjectsAsync = ref.watch(personObjectsDataProvider(mediaId));
+    // 🎯 FIX: Use PPL Thread provider instead of old Enhanced Logic V2 provider
+    final personCountAsync = ref.watch(personCountProvider(mediaId));
     
     // DEBUG: Force logging when widget builds
-    developer.log('CompactFaceAndPersonCountWidget build: mediaId=$mediaId, personObjectsAsync.hasValue=${personObjectsAsync.hasValue}', name: 'CompactWidget');
+    developer.log('CompactFaceAndPersonCountWidget build: mediaId=$mediaId, personCountAsync.hasValue=${personCountAsync.hasValue}', name: 'CompactWidget');
     
-    // Add comprehensive debugging for provider states
-    personObjectsAsync.when(
-      data: (data) {
-        if (data != null) {
-          print('🎯 COMPACT WIDGET DEBUG: PersonObjects data received: totalPersons=${data.totalPersons}, success=${data.success}');
-          developer.log('🎯 COMPACT: PersonObjects data received: totalPersons=${data.totalPersons}, success=${data.success}', name: 'CompactWidget');
-        } else {
-          print('🎯 COMPACT WIDGET DEBUG: PersonObjects data is null');
-        }
+    // Add comprehensive debugging for PPL Thread provider states
+    personCountAsync.when(
+      data: (personCount) {
+        print('🎯 PPL THREAD COMPACT: Person count received: $personCount');
+        developer.log('🎯 PPL THREAD COMPACT: Person count received: $personCount', name: 'CompactWidget');
       },
       loading: () {
-        print('🎯 COMPACT WIDGET DEBUG: PersonObjects provider is loading');
+        print('🎯 PPL THREAD COMPACT: Provider is loading');
       },
       error: (error, stackTrace) {
-        print('🎯 COMPACT WIDGET DEBUG: PersonObjects provider error: $error');
+        print('🎯 PPL THREAD COMPACT: Provider error: $error');
       },
     );
     
@@ -772,27 +769,26 @@ class CompactFaceAndPersonCountWidget extends ConsumerWidget {
           ),
         ),
         
-        // Person count (only if faces > 0)
+        // Person count (only if faces > 0) - NOW USING PPL THREAD!
         if (faceData.totalCount > 0) ...[
           const SizedBox(width: 6),
-          personObjectsAsync.when(
-            data: (personObjectsData) {
-              final personCount = personObjectsData?.totalPersons ?? 0;
-              developer.log('PPL Thread Data SUCCESS: personCount=$personCount for mediaId=$mediaId', name: 'CompactWidget');
-              print('🎯 COMPACT RENDERING: totalPersons=$personCount');
+          personCountAsync.when(
+            data: (personCount) {
+              developer.log('🎯 PPL THREAD SUCCESS: personCount=$personCount for mediaId=$mediaId', name: 'CompactWidget');
+              print('🎯 PPL THREAD COMPACT RENDERING: personCount=$personCount');
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.people,
                     size: 10,
-                    color: Colors.blue.shade300,
+                    color: Colors.green.shade300, // Green to indicate PPL Thread
                   ),
                   const SizedBox(width: 2),
                   Text(
                     personCount == 0 ? 'Processing...' : '${personCount}P',
                     style: TextStyle(
-                      color: Colors.blue.shade300,
+                      color: Colors.green.shade300, // Green to indicate PPL Thread
                       fontSize: 8,
                       fontWeight: FontWeight.w600,
                     ),
@@ -801,7 +797,7 @@ class CompactFaceAndPersonCountWidget extends ConsumerWidget {
               );
             },
             loading: () {
-              developer.log('PPL Thread LOADING for mediaId=$mediaId', name: 'CompactWidget');
+              developer.log('🎯 PPL THREAD LOADING for mediaId=$mediaId', name: 'CompactWidget');
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -810,14 +806,14 @@ class CompactFaceAndPersonCountWidget extends ConsumerWidget {
                     height: 6,
                     child: CircularProgressIndicator(
                       strokeWidth: 0.8,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade300),
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.green.shade300), // Green for PPL Thread
                     ),
                   ),
                   const SizedBox(width: 2),
                   Text(
                     '?P',
                     style: TextStyle(
-                      color: Colors.blue.shade300,
+                      color: Colors.green.shade300, // Green for PPL Thread
                       fontSize: 8,
                       fontWeight: FontWeight.w500,
                     ),
@@ -826,7 +822,7 @@ class CompactFaceAndPersonCountWidget extends ConsumerWidget {
               );
             },
             error: (error, stack) {
-              developer.log('PPL Thread ERROR for mediaId=$mediaId: $error', name: 'CompactWidget', error: error, stackTrace: stack);
+              developer.log('🎯 PPL THREAD ERROR for mediaId=$mediaId: $error', name: 'CompactWidget', error: error, stackTrace: stack);
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
