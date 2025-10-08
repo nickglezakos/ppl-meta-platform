@@ -29,6 +29,9 @@ class ServiceResponse(BaseModel):
     endpoint: str
     timestamp: datetime
 
+    class Config:
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
 
 class TraceabilityContext(BaseModel):
     """Traceability context for cross-service tracking."""
@@ -1001,6 +1004,666 @@ class VisionServiceClient:
                     "status": "legacy_error",
                     "message": f"Legacy processing failed: {str(e)}",
                 },
+            )
+
+    async def start_session_based_face_detection(
+        self,
+        trace_ctx: TraceabilityContext = None,
+        session_uuid: str = None,
+        media_id: str = None,
+        source_identifier: str = None,
+        source_type: str = "collection",
+        execution_trigger: str = "manual",
+        config: Optional[Dict] = None,
+        auth_token: Optional[str] = None,
+    ) -> ServiceResponse:
+        """
+        Start session-based face detection workflow for Master Lifecycle integration.
+
+        This method provides the integration point between the Master Lifecycle
+        Workflow and the Vision Service session-based face detection system.
+        For collections, it gets individual media items and processes them.
+
+        Args:
+            trace_ctx: Traceability context for tracking (optional, created if None)
+            session_uuid: Session UUID for tracking (optional)
+            media_id: Media ID or collection ID to process
+            source_identifier: Human-readable source identifier
+            source_type: Type of source (collection, media, camera)
+            execution_trigger: How the workflow was triggered
+            config: Optional configuration for detection settings
+            auth_token: Authentication token for the request
+
+        Returns:
+            ServiceResponse with session details and status
+        """
+        # Create trace context if not provided
+        if not trace_ctx:
+            import uuid
+
+            trace_ctx = TraceabilityContext(
+                workflow_id=session_uuid or str(uuid.uuid4()),
+                user_id=None,
+                session_id=session_uuid,
+                request_id=str(uuid.uuid4()),
+                source_service="orchestrator",
+                operation="start_session_based_face_detection",
+                metadata={},
+            )
+
+        trace_ctx.operation = "start_session_based_face_detection"
+        trace_ctx.metadata.update(
+            {
+                "media_id": media_id,
+                "source_identifier": source_identifier,
+                "source_type": source_type,
+                "execution_trigger": execution_trigger,
+                "config": config or {},
+            }
+        )
+
+        # Prepare auth headers if token provided
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        logger.info(
+            f"Starting session-based face detection for {source_type} {media_id} "
+            f"via session {session_uuid}"
+        )
+
+        try:
+            # Handle collection vs individual media processing
+            if source_type == "collection":
+                # For collections, get individual media items first
+                media_items = await self._get_collection_media_items(
+                    media_id, auth_token, trace_ctx
+                )
+
+                if not media_items:
+                    return ServiceResponse(
+                        success=False,
+                        data={"faces_detected": 0},
+                        error_message="No media items found in collection",
+                    )
+
+                # Process first media item for now (can be extended for batch)
+                first_media = media_items[0]
+                media_uuid = first_media.get("id") or first_media.get("uuid")
+
+                if not media_uuid:
+                    return ServiceResponse(
+                        success=False,
+                        data={"faces_detected": 0},
+                        error_message="No valid media UUID found in collection",
+                    )
+
+                logger.info(
+                    f"Processing collection {media_id}: "
+                    f"Using first media item {media_uuid}"
+                )
+
+            else:
+                # For individual media items, use media_id directly as media_uuid
+                media_uuid = media_id
+
+            # Prepare session start data using proper media_uuid
+            session_data = {
+                "media_uuid": media_uuid,  # Use correct field name
+                "session_uuid": session_uuid,
+                "camera_device_uuid": (
+                    config.get("camera_device_uuid") if config else None
+                ),
+                "detection_method": "two_stage",  # Use proven working method
+                "enable_distance_calculation": (
+                    config.get("enable_distance_calculation", True) if config else True
+                ),
+                "session_metadata": {
+                    "triggered_by": "master_lifecycle_workflow",
+                    "workflow_session": session_uuid,
+                    "orchestrator_trace_id": trace_ctx.request_id,
+                    "source_identifier": source_identifier,
+                    "execution_trigger": execution_trigger,
+                    "original_source_type": source_type,
+                    "original_source_id": media_id,
+                },
+            }
+
+            # Add configuration options if provided
+            if config:
+                session_data.update(
+                    {
+                        "detection_method": config.get("method", "two_stage"),
+                        "confidence_threshold": config.get("confidence_threshold", 0.5),
+                        "enable_distance_calculation": config.get(
+                            "enable_distance_calculation", True
+                        ),
+                        "store_session": config.get("store_session", True),
+                        "force_process": config.get("force_process", False),
+                    }
+                )
+
+            response = await self._make_request(
+                "POST",
+                "/sessions/start",
+                trace_ctx,
+                data=session_data,
+                additional_headers=headers,
+            )
+
+            # If successful, return the expected format for Master Lifecycle
+            if response.success and response.data:
+                # Transform response to expected format
+                session_info = response.data
+                return ServiceResponse(
+                    success=True,
+                    status_code=200,
+                    service_name="vision",
+                    endpoint="/sessions/start",
+                    timestamp=datetime.now(),
+                    data={
+                        "session_uuid": session_info.get("session_uuid", session_uuid),
+                        "faces_detected": session_info.get("faces_detected", 0),
+                        "status": session_info.get("status", "started"),
+                        "message": ("Face detection session started successfully"),
+                        "media_uuid": media_uuid,
+                        "collection_id": (
+                            media_id if source_type == "collection" else None
+                        ),
+                    },
+                    error_message=None,
+                )
+            else:
+                return ServiceResponse(
+                    success=False,
+                    status_code=(
+                        response.status_code
+                        if hasattr(response, "status_code")
+                        else 500
+                    ),
+                    service_name="vision",
+                    endpoint="/sessions/start",
+                    timestamp=datetime.now(),
+                    data={"faces_detected": 0},
+                    error_message=(
+                        response.error_message
+                        or "Failed to start face detection session"
+                    ),
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to start session-based face detection: {e}")
+            return ServiceResponse(
+                success=False,
+                status_code=500,
+                service_name="vision",
+                endpoint="/sessions/start",
+                timestamp=datetime.now(),
+                data={"faces_detected": 0},
+                error_message=str(e),
+            )
+
+    async def bulk_process_media(
+        self,
+        media_id: str,
+        detection_method: str = "two_stage",
+        force_process: bool = True,
+        frame_interval: Optional[int] = None,
+        max_frames: Optional[int] = None,
+        config: Optional[Dict] = None,
+        auth_token: Optional[str] = None,
+    ) -> ServiceResponse:
+        """
+        Process media using Vision Service bulk processing endpoint.
+
+        Args:
+            media_id: UUID of media to process
+            detection_method: Face detection method to use
+            force_process: Whether to bypass duplicate prevention
+            frame_interval: Process every Nth frame
+            max_frames: Maximum frames to process
+            config: Additional configuration
+            auth_token: Authentication token
+
+        Returns:
+            ServiceResponse with face detection results
+        """
+        try:
+            trace_ctx = TraceabilityContext(
+                request_id=str(uuid.uuid4()),
+                workflow_id=str(uuid.uuid4()),
+                source_service="orchestrator",
+                operation="bulk_process_media",
+                metadata={
+                    "media_id": media_id,
+                    "detection_method": detection_method,
+                    "force_process": force_process,
+                },
+            )
+
+            # Prepare bulk processing parameters
+            params = {
+                "detection_method": detection_method,
+                "force_process": force_process,
+            }
+
+            if frame_interval is not None:
+                params["frame_interval"] = frame_interval
+            if max_frames is not None:
+                params["max_frames"] = max_frames
+
+            # Add confidence threshold if provided in config
+            if config and "confidence_threshold" in config:
+                params["confidence_threshold"] = config["confidence_threshold"]
+            else:
+                params["confidence_threshold"] = 0.5  # Default value
+
+            # Add authentication header if provided
+            headers = {}
+            if auth_token:
+                headers["Authorization"] = f"Bearer {auth_token}"
+
+            # Call Vision Service bulk processing endpoint
+            response = await self._make_request(
+                "POST",
+                f"/faces/media/{media_id}/bulk-process",
+                trace_ctx,
+                data=params,  # Use data for JSON body, not params for URL parameters
+                additional_headers=headers,
+            )
+
+            # Transform response to expected format
+            if response.success and response.data:
+                return ServiceResponse(
+                    success=True,
+                    status_code=200,
+                    service_name="vision",
+                    endpoint=f"/faces/media/{media_id}/bulk-process",
+                    timestamp=datetime.now(),
+                    data=response.data,
+                    error_message=None,
+                )
+            else:
+                return ServiceResponse(
+                    success=False,
+                    status_code=(
+                        response.status_code
+                        if hasattr(response, "status_code")
+                        else 500
+                    ),
+                    service_name="vision",
+                    endpoint=f"/faces/media/{media_id}/bulk-process",
+                    timestamp=datetime.now(),
+                    data={"faces_detected": 0},
+                    error_message=response.error_message or "Bulk processing failed",
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to bulk process media {media_id}: {e}")
+            return ServiceResponse(
+                success=False,
+                status_code=500,
+                service_name="vision",
+                endpoint=f"/faces/media/{media_id}/bulk-process",
+                timestamp=datetime.now(),
+                data={"faces_detected": 0},
+                error_message=str(e),
+            )
+
+    async def _get_collection_media_items(
+        self,
+        collection_id: str,
+        auth_token: Optional[str],
+        trace_ctx: TraceabilityContext,
+        media_client: Optional["MediaServiceClient"] = None,
+    ) -> List[Dict]:
+        """
+        Get media items from a collection via the media service.
+
+        Args:
+            collection_id: Collection ID to get media items from
+            auth_token: Authentication token
+            trace_ctx: Traceability context
+            media_client: Optional media service client (injected dependency)
+
+        Returns:
+            List of media items with their details
+        """
+        try:
+            # Get user_id from auth token (simplified for now)
+            # In production, decode JWT to get user_id
+            user_id = "admin"  # Fallback for testing
+
+            # Use injected client or create a new one
+            if not media_client:
+                media_client = MediaServiceClient(
+                    base_url="http://localhost:8000",  # Media service URL
+                    timeout=30,
+                )
+
+            # Get collection items
+            response = await media_client._make_request(
+                "GET",
+                f"/api/v1/media/collections/{collection_id}/items",
+                trace_ctx,
+                params={"user_id": user_id, "limit": 10},  # Get first 10 items
+                auth_token=auth_token,
+            )
+
+            if response.success and response.data:
+                return response.data
+            else:
+                logger.warning(
+                    f"Failed to get collection items: {response.error_message}"
+                )
+                return []
+
+        except Exception as e:
+            logger.error(f"Error getting collection media items: {e}")
+            return []
+
+    async def get_session_status(
+        self,
+        trace_ctx: TraceabilityContext,
+        session_uuid: str,
+        auth_token: Optional[str] = None,
+    ) -> ServiceResponse:
+        """
+        Get status of a session-based face detection workflow.
+
+        Args:
+            trace_ctx: Traceability context for tracking
+            session_uuid: UUID of the session to check
+            auth_token: Authentication token for the request
+
+        Returns:
+            ServiceResponse with session status and progress
+        """
+        trace_ctx.operation = "get_session_status"
+        trace_ctx.metadata.update({"session_uuid": session_uuid})
+
+        # Prepare auth headers if token provided
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        return await self._make_request(
+            "GET",
+            f"/sessions/{session_uuid}/status",
+            trace_ctx,
+            additional_headers=headers,
+        )
+
+    async def complete_session(
+        self,
+        trace_ctx: TraceabilityContext,
+        session_uuid: str,
+        auth_token: Optional[str] = None,
+    ) -> ServiceResponse:
+        """
+        Complete a session-based face detection workflow.
+
+        Args:
+            trace_ctx: Traceability context for tracking
+            session_uuid: UUID of the session to complete
+            auth_token: Authentication token for the request
+
+        Returns:
+            ServiceResponse with completion status and results
+        """
+        trace_ctx.operation = "complete_session"
+        trace_ctx.metadata.update({"session_uuid": session_uuid})
+
+        # Prepare auth headers if token provided
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        return await self._make_request(
+            "POST",
+            f"/sessions/{session_uuid}/complete",
+            trace_ctx,
+            additional_headers=headers,
+        )
+
+    async def start_person_objects_workflow(
+        self,
+        trace_ctx: Optional[TraceabilityContext] = None,
+        session_uuid: Optional[str] = None,
+        media_id: Optional[str] = None,
+        source_identifier: Optional[str] = None,
+        source_type: str = "collection",
+        config: Optional[Dict] = None,
+        auth_token: Optional[str] = None,
+    ) -> ServiceResponse:
+        """
+        Start person objects workflow for Master Lifecycle integration.
+
+        This method triggers the person objects (PPL Thread) workflow in
+        the vision service after face detection has been completed.
+
+        Args:
+            trace_ctx: Traceability context for tracking
+            session_uuid: Session UUID for tracking
+            media_id: Media ID or collection ID to process
+            source_identifier: Human-readable source identifier
+            source_type: Type of source (collection, media, camera)
+            config: Optional configuration for person objects creation
+            auth_token: Authentication token for the request
+
+        Returns:
+            ServiceResponse with workflow results
+        """
+        # Create trace context if not provided
+        if not trace_ctx:
+            import uuid
+
+            trace_ctx = TraceabilityContext(
+                workflow_id=session_uuid or str(uuid.uuid4()),
+                user_id=None,
+                session_id=session_uuid,
+                request_id=str(uuid.uuid4()),
+                source_service="orchestrator",
+                operation="start_person_objects_workflow",
+                metadata={},
+            )
+
+        trace_ctx.operation = "start_person_objects_workflow"
+        trace_ctx.metadata.update(
+            {
+                "media_id": media_id,
+                "source_identifier": source_identifier,
+                "source_type": source_type,
+                "session_uuid": session_uuid,
+            }
+        )
+
+        # Prepare auth headers if token provided
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        # Prepare person objects workflow data
+        workflow_data = {
+            "session_uuid": session_uuid,
+            "source_id": media_id,
+            "source_type": source_type,
+            "workflow_metadata": {
+                "triggered_by": "master_lifecycle_workflow",
+                "orchestrator_trace_id": trace_ctx.request_id,
+                "source_identifier": source_identifier,
+            },
+        }
+
+        # Add configuration options if provided
+        if config:
+            workflow_data.update(config)
+
+        logger.info(
+            f"Starting person objects workflow for {source_type} {media_id} "
+            f"via session {session_uuid}"
+        )
+
+        try:
+            response = await self._make_request(
+                "POST",
+                "/person-objects/workflow/trigger",
+                trace_ctx,
+                data=workflow_data,
+                additional_headers=headers,
+            )
+
+            # If successful, return the expected format
+            if response.success and response.data:
+                workflow_info = response.data
+                return ServiceResponse(
+                    success=True,
+                    status_code=200,
+                    service_name="vision",
+                    endpoint="/person-objects/workflow/trigger",
+                    timestamp=datetime.now(),
+                    data={
+                        "workflow_id": workflow_info.get("workflow_id"),
+                        "person_objects_created": workflow_info.get(
+                            "person_objects_created", 0
+                        ),
+                        "status": workflow_info.get("status", "started"),
+                        "message": ("Person objects workflow started successfully"),
+                    },
+                    error_message=None,
+                )
+            else:
+                return ServiceResponse(
+                    success=False,
+                    status_code=(
+                        response.status_code
+                        if hasattr(response, "status_code")
+                        else 500
+                    ),
+                    service_name="vision",
+                    endpoint="/person-objects/workflow/trigger",
+                    timestamp=datetime.now(),
+                    data={"person_objects_created": 0},
+                    error_message=(
+                        response.error_message
+                        or "Failed to start person objects workflow"
+                    ),
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to start person objects workflow: {e}")
+            return ServiceResponse(
+                success=False,
+                status_code=500,
+                service_name="vision",
+                endpoint="/person-objects/workflow/trigger",
+                timestamp=datetime.now(),
+                data={"person_objects_created": 0},
+                error_message=str(e),
+            )
+
+    async def get_existing_faces(
+        self,
+        media_id: str,
+        auth_token: Optional[str] = None,
+    ) -> ServiceResponse:
+        """
+        Retrieve existing face detection data for a media item.
+        This method uses the bulk-process endpoint with force_process=false
+        to trigger duplicate prevention logic, which retrieves existing faces
+        WITHOUT requiring media registration.
+
+        Args:
+            media_id: UUID of the media item
+            auth_token: Optional authentication token
+
+        Returns:
+            ServiceResponse with existing face data
+        """
+        trace_ctx = TraceabilityContext(
+            request_id=str(uuid.uuid4()),
+            service_name="vision",
+            operation="get_existing_faces",
+            timestamp=datetime.now(),
+        )
+        trace_ctx.metadata.update({"media_id": media_id})
+
+        headers = {"Content-Type": "application/json"}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        try:
+            # CORRECT APPROACH: Use bulk-process endpoint with
+            # force_process=false. This triggers duplicate prevention logic
+            # which retrieves existing faces without requiring media
+            # registration
+            request_data = {
+                "session_uuid": str(uuid.uuid4()),
+                "force_process": False,  # This triggers duplicate prevention
+                "config": {
+                    "detection_method": "two_stage",
+                    "confidence_threshold": 0.5,
+                    "frame_interval": 30,  # Not used in duplicate prevention
+                    "max_frames": 10,  # Not used in duplicate prevention
+                },
+            }
+
+            response = await self._make_request(
+                "POST",
+                f"/faces/media/{media_id}/bulk-process",
+                trace_ctx,
+                data=request_data,
+                additional_headers=headers,
+            )
+
+            if response.success and response.data:
+                # Check if duplicate prevention triggered
+                if response.data.get("duplicate_prevention"):
+                    logger.info(
+                        f"✅ Retrieved existing faces via duplicate prevention: "
+                        f"{response.data.get('total_faces', 0)} faces"
+                    )
+                    return ServiceResponse(
+                        success=True,
+                        status_code=200,
+                        service_name="vision",
+                        endpoint=f"/faces/media/{media_id}/bulk-process",
+                        timestamp=datetime.now(),
+                        data=response.data,
+                        error_message=None,
+                    )
+                else:
+                    # Bulk processing ran normally - still valid result
+                    return response
+            else:
+                return ServiceResponse(
+                    success=False,
+                    status_code=(
+                        response.status_code
+                        if hasattr(response, "status_code")
+                        else 404
+                    ),
+                    service_name="vision",
+                    endpoint=f"/faces/media/{media_id}/bulk-process",
+                    timestamp=datetime.now(),
+                    data={"total_faces": 0},
+                    error_message=(
+                        response.error_message
+                        if hasattr(response, "error_message")
+                        else "No existing faces found"
+                    ),
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve existing faces for {media_id}: {e}")
+            return ServiceResponse(
+                success=False,
+                status_code=500,
+                service_name="vision",
+                endpoint=f"/faces/media/{media_id}/bulk-process",
+                timestamp=datetime.now(),
+                data={"total_faces": 0},
+                error_message=str(e),
             )
 
 

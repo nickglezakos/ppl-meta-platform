@@ -95,7 +95,7 @@ class _CameraStreamingPageState extends ConsumerState<CameraStreamingPage> {
       
       // Also update the stream provider state
       final streamNotifier = ref.read(cameraStreamProvider.notifier);
-      streamNotifier.stopStreamingState();
+      streamNotifier.stopStreaming();
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -396,7 +396,7 @@ class _CameraStreamingPageState extends ConsumerState<CameraStreamingPage> {
         '$label: $value',
         style: TextStyle(
           fontSize: 12,
-          color: color.shade700,
+          color: color.withOpacity(0.8),
           fontWeight: FontWeight.w500,
         ),
       ),

@@ -3,11 +3,13 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'face_data_providers.dart';
+import '../services/media_api_client.dart'; // Import for FaceDetection class
 
 /// Memory management utility for face data caching
 class FaceDataMemoryManager {
   static final FaceDataMemoryManager _instance = FaceDataMemoryManager._internal();
   factory FaceDataMemoryManager() => _instance;
+  static FaceDataMemoryManager get instance => _instance;
   FaceDataMemoryManager._internal();
 
   Timer? _memoryMonitorTimer;
@@ -15,11 +17,67 @@ class FaceDataMemoryManager {
   final Set<String> _recentlyAccessedIds = <String>{};
   DateTime? _lastCleanup;
   
+  // [CACHE] GLOBAL FACE DATA CACHE for overlay persistence
+  final Map<String, Map<int, List<FaceDetection>>> _globalFaceCache = {};
+  final Map<String, Map<String, List<FaceDetection>>> _globalStoredFaceCache = {};
+  
   // Memory thresholds (in MB)
   static const int maxCacheMemoryMB = 50; // Reduced from 100
   static const int cleanupTriggerMemoryMB = 30; // Reduced from 80
   static const Duration cleanupInterval = Duration(minutes: 2); // Reduced from 5
   static const Duration accessTrackingWindow = Duration(minutes: 5); // Reduced from 10
+
+  /// Store face data globally for overlay persistence
+  void storeFaceData(String mediaId, Map<int, List<FaceDetection>> memoryCache, Map<String, List<FaceDetection>> storedFaces) {
+    _globalFaceCache[mediaId] = Map.from(memoryCache);
+    _globalStoredFaceCache[mediaId] = Map.from(storedFaces);
+    
+    if (kDebugMode) {
+      final totalFaces = memoryCache.values.fold(0, (sum, faces) => sum + faces.length);
+      print('[CACHE] GLOBAL CACHE STORE: Stored $totalFaces faces for media $mediaId');
+      print('[CACHE] GLOBAL CACHE STORE: Cache now contains ${_globalFaceCache.keys.length} media entries: ${_globalFaceCache.keys.toList()}');
+    }
+  }
+  
+  /// Retrieve face data from global cache
+  Map<int, List<FaceDetection>>? getMemoryCache(String mediaId) {
+    final result = _globalFaceCache[mediaId];
+    if (kDebugMode) {
+      print('[CACHE] GLOBAL CACHE GET: Requested $mediaId, found: ${result != null} (cache has ${_globalFaceCache.keys.length} entries)');
+    }
+    return result;
+  }
+  
+  /// Retrieve stored face data from global cache
+  Map<String, List<FaceDetection>>? getStoredFaces(String mediaId) {
+    final result = _globalStoredFaceCache[mediaId];
+    if (kDebugMode) {
+      print('[CACHE] GLOBAL CACHE GET STORED: Requested $mediaId, found: ${result != null}');
+    }
+    return result;
+  }
+  
+  /// Check if face data exists in global cache
+  bool hasFaceData(String mediaId) {
+    final hasData = _globalFaceCache.containsKey(mediaId) && _globalFaceCache[mediaId]!.isNotEmpty;
+    if (kDebugMode) {
+      print('[CACHE] GLOBAL CACHE CHECK: $mediaId has data: $hasData (cache keys: ${_globalFaceCache.keys.toList()})');
+    }
+    return hasData;
+  }
+
+  /// Clear face data for a specific media ID (when switching videos)
+  void clearMediaData(String mediaId) {
+    _globalFaceCache.remove(mediaId);
+    _globalStoredFaceCache.remove(mediaId);
+    _activeMediaIds.remove(mediaId);
+    _recentlyAccessedIds.remove(mediaId);
+    
+    if (kDebugMode) {
+      print('[CACHE] GLOBAL CACHE CLEAR: Cleared all data for media $mediaId');
+      print('[CACHE] GLOBAL CACHE CLEAR: Cache now contains ${_globalFaceCache.keys.length} media entries: ${_globalFaceCache.keys.toList()}');
+    }
+  }
 
   /// Initialize memory monitoring
   void initialize(Ref ref) {
@@ -30,7 +88,7 @@ class FaceDataMemoryManager {
     });
 
     if (kDebugMode) {
-      print('🧠 FaceDataMemoryManager initialized');
+      print('[MEMORY] FaceDataMemoryManager initialized');
     }
   }
 
@@ -172,7 +230,7 @@ class FaceDataMemoryManager {
     _recentlyAccessedIds.clear();
     
     if (kDebugMode) {
-      print('🧠 FaceDataMemoryManager disposed');
+      print('[MEMORY] FaceDataMemoryManager disposed');
     }
   }
 }

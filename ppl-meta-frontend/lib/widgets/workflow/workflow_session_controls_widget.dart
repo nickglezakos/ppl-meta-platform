@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../models/face_detection_models.dart';
+import '../../models/face_detection_models.dart'; // Use face detection models instead of api_models
 import '../../providers/workflow_session_controller.dart';
 import '../../providers/workflow_providers.dart';
 

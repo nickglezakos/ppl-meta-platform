@@ -1,6 +1,7 @@
 // User Storage Preferences Model
 // Data model for managing user storage configuration and preferences
 
+import 'package:flutter/material.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part 'user_storage_preferences.g.dart';

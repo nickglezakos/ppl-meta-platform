@@ -1020,6 +1020,13 @@ async def validate_orchestrator(request: Request):
     return await _proxy_to_orchestrator_service(request)
 
 
+# Face Detection Session Routes
+@api_router.post("/orchestrator/face-detection")
+async def create_face_detection_session(request: Request):
+    """Proxy face detection session creation to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
 # Workflow Management Routes
 @api_router.post("/orchestrator/workflows/camera/events")
 async def create_camera_workflow_event(request: Request):

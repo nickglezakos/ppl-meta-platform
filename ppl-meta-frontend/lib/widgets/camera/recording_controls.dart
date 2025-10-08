@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
-import '../../core/models/camera.dart';
 import '../../core/providers/camera_providers.dart';
 import '../../providers/settings_providers.dart';
 import '../../models/settings_models.dart';
@@ -111,7 +110,11 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
             const SizedBox(height: 16),
             
             // Quick automation settings
-            _buildQuickSettings(context, automationSettings),
+            automationSettings.when(
+              data: (settings) => _buildQuickSettings(context, settings),
+              loading: () => const CircularProgressIndicator(),
+              error: (error, stack) => Text('Error loading settings: $error'),
+            ),
             
             const SizedBox(height: 16),
             
@@ -126,7 +129,7 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
   Widget _buildRecordingButton(BuildContext context, CameraRecordingState recordingState) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDisabled = widget.selectedDeviceId == null || recordingState.isConnecting;
+    final isDisabled = widget.selectedDeviceId == null || recordingState.isLoading;
 
     return AnimatedBuilder(
       animation: _pulseAnimation,
@@ -146,7 +149,7 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
                 shape: const CircleBorder(),
                 elevation: recordingState.isRecording ? 8 : 4,
               ),
-              child: recordingState.isConnecting
+              child: recordingState.isLoading
                   ? const CircularProgressIndicator(
                       color: Colors.white,
                       strokeWidth: 3,
@@ -194,7 +197,7 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
         // Recording timer
         if (recordingState.isRecording)
           RecordingTimer(
-            startTime: recordingState.startTime!,
+            startTime: recordingState.startedAt!,
             style: theme.textTheme.headlineMedium?.copyWith(
               fontFamily: 'monospace',
               fontWeight: FontWeight.bold,
@@ -260,10 +263,76 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
     );
   }
 
-  void _toggleRecording() async {
-    if (widget.selectedDeviceId == null) return;
+  Widget _buildStatusSection(BuildContext context, CameraRecordingState recordingState) {
+    return Column(
+      children: [
+        // Recording status indicator
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: recordingState.isRecording 
+              ? Colors.red.withValues(alpha: 0.1) 
+              : recordingState.isLoading
+                ? Colors.orange.withValues(alpha: 0.1)
+                : Colors.green.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: recordingState.isRecording 
+                ? Colors.red 
+                : recordingState.isLoading
+                  ? Colors.orange
+                  : Colors.green,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                recordingState.isRecording 
+                  ? Icons.fiber_manual_record 
+                  : recordingState.isLoading
+                    ? Icons.hourglass_empty
+                    : Icons.videocam,
+                color: recordingState.isRecording 
+                  ? Colors.red 
+                  : recordingState.isLoading
+                    ? Colors.orange
+                    : Colors.green,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                recordingState.isRecording 
+                  ? 'Recording' 
+                  : recordingState.isLoading
+                    ? 'Connecting...'
+                    : 'Ready',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: recordingState.isRecording 
+                    ? Colors.red 
+                    : recordingState.isLoading
+                      ? Colors.orange
+                      : Colors.green,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // Recording timer (only show when recording)
+        if (recordingState.isRecording && recordingState.startedAt != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: RecordingTimer(
+              startTime: recordingState.startedAt!,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+      ],
+    );
+  }
 
-    void _toggleRecording() async {
+  void _toggleRecording() async {
     if (widget.selectedDeviceId == null) return;
     
     final recordingNotifier = ref.read(recordingStateProvider(widget.selectedDeviceId!).notifier);

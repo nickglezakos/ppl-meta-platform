@@ -4,12 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../services/workflow_api_client.dart';
 import '../services/media_api_client.dart';
-import '../services/vision_api_client.dart';
-import '../models/face_detection_models.dart';
+import '../services/orchestrator_api_client.dart';
 import '../models/workflow_widget_models.dart' hide PlaybackMode; // Avoid conflict
-import '../models/api_models.dart';
+import '../models/face_detection_models.dart'; // Use face detection models instead of api_models
+import '../models/api_models.dart' hide FaceDetectionSession; // Import api_models but hide conflicting FaceDetectionSession
 import '../core/api/api_client.dart';
 import '../widgets/workflow/authenticated_workflow_wrapper.dart';
+import 'face_data_providers.dart';
 
 // =============================================================================
 // WORKFLOW PROVIDERS CONFIGURATION
@@ -211,38 +212,27 @@ final optimalPlaybackModeProvider = FutureProvider.family<PlaybackMode?, String>
 });
 
 /// Provider for stored face data (optimized for Workflow 5)
-/// Uses Vision Service API directly for stored face detections
+/// Uses Orchestrator session-based face detection through providers
 final storedFaceDataProvider = FutureProvider.family<List<FaceDetection>, StoredFaceDataParams>((ref, params) async {
-  // Use VisionApiClient to get stored face data directly from Vision Service
-  final visionClient = VisionApiClient(
-    authToken: ref.watch(workflowAuthTokenProvider).asData?.value,
-  );
+  // Use the face data provider that calls Orchestrator session-based endpoints
+  final notifier = ref.read(mediaFaceDataProvider(params.mediaUuid).notifier);
+  await notifier.loadFaces();
+  
+  final faceData = ref.read(mediaFaceDataProvider(params.mediaUuid));
   
   try {
-    final response = await visionClient.getAllMediaFaces(
-      mediaId: params.mediaUuid,
-      confidenceThreshold: 0.5,
-    );
-    
-    // Convert Vision API response to FaceDetection list
-    final List<FaceDetection> faces = [];
-    if (response.hasStoredFaces && response.facesByFrame.isNotEmpty) {
-      for (final frameEntry in response.facesByFrame.entries) {
-        for (final face in frameEntry.value) {
-          faces.add(face); // FaceDetection objects are already correctly parsed
-          
-          // Limit to maxFaces if specified
-          if (params.maxFaces != null && faces.length >= params.maxFaces!) {
-            break;
-          }
-        }
-        if (params.maxFaces != null && faces.length >= params.maxFaces!) {
-          break;
-        }
+    if (faceData.hasData && faceData.faces.isNotEmpty) {
+      List<FaceDetection> faces = faceData.faces;
+      
+      // Limit to maxFaces if specified
+      if (params.maxFaces != null && faces.length > params.maxFaces!) {
+        faces = faces.take(params.maxFaces!).toList();
       }
+      
+      return faces;
+    } else {
+      return <FaceDetection>[]; // Return empty list if no face data
     }
-    
-    return faces;
   } catch (e) {
     // For videos without stored face data, return empty list instead of throwing error
     // This prevents UI crashes when videos don't have processed face detections

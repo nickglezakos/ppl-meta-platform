@@ -275,6 +275,26 @@ class DetectedFace {
   factory DetectedFace.fromJson(Map<String, dynamic> json) =>
       _$DetectedFaceFromJson(json);
 
+  /// Create DetectedFace from Orchestrator face data format
+  factory DetectedFace.fromOrchestratorFace(Map<String, dynamic> faceData) {
+    // Orchestrator bbox format: [x, y, width, height]
+    final bbox = faceData['bbox'] as List<dynamic>;
+    return DetectedFace(
+      boundingBox: FaceBox(
+        x: bbox[0].toDouble(),
+        y: bbox[1].toDouble(),
+        width: (bbox[2] - bbox[0]).toDouble(),
+        height: (bbox[3] - bbox[1]).toDouble(),
+      ),
+      confidence: (faceData['confidence'] as num?)?.toDouble() ?? 0.0,
+      landmarks: null,
+      attributes: {
+        'method': faceData['method'],
+        'timestamp': faceData['timestamp'],
+      },
+    );
+  }
+
   Map<String, dynamic> toJson() => _$DetectedFaceToJson(this);
 }
 
@@ -296,6 +316,263 @@ class FaceBox {
       _$FaceBoxFromJson(json);
 
   Map<String, dynamic> toJson() => _$FaceBoxToJson(this);
+}
+
+// ====================
+// Face Detection Session Models
+// ====================
+
+@JsonSerializable()
+class FaceDetectionSessionRequest {
+  final String mediaId;
+  final FaceDetectionRequest? config;
+
+  FaceDetectionSessionRequest({
+    required this.mediaId,
+    this.config,
+  });
+
+  factory FaceDetectionSessionRequest.fromJson(Map<String, dynamic> json) =>
+      _$FaceDetectionSessionRequestFromJson(json);
+
+  Map<String, dynamic> toJson() => _$FaceDetectionSessionRequestToJson(this);
+}
+
+@JsonSerializable()
+class FaceDetectionSession {
+  final String sessionId;
+  final String mediaId;
+  final String status;
+  final DateTime createdAt;
+  final DateTime? completedAt;
+  final DateTime? startedAt;
+  final double? progress;
+  final OrchestratorFaceDetectionResult? result;
+  final String? error;
+  final String? errorMessage;
+  final Map<String, dynamic>? metadata;
+  final int? totalFacesDetected;
+  final int? totalFramesProcessed;
+
+  FaceDetectionSession({
+    required this.sessionId,
+    required this.mediaId,
+    required this.status,
+    required this.createdAt,
+    this.completedAt,
+    this.startedAt,
+    this.progress,
+    this.result,
+    this.error,
+    this.errorMessage,
+    this.metadata,
+    this.totalFacesDetected,
+    this.totalFramesProcessed,
+  });
+
+  factory FaceDetectionSession.fromJson(Map<String, dynamic> json) =>
+      _$FaceDetectionSessionFromJson(json);
+
+  Map<String, dynamic> toJson() => _$FaceDetectionSessionToJson(this);
+
+  bool get isCompleted => status == 'completed' || status == 'finished' || status == 'complete';
+  bool get isProcessing => status == 'processing' || status == 'running';
+  bool get isFailed => status == 'failed';
+  bool get isPending => status == 'pending';
+  bool get isActive => !isCompleted && !isFailed;
+  
+  // Extract face count from orchestrator result
+  int get faceCount {
+    if (result != null && result!.totalFaces != null) {
+      return result!.totalFaces!;
+    }
+    return totalFacesDetected ?? 0;
+  }
+  
+  // Extract faces data for overlays
+  List<DetectedFace> get faces {
+    if (result?.facesByFrame != null) {
+      List<DetectedFace> allFaces = [];
+      result!.facesByFrame!.forEach((frameKey, faceList) {
+        for (var faceData in faceList) {
+          allFaces.add(DetectedFace.fromOrchestratorFace(faceData));
+        }
+      });
+      return allFaces;
+    }
+    return [];
+  }
+  
+  // Add sessionUuid alias for backward compatibility
+  String get sessionUuid => sessionId;
+  
+  // Add mediaUuid alias for backward compatibility  
+  String get mediaUuid => mediaId;
+}
+
+/// Orchestrator face detection result structure
+@JsonSerializable()
+class OrchestratorFaceDetectionResult {
+  final bool success;
+  final String mediaId;
+  final bool? hasStoredFaces;
+  final int? totalFaces;
+  final Map<String, List<Map<String, dynamic>>>? facesByFrame;
+  final String? message;
+
+  OrchestratorFaceDetectionResult({
+    required this.success,
+    required this.mediaId,
+    this.hasStoredFaces,
+    this.totalFaces,
+    this.facesByFrame,
+    this.message,
+  });
+
+  factory OrchestratorFaceDetectionResult.fromJson(Map<String, dynamic> json) =>
+      _$OrchestratorFaceDetectionResultFromJson(json);
+
+  Map<String, dynamic> toJson() => _$OrchestratorFaceDetectionResultToJson(this);
+}
+
+@JsonSerializable()
+class FaceDetectionSessionList {
+  final List<FaceDetectionSession> sessions;
+  final int total;
+  final int page;
+  final int pageSize;
+
+  FaceDetectionSessionList({
+    required this.sessions,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+  });
+
+  factory FaceDetectionSessionList.fromJson(Map<String, dynamic> json) =>
+      _$FaceDetectionSessionListFromJson(json);
+
+  Map<String, dynamic> toJson() => _$FaceDetectionSessionListToJson(this);
+}
+
+@JsonSerializable()
+class MediaFaceDetectionResponse {
+  final String mediaId;
+  final bool hasStoredResults;
+  final FaceDetectionResult? storedResult;
+  final FaceDetectionSession? liveSession;
+
+  MediaFaceDetectionResponse({
+    required this.mediaId,
+    required this.hasStoredResults,
+    this.storedResult,
+    this.liveSession,
+  });
+
+  factory MediaFaceDetectionResponse.fromJson(Map<String, dynamic> json) =>
+      _$MediaFaceDetectionResponseFromJson(json);
+
+  Map<String, dynamic> toJson() => _$MediaFaceDetectionResponseToJson(this);
+}
+
+@JsonSerializable()
+class PersonObjectsResponse {
+  final bool success;
+  final String mediaId;
+  final int totalPersons;
+  final int totalFaces;
+  final String status;
+  final String message;
+
+  PersonObjectsResponse({
+    required this.success,
+    required this.mediaId,
+    required this.totalPersons,
+    required this.totalFaces,
+    required this.status,
+    required this.message,
+  });
+
+  factory PersonObjectsResponse.fromJson(Map<String, dynamic> json) =>
+      _$PersonObjectsResponseFromJson(json);
+
+  /// Enhanced Logic V2 response parser
+  /// Handles the new session-based response format from Enhanced Logic V2
+  factory PersonObjectsResponse.fromEnhancedV2Json(Map<String, dynamic> json) {
+    return PersonObjectsResponse(
+      success: json['success'] ?? false,
+      mediaId: json['media_id'] ?? '',
+      totalPersons: 0, // Enhanced Logic V2 focuses on faces, persons are derived
+      totalFaces: json['total_faces'] ?? 0,
+      status: json['source'] ?? 'unknown', // Use source as status (stored_faces, real_time_detection, etc.)
+      message: json['message'] ?? 'Enhanced Logic V2 response',
+    );
+  }
+
+  Map<String, dynamic> toJson() => _$PersonObjectsResponseToJson(this);
+}
+
+// ====================
+// Enhanced Logic V2 Models
+// ====================
+
+@JsonSerializable()
+@JsonSerializable()
+class EnhancedLogicV2Response {
+  final bool success;
+  @JsonKey(name: 'session_uuid')
+  final String sessionUuid;
+  @JsonKey(name: 'media_id')
+  final String mediaId;
+  final String source;
+  @JsonKey(name: 'total_faces')
+  final int totalFaces;
+  final List<EnhancedLogicV2Face> faces;
+  @JsonKey(name: 'faces_by_frame')
+  final Map<String, List<EnhancedLogicV2Face>> facesByFrame;
+  @JsonKey(name: 'processing_time')
+  final double processingTime;
+  final String message;
+
+  EnhancedLogicV2Response({
+    required this.success,
+    required this.sessionUuid,
+    required this.mediaId,
+    required this.source,
+    required this.totalFaces,
+    required this.faces,
+    required this.facesByFrame,
+    required this.processingTime,
+    required this.message,
+  });
+
+  factory EnhancedLogicV2Response.fromJson(Map<String, dynamic> json) =>
+      _$EnhancedLogicV2ResponseFromJson(json);
+
+  Map<String, dynamic> toJson() => _$EnhancedLogicV2ResponseToJson(this);
+}
+
+@JsonSerializable()
+class EnhancedLogicV2Face {
+  final List<double> bbox;
+  final double confidence;
+  final String method;
+  final double timestamp;
+  @JsonKey(name: 'frame_number')
+  final int frameNumber;
+
+  EnhancedLogicV2Face({
+    required this.bbox,
+    required this.confidence,
+    required this.method,
+    required this.timestamp,
+    required this.frameNumber,
+  });
+
+  factory EnhancedLogicV2Face.fromJson(Map<String, dynamic> json) =>
+      _$EnhancedLogicV2FaceFromJson(json);
+
+  Map<String, dynamic> toJson() => _$EnhancedLogicV2FaceToJson(this);
 }
 
 // ====================

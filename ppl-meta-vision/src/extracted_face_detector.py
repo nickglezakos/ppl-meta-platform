@@ -33,12 +33,17 @@ class ExtractedFaceDetector:
             }
         }
 
-        # Model paths based on monolithic app structure
+        # Model paths based on Vision Service structure
+        base_path = os.path.join(os.path.dirname(__file__), "..", "models")
         self.model_paths = {
-            "haar_cascade": "/Users/nickgklezakos/ppl-meta-alpha-staging/ppl-meta/models/haarcascade_frontalface_default.xml",
-            "ssd_config": "/Users/nickgklezakos/ppl-meta-alpha-staging/ppl-meta/models/ssd-face.cfg",
-            "ssd_weights": "/Users/nickgklezakos/ppl-meta-alpha-staging/ppl-meta/models/ssd-face.weights",
-            "dlib_predictor": "/Users/nickgklezakos/ppl-meta-alpha-staging/ppl-meta/models/shape_predictor_68_face_landmarks.dat",
+            "haar_cascade": os.path.join(
+                base_path, "haarcascade_frontalface_default.xml"
+            ),
+            "ssd_config": os.path.join(base_path, "ssd-face.cfg"),
+            "ssd_weights": os.path.join(base_path, "ssd-face.weights"),
+            "dlib_predictor": os.path.join(
+                base_path, "shape_predictor_68_face_landmarks.dat"
+            ),
         }
 
         # Initialize detection methods

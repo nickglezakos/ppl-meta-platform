@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
-import '../../models/face_detection_models.dart';
+import '../../models/face_detection_models.dart'; // Use face detection models instead of api_models
 import '../../providers/workflow_providers.dart';
 
 /// Displays and manages face detection sessions for Workflow 4

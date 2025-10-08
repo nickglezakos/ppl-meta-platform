@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
-import '../widgets/analytics_dashboard.dart';
+// import '../widgets/analytics_dashboard.dart'; // Temporarily disabled - has broken dependencies
 import '../widgets/custom_app_bar.dart';
 
 /// Analytics screen showing usage metrics and insights
@@ -37,11 +37,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           
           // Analytics dashboard
           Expanded(
-            child: AnalyticsDashboard(
-              userId: _selectedUserId,
-              collectionId: _selectedCollectionId,
-              startDate: _startDate,
-              endDate: _endDate,
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.analytics, size: 64, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text(
+                    'Analytics Dashboard',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Analytics features are being rebuilt.\nCheck back soon!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

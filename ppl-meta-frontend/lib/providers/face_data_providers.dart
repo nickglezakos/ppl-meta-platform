@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/vision_api_client.dart';
-import '../services/media_api_client.dart'; // For FaceDetection class
+import '../services/orchestrator_api_client.dart';
+import '../services/media_api_client.dart'; // For FaceDetection and FaceBoundingBox classes
 
 // =============================================================================
 // FACE DATA PROVIDERS
@@ -12,7 +12,7 @@ import '../services/media_api_client.dart'; // For FaceDetection class
 //
 // Provider Hierarchy:
 // 1. Face Data State Management (MediaFaceDataProvider)
-// 2. Face Loading Services (Vision API integration)
+// 2. Face Loading Services (Orchestrator session-based API integration)
 // 3. Memory Management (LRU cache for face data)
 // 4. Face Count Tracking (Real-time face count updates)
 //
@@ -189,14 +189,28 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
 
   /// Load face data for the current media item
   Future<void> loadFaces({bool forceRefresh = false}) async {
+    print('🔍 PROVIDER: loadFaces called for media $mediaId (forceRefresh: $forceRefresh)');
+    
+    // DEDUPLICATION: Check if already loading to prevent duplicate requests
+    if (!forceRefresh && _isLoadingInProgress(mediaId)) {
+      print('⏳ DEDUPLICATION: Face loading already in progress for media $mediaId, skipping duplicate request');
+      return;
+    }
+
     // Check cache first (unless force refresh is requested)
     if (!forceRefresh && _cache.contains(mediaId)) {
       final cachedData = _cache.get(mediaId);
       if (cachedData != null && cachedData.hasData) {
         state = cachedData;
+        print('✅ DEDUPLICATION: Using cached faces for media $mediaId (${cachedData.totalCount} faces)');
         return;
       }
     }
+
+    print('🔍 PROVIDER: No cache hit for media $mediaId, making API call...');
+    
+    // Mark as loading to prevent duplicate requests
+    _markAsLoading(mediaId);
 
     // Set loading state
     state = MediaFaceDataState.loading(mediaId);
@@ -213,17 +227,65 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
     });
 
     try {
-      // Get vision API client
-      final visionClient = ref.read(visionApiClientProvider);
+      // Get orchestrator API client for Enhanced Logic V2 direct call
+      final orchestratorClient = ref.read(orchestratorApiClientProvider);
 
-      // Fetch face data from Vision Service
-      final response = await visionClient.getMediaFaces(mediaId);
+      // Use Enhanced Logic V2 endpoint which is already working 
+      print('🔍 PROVIDER: Starting Enhanced Logic V2 call for media $mediaId...');
+      final response = await orchestratorClient.getEnhancedLogicV2Response(mediaId);
 
       _loadingTimeout?.cancel();
 
-      if (response.success) {
-        final faces = response.data ?? <FaceDetection>[];
-        final successState = MediaFaceDataState.success(mediaId, faces);
+      print('🔍 PROVIDER: Enhanced Logic V2 response received - success: ${response.isSuccess}');
+      if (response.data != null) {
+        print('🔍 PROVIDER: Response data exists - totalFaces: ${response.data!.totalFaces}');
+      } else {
+        print('🔍 PROVIDER: Response data is null');
+      }
+      if (response.error != null) {
+        print('🔍 PROVIDER: Response error: ${response.error!.message}');
+      }
+
+      if (response.isSuccess) {
+        final enhancedV2Data = response.data;
+        List<FaceDetection> faces = [];
+        int totalFaces = 0;
+        
+        if (enhancedV2Data != null) {
+          // Enhanced Logic V2 response structure
+          totalFaces = enhancedV2Data.totalFaces;
+          
+          // Convert Enhanced Logic V2 faces to FaceDetection objects
+          faces = enhancedV2Data.faces.map((face) {
+            return FaceDetection(
+              id: 'enhanced_v2_face_${enhancedV2Data.faces.indexOf(face)}',
+              mediaId: mediaId,
+              boundingBox: FaceBoundingBox(
+                left: face.bbox[0],
+                top: face.bbox[1],
+                width: face.bbox[2] - face.bbox[0],
+                height: face.bbox[3] - face.bbox[1],
+              ),
+              confidence: face.confidence,
+              timestamp: DateTime.now(),
+              method: face.method,
+              metadata: {
+                'frame_number': face.frameNumber,
+                'original_timestamp': face.timestamp,
+                'source': 'enhanced_v2',
+              },
+            );
+          }).toList();
+          
+          print('✅ ENHANCED V2: Successfully loaded $totalFaces faces using Enhanced Logic V2 with frame metadata');
+        } else {
+          throw Exception('Enhanced Logic V2 response data is null');
+        }
+        
+        // DEDUPLICATION: Remove duplicates based on frame and position
+        final deduplicatedFaces = _deduplicateFaces(faces);
+        
+        final successState = MediaFaceDataState.success(mediaId, deduplicatedFaces);
         
         // Update state
         state = successState;
@@ -231,14 +293,14 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
         // Cache the result
         _cache.put(mediaId, successState);
         
-        print('✅ Loaded ${faces.length} faces for media $mediaId');
+        print('✅ ENHANCED V2: Loaded ${deduplicatedFaces.length} unique faces (${faces.length} total before deduplication) for media $mediaId');
       } else {
         final errorState = MediaFaceDataState.error(
           mediaId,
-          response.error ?? 'Failed to load face data',
+          response.error?.message ?? 'Failed to load face data',
         );
         state = errorState;
-        print('❌ Failed to load faces for media $mediaId: ${response.error}');
+        print('❌ Failed to load faces for media $mediaId: ${response.error?.message}');
       }
     } catch (e) {
       _loadingTimeout?.cancel();
@@ -248,7 +310,34 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
       );
       state = errorState;
       print('❌ Exception loading faces for media $mediaId: $e');
+    } finally {
+      // Always mark loading as complete
+      _markLoadingComplete(mediaId);
     }
+  }
+
+  /// Deduplicate faces based on position similarity
+  List<FaceDetection> _deduplicateFaces(List<FaceDetection> faces) {
+    final Map<String, FaceDetection> uniqueFaces = {};
+    
+    for (final face in faces) {
+      // Create unique key based on approximate position
+      final positionKey = '${(face.boundingBox.left * 100).round()}_${(face.boundingBox.top * 100).round()}';
+      
+      // Keep the face with highest confidence if duplicate position found
+      if (!uniqueFaces.containsKey(positionKey) || 
+          face.confidence > uniqueFaces[positionKey]!.confidence) {
+        uniqueFaces[positionKey] = face;
+      }
+    }
+    
+    final deduplicatedList = uniqueFaces.values.toList();
+    
+    if (deduplicatedList.length != faces.length) {
+      print('🎯 DEDUPLICATION: Removed ${faces.length - deduplicatedList.length} duplicate faces');
+    }
+    
+    return deduplicatedList;
   }
 
   /// Refresh face data (force reload from server)
@@ -284,35 +373,50 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
 }
 
 // -----------------------------------------------------------------------------
-// VISION API CLIENT PROVIDER
+// GLOBAL FACE CACHE PROVIDER  
 // -----------------------------------------------------------------------------
 
-/// Vision API client provider
-final visionApiClientProvider = Provider<VisionApiClient>((ref) {
-  return VisionApiClient(
-    baseUrl: 'http://localhost:8003', // Vision service endpoint
-  );
-});
+/// Global face data cache instance with deduplication tracking
+final _globalFaceCache = FaceDataCache(maxSize: 50); // Increased for better performance
 
-// -----------------------------------------------------------------------------
-// GLOBAL FACE CACHE PROVIDER
-// -----------------------------------------------------------------------------
+/// Track which media items are currently being loaded to prevent duplicate requests
+final _loadingTracker = <String, DateTime>{};
+
+/// Check if media face loading is already in progress
+bool _isLoadingInProgress(String mediaId) {
+  final loadingTime = _loadingTracker[mediaId];
+  if (loadingTime != null) {
+    // Consider loading stale after 30 seconds
+    if (DateTime.now().difference(loadingTime).inSeconds < 30) {
+      return true;
+    } else {
+      _loadingTracker.remove(mediaId); // Cleanup stale loading state
+    }
+  }
+  return false;
+}
+
+/// Mark media as currently loading
+void _markAsLoading(String mediaId) {
+  _loadingTracker[mediaId] = DateTime.now();
+}
+
+/// Mark media loading as complete
+void _markLoadingComplete(String mediaId) {
+  _loadingTracker.remove(mediaId);
+}
 
 /// Global face data cache provider
-final faceDataCacheProvider = Provider<FaceDataCache>((ref) {
-  return FaceDataCache(maxSize: 20); // Cache up to 20 media items
-});
+final faceDataCacheProvider = Provider<FaceDataCache>((ref) => _globalFaceCache);
 
-// -----------------------------------------------------------------------------
-// MEDIA FACE DATA PROVIDER
-// -----------------------------------------------------------------------------
-
-/// Family provider for face data per media item
-final mediaFaceDataProvider = StateNotifierProvider.family<
-    MediaFaceDataNotifier, MediaFaceDataState, String>((ref, mediaId) {
-  final cache = ref.watch(faceDataCacheProvider);
-  return MediaFaceDataNotifier(ref, mediaId, cache);
-});
+/// Media face data provider (per media UUID) with deduplication
+final mediaFaceDataProvider = StateNotifierProvider.autoDispose
+    .family<MediaFaceDataNotifier, MediaFaceDataState, String>(
+  (ref, mediaId) {
+    // Return notifier with global cache reference and deduplication tracking
+    return MediaFaceDataNotifier(ref, mediaId, _globalFaceCache);
+  },
+);
 
 // -----------------------------------------------------------------------------
 // FACE COUNT PROVIDER

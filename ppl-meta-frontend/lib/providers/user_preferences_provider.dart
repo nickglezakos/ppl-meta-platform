@@ -2,14 +2,19 @@
 // State management for user storage preferences and settings
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_storage_preferences.dart';
-import '../services/api_service.dart';
+import '../core/api/api_client.dart';
 
 class UserPreferencesProvider extends ChangeNotifier {
+  final ApiClient _apiClient;
   UserStoragePreferences? _storagePreferences;
   StorageUsageSummary? _usageSummary;
   bool _isLoading = false;
   String? _error;
+
+  UserPreferencesProvider(this._apiClient);
 
   UserStoragePreferences? get storagePreferences => _storagePreferences;
   StorageUsageSummary? get usageSummary => _usageSummary;
@@ -22,8 +27,8 @@ class UserPreferencesProvider extends ChangeNotifier {
     _clearError();
 
     try {
-      final response = await ApiService.get('/api/v1/users/storage-preferences');
-      _storagePreferences = UserStoragePreferences.fromJson(response);
+      final response = await _apiClient.get('/api/v1/users/storage-preferences');
+      _storagePreferences = UserStoragePreferences.fromJson(response.data as Map<String, dynamic>);
       notifyListeners();
       return _storagePreferences!;
     } catch (e) {
@@ -43,12 +48,12 @@ class UserPreferencesProvider extends ChangeNotifier {
     _clearError();
 
     try {
-      final response = await ApiService.put(
+      final response = await _apiClient.put(
         '/api/v1/users/storage-preferences',
         data: preferences.toJson(),
       );
       
-      _storagePreferences = UserStoragePreferences.fromJson(response);
+      _storagePreferences = UserStoragePreferences.fromJson(response.data as Map<String, dynamic>);
       notifyListeners();
     } catch (e) {
       _setError('Failed to update storage preferences: $e');
@@ -64,8 +69,8 @@ class UserPreferencesProvider extends ChangeNotifier {
     _clearError();
 
     try {
-      final response = await ApiService.post('/api/v1/users/storage-preferences/reset');
-      _storagePreferences = UserStoragePreferences.fromJson(response);
+      final response = await _apiClient.post('/api/v1/users/storage-preferences/reset');
+      _storagePreferences = UserStoragePreferences.fromJson(response.data as Map<String, dynamic>);
       notifyListeners();
     } catch (e) {
       _setError('Failed to reset preferences: $e');
@@ -81,8 +86,8 @@ class UserPreferencesProvider extends ChangeNotifier {
     _clearError();
 
     try {
-      final response = await ApiService.get('/api/v1/users/storage-summary');
-      _usageSummary = StorageUsageSummary.fromJson(response);
+      final response = await _apiClient.get('/api/v1/users/storage-summary');
+      _usageSummary = StorageUsageSummary.fromJson(response.data as Map<String, dynamic>);
       notifyListeners();
       return _usageSummary!;
     } catch (e) {
@@ -98,8 +103,8 @@ class UserPreferencesProvider extends ChangeNotifier {
     _clearError();
 
     try {
-      final response = await ApiService.get('/api/v1/users/storage-recommendations');
-      final List<dynamic> recommendationsList = response['recommendations'] ?? [];
+      final response = await _apiClient.get('/api/v1/users/storage-recommendations');
+      final List<dynamic> recommendationsList = response.data['recommendations'] ?? [];
       
       return recommendationsList.map((rec) => StorageRecommendation(
         sizeGb: (rec['size_gb'] as num).toDouble(),
@@ -321,3 +326,9 @@ class StorageRecommendation {
     required this.icon,
   });
 }
+
+// Riverpod provider for UserPreferencesProvider
+final userPreferencesProvider = ChangeNotifierProvider<UserPreferencesProvider>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return UserPreferencesProvider(apiClient);
+});

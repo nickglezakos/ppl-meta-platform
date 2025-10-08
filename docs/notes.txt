@@ -11,12 +11,27 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 
+mediaItem.uuid: d66948d7-e26d-4c71-9e7b-f3694d0bd132
+mediaItem.uuid: 2be5fab4-5d50-41bd-ab18-cfe069818d01
+mediaItem.uuid: 60aa5a20-c161-457b-8f44-5fb63bb1c7c1
+
+
 cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-frontend && flutter run -d chrome --web-port 3000
 
 Kkkkodikos234
 rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.76:554/stream1
 
 http://192.168.1.68:8001
+
+
+
+
+
+
+
+INFO: 127.0.0.1:54681 - "GET /api/v1/media/60aa5a20-c161-457b-8f44-5fb63bb1c7c1?user_id=user123 HTTP/1.1" 400 Bad Request
+The Vision Service is trying to access the media with user_id=user123 (a dummy test user), but the media was uploaded by a real user, causing a 400 Bad Request.
+
 
 echo "📱 Reconnecting Redmi Note 11 via WiFi Debugging"
 echo "=============================================="
@@ -157,6 +172,8 @@ for a specific time span the system carries out the following:
 
 
 
-
+it worked! excellent job!
+I see some monor issues but first
+Please create a document with todays date and a version number with technical analysis of our recent work: How the the v2 orchestrator endpoint worked with the counter and with the green rectagles overlay
 
 

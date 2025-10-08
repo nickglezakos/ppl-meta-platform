@@ -2,6 +2,7 @@
 Media API routes for PPL Meta Platform Media Service - API v1.
 """
 
+import asyncio
 import io
 import json
 import logging
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+import aiohttp
 from fastapi import (
     APIRouter,
     Depends,
@@ -79,6 +81,62 @@ from src.services.thumbnail_service import ThumbnailService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/media", tags=["media"])
+
+
+async def _trigger_enhanced_logic_v2_for_media(
+    media_uuid: str, current_user: Optional[AuthUser] = None
+):
+    """
+    Trigger Enhanced Logic V2 face detection for uploaded media.
+
+    This function calls the Orchestrator's Enhanced Logic V2 endpoint
+    to process face detection for newly uploaded videos.
+    """
+    try:
+        # Service URLs
+        ORCHESTRATOR_SERVICE_URL = "http://localhost:8002"
+
+        # Build the Enhanced Logic V2 endpoint URL
+        orchestrator_url = (
+            f"{ORCHESTRATOR_SERVICE_URL}/api/v1/media/"
+            f"{media_uuid}/faces/enhanced-v2"
+        )
+
+        # Prepare headers - use service-to-service communication
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        # For now, we'll make a simple GET request
+        # In the future, this could include user context if needed
+        async with aiohttp.ClientSession() as session:
+            async with session.get(orchestrator_url, headers=headers) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    session_uuid = result.get("session_uuid")
+                    total_faces = result.get("total_faces", 0)
+                    source = result.get("source", "unknown")
+                    processing_time = result.get("processing_time", 0)
+
+                    logger.info(
+                        f"🎯 ✅ Enhanced Logic V2 face detection completed "
+                        f"for uploaded media {media_uuid}: {total_faces} faces "
+                        f"found ({source}, {processing_time:.3f}s, "
+                        f"session: {session_uuid})"
+                    )
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"🎯 ❌ Failed to trigger Enhanced Logic V2 "
+                        f"for uploaded media {media_uuid}: "
+                        f"{response.status} - {error_text}"
+                    )
+    except Exception as e:
+        logger.error(
+            f"🎯 Error triggering Enhanced Logic V2 "
+            f"for uploaded media {media_uuid}: {e}"
+        )
 
 
 @router.post("/register", response_model=MediaResponse)
@@ -241,6 +299,18 @@ async def upload_media(
         urls = media_service.generate_media_urls(media)
         media_response.thumbnail_url = urls["thumbnail_url"]
         media_response.url = urls["url"]
+
+        # 🎯 AUTO-TRIGGER: Enhanced Logic V2 for video uploads
+        if media.media_type == MediaType.VIDEO:
+            try:
+                await _trigger_enhanced_logic_v2_for_media(
+                    str(media.uuid), current_user=None
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to trigger Enhanced Logic V2 for uploaded media "
+                    f"{media.uuid}: {e}"
+                )
 
         return media_response
 
@@ -1092,6 +1162,22 @@ async def stream_media(
         media_id, current_user.user_id, share_token, db
     )
 
+    # 🎯 AUTO-TRIGGER: Enhanced Logic V2 for video loads
+    media = access_info["media"]
+    if media.media_type == MediaType.VIDEO:
+        try:
+            # Trigger Enhanced Logic V2 asynchronously (don't block streaming)
+            asyncio.create_task(
+                _trigger_enhanced_logic_v2_for_media(
+                    media_id, current_user=current_user
+                )
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to trigger Enhanced Logic V2 for loaded media "
+                f"{media_id}: {e}"
+            )
+
     file_path = Path(access_info["file_path"])
 
     # Verify file exists on disk
@@ -1183,6 +1269,22 @@ async def stream_media_with_token(
     access_info = get_media_access_check(
         media_id, current_user.user_id, share_token, db
     )
+
+    # 🎯 AUTO-TRIGGER: Enhanced Logic V2 for video loads (token endpoint)
+    media = access_info["media"]
+    if media.media_type == MediaType.VIDEO:
+        try:
+            # Trigger Enhanced Logic V2 asynchronously (don't block streaming)
+            asyncio.create_task(
+                _trigger_enhanced_logic_v2_for_media(
+                    media_id, current_user=current_user
+                )
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to trigger Enhanced Logic V2 for loaded media "
+                f"{media_id}: {e}"
+            )
 
     file_path = Path(access_info["file_path"])
 
@@ -2515,5 +2617,83 @@ async def get_video_properties(
 
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/refresh-metadata")
+async def refresh_metadata_for_videos_with_errors(
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Refresh video metadata for videos that have video_error in technical_metadata.
+
+    This endpoint fixes cached metadata issues after storage path configuration changes.
+    """
+    try:
+        media_service = MediaService(db)
+
+        # Find videos with video_error in metadata
+        videos_with_errors = []
+        all_media = (
+            db.query(Media)
+            .filter(
+                Media.media_type == "video",
+                Media.processing_status == "completed",
+            )
+            .all()
+        )
+
+        for media in all_media:
+            if (
+                media.technical_metadata
+                and isinstance(media.technical_metadata, dict)
+                and media.technical_metadata.get("video_error")
+            ):
+                videos_with_errors.append(media)
+
+        if not videos_with_errors:
+            return {
+                "message": "No videos with metadata errors found",
+                "videos_processed": 0,
+                "videos_fixed": 0,
+                "videos_failed": 0,
+            }
+
+        # Process each video
+        videos_fixed = 0
+        videos_failed = 0
+
+        for media in videos_with_errors:
+            try:
+                # Clear the error from technical_metadata
+                if "video_error" in media.technical_metadata:
+                    del media.technical_metadata["video_error"]
+
+                # Re-extract video metadata
+                await media_service._extract_video_metadata(media)
+
+                # Check if error was resolved
+                if not media.technical_metadata.get("video_error"):
+                    videos_fixed += 1
+                else:
+                    videos_failed += 1
+
+                # Commit changes for this video
+                db.commit()
+
+            except Exception as e:
+                print(f"Failed to refresh metadata for {media.uuid}: {e}")
+                videos_failed += 1
+                db.rollback()
+
+        return {
+            "message": f"Metadata refresh complete",
+            "videos_processed": len(videos_with_errors),
+            "videos_fixed": videos_fixed,
+            "videos_failed": videos_failed,
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e

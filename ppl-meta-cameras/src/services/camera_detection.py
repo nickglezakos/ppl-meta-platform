@@ -1589,48 +1589,42 @@ class CameraDetectionService:
     async def _trigger_face_detection_workflow(
         self, media_uuid: str, session, headers: Dict
     ):
-        """Trigger face detection workflow for uploaded media."""
+        """Trigger Enhanced Logic V2 face detection workflow for uploaded media."""
         try:
             # Service URLs
             ORCHESTRATOR_SERVICE_URL = "http://localhost:8002"
 
-            # Trigger face detection via orchestrator
+            # Trigger Enhanced Logic V2 face detection via orchestrator
             orchestrator_url = (
-                f"{ORCHESTRATOR_SERVICE_URL}/api/v1/workflows/bulk-process"
+                f"{ORCHESTRATOR_SERVICE_URL}/api/v1/media/"
+                f"{media_uuid}/faces/enhanced-v2"
             )
 
-            workflow_data = {
-                "media_ids": [media_uuid],
-                "methods": ["two_stage"],
-                "processing_options": {
-                    "confidence_threshold": 0.7,
-                    "store_results": True,
-                },
-                "priority": "normal",
-                "auto_triggered": True,  # Mark as automatically triggered
-            }
-
-            async with session.post(
-                orchestrator_url, json=workflow_data, headers=headers
-            ) as response:
+            async with session.get(orchestrator_url, headers=headers) as response:
                 if response.status == 200:
                     result = await response.json()
-                    workflow_id = result.get("workflow_id")
+                    session_uuid = result.get("session_uuid")
+                    total_faces = result.get("total_faces", 0)
+                    source = result.get("source", "unknown")
+                    processing_time = result.get("processing_time", 0)
+
                     logger.info(
-                        f"🎯 ✅ Face detection workflow triggered "
-                        f"for media {media_uuid} (workflow: {workflow_id})"
+                        f"🎯 ✅ Enhanced Logic V2 face detection completed "
+                        f"for media {media_uuid}: {total_faces} faces found "
+                        f"({source}, {processing_time:.3f}s, "
+                        f"session: {session_uuid})"
                     )
                 else:
                     error_text = await response.text()
                     logger.error(
-                        f"🎯 ❌ Failed to trigger face detection workflow "
-                        f"for media {media_uuid}: {response.status} - "
-                        f"{error_text}"
+                        f"🎯 ❌ Failed to trigger Enhanced Logic V2 "
+                        f"face detection for media {media_uuid}: "
+                        f"{response.status} - {error_text}"
                     )
 
         except Exception as e:
             logger.error(
-                f"🎯 Error triggering face detection workflow "
+                f"🎯 Error triggering Enhanced Logic V2 face detection "
                 f"for media {media_uuid}: {e}"
             )
 

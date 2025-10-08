@@ -141,6 +141,7 @@ class VisionDatabase:
                 workflow_id TEXT,
                 status TEXT DEFAULT 'active',
                 face_count INTEGER DEFAULT 0,
+                metadata JSONB,
                 created_at TIMESTAMP DEFAULT NOW(),
                 completed_at TIMESTAMP,
                 FOREIGN KEY (media_uuid) REFERENCES media_records (media_id)
@@ -368,9 +369,24 @@ class VisionDatabase:
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # For now, return empty list when loop is running
-                # In practice, this should be called from async context
-                return []
+                # FIXED: Use create_task to run async function in running loop
+                task = asyncio.create_task(self._get_face_detections_async(media_id))
+                # This is a synchronous function, so we need to handle the running loop properly
+                # For now, we'll use a thread to run the async function
+                import concurrent.futures
+                import threading
+                
+                def run_async():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(self._get_face_detections_async(media_id))
+                    finally:
+                        new_loop.close()
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_async)
+                    return future.result(timeout=30)
             else:
                 return loop.run_until_complete(
                     self._get_face_detections_async(media_id)

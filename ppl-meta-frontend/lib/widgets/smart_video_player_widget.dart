@@ -8,6 +8,7 @@ import '../widgets/video_player_widget.dart';
 import '../widgets/simple_video_face_detection_overlay.dart';
 import '../providers/workflow_providers.dart';
 import '../providers/face_data_providers.dart';
+import '../providers/face_memory_manager.dart';
 
 /// EXPERIMENTAL SMOOTH TRANSITIONS: 
 /// To revert to basic frame sync, change _enableSmoothTransitions to false on line ~55
@@ -92,6 +93,11 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   void _onVideoFrameChanged() {
     if (!mounted || _videoController == null) return;
     
+    // If stored face data isn't loaded yet but video is playing, try to load it
+    if (_allStoredFaces.isEmpty && _videoController!.value.isPlaying && _storedFaceData != null) {
+      _setupFaceFrameSync(_storedFaceData!, _faceDataSource);
+    }
+    
     _updateCurrentFrameFaces();
   }
 
@@ -102,6 +108,17 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     final currentPosition = _videoController!.value.position;
     final currentFrameNumber = _positionToFrameNumber(currentPosition);
     final totalFaces = _allStoredFaces.length;
+    
+    // 🔧 FIRST-PLAY FIX: If video is playing but no faces loaded, try emergency data load
+    if (totalFaces == 0 && _videoController!.value.isPlaying && !_isLoadingWorkflowData) {
+      debugPrint('🚨 EMERGENCY LOAD: Video playing but no faces loaded, trying immediate MediaFaceDataProvider read...');
+      final faceDataState = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid));
+      if (faceDataState.hasData && faceDataState.faces.isNotEmpty) {
+        debugPrint('🚨 EMERGENCY SUCCESS: Found ${faceDataState.faces.length} faces in MediaFaceDataProvider cache');
+        _setupFaceFrameSync(faceDataState.faces, 'Emergency_MediaFaceDataProvider_Cache');
+        return; // Restart the method now that faces are loaded
+      }
+    }
     
     if (totalFaces == 0) {
       setState(() {
@@ -287,7 +304,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       final processingStatusAsync = ref.read(processingStatusProvider(widget.mediaItem.uuid));
       await processingStatusAsync.when(
         data: (status) async {
-          _processingStatus = status;
+          _processingStatus = status as ProcessingStatus?;
           // Determine optimal playback mode
           await _determinePlaybackMode();
         },
@@ -328,7 +345,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       final playbackModeAsync = ref.read(optimalPlaybackModeProvider(widget.mediaItem.uuid));
       await playbackModeAsync.when(
         data: (mode) async {
-          _currentPlaybackMode = mode;
+          _currentPlaybackMode = mode as PlaybackMode?;
         },
         loading: () async {
           _setFallbackPlaybackMode();
@@ -356,77 +373,67 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   /// Load stored face detection data for optimized playback
   Future<void> _loadStoredFaceData() async {
     try {
-      debugPrint('_loadStoredFaceData() called - checking MediaFaceDataProvider cache...');
+      debugPrint('_loadStoredFaceData() called - ensuring MediaFaceDataProvider data is loaded...');
       
-      // First try to get face data from our new MediaFaceDataProvider cache
-      final faceDataState = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid));
+      // 🔧 LOADING FIX: Wait for MediaFaceDataProvider to load data instead of just reading current state
+      // First ensure the provider starts loading
+      final notifier = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid).notifier);
+      notifier.loadFaces();
       
-      debugPrint('MediaFaceDataProvider state: hasData=${faceDataState.hasData}, isLoading=${faceDataState.isLoading}, hasError=${faceDataState.hasError}');
-      if (faceDataState.hasData) {
-        debugPrint('MediaFaceDataProvider faces count: ${faceDataState.faces.length}');
-      }
+      // Wait for the provider to have data (with timeout)
+      var attempts = 0;
+      const maxAttempts = 20; // 10 seconds total (500ms * 20)
       
-      // Debug the condition check
-      debugPrint('CONDITION CHECK: hasData=${faceDataState.hasData}, faces.isNotEmpty=${faceDataState.faces.isNotEmpty}, faces.length=${faceDataState.faces.length}');
-      
-      if (faceDataState.hasData && faceDataState.faces.isNotEmpty) {
-        // Use cached face data from our new provider
-        _storedFaceData = faceDataState.faces;
-        _faceDataSource = 'MediaFaceDataProvider_Cache';
-        debugPrint('VERIFICATION: Using CACHED MEMORY face data: ${_storedFaceData?.length ?? 0} faces loaded from MediaFaceDataProvider');
-        debugPrint('GREEN RECTANGLES DATA SOURCE: Memory Cache (NOT embedded endpoint)');
-        debugPrint('DATA SOURCE TAG: $_faceDataSource');
-        return;
-      }
-      
-      if (faceDataState.isLoading) {
-        debugPrint('Face data still loading from MediaFaceDataProvider...');
-        // Wait a bit and try again
-        await Future.delayed(const Duration(milliseconds: 500));
-        final retryState = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid));
-        debugPrint('Retry MediaFaceDataProvider state: hasData=${retryState.hasData}, faces=${retryState.hasData ? retryState.faces.length : 0}');
+      while (attempts < maxAttempts) {
+        final faceDataState = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid));
         
-        if (retryState.hasData && retryState.faces.isNotEmpty) {
-          _storedFaceData = retryState.faces;
+        debugPrint('LOADING ATTEMPT $attempts: hasData=${faceDataState.hasData}, isLoading=${faceDataState.isLoading}, hasError=${faceDataState.hasError}, faces=${faceDataState.hasData ? faceDataState.faces.length : 0}');
+        
+        if (faceDataState.hasData && faceDataState.faces.isNotEmpty) {
+          // Successfully loaded face data
+          _storedFaceData = faceDataState.faces;
           _faceDataSource = 'MediaFaceDataProvider_Cache';
-          debugPrint('VERIFICATION (RETRY): Using CACHED MEMORY face data: ${_storedFaceData?.length ?? 0} faces loaded from MediaFaceDataProvider');
-          debugPrint('GREEN RECTANGLES DATA SOURCE: Memory Cache (NOT embedded endpoint)');
-          debugPrint('DATA SOURCE TAG: $_faceDataSource');
+          debugPrint('✅ LOADING SUCCESS: Loaded ${_storedFaceData?.length ?? 0} faces from MediaFaceDataProvider after $attempts attempts');
           return;
         }
-      }
-      
-      if (faceDataState.hasError) {
-        debugPrint('Error loading from MediaFaceDataProvider: ${faceDataState.error}');
-      }
-      
-      // Fallback to original stored face data provider if cache is empty
-      if (_storedFaceData == null || _storedFaceData!.isEmpty) {
-        debugPrint('FALLBACK: Loading face data from Vision Service API (embedded endpoint)...');
-        debugPrint('YELLOW RECTANGLES DATA SOURCE: Vision Service API (embedded endpoint)');
-        final params = StoredFaceDataParams(
-          mediaUuid: widget.mediaItem.uuid,
-          startFrame: null,
-          endFrame: null,
-        );
         
-        final storedDataAsync = ref.read(storedFaceDataProvider(params));
-        await storedDataAsync.when(
-          data: (data) async {
-            _storedFaceData = data;
-            _faceDataSource = 'VisionService_API_Fallback';
-            debugPrint('FALLBACK USED: Loaded ${_storedFaceData?.length ?? 0} face records from Vision Service (embedded endpoint)');
-            debugPrint('YELLOW RECTANGLES DATA SOURCE: Vision Service API (embedded endpoint)');
-            debugPrint('DATA SOURCE TAG: $_faceDataSource');
-          },
-          loading: () async {
-            _storedFaceData = null;
-          },
-          error: (error, stack) async {
-            throw error;
-          },
-        );
+        if (faceDataState.hasError) {
+          debugPrint('❌ MediaFaceDataProvider error: ${faceDataState.error}');
+          break;
+        }
+        
+        // Wait before next attempt
+        await Future.delayed(const Duration(milliseconds: 500));
+        attempts++;
       }
+      
+      debugPrint('⏰ LOADING TIMEOUT: MediaFaceDataProvider did not load data within ${maxAttempts * 500}ms, falling back to direct API call');
+      
+      // Fallback to original stored face data provider if MediaFaceDataProvider failed
+      debugPrint('FALLBACK: Loading face data from Vision Service API (embedded endpoint)...');
+      debugPrint('YELLOW RECTANGLES DATA SOURCE: Vision Service API (embedded endpoint)');
+      final params = StoredFaceDataParams(
+        mediaUuid: widget.mediaItem.uuid,
+        startFrame: null,
+        endFrame: null,
+      );
+      
+      final storedDataAsync = ref.read(storedFaceDataProvider(params));
+      await storedDataAsync.when(
+        data: (data) async {
+          _storedFaceData = data;
+          _faceDataSource = 'VisionService_API_Fallback';
+          debugPrint('FALLBACK USED: Loaded ${_storedFaceData?.length ?? 0} face records from Vision Service (embedded endpoint)');
+          debugPrint('YELLOW RECTANGLES DATA SOURCE: Vision Service API (embedded endpoint)');
+          debugPrint('DATA SOURCE TAG: $_faceDataSource');
+        },
+        loading: () async {
+          _storedFaceData = null;
+        },
+        error: (error, stack) async {
+          throw error;
+        },
+      );
     } catch (e) {
       debugPrint('Failed to load stored face data: $e');
       _storedFaceData = null;
@@ -508,41 +515,60 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   Widget _buildSmartVideoPlayer() {
     final videoUrl = _buildOptimalVideoUrl();
     
-    // Get face data state and watch for changes (not just read once)
-    final faceDataState = mounted ? ref.watch(mediaFaceDataProvider(widget.mediaItem.uuid)) : null;
+    // 🎯 ARCHITECTURAL FIX: MediaFaceDataProvider should NOT be used for video overlays
+    // It flattens frame-based data into a continuous list, causing inappropriate real-time display
+    // MediaFaceDataProvider is for counts/statistics only, NOT for frame-synchronized video overlays
     
-    debugPrint('=== FACE DATA DEBUG ===');
+    debugPrint('=== FACE OVERLAY ARCHITECTURE FIX ===');
     debugPrint('mediaItem.uuid: ${widget.mediaItem.uuid}');
-    debugPrint('faceDataState: ${faceDataState != null ? "exists" : "null"}');
-    if (faceDataState != null) {
-      debugPrint('faceDataState.hasData: ${faceDataState.hasData}');
-      debugPrint('faceDataState.isLoading: ${faceDataState.isLoading}');
-      debugPrint('faceDataState.hasError: ${faceDataState.hasError}');
-      debugPrint('faceDataState.faces.length: ${faceDataState.hasData ? faceDataState.faces.length : "N/A"}');
-    }
     debugPrint('_storedFaceData: ${_storedFaceData?.length ?? "null"}');
-    debugPrint('======================');
+    debugPrint('_faceDataSource: $_faceDataSource');
+    debugPrint('=====================================');
     
-    // Determine which face data to use and data source for color coding
+    // 🔧 CORRECTED LOGIC: Only use frame-based stored face data for overlays
+    // MediaFaceDataProvider is excluded from overlay logic to prevent continuous display
     List<FaceDetection> facesToDisplay = [];
     String dataSource = 'none';
-    bool hasMemoryFaceData = faceDataState?.hasData == true && faceDataState!.faces.isNotEmpty;
     bool hasStoredFaceData = _storedFaceData != null && _storedFaceData!.isNotEmpty;
     
-    // Priority: Memory cache (green) > Stored data (yellow)
-    if (hasMemoryFaceData) {
-      facesToDisplay = faceDataState!.faces;
-      dataSource = 'MediaFaceDataProvider_Cache';
-      debugPrint('GREEN RECTANGLES: ${facesToDisplay.length} faces from MediaFaceDataProvider');
-    } else if (hasStoredFaceData) {
+    // Only use stored face data that preserves frame timing
+    if (hasStoredFaceData) {
       facesToDisplay = _storedFaceData!;
       dataSource = _faceDataSource;
-      debugPrint('YELLOW RECTANGLES: ${facesToDisplay.length} faces from fallback $_faceDataSource');
+      debugPrint('FRAME-SYNCHRONIZED RECTANGLES: ${facesToDisplay.length} faces from $_faceDataSource');
     } else {
-      debugPrint('NO FACE DATA: No memory cache or stored data available');
+      // 🔧 GLOBAL CACHE CHECK: Check if data is available in global cache from previous overlay loading
+      try {
+        final globalManager = FaceDataMemoryManager.instance;
+        final mediaId = widget.mediaItem.uuid;
+        
+        if (globalManager.hasFaceData(mediaId)) {
+          final globalStoredFaces = globalManager.getStoredFaces(mediaId);
+          if (globalStoredFaces != null && globalStoredFaces.isNotEmpty) {
+            // Convert stored faces map to flat list for overlay display
+            final List<FaceDetection> globalFacesList = [];
+            globalStoredFaces.forEach((frameKey, faces) {
+              globalFacesList.addAll(faces);
+            });
+            
+            if (globalFacesList.isNotEmpty) {
+              facesToDisplay = globalFacesList;
+              dataSource = 'global_cache';
+              debugPrint('GLOBAL CACHE HIT: Using ${globalFacesList.length} faces from global cache for GREEN rectangles');
+            }
+          }
+        }
+        
+        if (facesToDisplay.isEmpty) {
+          debugPrint('NO FRAME DATA: No stored face data available for frame synchronization');
+        }
+      } catch (e) {
+        debugPrint('GLOBAL CACHE ERROR: Failed to check global cache: $e');
+        debugPrint('NO FRAME DATA: No stored face data available for frame synchronization');
+      }
     }
     
-    // Always use overlay if we have face data to display
+    // Use overlay only if we have frame-synchronized data
     final useStoredFaceData = facesToDisplay.isNotEmpty;
 
     debugPrint('OVERLAY DEBUG: useStoredFaceData=$useStoredFaceData, facesToDisplay.length=${facesToDisplay.length}, dataSource=$dataSource');
@@ -615,7 +641,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
                          _currentPlaybackMode?.mode == 'realtime_only';
     
     return SimpleFaceDetectionOverlay(
-      videoController: _videoController,
+      videoController: _videoController, // Will be null initially, updated when controller is ready
       videoUrl: videoUrl,
       enabled: enableOverlay,
       useEmbeddedFaceDetection: false, // Use overlay system, not embedded
@@ -624,8 +650,13 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         headers: widget.headers,
         collectionId: widget.collectionId,
         onControllerReady: (controller) {
-          _videoController = controller;
+          debugPrint('🔧 CONTROLLER READY: About to call setState to trigger overlay rebuild');
+          setState(() {
+            _videoController = controller; // This will trigger a rebuild with the controller
+          });
           if (controller != null) {
+            debugPrint('🔧 CONTROLLER FIX: Video controller ready, rebuilding overlay with controller');
+            debugPrint('🔧 CONTROLLER FIX: setState completed, overlay should now have controller');
             widget.onControllerReady?.call(controller);
           }
         },
@@ -670,16 +701,17 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         break;
       
       case 'realtime_with_session':
-        // Workflow 4: Use Media Service for video + overlay for face detection (Flutter compatibility)
-        url = '/api/v1/media/stream/${widget.mediaItem.uuid}';
-        debugPrint('🎯 SmartVideoPlayer: Using realtime_with_session Media Service URL with overlay: $url');
+        // Workflow 4: Use Media Service for video WITHOUT face detection + overlay for face detection (Flutter compatibility)
+        url = '/api/v1/media/stream/${widget.mediaItem.uuid}?face_detection=false';
+        debugPrint('🎯 SmartVideoPlayer: Using realtime_with_session Media Service URL with overlay (clean video): $url');
         break;
       
       case 'realtime_only':
       default:
-        // Basic real-time: Use Media Service for video + overlay for face detection (Flutter compatibility)
-        url = '/api/v1/media/stream/${widget.mediaItem.uuid}';
-        debugPrint('🎯 SmartVideoPlayer: Using realtime_only Media Service URL with overlay (fixed): $url');
+        // Basic real-time: Use Media Service for video WITHOUT face detection + overlay for face detection (Flutter compatibility)
+        // Disable embedded yellow rectangles so we can use green Enhanced Logic V2 overlay
+        url = '/api/v1/media/stream/${widget.mediaItem.uuid}?face_detection=false';
+        debugPrint('🎯 SmartVideoPlayer: Using realtime_only Media Service URL with overlay (clean video): $url');
         break;
     }
     
@@ -947,8 +979,8 @@ class OptimizedFacePainter extends CustomPainter {
       return;
     }
 
-    // Color coding: Green for memory cache, Yellow for fallback
-    final bool isFromMemoryCache = dataSource == 'MediaFaceDataProvider_Cache';
+    // Color coding: Green for memory cache/global cache, Yellow for fallback
+    final bool isFromMemoryCache = dataSource == 'MediaFaceDataProvider_Cache' || dataSource == 'global_cache';
     final Color rectangleColor = isFromMemoryCache ? Colors.green : Colors.yellow;
     final String colorName = isFromMemoryCache ? 'GREEN' : 'YELLOW';
     

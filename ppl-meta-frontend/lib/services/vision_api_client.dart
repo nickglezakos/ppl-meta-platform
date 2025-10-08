@@ -167,18 +167,17 @@ class VisionApiClient {
     bool storeToDatabase = false, // New parameter for Phase 2 complete analysis
   }) async {
     try {
-      final queryParams = <String, dynamic>{};
-      if (frameInterval != null) queryParams['frame_interval'] = frameInterval;
-      if (maxFrames != null) queryParams['max_frames'] = maxFrames;
-      
+      // 🔧 TEMPORARY REVERT: Use working direct Vision Service until Media Service workflow is fixed
+      // TODO: Re-enable Media Service workflow when http://localhost:8000/api/v1/workflow/face-detection/bulk-process is working
       final response = await _dio.post(
         '/faces/media/$mediaId/bulk-process',
-        queryParameters: queryParams,
         data: {
           'method': method,
           'confidence_threshold': confidenceThreshold,
-          'store_to_database': storeToDatabase, // Enable database storage for Phase 2
+          'store_to_database': storeToDatabase,
           if (description != null) 'description': description,
+          if (frameInterval != null) 'frame_interval': frameInterval,
+          if (maxFrames != null) 'max_frames': maxFrames,
         },
       );
 

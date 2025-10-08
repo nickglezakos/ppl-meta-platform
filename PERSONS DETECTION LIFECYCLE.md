@@ -162,32 +162,54 @@ GET /api/v1/persons-lifecycle-master/sources/camera-stream-living-room/person-ob
 
 ## 2. Step-by-Step Backend Lifecycle
 
-### Step 1: Camera Activation and Video Recording
+### Step 0: Authentication (Prerequisite)
 
-#### 2.1 Camera Discovery and Activation
-**Endpoint**: `POST /api/v1/cameras/discover` (Orchestrator)
-**Purpose**: Discover and activate available cameras
+**Purpose**: Obtain authentication token for all API calls
 
 ```bash
-# Discover cameras
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8002/api/v1/cameras/discover"
+# Login to get authentication token
+curl -X POST 'http://localhost:8001/api/v1/users/login' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'username=fresh.user@example.com&password=NewPassword234!'
 
 # Expected Response:
 {
-  "success": true,
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 3600
+}
+
+# Export token for subsequent commands
+export TOKEN="your_access_token_here"
+```
+
+### Step 1: Camera Activation and Video Recording
+
+#### 2.1 Camera Discovery and Activation
+**Endpoint**: `GET /api/v1/cameras/` (Cameras Service)
+**Purpose**: List available cameras for activation
+
+```bash
+# List available cameras
+curl -X GET -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8005/api/v1/cameras/"
+
+# Expected Response:
+{
   "cameras": [
     {
-      "device_uuid": "camera-uuid-123",
-      "name": "USB Camera",
-      "status": "available"
+      "device_id": "camera-device-123",
+      "name": "Living Room Camera",
+      "status": "available",
+      "type": "rtsp",
+      "capabilities": ["recording", "streaming", "snapshot"]
     }
   ]
 }
 ```
 
 #### 2.2 Start Camera Recording
-**Endpoint**: `POST /api/v1/cameras/{device_uuid}/start` (Orchestrator)
+**Endpoint**: `POST /api/v1/streaming/{device_id}/record/start` (Cameras Service)
 **Purpose**: Start recording video from camera
 
 ```bash
@@ -195,34 +217,36 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"duration": 30, "quality": "high"}' \
-  "http://localhost:8002/api/v1/cameras/camera-uuid-123/start"
+  "http://localhost:8005/api/v1/streaming/camera-device-123/record/start"
 
 # Expected Response:
 {
   "success": true,
-  "session_uuid": "session-uuid-456",
+  "recording_session_id": "recording-session-456",
+  "device_id": "camera-device-123",
   "recording_started": true,
-  "estimated_completion": "2025-10-01T19:30:00Z"
+  "estimated_completion": "2025-10-04T19:30:00Z"
 }
 ```
 
 #### 2.3 Complete Recording and Get Video
-**Endpoint**: `POST /api/v1/cameras/{device_uuid}/stop` (Orchestrator)
-**Purpose**: Stop recording and get the produced video
+**Endpoint**: `POST /api/v1/streaming/{device_id}/record/stop` (Cameras Service)
+**Purpose**: Stop recording and get the produced video information
 
 ```bash
 # Stop recording
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8002/api/v1/cameras/camera-uuid-123/stop"
+  "http://localhost:8005/api/v1/streaming/camera-device-123/record/stop"
 
 # Expected Response:
 {
   "success": true,
-  "session_uuid": "session-uuid-456",
-  "media_id": "media-uuid-789",
-  "video_url": "/media/media-uuid-789.mp4",
+  "recording_session_id": "recording-session-456",
+  "media_id": "media-uuid-real-123",
+  "video_file": "/recordings/media-uuid-real-123.mp4",
   "duration": 30.5,
-  "file_size": 15728640
+  "file_size": 15728640,
+  "created_at": "2025-10-04T19:29:45Z"
 }
 ```
 
@@ -2647,33 +2671,38 @@ This roadmap unifies all enhancements into distinct development phases, addressi
 **Objective**: Resolve critical Flutter issues and establish enhanced session-based architecture
 
 **🚨 Critical Issues Resolution**:
-- ✅ **Issue 1: Vision Service Duplicate Prevention** - REPLACED by session management
-- 🔥 **Issue 2: Multiple Overlapping Pipelines** - Consolidate to single Master Workflow
-- 🔥 **Issue 3: API Spam from Emergency Fallback** - Backend-only approach eliminates this
+- ✅ **Issue 1: Vision Service Duplicate Prevention** - REPLACED by session management (COMPLETE)
+- ✅ **Issue 2: Multiple Overlapping Pipelines** - Consolidated to Vision Service direct processing (COMPLETE)  
+- ✅ **Issue 3: API Spam from Emergency Fallback** - Backend-only approach implemented (COMPLETE)
 
 **Core Infrastructure Tasks**:
 1. **Enhanced Database Schema Implementation**
-   - Create `persons_lifecycle_master_workflows` table with session management
-   - Create `person_routes` table for X, Y, Distance coordinate tracking
-   - Add vector embeddings columns (DeepFace + pgvector)
-   - Implement session-based indexes and vector similarity search
+   - ✅ Create `person_objects` table with session management (COMPLETE)
+   - ✅ Create `person_face_mappings` table for tracking (COMPLETE)
+   - ✅ Create `face_detection_sessions` table (COMPLETE)
+   - ✅ Add session_uuid columns to existing tables (COMPLETE)
+   - 🔄 Add vector embeddings columns (DeepFace + pgvector) (PARTIAL - needs vmeta integration)
+   - 🔄 Create `person_routes` table for X, Y, Distance coordinate tracking (PENDING)
+   - 🔄 Implement session-based indexes and vector similarity search (PENDING)
 
-2. **Vision Service Session Enhancement**
-   - Remove all duplicate prevention logic (BREAKING CHANGE)
-   - Implement session-based face detection with embeddings generation
-   - Add distance calculation using autonomous system methodology
-   - Create person routes tracking for movement analysis
+2. **Vision Service Session Enhancement** 
+   - ✅ Remove all duplicate prevention logic (BREAKING CHANGE) (COMPLETE)
+   - ✅ Implement session-based face detection storage (COMPLETE)
+   - ✅ Create person objects workflow processing (COMPLETE)
+   - 🔄 Add distance calculation using autonomous system methodology (PARTIAL)
+   - 🔄 Implement facial embeddings generation with DeepFace (PENDING - needs vmeta)
+   - 🔄 Create person routes tracking for movement analysis (PENDING)
 
 3. **Master Workflow Controller Foundation**
-   - Implement Persons Lifecycle Master Workflow in Orchestrator
-   - Create session-based sub-workflow management
-   - Establish automatic queueing with session tracking
+   - 🔄 Implement Persons Lifecycle Master Workflow in Orchestrator (PENDING)
+   - ✅ Session-based sub-workflow management in Vision Service (COMPLETE)
+   - 🔄 Establish automatic queueing with session tracking (PENDING)
 
 **Deliverables**:
-- ✅ Session-based database schema deployed
-- ✅ Enhanced Vision Service with distance calculation
-- ✅ Basic Master Workflow controller
-- ✅ Elimination of duplicate pipeline processing
+- ✅ Session-based database schema deployed (COMPLETE)
+- 🔄 Enhanced Vision Service with distance calculation (PARTIAL)
+- 🔄 Basic Master Workflow controller (PENDING - needs orchestrator implementation)
+- ✅ Elimination of duplicate pipeline processing (COMPLETE)
 
 #### Phase 2: Advanced Analytics & Person Routes (Week 3)
 **Objective**: Implement comprehensive person movement tracking and spatial analysis

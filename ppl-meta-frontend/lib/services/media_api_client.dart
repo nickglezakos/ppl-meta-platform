@@ -793,6 +793,50 @@ class MediaApiClient {
       throw Exception('Real-time face detection failed: ${_handleDioError(e)}');
     }
   }
+
+  /// Bulk face detection workflow for optimized video processing
+  /// Uses Media Service workflow with frame rate optimization (3 FPS default)
+  Future<BulkFaceDetectionWorkflowResult> startBulkFaceDetectionWorkflow({
+    required String mediaId,
+    double framesPerSecond = 3.0,
+    String method = 'two_stage',
+    double confidenceThreshold = 0.5,
+    String priority = 'normal',
+    bool storeResults = true,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/workflow/face-detection/bulk-process',
+        data: {
+          'media_ids': [mediaId],
+          'frames_per_second': framesPerSecond,
+          'method': method,
+          'confidence_threshold': confidenceThreshold,
+          'priority': priority,
+          'store_results': storeResults,
+        },
+      );
+
+      return BulkFaceDetectionWorkflowResult.fromJson(response.data);
+    } on DioException catch (e) {
+      throw Exception('Bulk face detection workflow failed: ${_handleDioError(e)}');
+    }
+  }
+
+  /// Check bulk face detection workflow status
+  Future<BulkFaceDetectionWorkflowResult> getBulkFaceDetectionWorkflowStatus({
+    required String workflowId,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/workflow/face-detection/$workflowId',
+      );
+
+      return BulkFaceDetectionWorkflowResult.fromJson(response.data);
+    } on DioException catch (e) {
+      throw Exception('Get workflow status failed: ${_handleDioError(e)}');
+    }
+  }
   
   /// Get current user ID from authentication context
   Future<String?> _getCurrentUserId() async {
@@ -844,23 +888,76 @@ class SingleFrameFaceDetectionResult {
   }
 }
 
+/// Bulk face detection workflow result model for optimized video processing
+class BulkFaceDetectionWorkflowResult {
+  final String workflowId;
+  final String status; // queued, processing, completed, failed
+  final int mediaCount;
+  final String createdAt;
+  final String? estimatedCompletionTime;
+  final Map<String, dynamic> processingOptions;
+  final String? errorMessage;
+  final Map<String, dynamic>? resultsSummary;
+
+  BulkFaceDetectionWorkflowResult({
+    required this.workflowId,
+    required this.status,
+    required this.mediaCount,
+    required this.createdAt,
+    this.estimatedCompletionTime,
+    required this.processingOptions,
+    this.errorMessage,
+    this.resultsSummary,
+  });
+
+  factory BulkFaceDetectionWorkflowResult.fromJson(Map<String, dynamic> json) {
+    return BulkFaceDetectionWorkflowResult(
+      workflowId: json['workflow_id'] ?? '',
+      status: json['status'] ?? 'unknown',
+      mediaCount: json['media_count'] ?? 0,
+      createdAt: json['created_at'] ?? '',
+      estimatedCompletionTime: json['estimated_completion_time'],
+      processingOptions: json['processing_options'] ?? {},
+      errorMessage: json['error_message'],
+      resultsSummary: json['results_summary'],
+    );
+  }
+
+  bool get isCompleted => status == 'completed';
+  bool get isFailed => status == 'failed';
+  bool get isProcessing => status == 'processing';
+  bool get isQueued => status == 'queued';
+}
+
 /// Face detection model for single face result
 class FaceDetection {
+  final String? id;
+  final String? mediaId;
   final FaceBoundingBox boundingBox;
   final double confidence;
   final String method;
+  final DateTime? timestamp;
+  final Map<String, dynamic>? metadata;
 
   FaceDetection({
+    this.id,
+    this.mediaId,
     required this.boundingBox,
     required this.confidence,
     required this.method,
+    this.timestamp,
+    this.metadata,
   });
 
   factory FaceDetection.fromJson(Map<String, dynamic> json) {
     return FaceDetection(
+      id: json['id'],
+      mediaId: json['media_id'],
       boundingBox: FaceBoundingBox.fromJson(json['bbox'] ?? [0, 0, 0, 0]),
       confidence: (json['confidence'] ?? 0.0).toDouble(),
       method: json['method'] ?? 'unknown',
+      timestamp: json['timestamp'] != null ? DateTime.parse(json['timestamp']) : null,
+      metadata: json['metadata'],
     );
   }
 }

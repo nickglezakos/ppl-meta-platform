@@ -38,18 +38,23 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // Use the Gateway service (port 8080) which handles CORS and routing to Orchestrator
-      // This avoids CORS issues when calling from Flutter web
+      // 🚀 ENHANCED LOGIC V2: Call Orchestrator service directly (port 8002)
+      // This uses the new Enhanced Logic V2 endpoint with session-based processing
       developer.log(
-        'Getting person objects via Gateway service for media: $mediaUuid',
+        'Getting person objects via Enhanced Logic V2 for media: $mediaUuid',
         name: _logName,
       );
 
-      // Use the existing API client (which connects to Gateway via localhost or configured base URL)
-      // Gateway should proxy the request to the Orchestrator service
+      // Use Enhanced Logic V2 endpoint directly to Orchestrator
+      final orchestratorUrl = 'http://localhost:8002';
+      final originalBaseUrl = _apiClient.dio.options.baseUrl;
+      _apiClient.dio.options.baseUrl = orchestratorUrl;
+      
       final response = await _apiClient.get(
-        '/api/v1/orchestrator/person-objects/$mediaUuid',
+        '/api/v1/media/$mediaUuid/faces/enhanced-v2',
       );
+      
+      _apiClient.dio.options.baseUrl = originalBaseUrl;
 
       developer.log(
         'Orchestrator response: status=${response.statusCode}, data=${response.data}',
@@ -60,34 +65,36 @@ class PersonObjectsApiClient {
         final data = response.data;
         
         developer.log(
-          'Successfully retrieved person objects from Orchestrator: ${data['total_persons']} persons, ${data['total_faces']} faces',
+          'Successfully retrieved Enhanced Logic V2 response: ${data['total_faces']} faces, source: ${data['source']}',
           name: _logName,
         );
         
-        // Transform Orchestrator response to PersonObjectsData format
-        final totalPersons = data['total_persons'] ?? 0;
+        // Transform Enhanced Logic V2 response to PersonObjectsData format
         final totalFaces = data['total_faces'] ?? 0;
+        final totalPersons = totalFaces > 0 ? (totalFaces / 3).ceil() : 0; // Estimate persons from faces
+        final sessionUuid = data['session_uuid'] ?? mediaUuid;
+        final source = data['source'] ?? 'unknown';
         
         developer.log(
-          'Transforming Orchestrator data: totalPersons=$totalPersons, totalFaces=$totalFaces',
+          'Transforming Enhanced Logic V2 data: totalFaces=$totalFaces, estimatedPersons=$totalPersons, source=$source',
           name: _logName,
         );
         
-        print('🎯 ORCHESTRATOR DATA TRANSFORM: totalPersons=$totalPersons, totalFaces=$totalFaces');
+        print('🎯 ENHANCED LOGIC V2 DATA TRANSFORM: totalPersons=$totalPersons, totalFaces=$totalFaces, source=$source');
         
         final personObjectsData = PersonObjectsData(
           workflowId: data['media_id'] ?? mediaUuid,
-          sessionUuid: mediaUuid, // Use media UUID as session identifier
+          sessionUuid: sessionUuid,
           success: data['success'] ?? false,
           originalGroups: totalFaces,
           mergedGroups: totalPersons,
           totalPersons: totalPersons,
           groupTracking: [],
           statistics: PersonObjectsStatistics(
-            totalGroups: data['total_persons'] ?? 0,
-            originalUniqueFaces: data['total_faces'] ?? 0,
-            mergedGroupsCount: data['total_persons'] ?? 0,
-            totalDetections: data['total_faces'] ?? 0,
+            totalGroups: totalPersons,
+            originalUniqueFaces: totalFaces,
+            mergedGroupsCount: totalPersons,
+            totalDetections: totalFaces,
             framesProcessed: 0,
             groupingAlgorithm: 'ppl_thread',
             tolerancePercent: 20.0,

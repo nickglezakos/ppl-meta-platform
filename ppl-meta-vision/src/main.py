@@ -66,6 +66,11 @@ db_spec.loader.exec_module(db_module)
 
 vision_db = db_module.vision_db
 
+from distance_calculator import (
+    DistanceCalculator,
+    enhance_face_detections_with_distance,
+)
+
 # Import our services and models
 from extracted_face_detector import ExtractedFaceDetector
 
@@ -221,6 +226,10 @@ def get_user_uuid_from_profile(authorization_header: str) -> Optional[str]:
     """Get user UUID by calling the user profile endpoint."""
     try:
         if not authorization_header:
+            return None
+
+        # Authentication working - calling Gateway user profile endpoint
+        if not authorization_header.startswith("Bearer "):
             return None
 
         # Call user profile endpoint to get UUID via Gateway service
@@ -586,7 +595,7 @@ async def detect_faces(request: FaceDetectionRequest):
             else:
                 raise HTTPException(status_code=400, detail=f"Unknown method: {method}")
 
-            # Format response
+            # Format response with distance calculation
             if result["success"]:
                 detections = [
                     FaceDetection(
@@ -597,12 +606,24 @@ async def detect_faces(request: FaceDetectionRequest):
                     for det in result["detections"]
                 ]
 
+                # Apply distance calculation to enhance detections
+                try:
+                    enhanced_detections = enhance_face_detections_with_distance(
+                        detections,
+                        image.shape[:2],  # Pass image dimensions (height, width)
+                    )
+                    detections = enhanced_detections
+                except Exception as e:
+                    logger.warning(
+                        f"Distance calculation failed: {e}, continuing without distance data"
+                    )
+
                 processing_time = time.time() - start_time
                 return FaceDetectionResponse(
                     success=True,
                     detections=detections,
                     processing_time=processing_time,
-                    message=f"Detected {len(detections)} faces using {method}",
+                    message=f"Detected {len(detections)} faces using {method} with distance calculation",
                 )
             else:
                 raise HTTPException(
@@ -626,13 +647,24 @@ async def detect_faces(request: FaceDetectionRequest):
                             )
                         )
 
+            # Apply distance calculation to enhanced detections
+            try:
+                enhanced_detections = enhance_face_detections_with_distance(
+                    all_detections, image.shape[:2]  # Pass image dimensions
+                )
+                all_detections = enhanced_detections
+            except Exception as e:
+                logger.warning(
+                    f"Distance calculation failed: {e}, continuing without distance data"
+                )
+
             processing_time = time.time() - start_time
             return FaceDetectionResponse(
                 success=True,
                 detections=all_detections,
                 processing_time=processing_time,
                 method_results=results,
-                message=f"Detected {len(all_detections)} faces using {len(methods)} methods",
+                message=f"Detected {len(all_detections)} faces using {len(methods)} methods with distance calculation",
             )
 
     except HTTPException:
@@ -1518,19 +1550,91 @@ async def bulk_process_video_faces(
 
                 if existing_count > 0:
                     logger.info(
-                        f"DUPLICATE PREVENTION SUCCESS: Found {existing_count} existing faces for media {media_id}. "
-                        f"Skipping duplicate processing. Use force_process=true to override."
+                        f"DUPLICATE PREVENTION SUCCESS: Found {existing_count} "
+                        f"existing faces for media {media_id}. "
+                        f"Retrieving existing face data. Use force_process=true to override."
                     )
-                    return {
-                        "success": True,
-                        "message": f"Face detection already completed for media {media_id}",
-                        "existing_results": {
+
+                    # 🔧 FIXED: Retrieve existing face data in proper response structure
+                    try:
+                        existing_faces = vision_db.get_face_detections(media_id)
+
+                        # Convert existing face data to same format as fresh processing
+                        faces_by_frame = {}
+                        for face in existing_faces:
+                            frame_num = face.get("frame_number", 0)
+                            if frame_num not in faces_by_frame:
+                                faces_by_frame[frame_num] = []
+
+                            # Convert bbox [x1, y1, x2, y2] to x, y, width, height
+                            bbox = face.get("bbox", [0, 0, 0, 0])
+                            x1, y1, x2, y2 = bbox
+
+                            faces_by_frame[frame_num].append(
+                                {
+                                    "x": int(x1),
+                                    "y": int(y1),
+                                    "width": int(x2 - x1),
+                                    "height": int(y2 - y1),
+                                    "confidence": face.get("confidence", 0.0),
+                                    "face_id": str(face.get("id", "")),
+                                    "timestamp": face.get("timestamp", 0.0),
+                                    "frame_number": frame_num,
+                                    # Add coordinates format for compatibility
+                                    "coordinates": {
+                                        "x": int(x1),
+                                        "y": int(y1),
+                                        "width": int(x2 - x1),
+                                        "height": int(y2 - y1),
+                                    },
+                                }
+                            )
+
+                        # Return in EXACT same format as successful processing
+                        # Also add flattened faces array for compatibility
+                        all_faces = []
+                        for frame_faces in faces_by_frame.values():
+                            all_faces.extend(frame_faces)
+
+                        return {
+                            "success": True,
+                            "media_id": media_id,
+                            "video_info": {
+                                "total_frames": 0,  # Not available from existing data
+                                "fps": 0.0,  # Not available from existing data
+                                "duration": 0.0,  # Not available from existing data
+                                "processed_frames": len(faces_by_frame),
+                                "frame_interval": 1,  # Not available from existing data
+                            },
+                            "faces_by_frame": faces_by_frame,
+                            "faces": all_faces,  # Flattened array for compatibility
+                            "faces_detected": existing_count,
                             "total_faces": existing_count,
-                            "processing_method": "existing_data_reused",
-                        },
-                        "duplicate_prevention": True,
-                        "skipped_processing": True,
-                    }
+                            "processing_time": 0.0,  # No processing time for existing
+                            "confidence_threshold": 0.5,  # Default value
+                            "session_uuid": None,  # No session for existing data
+                            "message": f"Retrieved {existing_count} existing faces "
+                            f"for media {media_id}",
+                            "duplicate_prevention": True,
+                            "processing_method": "existing_data_retrieved",
+                        }
+
+                    except Exception as retrieval_error:
+                        logger.error(
+                            f"Failed to retrieve existing face data: "
+                            f"{retrieval_error}"
+                        )
+                        # Fallback to simple response if retrieval fails
+                        return {
+                            "success": True,
+                            "message": f"Face detection already completed "
+                            f"for media {media_id}",
+                            "total_faces": existing_count,
+                            "faces_by_frame": {},
+                            "duplicate_prevention": True,
+                            "error": f"Could not retrieve existing face data: "
+                            f"{retrieval_error}",
+                        }
                 else:
                     logger.info(
                         f"DUPLICATE PREVENTION: No existing faces found for media {media_id}, proceeding with processing"

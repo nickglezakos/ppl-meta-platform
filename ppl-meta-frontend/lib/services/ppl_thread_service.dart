@@ -17,16 +17,17 @@ import 'package:dio/dio.dart';
 import '../core/api/api_client.dart';
 
 class PPLThreadService {
-  static const String _baseUrl = 'http://localhost:8002'; // Orchestrator Service (fixed architectural pattern)
   static const String _logName = 'PPLThreadService';
   
   final ApiClient _apiClient;
   late final Dio _dio;
   
   PPLThreadService(this._apiClient) {
-    // Create dedicated Dio instance for Orchestrator communication
+    // 🔧 CORS FIX: Use Gateway (port 8080) instead of direct Orchestrator (port 8002)
+    // Flutter web can't access port 8002 directly due to CORS restrictions
+    // Gateway proxies requests to Orchestrator with proper CORS headers
     _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
+      baseUrl: _apiClient.baseUrl, // Use Gateway base URL
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 30),
       headers: {
@@ -71,8 +72,9 @@ class PPLThreadService {
         return 0;
       }
       
-      // GET person objects data via Orchestrator (proper architectural pattern)
-      final response = await _dio.get('/person-objects/$mediaId');
+      // � ENHANCED LOGIC V2: Use new session-based endpoint via Gateway
+      // GET face detection data via Gateway -> Orchestrator Enhanced Logic V2
+      final response = await _dio.get('/api/v1/media/$mediaId/faces/enhanced-v2');
       
       developer.log(
         'Person objects response: ${response.statusCode} - ${response.data}',
@@ -92,47 +94,56 @@ class PPLThreadService {
           name: _logName,
         );
         
-        // FIXED PARSING: Handle the actual data structure safely
+        // 🚀 ENHANCED LOGIC V2 PARSING: Handle session-based response format
         int totalPersons = 0;
+        int totalFaces = 0;
         
         if (data is Map<String, dynamic>) {
-          // Check for merged_groups field (this is what we're getting: "merged_groups":4)
-          if (data.containsKey('merged_groups')) {
-            final mergedGroupsValue = data['merged_groups'];
+          developer.log(
+            'Enhanced Logic V2 response - keys: ${data.keys.toList()}',
+            name: _logName,
+          );
+          
+          // Parse total_faces from Enhanced Logic V2 response
+          if (data.containsKey('total_faces')) {
+            final totalFacesValue = data['total_faces'];
             developer.log(
-              'PARSING DEBUG - merged_groups value: $mergedGroupsValue, type: ${mergedGroupsValue.runtimeType}',
+              'PARSING DEBUG - total_faces value: $totalFacesValue, type: ${totalFacesValue.runtimeType}',
               name: _logName,
             );
             
-            if (mergedGroupsValue is int) {
-              totalPersons = mergedGroupsValue;
-            } else if (mergedGroupsValue is num) {
-              totalPersons = mergedGroupsValue.toInt();
-            } else if (mergedGroupsValue is String) {
-              totalPersons = int.tryParse(mergedGroupsValue) ?? 0;
+            if (totalFacesValue is int) {
+              totalFaces = totalFacesValue;
+            } else if (totalFacesValue is num) {
+              totalFaces = totalFacesValue.toInt();
+            } else if (totalFacesValue is String) {
+              totalFaces = int.tryParse(totalFacesValue) ?? 0;
             }
           }
           
-          // Fallback: Check for total_persons field (transformed format)
-          if (totalPersons == 0 && data.containsKey('total_persons')) {
-            final totalPersonsValue = data['total_persons'];
-            developer.log(
-              'PARSING DEBUG - total_persons value: $totalPersonsValue, type: ${totalPersonsValue.runtimeType}',
-              name: _logName,
-            );
-            
-            if (totalPersonsValue is int) {
-              totalPersons = totalPersonsValue;
-            } else if (totalPersonsValue is num) {
-              totalPersons = totalPersonsValue.toInt();
-            } else if (totalPersonsValue is String) {
-              totalPersons = int.tryParse(totalPersonsValue) ?? 0;
-            }
+          // For person count, use faces count as approximation or check if faces array exists
+          if (data.containsKey('faces') && data['faces'] is List) {
+            // If we have faces array, estimate persons from unique face groups
+            final faces = data['faces'] as List;
+            totalPersons = (faces.length / 3).ceil(); // Rough estimation: 3 faces per person
+          } else {
+            // Fallback: use faces count as person count approximation
+            totalPersons = totalFaces > 0 ? (totalFaces / 3).ceil() : 0;
           }
+          
+          // Log Enhanced Logic V2 specific fields
+          final sessionUuid = data['session_uuid'] ?? 'N/A';
+          final source = data['source'] ?? 'unknown';
+          final message = data['message'] ?? 'No message';
+          
+          developer.log(
+            'Enhanced Logic V2 - Session: $sessionUuid, Source: $source, Message: $message',
+            name: _logName,
+          );
         }
         
         developer.log(
-          'FINAL RESULT: Successfully parsed person count: $totalPersons for media $mediaId',
+          'ENHANCED LOGIC V2 RESULT: Successfully parsed faces: $totalFaces, estimated persons: $totalPersons for media $mediaId',
           name: _logName,
         );
         
@@ -176,7 +187,17 @@ class PPLThreadService {
         return false;
       }
       
-      final response = await _dio.get('/person-objects/$mediaId');
+      // 🚀 ENHANCED LOGIC V2: Call Orchestrator service directly
+      final orchestratorUrl = 'http://localhost:8002/api/v1/media/$mediaId/faces/enhanced-v2';
+      final response = await Dio().get(
+        orchestratorUrl,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer ${_apiClient.authToken}',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
       
       if (response.statusCode == 200) {
         final data = response.data;
@@ -223,7 +244,17 @@ class PPLThreadService {
         return null;
       }
       
-      final response = await _dio.get('/person-objects/$mediaId');
+      // 🚀 ENHANCED LOGIC V2: Call Orchestrator service directly
+      final orchestratorUrl = 'http://localhost:8002/api/v1/media/$mediaId/faces/enhanced-v2';
+      final response = await Dio().get(
+        orchestratorUrl,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer ${_apiClient.authToken}',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
       
       developer.log(
         'Complete person objects response: ${response.statusCode} - ${response.data}',

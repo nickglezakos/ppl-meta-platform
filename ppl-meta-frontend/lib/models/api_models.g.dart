@@ -229,6 +229,218 @@ Map<String, dynamic> _$FaceBoxToJson(FaceBox instance) => <String, dynamic>{
       'height': instance.height,
     };
 
+FaceDetectionSessionRequest _$FaceDetectionSessionRequestFromJson(
+        Map<String, dynamic> json) =>
+    FaceDetectionSessionRequest(
+      mediaId: json['mediaId'] as String,
+      config: json['config'] == null
+          ? null
+          : FaceDetectionRequest.fromJson(
+              json['config'] as Map<String, dynamic>),
+    );
+
+Map<String, dynamic> _$FaceDetectionSessionRequestToJson(
+        FaceDetectionSessionRequest instance) =>
+    <String, dynamic>{
+      'mediaId': instance.mediaId,
+      'config': instance.config,
+    };
+
+FaceDetectionSession _$FaceDetectionSessionFromJson(
+        Map<String, dynamic> json) =>
+    FaceDetectionSession(
+      sessionId: json['sessionId'] as String,
+      mediaId: json['mediaId'] as String,
+      status: json['status'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      completedAt: json['completedAt'] == null
+          ? null
+          : DateTime.parse(json['completedAt'] as String),
+      startedAt: json['startedAt'] == null
+          ? null
+          : DateTime.parse(json['startedAt'] as String),
+      progress: (json['progress'] as num?)?.toDouble(),
+      result: json['result'] == null
+          ? null
+          : OrchestratorFaceDetectionResult.fromJson(
+              json['result'] as Map<String, dynamic>),
+      error: json['error'] as String?,
+      errorMessage: json['errorMessage'] as String?,
+      metadata: json['metadata'] as Map<String, dynamic>?,
+      totalFacesDetected: (json['totalFacesDetected'] as num?)?.toInt(),
+      totalFramesProcessed: (json['totalFramesProcessed'] as num?)?.toInt(),
+    );
+
+Map<String, dynamic> _$FaceDetectionSessionToJson(
+        FaceDetectionSession instance) =>
+    <String, dynamic>{
+      'sessionId': instance.sessionId,
+      'mediaId': instance.mediaId,
+      'status': instance.status,
+      'createdAt': instance.createdAt.toIso8601String(),
+      'completedAt': instance.completedAt?.toIso8601String(),
+      'startedAt': instance.startedAt?.toIso8601String(),
+      'progress': instance.progress,
+      'result': instance.result,
+      'error': instance.error,
+      'errorMessage': instance.errorMessage,
+      'metadata': instance.metadata,
+      'totalFacesDetected': instance.totalFacesDetected,
+      'totalFramesProcessed': instance.totalFramesProcessed,
+    };
+
+OrchestratorFaceDetectionResult _$OrchestratorFaceDetectionResultFromJson(
+        Map<String, dynamic> json) =>
+    OrchestratorFaceDetectionResult(
+      success: json['success'] as bool,
+      mediaId: json['mediaId'] as String,
+      hasStoredFaces: json['hasStoredFaces'] as bool?,
+      totalFaces: (json['totalFaces'] as num?)?.toInt(),
+      facesByFrame: (json['facesByFrame'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(
+            k,
+            (e as List<dynamic>)
+                .map((e) => e as Map<String, dynamic>)
+                .toList()),
+      ),
+      message: json['message'] as String?,
+    );
+
+Map<String, dynamic> _$OrchestratorFaceDetectionResultToJson(
+        OrchestratorFaceDetectionResult instance) =>
+    <String, dynamic>{
+      'success': instance.success,
+      'mediaId': instance.mediaId,
+      'hasStoredFaces': instance.hasStoredFaces,
+      'totalFaces': instance.totalFaces,
+      'facesByFrame': instance.facesByFrame,
+      'message': instance.message,
+    };
+
+FaceDetectionSessionList _$FaceDetectionSessionListFromJson(
+        Map<String, dynamic> json) =>
+    FaceDetectionSessionList(
+      sessions: (json['sessions'] as List<dynamic>)
+          .map((e) => FaceDetectionSession.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      total: (json['total'] as num).toInt(),
+      page: (json['page'] as num).toInt(),
+      pageSize: (json['pageSize'] as num).toInt(),
+    );
+
+Map<String, dynamic> _$FaceDetectionSessionListToJson(
+        FaceDetectionSessionList instance) =>
+    <String, dynamic>{
+      'sessions': instance.sessions,
+      'total': instance.total,
+      'page': instance.page,
+      'pageSize': instance.pageSize,
+    };
+
+MediaFaceDetectionResponse _$MediaFaceDetectionResponseFromJson(
+        Map<String, dynamic> json) =>
+    MediaFaceDetectionResponse(
+      mediaId: json['mediaId'] as String,
+      hasStoredResults: json['hasStoredResults'] as bool,
+      storedResult: json['storedResult'] == null
+          ? null
+          : FaceDetectionResult.fromJson(
+              json['storedResult'] as Map<String, dynamic>),
+      liveSession: json['liveSession'] == null
+          ? null
+          : FaceDetectionSession.fromJson(
+              json['liveSession'] as Map<String, dynamic>),
+    );
+
+Map<String, dynamic> _$MediaFaceDetectionResponseToJson(
+        MediaFaceDetectionResponse instance) =>
+    <String, dynamic>{
+      'mediaId': instance.mediaId,
+      'hasStoredResults': instance.hasStoredResults,
+      'storedResult': instance.storedResult,
+      'liveSession': instance.liveSession,
+    };
+
+PersonObjectsResponse _$PersonObjectsResponseFromJson(
+        Map<String, dynamic> json) =>
+    PersonObjectsResponse(
+      success: json['success'] as bool,
+      mediaId: json['mediaId'] as String,
+      totalPersons: (json['totalPersons'] as num).toInt(),
+      totalFaces: (json['totalFaces'] as num).toInt(),
+      status: json['status'] as String,
+      message: json['message'] as String,
+    );
+
+Map<String, dynamic> _$PersonObjectsResponseToJson(
+        PersonObjectsResponse instance) =>
+    <String, dynamic>{
+      'success': instance.success,
+      'mediaId': instance.mediaId,
+      'totalPersons': instance.totalPersons,
+      'totalFaces': instance.totalFaces,
+      'status': instance.status,
+      'message': instance.message,
+    };
+
+EnhancedLogicV2Response _$EnhancedLogicV2ResponseFromJson(
+        Map<String, dynamic> json) =>
+    EnhancedLogicV2Response(
+      success: json['success'] as bool,
+      sessionUuid: json['session_uuid'] as String,
+      mediaId: json['media_id'] as String,
+      source: json['source'] as String,
+      totalFaces: (json['total_faces'] as num).toInt(),
+      faces: (json['faces'] as List<dynamic>)
+          .map((e) => EnhancedLogicV2Face.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      facesByFrame: (json['faces_by_frame'] as Map<String, dynamic>).map(
+        (k, e) => MapEntry(
+            k,
+            (e as List<dynamic>)
+                .map((e) =>
+                    EnhancedLogicV2Face.fromJson(e as Map<String, dynamic>))
+                .toList()),
+      ),
+      processingTime: (json['processing_time'] as num).toDouble(),
+      message: json['message'] as String,
+    );
+
+Map<String, dynamic> _$EnhancedLogicV2ResponseToJson(
+        EnhancedLogicV2Response instance) =>
+    <String, dynamic>{
+      'success': instance.success,
+      'session_uuid': instance.sessionUuid,
+      'media_id': instance.mediaId,
+      'source': instance.source,
+      'total_faces': instance.totalFaces,
+      'faces': instance.faces,
+      'faces_by_frame': instance.facesByFrame,
+      'processing_time': instance.processingTime,
+      'message': instance.message,
+    };
+
+EnhancedLogicV2Face _$EnhancedLogicV2FaceFromJson(Map<String, dynamic> json) =>
+    EnhancedLogicV2Face(
+      bbox: (json['bbox'] as List<dynamic>)
+          .map((e) => (e as num).toDouble())
+          .toList(),
+      confidence: (json['confidence'] as num).toDouble(),
+      method: json['method'] as String,
+      timestamp: (json['timestamp'] as num).toDouble(),
+      frameNumber: (json['frame_number'] as num).toInt(),
+    );
+
+Map<String, dynamic> _$EnhancedLogicV2FaceToJson(
+        EnhancedLogicV2Face instance) =>
+    <String, dynamic>{
+      'bbox': instance.bbox,
+      'confidence': instance.confidence,
+      'method': instance.method,
+      'timestamp': instance.timestamp,
+      'frame_number': instance.frameNumber,
+    };
+
 WorkflowTemplate _$WorkflowTemplateFromJson(Map<String, dynamic> json) =>
     WorkflowTemplate(
       id: json['id'] as String,

@@ -124,6 +124,7 @@ class VisionDatabase:
                 workflow_id TEXT,
                 status TEXT DEFAULT 'active',
                 face_count INTEGER DEFAULT 0,
+                metadata TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
                 completed_at TIMESTAMP
             )

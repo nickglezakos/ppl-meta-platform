@@ -790,7 +790,7 @@ class CompactFaceAndPersonCountWidget extends ConsumerWidget {
                   ),
                   const SizedBox(width: 2),
                   Text(
-                    personCount == 0 ? '0P' : '${personCount}P',
+                    personCount == 0 ? 'Processing...' : '${personCount}P',
                     style: TextStyle(
                       color: Colors.blue.shade300,
                       fontSize: 8,

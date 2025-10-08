@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 # Standard library and third-party imports
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from service_clients import ServiceClientManager
 from workflow_orchestrator import CameraFaceDetectionWorkflowOrchestrator
@@ -119,6 +120,18 @@ async def lifespan(_app: FastAPI):
             logger.error(f"Failed to initialize session endpoints: {session_error}")
             logger.warning("Continuing without session endpoints")
 
+        # Include face detection endpoints for self-referencing architecture
+        try:
+            from face_detection_endpoints import face_detection_router
+
+            app.include_router(face_detection_router)
+            logger.info("✅ Face detection endpoints registered")
+        except Exception as face_detection_error:
+            logger.error(
+                f"Failed to initialize face detection endpoints: {face_detection_error}"
+            )
+            logger.warning("Continuing without face detection endpoints")
+
     except Exception as e:
         logger.error(f"Failed to initialize workflow orchestrator: {e}")
         raise RuntimeError("Critical component initialization failed")
@@ -137,6 +150,9 @@ async def lifespan(_app: FastAPI):
         # Register endpoints
         from camera_automation_endpoints import automation_router
 
+        app.include_router(automation_router)
+
+        logger.info("✅ Phase 2 camera automation initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize camera automation: {e}")
         logger.warning("Continuing without Phase 2 automation features")
@@ -220,6 +236,55 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize PPL Thread endpoints: {e}")
         logger.warning("Continuing without PPL Thread features")
+
+    # Initialize Master Lifecycle Workflow endpoints (Phase 1 completion)
+    try:
+        logger.info("Initializing Master Lifecycle Workflow endpoints...")
+
+        # Initialize the Master Workflow Controller first
+        from master_lifecycle_workflow import initialize_master_workflow_controller
+
+        # Initialize with service manager clients
+        if service_manager:
+            vision_client = service_manager.vision
+            vmeta_client = None  # vmeta client not available in current setup
+
+            initialize_master_workflow_controller(
+                vision_service_client=vision_client,
+                vmeta_service_client=vmeta_client,
+                config={"max_concurrent_workflows": 10},
+            )
+            logger.info("✅ Master Workflow Controller initialized")
+        else:
+            logger.warning(
+                "Service manager not available, initializing with None clients"
+            )
+            initialize_master_workflow_controller(
+                vision_service_client=None,
+                vmeta_service_client=None,
+                config={"max_concurrent_workflows": 10},
+            )
+
+        import master_lifecycle_endpoints
+
+        app.include_router(master_lifecycle_endpoints.router)
+
+        logger.info("✅ Master Lifecycle Workflow endpoints initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize Master Lifecycle Workflow endpoints: {e}")
+        logger.warning("Continuing without Master Lifecycle Workflow features")
+
+    # Phase 2.5: Face Detection Endpoints (Self-referencing architecture)
+    try:
+        from face_detection_endpoints import face_detection_router
+
+        app.include_router(face_detection_router)
+        logger.info("✅ Face Detection endpoints initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize Face Detection endpoints: {e}")
+        logger.warning("Continuing without Face Detection features")
 
     # Initialize service discovery if available
     try:
@@ -325,6 +390,15 @@ app = FastAPI(
         "PPL Meta Orchestrator with Camera Integration, "
         "Automation, Event Publishing, Method Lifecycle & Automation Engine"
     ),
+)
+
+# Add CORS middleware for Flutter web client access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Router will be included after initialization in the lifespan event

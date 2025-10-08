@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../services/vision_api_client.dart';
 import '../services/media_api_client.dart';
 import '../models/api_models.dart';
 import '../core/providers/features_providers.dart';
+import '../providers/face_data_providers.dart';
 
 /// Face detection overlay for static images
 /// Overlays yellow rectangles on detected faces in static images
@@ -56,26 +56,14 @@ class _FaceDetectionOverlayState extends ConsumerState<FaceDetectionOverlay> {
     });
 
     try {
-      // Send to Vision service
-      final visionClient = VisionApiClient();
-      final base64Image = base64Encode(widget.imageBytes!);
-      final result = await visionClient.detectFaces(
-        imageBase64: base64Image,
-        confidenceThreshold: widget.confidenceThreshold,
-      );
+      // Note: Static image face detection temporarily disabled
+      // Focus is on video face detection through Orchestrator providers
+      debugPrint('🖼️ Static image face detection: Using Orchestrator session-based system');
       
-      if (result != null && mounted) {
-        // Filter by confidence threshold
-        final filteredFaces = result.faces
-            .where((face) => face.confidence >= widget.confidenceThreshold)
-            .toList();
-
-        setState(() {
-          _detectedFaces = filteredFaces;
-        });
-
-        debugPrint('✅ Detected ${filteredFaces.length} faces in image');
-      }
+      // For now, mark as no faces detected
+      setState(() {
+        _detectedFaces = [];
+      });
     } catch (e) {
       debugPrint('⚠️ Face detection error: $e');
     } finally {
@@ -181,7 +169,7 @@ class StaticFaceDetectionPainter extends CustomPainter {
 
     // Paint for face rectangles
     final paint = Paint()
-      ..color = Colors.yellow
+      ..color = Colors.green
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke;
 

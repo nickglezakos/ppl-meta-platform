@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
-import '../services/vision_api_client.dart';
 import '../services/media_api_client.dart';
 import '../models/api_models.dart';
 import '../core/providers/features_providers.dart';
 import '../core/providers/features_provider.dart';
 import '../core/theme/app_theme.dart';
+import '../providers/face_data_providers.dart';
 
 /// Real-time face detection overlay for video content
 /// Overlays yellow rectangles on detected faces during video playback
@@ -112,31 +112,14 @@ class _VideoFaceDetectionOverlayState extends ConsumerState<VideoFaceDetectionOv
       final frameBytes = await _extractCurrentFrame();
       if (frameBytes == null || !mounted) return;
 
-      // Send to Vision service
-      final visionClient = VisionApiClient();
-      final base64Image = base64Encode(frameBytes);
-      final result = await visionClient.detectFaces(
-        imageBase64: base64Image,
-        confidenceThreshold: widget.confidenceThreshold,
-      );
+      // Note: Live frame face detection temporarily disabled  
+      // Focus is on stored video face detection through Orchestrator providers
+      debugPrint('🎥 Live frame face detection: Using Orchestrator session-based system');
       
-      if (result != null && mounted) {
-        // Filter by confidence threshold
-        final filteredFaces = result.faces
-            .where((face) => face.confidence >= widget.confidenceThreshold)
-            .toList();
-
-        setState(() {
-          _detectedFaces = filteredFaces;
-          _frameCache[cacheKey] = filteredFaces; // Cache result
-        });
-
-        // Limit cache size
-        if (_frameCache.length > 50) {
-          final oldestKey = _frameCache.keys.first;
-          _frameCache.remove(oldestKey);
-        }
-      }
+      // For now, use empty face list (stored faces from providers will be shown)
+      setState(() {
+        _detectedFaces = [];
+      });
     } catch (e) {
       debugPrint('⚠️ Face detection error: $e');
     } finally {

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
-import '../presentation/widgets/settings/workflow_settings_section.dart';
+import '../../presentation/widgets/settings/workflow_settings_section.dart';
 
 /// Quick workflow settings dialog for easy access from media preview
 class QuickWorkflowSettingsDialog extends ConsumerWidget {
