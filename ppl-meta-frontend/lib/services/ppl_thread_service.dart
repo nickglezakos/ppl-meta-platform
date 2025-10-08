@@ -123,12 +123,12 @@ class PPLThreadService {
           
           // For person count, use faces count as approximation or check if faces array exists
           if (data.containsKey('faces') && data['faces'] is List) {
-            // If we have faces array, estimate persons from unique face groups
+            // Use faces array length directly - no estimation
             final faces = data['faces'] as List;
-            totalPersons = (faces.length / 3).ceil(); // Rough estimation: 3 faces per person
+            totalPersons = faces.length; // NO ESTIMATION: Use face count directly
           } else {
-            // Fallback: use faces count as person count approximation
-            totalPersons = totalFaces > 0 ? (totalFaces / 3).ceil() : 0;
+            // Fallback: use total_faces value directly
+            totalPersons = totalFaces; // NO ESTIMATION: Backend should handle person grouping
           }
           
           // Log Enhanced Logic V2 specific fields

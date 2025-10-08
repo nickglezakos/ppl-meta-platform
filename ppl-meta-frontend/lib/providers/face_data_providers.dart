@@ -191,9 +191,9 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
   Future<void> loadFaces({bool forceRefresh = false}) async {
     print('🔍 PROVIDER: loadFaces called for media $mediaId (forceRefresh: $forceRefresh)');
     
-    // DEDUPLICATION: Check if already loading to prevent duplicate requests
+    // CACHE CHECK: Check if already loading to prevent duplicate requests
     if (!forceRefresh && _isLoadingInProgress(mediaId)) {
-      print('⏳ DEDUPLICATION: Face loading already in progress for media $mediaId, skipping duplicate request');
+      print('⏳ CACHE: Face loading already in progress for media $mediaId, skipping duplicate request');
       return;
     }
 
@@ -202,7 +202,7 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
       final cachedData = _cache.get(mediaId);
       if (cachedData != null && cachedData.hasData) {
         state = cachedData;
-        print('✅ DEDUPLICATION: Using cached faces for media $mediaId (${cachedData.totalCount} faces)');
+        print('✅ CACHE: Using cached faces for media $mediaId (${cachedData.totalCount} faces)');
         return;
       }
     }
@@ -282,10 +282,8 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
           throw Exception('Enhanced Logic V2 response data is null');
         }
         
-        // DEDUPLICATION: Remove duplicates based on frame and position
-        final deduplicatedFaces = _deduplicateFaces(faces);
-        
-        final successState = MediaFaceDataState.success(mediaId, deduplicatedFaces);
+        // NO DEDUPLICATION: Use raw backend data directly - deduplication should happen in Enhanced Logic V2 backend
+        final successState = MediaFaceDataState.success(mediaId, faces);
         
         // Update state
         state = successState;
@@ -293,7 +291,7 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
         // Cache the result
         _cache.put(mediaId, successState);
         
-        print('✅ ENHANCED V2: Loaded ${deduplicatedFaces.length} unique faces (${faces.length} total before deduplication) for media $mediaId');
+        print('✅ ENHANCED V2: Loaded ${faces.length} faces (NO CLIENT-SIDE DEDUPLICATION) for media $mediaId');
       } else {
         final errorState = MediaFaceDataState.error(
           mediaId,
@@ -314,30 +312,6 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
       // Always mark loading as complete
       _markLoadingComplete(mediaId);
     }
-  }
-
-  /// Deduplicate faces based on position similarity
-  List<FaceDetection> _deduplicateFaces(List<FaceDetection> faces) {
-    final Map<String, FaceDetection> uniqueFaces = {};
-    
-    for (final face in faces) {
-      // Create unique key based on approximate position
-      final positionKey = '${(face.boundingBox.left * 100).round()}_${(face.boundingBox.top * 100).round()}';
-      
-      // Keep the face with highest confidence if duplicate position found
-      if (!uniqueFaces.containsKey(positionKey) || 
-          face.confidence > uniqueFaces[positionKey]!.confidence) {
-        uniqueFaces[positionKey] = face;
-      }
-    }
-    
-    final deduplicatedList = uniqueFaces.values.toList();
-    
-    if (deduplicatedList.length != faces.length) {
-      print('🎯 DEDUPLICATION: Removed ${faces.length - deduplicatedList.length} duplicate faces');
-    }
-    
-    return deduplicatedList;
   }
 
   /// Refresh face data (force reload from server)
@@ -376,7 +350,7 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
 // GLOBAL FACE CACHE PROVIDER  
 // -----------------------------------------------------------------------------
 
-/// Global face data cache instance with deduplication tracking
+/// Global face data cache instance
 final _globalFaceCache = FaceDataCache(maxSize: 50); // Increased for better performance
 
 /// Track which media items are currently being loaded to prevent duplicate requests
@@ -409,11 +383,11 @@ void _markLoadingComplete(String mediaId) {
 /// Global face data cache provider
 final faceDataCacheProvider = Provider<FaceDataCache>((ref) => _globalFaceCache);
 
-/// Media face data provider (per media UUID) with deduplication
+/// Media face data provider (per media UUID)
 final mediaFaceDataProvider = StateNotifierProvider.autoDispose
     .family<MediaFaceDataNotifier, MediaFaceDataState, String>(
   (ref, mediaId) {
-    // Return notifier with global cache reference and deduplication tracking
+    // Return notifier with global cache reference
     return MediaFaceDataNotifier(ref, mediaId, _globalFaceCache);
   },
 );

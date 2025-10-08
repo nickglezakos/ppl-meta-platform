@@ -71,16 +71,16 @@ class PersonObjectsApiClient {
         
         // Transform Enhanced Logic V2 response to PersonObjectsData format
         final totalFaces = data['total_faces'] ?? 0;
-        final totalPersons = totalFaces > 0 ? (totalFaces / 3).ceil() : 0; // Estimate persons from faces
+        final totalPersons = totalFaces; // NO ESTIMATION: Use face count directly - person grouping should happen in backend
         final sessionUuid = data['session_uuid'] ?? mediaUuid;
         final source = data['source'] ?? 'unknown';
         
         developer.log(
-          'Transforming Enhanced Logic V2 data: totalFaces=$totalFaces, estimatedPersons=$totalPersons, source=$source',
+          'Transforming Enhanced Logic V2 data: totalFaces=$totalFaces, totalPersons=$totalPersons (direct mapping), source=$source',
           name: _logName,
         );
         
-        print('🎯 ENHANCED LOGIC V2 DATA TRANSFORM: totalPersons=$totalPersons, totalFaces=$totalFaces, source=$source');
+        print('🎯 ENHANCED LOGIC V2 DATA TRANSFORM: totalPersons=$totalPersons, totalFaces=$totalFaces, source=$source (NO CLIENT-SIDE ESTIMATION)');
         
         final personObjectsData = PersonObjectsData(
           workflowId: data['media_id'] ?? mediaUuid,

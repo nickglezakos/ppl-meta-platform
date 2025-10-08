@@ -23,7 +23,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from service_clients import ServiceClientManager
@@ -174,15 +174,16 @@ class FaceDetectionSessionManager:
             return None
 
     async def enhanced_logic_v2_session_based(
-        self, media_id: str, auth_token: str
+        self, media_id: str, auth_token: str, frame_interval: int = 10
     ) -> Dict[str, Any]:
         """
-        Enhanced Logic V2: Session-based face detection workflow.
+        Enhanced Logic V2: Session-based face detection with frame sampling.
 
         Workflow:
         1. Create/start a session UUID for this media processing
         2. Check for stored faces under session or media
         3. If no stored faces → Call Vision Service for real-time detection
+           with configurable frame sampling for performance optimization
         4. If stored faces found → Use existing data
         5. Everything happens under the same session UUID
 
@@ -250,7 +251,7 @@ class FaceDetectionSessionManager:
 
                     # Step 2: No stored faces - trigger real-time detection
                     return await self._trigger_realtime_detection(
-                        media_id, session_uuid, start_time, auth_token
+                        media_id, session_uuid, start_time, auth_token, frame_interval
                     )
 
             else:
@@ -286,15 +287,17 @@ class FaceDetectionSessionManager:
         session_uuid: str,
         start_time: float,
         auth_token: str,
+        frame_interval: int = 10,
     ) -> Dict[str, Any]:
         """
-        Trigger real-time face detection via Vision Service.
+        Trigger real-time face detection via Vision Service with frame sampling.
 
         Args:
             media_id: The media UUID to process
             session_uuid: The session UUID for this processing
             start_time: Start timestamp for performance measurement
             auth_token: Authentication token for Vision Service requests
+            frame_interval: Process every N frames (default: 10)
 
         Returns:
             dict: Real-time detection results with session information
@@ -302,20 +305,25 @@ class FaceDetectionSessionManager:
         import time
 
         logger.info("🔄 Step 2: Real-time face detection")
-        logger.info("   📡 Calling Vision Service bulk-process...")
+        logger.info(
+            f"   📡 Calling Vision Service bulk-process "
+            f"with frame_interval={frame_interval}..."
+        )
 
         try:
-            # Call Vision Service for real-time detection
+            # Call Vision Service for real-time detection with frame sampling
             bulk_detect_url = (
                 f"http://localhost:8003/faces/media/{media_id}/bulk-process"
+                f"?force_process=true&frame_interval={frame_interval}"
             )
 
             # Create headers with Authorization token
             headers = {"Authorization": f"Bearer {auth_token}"}
 
-            # Use force_process=true to ensure detection runs
+            # Call bulk-process with frame sampling
+            # URL includes force_process and frame_interval parameters
             detection_response = requests.post(
-                bulk_detect_url + "?force_process=true",
+                bulk_detect_url,
                 headers=headers,
                 timeout=60,  # Face detection can take time
             )
@@ -602,25 +610,36 @@ async def get_media_face_detection(
 
 @face_detection_router.get("/media/{media_id}/faces/enhanced-v2")
 async def get_media_face_detection_enhanced_v2(
-    media_id: str, auth_token: str = Depends(get_auth_token)
+    media_id: str,
+    auth_token: str = Depends(get_auth_token),
+    frame_interval: int = Query(
+        10, description="Process every N frames (default: 10)"
+    )
 ):
     """
-    Enhanced Logic V2: Session-based face detection endpoint.
+    Enhanced Logic V2: Session-based face detection with frame sampling.
 
     This endpoint implements the new session-based workflow:
     1. Create session UUID for this processing
     2. Check for stored faces first (fast path)
-    3. If no stored faces → trigger real-time detection (fallback)
+    3. If no stored faces → trigger real-time detection with frame sampling
     4. Return unified response with session information
+
+    Args:
+        media_id: UUID of the media to process
+        frame_interval: Process every N frames (default: 10 = 10x faster)
 
     This is the recommended endpoint for new Flutter integrations.
     """
     try:
-        logger.info(f"Enhanced Logic V2 requested for media: {media_id}")
+        logger.info(
+            f"Enhanced Logic V2 requested for media: {media_id}, "
+            f"frame_interval: {frame_interval}"
+        )
 
-        # Use Enhanced Logic V2 session-based processing
+        # Use Enhanced Logic V2 session-based processing with frame sampling
         result = await session_manager.enhanced_logic_v2_session_based(
-            media_id, auth_token
+            media_id, auth_token, frame_interval
         )
 
         # Return the Enhanced Logic V2 result directly
