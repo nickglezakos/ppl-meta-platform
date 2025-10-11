@@ -31,6 +31,32 @@ from service_clients import ServiceClientManager
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Import distance calculator for Enhanced Logic V2 distance integration
+try:
+    import os
+    import sys
+
+    # Add ppl-meta-vision to path for distance calculator import
+    vision_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "ppl-meta-vision",
+        "src",
+    )
+    if vision_path not in sys.path:
+        sys.path.insert(0, vision_path)
+
+    from distance_calculator import enhance_face_detections_with_distance
+
+    logger.info("✅ Successfully imported distance calculator")
+except ImportError as e:
+    logger.warning(f"⚠️ Failed to import distance calculator: {e}")
+    # Fallback function if import fails
+
+    def enhance_face_detections_with_distance(face_detections):
+        logger.warning("Using fallback - no distance calculations applied")
+        return face_detections
+
+
 # Security setup
 security = HTTPBearer()
 
@@ -228,6 +254,16 @@ class FaceDetectionSessionManager:
                             face["frame_number"] = int(frame_num)
                             faces_array.append(face)
 
+                    # ✨ ENHANCED LOGIC V2 DISTANCE INTEGRATION
+                    # Add distance calculations, center coordinates, and dimensions
+                    logger.info(
+                        "🧮 Enhancing stored faces with distance calculations..."
+                    )
+                    enhanced_faces = enhance_face_detections_with_distance(faces_array)
+                    logger.info(
+                        f"✅ Enhanced {len(enhanced_faces)} faces with distance data"
+                    )
+
                     processing_time = time.time() - start_time
 
                     return {
@@ -236,12 +272,12 @@ class FaceDetectionSessionManager:
                         "media_id": media_id,
                         "source": "stored_faces",
                         "total_faces": stored_face_count,
-                        "faces": faces_array,
+                        "faces": enhanced_faces,  # Now includes distance data
                         "faces_by_frame": faces_by_frame,
                         "processing_time": processing_time,
                         "message": (
                             f"Retrieved {stored_face_count} stored faces "
-                            f"from existing session data"
+                            f"with distance calculations from existing session data"
                         ),
                     }
                 else:
@@ -354,6 +390,16 @@ class FaceDetectionSessionManager:
                             face["frame_number"] = int(frame_num)
                             faces_array.append(face)
 
+                    # ✨ ENHANCED LOGIC V2 DISTANCE INTEGRATION
+                    # Add distance calculations, center coordinates, and dimensions
+                    logger.info(
+                        "🧮 Enhancing real-time faces with distance calculations..."
+                    )
+                    enhanced_faces = enhance_face_detections_with_distance(faces_array)
+                    logger.info(
+                        f"✅ Enhanced {len(enhanced_faces)} faces with distance data"
+                    )
+
                     processing_time = time.time() - start_time
 
                     # Create session linkage for future use
@@ -371,14 +417,14 @@ class FaceDetectionSessionManager:
                         "media_id": media_id,
                         "source": "real_time_detection",
                         "total_faces": detected_face_count,
-                        "faces": faces_array,
+                        "faces": enhanced_faces,  # Now includes distance data
                         "faces_by_frame": faces_by_frame,
                         "processing_time": processing_time,
                         "session_data": session_data,
                         "detection_result": detection_data,
                         "message": (
                             f"Detected {detected_face_count} faces "
-                            f"via real-time processing"
+                            f"via real-time processing with distance calculations"
                         ),
                     }
                 else:
