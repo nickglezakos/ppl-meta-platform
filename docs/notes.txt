@@ -15,14 +15,12 @@ mediaItem.uuid: d66948d7-e26d-4c71-9e7b-f3694d0bd132
 mediaItem.uuid: 2be5fab4-5d50-41bd-ab18-cfe069818d01
 mediaItem.uuid: 60aa5a20-c161-457b-8f44-5fb63bb1c7c1
 
-
 cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-frontend && flutter run -d chrome --web-port 3000
 
 Kkkkodikos234
 rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.76:554/stream1
 
 http://192.168.1.68:8001
-
 
 
 

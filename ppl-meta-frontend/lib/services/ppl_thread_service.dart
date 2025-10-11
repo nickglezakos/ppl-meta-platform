@@ -15,6 +15,7 @@
 import 'dart:developer' as developer;
 import 'package:dio/dio.dart';
 import '../core/api/api_client.dart';
+import '../models/enhanced_person_objects_models.dart';
 
 class PPLThreadService {
   static const String _logName = 'PPLThreadService';
@@ -267,6 +268,116 @@ class PPLThreadService {
       developer.log(
         'Error manually triggering workflow: $e',
         name: _logName,
+      );
+      return false;
+    }
+  }
+
+  // =============================================================================
+  // ENHANCED PERSON OBJECTS WITH DISTANCE-BASED COLOR CODING
+  // =============================================================================
+
+  /// Get enhanced person objects data with distance calculations and representative faces
+  /// 
+  /// This method calls the enhanced PPL Thread endpoint that returns:
+  /// - Detailed person groups with UUIDs
+  /// - Representative faces with quality scoring
+  /// - Distance calculations for each face
+  /// - Movement tracking data (for future route visualization)
+  Future<EnhancedPPLThreadResponse?> getEnhancedPersonObjects(String mediaId) async {
+    try {
+      developer.log(
+        '🚀 ENHANCED PPL THREAD: Getting detailed person objects for media: $mediaId',
+        name: _logName,
+      );
+      
+      // Ensure we have a valid auth token
+      if (_apiClient.authToken == null) {
+        developer.log(
+          'Not authenticated - cannot get enhanced person objects',
+          name: _logName,
+        );
+        return null;
+      }
+      
+      // Call the enhanced PPL Thread endpoint via Gateway
+      final response = await _dio.get('/api/v1/orchestrator/person-objects/$mediaId');
+      
+      developer.log(
+        '🚀 ENHANCED PPL THREAD: Response: ${response.statusCode}',
+        name: _logName,
+      );
+      
+      if (response.statusCode == 200) {
+        final data = response.data;
+        
+        if (data is Map<String, dynamic>) {
+          developer.log(
+            '🚀 ENHANCED PPL THREAD: Successfully parsed response data',
+            name: _logName,
+          );
+          
+          // Parse the enhanced response
+          final enhancedResponse = EnhancedPPLThreadResponse.fromJson(data);
+          
+          developer.log(
+            '🚀 ENHANCED PPL THREAD: Found ${enhancedResponse.totalPersons} persons with ${enhancedResponse.personGroups.length} groups',
+            name: _logName,
+          );
+          
+          // Log distance information for debugging
+          for (final group in enhancedResponse.personGroups) {
+            developer.log(
+              '🎯 Person ${group.personId}: ${group.faceCount} faces, closest distance: ${group.closestDistance.toStringAsFixed(1)}m',
+              name: _logName,
+            );
+          }
+          
+          return enhancedResponse;
+        }
+      }
+      
+      developer.log(
+        'No enhanced person objects data found for media $mediaId (HTTP ${response.statusCode})',
+        name: _logName,
+      );
+      return null;
+      
+    } catch (e) {
+      developer.log(
+        'Error getting enhanced person objects for media $mediaId: $e',
+        name: _logName,
+        error: e,
+      );
+      return null;
+    }
+  }
+
+  /// Get enhanced person objects with simpler error handling for UI widgets
+  Future<List<EnhancedPersonObjectGroup>> getPersonObjectGroups(String mediaId) async {
+    try {
+      final response = await getEnhancedPersonObjects(mediaId);
+      return response?.personGroups ?? [];
+    } catch (e) {
+      developer.log(
+        'Error getting person object groups for media $mediaId: $e',
+        name: _logName,
+        error: e,
+      );
+      return [];
+    }
+  }
+
+  /// Check if enhanced person objects data is available for media
+  Future<bool> hasEnhancedPersonObjectsData(String mediaId) async {
+    try {
+      final response = await getEnhancedPersonObjects(mediaId);
+      return response != null && response.success;
+    } catch (e) {
+      developer.log(
+        'Error checking enhanced person objects availability for media $mediaId: $e',
+        name: _logName,
+        error: e,
       );
       return false;
     }

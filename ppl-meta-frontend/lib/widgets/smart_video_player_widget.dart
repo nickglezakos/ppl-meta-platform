@@ -4,6 +4,7 @@ import 'package:video_player/video_player.dart';
 import '../models/media_models.dart';
 import '../models/face_detection_models.dart';
 import '../services/media_api_client.dart';
+import '../services/distance_color_service.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/simple_video_face_detection_overlay.dart';
 import '../providers/workflow_providers.dart';
@@ -979,16 +980,6 @@ class OptimizedFacePainter extends CustomPainter {
       return;
     }
 
-    // Color coding: Green for memory cache/global cache, Yellow for fallback
-    final bool isFromMemoryCache = dataSource == 'MediaFaceDataProvider_Cache' || dataSource == 'global_cache';
-    final Color rectangleColor = isFromMemoryCache ? Colors.green : Colors.yellow;
-    final String colorName = isFromMemoryCache ? 'GREEN' : 'YELLOW';
-    
-    final paint = Paint()
-      ..color = rectangleColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0; // Make thicker for better visibility
-
     final textPainter = TextPainter(
       textDirection: TextDirection.ltr,
     );
@@ -1029,6 +1020,11 @@ class OptimizedFacePainter extends CustomPainter {
       // Skip faces with very low opacity
       if (opacity < 0.05) continue;
       
+      // 🎯 DISTANCE-BASED COLOR CODING: Calculate distance from face area
+      final faceArea = bbox.width * bbox.height;
+      final distance = _calculateDistanceFromArea(faceArea);
+      final distanceColor = DistanceColorService.getDistanceColor(distance);
+      
       // Scale face coordinates to match actual video display area (WORKING LOGIC)
       // Convert from left,top,width,height to left,top,right,bottom for Rect.fromLTRB
       final rect = Rect.fromLTRB(
@@ -1038,23 +1034,37 @@ class OptimizedFacePainter extends CustomPainter {
         (bbox.top + bbox.height) * scaleY + offsetY,
       );
 
-      // Create paint with opacity for smooth transitions
+      // Create paint with distance-based color and opacity for smooth transitions
       final opacityPaint = Paint()
-        ..color = rectangleColor.withValues(alpha: opacity)
+        ..color = distanceColor.withValues(alpha: opacity)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3.0;
 
-      // Draw rectangle with opacity
+      // Draw rectangle with distance-based color and opacity
       canvas.drawRect(rect, opacityPaint);
 
-      // Draw confidence text with opacity
+      // Draw confidence and distance text with matching color
       final confidence = face.confidence;
       textPainter.text = TextSpan(
-        text: '${(confidence * 100).toInt()}%',
+        children: [
+          TextSpan(
+            text: '${(confidence * 100).toInt()}%',
+            style: TextStyle(
+              color: distanceColor.withValues(alpha: opacity),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          TextSpan(
+            text: '\n${distance.toStringAsFixed(1)}m',
+            style: TextStyle(
+              color: distanceColor.withValues(alpha: opacity),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
         style: TextStyle(
-          color: rectangleColor.withValues(alpha: opacity),
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
           shadows: [
             Shadow(
               offset: const Offset(1.0, 1.0),
@@ -1065,11 +1075,28 @@ class OptimizedFacePainter extends CustomPainter {
         ),
       );
       textPainter.layout();
-      textPainter.paint(canvas, Offset(rect.left, rect.top - 25));
+      textPainter.paint(canvas, Offset(rect.left, rect.top - 35)); // Moved up to accommodate distance text
     }
 
-    // Simple success message
-    debugPrint('🎨 ${faces.length} $colorName rectangles painted successfully');
+    // Success message with distance-based color coding
+    debugPrint('🎨 ${faces.length} distance-colored rectangles painted successfully');
+  }
+
+  /// Calculate distance from camera based on face area using PPL Meta methodology
+  /// Based on the autonomous system formula: distance = (baseline_face_size / face_area) * baseline_distance
+  double _calculateDistanceFromArea(double faceArea) {
+    // PPL Meta standard constants (from distance_calculator.py)
+    const double baselineFaceSize = 1000000.0; // 1,000,000 pixels for baseline
+    const double baselineDistance = 1.0; // 1 meter baseline distance
+    
+    // Avoid division by zero
+    if (faceArea <= 0) return 100.0; // Default far distance
+    
+    // Calculate distance using autonomous methodology
+    final distance = (baselineFaceSize / faceArea) * baselineDistance;
+    
+    // Clamp to reasonable range (0.5m to 100m)
+    return distance.clamp(0.5, 100.0);
   }
 
   @override

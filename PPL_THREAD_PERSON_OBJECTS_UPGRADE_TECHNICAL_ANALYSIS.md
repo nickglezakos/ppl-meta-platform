@@ -526,17 +526,17 @@ class FaceDataProvider extends ChangeNotifier {
 }
 ```
 
-### **2. Green Rectangle Overlay Enhancement**
+### **2. Green Rectangle Overlay Enhancement (Simplified)**
 
 #### **File**: `/ppl-meta-frontend/lib/widgets/face_detection_overlay.dart`
 
-#### **Enhanced Overlay Widget**:
+#### **Enhanced Overlay Widget (No Quality Scores)**:
 ```dart
 class PersonObjectsOverlay extends StatelessWidget {
   final List<PersonObjectGroup> personGroups;
   final List<RoutePoint> routeData;
   final bool showRoutes;
-  final bool showQualityScores;
+  final bool showDistanceColors;
   
   @override
   Widget build(BuildContext context) {
@@ -545,7 +545,7 @@ class PersonObjectsOverlay extends StatelessWidget {
         personGroups: personGroups,
         routeData: routeData,
         showRoutes: showRoutes,
-        showQualityScores: showQualityScores,
+        showDistanceColors: showDistanceColors,
       ),
     );
   }
@@ -565,20 +565,20 @@ class PersonObjectsPainter extends CustomPainter {
           (bbox[3] - bbox[1]).toDouble(),
         );
         
-        // Color-code by quality score
-        final color = _getQualityColor(face.qualityScore);
+        // Distance-based color coding
+        final distance = face.faceData['distance_from_camera'] ?? 0;
+        final color = _getDistanceColor(distance);
         
-        // Draw rectangle
+        // Draw rectangle with distance-based color
         canvas.drawRect(rect, Paint()
           ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.0);
         
-        // Draw person UUID label
-        _drawPersonLabel(canvas, rect, person.personId, face.qualityScore);
+        // Draw person ID label (no quality score)
+        _drawPersonLabel(canvas, rect, person.personId);
         
         // Draw distance information
-        final distance = face.faceData['distance_from_camera'] ?? 0;
         _drawDistanceLabel(canvas, rect, distance);
       }
       
@@ -589,19 +589,24 @@ class PersonObjectsPainter extends CustomPainter {
     }
   }
   
-  Color _getQualityColor(double qualityScore) {
-    if (qualityScore > 80) return Colors.green;
-    if (qualityScore > 60) return Colors.orange;
-    return Colors.red;
+  // DISTANCE-BASED COLOR CODING IMPLEMENTATION
+  Color _getDistanceColor(double distance) {
+    // Color scheme based on distance ranges
+    if (distance < 10) return Colors.red;        // Very close (< 10m)
+    if (distance < 20) return Colors.orange;     // Close (10-20m) 
+    if (distance < 30) return Colors.yellow;     // Medium (20-30m)
+    if (distance < 50) return Colors.green;      // Far (30-50m)
+    return Colors.blue;                          // Very far (> 50m)
   }
   
-  void _drawPersonLabel(Canvas canvas, Rect rect, String personId, double quality) {
+  void _drawPersonLabel(Canvas canvas, Rect rect, String personId) {
     final textPainter = TextPainter(
       text: TextSpan(
-        text: '$personId\nQ: ${quality.toStringAsFixed(1)}',
+        text: personId, // Simplified - no quality score
         style: TextStyle(
           color: Colors.white,
           fontSize: 12,
+          fontWeight: FontWeight.bold,
           backgroundColor: Colors.black54,
         ),
       ),
@@ -609,32 +614,35 @@ class PersonObjectsPainter extends CustomPainter {
     );
     
     textPainter.layout();
-    textPainter.paint(canvas, Offset(rect.left, rect.top - 30));
+    textPainter.paint(canvas, Offset(rect.left, rect.top - 25));
   }
   
   void _drawDistanceLabel(Canvas canvas, Rect rect, double distance) {
     final textPainter = TextPainter(
       text: TextSpan(
-        text: 'D: ${distance.toStringAsFixed(1)}m',
+        text: '${distance.toStringAsFixed(1)}m',
         style: TextStyle(
-          color: Colors.blue,
+          color: Colors.white,
           fontSize: 10,
-          backgroundColor: Colors.white70,
+          fontWeight: FontWeight.bold,
+          backgroundColor: Colors.black87,
         ),
       ),
       textDirection: TextDirection.ltr,
     );
     
     textPainter.layout();
-    textPainter.paint(canvas, Offset(rect.right - 50, rect.bottom + 5));
+    textPainter.paint(canvas, Offset(rect.right - 40, rect.bottom + 5));
   }
   
+  // ROUTE TRACKING VISUALIZATION IMPLEMENTATION
   void _drawMovementRoute(Canvas canvas, List<RoutePoint> routePoints) {
     if (routePoints.length < 2) return;
     
-    final paint = Paint()
-      ..color = Colors.blue.withOpacity(0.6)
-      ..strokeWidth = 2.0
+    // Draw main route path
+    final routePaint = Paint()
+      ..color = Colors.cyan.withOpacity(0.7)
+      ..strokeWidth = 3.0
       ..style = PaintingStyle.stroke;
     
     final path = Path();
@@ -644,22 +652,383 @@ class PersonObjectsPainter extends CustomPainter {
       path.lineTo(point.centerX, point.centerY);
     }
     
-    canvas.drawPath(path, paint);
+    canvas.drawPath(path, routePaint);
     
-    // Draw velocity arrows
+    // Draw start point (green circle)
+    canvas.drawCircle(
+      Offset(routePoints.first.centerX, routePoints.first.centerY),
+      6.0,
+      Paint()..color = Colors.green
+    );
+    
+    // Draw end point (red circle)
+    canvas.drawCircle(
+      Offset(routePoints.last.centerX, routePoints.last.centerY),
+      6.0,
+      Paint()..color = Colors.red
+    );
+    
+    // Draw velocity indicators for significant movements
     for (int i = 1; i < routePoints.length; i++) {
       final current = routePoints[i];
       final previous = routePoints[i-1];
       
-      if (current.velocityMagnitude > 5) { // Only show significant movement
+      if (current.velocityMagnitude > 20) { // Threshold for significant movement
         _drawVelocityArrow(canvas, previous, current);
       }
     }
+    
+    // Draw route statistics overlay
+    _drawRouteStatistics(canvas, routePoints);
+  }
+  
+  void _drawVelocityArrow(Canvas canvas, RoutePoint from, RoutePoint to) {
+    final paint = Paint()
+      ..color = Colors.purple.withOpacity(0.8)
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+    
+    // Calculate arrow direction
+    final dx = to.centerX - from.centerX;
+    final dy = to.centerY - from.centerY;
+    final angle = math.atan2(dy, dx);
+    
+    // Draw arrow line
+    canvas.drawLine(
+      Offset(from.centerX, from.centerY),
+      Offset(to.centerX, to.centerY),
+      paint
+    );
+    
+    // Draw arrowhead
+    final arrowLength = 8.0;
+    final arrowAngle = 0.5;
+    
+    final arrowX1 = to.centerX - arrowLength * math.cos(angle - arrowAngle);
+    final arrowY1 = to.centerY - arrowLength * math.sin(angle - arrowAngle);
+    final arrowX2 = to.centerX - arrowLength * math.cos(angle + arrowAngle);
+    final arrowY2 = to.centerY - arrowLength * math.sin(angle + arrowAngle);
+    
+    canvas.drawLine(Offset(to.centerX, to.centerY), Offset(arrowX1, arrowY1), paint);
+    canvas.drawLine(Offset(to.centerX, to.centerY), Offset(arrowX2, arrowY2), paint);
+  }
+  
+  void _drawRouteStatistics(Canvas canvas, List<RoutePoint> routePoints) {
+    // Calculate total distance and time
+    final totalPoints = routePoints.length;
+    final duration = routePoints.last.timestamp - routePoints.first.timestamp;
+    final maxVelocity = routePoints.map((p) => p.velocityMagnitude).reduce(math.max);
+    
+    // Draw statistics box
+    final statsText = 'Points: $totalPoints\nTime: ${duration.toStringAsFixed(1)}s\nMax Speed: ${maxVelocity.toStringAsFixed(1)}';
+    
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: statsText,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          backgroundColor: Colors.black87,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    
+    textPainter.layout();
+    
+    // Position at top-right of screen
+    final statsPosition = Offset(canvas.deviceTransform.getMaxScaleOnAxis() - textPainter.width - 10, 10);
+    
+    // Draw background
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(statsPosition.dx - 5, statsPosition.dy - 5, 
+                     textPainter.width + 10, textPainter.height + 10),
+        Radius.circular(5)
+      ),
+      Paint()..color = Colors.black54
+    );
+    
+    textPainter.paint(canvas, statsPosition);
   }
 }
 ```
 
-### **3. Counter Widgets Enhancement**
+---
+
+## 🎯 **Implementation Guides for Key Features**
+
+### **1. Route Tracking Visualization - Optional Future Upgrade** ⚠️ *NOT IMPLEMENTED NOW*
+
+> **Note**: This feature is documented for future development but will **NOT** be implemented in the current phase. The backend PPL Thread endpoint includes movement tracking data, but the Flutter visualization components are deferred to a future upgrade.
+
+#### **Overview**: 
+Route tracking shows the complete movement path of each person through the video, with visual indicators for velocity, direction changes, and movement statistics.
+
+#### **Implementation Strategy** *(Future Development)*:
+```dart
+// Route visualization components (FUTURE):
+1. **Main Path Line**: Cyan colored path connecting all detection points
+2. **Start/End Markers**: Green circle (start) → Red circle (end)  
+3. **Velocity Arrows**: Purple arrows for significant movements (> 20 px/sec)
+4. **Statistics Overlay**: Real-time movement metrics display
+
+// Data Source:
+- Uses movement_tracking.route_points from PPL Thread API
+- Each route point contains: center_x, center_y, velocity_magnitude, timestamp
+- NO additional sampling needed - all 158 points displayed
+
+// Performance Considerations:
+- Only draw velocity arrows for significant movements (threshold: 20+ px/sec)
+- Use Canvas.drawPath() for efficient line rendering
+- Statistics overlay updates dynamically based on route data
+```
+
+#### **User Benefits** *(Future Implementation)*:
+- **Movement Pattern Analysis**: See how person moves through frame
+- **Velocity Insights**: Identify fast movements vs stationary periods  
+- **Temporal Tracking**: Understand movement over 5.43 second duration
+- **Spatial Awareness**: Visualize movement within 20×34.5 pixel area
+
+---
+
+### **2. Distance-Based Color Coding - Detailed Implementation**
+
+#### **Overview**:
+Face rectangles change color based on distance from camera, providing immediate visual feedback about person proximity without cluttering the interface.
+
+#### **Color Scheme Implementation**:
+```dart
+Color _getDistanceColor(double distance) {
+  // Professional distance-based color coding
+  if (distance < 10) return Colors.red;        // CRITICAL: Very close (< 10m)
+  if (distance < 20) return Colors.orange;     // WARNING: Close (10-20m) 
+  if (distance < 30) return Colors.yellow;     // CAUTION: Medium (20-30m)
+  if (distance < 50) return Colors.green;      // SAFE: Far (30-50m)
+  return Colors.blue;                          // DISTANT: Very far (> 50m)
+}
+
+// Real-world application with our test data:
+// - Best face: 15.26m → ORANGE (close proximity)
+// - Representative faces: 15-17m range → ORANGE/YELLOW transition
+// - Provides immediate visual distance assessment
+```
+
+#### **Visual Benefits**:
+- **Instant Recognition**: No need to read distance numbers
+- **Safety Applications**: Red indicates very close proximity
+- **Depth Perception**: Color gradient shows spatial relationships
+- **Accessibility**: Color-blind friendly with distinct hue ranges
+
+---
+
+### **3. Person Group Drill-Down Views - Detailed Implementation**
+
+#### **Overview**: 
+Interactive detailed views that allow users to explore individual person analytics, representative faces, movement patterns, and quality metrics.
+
+#### **Implementation Architecture**:
+```dart
+// 1. Person Group Summary Card (Main View)
+class PersonGroupSummaryCard extends StatelessWidget {
+  final PersonObjectGroup group;
+  
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: _getGroupColor(group.qualityMetrics.averageQuality),
+          child: Text(group.personId.split('_')[1]), // Show person number
+        ),
+        title: Text('${group.personId} (${group.faceCount} faces)'),
+        subtitle: Text('Quality: ${group.qualityMetrics.averageQuality.toStringAsFixed(1)} | Distance: ${group.representativeFaces.first.faceData["distance_from_camera"]}m'),
+        trailing: Icon(Icons.chevron_right),
+        onTap: () => _showPersonGroupDetails(context, group),
+      ),
+    );
+  }
+}
+
+// 2. Detailed Drill-Down View
+class PersonGroupDetailView extends StatefulWidget {
+  final PersonObjectGroup group;
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('${group.personId} Details')),
+      body: TabBarView(
+        children: [
+          _buildOverviewTab(),      // Summary statistics
+          _buildFacesTab(),         // Representative faces gallery
+          _buildMovementTab(),      // Route tracking analysis
+          _buildAnalyticsTab(),     // Quality metrics & spatial data
+        ],
+      ),
+    );
+  }
+  
+  // Overview Tab: Key statistics and summary
+  Widget _buildOverviewTab() {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Person UUID and basic info
+          InfoCard(
+            title: 'Person Information',
+            children: [
+              InfoRow('UUID', group.personUuid),
+              InfoRow('Face Count', '${group.faceCount}'),
+              InfoRow('Average Confidence', '${group.averageConfidence}'),
+              InfoRow('Duration', '${group.temporalSpan.durationSeconds.toStringAsFixed(1)}s'),
+            ],
+          ),
+          
+          // Quality metrics
+          InfoCard(
+            title: 'Quality Metrics',
+            children: [
+              InfoRow('Average Quality', '${group.qualityMetrics.averageQuality}'),
+              InfoRow('Best Quality', '${group.qualityMetrics.maxQuality}'),
+              InfoRow('Quality Range', '${group.qualityMetrics.minQuality} - ${group.qualityMetrics.maxQuality}'),
+              InfoRow('Consistency', '${(100 - group.qualityMetrics.qualityVariance).toStringAsFixed(1)}%'),
+            ],
+          ),
+          
+          // Spatial information
+          InfoCard(
+            title: 'Spatial Analysis',
+            children: [
+              InfoRow('Movement Area', '${group.spatialBounds.width.toStringAsFixed(1)} × ${group.spatialBounds.height.toStringAsFixed(1)} pixels'),
+              InfoRow('Center Position', '(${group.spatialBounds.minX + group.spatialBounds.width/2}, ${group.spatialBounds.minY + group.spatialBounds.height/2})'),
+              InfoRow('Total Distance', '${group.movementTracking.movementStatistics.totalDistancePixels} pixels'),
+              InfoRow('Average Speed', '${group.movementTracking.movementStatistics.averageVelocity.toStringAsFixed(1)} px/s'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // Representative Faces Tab: Visual gallery
+  Widget _buildFacesTab() {
+    return GridView.builder(
+      padding: EdgeInsets.all(16),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.8,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: group.representativeFaces.length,
+      itemBuilder: (context, index) {
+        final face = group.representativeFaces[index];
+        return RepresentativeFaceCard(
+          face: face,
+          rank: face.selectionRank,
+          onTap: () => _showFaceDetails(face),
+        );
+      },
+    );
+  }
+  
+  // Movement Analysis Tab: Route visualization
+  Widget _buildMovementTab() {
+    return Column(
+      children: [
+        // Movement statistics summary
+        Container(
+          padding: EdgeInsets.all(16),
+          child: MovementStatisticsCard(group.movementTracking.movementStatistics),
+        ),
+        
+        // Interactive route visualization
+        Expanded(
+          child: RouteVisualizationWidget(
+            routePoints: group.movementTracking.routePoints,
+            showVelocityHeatmap: true,
+            showDirectionArrows: true,
+            enableTimeSlider: true, // Scrub through movement over time
+          ),
+        ),
+        
+        // Route timeline
+        Container(
+          height: 100,
+          child: RouteTimelineWidget(group.movementTracking.routePoints),
+        ),
+      ],
+    );
+  }
+}
+
+// 3. Interactive Features
+class RouteVisualizationWidget extends StatefulWidget {
+  // Features:
+  // - Pinch to zoom route visualization
+  // - Tap route points to see frame details
+  // - Time slider to animate movement
+  // - Velocity heatmap overlay
+  // - Export route data to CSV
+}
+```
+
+#### **Drill-Down Benefits**:
+- **Comprehensive Analysis**: Full person analytics in organized tabs
+- **Interactive Exploration**: Tap faces, scrub timeline, zoom routes
+- **Data Export**: CSV export for external analysis
+- **Professional Interface**: Clean, organized information hierarchy
+
+---
+
+## 🎯 **Updated Implementation Priority**
+
+### **Immediate Implementation (Week 2)**:
+1. ✅ **Distance-Based Color Coding**: Simple but impactful visual enhancement
+2. ✅ **Simplified Green Rectangles**: Clean person ID labels without quality clutter  
+3. ⚠️ **Route Tracking Visualization**: *DEFERRED TO FUTURE RELEASE* - Backend data available but Flutter visualization not implemented
+
+### **Enhanced Features (Week 2.5)**:
+1. ✅ **Person Group Drill-Down**: Detailed analytics views
+2. ⚠️ **Interactive Route Timeline**: *DEFERRED TO FUTURE RELEASE* - Temporal movement scrubbing not implemented  
+3. ⚠️ **Movement Statistics**: *DEFERRED TO FUTURE RELEASE* - Real-time velocity and distance metrics not implemented
+
+### **Current Phase Scope**:
+- ✅ **Backend Complete**: PPL Thread endpoint with full movement tracking data
+- ✅ **Distance Color Coding**: Immediate visual distance feedback  
+- ✅ **Simplified Overlays**: Clean person rectangles without quality score clutter
+- ✅ **Person Group Analytics**: Drill-down views for detailed analysis
+- ⚠️ **Movement Visualization**: Backend ready, Flutter implementation deferred
+
+---
+
+## 📊 **Expected User Experience** (Current Phase)
+
+### **Visual Interface**:
+- **Clean Overlays**: Distance-colored rectangles with person IDs
+- **Instant Feedback**: Color-coded distance assessment (red=close, blue=far)
+- **Simplified Design**: No quality score clutter on overlays
+
+### **Interaction Flow**:
+1. **Video View**: See distance-colored rectangles (no movement paths in current phase)
+2. **Counter Widget**: Tap person summary to drill down  
+3. **Detail View**: Explore representative faces and analytics in organized tabs
+4. **Route Analysis**: *FUTURE FEATURE* - Interactive timeline and velocity visualization deferred
+
+### **Data Insights** (Current Implementation):
+- **Distance Awareness**: Immediate visual distance feedback
+- **Quality Assessment**: Representative face ranking and selection criteria (backend data available)
+- **Person Analytics**: Spatial bounds and temporal data (in drill-down views)
+- **Movement Data**: Complete route tracking available via API but not visualized in UI
+
+### **Future Enhancements** (Not Implemented):
+- **Movement Intelligence**: Route visualization with velocity analysis  
+- **Spatial Analytics**: Interactive movement bounds and velocity patterns
+- **Timeline Scrubbing**: Temporal playback controls for movement data
+```
+
+### **3. Counter Widgets Enhancement (Simplified)**
 
 #### **File**: `/ppl-meta-frontend/lib/widgets/face_person_counters.dart`
 
@@ -702,7 +1071,7 @@ class EnhancedPersonCounter extends StatelessWidget {
             
             SizedBox(height: 16),
             
-            // Person groups summary
+            // Person groups summary (simplified - no quality scores)
             if (personGroups.isNotEmpty) ...[
               Text('Person Groups:', style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
@@ -716,27 +1085,79 @@ class EnhancedPersonCounter extends StatelessWidget {
   }
   
   Widget _buildPersonGroupSummary(PersonObjectGroup group) {
-    return Container(
-      margin: EdgeInsets.symmetric(vertical: 2),
-      padding: EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.grey[100],
-        borderRadius: BorderRadius.circular(8),
+    // Get closest distance from representative faces
+    final closestDistance = group.representativeFaces
+        .map((face) => face.faceData['distance_from_camera'] as double)
+        .reduce((a, b) => a < b ? a : b);
+    
+    return GestureDetector(
+      onTap: () => _showPersonGroupDrillDown(context, group),
+      child: Container(
+        margin: EdgeInsets.symmetric(vertical: 2),
+        padding: EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          children: [
+            // Person icon with distance-based color
+            Icon(
+              Icons.person, 
+              size: 16, 
+              color: _getDistanceColor(closestDistance)
+            ),
+            SizedBox(width: 8),
+            
+            // Person ID
+            Text(
+              group.personId, 
+              style: TextStyle(fontWeight: FontWeight.bold)
+            ),
+            
+            Spacer(),
+            
+            // Face count
+            Text('${group.faceCount} faces'),
+            SizedBox(width: 8),
+            
+            // Distance indicator
+            Text(
+              '${closestDistance.toStringAsFixed(1)}m',
+              style: TextStyle(
+                color: _getDistanceColor(closestDistance),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            
+            // Drill-down indicator
+            Icon(Icons.chevron_right, size: 16, color: Colors.grey),
+          ],
+        ),
       ),
-      child: Row(
-        children: [
-          Icon(Icons.person, size: 16, color: Colors.blue),
-          SizedBox(width: 8),
-          Text(group.personId, style: TextStyle(fontWeight: FontWeight.bold)),
-          Spacer(),
-          Text('${group.faceCount} faces'),
-          SizedBox(width: 8),
-          Text('Q: ${group.qualityMetrics.averageQuality.toStringAsFixed(1)}'),
-        ],
+    );
+  }
+  
+  Color _getDistanceColor(double distance) {
+    // Same distance-based color coding as overlay
+    if (distance < 10) return Colors.red;
+    if (distance < 20) return Colors.orange; 
+    if (distance < 30) return Colors.yellow;
+    if (distance < 50) return Colors.green;
+    return Colors.blue;
+  }
+  
+  void _showPersonGroupDrillDown(BuildContext context, PersonObjectGroup group) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PersonGroupDetailView(group: group),
       ),
     );
   }
 }
+```
 ```
 
 ---
@@ -769,13 +1190,15 @@ class EnhancedPersonCounter extends StatelessWidget {
 
 2. **UI Component Enhancements**:
    - Update face/person counters with detailed information
-   - Enhance green rectangle overlay with quality scores
-   - Add route tracking visualization
+   - Enhance green rectangle overlay (simplified without quality scores)
+   - Add route tracking visualization with movement paths
+   - Implement distance-based color coding for face rectangles
 
 3. **User Experience**:
-   - Add quality score indicators
-   - Implement distance-based color coding
-   - Create person group drill-down views
+   - Implement distance-based color coding system
+   - Add route tracking visualization with velocity indicators
+   - Create person group drill-down views for detailed analytics
+   - Enhanced face/person counters with group summaries
 
 ### **Phase 3: Advanced Features** (Week 3)
 
