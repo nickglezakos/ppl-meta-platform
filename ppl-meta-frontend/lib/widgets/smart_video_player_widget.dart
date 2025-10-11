@@ -22,6 +22,7 @@ class SmartVideoPlayerWidget extends ConsumerStatefulWidget {
   final Map<String, String>? headers;
   final String? collectionId;
   final Function(VideoPlayerController)? onControllerReady;
+  final VoidCallback? onDetailsPressed;
 
   const SmartVideoPlayerWidget({
     super.key,
@@ -29,6 +30,7 @@ class SmartVideoPlayerWidget extends ConsumerStatefulWidget {
     this.headers,
     this.collectionId,
     this.onControllerReady,
+    this.onDetailsPressed,
   });
 
   @override
@@ -719,37 +721,38 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     return url;
   }
 
-  /// Build playback mode indicator
+  /// Build details indicator
   Widget _buildPlaybackModeIndicator() {
-    if (_currentPlaybackMode == null) return const SizedBox.shrink();
-
     return Positioned(
       top: 16,
       left: 16,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: _getPlaybackModeColor().withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _getPlaybackModeIcon(),
-              size: 14,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              _getPlaybackModeDisplayName(),
-              style: const TextStyle(
+      child: GestureDetector(
+        onTap: widget.onDetailsPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.blue[700]!.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 14,
                 color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
               ),
-            ),
-          ],
+              const SizedBox(width: 4),
+              Text(
+                'Details',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

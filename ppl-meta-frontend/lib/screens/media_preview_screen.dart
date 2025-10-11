@@ -12,7 +12,6 @@ import '../widgets/custom_app_bar.dart';
 import '../providers/workflow_providers.dart';
 import '../providers/face_memory_manager.dart';
 import '../widgets/face_and_person_count_widget.dart';
-import '../widgets/ppl_thread_test_widget.dart';
 // Phase 6: Person Objects Integration
 import '../providers/person_objects_provider.dart';
 import '../widgets/person_objects_components.dart';
@@ -201,6 +200,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               _videoController = controller;
             });
           },
+          onDetailsPressed: _navigateToPersonObjectsDetail,
         ),
       ),
     );
@@ -1333,11 +1333,6 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
   /// Build performance status bar showing key metrics
   Widget _buildPerformanceStatusBar(WidgetRef ref) {
-    final processingStatus = ref.watch(processingStatusProvider(widget.mediaItem.uuid));
-    final activeSessions = ref.watch(activeSessionsProvider);
-    final playbackMode = ref.watch(optimalPlaybackModeProvider(widget.mediaItem.uuid));
-    final workflowState = ref.watch(mediaWorkflowProvider(widget.mediaItem.uuid));
-    
     return Container(
       height: 50, // Fixed height to prevent vertical stacking
       color: Colors.grey[900],
@@ -1345,130 +1340,16 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center, // Ensure horizontal alignment
         children: [
-          // 1. Playback mode indicator
-          Flexible(
-            flex: 1,
-            child: playbackMode.when(
-              data: (mode) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _getPlaybackModeColor(mode?.mode ?? 'standard'),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _getPlaybackModeDisplayName(mode?.mode ?? 'standard'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
+          // Only show the combined Face and Person Count widget
+          Expanded(
+            child: Center(
+              child: FaceAndPersonCountWidget(
+                mediaId: widget.mediaItem.uuid,
+                compact: true,
+                useEnhancedView: false, // Temporarily disable enhanced view to check auth issue
+                textColor: Colors.white70,
+                iconColor: Colors.white70,
               ),
-              loading: () => const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 1),
-              ),
-              error: (error, stack) => const Icon(Icons.error, color: Colors.red, size: 12),
-            ),
-          ),
-          
-          const SizedBox(width: 8),
-          
-          // 2. Processing status display
-          Flexible(
-            flex: 2,
-            child: processingStatus.when(
-              data: (status) => status != null 
-                  ? _buildCompactProcessingStatus(status, ref)
-                  : const Text(
-                      'No processing status',
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-              loading: () => const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.blue),
-                  ),
-                  SizedBox(width: 8),
-                  Flexible(
-                    child: Text('Loading...', style: TextStyle(color: Colors.white70, fontSize: 12), overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-              ),
-              error: (error, stack) => const Text(
-                'Status error',
-                style: TextStyle(color: Colors.red, fontSize: 12),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          
-          const SizedBox(width: 8),
-          
-          // 3. Active sessions display
-          Flexible(
-            flex: 1,
-            child: activeSessions.when(
-              data: (sessions) => _buildCompactActiveSessionsStatus(sessions),
-              loading: () => const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 1, color: Colors.orange),
-                  ),
-                  SizedBox(width: 4),
-                  Text('Sessions...', style: TextStyle(color: Colors.white70, fontSize: 10)),
-                ],
-              ),
-              error: (error, stack) => const Icon(Icons.error, color: Colors.red, size: 12),
-            ),
-          ),
-          
-          const SizedBox(width: 8),
-          
-          // 4. Media workflow progress
-          Flexible(
-            flex: 1,
-            child: _buildCompactMediaWorkflowProgress(workflowState),
-          ),
-          
-          const SizedBox(width: 4),
-          
-          // 5. Workflow status display 
-          Flexible(
-            flex: 1,
-            child: _buildCompactWorkflowProgress(workflowState),
-          ),
-
-          const SizedBox(width: 4),
-          
-          // 6. Face and person count display (Enhanced with PPL Thread integration and drill-down)
-          Flexible(
-            flex: 1,
-            child: FaceAndPersonCountWidget(
-              mediaId: widget.mediaItem.uuid,
-              compact: true,
-              useEnhancedView: false, // Temporarily disable enhanced view to check auth issue
-              textColor: Colors.white70,
-              iconColor: Colors.white70,
-            ),
-          ),
-          
-          const SizedBox(width: 4),
-          
-          // DEBUG: PPL Thread test widget (horizontal layout)
-          Flexible(
-            flex: 1,
-            child: PPLThreadTestWidget(
-              mediaId: widget.mediaItem.uuid,
             ),
           ),
         ],

@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:ui' as ui;
+import 'dart:io';
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import '../models/person_objects_models.dart';
 import '../providers/person_objects_provider.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/media_models.dart';
+import '../core/api/api_client.dart';
 
 /// Detailed screen for viewing person objects results and analysis
 class PersonObjectsDetailScreen extends ConsumerStatefulWidget {
@@ -24,6 +31,7 @@ class _PersonObjectsDetailScreenState
     with SingleTickerProviderStateMixin {
   
   late TabController _tabController;
+  final Set<String> _debuggedFaces = {}; // Cache for debug output
 
   @override
   void initState() {
@@ -66,7 +74,7 @@ class _PersonObjectsDetailScreenState
               ),
               Tab(
                 icon: Icon(Icons.groups),
-                text: 'Person Groups',
+                text: 'Persons',
               ),
               Tab(
                 icon: Icon(Icons.face),
@@ -241,25 +249,59 @@ class _PersonObjectsDetailScreenState
       
       // Create person group data for each person
       facesByPerson.forEach((personId, faces) {
+        // Find the face with the largest bounding box area for this person
+        BestQualityFace? largestFaceData;
+        double maxArea = 0;
+        
+        if (data.bestQualityFaces.isNotEmpty) {
+          for (final faceData in data.bestQualityFaces.values) {
+            final bbox = faceData.bbox;
+            if (bbox.length >= 4) {
+              final width = (bbox[2] - bbox[0]).toDouble();
+              final height = (bbox[3] - bbox[1]).toDouble();
+              final area = width * height;
+              
+              if (area > maxArea) {
+                maxArea = area;
+                largestFaceData = faceData;
+              }
+            }
+          }
+        }
+        
+        print('DEBUG: Selected largest face with area: $maxArea from ${data.bestQualityFaces.length} faces');
+        
         final group = {
           'person_uuid': 'uuid_$personId',
           'person_id': personId,
           'face_count': faces.length,
-          'representative_faces': faces.map((face) => {
-            'face_data': {
-              'bbox': [face.positionX - 50, face.positionY - 50, face.positionX + 50, face.positionY + 50],
-              'confidence': 0.5,
-              'frame_number': face.frameNumber,
-              'timestamp': face.frameNumber * 0.033, // Approximate timestamp
-              'distance_from_camera': (face.matchDistance * 10).clamp(15.0, 50.0), // Convert quality to distance
-              'center_x': face.positionX,
-              'center_y': face.positionY,
-              'face_width': 100,
-              'face_height': 100,
-              'face_area': 10000,
-            },
-            'quality_score': face.matchDistance,
-            'selection_rank': faces.indexOf(face) + 1,
+          'representative_faces': faces.map((face) {
+            // Use the largest face data for consistent cropping
+            final bboxData = largestFaceData?.bbox ?? [
+              face.positionX.toInt() - 50, 
+              face.positionY.toInt() - 50, 
+              face.positionX.toInt() + 50, 
+              face.positionY.toInt() + 50
+            ];
+            print('DEBUG: Using largest bbox for face: $bboxData');
+            
+            return {
+              'face_data': {
+                'bbox': bboxData,
+                'confidence': largestFaceData?.qualityScore ?? 0.5,
+                'frame_number': face.frameNumber,
+                'timestamp': face.frameNumber * 0.033, // Approximate timestamp
+                'distance_from_camera': (face.matchDistance * 10).clamp(15.0, 50.0), // Convert quality to distance
+                'center_x': face.positionX,
+                'center_y': face.positionY,
+                'face_width': largestFaceData?.bbox != null ? (largestFaceData!.bbox[2] - largestFaceData.bbox[0]).abs() : 100,
+                'face_height': largestFaceData?.bbox != null ? (largestFaceData!.bbox[3] - largestFaceData.bbox[1]).abs() : 100,
+                'face_area': largestFaceData?.bbox != null ? 
+                  ((largestFaceData!.bbox[2] - largestFaceData.bbox[0]) * (largestFaceData.bbox[3] - largestFaceData.bbox[1])).abs() : 10000,
+              },
+              'quality_score': face.matchDistance,
+              'selection_rank': faces.indexOf(face) + 1,
+            };
           }).toList(),
           'spatial_bounds': {
             'min_x': faces.map((f) => f.positionX).reduce((a, b) => a < b ? a : b) - 50,
@@ -358,10 +400,14 @@ class _PersonObjectsDetailScreenState
     final movementStats = group['movement_tracking']['movement_statistics'] as Map<String, dynamic>;
     final qualityMetrics = group['quality_metrics'] as Map<String, dynamic>;
 
+    // Get the best representative face for the cropped bounding box
+    final bestFace = representativeFaces.isNotEmpty ? representativeFaces[0] : null;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16.0),
       elevation: 4,
       child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),  // Increased vertical padding for larger thumbnail
         leading: CircleAvatar(
           backgroundColor: _getPersonGroupColor(qualityMetrics['average_quality'] as double),
           child: Text(
@@ -398,6 +444,10 @@ class _PersonObjectsDetailScreenState
             ),
           ],
         ),
+        // Add cropped bounding box on the right side
+        trailing: bestFace != null 
+            ? _buildCroppedFaceImage(bestFace)
+            : const Icon(Icons.face),
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -409,13 +459,18 @@ class _PersonObjectsDetailScreenState
                 
                 const SizedBox(height: 16),
                 
-                // Statistics Grid
-                _buildPersonGroupStatistics(spatialBounds, temporalSpan, movementStats, qualityMetrics),
+                // Frame Image Section (moved up after representative faces)
+                if (bestFace != null) _buildFrameImageSection(bestFace),
                 
                 const SizedBox(height: 16),
                 
                 // Action Buttons
                 _buildPersonGroupActions(group),
+                
+                const SizedBox(height: 16),
+                
+                // Statistics Grid (moved to bottom)
+                _buildPersonGroupStatistics(spatialBounds, temporalSpan, movementStats, qualityMetrics),
               ],
             ),
           ),
@@ -998,4 +1053,445 @@ class _PersonObjectsDetailScreenState
       ),
     );
   }
+
+  /// Build cropped face image for the trailing widget
+  Widget _buildCroppedFaceImage(Map<String, dynamic> faceData) {
+    return SizedBox(
+      width: 90,   // Fixed width to ensure it renders
+      height: 120, // Fixed height to match the increased row height
+      child: Container(
+        decoration: BoxDecoration(
+          // Removed red debug border
+        ),
+        child: FutureBuilder<Widget>(
+          future: _buildCroppedFaceImageAsync(faceData['face_data']),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Container(
+                color: Colors.grey[300],
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            } else if (snapshot.hasError) {
+              return Container(
+                color: Colors.grey[300],
+                child: Icon(Icons.error, size: 24, color: Colors.red),
+              );
+            } else {
+              return snapshot.data ?? Container(
+                color: Colors.grey[300],
+                child: Icon(Icons.face, size: 24, color: Colors.grey[600]),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Build cropped face image asynchronously
+  Future<Widget> _buildCroppedFaceImageAsync(Map<String, dynamic> faceData) async {
+    try {
+      final frameNumber = faceData['frame_number'] ?? 0;
+      final bbox = faceData['bbox'] as List<dynamic>?;
+      
+      // Create unique cache key to avoid repeated calculations
+      final cacheKey = 'frame_${frameNumber}_bbox_${bbox?.join('_')}';
+      
+      // Only print debug info once per unique face
+      final shouldDebug = !_debuggedFaces.contains(cacheKey);
+      if (shouldDebug) {
+        print('DEBUG CROPPING: frameNumber: $frameNumber, bbox: $bbox');
+        _debuggedFaces.add(cacheKey);
+      }
+      
+      // Check if bbox is available and valid
+      if (bbox == null || bbox.length < 4) {
+        if (shouldDebug) print('Warning: bbox is null or invalid, falling back to full frame image');
+        // Fallback to showing the full frame image
+        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+        final apiClient = ref.read(apiClientProvider);
+        return Image.network(
+          frameUrl,
+          fit: BoxFit.cover,
+          headers: apiClient.authToken != null ? {
+            'Authorization': 'Bearer ${apiClient.authToken}',
+          } : {},
+          errorBuilder: (context, error, stackTrace) {
+            print('Error loading fallback frame image: $error');
+            return Container(
+              color: Colors.grey[300],
+              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+            );
+          },
+        );
+      }
+      
+      // Extract bounding box coordinates
+      final x = bbox[0].toDouble();
+      final y = bbox[1].toDouble();
+      final x2 = bbox[2].toDouble();
+      final y2 = bbox[3].toDouble();
+      final width = x2 - x;
+      final height = y2 - y;
+      
+      // Expand the crop area to get 250x250 from original 100x100
+      final areaMultiplier = 6.25; // 250x250 = 62,500 px² vs 100x100 = 10,000 px²
+      final scaleFactor = math.sqrt(areaMultiplier); // Scale factor for dimensions
+      final expandedWidth = width * scaleFactor;
+      final expandedHeight = height * scaleFactor;
+      
+      final widthExpansion = expandedWidth - width;
+      final heightExpansion = expandedHeight - height;
+      
+      final expandedX = x - (widthExpansion / 2);
+      final expandedY = y - (heightExpansion / 2);
+      
+      if (shouldDebug) {
+        final originalArea = width * height;
+        final expandedArea = expandedWidth * expandedHeight;
+        final areaIncrease = ((expandedArea - originalArea) / originalArea * 100).toInt();
+        final expandedX2 = expandedX + expandedWidth;
+        final expandedY2 = expandedY + expandedHeight;
+        print('DEBUG BBOX: Original=${width.toInt()}x${height.toInt()} (${originalArea.toInt()}px²) → Expanded=${expandedWidth.toInt()}x${expandedHeight.toInt()} (${expandedArea.toInt()}px², +${areaIncrease}% area)');
+        print('DEBUG COORDS: Original=[${x.toInt()}, ${y.toInt()}, ${x2.toInt()}, ${y2.toInt()}] → Expanded=[${expandedX.toInt()}, ${expandedY.toInt()}, ${expandedX2.toInt()}, ${expandedY2.toInt()}]');
+      }
+      
+      // Validate expanded bounding box dimensions
+      if (expandedWidth <= 0 || expandedHeight <= 0) {
+        print('Warning: Invalid expanded bbox dimensions (width: $expandedWidth, height: $expandedHeight), using fallback');
+        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+        final apiClient = ref.read(apiClientProvider);
+        return Image.network(
+          frameUrl,
+          fit: BoxFit.cover,
+          headers: apiClient.authToken != null ? {
+            'Authorization': 'Bearer ${apiClient.authToken}',
+          } : {},
+          errorBuilder: (context, error, stackTrace) {
+            print('Error loading fallback frame image: $error');
+            return Container(
+              color: Colors.grey[300],
+              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+            );
+          },
+        );
+      }
+      
+      // Get the full frame image first
+      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+      
+      // For now, return the full frame and crop it in Flutter since backend doesn't support cropping
+      // TODO: When backend supports crop parameters, use: frameUrl + '&crop=$x,$y,$width,$height'
+      return FutureBuilder<ui.Image>(
+        future: _loadNetworkImage(frameUrl),
+        builder: (context, snapshot) {
+          if (snapshot.hasData && snapshot.data != null) {
+            return SizedBox(
+              width: expandedWidth,
+              height: expandedHeight,
+              child: CustomPaint(
+                painter: CroppedImagePainter(
+                  image: snapshot.data!,
+                  cropRect: Rect.fromLTWH(expandedX, expandedY, expandedWidth, expandedHeight),
+                ),
+                size: Size(expandedWidth, expandedHeight), // Use actual bbox dimensions
+              ),
+            );
+          } else {
+            final apiClient = ref.read(apiClientProvider);
+            return Image.network(
+              frameUrl,
+              fit: BoxFit.cover,
+              headers: apiClient.authToken != null ? {
+                'Authorization': 'Bearer ${apiClient.authToken}',
+              } : {},
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Center(
+                  child: CircularProgressIndicator(
+                    value: loadingProgress.expectedTotalBytes != null
+                        ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                        : null,
+                    strokeWidth: 2,
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) {
+                print('Error loading cropped image: $error');
+                print('URL: $frameUrl');
+                return Container(
+                  color: Colors.grey[300],
+                  child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+                );
+              },
+            );
+          }
+        },
+      );
+    } catch (e) {
+      print('Exception in _buildCroppedFaceImageAsync: $e');
+      return Container(
+        color: Colors.grey[300],
+        child: Icon(Icons.error, size: 24, color: Colors.red), // Larger icon for responsive container
+      );
+    }
+  }
+
+  /// Load network image and return ui.Image for cropping
+  Future<ui.Image> _loadNetworkImage(String url) async {
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      // Use Image.network to load the image with proper headers for web compatibility
+      final ImageProvider imageProvider = NetworkImage(
+        url,
+        headers: apiClient.authToken != null ? {
+          'Authorization': 'Bearer ${apiClient.authToken}',
+        } : {},
+      );
+      
+      final ImageStream stream = imageProvider.resolve(const ImageConfiguration());
+      final Completer<ui.Image> completer = Completer<ui.Image>();
+      
+      late ImageStreamListener listener;
+      listener = ImageStreamListener(
+        (ImageInfo info, bool synchronousCall) {
+          stream.removeListener(listener);
+          completer.complete(info.image);
+        },
+        onError: (exception, stackTrace) {
+          stream.removeListener(listener);
+          completer.completeError(exception);
+        },
+      );
+      
+      stream.addListener(listener);
+      return completer.future;
+    } catch (e) {
+      throw Exception('Failed to load image: $e');
+    }
+  }
+
+  /// Build frame image widget using the frame extraction API
+  Future<Widget> _buildFrameImage(int frameNumber) async {
+    try {
+      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+      final apiClient = ref.read(apiClientProvider);
+      
+      return Image.network(
+        frameUrl,
+        fit: BoxFit.contain, // Maintain aspect ratio and fit within container
+        headers: apiClient.authToken != null ? {
+          'Authorization': 'Bearer ${apiClient.authToken}',
+        } : {},
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          print('Error loading frame image: $error');
+          print('URL: $frameUrl');
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error, color: Colors.grey, size: 24),
+                SizedBox(height: 4),
+                Text('Image failed to load', style: TextStyle(fontSize: 10, color: Colors.grey)),
+              ],
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      print('Exception in _buildFrameImage: $e');
+      return const Center(
+        child: Icon(Icons.error, color: Colors.grey),
+      );
+    }
+  }
+
+  /// Build frame image section to show the full frame
+  Widget _buildFrameImageSection(Map<String, dynamic> face) {
+    final faceData = face['face_data'] as Map<String, dynamic>;
+    final frameNumber = faceData['frame_number'] as int;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '🖼️ Frame Image',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(
+            maxHeight: 400, // Half of standard smartphone height (~800px)
+          ),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: FutureBuilder<Widget>(
+              future: _buildFrameImage(frameNumber),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Container(
+                    height: 200,
+                    child: const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                } else if (snapshot.hasError || !snapshot.hasData) {
+                  return Container(
+                    height: 200,
+                    child: const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.error, color: Colors.grey, size: 32),
+                          SizedBox(height: 8),
+                          Text('Failed to load frame', style: TextStyle(color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                  );
+                } else {
+                  return snapshot.data!;
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Frame: $frameNumber',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ),
+        
+        // Add cropped face image section
+        const SizedBox(height: 16),
+        const Text(
+          'Selected face',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: 120,
+          height: 160,
+          decoration: BoxDecoration(
+            // Removed red debug border
+          ),
+          child: FutureBuilder<Widget>(
+            future: _buildCroppedFaceImageAsync(faceData),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Container(
+                  color: Colors.grey[200],
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              } else if (snapshot.hasError || !snapshot.hasData) {
+                return Container(
+                  color: Colors.grey[200],
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.face, color: Colors.grey, size: 32),
+                        SizedBox(height: 4),
+                        Text('Crop failed', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                      ],
+                    ),
+                  ),
+                );
+              } else {
+                return snapshot.data!;
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build cropped image from frame using the frame extraction API
+  Future<Widget> _buildCroppedImageFromFrame(int frameNumber, double x, double y, double width, double height) async {
+    try {
+      // For now, return the full frame - cropping would require additional backend support
+      // TODO: Implement actual cropping when backend supports crop parameters
+      return await _buildFrameImage(frameNumber);
+    } catch (e) {
+      return const Icon(Icons.face, color: Colors.grey);
+    }
+  }
+}
+
+/// Custom painter to draw cropped image
+class CroppedImagePainter extends CustomPainter {
+  final ui.Image image;
+  final Rect cropRect;
+  static String? _lastDebugInfo; // Static variable to reduce debug spam
+  static Size? _lastSignificantSize; // Track significant canvas size changes
+
+  CroppedImagePainter({required this.image, required this.cropRect});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint();
+    
+    // Much more aggressive debug reduction - only print for significant canvas size changes
+    final isSignificantChange = _lastSignificantSize == null || 
+        (size.width - _lastSignificantSize!.width).abs() > 20 ||
+        (size.height - _lastSignificantSize!.height).abs() > 20;
+        
+    if (isSignificantChange) {
+      print('DEBUG PAINTER: Canvas ${size.width.toInt()}x${size.height.toInt()} for crop ${cropRect.width.toInt()}x${cropRect.height.toInt()}');
+      _lastSignificantSize = size;
+    }
+    
+    // MAINTAIN ASPECT RATIO: Don't stretch the square crop into different canvas proportions
+    final cropAspectRatio = cropRect.width / cropRect.height;
+    final canvasAspectRatio = size.width / size.height;
+    
+    late Rect destRect;
+    
+    if (cropAspectRatio > canvasAspectRatio) {
+      // Crop is wider than canvas - fit width, center vertically
+      final destHeight = size.width / cropAspectRatio;
+      final offsetY = (size.height - destHeight) / 2;
+      destRect = Rect.fromLTWH(0, offsetY, size.width, destHeight);
+    } else {
+      // Crop is taller than canvas - fit height, center horizontally  
+      final destWidth = size.height * cropAspectRatio;
+      final offsetX = (size.width - destWidth) / 2;
+      destRect = Rect.fromLTWH(offsetX, 0, destWidth, size.height);
+    }
+    
+    // Draw with proper aspect ratio (no stretching)
+    canvas.drawImageRect(
+      image,
+      cropRect, // Source: 130x130 expanded face area
+      destRect,  // Destination: properly scaled to fit canvas without stretching
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
