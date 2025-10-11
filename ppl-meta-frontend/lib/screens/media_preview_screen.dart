@@ -866,6 +866,15 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               enabled: true,
             ),
             
+            // Enhanced Person Analytics - Temporarily disabled to check auth issue
+            // _buildEnhancedControlButton(
+            //   icon: Icons.people_alt,
+            //   label: 'Analytics',
+            //   onTap: () => _navigateToPersonObjectsDetail(),
+            //   color: Colors.blue,
+            //   enabled: true,
+            // ),
+            
             // Settings
             _buildEnhancedControlButton(
               icon: Icons.settings,
@@ -1441,12 +1450,15 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
           const SizedBox(width: 4),
           
-          // 6. Face and person count display (Enhanced with PPL Thread integration)
+          // 6. Face and person count display (Enhanced with PPL Thread integration and drill-down)
           Flexible(
             flex: 1,
-            child: CompactFaceAndPersonCountWidget(
+            child: FaceAndPersonCountWidget(
               mediaId: widget.mediaItem.uuid,
-              color: Colors.white70,
+              compact: true,
+              useEnhancedView: false, // Temporarily disable enhanced view to check auth issue
+              textColor: Colors.white70,
+              iconColor: Colors.white70,
             ),
           ),
           

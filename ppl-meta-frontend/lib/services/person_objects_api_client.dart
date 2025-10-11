@@ -38,20 +38,20 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // 🚀 ENHANCED LOGIC V2: Call Orchestrator service directly (port 8002)
-      // This uses the new Enhanced Logic V2 endpoint with session-based processing
+      // 🚀 PERSON OBJECTS API: Call Orchestrator service directly (port 8002)
+      // This uses the actual person objects endpoint with grouping and tracking
       developer.log(
-        'Getting person objects via Enhanced Logic V2 for media: $mediaUuid',
+        'Getting person objects from Orchestrator for media: $mediaUuid',
         name: _logName,
       );
 
-      // Use Enhanced Logic V2 endpoint directly to Orchestrator
+      // Use Person Objects endpoint directly to Orchestrator
       final orchestratorUrl = 'http://localhost:8002';
       final originalBaseUrl = _apiClient.dio.options.baseUrl;
       _apiClient.dio.options.baseUrl = orchestratorUrl;
       
       final response = await _apiClient.get(
-        '/api/v1/media/$mediaUuid/faces/enhanced-v2',
+        '/person-objects/$mediaUuid',
       );
       
       _apiClient.dio.options.baseUrl = originalBaseUrl;
@@ -65,22 +65,24 @@ class PersonObjectsApiClient {
         final data = response.data;
         
         developer.log(
-          'Successfully retrieved Enhanced Logic V2 response: ${data['total_faces']} faces, source: ${data['source']}',
+          'Successfully retrieved Person Objects response: ${data['total_persons']} persons from ${data['total_faces']} faces',
           name: _logName,
         );
         
-        // Transform Enhanced Logic V2 response to PersonObjectsData format
+        // Transform Person Objects response to PersonObjectsData format
         final totalFaces = data['total_faces'] ?? 0;
-        final totalPersons = totalFaces; // NO ESTIMATION: Use face count directly - person grouping should happen in backend
+        final totalPersons = data['total_persons'] ?? 0; // Use actual person grouping count
         final sessionUuid = data['session_uuid'] ?? mediaUuid;
-        final source = data['source'] ?? 'unknown';
+        final status = data['status'] ?? 'unknown';
+        final groupingAlgorithm = data['grouping_algorithm'] ?? 'rectangle_overlap_detection';
+        final processingTimeMs = data['processing_time_ms'] ?? 0.0;
         
         developer.log(
-          'Transforming Enhanced Logic V2 data: totalFaces=$totalFaces, totalPersons=$totalPersons (direct mapping), source=$source',
+          'Person Objects data: totalFaces=$totalFaces, totalPersons=$totalPersons, algorithm=$groupingAlgorithm',
           name: _logName,
         );
         
-        print('🎯 ENHANCED LOGIC V2 DATA TRANSFORM: totalPersons=$totalPersons, totalFaces=$totalFaces, source=$source (NO CLIENT-SIDE ESTIMATION)');
+        print('🎯 PERSON OBJECTS DATA: totalPersons=$totalPersons, totalFaces=$totalFaces, algorithm=$groupingAlgorithm');
         
         final personObjectsData = PersonObjectsData(
           workflowId: data['media_id'] ?? mediaUuid,
@@ -96,16 +98,16 @@ class PersonObjectsApiClient {
             mergedGroupsCount: totalPersons,
             totalDetections: totalFaces,
             framesProcessed: 0,
-            groupingAlgorithm: 'ppl_thread',
+            groupingAlgorithm: groupingAlgorithm,
             tolerancePercent: 20.0,
-            trackedFaces: data['total_faces'] ?? 0,
+            trackedFaces: totalFaces,
             newFaces: 0,
             mergeIterations: 1,
           ),
           bestQualityFaces: {},
-          classifiedFaces: [],
+          classifiedFaces: _extractClassifiedFaces(data),
           processingTimestamp: DateTime.now().toIso8601String(),
-          workflowType: data['status'] == 'completed' ? 'bulk_processing_complete' : 'processing',
+          workflowType: status == 'completed' ? 'bulk_processing_complete' : 'processing',
         );
         
         print('🎯 CREATED PersonObjectsData: totalPersons=${personObjectsData.totalPersons}');
@@ -128,6 +130,47 @@ class PersonObjectsApiClient {
       );
       return null;
     }
+  }
+
+  /// Extract classified faces from person objects response
+  List<ClassifiedFace> _extractClassifiedFaces(Map<String, dynamic> data) {
+    final classifiedFaces = <ClassifiedFace>[];
+    
+    // Extract faces from person_groups if available
+    final personGroups = data['person_groups'] as List<dynamic>?;
+    if (personGroups != null) {
+      for (var group in personGroups) {
+        final personId = group['person_id'] ?? 'unknown_person';
+        
+        // Add representative faces
+        final representativeFaces = group['representative_faces'] as List<dynamic>?;
+        if (representativeFaces != null) {
+          for (var i = 0; i < representativeFaces.length; i++) {
+            final face = representativeFaces[i];
+            final faceData = face['face_data'];
+            if (faceData != null) {
+              final classifiedFace = ClassifiedFace(
+                personId: personId,
+                faceDetectionId: 'face_${classifiedFaces.length + 1}',
+                matchType: 'representative_face',
+                matchDistance: (face['quality_score'] ?? 0).toDouble(),
+                frameNumber: faceData['frame_number'] ?? 0,
+                positionX: (faceData['center_x'] ?? 0).toDouble(),
+                positionY: (faceData['center_y'] ?? 0).toDouble(),
+              );
+              classifiedFaces.add(classifiedFace);
+            }
+          }
+        }
+      }
+    }
+    
+    developer.log(
+      'Extracted ${classifiedFaces.length} classified faces from person objects data',
+      name: _logName,
+    );
+    
+    return classifiedFaces;
   }
   
   /// Get person objects for a specific session

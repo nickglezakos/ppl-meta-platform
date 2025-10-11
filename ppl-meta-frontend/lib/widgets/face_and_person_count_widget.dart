@@ -7,6 +7,8 @@ import '../providers/person_objects_provider.dart' as legacy;
 import '../providers/person_objects_provider.dart';
 import '../providers/ppl_thread_providers.dart';
 import '../models/person_objects_models.dart';
+import '../models/person_group_models.dart';
+import 'enhanced_person_counter.dart';
 
 /// Enhanced widget that displays both face count and person count
 /// Automatically triggers person objects workflow when face detection completes
@@ -14,6 +16,7 @@ class FaceAndPersonCountWidget extends ConsumerStatefulWidget {
   final String mediaId;
   final bool showIcon;
   final bool compact;
+  final bool useEnhancedView; // NEW: Enable enhanced analytics view
   final Color? textColor;
   final Color? iconColor;
 
@@ -22,6 +25,7 @@ class FaceAndPersonCountWidget extends ConsumerStatefulWidget {
     required this.mediaId,
     this.showIcon = true,
     this.compact = false,
+    this.useEnhancedView = false, // NEW: Default to false for backward compatibility
     this.textColor,
     this.iconColor,
   });
@@ -36,53 +40,24 @@ class _FaceAndPersonCountWidgetState extends ConsumerState<FaceAndPersonCountWid
 
   @override
   Widget build(BuildContext context) {
-    print('🏗️ FaceAndPersonCountWidget.build() called for mediaId: ${widget.mediaId}');
-    
     final faceData = ref.watch(mediaFaceDataProvider(widget.mediaId));
     // Use the updated provider that calls Orchestrator endpoint
     final personObjectsAsync = ref.watch(personObjectsDataProvider(widget.mediaId));
-    
-    // Add debug logging and check all provider states
-    personObjectsAsync.when(
-      data: (data) {
-        if (data != null) {
-          print('🎯 WIDGET DEBUG: PersonObjects data received: totalPersons=${data.totalPersons}, success=${data.success}');
-          developer.log('🎯 PersonObjects data received: totalPersons=${data.totalPersons}, success=${data.success}', name: 'PersonCountWidget');
-        } else {
-          print('🎯 WIDGET DEBUG: PersonObjects data is null');
-        }
-      },
-      loading: () {
-        print('🎯 WIDGET DEBUG: PersonObjects provider is loading');
-      },
-      error: (error, stackTrace) {
-        print('🎯 WIDGET DEBUG: PersonObjects provider error: $error');
-      },
-    );
-    
-    // Force refresh provider cache every 5 seconds to pick up new data
-    // This ensures we get updated person counts after PPL Thread processing
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        ref.invalidate(personObjectsDataProvider(widget.mediaId));
-      }
-    });
     final workflowState = ref.watch(personObjectsWorkflowControllerProvider);
 
-    print('🔍 Main Widget build - faceData: totalCount=${faceData.totalCount}, isLoading=${faceData.isLoading}, hasError=${faceData.hasError}');
-    print('🔍 Main Widget build - personObjectsAsync: value=${personObjectsAsync.value?.totalPersons}, isLoading=${personObjectsAsync.isLoading}, hasError=${personObjectsAsync.hasError}, hasValue=${personObjectsAsync.hasValue}');
-
-    // Debug logging
+    // Debug logging for critical issues only
     developer.log(
-      'FaceAndPersonCountWidget build: mediaId=${widget.mediaId}, faces=${faceData.totalCount}, personObjectsAsync=${personObjectsAsync.runtimeType}',
+      'FaceAndPersonCountWidget build: mediaId=${widget.mediaId}, faces=${faceData.totalCount}',
       name: 'FaceAndPersonCountWidget',
     );
-
-    // LOUD DEBUG - should definitely show up
-    debugPrint('🚨 WIDGET RENDERING: faces=${faceData.totalCount}, persons=${personObjectsAsync.value?.totalPersons ?? 0}');
     
     // Auto-trigger person objects workflow when face detection completes
     _autoTriggerPersonObjectsIfNeeded(faceData, personObjectsAsync, workflowState);
+
+    // NEW: Enhanced analytics view with drill-down functionality
+    if (widget.useEnhancedView) {
+      return _buildEnhancedAnalyticsWidget(context, faceData, personObjectsAsync, workflowState);
+    }
 
     if (widget.compact) {
       return _buildCompactWidget(context, faceData, personObjectsAsync, workflowState);
@@ -97,21 +72,6 @@ class _FaceAndPersonCountWidgetState extends ConsumerState<FaceAndPersonCountWid
     AsyncValue<PersonObjectsData?> personObjectsAsync,
     legacy.PersonObjectsWorkflowState workflowState,
   ) {
-    // LOUD DEBUG - should definitely show up
-    debugPrint('🚨 AUTO-TRIGGER CALLED: mediaId=${widget.mediaId}, faces=${faceData.totalCount}, hasTriggered=$_hasTriggeredPersonObjects');
-    
-    // Debug logging for all videos
-    developer.log(
-      'AUTO-TRIGGER CHECK: mediaId=${widget.mediaId}, '
-      'hasTriggered=$_hasTriggeredPersonObjects, '
-      'faceLoading=${faceData.isLoading}, '
-      'faceError=${faceData.hasError}, '
-      'faceCount=${faceData.totalCount}, '
-      'personObjectsValue=${personObjectsAsync.value}, '
-      'workflowState=$workflowState',
-      name: 'FaceAndPersonCountWidget',
-    );
-
     // Reset trigger flag only once when conditions change (prevent infinite loops)
     // We only reset if we haven't already attempted a retry
     if (_hasTriggeredPersonObjects && !_hasAttemptedRetry) {
@@ -119,14 +79,12 @@ class _FaceAndPersonCountWidgetState extends ConsumerState<FaceAndPersonCountWid
       
       // 1. If person objects provider is in error state (404 means no session exists)
       if (personObjectsAsync.hasError) {
-        debugPrint('🔄 RESETTING TRIGGER FLAG: Person objects provider in error state, will retry workflow');
         shouldResetTrigger = true;
       }
       // 2. If workflow completed but returned no persons (suggests session creation failed)
       else if (workflowState == legacy.PersonObjectsWorkflowState.completed &&
           (personObjectsAsync.value == null || personObjectsAsync.value!.totalPersons == 0) &&
           faceData.totalCount > 0) {
-        debugPrint('🔄 RESETTING TRIGGER FLAG: Workflow completed but no persons found despite having ${faceData.totalCount} faces');
         shouldResetTrigger = true;
       }
       
@@ -141,8 +99,6 @@ class _FaceAndPersonCountWidgetState extends ConsumerState<FaceAndPersonCountWid
     // 2. Person objects workflow hasn't been triggered yet (or was reset due to conditions above)
     // 3. Person objects don't already exist (or are in error state due to no session)
     // 4. Not currently processing person objects
-    debugPrint('🔍 AUTO-TRIGGER CONDITIONS: hasTriggered=$_hasTriggeredPersonObjects, faceLoading=${faceData.isLoading}, faceError=${faceData.hasError}, faceCount=${faceData.totalCount}, personObjectsError=${personObjectsAsync.hasError}, workflowState=$workflowState, personCount=${personObjectsAsync.value?.totalPersons ?? 0}');
-    
     if (!_hasTriggeredPersonObjects &&
         !faceData.isLoading &&
         !faceData.hasError &&
@@ -152,28 +108,17 @@ class _FaceAndPersonCountWidgetState extends ConsumerState<FaceAndPersonCountWid
         workflowState != legacy.PersonObjectsWorkflowState.triggering) {
       
       _hasTriggeredPersonObjects = true;
-      
-      debugPrint('🚀 STARTING AUTO-TRIGGER: About to trigger person objects workflow for ${widget.mediaId}');
-      
-      developer.log(
-        'Auto-triggering person objects workflow for media: ${widget.mediaId} (${faceData.totalCount} faces detected)',
-        name: 'FaceAndPersonCountWidget',
-      );
-
       // Trigger person objects workflow after a small delay
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         try {
-          debugPrint('🚀 CALLING CONTROLLER: Attempting to trigger workflow for ${widget.mediaId}');
           final controller = ref.read(legacy.personObjectsWorkflowControllerProvider.notifier);
           await controller.autoTriggerWorkflow(widget.mediaId);
           
-          debugPrint('✅ WORKFLOW TRIGGERED: Successfully triggered workflow for ${widget.mediaId}');
           developer.log(
             'Person objects workflow triggered successfully for: ${widget.mediaId}',
             name: 'FaceAndPersonCountWidget',
           );
         } catch (e) {
-          debugPrint('❌ WORKFLOW FAILED: Error triggering workflow for ${widget.mediaId}: $e');
           developer.log(
             'Failed to trigger person objects workflow for ${widget.mediaId}: $e',
             name: 'FaceAndPersonCountWidget',
@@ -181,19 +126,107 @@ class _FaceAndPersonCountWidgetState extends ConsumerState<FaceAndPersonCountWid
           );
         }
       });
-    } else {
-      // Debug why workflow wasn't triggered
-      developer.log(
-        'AUTO-TRIGGER SKIPPED for ${widget.mediaId}: '
-        'hasTriggered=$_hasTriggeredPersonObjects, '
-        'faceLoading=${faceData.isLoading}, '
-        'faceError=${faceData.hasError}, '
-        'faceCount=${faceData.totalCount}, '
-        'hasPersonObjects=${personObjectsAsync.value != null}, '
-        'workflowBusy=${workflowState == legacy.PersonObjectsWorkflowState.processing || workflowState == legacy.PersonObjectsWorkflowState.triggering}',
-        name: 'FaceAndPersonCountWidget',
+    }
+  }
+
+  /// NEW: Build enhanced analytics widget with drill-down functionality
+  Widget _buildEnhancedAnalyticsWidget(
+    BuildContext context,
+    MediaFaceDataState faceData,
+    AsyncValue<PersonObjectsData?> personObjectsAsync,
+    legacy.PersonObjectsWorkflowState workflowState,
+  ) {
+    // Handle loading state
+    if (faceData.isLoading) {
+      return const EnhancedPersonCounter(
+        totalPersons: 0,
+        totalFaces: 0,
+        personGroups: [],
+        isLoading: true,
       );
     }
+
+    // Handle error state
+    if (faceData.hasError) {
+      return EnhancedPersonCounter(
+        totalPersons: 0,
+        totalFaces: faceData.totalCount,
+        personGroups: const [],
+        error: 'Face detection error',
+      );
+    }
+
+    // Get person objects data with enhanced models
+    return personObjectsAsync.when(
+      data: (personObjectsData) {
+        // Convert legacy PersonObjectsData to enhanced PersonObjectGroup list
+        final personGroups = _convertToPersonGroups(personObjectsData);
+        
+        return EnhancedPersonCounter(
+          totalPersons: personObjectsData?.totalPersons ?? 0,
+          totalFaces: faceData.totalCount,
+          personGroups: personGroups,
+          groupingMethod: 'rectangle_overlap_detection',
+          processingTime: 0.0, // TODO: Add processing time to PersonObjectsData
+          sessionUuid: '', // TODO: Add session UUID to PersonObjectsData
+          isLoading: false,
+        );
+      },
+      loading: () => EnhancedPersonCounter(
+        totalPersons: 0,
+        totalFaces: faceData.totalCount,
+        personGroups: const [],
+        isLoading: true,
+      ),
+      error: (error, stackTrace) => EnhancedPersonCounter(
+        totalPersons: 0,
+        totalFaces: faceData.totalCount,
+        personGroups: const [],
+        error: 'Person objects error: $error',
+      ),
+    );
+  }
+
+  /// Convert legacy PersonObjectsData to enhanced PersonObjectGroup list
+  List<PersonObjectGroup> _convertToPersonGroups(PersonObjectsData? data) {
+    if (data == null) return [];
+
+    // For now, create a simplified person group from legacy data
+    // In the future, this will come directly from the enhanced PPL Thread endpoint
+    return [
+      PersonObjectGroup(
+        personUuid: 'legacy-person-1',
+        personId: 'person_1',
+        faceCount: data.originalGroups, // Using originalGroups which contains total_faces
+        representativeFaces: const [], // Empty for now - will be populated by enhanced endpoint
+        allFaceIds: const [],
+        averageConfidence: 0.75, // Default confidence
+        spatialBounds: const SpatialBounds(
+          minX: 0, maxX: 640, minY: 0, maxY: 480,
+          centerX: 320, centerY: 240,
+        ),
+        temporalSpan: const TemporalSpan(
+          startFrame: 0, endFrame: 100,
+          durationSeconds: 3.33, frameCount: 100,
+        ),
+        movementTracking: const MovementTracking(
+          routePoints: [],
+          movementStatistics: MovementStatistics(
+            totalRoutePoints: 0,
+            totalDistancePixels: 0.0,
+            averageVelocity: 0.0,
+            maxVelocity: 0.0,
+            timeInFrameSeconds: 0.0,
+          ),
+        ),
+        qualityMetrics: const QualityMetrics(
+          averageQuality: 75.0,
+          maxQuality: 85.0,
+          minQuality: 65.0,
+          qualityVariance: 10.0,
+        ),
+      ),
+    ];
   }
 
   Widget _buildCompactWidget(
@@ -682,23 +715,6 @@ class CompactFaceAndPersonCountWidget extends ConsumerWidget {
     final faceData = ref.watch(mediaFaceDataProvider(mediaId));
     // 🎯 FIX: Use PPL Thread provider instead of old Enhanced Logic V2 provider
     final personCountAsync = ref.watch(personCountProvider(mediaId));
-    
-    // DEBUG: Force logging when widget builds
-    developer.log('CompactFaceAndPersonCountWidget build: mediaId=$mediaId, personCountAsync.hasValue=${personCountAsync.hasValue}', name: 'CompactWidget');
-    
-    // Add comprehensive debugging for PPL Thread provider states
-    personCountAsync.when(
-      data: (personCount) {
-        print('🎯 PPL THREAD COMPACT: Person count received: $personCount');
-        developer.log('🎯 PPL THREAD COMPACT: Person count received: $personCount', name: 'CompactWidget');
-      },
-      loading: () {
-        print('🎯 PPL THREAD COMPACT: Provider is loading');
-      },
-      error: (error, stackTrace) {
-        print('🎯 PPL THREAD COMPACT: Provider error: $error');
-      },
-    );
     
     final effectiveTextColor = color ?? Colors.white70;
     final effectiveIconColor = color ?? Colors.white70;

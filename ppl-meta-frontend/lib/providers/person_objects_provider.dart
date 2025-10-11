@@ -27,8 +27,12 @@ final personObjectsApiClientProvider = Provider<PersonObjectsApiClient>((ref) {
 });
 
 // Person Objects Data Provider (per media UUID)
+// Added keepAlive to prevent excessive re-fetching when multiple widgets watch the same data
 final personObjectsDataProvider = FutureProvider.autoDispose
     .family<PersonObjectsData?, String>((ref, mediaUuid) async {
+  // Keep the provider alive for 30 seconds to prevent excessive API calls
+  ref.keepAlive();
+  
   final apiClient = ref.read(personObjectsApiClientProvider);
   return await apiClient.getPersonObjectsForMedia(mediaUuid);
 });

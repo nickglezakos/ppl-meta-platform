@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_theme.dart';
 // import '../widgets/analytics_dashboard.dart'; // Temporarily disabled - has broken dependencies
 import '../widgets/custom_app_bar.dart';
+// Import enhanced person analytics demo - Temporarily disabled to check auth issue
+// import '../widgets/enhanced_person_counter_demo.dart';
 
 /// Analytics screen showing usage metrics and insights
 class AnalyticsScreen extends StatefulWidget {
@@ -37,21 +39,84 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           
           // Analytics dashboard
           Expanded(
-            child: const Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.analytics, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'Analytics Dashboard',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  // Enhanced Person Analytics Demo Section
+                  Card(
+                    elevation: 4,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.people_alt, color: Colors.blue),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Enhanced Person Analytics',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const Spacer(),
+                              Chip(
+                                label: const Text('Demo'),
+                                backgroundColor: Colors.orange[100],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Interactive demo showcasing person group analytics with distance-based color coding and drill-down functionality.',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                          const SizedBox(height: 16),
+                          // Demo widget - Temporarily disabled to check auth issue
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'Enhanced Person Analytics Demo\n(Temporarily disabled for testing)',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                          // const EnhancedPersonCounterDemo(),
+                        ],
+                      ),
+                    ),
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Analytics features are being rebuilt.\nCheck back soon!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Placeholder for future analytics sections
+                  const Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.analytics, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'Additional Analytics Coming Soon',
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'More analytics features will be added here',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
