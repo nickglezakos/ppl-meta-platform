@@ -32,11 +32,12 @@ class _PersonObjectsDetailScreenState
   
   late TabController _tabController;
   final Set<String> _debuggedFaces = {}; // Cache for debug output
+  String _routesDisplayMode = 'path'; // 'path' or 'scatter'
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
@@ -69,12 +70,16 @@ class _PersonObjectsDetailScreenState
             controller: _tabController,
             tabs: const [
               Tab(
-                icon: Icon(Icons.analytics),
-                text: 'Overview',
-              ),
-              Tab(
                 icon: Icon(Icons.groups),
                 text: 'Persons',
+              ),
+              Tab(
+                icon: Icon(Icons.route),
+                text: 'Routes',
+              ),
+              Tab(
+                icon: Icon(Icons.analytics),
+                text: 'Overview',
               ),
               Tab(
                 icon: Icon(Icons.face),
@@ -86,8 +91,9 @@ class _PersonObjectsDetailScreenState
             child: TabBarView(
               controller: _tabController,
               children: [
-                _buildOverviewTab(),
                 _buildPersonGroupsTab(),
+                _buildRoutesTab(),
+                _buildOverviewTab(),
                 _buildFaceDetailsTab(),
               ],
             ),
@@ -1440,6 +1446,555 @@ class _PersonObjectsDetailScreenState
       return const Icon(Icons.face, color: Colors.grey);
     }
   }
+
+  Widget _buildRoutesTab() {
+    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem.uuid));
+
+    return dataAsync.when(
+      data: (data) {
+        if (data == null) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.route, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text('No route data available'),
+                Text('Run person objects analysis first'),
+              ],
+            ),
+          );
+        }
+
+        // Get person groups and routes data from the provider
+        return FutureBuilder<Map<String, dynamic>?>(
+          future: _fetchRoutesData(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Loading routes data...'),
+                  ],
+                ),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error, size: 64, color: Colors.red),
+                    const SizedBox(height: 16),
+                    Text('Error loading routes: ${snapshot.error}'),
+                  ],
+                ),
+              );
+            }
+
+            final routesData = snapshot.data;
+            if (routesData == null || routesData['person_groups'] == null) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.route_outlined, size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text('No movement routes found'),
+                  ],
+                ),
+              );
+            }
+
+            final personGroups = routesData['person_groups'] as List<dynamic>;
+            
+            return SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Routes visualization header - make it more compact
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                      const Icon(Icons.route, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Movement Routes Visualization',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              'Shows movement paths for ${personGroups.length} person(s)',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Display mode toggle
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.visibility, size: 16, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            DropdownButton<String>(
+                              value: _routesDisplayMode,
+                              isDense: true,
+                              underline: Container(),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'path',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.timeline, size: 16),
+                                      SizedBox(width: 4),
+                                      Text('Path'),
+                                    ],
+                                  ),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'scatter',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.scatter_plot, size: 16),
+                                      SizedBox(width: 4),
+                                      Text('Scatter'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              onChanged: (String? newValue) {
+                                if (newValue != null) {
+                                  setState(() {
+                                    _routesDisplayMode = newValue;
+                                  });
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Routes canvas with actual frame dimensions - NATURAL SIZING
+                FutureBuilder<Size?>(
+                  future: _getFrameDimensions(),
+                  builder: (context, dimensionsSnapshot) {
+                    if (dimensionsSnapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 8),
+                            Text('Loading frame dimensions...'),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (dimensionsSnapshot.hasError) {
+                      print('🖼️ Frame Dimensions ERROR: ${dimensionsSnapshot.error}');
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error, size: 48, color: Colors.red),
+                            const SizedBox(height: 16),
+                            Text('Error loading frame dimensions: ${dimensionsSnapshot.error}'),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final frameDimensions = dimensionsSnapshot.data;
+                    if (frameDimensions == null) {
+                      print('🖼️ Frame Dimensions ERROR: Null dimensions returned');
+                      return const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.warning, size: 48, color: Colors.orange),
+                            SizedBox(height: 16),
+                            Text('Could not determine frame dimensions'),
+                          ],
+                        ),
+                      );
+                    }
+
+                    print('🖼️ Frame Dimensions SUCCESS: ${frameDimensions.width}x${frameDimensions.height}');
+
+                    return Column(
+                      children: [
+                        // ROW 1: Camera View - HEIGHT = FRAME HEIGHT + HEADER
+                        Container(
+                          height: frameDimensions.height + 56, // Frame height + header space
+                          child: Column(
+                            children: [
+                              // Camera view header
+                              Container(
+                                height: 40,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.videocam, size: 16, color: Colors.blue),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Camera View (${frameDimensions.width.toInt()}×${frameDimensions.height.toInt()}px)',
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              // Camera view container - EXACT FRAME DIMENSIONS
+                              Center(
+                                child: Container(
+                                  width: frameDimensions.width,
+                                  height: frameDimensions.height,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black12,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: CustomPaint(
+                                      painter: RoutesPainter(
+                                        personGroups,
+                                        frameDimensions: frameDimensions,
+                                        displayMode: _routesDisplayMode,
+                                      ),
+                                      size: Size(frameDimensions.width, frameDimensions.height),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 16), // Spacing between rows
+                        
+                        // ROW 2: Top View - HEIGHT = FRAME HEIGHT + HEADER  
+                        Container(
+                          height: frameDimensions.height + 56, // Frame height + header space
+                          child: Column(
+                            children: [
+                              // Top view header
+                              Container(
+                                height: 40,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.map, size: 16, color: Colors.green),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Top View (${frameDimensions.width.toInt()}×${frameDimensions.height.toInt()}px)',
+                                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              // Top view container - SQUARE BASED ON FRAME HEIGHT
+                              Center(
+                                child: Container(
+                                  width: frameDimensions.height, // Square based on frame height
+                                  height: frameDimensions.height,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black12,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: CustomPaint(
+                                      painter: TopViewRoutesPainter(
+                                        personGroups,
+                                        displayMode: _routesDisplayMode,
+                                      ),
+                                      size: Size(frameDimensions.height, frameDimensions.height),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                
+                // Legend - make it compact
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _buildRoutesLegend(personGroups),
+                ),
+              ],
+            ),
+            );
+          },
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text('Error: $error'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _fetchRoutesData() async {
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      
+      // Call the PPL Thread endpoint to get person groups with route data
+      print('🔍 Routes DEBUG: Fetching routes data for media: ${widget.mediaItem.uuid}');
+      final response = await apiClient.get(
+        '/person-objects/${widget.mediaItem.uuid}',
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        print('🔍 Routes DEBUG: Response data keys: ${data.keys.toList()}');
+        
+        if (data['person_groups'] != null) {
+          final personGroups = data['person_groups'] as List;
+          print('🔍 Routes DEBUG: Found ${personGroups.length} person groups');
+          
+          for (int i = 0; i < personGroups.length; i++) {
+            final group = personGroups[i];
+            final trackingData = group['movement_tracking'];
+            if (trackingData != null) {
+              final routePoints = trackingData['route_points'] as List?;
+              print('🔍 Routes DEBUG: Group $i has ${routePoints?.length ?? 0} route points');
+              if (routePoints != null && routePoints.isNotEmpty) {
+                final firstPoint = routePoints.first;
+                print('🔍 Routes DEBUG: First point: center_x=${firstPoint['center_x']}, center_y=${firstPoint['center_y']}');
+              }
+            } else {
+              print('🔍 Routes DEBUG: Group $i has no movement_tracking data');
+            }
+          }
+        } else {
+          print('🔍 Routes DEBUG: No person_groups found in response');
+        }
+        
+        return data;
+      } else {
+        throw Exception('Failed to fetch routes data: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Routes DEBUG: Error fetching routes data: $e');
+      throw e;
+    }
+  }
+
+  Future<Size?> _getFrameDimensions() async {
+    try {
+      print('🖼️ Frame Dimensions DEBUG: Getting dimensions for media: ${widget.mediaItem.uuid}');
+      
+      // Try method 1: Load frame using HTTP image provider
+      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/0?format=jpeg';
+      final apiClient = ref.read(apiClientProvider);
+      
+      // Create headers for authenticated request
+      final headers = <String, String>{};
+      if (apiClient.authToken != null) {
+        headers['Authorization'] = 'Bearer ${apiClient.authToken}';
+      }
+      
+      try {
+        final image = NetworkImage(frameUrl, headers: headers);
+        final ImageStream stream = image.resolve(const ImageConfiguration());
+        final Completer<ImageInfo> completer = Completer();
+        
+        stream.addListener(ImageStreamListener((ImageInfo info, bool _) {
+          completer.complete(info);
+        }));
+        
+        final imageInfo = await completer.future.timeout(const Duration(seconds: 10));
+        final size = Size(
+          imageInfo.image.width.toDouble(), 
+          imageInfo.image.height.toDouble()
+        );
+        
+        print('🖼️ Frame Dimensions DEBUG: Successfully got dimensions: ${size.width}x${size.height}');
+        return size;
+      } catch (e) {
+        print('🖼️ Frame Dimensions DEBUG: NetworkImage method failed: $e');
+      }
+      
+      // Method 2: Fallback to media metadata if available
+      if (widget.mediaItem.metadata != null) {
+        final metadata = widget.mediaItem.metadata!;
+        if (metadata['width'] != null && metadata['height'] != null) {
+          final size = Size(
+            (metadata['width'] as num).toDouble(),
+            (metadata['height'] as num).toDouble(),
+          );
+          print('🖼️ Frame Dimensions DEBUG: Using metadata dimensions: ${size.width}x${size.height}');
+          return size;
+        }
+      }
+      
+      // Method 3: Final fallback to common video resolution
+      print('🖼️ Frame Dimensions DEBUG: Using fallback dimensions: 1280x720');
+      return const Size(1280, 720);
+      
+    } catch (e) {
+      print('❌ Frame Dimensions DEBUG: Error getting frame dimensions: $e');
+      return const Size(1280, 720); // Fallback
+    }
+  }
+
+  Widget _buildRoutesLegend(List<dynamic> personGroups) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Route Legend',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            
+            // Horizontal layout for person legends
+            Wrap(
+              spacing: 16,
+              runSpacing: 4,
+              children: personGroups.asMap().entries.map((entry) {
+                final index = entry.key;
+                final group = entry.value;
+                final color = _getPersonColor(index);
+                final personId = group['person_id'] ?? 'person_${index + 1}';
+                final routePoints = group['movement_tracking']?['route_points'] ?? [];
+                
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Color indicator
+                    Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    
+                    // Person info
+                    Text(
+                      '$personId (${routePoints.length} pts)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+            
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+            
+            // Route symbols legend - more compact
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildLegendSymbol(
+                  Icons.play_circle_filled,
+                  Colors.green,
+                  'Start',
+                ),
+                _buildLegendSymbol(
+                  Icons.stop_circle,
+                  Colors.red,
+                  'End',
+                ),
+                _buildLegendSymbol(
+                  Icons.circle,
+                  Colors.blue,
+                  'Path',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendSymbol(IconData icon, Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11),
+        ),
+      ],
+    );
+  }
+
+  Color _getPersonColor(int index) {
+    // Generate distinct colors for different persons
+    final colors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.cyan,
+    ];
+    return colors[index % colors.length];
+  }
 }
 
 /// Custom painter to draw cropped image
@@ -1494,4 +2049,831 @@ class CroppedImagePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Custom painter for drawing movement routes
+class RoutesPainter extends CustomPainter {
+  final List<dynamic> personGroups;
+  final Size? frameDimensions;
+  final String displayMode; // 'path' or 'scatter'
+
+  RoutesPainter(this.personGroups, {this.frameDimensions, this.displayMode = 'path'});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (personGroups.isEmpty) {
+      // Draw "No routes" message
+      final textPainter = TextPainter(
+        text: const TextSpan(
+          text: 'No movement routes to display',
+          style: TextStyle(color: Colors.grey, fontSize: 16),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(
+          (size.width - textPainter.width) / 2,
+          (size.height - textPainter.height) / 2,
+        ),
+      );
+      return;
+    }
+
+    // Use frame dimensions for 1:1 coordinate mapping if available
+    if (frameDimensions != null) {
+      _paintWithFrameDimensions(canvas, size);
+    } else {
+      _paintWithScaling(canvas, size);
+    }
+  }
+
+  void _paintWithFrameDimensions(Canvas canvas, Size size) {
+    print('🎨 RoutesPainter DEBUG: _paintWithFrameDimensions called');
+    print('🎨 RoutesPainter DEBUG: Canvas size: ${size.width}x${size.height}');
+    print('🎨 RoutesPainter DEBUG: Frame dimensions: ${frameDimensions!.width}x${frameDimensions!.height}');
+    print('🎨 RoutesPainter DEBUG: Person groups count: ${personGroups.length}');
+    
+    // Check if we have true 1:1 mapping (canvas matches frame exactly)
+    final isOneToOneMapping = (size.width == frameDimensions!.width && size.height == frameDimensions!.height);
+    print('🎨 RoutesPainter DEBUG: One-to-one mapping: $isOneToOneMapping');
+
+    // Helper function for coordinate conversion
+    Offset convertPoint(double x, double y) {
+      if (isOneToOneMapping) {
+        // True 1:1 mapping - use coordinates directly
+        final converted = Offset(x, y);
+        print('🎨 RoutesPainter DEBUG: 1:1 direct mapping ($x, $y) -> (${converted.dx}, ${converted.dy})');
+        return converted;
+      } else {
+        // Scale to fit canvas
+        final scaleX = size.width / frameDimensions!.width;
+        final scaleY = size.height / frameDimensions!.height;
+        final converted = Offset(x * scaleX, y * scaleY);
+        print('🎨 RoutesPainter DEBUG: Scaled mapping ($x, $y) -> (${converted.dx}, ${converted.dy}) [scale: ${scaleX}x${scaleY}]');
+        return converted;
+      }
+    }
+
+    // Draw routes for each person
+    for (int personIndex = 0; personIndex < personGroups.length; personIndex++) {
+      final group = personGroups[personIndex];
+      final routePoints = group['movement_tracking']?['route_points'] ?? [];
+      
+      print('🎨 RoutesPainter DEBUG: Person $personIndex has ${routePoints.length} route points');
+      
+      if (routePoints.isEmpty) continue;
+
+      final color = _getPersonColor(personIndex);
+      
+      // Draw based on display mode
+      if (displayMode == 'scatter') {
+        // Scatter plot mode - draw all points as circles with sequence numbers
+        for (int i = 0; i < routePoints.length; i++) {
+          final point = routePoints[i];
+          final x = (point['center_x'] ?? 0).toDouble();
+          final y = (point['center_y'] ?? 0).toDouble();
+          final pos = convertPoint(x, y);
+          
+          // Varying point sizes: start=large, end=medium, middle=small
+          double pointSize;
+          Color pointColor;
+          if (i == 0) {
+            pointSize = 10.0; // Start point
+            pointColor = Colors.green;
+          } else if (i == routePoints.length - 1) {
+            pointSize = 8.0;  // End point
+            pointColor = Colors.red;
+          } else {
+            pointSize = 5.0;  // Middle points
+            pointColor = color;
+          }
+          
+          // Draw main point
+          final pointPaint = Paint()..color = pointColor.withOpacity(0.8);
+          canvas.drawCircle(pos, pointSize, pointPaint);
+          
+          // Add white border for better visibility
+          final borderPaint = Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5;
+          canvas.drawCircle(pos, pointSize, borderPaint);
+          
+          // Draw sequence number on larger points
+          if (pointSize >= 8.0) {
+            final textPainter = TextPainter(
+              text: TextSpan(
+                text: '${i + 1}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              textDirection: TextDirection.ltr,
+            );
+            textPainter.layout();
+            textPainter.paint(
+              canvas,
+              Offset(pos.dx - textPainter.width / 2, pos.dy - textPainter.height / 2),
+            );
+          }
+        }
+      } else {
+        // Path mode - draw connected route path
+        if (routePoints.length > 1) {
+        final path = Path();
+        bool isFirst = true;
+        
+        for (final point in routePoints) {
+          final x = (point['center_x'] ?? 0).toDouble();
+          final y = (point['center_y'] ?? 0).toDouble();
+          print('🎨 RoutesPainter DEBUG: Route point: x=$x, y=$y');
+          final pos = convertPoint(x, y);
+          
+          if (isFirst) {
+            path.moveTo(pos.dx, pos.dy);
+            isFirst = false;
+          } else {
+            path.lineTo(pos.dx, pos.dy);
+          }
+        }
+        
+        // Draw the path
+        final pathPaint = Paint()
+          ..color = color.withOpacity(0.7)
+          ..strokeWidth = 3.0
+          ..style = PaintingStyle.stroke;
+        
+        canvas.drawPath(path, pathPaint);
+      }
+      
+      // Draw route points and markers (only in path mode)
+      for (int i = 0; i < routePoints.length; i++) {
+        final point = routePoints[i];
+        final x = (point['center_x'] ?? 0).toDouble();
+        final y = (point['center_y'] ?? 0).toDouble();
+        final pos = convertPoint(x, y);
+        
+        // Draw point
+        final pointPaint = Paint()..color = color;
+        canvas.drawCircle(pos, 4.0, pointPaint);
+        
+        // Draw start marker (green arrow)
+        if (i == 0) {
+          final startPaint = Paint()..color = Colors.green;
+          canvas.drawCircle(pos, 8.0, startPaint);
+          
+          // Draw arrow
+          final arrowPaint = Paint()
+            ..color = Colors.white
+            ..strokeWidth = 2.0
+            ..style = PaintingStyle.stroke;
+          
+          canvas.drawLine(
+            Offset(pos.dx - 4, pos.dy),
+            Offset(pos.dx + 4, pos.dy),
+            arrowPaint,
+          );
+          canvas.drawLine(
+            Offset(pos.dx + 4, pos.dy),
+            Offset(pos.dx + 1, pos.dy - 3),
+            arrowPaint,
+          );
+          canvas.drawLine(
+            Offset(pos.dx + 4, pos.dy),
+            Offset(pos.dx + 1, pos.dy + 3),
+            arrowPaint,
+          );
+        }
+        
+        // Draw end marker (red square)
+        if (i == routePoints.length - 1) {
+          final endPaint = Paint()..color = Colors.red;
+          canvas.drawRect(
+            Rect.fromCenter(center: pos, width: 12, height: 12),
+            endPaint,
+          );
+        }
+      }
+      } // End of path mode else block
+      
+      // Draw person label near start point
+      if (routePoints.isNotEmpty) {
+        final firstPoint = routePoints.first;
+        final x = (firstPoint['center_x'] ?? 0).toDouble();
+        final y = (firstPoint['center_y'] ?? 0).toDouble();
+        final pos = convertPoint(x, y);
+        
+        final personId = group['person_id'] ?? 'person_${personIndex + 1}';
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: personId,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+        
+        // Position label above and to the right of start point
+        textPainter.paint(
+          canvas,
+          Offset(pos.dx + 12, pos.dy - 20),
+        );
+      }
+    }
+
+    // Draw frame information in corner
+    final frameInfo = 'Frame: ${frameDimensions!.width.toInt()}×${frameDimensions!.height.toInt()}px';
+    final infoTextPainter = TextPainter(
+      text: TextSpan(
+        text: frameInfo,
+        style: const TextStyle(
+          color: Colors.grey,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    infoTextPainter.layout();
+    infoTextPainter.paint(
+      canvas,
+      Offset(size.width - infoTextPainter.width - 8, 8),
+    );
+  }
+
+  void _paintWithScaling(Canvas canvas, Size size) {
+    // Fallback method with scaling (original implementation)
+    // Find bounds of all routes to scale properly
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+
+    for (final group in personGroups) {
+      final routePoints = group['movement_tracking']?['route_points'] ?? [];
+      for (final point in routePoints) {
+        final x = (point['center_x'] ?? 0).toDouble();
+        final y = (point['center_y'] ?? 0).toDouble();
+        minX = math.min(minX, x);
+        minY = math.min(minY, y);
+        maxX = math.max(maxX, x);
+        maxY = math.max(maxY, y);
+      }
+    }
+
+    // Add padding
+    const padding = 40.0;
+    final dataWidth = maxX - minX;
+    final dataHeight = maxY - minY;
+    
+    if (dataWidth <= 0 || dataHeight <= 0) return;
+
+    // Calculate scale to fit canvas
+    final scaleX = (size.width - 2 * padding) / dataWidth;
+    final scaleY = (size.height - 2 * padding) / dataHeight;
+    final scale = math.min(scaleX, scaleY);
+
+    // Helper function to convert coordinates
+    Offset convertPoint(double x, double y) {
+      final scaledX = padding + (x - minX) * scale;
+      final scaledY = padding + (y - minY) * scale;
+      return Offset(scaledX, scaledY);
+    }
+
+    // Draw routes for each person (same as before)
+    for (int personIndex = 0; personIndex < personGroups.length; personIndex++) {
+      final group = personGroups[personIndex];
+      final routePoints = group['movement_tracking']?['route_points'] ?? [];
+      
+      if (routePoints.isEmpty) continue;
+
+      final color = _getPersonColor(personIndex);
+      
+      // Draw route path
+      if (routePoints.length > 1) {
+        final path = Path();
+        bool isFirst = true;
+        
+        for (final point in routePoints) {
+          final x = (point['center_x'] ?? 0).toDouble();
+          final y = (point['center_y'] ?? 0).toDouble();
+          final pos = convertPoint(x, y);
+          
+          if (isFirst) {
+            path.moveTo(pos.dx, pos.dy);
+            isFirst = false;
+          } else {
+            path.lineTo(pos.dx, pos.dy);
+          }
+        }
+        
+        // Draw the path
+        final pathPaint = Paint()
+          ..color = color.withOpacity(0.7)
+          ..strokeWidth = 3.0
+          ..style = PaintingStyle.stroke;
+        
+        canvas.drawPath(path, pathPaint);
+      }
+      
+      // Draw route points and markers (same implementation as above)
+      for (int i = 0; i < routePoints.length; i++) {
+        final point = routePoints[i];
+        final x = (point['center_x'] ?? 0).toDouble();
+        final y = (point['center_y'] ?? 0).toDouble();
+        final pos = convertPoint(x, y);
+        
+        // Draw point
+        final pointPaint = Paint()..color = color;
+        canvas.drawCircle(pos, 4.0, pointPaint);
+        
+        // Draw start marker (green arrow)
+        if (i == 0) {
+          final startPaint = Paint()..color = Colors.green;
+          canvas.drawCircle(pos, 8.0, startPaint);
+          
+          // Draw arrow (same as above)
+          final arrowPaint = Paint()
+            ..color = Colors.white
+            ..strokeWidth = 2.0
+            ..style = PaintingStyle.stroke;
+          
+          canvas.drawLine(
+            Offset(pos.dx - 4, pos.dy),
+            Offset(pos.dx + 4, pos.dy),
+            arrowPaint,
+          );
+          canvas.drawLine(
+            Offset(pos.dx + 4, pos.dy),
+            Offset(pos.dx + 1, pos.dy - 3),
+            arrowPaint,
+          );
+          canvas.drawLine(
+            Offset(pos.dx + 4, pos.dy),
+            Offset(pos.dx + 1, pos.dy + 3),
+            arrowPaint,
+          );
+        }
+        
+        // Draw end marker (red square)
+        if (i == routePoints.length - 1) {
+          final endPaint = Paint()..color = Colors.red;
+          canvas.drawRect(
+            Rect.fromCenter(center: pos, width: 12, height: 12),
+            endPaint,
+          );
+        }
+      }
+      
+      // Draw person label near start point
+      if (routePoints.isNotEmpty) {
+        final firstPoint = routePoints.first;
+        final x = (firstPoint['center_x'] ?? 0).toDouble();
+        final y = (firstPoint['center_y'] ?? 0).toDouble();
+        final pos = convertPoint(x, y);
+        
+        final personId = group['person_id'] ?? 'person_${personIndex + 1}';
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: personId,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+        
+        // Position label above and to the right of start point
+        textPainter.paint(
+          canvas,
+          Offset(pos.dx + 12, pos.dy - 20),
+        );
+      }
+    }
+  }
+
+  Color _getPersonColor(int index) {
+    final colors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.cyan,
+    ];
+    return colors[index % colors.length];
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+/// Custom painter for drawing movement routes from top-down view
+class TopViewRoutesPainter extends CustomPainter {
+  final List<dynamic> personGroups;
+  final String displayMode; // 'path' or 'scatter'
+
+  TopViewRoutesPainter(this.personGroups, {this.displayMode = 'path'});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (personGroups.isEmpty) {
+      // Draw "No routes" message
+      final textPainter = TextPainter(
+        text: const TextSpan(
+          text: 'No movement routes to display',
+          style: TextStyle(color: Colors.grey, fontSize: 16),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(
+          (size.width - textPainter.width) / 2,
+          (size.height - textPainter.height) / 2,
+        ),
+      );
+      return;
+    }
+
+    print('🗺️ TopView DEBUG: Canvas size: ${size.width}x${size.height}');
+    print('🗺️ TopView DEBUG: Person groups count: ${personGroups.length}');
+
+    // Find bounds of all routes to create a top-down view
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+
+    for (final group in personGroups) {
+      final routePoints = group['movement_tracking']?['route_points'] ?? [];
+      for (final point in routePoints) {
+        final x = (point['center_x'] ?? 0).toDouble();
+        final y = (point['center_y'] ?? 0).toDouble();
+        minX = math.min(minX, x);
+        minY = math.min(minY, y);
+        maxX = math.max(maxX, x);
+        maxY = math.max(maxY, y);
+      }
+    }
+
+    print('🗺️ TopView DEBUG: Route bounds: ($minX, $minY) to ($maxX, $maxY)');
+
+    // Add padding around the movement area
+    const padding = 40.0;
+    final dataWidth = maxX - minX;
+    final dataHeight = maxY - minY;
+    
+    if (dataWidth <= 0 || dataHeight <= 0) return;
+
+    // Calculate scale to fit canvas with equal scaling (preserving aspect ratio)
+    final availableWidth = size.width - 2 * padding;
+    final availableHeight = size.height - 2 * padding;
+    final scale = math.min(availableWidth / dataWidth, availableHeight / dataHeight);
+
+    print('🗺️ TopView DEBUG: Scale factor: $scale');
+
+    // Calculate offset to center the movement area
+    final scaledWidth = dataWidth * scale;
+    final scaledHeight = dataHeight * scale;
+    final offsetX = (size.width - scaledWidth) / 2 - minX * scale;
+    final offsetY = (size.height - scaledHeight) / 2 - minY * scale;
+
+    // Helper function to convert coordinates
+    Offset convertPoint(double x, double y) {
+      final convertedX = x * scale + offsetX;
+      final convertedY = y * scale + offsetY;
+      return Offset(convertedX, convertedY);
+    }
+
+    // Draw grid background
+    _drawGrid(canvas, size, scale, offsetX, offsetY);
+
+    // Draw routes for each person
+    for (int personIndex = 0; personIndex < personGroups.length; personIndex++) {
+      final group = personGroups[personIndex];
+      final routePoints = group['movement_tracking']?['route_points'] ?? [];
+      
+      if (routePoints.isEmpty) continue;
+
+      final color = _getPersonColor(personIndex);
+      
+      print('🗺️ TopView DEBUG: Person $personIndex has ${routePoints.length} route points');
+      
+      // Draw based on display mode
+      if (displayMode == 'scatter') {
+        // Scatter plot mode - draw only points without lines
+        for (int i = 0; i < routePoints.length; i++) {
+          final point = routePoints[i];
+          final x = (point['center_x'] ?? 0).toDouble();
+          final y = (point['center_y'] ?? 0).toDouble();
+          final pos = convertPoint(x, y);
+          
+          // Varying point sizes: start=large, end=medium, middle=small
+          double pointSize;
+          Color pointColor;
+          if (i == 0) {
+            pointSize = 12.0; // Start point (slightly larger for top view)
+            pointColor = Colors.green;
+          } else if (i == routePoints.length - 1) {
+            pointSize = 10.0;  // End point
+            pointColor = Colors.red;
+          } else {
+            pointSize = 6.0;  // Middle points (slightly larger for top view)
+            pointColor = color;
+          }
+          
+          // Draw main point
+          final pointPaint = Paint()..color = pointColor.withOpacity(0.9);
+          canvas.drawCircle(pos, pointSize, pointPaint);
+          
+          // Add white border for better visibility
+          final borderPaint = Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.0;
+          canvas.drawCircle(pos, pointSize, borderPaint);
+          
+          // Draw sequence number on larger points
+          if (pointSize >= 10.0) {
+            final textPainter = TextPainter(
+              text: TextSpan(
+                text: '${i + 1}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              textDirection: TextDirection.ltr,
+            );
+            textPainter.layout();
+            textPainter.paint(
+              canvas,
+              Offset(pos.dx - textPainter.width / 2, pos.dy - textPainter.height / 2),
+            );
+          }
+        }
+      } else {
+        // Path mode - draw connected route path
+        if (routePoints.length > 1) {
+        final path = Path();
+        bool isFirst = true;
+        
+        for (final point in routePoints) {
+          final x = (point['center_x'] ?? 0).toDouble();
+          final y = (point['center_y'] ?? 0).toDouble();
+          final pos = convertPoint(x, y);
+          
+          if (isFirst) {
+            path.moveTo(pos.dx, pos.dy);
+            isFirst = false;
+          } else {
+            path.lineTo(pos.dx, pos.dy);
+          }
+        }
+        
+        // Draw the path with thicker lines for top view
+        final pathPaint = Paint()
+          ..color = color.withOpacity(0.8)
+          ..strokeWidth = 4.0
+          ..style = PaintingStyle.stroke;
+        
+        canvas.drawPath(path, pathPaint);
+      }
+      
+      // Draw route points (only in path mode)
+      for (int i = 0; i < routePoints.length; i++) {
+        final point = routePoints[i];
+        final x = (point['center_x'] ?? 0).toDouble();
+        final y = (point['center_y'] ?? 0).toDouble();
+        final pos = convertPoint(x, y);
+        
+        // Draw point
+        final pointPaint = Paint()..color = color;
+        canvas.drawCircle(pos, 6.0, pointPaint);
+        
+        // Draw start marker (green circle with arrow)
+        if (i == 0) {
+          final startPaint = Paint()..color = Colors.green;
+          canvas.drawCircle(pos, 12.0, startPaint);
+          
+          // Draw directional arrow towards next point
+          if (routePoints.length > 1) {
+            final nextPoint = routePoints[1];
+            final nextX = (nextPoint['center_x'] ?? 0).toDouble();
+            final nextY = (nextPoint['center_y'] ?? 0).toDouble();
+            final nextPos = convertPoint(nextX, nextY);
+            
+            final dx = nextPos.dx - pos.dx;
+            final dy = nextPos.dy - pos.dy;
+            final length = math.sqrt(dx * dx + dy * dy);
+            
+            if (length > 0) {
+              final unitX = dx / length;
+              final unitY = dy / length;
+              
+              // Draw arrow
+              final arrowPaint = Paint()
+                ..color = Colors.white
+                ..strokeWidth = 2.0
+                ..style = PaintingStyle.stroke;
+              
+              final arrowLength = 8.0;
+              final arrowEnd = Offset(
+                pos.dx + unitX * arrowLength,
+                pos.dy + unitY * arrowLength,
+              );
+              
+              canvas.drawLine(pos, arrowEnd, arrowPaint);
+              
+              // Arrow head
+              final arrowHeadLength = 4.0;
+              final leftArrow = Offset(
+                arrowEnd.dx - unitX * arrowHeadLength + unitY * arrowHeadLength * 0.5,
+                arrowEnd.dy - unitY * arrowHeadLength - unitX * arrowHeadLength * 0.5,
+              );
+              final rightArrow = Offset(
+                arrowEnd.dx - unitX * arrowHeadLength - unitY * arrowHeadLength * 0.5,
+                arrowEnd.dy - unitY * arrowHeadLength + unitX * arrowHeadLength * 0.5,
+              );
+              
+              canvas.drawLine(arrowEnd, leftArrow, arrowPaint);
+              canvas.drawLine(arrowEnd, rightArrow, arrowPaint);
+            }
+          }
+        }
+        
+        // Draw end marker (red square)
+        if (i == routePoints.length - 1) {
+          final endPaint = Paint()..color = Colors.red;
+          canvas.drawRect(
+            Rect.fromCenter(center: pos, width: 16, height: 16),
+            endPaint,
+          );
+        }
+      }
+      } // End of path mode else block
+      
+      // Draw person label near start point
+      if (routePoints.isNotEmpty) {
+        final firstPoint = routePoints.first;
+        final x = (firstPoint['center_x'] ?? 0).toDouble();
+        final y = (firstPoint['center_y'] ?? 0).toDouble();
+        final pos = convertPoint(x, y);
+        
+        final personId = group['person_id'] ?? 'person_${personIndex + 1}';
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: personId,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              shadows: [
+                Shadow(
+                  color: Colors.white,
+                  offset: Offset(1, 1),
+                  blurRadius: 2,
+                ),
+              ],
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+        
+        // Position label above start point
+        textPainter.paint(
+          canvas,
+          Offset(pos.dx - textPainter.width / 2, pos.dy - 30),
+        );
+      }
+    }
+
+    // Draw compass and scale info
+    _drawCompassAndScale(canvas, size, scale);
+  }
+
+  void _drawGrid(Canvas canvas, Size size, double scale, double offsetX, double offsetY) {
+    final gridPaint = Paint()
+      ..color = Colors.grey.withOpacity(0.2)
+      ..strokeWidth = 1.0;
+
+    // Draw subtle grid lines
+    final gridSpacing = 50.0 * scale; // Grid every 50 pixels in original coordinates
+    
+    for (double x = 0; x < size.width; x += gridSpacing) {
+      canvas.drawLine(
+        Offset(x, 0),
+        Offset(x, size.height),
+        gridPaint,
+      );
+    }
+    
+    for (double y = 0; y < size.height; y += gridSpacing) {
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        gridPaint,
+      );
+    }
+  }
+
+  void _drawCompassAndScale(Canvas canvas, Size size, double scale) {
+    // Draw compass rose in top-right corner
+    final compassCenter = Offset(size.width - 40, 40);
+    
+    // Draw compass background
+    final compassBgPaint = Paint()
+      ..color = Colors.white.withOpacity(0.9)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(compassCenter, 25, compassBgPaint);
+    
+    final compassBorderPaint = Paint()
+      ..color = Colors.grey.shade400
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+    canvas.drawCircle(compassCenter, 25, compassBorderPaint);
+    
+    // Draw N arrow
+    final arrowPaint = Paint()
+      ..color = Colors.red
+      ..strokeWidth = 2.0;
+      
+    canvas.drawLine(
+      compassCenter,
+      Offset(compassCenter.dx, compassCenter.dy - 15),
+      arrowPaint,
+    );
+    
+    // Draw N label
+    final compassTextPainter = TextPainter(
+      text: const TextSpan(
+        text: 'N',
+        style: TextStyle(
+          color: Colors.red,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    compassTextPainter.layout();
+    compassTextPainter.paint(
+      canvas,
+      Offset(compassCenter.dx - 4, compassCenter.dy - 35),
+    );
+
+    // Draw scale info in bottom-right corner
+    final scaleText = 'Scale: ${scale.toStringAsFixed(2)}x';
+    final scaleTextPainter = TextPainter(
+      text: TextSpan(
+        text: scaleText,
+        style: const TextStyle(
+          color: Colors.grey,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    scaleTextPainter.layout();
+    scaleTextPainter.paint(
+      canvas,
+      Offset(size.width - scaleTextPainter.width - 8, size.height - 20),
+    );
+  }
+
+  Color _getPersonColor(int index) {
+    // Same color scheme as camera view for consistency
+    final colors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.cyan,
+    ];
+    return colors[index % colors.length];
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

@@ -385,11 +385,18 @@ class MediaApiClient {
   /// Get current user ID from authentication context
   Future<String?> _getCurrentUserId() async {
     try {
-      // Get user profile to extract user ID
-      final response = await _dio.get('/api/v1/user/profile');
+      // Call Gateway service for user profile (not media service)
+      final gatewayDio = Dio(BaseOptions(
+        baseUrl: 'http://localhost:8080',
+        connectTimeout: _connectTimeout,
+        receiveTimeout: _receiveTimeout,
+        headers: _dio.options.headers,
+      ));
+      
+      final response = await gatewayDio.get('/api/v1/user/profile');
       if (response.data != null) {
-        // Extract user_id from profile response
-        return response.data['user_id']?.toString();
+        // Extract user_id from profile response - use 'guid' (UUID)
+        return response.data['guid']?.toString();
       }
     } catch (e) {
       _logger.w('Failed to get current user ID: $e');

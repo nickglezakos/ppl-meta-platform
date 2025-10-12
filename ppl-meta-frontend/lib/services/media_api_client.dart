@@ -622,9 +622,9 @@ class MediaApiClient {
     String? description,
   }) async {
     try {
-      // Get user profile to extract user_id
-      final profileResponse = await _apiClient.get('/api/v1/user/profile');
-      final userId = profileResponse.data['guid'] as String;
+      // Get user profile to extract user_id from Gateway service
+      final profileData = await _makeGatewayRequest('/api/v1/user/profile');
+      final userId = profileData['guid'] as String;
       
       final response = await _apiClient.put('/api/v1/media/collections/$collectionId?user_id=$userId', data: {
         if (name != null) 'name': name,
@@ -841,11 +841,11 @@ class MediaApiClient {
   /// Get current user ID from authentication context
   Future<String?> _getCurrentUserId() async {
     try {
-      // Use internal ApiClient for authentication
-      final response = await _apiClient.get('/api/v1/user/profile');
-      if (response.data != null) {
+      // Call Gateway service for user profile (not media service)
+      final gatewayResponse = await _makeGatewayRequest('/api/v1/user/profile');
+      if (gatewayResponse['guid'] != null) {
         // Extract user_id from profile response - use 'guid' (UUID) instead of 'id' (integer)
-        return response.data['guid']?.toString();
+        return gatewayResponse['guid']?.toString();
       }
       return null;
     } on DioException catch (e) {
@@ -859,6 +859,20 @@ class MediaApiClient {
       print('⚠️ MediaApiClient: Network error getting user ID: $e');
       return null;
     }
+  }
+
+  /// Helper method to make requests to Gateway service for user-related endpoints
+  Future<Map<String, dynamic>> _makeGatewayRequest(String endpoint) async {
+    const gatewayBaseUrl = 'http://localhost:8080';
+    
+    final response = await _apiClient.dio.get(
+      '$gatewayBaseUrl$endpoint',
+      options: Options(
+        headers: _apiClient.dio.options.headers,
+      ),
+    );
+    
+    return response.data as Map<String, dynamic>;
   }
 }
 
