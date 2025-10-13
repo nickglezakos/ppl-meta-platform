@@ -27,6 +27,7 @@ from src.services.camera_detection import camera_service
 from src.services.mobile_streaming import mobile_streaming_service
 from src.services.session_auth import session_manager
 from src.services.session_aware_face_detector import session_aware_face_detector
+from src.services.streaming_resource_manager import streaming_resource_manager
 from src.services.streaming_session_manager import streaming_session_manager
 
 logger = logging.getLogger(__name__)
@@ -149,9 +150,32 @@ async def video_stream(
             detail=f"Camera {device_id} not found",
         )
 
+    # ⚡ NEW: Check if system can handle another concurrent stream
+    can_start = await streaming_resource_manager.can_start_stream(device_id)
+    if not can_start:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Maximum concurrent streams reached. Please stop other streams first.",
+        )
+
     # Handle mobile cameras differently
     if camera.camera_type == CameraType.MOBILE:
         return await handle_mobile_camera_stream(device_id, quality, current_user)
+
+    # ⚡ NEW: Register stream for resource management
+    await streaming_resource_manager.register_stream(
+        device_id, camera.camera_type, quality
+    )
+
+    # Get optimized quality for concurrent streaming
+    optimized_quality = streaming_resource_manager.get_optimized_quality_for_device(
+        device_id
+    )
+    if optimized_quality != quality:
+        logger.info(
+            f"🎯 Quality optimized for concurrent streams: {quality} → {optimized_quality}"
+        )
+        quality = optimized_quality
 
     # Continue with regular camera streaming for non-mobile cameras with session support
 
@@ -212,6 +236,20 @@ async def video_stream(
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             cap.set(cv2.CAP_PROP_FPS, fps)
 
+            # ⚡ NEW: Apply concurrent streaming performance optimizations
+            fps_adjustment = streaming_resource_manager.get_fps_adjustment(device_id)
+            adjusted_fps = int(fps * fps_adjustment)
+            concurrent_detection_skip = (
+                streaming_resource_manager.get_detection_frame_skip(device_id)
+            )
+
+            logger.info(
+                f"🎯 Concurrent streaming optimization for {device_id}: "
+                f"streams: {streaming_resource_manager.get_stream_count()}, "
+                f"fps: {fps} → {adjusted_fps}, "
+                f"detection skip: {concurrent_detection_skip}"
+            )
+
             frame_count = 0
             while True:
                 ret, frame = cap.read()
@@ -222,24 +260,27 @@ async def video_stream(
                 # Cache the frame for recording use
                 camera_service.latest_frames[device_id] = (ret, frame.copy())
 
-                # Calculate dynamic frame skip based on configuration
-                from src.config import get_config
+                # ⚡ NEW: Use concurrent-aware detection frame skipping
+                detection_skip_interval = concurrent_detection_skip
 
-                config = get_config()
-                video_fps = config.DEFAULT_CAMERA_FPS
-                target_detection_fps = config.FACE_DETECTION_TARGET_FPS
-                frame_skip_interval = max(1, video_fps // target_detection_fps)
-
-                # Log frame rate optimization settings once per session
+                # Log optimization settings once per session
                 if frame_count == 1:
                     logger.info(
-                        f"🎯 Face detection frame rate optimization: "
-                        f"processing every {frame_skip_interval} frames "
-                        f"({target_detection_fps} FPS target from {video_fps} FPS video)"
+                        f"🎯 Concurrent streaming detection optimization: "
+                        f"processing every {detection_skip_interval} frames "
+                        f"(concurrent streams: {streaming_resource_manager.get_stream_count()})"
                     )
 
-                # Perform face detection with configurable frame skipping
-                if frame_count % frame_skip_interval == 0 and session_uuid:
+                # Perform face detection with concurrent-optimized frame skipping
+                should_detect = (
+                    frame_count % detection_skip_interval == 0
+                    and session_uuid
+                    and not streaming_resource_manager.should_throttle_detection(
+                        device_id
+                    )
+                )
+
+                if should_detect:
                     try:
                         detection_result = (
                             await session_aware_face_detector.detect_faces_with_session(
@@ -289,13 +330,16 @@ async def video_stream(
 
                 frame_count += 1
 
-                # Small delay to control frame rate
-                await asyncio.sleep(1.0 / fps)
+                # ⚡ NEW: Use adjusted FPS for concurrent streaming optimization
+                await asyncio.sleep(1.0 / adjusted_fps)
 
         except Exception as e:
             logger.error(f"Error in video stream for camera {device_id}: {e}")
             return
         finally:
+            # ⚡ NEW: Unregister stream from resource manager
+            await streaming_resource_manager.unregister_stream(device_id)
+
             # Complete session when stream ends
             if session_uuid:
                 await streaming_session_manager.complete_streaming_session(

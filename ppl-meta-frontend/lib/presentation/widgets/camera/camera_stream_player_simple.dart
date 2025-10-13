@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/camera_providers.dart';
+import '../../../core/models/camera.dart';
 
 /// Simplified camera stream player that focuses on MJPEG rendering
 /// without complex provider state management
@@ -58,9 +59,16 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
   void _startStreaming() {
     if (!_isActive) return;
     
-    setState(() {
-      _isStreaming = true;
-    });
+    // Clear any cached URL when starting fresh to ensure new session
+    _currentStreamUrl = null;
+    _retryCount = 0;
+    
+    // Check if widget is still mounted before calling setState
+    if (mounted) {
+      setState(() {
+        _isStreaming = true;
+      });
+    }
     
     print('🎥 Starting stream for camera: ${widget.cameraId}');
   }
@@ -86,43 +94,31 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
     widget.onStop?.call();
   }
 
-  Future<String?> _prepareAuthenticatedUrl() async {
+  Future<String?> _prepareAuthenticatedUrlWithCamera(dynamic camera) async {
+    // Check if widget is still active before proceeding
+    if (!_isActive || !mounted) {
+      print('🚫 Widget not active or mounted, aborting URL preparation');
+      return null;
+    }
+    
+    // If we already have a cached URL, return it to avoid creating new sessions
+    if (_currentStreamUrl != null) {
+      return _currentStreamUrl;
+    }
+    
     try {
-      // First get camera information to detect if it's a mobile camera
-      final cameraAsyncValue = ref.read(cameraByIdProvider(widget.cameraId));
-      
-      // Handle loading state - wait for camera data to load before proceeding
-      if (cameraAsyncValue.isLoading) {
-        print('Camera data is loading, waiting...');
-        // Return null to show loading state in UI
-        return null;
-      }
-      
-      final camera = cameraAsyncValue.when(
-        data: (camera) => camera,
-        loading: () => null, // This shouldn't happen due to check above
-        error: (error, stack) {
-          print('Error loading camera data: $error');
-          return null;
-        },
-      );
-      
-      // If camera data is still null after loading, something went wrong
-      if (camera == null) {
-        print('Camera data is null after loading - camera may not exist');
-        return null;
-      }
-      
       // Debug camera properties first
       print('🔍 [CAMERA_DEBUG] Camera properties:');
       print('  - Camera name: ${camera.name}');
       print('  - Device ID: ${camera.deviceId}');
       print('  - Camera type: ${camera.type}');
-      print('  - Camera type name: ${camera.type.name}');
+      print('  - Camera type string: ${camera.type.toString()}');
       print('  - Camera status: ${camera.status}');
       print('  - isMobileCamera getter result: ${camera.isMobileCamera}');
       print('  - Metadata: ${camera.metadata}');
       print('  - Connection string from metadata: ${camera.metadata?['connection_string']}');
+      
+      String? authenticatedUrl;
       
       // Check if this is a mobile camera
       if (camera.isMobileCamera) {
@@ -132,9 +128,21 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         print('  - Camera type: ${camera.type}');
         print('  - Camera status: ${camera.status}');
         
+        // Check again before async operation
+        if (!_isActive || !mounted) {
+          print('🚫 Widget disposed during mobile camera setup');
+          return null;
+        }
+        
         // Create mobile streaming session for browser-compatible authentication
         final cameraService = ref.read(cameraServiceProvider);
         final sessionResponse = await cameraService.createMobileStreamingSession(camera.deviceId);
+        
+        // Check again after async operation
+        if (!_isActive || !mounted) {
+          print('🚫 Widget disposed after mobile session creation');
+          return null;
+        }
         
         if (sessionResponse == null) {
           print('Failed to create mobile streaming session');
@@ -149,35 +157,56 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         
         // Use session-based streaming URL for mobile cameras
         final camerasEndpoint = AppConfig.instance.cameraServiceUrl;
-        final sessionUrl = '$camerasEndpoint/api/v1/streaming/${camera.deviceId}/video-session/$sessionId';
+        authenticatedUrl = '$camerasEndpoint/api/v1/streaming/${camera.deviceId}/video-session/$sessionId';
         
-        print('📱 [MOBILE_STREAM_DEBUG] Session-based mobile stream URL: $sessionUrl');
-        return sessionUrl;
+        print('📱 [MOBILE_STREAM_DEBUG] Session-based mobile stream URL: $authenticatedUrl');
+      } else {
+        // For non-mobile cameras, use the traditional backend camera service approach
+        print('Creating backend streaming session for non-mobile camera ${camera.deviceId}');
+        
+        // Check again before async operation
+        if (!_isActive || !mounted) {
+          print('🚫 Widget disposed during backend camera setup');
+          return null;
+        }
+        
+        final cameraService = ref.read(cameraServiceProvider);
+        
+        // Create a streaming session for browser-compatible authentication
+        final sessionResponse = await cameraService.createStreamingSession(widget.cameraId);
+        
+        // Check again after async operation
+        if (!_isActive || !mounted) {
+          print('🚫 Widget disposed after backend session creation');
+          return null;
+        }
+        
+        if (sessionResponse == null) {
+          print('Failed to create streaming session');
+          return null;
+        }
+        
+        final sessionId = sessionResponse['session_id'] as String?;
+        if (sessionId == null) {
+          print('No session_id in response');
+          return null;
+        }
+        
+        // Use session-based streaming URL
+        final baseUrl = AppConfig.instance.cameraServiceUrl;
+        authenticatedUrl = '$baseUrl/api/v1/streaming/${widget.cameraId}/video-session/$sessionId';
+        
+        print('Prepared authenticated camera stream URL: $authenticatedUrl');
       }
       
-      // For non-mobile cameras, use the traditional backend camera service approach
-      print('Creating backend streaming session for non-mobile camera ${camera.deviceId}');
-      final cameraService = ref.read(cameraServiceProvider);
-      
-      // Create a streaming session for browser-compatible authentication
-      final sessionResponse = await cameraService.createStreamingSession(widget.cameraId);
-      
-      if (sessionResponse == null) {
-        print('Failed to create streaming session');
+      // Final check before caching the URL
+      if (!_isActive || !mounted) {
+        print('🚫 Widget disposed before caching URL');
         return null;
       }
       
-      final sessionId = sessionResponse['session_id'] as String?;
-      if (sessionId == null) {
-        print('No session_id in response');
-        return null;
-      }
-      
-      // Use session-based streaming URL
-      final baseUrl = AppConfig.instance.cameraServiceUrl;
-      final authenticatedUrl = '$baseUrl/api/v1/streaming/${widget.cameraId}/video-session/$sessionId';
-      
-      print('Prepared authenticated camera stream URL: $authenticatedUrl');
+      // Cache the URL so we don't create new sessions on every rebuild
+      _currentStreamUrl = authenticatedUrl;
       return authenticatedUrl;
     } catch (e) {
       print('Error preparing authenticated URL: $e');
@@ -187,6 +216,23 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
 
   @override
   Widget build(BuildContext context) {
+    // Early return if widget is not active to prevent disposed widget issues
+    if (!_isActive || !mounted) {
+      return Container(
+        width: widget.width ?? 640,
+        height: widget.height ?? 480,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: _buildStoppedView(),
+        ),
+      );
+    }
+    
     return Container(
       width: widget.width ?? 640,
       height: widget.height ?? 480,
@@ -231,28 +277,102 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
   }
 
   Widget _buildStreamView() {
-    return FutureBuilder<String?>(
-      future: _prepareAuthenticatedUrl(),
-      builder: (context, snapshot) {
-        if (!_isActive || !_isStreaming) {
-          return _buildStoppedView();
-        }
-        
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
+    // Watch camera data to handle loading states properly
+    final cameraAsyncValue = ref.watch(cameraByIdProvider(widget.cameraId));
+    
+    // Handle camera data loading state at widget level
+    return cameraAsyncValue.when(
+      loading: () => const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Colors.white),
+            SizedBox(height: 16),
+            Text(
+              'Loading camera data...',
+              style: TextStyle(color: Colors.white70),
+            ),
+          ],
+        ),
+      ),
+      error: (error, stack) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 48,
+              color: Colors.red.shade300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Error loading camera: $error',
+              style: TextStyle(color: Colors.red.shade300),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _stopStreaming,
+              child: const Text('Stop'),
+            ),
+          ],
+        ),
+      ),
+      data: (camera) {
+        if (camera == null) {
+          return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                CircularProgressIndicator(color: Colors.white),
-                SizedBox(height: 16),
+                Icon(
+                  Icons.camera_alt_outlined,
+                  size: 48,
+                  color: Colors.white54,
+                ),
+                const SizedBox(height: 16),
                 Text(
-                  'Preparing camera stream...',
+                  'Camera not found',
                   style: TextStyle(color: Colors.white70),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: _stopStreaming,
+                  child: const Text('Stop'),
                 ),
               ],
             ),
           );
         }
+        
+        // Camera data is available, proceed with stream setup
+        final urlFuture = _currentStreamUrl != null 
+            ? Future.value(_currentStreamUrl)
+            : _prepareAuthenticatedUrlWithCamera(camera);
+            
+        return FutureBuilder<String?>(
+          future: urlFuture,
+          builder: (context, snapshot) {
+            // Add early lifecycle check to prevent disposed widget issues
+            if (!mounted || !_isActive || !_isStreaming) {
+              return _buildStoppedView();
+            }
+            
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 16),
+                    Text(
+                      'Preparing camera stream...',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              );
+            }
         
         if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
           return Center(
@@ -305,7 +425,7 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
           // Check if this is a mobile camera for orientation handling
           final cameraAsyncValue = ref.read(cameraByIdProvider(widget.cameraId));
           final isMobileCamera = cameraAsyncValue.when(
-            data: (camera) => camera?.type.toString() == 'CameraType.mobile' || camera?.isMobileCamera == true,
+            data: (camera) => camera?.type == CameraType.mobile || camera?.isMobileCamera == true,
             loading: () => false,
             error: (_, __) => false,
           );
@@ -343,19 +463,19 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
           _imageElement!.onError.listen((event) {
             print('Stream error for ${widget.cameraId}: $event');
             
-            if (_retryCount < _maxRetries && _isActive && _isStreaming) {
+            if (_retryCount < _maxRetries && _isActive && _isStreaming && _currentStreamUrl != null) {
               _retryCount++;
               print('Retrying MJPEG stream connection...');
               
               Timer(Duration(seconds: _retryDelay), () {
-                if (_isActive && _isStreaming && _imageElement != null) {
-                  final currentUrl = Uri.parse(authenticatedUrl);
+                if (_isActive && _isStreaming && _imageElement != null && _currentStreamUrl != null) {
+                  final currentUrl = Uri.parse(_currentStreamUrl!);
                   String retryUrl;
                   
                   if (currentUrl.hasQuery) {
-                    retryUrl = '$authenticatedUrl&_retry=${DateTime.now().millisecondsSinceEpoch}';
+                    retryUrl = '$_currentStreamUrl&_retry=${DateTime.now().millisecondsSinceEpoch}';
                   } else {
-                    retryUrl = '$authenticatedUrl?_retry=${DateTime.now().millisecondsSinceEpoch}';
+                    retryUrl = '$_currentStreamUrl?_retry=${DateTime.now().millisecondsSinceEpoch}';
                   }
                   
                   _imageElement!.src = retryUrl;
@@ -455,6 +575,8 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
               ),
             ),
           ],
+        );
+          },
         );
       },
     );
