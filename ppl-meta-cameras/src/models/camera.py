@@ -85,6 +85,11 @@ class Camera(Base):
     last_error = Column(Text)
     is_active = Column(Boolean, default=True)
 
+    # Recording profile assignment - TODO: Add when Phase 2 is implemented
+    # recording_profile_id = Column(
+    #     Integer, ForeignKey("camera_recording_profiles.id"), nullable=True
+    # )
+
     # Timestamps
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -92,9 +97,57 @@ class Camera(Base):
     # Relationships
     sessions = relationship("CameraSession", back_populates="camera")
     capabilities = relationship("CameraCapability", back_populates="camera")
+    # recording_profile = relationship("CameraRecordingProfile", back_populates="cameras")
 
     def __repr__(self):
         return f"<Camera(id={self.id}, name='{self.name}', type='{self.camera_type}', status='{self.status}')>"
+
+    # TODO: Uncomment when Phase 2 recording profiles are implemented
+    # @property
+    # def effective_recording_config(self) -> Optional[dict]:
+    #     """
+    #     Get the effective recording configuration for this camera.
+
+    #     Returns the assigned recording profile configuration, or None if no profile assigned.
+    #     This property provides a convenient way to access recording parameters.
+    #     """
+    #     if self.recording_profile:
+    #         return self.recording_profile.effective_recording_config
+    #     return None
+
+    # @property
+    # def supports_automatic_recording(self) -> bool:
+    #     """
+    #     Check if this camera supports automatic recording based on its profile.
+
+    #     Returns:
+    #         True if camera has a profile with automatic recording enabled, False otherwise
+    #     """
+    #     config = self.effective_recording_config
+    #     if config:
+    #         return config.get("auto_segment_recording", False)
+    #     return False
+
+    # def get_recording_schedule_info(self) -> dict:
+    #     """
+    #     Get recording schedule information for this camera.
+
+    #     Returns:
+    #         Dictionary with schedule details or empty dict if no profile assigned
+    #     """
+    #     config = self.effective_recording_config
+    #     if not config:
+    #         return {}
+
+    #     return {
+    #         "has_profile": True,
+    #         "profile_name": config.get("profile_name", "Unknown"),
+    #         "auto_recording": config.get("auto_segment_recording", False),
+    #         "interval_seconds": config.get("segment_interval_seconds"),
+    #         "duration_seconds": config.get("segment_duration_seconds", 30),
+    #         "recording_quality": config.get("recording_quality", "high"),
+    #         "face_detection_enabled": config.get("auto_face_detection_enabled", True),
+    #     }
 
 
 class CameraSession(Base):

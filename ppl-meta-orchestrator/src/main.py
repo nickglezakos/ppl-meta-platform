@@ -65,6 +65,19 @@ async def lifespan(_app: FastAPI):
     global consul_client, service_manager, workflow_orchestrator, workflow_endpoints
     logger.info("Starting PPL Meta Orchestrator Service with Phase 1 capabilities...")
 
+    # Initialize Phase 4 database tables
+    try:
+        logger.info("Initializing Phase 4 recording session database tables...")
+        from database import engine
+        from models.recording_session import Base
+
+        # Create all tables
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Phase 4 database tables initialized successfully")
+    except Exception as db_error:
+        logger.error(f"Failed to initialize database tables: {db_error}")
+        logger.warning("Continuing without database persistence")
+
     # Initialize Phase 1 service clients
     try:
         logger.info(
@@ -131,6 +144,20 @@ async def lifespan(_app: FastAPI):
                 f"Failed to initialize face detection endpoints: {face_detection_error}"
             )
             logger.warning("Continuing without face detection endpoints")
+
+        # Include Phase 4 recording session endpoints for database persistence
+        try:
+            from api.recording_session_endpoints import (
+                router as recording_session_router,
+            )
+
+            app.include_router(recording_session_router)
+            logger.info("✅ Phase 4 recording session endpoints registered")
+        except Exception as recording_session_error:
+            logger.error(
+                f"Failed to initialize recording session endpoints: {recording_session_error}"
+            )
+            logger.warning("Continuing without recording session endpoints")
 
     except Exception as e:
         logger.error(f"Failed to initialize workflow orchestrator: {e}")

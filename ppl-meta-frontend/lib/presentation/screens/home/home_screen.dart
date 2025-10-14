@@ -261,6 +261,15 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
+                        icon: Icons.video_camera_front,
+                        iconColor: Colors.green, // Distinct color for enhanced cameras
+                        title: 'Enhanced Cameras',
+                        subtitle: 'Phase 5 recording management',
+                        onTap: () {
+                          context.go('/cameras-enhanced');
+                        },
+                      ),
+                      _ActionCard(
                         icon: Icons.collections,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Collections',

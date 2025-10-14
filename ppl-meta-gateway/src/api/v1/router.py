@@ -943,6 +943,25 @@ async def get_streaming_video(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+# Recording Service Routes
+@api_router.post("/streaming/{device_id}/record/start")
+async def start_recording(request: Request):
+    """Proxy start recording to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/streaming/{device_id}/record/stop")
+async def stop_recording(request: Request):
+    """Proxy stop recording to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/streaming/{device_id}/record/status")
+async def get_recording_status(request: Request):
+    """Proxy get recording status to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
 async def _proxy_to_orchestrator_service(request: Request) -> Response:
     """Helper function to proxy requests to the Orchestrator service."""
     try:

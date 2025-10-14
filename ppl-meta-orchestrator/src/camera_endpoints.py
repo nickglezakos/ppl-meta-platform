@@ -1,6 +1,7 @@
 """
 PPL Meta Orchestrator - Camera Event Handling and API Endpoints
 Phase 1 Implementation: Camera video storage event processing and workflow triggers
+Phase 4 Integration: Recording session database persistence
 """
 
 import logging
@@ -9,7 +10,11 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+# Phase 4 imports for session tracking
+from models.recording_session import SessionStatus
 from pydantic import BaseModel
+from services.recording_session_service import RecordingSessionService
 from workflow_orchestrator import (
     CameraEventData,
     CameraFaceDetectionWorkflowOrchestrator,
@@ -104,10 +109,11 @@ class WorkflowAnalyticsResponse(BaseModel):
 
 
 class CameraWorkflowEndpoints:
-    """Camera workflow API endpoints for Orchestrator service."""
+    """Camera workflow API endpoints with Phase 4 recording session tracking."""
 
     def __init__(self, orchestrator: CameraFaceDetectionWorkflowOrchestrator):
         self.orchestrator = orchestrator
+        self.session_service = RecordingSessionService()
 
     def _workflow_to_response(
         self, workflow: WorkflowExecution
@@ -132,11 +138,17 @@ class CameraWorkflowEndpoints:
     async def handle_camera_event(
         self, event_request: CameraEventRequest
     ) -> Dict[str, Any]:
-        """Handle camera recording events with automated workflow triggers."""
+        """Handle camera recording events with automated workflow triggers and session tracking."""
         try:
             logger.info(
                 f"Received camera event: {event_request.event_type} "
                 f"from camera {event_request.camera_device_id}"
+            )
+
+            # Phase 4: Handle session tracking based on event type
+            session_uuid = event_request.recording_session_id
+            session_result = await self._handle_session_lifecycle(
+                event_request, session_uuid
             )
 
             # Convert request to event data
@@ -155,27 +167,185 @@ class CameraWorkflowEndpoints:
             # Handle the camera event
             workflow = await self.orchestrator.handle_camera_recording_event(event_data)
 
+            # Phase 4: Update session with workflow information
+            if workflow and session_result.get("session_created"):
+                await self._update_session_workflow(session_uuid, workflow)
+
+            response = {
+                "status": "success",
+                "session_uuid": session_uuid,
+                "session_status": session_result.get("session_status"),
+                "session_action": session_result.get("action"),
+            }
+
             if workflow:
-                return {
-                    "status": "success",
-                    "message": "Camera event processed successfully",
-                    "workflow_created": True,
-                    "workflow_id": workflow.workflow_id,
-                    "workflow_status": workflow.status.value,
-                }
+                response.update(
+                    {
+                        "message": "Camera event processed successfully",
+                        "workflow_created": True,
+                        "workflow_id": workflow.workflow_id,
+                        "workflow_status": workflow.status.value,
+                    }
+                )
             else:
-                return {
-                    "status": "success",
-                    "message": "Camera event processed, no workflow created",
-                    "workflow_created": False,
-                    "reason": "Auto face detection disabled or event not applicable",
-                }
+                response.update(
+                    {
+                        "message": "Camera event processed, no workflow created",
+                        "workflow_created": False,
+                        "reason": "Auto face detection disabled or event not applicable",
+                    }
+                )
+
+            return response
 
         except Exception as e:
             logger.error(f"Failed to handle camera event: {e}")
+            # Try to mark session as failed if it exists
+            try:
+                if hasattr(event_request, "recording_session_id"):
+                    self.session_service.update_session_status(
+                        event_request.recording_session_id,
+                        SessionStatus.FAILED,
+                        error_message=str(e),
+                    )
+            except Exception:
+                pass  # Don't fail if session update fails
+
             raise HTTPException(
                 status_code=500, detail=f"Camera event processing failed: {str(e)}"
             )
+
+    async def _handle_session_lifecycle(
+        self, event_request: CameraEventRequest, session_uuid: str
+    ) -> Dict[str, Any]:
+        """Handle recording session lifecycle based on event type."""
+        event_type = event_request.event_type.lower()
+
+        if event_type in ["recording_started", "start_recording"]:
+            # Create new recording session
+            session = self.session_service.create_session(
+                camera_device_id=event_request.camera_device_id,
+                user_id=event_request.user_id,
+                recording_config={
+                    "event_type": event_request.event_type,
+                    "video_file_path": event_request.video_file_path,
+                },
+                workflow_metadata=event_request.metadata or {},
+            )
+            return {
+                "action": "session_created",
+                "session_created": True,
+                "session_status": session.status,
+                "session_uuid": session.session_uuid,
+            }
+
+        elif event_type in ["recording_progress", "progress_update"]:
+            # Update session progress
+            success = self.session_service.update_session_progress(
+                session_uuid=session_uuid,
+                duration_seconds=event_request.recording_duration_seconds,
+                estimated_file_size_bytes=event_request.file_size_bytes,
+                frames_recorded=int(
+                    event_request.recording_duration_seconds * 30
+                ),  # Estimate 30 FPS
+            )
+            return {
+                "action": "progress_updated",
+                "session_created": False,
+                "session_status": "active" if success else "unknown",
+                "progress_updated": success,
+            }
+
+        elif event_type in [
+            "recording_completed",
+            "recording_finished",
+            "end_recording",
+        ]:
+            # Complete recording session
+            success = self.session_service.update_session_status(
+                session_uuid=session_uuid, status=SessionStatus.COMPLETED
+            )
+            # Final progress update
+            self.session_service.update_session_progress(
+                session_uuid=session_uuid,
+                duration_seconds=event_request.recording_duration_seconds,
+                estimated_file_size_bytes=event_request.file_size_bytes,
+                frames_recorded=int(event_request.recording_duration_seconds * 30),
+            )
+            return {
+                "action": "session_completed",
+                "session_created": False,
+                "session_status": "completed" if success else "unknown",
+                "session_completed": success,
+            }
+
+        elif event_type in ["recording_failed", "recording_error"]:
+            # Mark session as failed
+            success = self.session_service.update_session_status(
+                session_uuid=session_uuid,
+                status=SessionStatus.FAILED,
+                error_message=event_request.metadata.get(
+                    "error_message", "Recording failed"
+                ),
+            )
+            return {
+                "action": "session_failed",
+                "session_created": False,
+                "session_status": "failed" if success else "unknown",
+                "error_message": event_request.metadata.get(
+                    "error_message", "Recording failed"
+                ),
+            }
+
+        else:
+            # Heartbeat for unknown event types
+            self.session_service.heartbeat_session(session_uuid)
+            return {
+                "action": "heartbeat",
+                "session_created": False,
+                "session_status": "active",
+                "event_type": event_type,
+            }
+
+    async def _update_session_workflow(
+        self, session_uuid: str, workflow: WorkflowExecution
+    ) -> bool:
+        """Update session with workflow information and trigger face detection tracking."""
+        try:
+            # Update workflow metadata
+            workflow_metadata = {
+                "workflow_id": workflow.workflow_id,
+                "workflow_type": workflow.workflow_type.value,
+                "workflow_status": workflow.status.value,
+                "media_count": workflow.total_media_count,
+                "created_at": (
+                    workflow.created_at.isoformat() if workflow.created_at else None
+                ),
+            }
+
+            # Get current session to update metadata
+            session = self.session_service.get_session(session_uuid)
+            if session and session.workflow_metadata:
+                session.workflow_metadata.update(workflow_metadata)
+            else:
+                session.workflow_metadata = workflow_metadata
+
+            # Trigger face detection tracking if workflow involves face detection
+            if "face_detection" in workflow.workflow_type.value.lower():
+                success = self.session_service.trigger_face_detection(
+                    session_uuid=session_uuid,
+                    face_detection_session_uuid=workflow.workflow_id,
+                    workflow_execution_id=workflow.workflow_id,
+                )
+                logger.info(
+                    f"Face detection triggered for session {session_uuid}: {success}"
+                )
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update session workflow: {e}")
+            return False
 
     async def start_bulk_processing(
         self,

@@ -24,6 +24,7 @@ import '../../screens/automation_screen.dart';
 import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
 import '../../pages/workflow_widget_test_page.dart';
+import '../../pages/enhanced_multi_camera_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authNotifierProvider);
@@ -142,6 +143,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'cameras',
         builder: (context, state) => const ProviderScreenWrapper(
           child: MultiCameraPage(),
+        ),
+      ),
+      GoRoute(
+        path: '/cameras-enhanced',
+        name: 'cameras-enhanced',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: EnhancedMultiCameraPage(),
         ),
       ),
       GoRoute(

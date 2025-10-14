@@ -1,6 +1,7 @@
 """
 PPL Meta Orchestrator - Camera Event Publishing Integration
 Phase 2.2 Implementation: Camera Service integration for recording completion events
+Phase 4 Integration: Recording session database persistence
 """
 
 import asyncio
@@ -9,7 +10,11 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import aiohttp
+
+# Phase 4 imports for session tracking
+from models.recording_session import SessionStatus
 from service_clients import ServiceClientManager
+from services.recording_session_service import RecordingSessionService
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,7 @@ class CameraEventPublisher:
     ):
         self.service_manager = service_manager
         self.automation_manager = automation_manager
+        self.session_service = RecordingSessionService()  # Phase 4 session tracking
         self._event_subscribers: Dict[str, List[callable]] = {}
         self._polling_tasks: Dict[str, asyncio.Task] = {}
         self._webhook_server_task: Optional[asyncio.Task] = None
@@ -132,7 +138,7 @@ class CameraEventPublisher:
     async def _handle_recording_completed(
         self, camera_device_id: str, user_id: str, recording_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Handle recording completion event and trigger automation if enabled."""
+        """Handle recording completion event with session tracking and automation."""
         try:
             # Extract recording information
             media_id = recording_data.get("id") or recording_data.get("recording_id")
@@ -143,6 +149,7 @@ class CameraEventPublisher:
                 "recording_duration_seconds", 0
             )
             file_size = recording_data.get("file_size_bytes", 0)
+            recording_session_id = recording_data.get("recording_session_id")
 
             if not media_id:
                 logger.error("Recording completion event missing media_id")
@@ -155,12 +162,41 @@ class CameraEventPublisher:
                 f"Recording completed for camera {camera_device_id}: {media_id}"
             )
 
-            # Check if automation is enabled for this camera
-            automation_triggered = (
-                await self.automation_manager.handle_recording_completion_trigger(
-                    camera_device_id, user_id, media_id
+            # Phase 4: Update session status to completed
+            session_updated = False
+            if recording_session_id:
+                session_updated = self.session_service.update_session_status(
+                    session_uuid=recording_session_id, status=SessionStatus.COMPLETED
                 )
-            )
+
+                # Update final session progress
+                if duration and file_size:
+                    self.session_service.update_session_progress(
+                        session_uuid=recording_session_id,
+                        duration_seconds=float(duration),
+                        estimated_file_size_bytes=int(file_size),
+                        frames_recorded=int(float(duration) * 30),  # Estimate 30 FPS
+                    )
+
+                # Update media information
+                self.session_service.update_media_upload_status(
+                    session_uuid=recording_session_id,
+                    completed=True,
+                    media_uuid=media_id,
+                )
+
+                logger.info(
+                    f"Session {recording_session_id} marked as completed: {session_updated}"
+                )
+
+            # Check if automation is enabled for this camera
+            automation_triggered = False
+            if self.automation_manager:
+                automation_triggered = (
+                    await self.automation_manager.handle_recording_completion_trigger(
+                        camera_device_id, user_id, media_id
+                    )
+                )
 
             # Publish event to other subscribers
             await self._publish_event(
@@ -172,7 +208,9 @@ class CameraEventPublisher:
                     "video_file_path": video_file_path,
                     "duration_seconds": duration,
                     "file_size_bytes": file_size,
+                    "recording_session_id": recording_session_id,
                     "automation_triggered": automation_triggered,
+                    "session_updated": session_updated,
                     "timestamp": datetime.now().isoformat(),
                 },
             )
@@ -181,11 +219,25 @@ class CameraEventPublisher:
                 "status": "success",
                 "message": "Recording completion processed",
                 "automation_triggered": automation_triggered,
+                "session_updated": session_updated,
                 "media_id": media_id,
+                "recording_session_id": recording_session_id,
             }
 
         except Exception as e:
             logger.error(f"Error handling recording completion: {e}")
+
+            # Try to mark session as failed if session exists
+            if recording_session_id:
+                try:
+                    self.session_service.update_session_status(
+                        session_uuid=recording_session_id,
+                        status=SessionStatus.FAILED,
+                        error_message=f"Failed to process completion: {str(e)}",
+                    )
+                except Exception:
+                    pass  # Don't fail if session update fails
+
             return {
                 "status": "error",
                 "message": f"Failed to handle recording completion: {str(e)}",
@@ -194,7 +246,7 @@ class CameraEventPublisher:
     async def _handle_recording_failed(
         self, camera_device_id: str, user_id: str, recording_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Handle recording failure event."""
+        """Handle recording failure event with session tracking."""
         try:
             error_message = recording_data.get("error_message", "Unknown error")
             recording_session_id = recording_data.get("recording_session_id")
@@ -202,6 +254,18 @@ class CameraEventPublisher:
             logger.warning(
                 f"Recording failed for camera {camera_device_id}: {error_message}"
             )
+
+            # Phase 4: Update session status to failed
+            session_updated = False
+            if recording_session_id:
+                session_updated = self.session_service.update_session_status(
+                    session_uuid=recording_session_id,
+                    status=SessionStatus.FAILED,
+                    error_message=error_message,
+                )
+                logger.info(
+                    f"Session {recording_session_id} marked as failed: {session_updated}"
+                )
 
             # Publish failure event
             await self._publish_event(
@@ -211,17 +275,70 @@ class CameraEventPublisher:
                     "user_id": user_id,
                     "recording_session_id": recording_session_id,
                     "error_message": error_message,
+                    "session_updated": session_updated,
                     "timestamp": datetime.now().isoformat(),
                 },
             )
 
-            return {"status": "acknowledged", "message": "Recording failure processed"}
+            return {
+                "status": "acknowledged",
+                "message": "Recording failure processed",
+                "session_updated": session_updated,
+                "recording_session_id": recording_session_id,
+            }
 
         except Exception as e:
             logger.error(f"Error handling recording failure: {e}")
             return {
                 "status": "error",
                 "message": f"Failed to handle recording failure: {str(e)}",
+            }
+
+    async def handle_face_detection_completion(
+        self, session_uuid: str, face_detection_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Handle face detection workflow completion for a recording session."""
+        try:
+            # Update session with face detection completion
+            success = self.session_service.complete_face_detection(
+                session_uuid=session_uuid, face_detection_results=face_detection_results
+            )
+
+            if success:
+                logger.info(f"Face detection completed for session {session_uuid}")
+
+                # Get session details for event publishing
+                session = self.session_service.get_session(session_uuid)
+                if session:
+                    # Publish face detection completion event
+                    await self._publish_event(
+                        "face_detection_completed",
+                        {
+                            "session_uuid": session_uuid,
+                            "camera_device_id": session.camera_device_id,
+                            "user_id": session.user_id,
+                            "workflow_execution_id": session.workflow_execution_id,
+                            "face_detection_results": face_detection_results,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+
+                return {
+                    "status": "success",
+                    "message": "Face detection completion recorded",
+                    "session_uuid": session_uuid,
+                }
+            else:
+                return {
+                    "status": "error",
+                    "message": f"Failed to update face detection completion for session {session_uuid}",
+                }
+
+        except Exception as e:
+            logger.error(f"Error handling face detection completion: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to handle face detection completion: {str(e)}",
             }
 
     async def subscribe_to_events(self, event_type: str, callback: callable):
