@@ -1,8 +1,80 @@
 {
     "folders": [
         {
-            "name": "PPL Meta Platform",
+            "name": "🏠 PPL Meta Platform (Root)",
             "path": "."
+        },
+        {
+            "name": "👥 User Management Service",
+            "path": "./ppl-meta-node"
+        },
+        {
+            "name": "🎬 Media Processing Service", 
+            "path": "./ppl-meta-media"
+        },
+        {
+            "name": "🚪 API Gateway Service",
+            "path": "./ppl-meta-gateway"
+        },
+        {
+            "name": "🎭 Orchestrator Service",
+            "path": "./ppl-meta-orchestrator"
+        },
+        {
+            "name": "📹 Camera Service",
+            "path": "./ppl-meta-cameras"
+        },
+        {
+            "name": "👁️ Vision Service",
+            "path": "./ppl-meta-vision"
+        },
+        {
+            "name": "🔍 Discovery Service",
+            "path": "./ppl-meta-discovery"
+        },
+        {
+            "name": "📱 Frontend (Flutter)",
+            "path": "./ppl-meta-frontend"
+        },
+        {
+            "name": "🏗️ Boot Core",
+            "path": "./ppl-meta-bootcore"
+        },
+        {
+            "name": "📊 VMeta Service",
+            "path": "./ppl-meta-vmeta"
+        },
+        {
+            "name": "🤖 Autonomous Mini",
+            "path": "./autonomous"
+        },
+        {
+            "name": "📱 Mobile Camera",
+            "path": "./ppl_meta_mobile_camera"
+        },
+        {
+            "name": "📄 Documentation",
+            "path": "./docs"
+        },
+        {
+            "name": "🔧 Scripts & Utils",
+            "path": "./scripts"
+        },
+        {
+            "name": "📋 Service Template",
+            "path": "./service-template"
+        },
+        {
+            "name": "🔗 Shared Libraries",
+            "path": "./shared"
+        },
+        {
+            "name": "⚙️ Configuration",
+            "path": "./config"
+        },
+        {
+            "name": "🔒 Secrets",
+            "path": "./secrets"
         }
     ],
     "settings": {
@@ -47,9 +119,14 @@
         },
         "terminal.integrated.env.windows": {
             "PYTHONPATH": "${workspaceFolder}"
-        }
+        },
+        "dart.flutterSdkPath": "/usr/local/bin/flutter",
+        "dart.lineLength": 100,
+        "dart.closingLabels": true,
+        "dart.openDevTools": "flutter",
+        "flutter.sdk": "/usr/local/bin/flutter"
     },
-    "extensions": {
+        "extensions": {
         "recommendations": [
             "ms-python.python",
             "ms-python.vscode-pylance", 
@@ -64,7 +141,12 @@
             "ms-vsliveshare.vsliveshare",
             "eamodio.gitlens",
             "ms-vscode.test-adapter-converter",
-            "littlefoxteam.vscode-python-test-adapter"
+            "littlefoxteam.vscode-python-test-adapter",
+            "dart-code.dart-code",
+            "dart-code.flutter",
+            "bradlc.vscode-tailwindcss",
+            "ms-vscode.vscode-typescript-next",
+            "ms-ceintl.vscode-language-pack-de"
         ]
     },
     "tasks": {
@@ -80,101 +162,6 @@
                     "panel": "new"
                 },
                 "problemMatcher": []
-            },
-            {
-                "label": "🏗️ Build All Docker Images",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "build"],
-                "group": "build",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                },
-                "problemMatcher": []
-            },
-            {
-                "label": "🏗️ Build Gateway Image",
-                "type": "shell",
-                "command": "docker",
-                "args": ["build", "-t", "ppl-meta-gateway", "."],
-                "options": {
-                    "cwd": "${workspaceFolder}/ppl-meta-gateway"
-                },
-                "group": "build",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🏗️ Build Node Image",
-                "type": "shell",
-                "command": "docker",
-                "args": ["build", "-t", "ppl-meta-node", "."],
-                "options": {
-                    "cwd": "${workspaceFolder}/ppl-meta-node"
-                },
-                "group": "build",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🏗️ Build Media Image",
-                "type": "shell",
-                "command": "docker",
-                "args": ["build", "-t", "ppl-meta-media", "."],
-                "options": {
-                    "cwd": "${workspaceFolder}/ppl-meta-media"
-                },
-                "group": "build",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🏗️ Build Orchestrator Image",
-                "type": "shell",
-                "command": "docker",
-                "args": ["build", "-t", "ppl-meta-orchestrator", "."],
-                "options": {
-                    "cwd": "${workspaceFolder}/ppl-meta-orchestrator"
-                },
-                "group": "build",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🚀 Start All Services",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "up", "-d"],
-                "group": "build",
-                "presentation": {
-                    "reveal": "always"
-                },
-                "dependsOn": ["🏗️ Build All Docker Images"]
-            },
-            {
-                "label": "🛑 Stop All Services",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "down"],
-                "group": "build",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🔄 Restart All Services",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "restart"],
-                "group": "build",
-                "presentation": {
-                    "reveal": "always"
-                }
             },
             {
                 "label": "Start Infrastructure",
@@ -194,134 +181,7 @@
                 "group": "build"
             },
             {
-                "label": "🏥 Health Check - All Services",
-                "type": "shell",
-                "command": "python",
-                "args": ["-c", "import requests; import sys; services = [('Gateway', 'http://localhost:8080/health'), ('Node', 'http://localhost:8001/health'), ('Media', 'http://localhost:8000/health'), ('Orchestrator', 'http://localhost:8002/health')]; results = []; [results.append(f'✅ {name}: {requests.get(url, timeout=5).status_code}' if (lambda: requests.get(url, timeout=5).status_code == 200)() else f'❌ {name}: Failed') for name, url in services]; [print(r) for r in results]"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                }
-            },
-            {
-                "label": "🏥 Health Check - Gateway",
-                "type": "shell",
-                "command": "curl",
-                "args": ["-s", "http://localhost:8080/health"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🏥 Health Check - Node Service",
-                "type": "shell",
-                "command": "curl",
-                "args": ["-s", "http://localhost:8001/health"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🏥 Health Check - Media Service",
-                "type": "shell",
-                "command": "curl",
-                "args": ["-s", "http://localhost:8000/health"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "🏥 Health Check - Orchestrator",
-                "type": "shell",
-                "command": "curl",
-                "args": ["-s", "http://localhost:8002/health"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "📊 Docker Status",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "ps"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always"
-                }
-            },
-            {
-                "label": "📈 Service Metrics - All",
-                "type": "shell",
-                "command": "python",
-                "args": ["test_metrics_implementation.py"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                }
-            },
-            {
-                "label": "📋 View Logs - All Services",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                }
-            },
-            {
-                "label": "📋 View Logs - Gateway",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "ppl-meta-gateway"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                }
-            },
-            {
-                "label": "📋 View Logs - Node Service",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "ppl-meta-node"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                }
-            },
-            {
-                "label": "📋 View Logs - Media Service",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "ppl-meta-media"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                }
-            },
-            {
-                "label": "📋 View Logs - Database",
-                "type": "shell",
-                "command": "docker-compose",
-                "args": ["-f", "docker-compose.minimal.yml", "logs", "-f", "postgres"],
-                "group": "test",
-                "presentation": {
-                    "reveal": "always",
-                    "panel": "new"
-                }
-            },
-            {
-                "label": "Start User Management Service",
+                "label": "🚀 Start User Management Service",
                 "type": "shell",
                 "command": "python",
                 "args": ["src/main.py"],
@@ -335,7 +195,7 @@
                 }
             },
             {
-                "label": "Start Media Service", 
+                "label": "🚀 Start Media Service", 
                 "type": "shell",
                 "command": "python",
                 "args": ["src/main.py"],
@@ -349,7 +209,7 @@
                 }
             },
             {
-                "label": "Start Gateway Service",
+                "label": "🚀 Start Gateway Service",
                 "type": "shell", 
                 "command": "python",
                 "args": ["src/main.py"],
@@ -363,7 +223,7 @@
                 }
             },
             {
-                "label": "Start Orchestrator Service",
+                "label": "🚀 Start Orchestrator Service",
                 "type": "shell",
                 "command": "python",
                 "args": ["src/main.py"],
@@ -377,41 +237,66 @@
                 }
             },
             {
-                "label": "🧪 Run Tests - All Services",
+                "label": "🚀 Start Camera Service",
                 "type": "shell",
                 "command": "python",
-                "args": ["-m", "pytest", "tests/", "-v"],
-                "group": "test",
+                "args": ["src/main.py"],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-cameras"
+                },
+                "group": "build",
                 "presentation": {
                     "reveal": "always",
                     "panel": "new"
                 }
             },
             {
-                "label": "🧹 Clean Docker Resources",
+                "label": "🚀 Start Vision Service",
                 "type": "shell",
-                "command": "docker",
-                "args": ["system", "prune", "-f"],
+                "command": "python",
+                "args": ["src/main.py"],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-vision"
+                },
                 "group": "build",
                 "presentation": {
-                    "reveal": "always"
+                    "reveal": "always",
+                    "panel": "new"
                 }
             },
             {
-                "label": "📦 Show Docker Images",
+                "label": "🚀 Start Discovery Service",
                 "type": "shell",
-                "command": "docker",
-                "args": ["images", "--filter", "reference=ppl-meta-*"],
-                "group": "test",
+                "command": "python",
+                "args": ["src/main.py"],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-discovery"
+                },
+                "group": "build",
                 "presentation": {
-                    "reveal": "always"
+                    "reveal": "always",
+                    "panel": "new"
                 }
             },
             {
-                "label": "🔍 Service Discovery Status",
+                "label": "📱 Start Flutter Frontend",
                 "type": "shell",
-                "command": "docker",
-                "args": ["exec", "ppl-consul", "consul", "members"],
+                "command": "flutter",
+                "args": ["run"],
+                "options": {
+                    "cwd": "${workspaceFolder}/ppl-meta-frontend"
+                },
+                "group": "build",
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                }
+            },
+            {
+                "label": "🏥 Health Check All Services",
+                "type": "shell",
+                "command": "bash",
+                "args": ["-c", "echo '🏥 Checking service health...' && for port in 8000 8001 8002 8003 8004 8005; do echo \"Port $port:\" && (curl -s http://localhost:$port/health 2>/dev/null | head -1 || echo 'Not responding'); done"],
                 "group": "test",
                 "presentation": {
                     "reveal": "always"
