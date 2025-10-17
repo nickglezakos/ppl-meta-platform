@@ -301,6 +301,69 @@
                 "presentation": {
                     "reveal": "always"
                 }
+            },
+            {
+                "label": "🚀 Start All Local Python Services",
+                "type": "shell",
+                "command": "./manage-services.sh",
+                "args": ["start"],
+                "group": "build",
+                "isBackground": true,
+                "presentation": {
+                    "reveal": "always",
+                    "panel": "new"
+                },
+                "problemMatcher": []
+            },
+            {
+                "label": "🛑 Stop All Local Python Services",
+                "type": "shell",
+                "command": "./manage-services.sh",
+                "args": ["stop"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🔄 Restart All Local Python Services",
+                "type": "shell",
+                "command": "./manage-services.sh",
+                "args": ["restart"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "📊 Check All Services Status",
+                "type": "shell",
+                "command": "./manage-services.sh",
+                "args": ["status"],
+                "group": "test",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🌐 Start Nginx",
+                "type": "shell",
+                "command": "./manage-services.sh",
+                "args": ["nginx-start"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🛑 Stop Nginx",
+                "type": "shell",
+                "command": "./manage-services.sh",
+                "args": ["nginx-stop"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
             }
         ]
     }
