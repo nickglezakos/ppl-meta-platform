@@ -270,6 +270,32 @@ face_pics/
 static-stage/
 Personprints_dir/
 
+# Camera recordings and snapshots
+recordings/
+snapshots/
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Media storage and thumbnails
+storage/
+thumbnails/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Machine learning models
+*.dat
+*.model
+*.pkl
+*.h5
+*.onnx
+
 # Reports and temporary data
 reports/
 *.tmp
