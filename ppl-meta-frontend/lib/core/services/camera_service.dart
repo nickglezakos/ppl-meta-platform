@@ -37,29 +37,29 @@ class CameraService {
   final ApiClient _apiClient;
   final CameraCollectionService _collectionService;
   late final Dio _cameraApiClient;
+  late final Dio _directCameraClient;
 
   CameraService(this._apiClient) : _collectionService = CameraCollectionService(_apiClient) {
-    // Create dedicated camera service API client
-    print('Camera service baseUrl: ${AppConfig.instance.cameraServiceUrl}');
-    _cameraApiClient = Dio(BaseOptions(
+    // Use the authenticated API client for general operations (goes through gateway)
+    print('Camera service using authenticated API client through gateway');
+    _cameraApiClient = _apiClient.dio;
+    
+    // Create a direct client to cameras service for streaming/recording operations
+    _directCameraClient = Dio(BaseOptions(
       baseUrl: AppConfig.instance.cameraServiceUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 30),
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 120),
+      sendTimeout: const Duration(seconds: 30),
     ));
     
-    // Add auth interceptor for camera service
-    _cameraApiClient.interceptors.add(InterceptorsWrapper(
-      onRequest: (options, handler) {
-        final token = _apiClient.authToken;
-        if (token != null) {
-          options.headers['Authorization'] = 'Bearer $token';
-        }
-        handler.next(options);
-      },
-    ));
+    // Copy authentication interceptors to the direct client
+    for (final interceptor in _apiClient.dio.interceptors) {
+      if (interceptor is InterceptorsWrapper) {
+        _directCameraClient.interceptors.add(interceptor);
+      }
+    }
+    
+    print('Direct camera client configured for: ${AppConfig.instance.cameraServiceUrl}');
   }
 
   /// Detect available cameras
@@ -145,7 +145,7 @@ class CameraService {
     String format = 'MJPEG',
   }) async {
     try {
-      final response = await _cameraApiClient.post<Map<String, dynamic>>(
+      final response = await _directCameraClient.post<Map<String, dynamic>>(
         '/api/v1/streaming/$cameraId/start',
         data: {
           'quality': quality,
@@ -192,7 +192,7 @@ class CameraService {
   /// Create a streaming session for a mobile camera (browser-compatible)
   Future<Map<String, dynamic>?> createMobileStreamingSession(String deviceId) async {
     try {
-      final response = await _cameraApiClient.post<Map<String, dynamic>>(
+      final response = await _directCameraClient.post<Map<String, dynamic>>(
         '/api/v1/streaming/mobile/$deviceId/streaming-session',
       );
 
@@ -210,7 +210,7 @@ class CameraService {
   /// Stop streaming for a camera
   Future<void> stopStreaming(String cameraId) async {
     try {
-      await _cameraApiClient.post<Map<String, dynamic>>(
+      await _directCameraClient.post<Map<String, dynamic>>(
         '/api/v1/streaming/$cameraId/stop',
       );
     } on DioException catch (e) {
@@ -221,7 +221,7 @@ class CameraService {
   /// Get streaming status for a camera
   Future<StreamingStatus> getStreamingStatus(String cameraId) async {
     try {
-      final response = await _cameraApiClient.get<Map<String, dynamic>>(
+      final response = await _directCameraClient.get<Map<String, dynamic>>(
         '/api/v1/streaming/$cameraId/status',
       );
 
@@ -238,7 +238,7 @@ class CameraService {
     /// Capture snapshot from a camera
   Future<SnapshotResult> captureSnapshot(String deviceId) async {
     try {
-      final response = await _cameraApiClient.get<Map<String, dynamic>>(
+      final response = await _directCameraClient.get<Map<String, dynamic>>(
         '/api/v1/streaming/$deviceId/snapshot',
       );
 
@@ -402,7 +402,7 @@ class CameraService {
     try {
       final snapshotSettings = settings ?? const SnapshotSettings();
       
-      final response = await _cameraApiClient.post<Map<String, dynamic>>(
+      final response = await _directCameraClient.post<Map<String, dynamic>>(
         '/api/v1/streaming/$cameraId/snapshot', // Direct to cameras service
         data: snapshotSettings.toJson(),
       );
@@ -425,7 +425,7 @@ class CameraService {
       final fullUrl = '${AppConfig.instance.cameraServiceUrl}/api/v1/streaming/$cameraId/capabilities';
       print('Requesting capabilities from: $fullUrl');
       
-      final response = await _cameraApiClient.get<Map<String, dynamic>>(
+      final response = await _directCameraClient.get<Map<String, dynamic>>(
         '/api/v1/streaming/$cameraId/capabilities', // Direct to cameras service
       );
 
@@ -570,21 +570,94 @@ class CameraService {
 
   /// Start recording for a camera
   Future<RecordingResult> startRecording(String deviceId) async {
+    print('🔥 DEBUG CORE: startRecording called for deviceId: $deviceId');
+    print('🔥 DEBUG CORE: Using Gateway client for recording operations');
+    
     try {
+      // Use Gateway for recording operations (has CORS support for browser requests)
       final response = await _cameraApiClient.post(
         '/api/v1/streaming/$deviceId/record/start',
       );
 
-      return RecordingResult.fromJson(response.data as Map<String, dynamic>);
+      // Transform response to match RecordingResult format
+      final sessionData = response.data as Map<String, dynamic>;
+      return RecordingResult.fromJson({
+        'session_id': sessionData['recording_id'] ?? sessionData['session_uuid'],
+        'device_id': sessionData['device_id'],
+        'status': sessionData['status'] ?? 'recording',
+        'started_at': sessionData['started_at'],
+        'message': sessionData['message'] ?? 'Recording started successfully',
+      });
     } on DioException catch (e) {
+      // Handle "already recording" state management issue
+      if (e.response?.statusCode == 400 && 
+          e.response?.data != null && 
+          e.response!.data.toString().contains('already recording')) {
+        
+        print('🔧 Detected stale recording state, clearing and retrying...');
+        
+        // Clear the stale recording state
+        await clearRecordingState(deviceId);
+        
+        // Retry the recording start with working API
+        final retryResponse = await _directCameraClient.post(
+          '/streaming/$deviceId/record/start',
+        );
+        
+        final sessionData = retryResponse.data as Map<String, dynamic>;
+        return RecordingResult.fromJson({
+          'session_id': sessionData['session_uuid'],
+          'device_id': sessionData['camera_device_id'],
+          'status': sessionData['status'],
+          'started_at': sessionData['started_at'],
+          'message': 'Recording started successfully after clearing stale state',
+        });
+      }
+      
       throw _handleDioError(e);
+    }
+  }
+
+  /// Clear stale recording state for a camera
+  /// This fixes the state management inconsistency between in-memory active_recordings and database session state
+  Future<void> clearRecordingState(String deviceId) async {
+    try {
+      print('🧹 Clearing stale recording state for camera $deviceId...');
+      
+      // Use Gateway for recording operations (has CORS support for browser requests)
+      final response = await _cameraApiClient.post(
+        '/api/v1/streaming/$deviceId/record/clear-state',
+      );
+      
+      if (response.data != null) {
+        print('✅ Cleared stale recording state: ${response.data}');
+      }
+    } on DioException catch (e) {
+      print('⚠️ Warning: Failed to clear recording state: ${e.message}');
+      // Don't throw here as this is a cleanup operation
+    }
+  }
+
+  /// Debug recording state for a camera
+  /// Returns information about recording state inconsistencies
+  Future<Map<String, dynamic>?> debugRecordingState(String deviceId) async {
+    try {
+      // Use Gateway for recording operations (has CORS support for browser requests)
+      final response = await _cameraApiClient.get(
+        '/api/v1/streaming/$deviceId/record/debug',
+      );
+      
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      print('⚠️ Warning: Failed to get debug recording state: ${e.message}');
+      return null;
     }
   }
 
   /// Update camera auto face detection setting
   Future<void> updateAutoFaceDetection(String deviceId, bool enabled) async {
     try {
-      await _cameraApiClient.put(
+      await _directCameraClient.put(
         '/api/v1/cameras/$deviceId/settings',
         data: {
           'auto_face_detection': enabled,
@@ -592,17 +665,26 @@ class CameraService {
       );
     } on DioException catch (e) {
       throw _handleDioError(e);
+    } catch (e) {
+      print('Warning: Failed to update camera auto face detection setting: $e');
     }
   }
 
   /// Stop recording for a camera
   Future<RecordingResult> stopRecording(String deviceId) async {
     try {
+      // Use Gateway for recording operations (has CORS support for browser requests)
       final response = await _cameraApiClient.post(
         '/api/v1/streaming/$deviceId/record/stop',
       );
-
-      return RecordingResult.fromJson(response.data as Map<String, dynamic>);
+      
+      // Transform response to match old RecordingResult format
+      return RecordingResult.fromJson({
+        'session_id': response.data['recording_id'] ?? response.data['session_uuid'],
+        'device_id': deviceId,
+        'status': 'stopped',
+        'message': response.data['message'] ?? 'Recording stopped successfully',
+      });
     } on DioException catch (e) {
       throw _handleDioError(e);
     }
@@ -611,13 +693,32 @@ class CameraService {
   /// Get recording status for a camera
   Future<RecordingStatus> getRecordingStatus(String deviceId) async {
     try {
+      // Use Gateway for recording operations (has CORS support for browser requests)
       final response = await _cameraApiClient.get(
         '/api/v1/streaming/$deviceId/record/status',
       );
-
-      return RecordingStatus.fromJson(response.data as Map<String, dynamic>);
+      
+      final data = response.data as Map<String, dynamic>;
+      
+      // Transform to match RecordingStatus format
+      return RecordingStatus.fromJson({
+        'is_recording': data['is_recording'] ?? false,
+        'session_id': data['recording_id'],
+        'device_id': deviceId,
+        'started_at': data['started_at'],
+        'duration_seconds': data['duration_seconds'] ?? 0,
+        'file_size_bytes': data['file_size_bytes'] ?? 0,
+      });
     } on DioException catch (e) {
-      throw _handleDioError(e);
+      // Return not recording status on error
+      return RecordingStatus.fromJson({
+        'is_recording': false,
+        'session_id': null,
+        'device_id': deviceId,
+        'started_at': null,
+        'duration_seconds': 0,
+        'file_size_bytes': 0,
+      });
     }
   }
 

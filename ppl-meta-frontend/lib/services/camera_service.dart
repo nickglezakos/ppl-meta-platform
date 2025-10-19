@@ -9,8 +9,12 @@ import 'camera_auth_service.dart';
 /// 
 /// Provides high-level camera management, streaming, and snapshot capabilities
 /// Relies on CameraAuthService for authentication
+/// 
+/// Follows the EXACT same workflow as the successful headless camera management test:
+/// Steps 1-4: Gateway for detect, connect, stream
+/// Steps 5-10: Gateway for recording (now with debug/clear-state endpoints added)
 class CameraService extends ChangeNotifier {
-  static const String _baseUrl = 'http://localhost:8005/api/v1';
+  static const String _gatewayUrl = 'http://localhost/api/v1';    // Gateway for ALL operations
   
   final CameraAuthService _authService;
   final Logger _logger = Logger(
@@ -62,16 +66,24 @@ class CameraService extends ChangeNotifier {
       _logger.i('🔍 Detecting cameras...');
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/cameras/detect?save_to_db=$saveToDb'),
+        Uri.parse('$_gatewayUrl/cameras/detect?save_to_db=$saveToDb'),
         headers: _authService.getAuthHeaders(),
-      ).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => throw TimeoutException('Camera detection timed out', const Duration(seconds: 15)),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         _logger.i('✅ Camera detection completed: ${data['status']}');
+        
+        // Clear recording state for all detected cameras to prevent conflicts
+        if (data['cameras'] != null) {
+          for (var camera in data['cameras']) {
+            final deviceId = camera['device_id'];
+            if (deviceId != null) {
+              _logger.i('🧹 Clearing stale state for detected camera: $deviceId');
+              await clearRecordingState(deviceId);
+            }
+          }
+        }
         
         // Refresh camera list after detection
         await getCameras();
@@ -102,7 +114,7 @@ class CameraService extends ChangeNotifier {
       _logger.i('📋 Fetching camera list...');
 
       final response = await http.get(
-        Uri.parse('$_baseUrl/cameras/'),
+        Uri.parse('$_gatewayUrl/cameras/'),
         headers: _authService.getAuthHeaders(),
       ).timeout(
         const Duration(seconds: 10),
@@ -149,7 +161,7 @@ class CameraService extends ChangeNotifier {
       _logger.i('📋 Fetching active cameras...');
 
       final response = await http.get(
-        Uri.parse('$_baseUrl/cameras/active'),
+        Uri.parse('$_gatewayUrl/cameras/active'),
         headers: _authService.getAuthHeaders(),
       ).timeout(
         const Duration(seconds: 10),
@@ -193,12 +205,13 @@ class CameraService extends ChangeNotifier {
     try {
       _logger.i('🔌 Connecting to camera: $deviceId');
 
+      // Clear any stale recording state before connecting
+      _logger.i('🧹 Clearing recording state before connecting to $deviceId');
+      await clearRecordingState(deviceId);
+
       final response = await http.post(
-        Uri.parse('$_baseUrl/cameras/$deviceId/connect'),
+        Uri.parse('$_gatewayUrl/cameras/$deviceId/connect'),
         headers: _authService.getAuthHeaders(),
-      ).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => throw TimeoutException('Camera connection timed out', const Duration(seconds: 15)),
       );
 
       if (response.statusCode == 200) {
@@ -230,12 +243,13 @@ class CameraService extends ChangeNotifier {
     try {
       _logger.i('🔌 Disconnecting from camera: $deviceId');
 
+      // Clear any stale recording state before disconnecting
+      _logger.i('🧹 Clearing recording state before disconnecting from $deviceId');
+      await clearRecordingState(deviceId);
+
       final response = await http.post(
-        Uri.parse('$_baseUrl/cameras/$deviceId/disconnect'),
+        Uri.parse('$_gatewayUrl/cameras/$deviceId/disconnect'),
         headers: _authService.getAuthHeaders(),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('Camera disconnection timed out', const Duration(seconds: 10)),
       );
 
       if (response.statusCode == 200) {
@@ -268,7 +282,7 @@ class CameraService extends ChangeNotifier {
       _logger.i('ℹ️ Getting camera info for: $deviceId');
 
       final response = await http.get(
-        Uri.parse('$_baseUrl/cameras/$deviceId/info'),
+        Uri.parse('$_gatewayUrl/cameras/$deviceId/info'),
         headers: _authService.getAuthHeaders(),
       ).timeout(
         const Duration(seconds: 10),
@@ -302,7 +316,7 @@ class CameraService extends ChangeNotifier {
       _logger.i('🔌 Disconnecting all cameras...');
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/cameras/disconnect-all'),
+        Uri.parse('$_gatewayUrl/cameras/disconnect-all'),
         headers: _authService.getAuthHeaders(),
       ).timeout(
         const Duration(seconds: 15),
@@ -341,8 +355,74 @@ class CameraService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Start streaming for a camera
+  Future<bool> startStreaming(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return false;
+    }
+
+    try {
+      _logger.i('📹 Starting streaming for camera $deviceId...');
+
+      final response = await http.post(
+        Uri.parse('$_gatewayUrl/streaming/$deviceId/start'),
+        headers: _authService.getAuthHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _logger.i('✅ Streaming started for $deviceId: ${data['status']}');
+        return true;
+      } else {
+        _lastError = 'Failed to start streaming for $deviceId: ${response.statusCode}';
+        _logger.e('❌ $_lastError');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Start streaming error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  /// Stop streaming for a camera
+  Future<bool> stopStreaming(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return false;
+    }
+
+    try {
+      _logger.i('⏹️ Stopping streaming for camera $deviceId...');
+
+      final response = await http.post(
+        Uri.parse('$_gatewayUrl/streaming/$deviceId/stop'),
+        headers: _authService.getAuthHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _logger.i('✅ Streaming stopped for $deviceId: ${data['status']}');
+        return true;
+      } else {
+        _lastError = 'Failed to stop streaming for $deviceId: ${response.statusCode}';
+        _logger.e('❌ $_lastError');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Stop streaming error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return false;
+    }
+  }
+
   /// Start recording for a camera
   Future<RecordingResult?> startRecording(String deviceId) async {
+    print('🔥 DEBUG: startRecording called for deviceId: $deviceId');
+    print('🔥 DEBUG: _gatewayUrl is: $_gatewayUrl');
+    print('🔥 DEBUG: isAuthenticated: ${_authService.isAuthenticated}');
+    
     if (!_authService.isAuthenticated) {
       _lastError = 'Authentication required';
       return null;
@@ -352,18 +432,92 @@ class CameraService extends ChangeNotifier {
       _logger.i('🎥 Starting recording for camera $deviceId...');
 
       final response = await http.post(
-        Uri.parse('$_baseUrl/streaming/$deviceId/record/start'),
+        Uri.parse('$_gatewayUrl/streaming/$deviceId/record/start'),
         headers: _authService.getAuthHeaders(),
-      ).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('Start recording timed out', const Duration(seconds: 10)),
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        _logger.i('✅ Recording started: ${data['recording_id']}');
+        _logger.i('✅ Recording started successfully');
         
-        return RecordingResult.fromJson(data);
+        // Handle both response formats from our working backend test
+        String? sessionId;
+        String? deviceIdFromResponse;
+        String? status = 'active';
+        String? startedAt;
+        String message = 'Recording started successfully';
+        
+        if (data is Map<String, dynamic>) {
+          // New API response format (if available)
+          sessionId = data['session_uuid'] ?? data['recording_id'];
+          deviceIdFromResponse = data['camera_device_id'] ?? data['device_id'] ?? deviceId;
+          status = data['status'] ?? 'active';
+          startedAt = data['started_at'];
+          message = data['message'] ?? 'Recording started successfully';
+        }
+        
+        // Transform to RecordingResult format
+        final transformedData = {
+          'session_id': sessionId ?? 'recording_active',
+          'device_id': deviceIdFromResponse ?? deviceId,
+          'status': status,
+          'started_at': startedAt ?? DateTime.now().toIso8601String(),
+          'message': message,
+        };
+        
+        return RecordingResult.fromJson(transformedData);
+      } else if (response.statusCode == 409 || (response.statusCode == 200 && response.body.contains('already recording'))) {
+        // Handle 409 Conflict OR success response that indicates already recording
+        _logger.w('⚠️ Recording conflict detected, attempting to clear stale state...');
+        
+        final cleared = await clearRecordingState(deviceId);
+        if (cleared) {
+          _logger.i('🔄 Retrying recording after clearing stale state...');
+          
+          // Retry the recording start
+          final retryResponse = await http.post(
+            Uri.parse('$_gatewayUrl/streaming/$deviceId/record/start'),
+            headers: _authService.getAuthHeaders(),
+          );
+          
+          if (retryResponse.statusCode == 200) {
+            final data = json.decode(retryResponse.body);
+            _logger.i('✅ Recording started after retry');
+            
+            // Handle response format like the main request
+            String? sessionId;
+            String? deviceIdFromResponse;
+            String? status = 'active';
+            String? startedAt;
+            String message = 'Recording started successfully after retry';
+            
+            if (data is Map<String, dynamic>) {
+              sessionId = data['session_uuid'] ?? data['recording_id'];
+              deviceIdFromResponse = data['camera_device_id'] ?? data['device_id'] ?? deviceId;
+              status = data['status'] ?? 'active';
+              startedAt = data['started_at'];
+              message = data['message'] ?? message;
+            }
+            
+            final transformedData = {
+              'session_id': sessionId ?? 'recording_active_retry',
+              'device_id': deviceIdFromResponse ?? deviceId,
+              'status': status,
+              'started_at': startedAt ?? DateTime.now().toIso8601String(),
+              'message': message,
+            };
+            
+            return RecordingResult.fromJson(transformedData);
+          } else {
+            _lastError = 'Failed to start recording after retry: ${retryResponse.statusCode}';
+            _logger.e('❌ $_lastError');
+            return null;
+          }
+        } else {
+          _lastError = 'Failed to clear stale recording state';
+          _logger.e('❌ $_lastError');
+          return null;
+        }
       } else {
         _lastError = 'Failed to start recording: ${response.statusCode}';
         _logger.e('❌ $_lastError');
@@ -373,6 +527,85 @@ class CameraService extends ChangeNotifier {
       _lastError = 'Start recording error: $e';
       _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
       return null;
+    }
+  }
+
+  /// Clear stale recording state for a camera (debug/fix method)
+  Future<bool> clearRecordingState(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return false;
+    }
+
+    try {
+      _logger.i('🧹 Clearing recording state for camera $deviceId...');
+
+      final response = await http.post(
+        Uri.parse('$_gatewayUrl/streaming/$deviceId/record/clear-state'),
+        headers: _authService.getAuthHeaders(),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final cleanedCount = data['cleaned_sessions_count'] ?? 0;
+        if (cleanedCount > 0) {
+          _logger.i('✅ Cleaned $cleanedCount stale sessions');
+        } else {
+          _logger.i('ℹ️ No stale sessions found to clean');
+        }
+        return true;
+      } else {
+        _lastError = 'Failed to clear recording state: ${response.statusCode}';
+        _logger.e('❌ $_lastError');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Clear recording state error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  /// Clear recording state for all available cameras (bulk operation)
+  Future<bool> clearAllRecordingStates() async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return false;
+    }
+
+    try {
+      _logger.i('🧹 Clearing recording state for all cameras...');
+      
+      // Use the availableCameras getter which returns List<Camera>
+      if (availableCameras.isEmpty) {
+        _logger.i('No cameras found to clear state for');
+        return true;
+      }
+
+      int successful = 0;
+      int failed = 0;
+
+      // Clear state for each camera
+      for (final camera in availableCameras) {
+        try {
+          final cleared = await clearRecordingState(camera.deviceId);
+          if (cleared) {
+            successful++;
+          } else {
+            failed++;
+          }
+        } catch (e) {
+          _logger.w('Failed to clear state for ${camera.deviceId}: $e');
+          failed++;
+        }
+      }
+
+      _logger.i('🧹 Bulk clear complete: $successful successful, $failed failed');
+      return failed == 0;
+    } catch (e, stackTrace) {
+      _lastError = 'Bulk clear recording state error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return false;
     }
   }
 
@@ -386,8 +619,9 @@ class CameraService extends ChangeNotifier {
     try {
       _logger.i('⏹️ Stopping recording for camera $deviceId...');
 
+      // Use actual working stop recording API
       final response = await http.post(
-        Uri.parse('$_baseUrl/streaming/$deviceId/record/stop'),
+        Uri.parse('$_gatewayUrl/streaming/$deviceId/record/stop'),
         headers: _authService.getAuthHeaders(),
       ).timeout(
         const Duration(seconds: 10),
@@ -396,9 +630,17 @@ class CameraService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        _logger.i('✅ Recording stopped: ${data['file_path']}');
+        _logger.i('✅ Recording stopped: ${data['message']}');
         
-        return RecordingResult.fromJson(data);
+        // Transform response to match old RecordingResult format
+        final transformedData = {
+          'session_id': data['recording_id'] ?? data['session_uuid'],
+          'device_id': deviceId,
+          'status': 'completed',
+          'message': data['message'] ?? 'Recording stopped successfully',
+        };
+        
+        return RecordingResult.fromJson(transformedData);
       } else {
         _lastError = 'Failed to stop recording: ${response.statusCode}';
         _logger.e('❌ $_lastError');
@@ -419,8 +661,9 @@ class CameraService extends ChangeNotifier {
     }
 
     try {
+      // Use actual working status endpoint
       final response = await http.get(
-        Uri.parse('$_baseUrl/streaming/$deviceId/record/status'),
+        Uri.parse('$_gatewayUrl/streaming/$deviceId/record/status'),
         headers: _authService.getAuthHeaders(),
       ).timeout(
         const Duration(seconds: 5),
@@ -428,8 +671,19 @@ class CameraService extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return RecordingStatus.fromJson(data);
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        
+        // Transform to match old RecordingStatus format
+        final transformedData = {
+          'is_recording': data['is_recording'] ?? false,
+          'session_id': data['recording_id'],
+          'device_id': deviceId,
+          'started_at': data['started_at'],
+          'duration_seconds': data['duration_seconds'] ?? 0,
+          'file_size_bytes': data['file_size_bytes'] ?? 0,
+        };
+        
+        return RecordingStatus.fromJson(transformedData);
       } else {
         _lastError = 'Failed to get recording status: ${response.statusCode}';
         _logger.e('❌ $_lastError');
@@ -437,6 +691,40 @@ class CameraService extends ChangeNotifier {
       }
     } catch (e, stackTrace) {
       _lastError = 'Get recording status error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return null;
+    }
+  }
+
+  /// Debug recording state for a camera (to identify state inconsistencies)
+  Future<Map<String, dynamic>?> debugRecordingState(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return null;
+    }
+
+    try {
+      _logger.i('🔍 Debugging recording state for camera $deviceId...');
+
+      final response = await http.get(
+        Uri.parse('$_gatewayUrl/streaming/$deviceId/record/debug'),
+        headers: _authService.getAuthHeaders(),
+      ).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException('Debug recording state timed out', const Duration(seconds: 5)),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        _logger.i('🔍 Debug state: memory=${data['has_active_recording_memory']}, db=${data['has_active_session_db']}');
+        return data;
+      } else {
+        _lastError = 'Failed to debug recording state: ${response.statusCode}';
+        _logger.e('❌ $_lastError');
+        return null;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Debug recording state error: $e';
       _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
       return null;
     }

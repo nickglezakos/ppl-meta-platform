@@ -51,7 +51,7 @@ async def _stream_proxy_response(target_url: str, headers: dict, query_params):
 
 
 # JWT Configuration (should match Node service config)
-JWT_SECRET_KEY = "RA6XfYJZqhz-_MAbGMhGCoQz1KGIKecLTb3RkLVOUr4"
+JWT_SECRET_KEY = "ppl-meta-secret-key-development-only-change-in-production"
 JWT_ALGORITHM = "HS256"
 
 
@@ -943,6 +943,31 @@ async def get_streaming_video(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+@api_router.get("/streaming/{device_id}/video-session/{session_id}")
+async def get_streaming_video_session(request: Request):
+    """Proxy authenticated video streaming session to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+# Auth Streaming Session Routes (for camera service authentication)
+@api_router.post("/auth/streaming-session/{device_id}")
+async def create_streaming_session(request: Request):
+    """Proxy create streaming session to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/auth/streaming-sessions")
+async def get_streaming_sessions(request: Request):
+    """Proxy get streaming sessions to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.delete("/auth/streaming-session/{session_id}")
+async def delete_streaming_session(request: Request):
+    """Proxy delete streaming session to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
 # Recording Service Routes
 @api_router.post("/streaming/{device_id}/record/start")
 async def start_recording(request: Request):
@@ -959,6 +984,18 @@ async def stop_recording(request: Request):
 @api_router.get("/streaming/{device_id}/record/status")
 async def get_recording_status(request: Request):
     """Proxy get recording status to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/streaming/{device_id}/record/debug")
+async def get_recording_debug(request: Request):
+    """Proxy get recording debug state to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/streaming/{device_id}/record/clear-state")
+async def clear_recording_state(request: Request):
+    """Proxy clear recording state to Cameras service."""
     return await _proxy_to_cameras_service(request)
 
 
@@ -1135,6 +1172,31 @@ async def update_session(request: Request):
 @api_router.delete("/orchestrator/sessions/{session_id}")
 async def delete_session(request: Request):
     """Proxy delete session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+# Recording Session Routes
+@api_router.post("/orchestrator/recording-sessions/")
+async def create_recording_session(request: Request):
+    """Proxy create recording session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/recording-sessions/")
+async def list_recording_sessions(request: Request):
+    """Proxy list recording sessions to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/recording-sessions/{session_uuid}")
+async def get_recording_session(request: Request):
+    """Proxy get recording session to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/orchestrator/recording-sessions/camera/{camera_device_id}")
+async def get_camera_recording_sessions(request: Request):
+    """Proxy get camera recording sessions to Orchestrator service."""
     return await _proxy_to_orchestrator_service(request)
 
 

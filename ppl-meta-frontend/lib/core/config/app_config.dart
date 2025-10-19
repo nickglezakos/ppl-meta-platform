@@ -29,7 +29,7 @@ class AppConfig {
       
       _instance = AppConfig._(
         apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost',
-        cameraServiceUrl: config['CAMERA_SERVICE_URL'] ?? 'http://localhost',
+        cameraServiceUrl: config['CAMERA_SERVICE_URL'] ?? 'http://localhost:8005',
         environment: config['ENVIRONMENT'] ?? 'development',
         logLevel: config['LOG_LEVEL'] ?? 'debug',
         cacheEnabled: config['CACHE_ENABLED'] ?? true,
