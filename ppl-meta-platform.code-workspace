@@ -364,6 +364,36 @@
                 "presentation": {
                     "reveal": "always"
                 }
+            },
+            {
+                "label": "🐘 Start PostgreSQL Database",
+                "type": "shell",
+                "command": "brew",
+                "args": ["services", "start", "postgresql"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🛑 Stop PostgreSQL Database",
+                "type": "shell",
+                "command": "brew",
+                "args": ["services", "stop", "postgresql"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
+            },
+            {
+                "label": "🔧 Setup PostgreSQL for PPL Meta",
+                "type": "shell",
+                "command": "bash",
+                "args": ["-c", "echo '🔧 Setting up PostgreSQL for PPL Meta Platform...' && createuser -s postgres 2>/dev/null || echo 'User postgres already exists' && createdb ppl_meta_users 2>/dev/null || echo 'Database ppl_meta_users already exists' && echo '✅ PostgreSQL setup complete!'"],
+                "group": "build",
+                "presentation": {
+                    "reveal": "always"
+                }
             }
         ]
     }

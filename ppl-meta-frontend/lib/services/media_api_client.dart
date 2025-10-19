@@ -450,22 +450,35 @@ class MediaApiClient {
 
       print('DEBUG: MediaApiClient searchMedia - general search queryParams: $queryParams');
       
-      // TEMPORARY FIX: Explicitly get Media Service URL to avoid Vision Service confusion
-      final discoveryService = DiscoveryServiceClient();
-      final mediaServiceUrl = await discoveryService.getServiceUrl('ppl-meta-media');
-      final fullUrl = '$mediaServiceUrl/api/v1/media/search';
+      // Use gateway routing instead of direct service discovery
+      final fullUrl = 'http://localhost:8080/api/v1/media/search';
       
-      print('DEBUG: MediaApiClient searchMedia - using explicit Media Service URL: $fullUrl');
+      print('DEBUG: MediaApiClient searchMedia - using gateway URL: $fullUrl');
       final response = await _apiClient.dio.get(fullUrl, queryParameters: queryParams);
       print('DEBUG: MediaApiClient searchMedia - response received, status: ${response.statusCode}');
       print('DEBUG: MediaApiClient searchMedia - response data type: ${response.data.runtimeType}');
-      print('DEBUG: MediaApiClient searchMedia - first item sample: ${(response.data as List).isNotEmpty ? (response.data as List)[0] : 'empty'}');
+      print('DEBUG: MediaApiClient searchMedia - response length: ${(response.data as List).length}');
+      
+      // Show complete first item JSON for debugging
+      if ((response.data as List).isNotEmpty) {
+        print('DEBUG: Complete first item JSON: ${(response.data as List)[0]}');
+      }
       
       // The backend returns a list directly, not wrapped in a response object
       final items = (response.data as List)
           .map((json) {
-            print('DEBUG: Parsing MediaItem from: ${json['original_filename']} - deviceName: ${json['device_name']}');
-            return MediaItem.fromJson(json);
+            print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            print('DEBUG: Processing JSON item:');
+            print('  - original_filename: ${json['original_filename']}');
+            print('  - device_name field exists: ${json.containsKey('device_name')}');
+            print('  - device_name value: ${json['device_name']}');
+            print('  - device_name type: ${json['device_name'].runtimeType}');
+            print('  - All keys in JSON: ${json.keys.toList()}');
+            
+            final mediaItem = MediaItem.fromJson(json);
+            print('  - After parsing - MediaItem.deviceName: ${mediaItem.deviceName}');
+            print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            return mediaItem;
           })
           .where((item) => !item.isArchived) // Filter out archived (deleted) items
           .toList();

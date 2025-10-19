@@ -6,7 +6,9 @@ import 'dart:async';
 import 'dart:math' as math;
 import '../../../core/config/app_config.dart';
 import '../../../core/providers/camera_providers.dart';
+import '../../../core/providers/multi_camera_providers.dart';
 import '../../../core/models/camera.dart';
+import '../../../core/services/auth_service.dart';
 
 /// Simplified camera stream player that focuses on MJPEG rendering
 /// without complex provider state management
@@ -63,24 +65,36 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
     _currentStreamUrl = null;
     _retryCount = 0;
     
-    // Check if widget is still mounted before calling setState
-    if (mounted) {
-      setState(() {
-        _isStreaming = true;
-      });
-    }
+    print('🎥 Starting stream for camera: ${widget.cameraId} (before setState)');
     
-    print('🎥 Starting stream for camera: ${widget.cameraId}');
+    // Check if widget is still mounted and not disposed before calling setState
+    try {
+      if (mounted && context.mounted) {
+        setState(() {
+          _isStreaming = true;
+        });
+        print('✅ _isStreaming set to true for camera: ${widget.cameraId}');
+      }
+    } catch (e) {
+      // Widget is already disposed, ignore setState error
+      print('🎥 Widget already disposed for camera: ${widget.cameraId}');
+    }
   }
 
   void _stopStreaming() {
-    print('🛑 Stopping stream for camera: ${widget.cameraId}');
+    print('🛑 Stopping stream for camera: ${widget.cameraId} (before setState)');
     
-    // Check if widget is still mounted before calling setState
-    if (mounted) {
-      setState(() {
-        _isStreaming = false;
-      });
+    // Check if widget is still mounted and not disposed before calling setState
+    try {
+      if (mounted && context.mounted) {
+        setState(() {
+          _isStreaming = false;
+        });
+        print('❌ _isStreaming set to false for camera: ${widget.cameraId}');
+      }
+    } catch (e) {
+      // Widget is already disposed, ignore setState error
+      print('🛑 Widget already disposed for camera: ${widget.cameraId}');
     }
     
     // Clean up HTML elements
@@ -101,103 +115,51 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
       return null;
     }
     
-    // If we already have a cached URL, return it to avoid creating new sessions
+    // If we already have a cached URL, return it to avoid recreating
     if (_currentStreamUrl != null) {
       return _currentStreamUrl;
     }
     
     try {
-      // Debug camera properties first
-      print('🔍 [CAMERA_DEBUG] Camera properties:');
-      print('  - Camera name: ${camera.name}');
-      print('  - Device ID: ${camera.deviceId}');
-      print('  - Camera type: ${camera.type}');
-      print('  - Camera type string: ${camera.type.toString()}');
-      print('  - Camera status: ${camera.status}');
-      print('  - isMobileCamera getter result: ${camera.isMobileCamera}');
-      print('  - Metadata: ${camera.metadata}');
-      print('  - Connection string from metadata: ${camera.metadata?['connection_string']}');
+      // SIMPLE DIRECT STREAMING - No sessions needed!
+      print('🎥 [SIMPLE_STREAMING] Setting up direct stream for camera: ${camera.deviceId}');
       
-      String? authenticatedUrl;
-      
-      // Check if this is a mobile camera
-      if (camera.isMobileCamera) {
-        print('📱 [MOBILE_STREAM_DEBUG] Mobile camera stream setup:');
-        print('  - Camera name: ${camera.name}');
-        print('  - Device ID: ${camera.deviceId}');
-        print('  - Camera type: ${camera.type}');
-        print('  - Camera status: ${camera.status}');
+      // Ensure camera is connected and streaming first
+      try {
+        final cameraActions = ref.read(cameraActionsProvider);
         
-        // Check again before async operation
-        if (!_isActive || !mounted) {
-          print('🚫 Widget disposed during mobile camera setup');
-          return null;
+        // Check if camera is already streaming
+        final allCameras = await ref.refresh(allCamerasProvider.future);
+        final currentCamera = allCameras.where((c) => c.id == widget.cameraId).firstOrNull;
+        
+        if (currentCamera != null && currentCamera.status != 'streaming') {
+          print('Camera not streaming, starting stream automatically...');
+          final streamingInfo = await cameraActions.startStreaming(widget.cameraId);
+          if (streamingInfo == null) {
+            print('Failed to start streaming for camera ${widget.cameraId}');
+            return null;
+          }
+          print('✅ Camera streaming started successfully');
         }
-        
-        // Create mobile streaming session for browser-compatible authentication
-        final cameraService = ref.read(cameraServiceProvider);
-        final sessionResponse = await cameraService.createMobileStreamingSession(camera.deviceId);
-        
-        // Check again after async operation
-        if (!_isActive || !mounted) {
-          print('🚫 Widget disposed after mobile session creation');
-          return null;
-        }
-        
-        if (sessionResponse == null) {
-          print('Failed to create mobile streaming session');
-          return null;
-        }
-        
-        final sessionId = sessionResponse['session_id'] as String?;
-        if (sessionId == null) {
-          print('No session_id in mobile streaming response');
-          return null;
-        }
-        
-        // Use session-based streaming URL for mobile cameras
-        final camerasEndpoint = AppConfig.instance.cameraServiceUrl;
-        authenticatedUrl = '$camerasEndpoint/api/v1/streaming/${camera.deviceId}/video-session/$sessionId';
-        
-        print('📱 [MOBILE_STREAM_DEBUG] Session-based mobile stream URL: $authenticatedUrl');
-      } else {
-        // For non-mobile cameras, use the traditional backend camera service approach
-        print('Creating backend streaming session for non-mobile camera ${camera.deviceId}');
-        
-        // Check again before async operation
-        if (!_isActive || !mounted) {
-          print('🚫 Widget disposed during backend camera setup');
-          return null;
-        }
-        
-        final cameraService = ref.read(cameraServiceProvider);
-        
-        // Create a streaming session for browser-compatible authentication
-        final sessionResponse = await cameraService.createStreamingSession(widget.cameraId);
-        
-        // Check again after async operation
-        if (!_isActive || !mounted) {
-          print('🚫 Widget disposed after backend session creation');
-          return null;
-        }
-        
-        if (sessionResponse == null) {
-          print('Failed to create streaming session');
-          return null;
-        }
-        
-        final sessionId = sessionResponse['session_id'] as String?;
-        if (sessionId == null) {
-          print('No session_id in response');
-          return null;
-        }
-        
-        // Use session-based streaming URL
-        final baseUrl = AppConfig.instance.cameraServiceUrl;
-        authenticatedUrl = '$baseUrl/api/v1/streaming/${widget.cameraId}/video-session/$sessionId';
-        
-        print('Prepared authenticated camera stream URL: $authenticatedUrl');
+      } catch (e) {
+        print('Error ensuring camera is streaming: $e');
+        // Continue anyway, direct streaming might still work
       }
+      
+      // Get authentication token
+      final authService = ref.read(authServiceProvider);
+      final token = await authService.getToken();
+      
+      if (token == null) {
+        print('❌ No authentication token available');
+        return null;
+      }
+      
+      // Create simple direct streaming URL with token - same for all camera types
+      final baseUrl = AppConfig.instance.cameraServiceUrl;
+      final authenticatedUrl = '$baseUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
+      
+      print('🎥 [SIMPLE_STREAMING] Direct stream URL: $authenticatedUrl');
       
       // Final check before caching the URL
       if (!_isActive || !mounted) {
@@ -205,11 +167,11 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         return null;
       }
       
-      // Cache the URL so we don't create new sessions on every rebuild
+      // Cache the URL so we don't recreate on every rebuild
       _currentStreamUrl = authenticatedUrl;
       return authenticatedUrl;
     } catch (e) {
-      print('Error preparing authenticated URL: $e');
+      print('Error preparing simple stream URL: $e');
       return null;
     }
   }
@@ -218,6 +180,7 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
   Widget build(BuildContext context) {
     // Early return if widget is not active to prevent disposed widget issues
     if (!_isActive || !mounted) {
+      print('🚫 Widget not active or not mounted for camera: ${widget.cameraId}');
       return Container(
         width: widget.width ?? 640,
         height: widget.height ?? 480,
@@ -232,6 +195,8 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         ),
       );
     }
+    
+    print('📺 Building widget for camera: ${widget.cameraId}, _isStreaming: $_isStreaming');
     
     return Container(
       width: widget.width ?? 640,
@@ -353,8 +318,9 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         return FutureBuilder<String?>(
           future: urlFuture,
           builder: (context, snapshot) {
-            // Add early lifecycle check to prevent disposed widget issues
-            if (!mounted || !_isActive || !_isStreaming) {
+            // Only check if widget is disposed, but allow streaming state to be managed normally
+            // The _isStreaming check was causing premature termination during async URL preparation
+            if (!mounted || !_isActive) {
               return _buildStoppedView();
             }
             
@@ -457,11 +423,22 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
           containerDiv.append(_imageElement!);
           
           // Set the image source with the authenticated URL
-          _imageElement!.src = authenticatedUrl;
+          print('🎥 Setting image src to: $authenticatedUrl');
           
-          // Error handling
+          // Add debugging for image state changes
+          _imageElement!.onLoad.listen((event) {
+            print('✅ Stream loaded successfully for ${widget.cameraId}');
+            print('✅ Loaded URL: $authenticatedUrl');
+            print('✅ Image natural dimensions: ${_imageElement!.naturalWidth}x${_imageElement!.naturalHeight}');
+          });
+          
           _imageElement!.onError.listen((event) {
-            print('Stream error for ${widget.cameraId}: $event');
+            print('❌ Stream error for ${widget.cameraId}: $event');
+            print('❌ Failed URL: $authenticatedUrl');
+            print('❌ Error details: ${event.toString()}');
+            print('❌ Stream error for ${widget.cameraId}: $event');
+            print('❌ Failed URL: $authenticatedUrl');
+            print('❌ Error details: ${event.toString()}');
             
             if (_retryCount < _maxRetries && _isActive && _isStreaming && _currentStreamUrl != null) {
               _retryCount++;
@@ -478,16 +455,33 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
                     retryUrl = '$_currentStreamUrl?_retry=${DateTime.now().millisecondsSinceEpoch}';
                   }
                   
+                  print('🔄 Retry attempt ${_retryCount}/${_maxRetries} with URL: $retryUrl');
                   _imageElement!.src = retryUrl;
                 }
               });
               widget.onError?.call();
+            } else {
+              print('❌ Max retries reached or widget disposed, stopping stream');
+              _stopStreaming();
             }
           });
           
-          // Load event handler
-          _imageElement!.onLoad.listen((event) {
-            print('Stream loaded successfully for ${widget.cameraId}');
+          // Set the image source AFTER setting up event listeners
+          print('🔗 Actually setting image src now...');
+          _imageElement!.src = authenticatedUrl;
+          
+          // Add a timeout to detect if the image never loads
+          Timer(const Duration(seconds: 10), () {
+            if (_isActive && _isStreaming && _imageElement != null) {
+              // Check if image loaded successfully by checking natural dimensions
+              if (_imageElement!.naturalWidth == 0 || _imageElement!.naturalHeight == 0) {
+                print('⏱️ Image load timeout - stream may not be responding');
+                print('⏱️ Natural dimensions: ${_imageElement!.naturalWidth}x${_imageElement!.naturalHeight}');
+                // Don't auto-stop, just log for debugging
+              } else {
+                print('✅ Image successfully loaded within timeout period');
+              }
+            }
           });
           
           // Register the HTML container with unique view type

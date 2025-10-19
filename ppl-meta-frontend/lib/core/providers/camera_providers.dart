@@ -622,6 +622,9 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
   final CameraService _cameraService;
   final Ref _ref;
   Timer? _statusTimer;
+  
+  // Static lock to prevent concurrent recording attempts for the same camera
+  static final Set<String> _recordingLocks = <String>{};
 
   CameraRecordingNotifier(this._cameraService, this._ref, String cameraId)
       : super(CameraRecordingState(cameraId: cameraId));
@@ -630,9 +633,22 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
   Future<void> startRecording() async {
     if (state.isRecording || state.isLoading) return;
 
+    // Check if another instance is already trying to start recording for this camera
+    if (_recordingLocks.contains(state.cameraId)) {
+      print('🔒 Recording already in progress for ${state.cameraId}, skipping duplicate request');
+      return;
+    }
+
+    // Acquire lock for this camera
+    _recordingLocks.add(state.cameraId);
+
     state = state.copyWith(isLoading: true, error: null);
 
     try {
+      // Clear any stale recording state first to prevent conflicts
+      print('🧹 Clearing stale recording state for ${state.cameraId} before starting');
+      await _cameraService.clearRecordingState(state.cameraId);
+
       // Update camera auto face detection setting based on automation preferences
       try {
         final automationSettings = _ref.read(automationSettingsProvider).valueOrNull;
@@ -670,6 +686,9 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
         isLoading: false,
         error: 'Recording error: $e',
       );
+    } finally {
+      // Always release the lock when done
+      _recordingLocks.remove(state.cameraId);
     }
   }
 
@@ -710,12 +729,12 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
 
   /// Update recording status
   Future<void> updateStatus() async {
-    if (!state.isRecording) return;
+    if (!state.isRecording || !mounted) return;
 
     try {
       final status = await _cameraService.getRecordingStatus(state.cameraId);
       
-      if (status != null) {
+      if (status != null && mounted) {
         if (status.isRecording) {
           state = state.copyWith(
             durationSeconds: status.durationSeconds,
@@ -744,7 +763,9 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
   void _startStatusUpdates() {
     _stopStatusUpdates(); // Ensure no duplicate timers
     _statusTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      updateStatus();
+      if (mounted) {
+        updateStatus();
+      }
     });
   }
 

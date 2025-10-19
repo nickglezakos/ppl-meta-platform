@@ -196,15 +196,7 @@ settings = Settings()
 
 # CORS settings
 CORS_SETTINGS = {
-    "allow_origins": (
-        ["*"]
-        if settings.debug
-        else [
-            "http://localhost:3000",  # Flutter frontend
-            "http://127.0.0.1:3000",  # Alternative localhost
-            "https://yourdomain.com",  # Production domain
-        ]
-    ),
+    "allow_origins": ["*"],  # Allow all origins for development
     "allow_credentials": True,
     "allow_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     "allow_headers": ["*"],

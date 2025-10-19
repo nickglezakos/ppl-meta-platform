@@ -19,9 +19,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-# Python lib directories only (exclude Flutter lib/ directories)
-**/venv/lib/
-**/env/lib/
+lib/
 lib64/
 parts/
 sdist/
@@ -186,35 +184,10 @@ $RECYCLE.BIN/
 .nfs*
 
 # =============================================
-# FLUTTER / MOBILE DEVELOPMENT
-# =============================================
-# Flutter build outputs
-**/build/app/outputs/
-*.apk
-*.aab
-*.ipa
-
-# Flutter/Dart/Pub related
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-**/ios/Flutter/.last_build_id
-**/android/app/debug/
-**/android/app/profile/
-**/android/app/release/
-
-# =============================================
 # DOCKER
 # =============================================
 # Docker volumes
 docker-volumes/
-
-# Docker image tar files
-*.tar
-ppl-meta-mini-beta*.tar
-PPL-Meta-Mini-*.tar
 
 # =============================================
 # CERTIFICATES & KEYS
@@ -276,9 +249,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-# Python lib directories only (exclude Flutter lib/ directories)
-**/venv/lib/
-**/env/lib/
+lib/
 lib64/
 parts/
 sdist/
@@ -298,12 +269,6 @@ frames/
 face_pics/
 static-stage/
 Personprints_dir/
-
-# Media storage directories
-ppl-meta-media/storage/
-ppl-meta-cameras/snapshots/
-*/storage/media/
-*/snapshots/
 
 # Reports and temporary data
 reports/

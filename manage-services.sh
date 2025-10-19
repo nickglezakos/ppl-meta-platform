@@ -30,11 +30,11 @@ print_error() {
 # PPL Meta Services Configuration
 SERVICES=(
     "ppl-meta-node:8001:User Management"
-    "ppl-meta-media:8002:Media Processing"
-    "ppl-meta-gateway:8000:API Gateway"
-    "ppl-meta-orchestrator:8003:Orchestrator"
-    "ppl-meta-cameras:8004:Camera Service"
-    "ppl-meta-vision:8005:Vision Service"
+    "ppl-meta-media:8000:Media Processing"
+    "ppl-meta-gateway:8080:API Gateway"
+    "ppl-meta-orchestrator:8002:Orchestrator"
+    "ppl-meta-cameras:8005:Camera Service"
+    "ppl-meta-vision:8003:Vision Service"
     "ppl-meta-discovery:8006:Discovery Service"
 )
 
@@ -48,22 +48,67 @@ start_all_services() {
         if [ -d "$service_name" ] && [ -f "$service_name/src/main.py" ]; then
             print_status "Starting $description ($service_name) on port $port..."
             
-            # Activate virtual environment if it exists
+            # Create logs directory if it doesn't exist
+            mkdir -p logs pids
+            
+            # Activate virtual environment if it exists and start service
             if [ -d "$service_name/venv" ]; then
                 cd "$service_name"
-                source venv/bin/activate
-                nohup python src/main.py > "../logs/${service_name}.log" 2>&1 &
+                
+                # Special handling for different service types
+                case "$service_name" in
+                    "ppl-meta-node")
+                        # Node service needs special Python path handling
+                        nohup bash -c "source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node uvicorn src.main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        ;;
+                    "ppl-meta-media")
+                        # Media service uses uvicorn.run() in main.py
+                        nohup bash -c "source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py" > "../logs/${service_name}.log" 2>&1 &
+                        ;;
+                    "ppl-meta-gateway")
+                        # Gateway runs from src directory
+                        nohup bash -c "source venv/bin/activate && cd src && uvicorn main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        ;;
+                    "ppl-meta-orchestrator")
+                        # Orchestrator runs from src directory
+                        nohup bash -c "source venv/bin/activate && cd src && uvicorn main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        ;;
+                    "ppl-meta-discovery")
+                        # Discovery runs from src directory
+                        nohup bash -c "source venv/bin/activate && cd src && uvicorn main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        ;;
+                    *)
+                        # Default: try python src/main.py first, then uvicorn
+                        if grep -q "uvicorn.run\|app.*FastAPI" "$service_name/src/main.py" 2>/dev/null; then
+                            nohup bash -c "source venv/bin/activate && python src/main.py" > "../logs/${service_name}.log" 2>&1 &
+                        else
+                            nohup bash -c "source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        fi
+                        ;;
+                esac
+                
                 echo $! > "../pids/${service_name}.pid"
-                deactivate
                 cd ..
             else
+                print_warning "No virtual environment found for $service_name"
                 cd "$service_name"
-                nohup python src/main.py > "../logs/${service_name}.log" 2>&1 &
+                
+                # Fallback without venv
+                case "$service_name" in
+                    "ppl-meta-node")
+                        nohup bash -c "PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node uvicorn src.main:app --host 0.0.0.0 --port $port --reload" > "../logs/${service_name}.log" 2>&1 &
+                        ;;
+                    *)
+                        nohup python src/main.py > "../logs/${service_name}.log" 2>&1 &
+                        ;;
+                esac
+                
                 echo $! > "../pids/${service_name}.pid"
                 cd ..
             fi
             
             print_success "$description started ✅"
+            sleep 1  # Give service time to start
         else
             print_warning "Skipping $service_name - not found or missing main.py"
         fi
@@ -72,6 +117,7 @@ start_all_services() {
     print_success "🎉 All available services started!"
     echo
     echo "📋 Service Status:"
+    sleep 3  # Give services time to fully start
     check_services_status
 }
 
@@ -79,19 +125,42 @@ start_all_services() {
 stop_all_services() {
     print_status "🛑 Stopping all PPL Meta Python services..."
     
-    # Kill processes by pattern
+    # Kill processes by multiple patterns to catch all variations
+    pkill -f 'ppl-meta.*uvicorn' 2>/dev/null || true
     pkill -f 'ppl-meta.*python.*main.py' 2>/dev/null || true
+    pkill -f 'ppl-meta.*python.*src/main.py' 2>/dev/null || true
+    pkill -f 'uvicorn.*main:app.*8001' 2>/dev/null || true
+    pkill -f 'uvicorn.*main:app.*8000' 2>/dev/null || true
+    pkill -f 'uvicorn.*main:app.*8080' 2>/dev/null || true
+    pkill -f 'uvicorn.*main:app.*8002' 2>/dev/null || true
+    pkill -f 'uvicorn.*main:app.*8003' 2>/dev/null || true
+    pkill -f 'uvicorn.*main:app.*8005' 2>/dev/null || true
+    pkill -f 'uvicorn.*main:app.*8006' 2>/dev/null || true
+    
+    # Kill multiprocessing children
+    pkill -f 'multiprocessing.*ppl-meta' 2>/dev/null || true
+    
+    # Give processes time to terminate gracefully
+    sleep 2
+    
+    # Force kill any remaining processes on our service ports
+    for port in 8001 8000 8080 8002 8003 8005 8006 8007 8008; do
+        lsof -ti:$port | xargs kill -9 2>/dev/null || true
+    done
     
     # Also kill by PID files if they exist
     if [ -d "pids" ]; then
         for pidfile in pids/*.pid; do
             if [ -f "$pidfile" ]; then
                 pid=$(cat "$pidfile")
-                kill "$pid" 2>/dev/null || true
+                kill -9 "$pid" 2>/dev/null || true
                 rm -f "$pidfile"
             fi
         done
     fi
+    
+    # Wait a bit more for ports to be freed
+    sleep 1
     
     print_success "✅ All Python services stopped."
 }
@@ -103,7 +172,17 @@ check_services_status() {
     for service_config in "${SERVICES[@]}"; do
         IFS=':' read -r service_name port description <<< "$service_config"
         
-        if curl -s "http://localhost:$port/health" >/dev/null 2>&1; then
+        # Use the correct health endpoint for each service
+        case "$service_name" in
+            "ppl-meta-node")
+                health_endpoint="http://localhost:$port/api/v1/health"
+                ;;
+            *)
+                health_endpoint="http://localhost:$port/health"
+                ;;
+        esac
+        
+        if curl -s --connect-timeout 3 "$health_endpoint" >/dev/null 2>&1; then
             print_success "$description (port $port) - ✅ Running"
         else
             print_warning "$description (port $port) - ❌ Not responding"

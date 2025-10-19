@@ -27,6 +27,12 @@ from src.database import Base, engine, test_connection
 
 # Import all models for table creation
 from src.models.camera import Camera, CameraCapability, CameraSession
+from src.models.recording_session import (
+    RecordingFile,
+    RecordingMetadata,
+    RecordingSession,
+    RecordingStatus,
+)
 
 # Try to import the shared service discovery module
 try:

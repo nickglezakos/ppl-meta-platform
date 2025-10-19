@@ -141,7 +141,11 @@ class CameraEventPublisher:
         """Handle recording completion event with session tracking and automation."""
         try:
             # Extract recording information
-            media_id = recording_data.get("id") or recording_data.get("recording_id")
+            media_id = (
+                recording_data.get("media_uuid")
+                or recording_data.get("id")
+                or recording_data.get("recording_id")
+            )
             video_file_path = recording_data.get("file_path") or recording_data.get(
                 "video_file_path"
             )
@@ -149,7 +153,9 @@ class CameraEventPublisher:
                 "recording_duration_seconds", 0
             )
             file_size = recording_data.get("file_size_bytes", 0)
-            recording_session_id = recording_data.get("recording_session_id")
+            recording_session_id = recording_data.get(
+                "session_uuid"
+            ) or recording_data.get("recording_session_id")
 
             if not media_id:
                 logger.error("Recording completion event missing media_id")

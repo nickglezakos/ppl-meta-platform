@@ -120,25 +120,29 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
         _isConnected = true;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Recording started for ${widget.camera.name}'),
-          backgroundColor: Colors.green,
-          action: SnackBarAction(
-            label: 'View Session',
-            onPressed: () => _showSessionDetails(),
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recording started for ${widget.camera.name}'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'View Session',
+              onPressed: () => _showSessionDetails(),
+            ),
           ),
-        ),
-      );
+        );
+      }
 
     } catch (e) {
       _errorMessage = 'Failed to start recording: $e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_errorMessage!),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_errorMessage!),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       setState(() {
         _isLoading = false;
@@ -183,25 +187,29 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
         _isRecording = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Recording completed for ${widget.camera.name}'),
-          backgroundColor: Colors.blue,
-          action: SnackBarAction(
-            label: 'View Results',
-            onPressed: () => _showSessionHistory(),
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recording completed for ${widget.camera.name}'),
+            backgroundColor: Colors.blue,
+            action: SnackBarAction(
+              label: 'View Results',
+              onPressed: () => _showSessionHistory(),
+            ),
           ),
-        ),
-      );
+        );
+      }
 
     } catch (e) {
       _errorMessage = 'Failed to stop recording: $e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_errorMessage!),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_errorMessage!),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       setState(() {
         _isLoading = false;

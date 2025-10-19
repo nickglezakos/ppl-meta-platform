@@ -207,6 +207,12 @@ class DiscoveryServiceClient {
         if (kDebugMode) {
           print('⚠️ Periodic service discovery failed: $e');
         }
+        // Return a valid DiscoveryResponse to satisfy the Future type
+        return DiscoveryResponse(
+          services: [],
+          totalCount: 0,
+          healthyCount: 0,
+        );
       });
     });
   }

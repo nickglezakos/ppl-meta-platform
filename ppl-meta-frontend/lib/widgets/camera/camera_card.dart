@@ -1268,11 +1268,13 @@ class _SnapshotPreviewDialog extends StatelessWidget {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         // TODO: Implement download functionality
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Download functionality coming soon!'),
-                          ),
-                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Download functionality coming soon!'),
+                            ),
+                          );
+                        }
                       },
                       icon: const Icon(Icons.download),
                       label: const Text('Download'),
@@ -1284,11 +1286,13 @@ class _SnapshotPreviewDialog extends StatelessWidget {
                       onPressed: () {
                         Navigator.pop(context);
                         // TODO: Implement share functionality
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Share functionality coming soon!'),
-                          ),
-                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Share functionality coming soon!'),
+                            ),
+                          );
+                        }
                       },
                       icon: const Icon(Icons.share),
                       label: const Text('Share'),

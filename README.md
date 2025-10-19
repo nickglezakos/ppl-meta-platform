@@ -2,31 +2,6 @@
 
 A comprehensive microservices platform for people detection, recognition, and management using computer vision and AI technologies.
 
-## 🔐 Security Features (v1.2.0-security)
-
-**LATEST RELEASE**: [v1.2.0-security](https://github.com/nickglezakos/ppl-meta-platform/releases/tag/v1.2.0-security) - Comprehensive secrets management system
-
-### 🛡️ Security Highlights
-
-- **Zero Hardcoded Secrets**: All passwords, keys, and credentials are securely generated and managed
-- **Cryptographic Security**: 256-bit secure random generation for all secrets
-- **Docker Secrets Integration**: Production-ready deployment with Docker secrets
-- **Secret Rotation**: Automated secret rotation capabilities with backup
-- **Encryption at Rest**: Optional AES-256 encryption for secret storage
-- **External Key Management**: Integration with Vault, AWS, and Azure key management
-
-### 🔑 Quick Security Setup
-
-```bash
-# Development environment
-./setup-secrets.sh
-
-# Production environment
-python secrets/manage_secrets.py generate --encrypted
-python secrets/manage_secrets.py create-docker
-docker-compose -f docker-compose.secrets.yml up -d
-```
-
 ## 🏗️ Architecture Overview
 
 This monorepo contains all services and infrastructure for the PPL Meta platform:
@@ -44,9 +19,6 @@ ppl-meta-code/
 │   ├── monitoring/     # Monitoring & logging
 │   ├── nginx/         # Reverse proxy configs
 │   └── vpn/           # VPN & security
-├── secrets/            # 🔐 Secrets Management System
-│   ├── manage_secrets.py # CLI for secret management
-│   └── requirements.txt  # Dependencies
 ├── shared/
 │   ├── auth/          # Shared authentication
 │   ├── config/        # Common configurations
@@ -168,14 +140,10 @@ docker-compose up --build
 
 ## 📚 Documentation
 
-**📖 Complete Documentation**: [docs/README.md](docs/archive/README.md)
-
-### Quick Links
-- **[Current Development Issues](./docs/current/)** - Active development and issues
-- **[User Testing Issues](./docs/current/user-testing/PPL_META_PLATFORM_USER_TESTING_ISSUES.md)** - Bug reports and user feedback
-- **[Vision Service Development](./docs/current/vision-service/PPL_META_VISION_SERVICE_ISSUES.md)** - New microservice planning
-- **[Technical Documentation](./docs/technical/)** - API specs, database design, infrastructure
-- **[User Guides](./docs/guides/)** - Setup and usage guides
+- [API Documentation](./docs/api/)
+- [Architecture Guide](./docs/architecture/)
+- [Deployment Guide](./docs/deployment/)
+- [Development Setup](./docs/development/)
 
 ## 🤝 Contributing
 

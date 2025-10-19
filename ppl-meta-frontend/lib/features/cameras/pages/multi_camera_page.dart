@@ -5,6 +5,7 @@ import '../../../widgets/camera/camera_card.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/multi_camera_providers.dart';
 import '../../../core/models/camera.dart';
+import '../../../core/services/auth_service.dart';
 import 'package:go_router/go_router.dart';
 
 /// Build responsive camera grid using StaggeredGridView:
@@ -68,9 +69,16 @@ class _MultiCameraPageState extends ConsumerState<MultiCameraPage>
       setState(() {});
     });
     
-    // Load cameras when the page initializes using proven pattern
+    // Load cameras when the page initializes, but only if authenticated
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(cameraListProvider.notifier).loadCameras();
+      final authService = ref.read(authServiceProvider);
+      authService.getToken().then((token) {
+        if (token != null && token.isNotEmpty) {
+          ref.read(cameraListProvider.notifier).loadCameras();
+        } else {
+          print('⚠️ Skipping camera loading - user not authenticated');
+        }
+      });
     });
   }
 
@@ -113,9 +121,19 @@ class _MultiCameraPageState extends ConsumerState<MultiCameraPage>
             onPressed: () => context.go('/'),
             tooltip: 'Home',
           ),
-          // Refresh cameras using proven pattern
+          // Refresh cameras with authentication check
           IconButton(
-            onPressed: () => ref.read(cameraListProvider.notifier).loadCameras(),
+            onPressed: () async {
+              final authService = ref.read(authServiceProvider);
+              final token = await authService.getToken();
+              if (token != null && token.isNotEmpty) {
+                ref.read(cameraListProvider.notifier).loadCameras();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please log in to load cameras')),
+                );
+              }
+            },
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh cameras',
           ),

@@ -19,7 +19,7 @@ class CamerasScreen extends ConsumerStatefulWidget {
 
 class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   bool _showMonitoringDashboard = false;
-  bool _showLiveStreams = true; // Enable streaming by default
+  bool _showLiveStreams = false; // Disable streaming by default to prevent auto-connection
 
   @override
   Widget build(BuildContext context) {

@@ -77,10 +77,10 @@ class AuthService {
     try {
       final response = await _apiClient.post(
         '/api/v1/users/login',
-        data: {
+        data: FormData.fromMap({
           'username': email,  // Backend expects 'username' field
           'password': password,
-        },
+        }),
         options: Options(
           headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         ),

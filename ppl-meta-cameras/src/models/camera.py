@@ -97,10 +97,25 @@ class Camera(Base):
     # Relationships
     sessions = relationship("CameraSession", back_populates="camera")
     capabilities = relationship("CameraCapability", back_populates="camera")
+    recording_sessions = relationship(
+        "RecordingSession", back_populates="camera", cascade="all, delete-orphan"
+    )
     # recording_profile = relationship("CameraRecordingProfile", back_populates="cameras")
 
     def __repr__(self):
         return f"<Camera(id={self.id}, name='{self.name}', type='{self.camera_type}', status='{self.status}')>"
+
+    # Recording session management methods
+    def get_active_recording_session(self):
+        """Get currently active recording session for this camera."""
+        for session in self.recording_sessions:
+            if session.is_active:
+                return session
+        return None
+
+    def has_active_recording(self):
+        """Check if camera currently has an active recording session."""
+        return self.get_active_recording_session() is not None
 
     # TODO: Uncomment when Phase 2 recording profiles are implemented
     # @property

@@ -23,6 +23,18 @@ rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.76:554/stream1
 http://192.168.1.68:8001
 
 
+at the flutter project there are multiple methods that were built for camera recording but just one is active:
+
+start_recording_with_session (line 613) - calls _frame_recording_loop_with_segments (our debug location)
+start_recording (line 837) - calls _frame_recording_loop (no debug)
+There are also mobile recording loops
+
+please check which method the Flutter frontend is actually calling by looking at the API endpoints.
+
+camera.detection.py
+the start_recording_with_session method is being called, 
+and it calls _frame_recording_loop_with_segments at line 740
+but this should call async def _frame_recording_loop_with_segments(self, device_id: str): in line 
 
 
 INFO: 127.0.0.1:54681 - "GET /api/v1/media/60aa5a20-c161-457b-8f44-5fb63bb1c7c1?user_id=user123 HTTP/1.1" 400 Bad Request

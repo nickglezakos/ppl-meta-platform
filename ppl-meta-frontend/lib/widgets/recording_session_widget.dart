@@ -195,21 +195,25 @@ class _RecordingSessionWidgetState extends ConsumerState<RecordingSessionWidget>
         _isRecording = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Recording completed for ${widget.cameraName ?? widget.cameraDeviceId}'),
-          backgroundColor: Colors.blue,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Recording completed for ${widget.cameraName ?? widget.cameraDeviceId}'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
 
     } catch (e) {
       _errorMessage = 'Failed to stop recording: $e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_errorMessage!),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_errorMessage!),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       setState(() {
         _isLoading = false;

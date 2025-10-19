@@ -181,12 +181,10 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      final visionServiceUrl = await _discoveryService.getServiceUrl('ppl-meta-vision');
-      if (visionServiceUrl == null) {
-        throw Exception('Vision Service not available');
-      }
+      // Use gateway routing instead of direct service discovery
+      final visionServiceUrl = 'http://localhost:8080';
 
-      // Temporarily set base URL to Vision service
+      // Temporarily set base URL to Vision service via gateway
       final originalBaseUrl = _apiClient.dio.options.baseUrl;
       _apiClient.dio.options.baseUrl = visionServiceUrl;
       
@@ -241,10 +239,8 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      final visionServiceUrl = await _discoveryService.getServiceUrl('ppl-meta-vision');
-      if (visionServiceUrl == null) {
-        throw Exception('Vision Service not available');
-      }
+      // Use gateway routing instead of direct service discovery
+      final visionServiceUrl = 'http://localhost:8080';
 
       final requestBody = {
         'session_uuid': sessionUuid,
@@ -254,7 +250,7 @@ class PersonObjectsApiClient {
         if (workflowMetadata != null) 'workflow_metadata': workflowMetadata,
       };
 
-      // Temporarily set base URL to Vision service
+      // Temporarily set base URL to Vision service via gateway
       final originalBaseUrl = _apiClient.dio.options.baseUrl;
       _apiClient.dio.options.baseUrl = visionServiceUrl;
       
@@ -299,12 +295,10 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      final visionServiceUrl = await _discoveryService.getServiceUrl('ppl-meta-vision');
-      if (visionServiceUrl == null) {
-        throw Exception('Vision Service not available');
-      }
+      // Use gateway routing instead of direct service discovery
+      final visionServiceUrl = 'http://localhost:8080';
 
-      // Temporarily set base URL to Vision service
+      // Temporarily set base URL to Vision service via gateway
       final originalBaseUrl = _apiClient.dio.options.baseUrl;
       _apiClient.dio.options.baseUrl = visionServiceUrl;
       
@@ -344,12 +338,10 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      final visionServiceUrl = await _discoveryService.getServiceUrl('ppl-meta-vision');
-      if (visionServiceUrl == null) {
-        throw Exception('Vision Service not available');
-      }
+      // Use gateway routing instead of direct service discovery
+      final visionServiceUrl = 'http://localhost:8080';
 
-      // Temporarily set base URL to Vision service
+      // Temporarily set base URL to Vision service via gateway
       final originalBaseUrl = _apiClient.dio.options.baseUrl;
       _apiClient.dio.options.baseUrl = visionServiceUrl;
       
@@ -699,12 +691,10 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      final visionServiceUrl = await _discoveryService.getServiceUrl('ppl-meta-vision');
-      if (visionServiceUrl == null) {
-        throw Exception('Vision Service not available');
-      }
+      // Use gateway routing instead of direct service discovery
+      final visionServiceUrl = 'http://localhost:8080';
 
-      // Temporarily set base URL to Vision service
+      // Temporarily set base URL to Vision service via gateway
       final originalBaseUrl = _apiClient.dio.options.baseUrl;
       _apiClient.dio.options.baseUrl = visionServiceUrl;
       
@@ -770,16 +760,13 @@ class PersonObjectsApiClient {
       
       debugPrint('🎯 PPL THREAD: Triggering legacy media workflow for: $mediaUuid');
 
-      // Get Vision Service endpoint from discovery
-      final visionEndpoint = await _discoveryService.getServiceUrl('vision');
-      if (visionEndpoint == null) {
-        throw Exception('Vision Service not available through discovery');
-      }
+      // Use gateway routing instead of direct service discovery
+      final visionEndpoint = 'http://localhost:8080';
       
       final originalBaseUrl = _apiClient.dio.options.baseUrl;
       
       try {
-        // Set base URL to Vision Service
+        // Set base URL to Vision Service via gateway
         _apiClient.dio.options.baseUrl = visionEndpoint;
         
         debugPrint('🔗 VISION ENDPOINT: Using $visionEndpoint for PPL Thread workflow');

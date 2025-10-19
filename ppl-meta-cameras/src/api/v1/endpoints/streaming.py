@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from src.database import get_db
-from src.models.camera import Camera, CameraType
+from src.models.camera import Camera
 from src.security.auth import (
     get_current_user,
     get_current_user_flexible,
@@ -24,11 +24,6 @@ from src.security.auth import (
     security,
 )
 from src.services.camera_detection import camera_service
-from src.services.mobile_streaming import mobile_streaming_service
-from src.services.session_auth import session_manager
-from src.services.session_aware_face_detector import session_aware_face_detector
-from src.services.streaming_resource_manager import streaming_resource_manager
-from src.services.streaming_session_manager import streaming_session_manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -41,32 +36,25 @@ async def start_stream(
     """Start streaming from a specific camera."""
 
     try:
-        # For USB cameras, always force a fresh connection to avoid black screen issues
-        # after stopping and restarting streams
-        existing_connection = await camera_service.get_camera_stream(device_id)
-        if existing_connection:
-            # Disconnect first to ensure fresh connection
-            await camera_service.disconnect_camera(device_id)
-
-        # Connect to camera with a fresh connection
-        connection = await camera_service.connect_camera(device_id)
+        # Connect to camera if not already connected
+        connection = await camera_service.get_camera_stream(device_id)
         if not connection:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to connect to camera {device_id}",
-            )
+            connection = await camera_service.connect_camera(device_id)
+            if not connection:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to connect to camera {device_id}",
+                )
 
         logger.info(
-            "User %s started stream for camera %s (fresh connection)",
-            current_user.get("sub"),
-            device_id,
+            f"User {current_user.get('sub')} started stream for camera {device_id}"
         )
 
         return {
             "device_id": device_id,
             "status": "streaming",
             "message": f"Stream started for camera {device_id}",
-            "stream_url": f"/cameras/api/v1/streaming/{device_id}/video",
+            "stream_url": f"/api/v1/streaming/{device_id}/video",
         }
 
     except HTTPException:
@@ -79,421 +67,13 @@ async def start_stream(
         )
 
 
-@router.get("/{device_id}/status")
-async def get_streaming_status(
-    device_id: str,
-    current_user: Dict = Depends(require_view_stream_flexible),
-) -> Dict:
-    """Get streaming status for a specific camera."""
-
-    try:
-        # Check if camera is connected and streaming
-        cap = await camera_service.get_camera_stream(device_id)
-        is_streaming = cap is not None and cap.isOpened()
-
-        # Get camera info from detected cameras
-        camera_info = camera_service.detected_cameras.get(device_id)
-
-        status_data = {
-            "device_id": device_id,
-            "is_streaming": is_streaming,
-            "status": "streaming" if is_streaming else "stopped",
-        }
-
-        if is_streaming and cap:
-            # Get current stream properties
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
-
-            status_data.update(
-                {
-                    "stream_url": f"/cameras/api/v1/streaming/" f"{device_id}/video",
-                    "resolution": f"{width}x{height}",
-                    "fps": fps,
-                }
-            )
-
-        if camera_info:
-            status_data.update(
-                {
-                    "camera_name": camera_info.get("name", device_id),
-                    "camera_type": camera_info.get("type", "Unknown"),
-                }
-            )
-
-        logger.debug(f"Streaming status for {device_id}: {status_data}")
-        return status_data
-
-    except Exception as e:
-        logger.error(f"Error getting streaming status for {device_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get streaming status for {device_id}",
-        )
-
-
 @router.get("/{device_id}/video")
 async def video_stream(
     device_id: str,
     quality: str = "medium",
     current_user: Dict = Depends(require_view_stream_flexible),
-    db: Session = Depends(get_db),
 ):
-    """Stream video from camera with integrated session management."""
-
-    # Check if this is a mobile camera
-    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
-    if not camera:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Camera {device_id} not found",
-        )
-
-    # ⚡ NEW: Check if system can handle another concurrent stream
-    can_start = await streaming_resource_manager.can_start_stream(device_id)
-    if not can_start:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Maximum concurrent streams reached. Please stop other streams first.",
-        )
-
-    # Handle mobile cameras differently
-    if camera.camera_type == CameraType.MOBILE:
-        return await handle_mobile_camera_stream(device_id, quality, current_user)
-
-    # ⚡ NEW: Register stream for resource management
-    await streaming_resource_manager.register_stream(
-        device_id, camera.camera_type, quality
-    )
-
-    # Get optimized quality for concurrent streaming
-    optimized_quality = streaming_resource_manager.get_optimized_quality_for_device(
-        device_id
-    )
-    if optimized_quality != quality:
-        logger.info(
-            f"🎯 Quality optimized for concurrent streams: {quality} → {optimized_quality}"
-        )
-        quality = optimized_quality
-
-    # Continue with regular camera streaming for non-mobile cameras with session support
-
-    async def generate_frames():
-        """Generate video frames for streaming with face detection and session tracking."""
-
-        session_uuid = None
-
-        try:
-            cap = await camera_service.get_camera_stream(device_id)
-            if not cap:
-                logger.info(
-                    f"Camera {device_id} not connected, attempting to connect..."
-                )
-                # Try to connect the camera automatically
-                connection = await camera_service.connect_camera(device_id)
-                if not connection:
-                    logger.error(
-                        f"Failed to auto-connect camera {device_id} for streaming"
-                    )
-                    return
-                cap = await camera_service.get_camera_stream(device_id)
-                if not cap:
-                    logger.error(
-                        f"Camera {device_id} still not connected after auto-connect"
-                    )
-                    return
-
-            # Create streaming session for USB camera
-            session_uuid = await streaming_session_manager.create_streaming_session(
-                device_id=device_id,
-                camera_device_uuid=camera.device_id,
-                session_metadata={
-                    "camera_type": "usb",
-                    "quality": quality,
-                    "stream_type": "http_mjpeg",
-                },
-            )
-
-            logger.info(
-                f"✅ Created USB camera streaming session {session_uuid} for device {device_id}"
-            )
-
-            # Set quality parameters
-            quality_settings = {
-                "low": (320, 240, 15),
-                "medium": (640, 480, 30),
-                "high": (1280, 720, 30),
-                "ultra": (1920, 1080, 30),
-            }
-
-            width, height, fps = quality_settings.get(
-                quality, quality_settings["medium"]
-            )
-
-            # Set camera properties
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-            cap.set(cv2.CAP_PROP_FPS, fps)
-
-            # ⚡ NEW: Apply concurrent streaming performance optimizations
-            fps_adjustment = streaming_resource_manager.get_fps_adjustment(device_id)
-            adjusted_fps = int(fps * fps_adjustment)
-            concurrent_detection_skip = (
-                streaming_resource_manager.get_detection_frame_skip(device_id)
-            )
-
-            logger.info(
-                f"🎯 Concurrent streaming optimization for {device_id}: "
-                f"streams: {streaming_resource_manager.get_stream_count()}, "
-                f"fps: {fps} → {adjusted_fps}, "
-                f"detection skip: {concurrent_detection_skip}"
-            )
-
-            frame_count = 0
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    logger.warning(f"Failed to read frame from camera {device_id}")
-                    break
-
-                # Cache the frame for recording use
-                camera_service.latest_frames[device_id] = (ret, frame.copy())
-
-                # ⚡ NEW: Use concurrent-aware detection frame skipping
-                detection_skip_interval = concurrent_detection_skip
-
-                # Log optimization settings once per session
-                if frame_count == 1:
-                    logger.info(
-                        f"🎯 Concurrent streaming detection optimization: "
-                        f"processing every {detection_skip_interval} frames "
-                        f"(concurrent streams: {streaming_resource_manager.get_stream_count()})"
-                    )
-
-                # Perform face detection with concurrent-optimized frame skipping
-                should_detect = (
-                    frame_count % detection_skip_interval == 0
-                    and session_uuid
-                    and not streaming_resource_manager.should_throttle_detection(
-                        device_id
-                    )
-                )
-
-                if should_detect:
-                    try:
-                        detection_result = (
-                            await session_aware_face_detector.detect_faces_with_session(
-                                frame=frame,
-                                session_uuid=session_uuid,
-                                device_id=device_id,
-                                method="two_stage",
-                                confidence_threshold=0.7,
-                                frame_metadata={
-                                    "frame_count": frame_count,
-                                    "frame_size": frame.shape,
-                                    "stream_type": "usb_mjpeg",
-                                },
-                            )
-                        )
-
-                        # Update session with detection results
-                        await streaming_session_manager.update_session_detection(
-                            device_id=device_id,
-                            faces_detected=detection_result["faces_detected"],
-                            frame_metadata=detection_result["frame_metadata"],
-                        )
-
-                        if detection_result["face_count"] > 0:
-                            logger.debug(
-                                f"🔍 USB Camera {device_id}: detected {detection_result['face_count']} faces in frame {frame_count}"
-                            )
-
-                    except Exception as detection_error:
-                        logger.error(
-                            f"❌ Face detection error for USB camera {device_id}: {detection_error}"
-                        )
-
-                # Resize frame if needed
-                if frame.shape[1] != width or frame.shape[0] != height:
-                    frame = cv2.resize(frame, (width, height))
-
-                # Encode frame as JPEG
-                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                frame_bytes = buffer.tobytes()
-
-                # Yield frame in multipart format
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-                )
-
-                frame_count += 1
-
-                # ⚡ NEW: Use adjusted FPS for concurrent streaming optimization
-                await asyncio.sleep(1.0 / adjusted_fps)
-
-        except Exception as e:
-            logger.error(f"Error in video stream for camera {device_id}: {e}")
-            return
-        finally:
-            # ⚡ NEW: Unregister stream from resource manager
-            await streaming_resource_manager.unregister_stream(device_id)
-
-            # Complete session when stream ends
-            if session_uuid:
-                await streaming_session_manager.complete_streaming_session(
-                    device_id=device_id, completion_reason="stream_ended"
-                )
-                logger.info(f"✅ Completed USB camera streaming session {session_uuid}")
-
-                # Cleanup session-aware detector session
-                session_aware_face_detector.cleanup_session(session_uuid)
-
-    try:
-        # Check if camera is connected
-        cap = await camera_service.get_camera_stream(device_id)
-        if not cap:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Camera {device_id} not connected",
-            )
-
-        logger.info(
-            f"User {current_user.get('sub')} accessing video stream for camera {device_id}"
-        )
-
-        return StreamingResponse(
-            generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame"
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error setting up video stream for camera {device_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to setup video stream",
-        )
-
-
-async def handle_mobile_camera_stream(device_id: str, quality: str, current_user: Dict):
-    """Handle mobile camera streaming using the mobile streaming service."""
-
-    async def generate_mobile_frames():
-        """Generate video frames from mobile camera stream."""
-
-        try:
-            # Set quality parameters
-            quality_settings = {
-                "low": (320, 240, 15),
-                "medium": (640, 480, 30),
-                "high": (1280, 720, 30),
-                "ultra": (1920, 1080, 30),
-            }
-
-            width, height, fps = quality_settings.get(
-                quality, quality_settings["medium"]
-            )
-
-            while True:
-                # Get latest frame data from mobile streaming service
-                frame_data = (
-                    await mobile_streaming_service.get_latest_mobile_frame_data(
-                        device_id
-                    )
-                )
-
-                if frame_data is None:
-                    # No frame available, send a blank frame or wait
-                    logger.debug(f"No frame available for mobile camera {device_id}")
-                    await asyncio.sleep(0.1)  # Wait 100ms before trying again
-                    continue
-
-                frame = frame_data["frame"]
-                rotation_angle = frame_data.get("rotation_angle", 0)
-                orientation = frame_data.get("orientation", "portraitUp")
-
-                logger.info(
-                    f"🔄 [ROTATION_DEBUG] Processing frame - "
-                    f"orientation: {orientation}, rotation_angle: {rotation_angle}"
-                )
-                logger.info(f"🔄 [ROTATION_DEBUG] Original frame shape: {frame.shape}")
-
-                # Apply rotation to frame based on orientation metadata
-                if rotation_angle != 0:
-                    logger.info(
-                        f"🔄 [ROTATION_DEBUG] Applying {rotation_angle}° "
-                        f"rotation to frame"
-                    )
-                    original_shape = frame.shape
-                    # Rotate frame based on rotation angle
-                    if rotation_angle == 90:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                        logger.info(
-                            "🔄 [ROTATION_DEBUG] Applied 90° clockwise rotation"
-                        )
-                    elif rotation_angle == 180:
-                        frame = cv2.rotate(frame, cv2.ROTATE_180)
-                        logger.info("🔄 [ROTATION_DEBUG] Applied 180° rotation")
-                    elif rotation_angle == 270:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-                        logger.info(
-                            "🔄 [ROTATION_DEBUG] Applied 270° (90° counter-clockwise) rotation"
-                        )
-                    else:
-                        logger.warning(
-                            f"🔄 [ROTATION_DEBUG] Unknown rotation angle: {rotation_angle}"
-                        )
-
-                    logger.info(
-                        f"🔄 [ROTATION_DEBUG] Frame shape after rotation: {frame.shape} (was: {original_shape})"
-                    )
-                    logger.info("🔄 [ROTATION_DEBUG] Frame rotated successfully")
-                else:
-                    logger.info(
-                        "🔄 [ROTATION_DEBUG] No rotation needed " "(rotation_angle = 0)"
-                    )
-
-                # Resize frame if needed (after rotation)
-                if frame.shape[1] != width or frame.shape[0] != height:
-                    frame = cv2.resize(frame, (width, height))
-
-                # Encode frame as JPEG
-                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                frame_bytes = buffer.tobytes()
-
-                # Yield frame in standard multipart format (no need for orientation headers now)
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-                )
-
-                # Small delay to control frame rate
-                await asyncio.sleep(1.0 / fps)
-
-        except Exception as e:
-            logger.error(f"Error in mobile video stream for camera {device_id}: {e}")
-            return
-
-    try:
-        logger.info(
-            f"User {current_user.get('sub')} accessing mobile video stream for camera {device_id}"
-        )
-
-        return StreamingResponse(
-            generate_mobile_frames(),
-            media_type="multipart/x-mixed-replace; boundary=frame",
-        )
-
-    except Exception as e:
-        logger.error(
-            f"Error setting up mobile video stream for camera {device_id}: {e}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to setup mobile video stream",
-        )
+    """Stream video from camera."""
 
     async def generate_frames():
         """Generate video frames for streaming."""
@@ -501,22 +81,8 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
         try:
             cap = await camera_service.get_camera_stream(device_id)
             if not cap:
-                logger.info(
-                    f"Camera {device_id} not connected, attempting to connect..."
-                )
-                # Try to connect the camera automatically
-                connection = await camera_service.connect_camera(device_id)
-                if not connection:
-                    logger.error(
-                        f"Failed to auto-connect camera {device_id} for streaming"
-                    )
-                    return
-                cap = await camera_service.get_camera_stream(device_id)
-                if not cap:
-                    logger.error(
-                        f"Camera {device_id} still not connected after auto-connect"
-                    )
-                    return
+                logger.error(f"Camera {device_id} not connected for streaming")
+                return
 
             # Set quality parameters
             quality_settings = {
@@ -540,9 +106,6 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
                 if not ret:
                     logger.warning(f"Failed to read frame from camera {device_id}")
                     break
-
-                # Cache the frame for recording use
-                camera_service.latest_frames[device_id] = (ret, frame.copy())
 
                 # Resize frame if needed
                 if frame.shape[1] != width or frame.shape[0] != height:
@@ -589,429 +152,6 @@ async def handle_mobile_camera_stream(device_id: str, quality: str, current_user
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to setup video stream",
-        )
-
-
-async def handle_mobile_camera_stream_session(
-    device_id: str, session_id: str, quality: str
-):
-    """Handle mobile camera streaming using session-based authentication."""
-
-    async def generate_mobile_frames():
-        """Generate video frames from mobile camera stream with session validation."""
-
-        try:
-            # Set quality parameters
-            quality_settings = {
-                "low": (320, 240, 15),
-                "medium": (640, 480, 30),
-                "high": (1280, 720, 30),
-                "ultra": (1920, 1080, 30),
-            }
-
-            width, height, fps = quality_settings.get(
-                quality, quality_settings["medium"]
-            )
-
-            logger.info(
-                f"Session {session_id[:16]}... accessing mobile video stream "
-                f"for camera {device_id} with quality {quality}"
-            )
-
-            while True:
-                # Validate session is still active
-                if not session_manager.validate_session(session_id, device_id):
-                    logger.warning(
-                        f"Session {session_id[:16]}... expired during mobile streaming"
-                    )
-                    break
-
-                # Get latest frame data from mobile streaming service
-                frame_data = (
-                    await mobile_streaming_service.get_latest_mobile_frame_data(
-                        device_id
-                    )
-                )
-
-                if frame_data is None:
-                    # No frame available, send a blank frame or wait
-                    logger.debug(f"No frame available for mobile camera {device_id}")
-                    await asyncio.sleep(0.1)  # Wait 100ms before trying again
-                    continue
-
-                frame = frame_data["frame"]
-                rotation_angle = frame_data.get("rotation_angle", 0)
-                orientation = frame_data.get("orientation", "portraitUp")
-
-                logger.info(
-                    f"🔄 [ROTATION_DEBUG_SESSION] Processing frame - "
-                    f"orientation: {orientation}, rotation_angle: {rotation_angle}"
-                )
-
-                # Apply rotation to frame based on orientation metadata
-                if rotation_angle != 0:
-                    logger.info(
-                        f"🔄 [ROTATION_DEBUG_SESSION] Applying {rotation_angle}° "
-                        f"rotation to frame"
-                    )
-                    # Rotate frame based on rotation angle
-                    if rotation_angle == 90:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                    elif rotation_angle == 180:
-                        frame = cv2.rotate(frame, cv2.ROTATE_180)
-                    elif rotation_angle == 270:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-                    logger.info(
-                        "🔄 [ROTATION_DEBUG_SESSION] Frame rotated successfully"
-                    )
-                else:
-                    logger.info(
-                        "🔄 [ROTATION_DEBUG_SESSION] No rotation needed "
-                        "(rotation_angle = 0)"
-                    )
-
-                # Resize frame if needed (after rotation)
-                if frame.shape[1] != width or frame.shape[0] != height:
-                    frame = cv2.resize(frame, (width, height))
-
-                # Encode frame as JPEG
-                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                frame_bytes = buffer.tobytes()
-
-                # Yield frame in multipart format
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-                )
-
-                # Small delay to control frame rate
-                await asyncio.sleep(1.0 / fps)
-
-        except Exception as e:
-            logger.error(
-                f"Error in mobile video stream session for camera {device_id}: {e}"
-            )
-            return
-
-    try:
-        return StreamingResponse(
-            generate_mobile_frames(),
-            media_type="multipart/x-mixed-replace; boundary=frame",
-        )
-
-    except Exception as e:
-        logger.error(
-            f"Error setting up mobile video stream session for camera {device_id}: {e}"
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to setup mobile video stream session",
-        )
-
-
-@router.get("/{device_id}/video-session/{session_id}")
-async def video_stream_session(
-    device_id: str,
-    session_id: str,
-    quality: str = "medium",
-    db: Session = Depends(get_db),
-):
-    """Stream video from camera using session-based authentication."""  # Validate session
-    session = session_manager.validate_session(session_id, device_id)
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired streaming session",
-        )
-
-    # Check if this is a mobile camera
-    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
-    if camera and camera.camera_type == CameraType.MOBILE:
-        return await handle_mobile_camera_stream_session(device_id, session_id, quality)
-
-    # Continue with regular camera streaming for non-mobile cameras
-
-    async def generate_frames():
-        """Generate video frames for streaming."""
-        try:
-            cap = await camera_service.get_camera_stream(device_id)
-            if not cap:
-                logger.info(
-                    "Camera %s not connected, attempting to connect...", device_id
-                )
-                # Try to connect the camera automatically
-                connection = await camera_service.connect_camera(device_id)
-                if not connection:
-                    logger.error(
-                        "Failed to auto-connect camera %s for streaming", device_id
-                    )
-                    return
-                cap = await camera_service.get_camera_stream(device_id)
-                if not cap:
-                    logger.error(
-                        "Camera %s still not connected after auto-connect", device_id
-                    )
-                    return
-
-            # Set quality parameters
-            quality_settings = {
-                "low": (320, 240, 15),
-                "medium": (640, 480, 30),
-                "high": (1280, 720, 30),
-                "ultra": (1920, 1080, 30),
-            }
-
-            width, height, fps = quality_settings.get(
-                quality, quality_settings["medium"]
-            )
-
-            # Set camera properties
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-            cap.set(cv2.CAP_PROP_FPS, fps)
-
-            logger.info(
-                "Session %s accessing video stream for camera %s with quality %s",
-                session_id[:16] + "...",
-                device_id,
-                quality,
-            )
-
-            while True:
-                # Validate session is still active (check every few frames)
-                if not session_manager.validate_session(session_id, device_id):
-                    logger.warning(
-                        "Session %s expired during streaming", session_id[:16] + "..."
-                    )
-                    break
-
-                ret, frame = cap.read()
-                if not ret:
-                    logger.warning("Failed to read frame from camera %s", device_id)
-                    await asyncio.sleep(0.1)
-                    continue
-
-                # Cache the frame for recording use
-                camera_service.latest_frames[device_id] = (ret, frame.copy())
-
-                # Encode frame as JPEG
-                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                frame_bytes = buffer.tobytes()
-
-                # Yield frame in multipart format
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
-                )
-
-                # Control frame rate
-                await asyncio.sleep(1.0 / fps)
-
-        except Exception as e:
-            logger.error(
-                "Error in session video stream for camera %s: %s", device_id, str(e)
-            )
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: text/plain\r\n\r\n"
-                b"Stream error occurred\r\n"
-            )
-
-    try:
-        return StreamingResponse(
-            generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame"
-        )
-    except Exception as e:
-        logger.error(
-            "Error setting up session video stream for camera %s: %s", device_id, str(e)
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error setting up session video stream for camera {device_id}: {e}",
-        )
-
-
-@router.post("/{device_id}/snapshot")
-async def capture_custom_snapshot(
-    request: Request, device_id: str, settings: Dict = None
-) -> Dict:
-    """Capture snapshot with custom resolution and quality settings."""
-
-    try:
-        # Get current user from request
-        current_user = await get_current_user_flexible(request)
-
-        # Parse request body for settings
-        if settings is None:
-            try:
-                body = await request.body()
-                if body:
-                    import json
-
-                    settings = json.loads(body.decode())
-                else:
-                    settings = {}
-            except Exception:
-                settings = {}
-
-        # Default settings
-        default_settings = {
-            "resolution": "max",
-            "quality": 95,
-            "format": "JPEG",
-            "save_to_file": True,
-            "filename": None,
-        }
-
-        # Merge with provided settings
-        final_settings = {**default_settings, **settings}
-
-        # Validate settings
-        from src.models.snapshot_settings import SnapshotSettings
-
-        try:
-            validated_settings = SnapshotSettings(**final_settings)
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Invalid snapshot settings: {e}",
-            )
-
-        # Capture high-resolution frame
-        result = await camera_service.capture_high_res_snapshot(
-            device_id, validated_settings.dict()
-        )
-
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Camera {device_id} not connected or failed to capture",
-            )
-
-        ret, frame, metadata = result
-        if not ret or frame is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to capture high-resolution frame",
-            )
-
-        # Encode frame with custom quality and format
-        if validated_settings.format.upper() == "JPEG":
-            encode_params = [cv2.IMWRITE_JPEG_QUALITY, validated_settings.quality]
-            extension = ".jpg"
-            mime_type = "image/jpeg"
-        elif validated_settings.format.upper() == "PNG":
-            # PNG compression level (0-9, where 9 is max compression)
-            png_compression = max(0, min(9, (100 - validated_settings.quality) // 10))
-            encode_params = [cv2.IMWRITE_PNG_COMPRESSION, png_compression]
-            extension = ".png"
-            mime_type = "image/png"
-        else:  # BMP
-            encode_params = []
-            extension = ".bmp"
-            mime_type = "image/bmp"
-
-        _, buffer = cv2.imencode(extension, frame, encode_params)
-        frame_base64 = base64.b64encode(buffer.tobytes()).decode("utf-8")
-
-        # Generate filename
-        import time
-
-        if validated_settings.filename:
-            filename = validated_settings.filename
-            if not filename.endswith(extension):
-                filename += extension
-        else:
-            timestamp = int(time.time())
-            filename = f"snapshot_{device_id}_{timestamp}{extension}"
-
-        # Save to file if requested
-        file_path = None
-        if validated_settings.save_to_file:
-            import os
-
-            snapshots_dir = "snapshots"
-            os.makedirs(snapshots_dir, exist_ok=True)
-            file_path = os.path.join(snapshots_dir, filename)
-
-            with open(file_path, "wb") as f:
-                f.write(buffer.tobytes())
-
-        # Get actual resolution from frame
-        actual_height, actual_width = frame.shape[:2]
-
-        logger.info(
-            f"User {current_user.get('sub')} captured enhanced snapshot "
-            f"from camera {device_id} at {actual_width}x{actual_height}"
-        )
-
-        return {
-            "status": "success",
-            "message": "Enhanced snapshot captured successfully",
-            "device_id": device_id,
-            "snapshot_data": {
-                "filename": filename,
-                "file_size_bytes": len(buffer.tobytes()),
-                "resolution": {"width": actual_width, "height": actual_height},
-                "format": validated_settings.format.upper(),
-                "quality": validated_settings.quality,
-                "captured_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "settings": validated_settings.dict(),
-                "metadata": metadata,
-            },
-            "base64_image": f"data:{mime_type};base64,{frame_base64}",
-            "download_url": (
-                f"/api/v1/streaming/{device_id}/snapshot/{filename}"
-                if file_path
-                else None
-            ),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error capturing enhanced snapshot from camera {device_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to capture enhanced snapshot",
-        )
-
-
-@router.get("/{device_id}/capabilities")
-async def get_camera_capabilities(request: Request, device_id: str) -> Dict:
-    """Get camera capabilities including supported resolutions."""
-
-    try:
-        # Get current user from request
-        current_user = await get_current_user_flexible(request)
-
-        # Get camera capabilities
-        capabilities = await camera_service.get_camera_capabilities(device_id)
-
-        if not capabilities:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Camera {device_id} not found or capabilities unavailable",
-            )
-
-        logger.info(
-            f"User {current_user.get('sub')} requested capabilities "
-            f"for camera {device_id}"
-        )
-
-        return {
-            "status": "success",
-            "device_id": device_id,
-            "capabilities": capabilities,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting capabilities for camera {device_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get camera capabilities",
         )
 
 
@@ -1076,40 +216,25 @@ async def stop_stream(
     """Stop streaming from a specific camera."""
 
     try:
-        # Clean up any active streaming sessions for this device
-        cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
+        # For now, we'll just keep the connection but log the stop request
+        # In a full implementation, you might track active streams separately
 
-        # Actually disconnect the camera to stop the stream
-        success = await camera_service.disconnect_camera(device_id)
+        logger.info(
+            f"User {current_user.get('sub')} stopped stream for camera {device_id}"
+        )
 
-        if success:
-            logger.info(
-                "User %s stopped stream for camera %s, cleaned %d sessions",
-                current_user.get("sub"),
-                device_id,
-                cleaned_sessions,
-            )
-            return {
-                "device_id": device_id,
-                "status": "stopped",
-                "message": f"Stream stopped for camera {device_id}",
-                "sessions_cleaned": cleaned_sessions,
-            }
-        else:
-            logger.warning("Camera %s was not connected", device_id)
-            return {
-                "device_id": device_id,
-                "status": "stopped",
-                "message": f"Camera {device_id} was already stopped",
-                "sessions_cleaned": cleaned_sessions,
-            }
+        return {
+            "device_id": device_id,
+            "status": "stopped",
+            "message": f"Stream stopped for camera {device_id}",
+        }
 
     except Exception as e:
-        logger.error("Error stopping stream for camera %s: %s", device_id, e)
+        logger.error(f"Error stopping stream for camera {device_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to stop stream",
-        ) from e
+        )
 
 
 @router.post("/{device_id}/record/start")
@@ -1119,7 +244,7 @@ async def start_recording(
     current_user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Dict:
-    """Start recording from a specific camera to collection."""
+    """Start recording from a specific camera with session tracking."""
 
     try:
         # Verify camera exists and supports recording
@@ -1136,38 +261,72 @@ async def start_recording(
                 detail=f"Camera {device_id} does not support recording",
             )
 
-        # Check if already recording
+        # Check if already recording using both old and new systems
         existing_recording = camera_service.get_active_recording(device_id)
-        if existing_recording:
+        active_session = camera.get_active_recording_session()
+
+        if existing_recording or active_session:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Camera {device_id} is already recording",
             )
 
-        # Start recording
-        recording_info = await camera_service.start_recording(
+        # Create recording session first
+        from src.services.recording_session_service import RecordingSessionService
+
+        session_service = RecordingSessionService(db)
+
+        # Get recording configuration (with segment support)
+        recording_config = {
+            "quality": "high",
+            "segment_duration_seconds": 30,  # Default segment duration
+            "auto_face_detection_enabled": True,
+            "video_codec": "h264",
+            "audio_enabled": False,
+            "face_detection_method": "enhanced-v2",
+            "quality_preset": "balanced",
+        }
+
+        # Create recording session
+        recording_session = session_service.create_session(
+            camera_device_id=device_id,
+            user_id=current_user.get("sub") or "",
+            recording_config=recording_config,
+        )
+
+        # Start recording with session tracking
+        recording_info = await camera_service.start_recording_with_session(
             device_id=device_id,
             user_id=current_user.get("sub") or "",
-            quality="high",  # TODO: Make configurable
+            quality="high",
             auth_token=credentials.credentials,
+            session_uuid=recording_session.session_uuid,
+            segment_duration=recording_config["segment_duration_seconds"],
         )
 
         if not recording_info:
+            # If recording fails, mark session as failed
+            session_service.update_session_status(
+                recording_session.session_uuid, "failed"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to start recording for camera {device_id}",
             )
 
         logger.info(
-            f"User {current_user.get('sub')} started recording for camera {device_id}"
+            f"User {current_user.get('sub')} started recording session "
+            f"{recording_session.session_uuid} for camera {device_id}"
         )
 
         return {
             "status": "success",
             "message": f"Recording started for camera {device_id}",
             "device_id": device_id,
+            "session_uuid": recording_session.session_uuid,
             "recording_id": recording_info.get("recording_id"),
             "started_at": recording_info.get("started_at"),
+            "segment_duration": recording_config["segment_duration_seconds"],
         }
 
     except HTTPException:
@@ -1221,10 +380,14 @@ async def stop_recording(
             "message": f"Recording stopped for camera {device_id}",
             "device_id": device_id,
             "recording_id": recording_result.get("recording_id"),
+            "session_uuid": recording_result.get("session_uuid"),
             "duration_seconds": recording_result.get("duration_seconds"),
             "file_path": recording_result.get("file_path"),
             "file_size_bytes": recording_result.get("file_size_bytes"),
             "collection_id": recording_result.get("collection_id"),
+            "segment_count": recording_result.get("segment_count"),
+            "segment_files": recording_result.get("segment_files"),
+            "session_dir": recording_result.get("session_dir"),
             "stopped_at": recording_result.get("stopped_at"),
         }
 
@@ -1274,4 +437,40 @@ async def get_recording_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get recording status",
+        ) from e
+
+
+@router.get("/{device_id}/record/debug")
+async def debug_recording_state(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Debug endpoint to inspect recording state inconsistencies."""
+    try:
+        debug_info = camera_service.get_debug_recording_state(device_id)
+        return debug_info
+    except Exception as e:
+        logger.error(
+            "Error getting debug recording state for camera %s: %s", device_id, e
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get debug recording state",
+        ) from e
+
+
+@router.post("/{device_id}/record/clear-state")
+async def clear_recording_state(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Debug endpoint to clear stale recording state."""
+    try:
+        result = camera_service.clear_stale_recording_state(device_id)
+        return result
+    except Exception as e:
+        logger.error("Error clearing recording state for camera %s: %s", device_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear recording state",
         ) from e

@@ -99,9 +99,10 @@ class RecordingSession(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    workflow_executions = relationship(
-        "WorkflowExecution", back_populates="recording_session"
-    )
+    # TODO: Create WorkflowExecution SQLAlchemy model if needed
+    # workflow_executions = relationship(
+    #     "WorkflowExecution", back_populates="recording_session"
+    # )
 
     def __init__(self, **kwargs):
         if "session_uuid" not in kwargs:

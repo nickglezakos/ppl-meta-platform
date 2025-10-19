@@ -150,8 +150,8 @@ async def create_streaming_session(
             "streaming_url": streaming_url,
             "expires_in_seconds": 3600,  # 1 hour
             "usage": {
-                "html_example": f'<img src="http://localhost:8005{streaming_url}" />',
-                "javascript_example": f'document.getElementById("stream").src = "http://localhost:8005{streaming_url}";',
+                "html_example": f'<img src="http://localhost:8080{streaming_url}" />',
+                "javascript_example": f'document.getElementById("stream").src = "http://localhost:8080{streaming_url}";',
                 "description": "Use the streaming_url directly in HTML img src or video src attributes",
             },
             "status": "active",
