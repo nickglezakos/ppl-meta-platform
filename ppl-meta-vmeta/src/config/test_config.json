@@ -1,0 +1,35 @@
+{
+  "runtime_settings": {
+    "max_concurrent_videos": 5,
+    "batch_size": 100,
+    "cache_ttl_hours": 24,
+    "enable_gpu_acceleration": true,
+    "memory_limit_mb": 4096,
+    "timeout_seconds": 300
+  },
+  "algorithm_configs": {
+    "fast_processing": {
+      "config_name": "fast_processing",
+      "description": "Fast processing with lower accuracy",
+      "max_gap_seconds": 10.0,
+      "iou_threshold": 0.4,
+      "face_similarity_threshold": 0.75,
+      "enable_face_clustering": false,
+      "is_default": false
+    },
+    "balanced": {
+      "config_name": "balanced",
+      "description": "Balanced accuracy and performance",
+      "max_gap_seconds": 5.0,
+      "iou_threshold": 0.3,
+      "face_similarity_threshold": 0.8,
+      "enable_face_clustering": true,
+      "is_default": true
+    }
+  },
+  "metadata": {
+    "saved_at": "2025-10-20T04:46:57.875774",
+    "version": "1.0",
+    "default_config": "balanced"
+  }
+}

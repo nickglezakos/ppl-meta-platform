@@ -54,7 +54,8 @@ async def lifespan(app: FastAPI):
         # Initialize embedding service
         logger.info("🧠 Initializing embedding service...")
         embedding_service = EmbeddingService(
-            database_client=db_client, model_name=settings.EMBEDDING_MODEL
+            database_client=db_client,
+            config={"embedding_model": settings.EMBEDDING_MODEL}
         )
 
         # Initialize workflow service
@@ -104,6 +105,20 @@ app.include_router(health.router, tags=["health"])
 app.include_router(workflows.router, prefix="/api/v1/workflows", tags=["workflows"])
 app.include_router(embeddings.router, prefix="/api/v1/embeddings", tags=["embeddings"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
+
+# Add cross-video tracking router with error handling
+try:
+    from api.v1.cross_video_tracking import router as cross_video_router
+    app.include_router(
+        cross_video_router,
+        prefix="/api/v1/cross-video",
+        tags=["cross-video-tracking"]
+    )
+    logger.info("✅ Cross-video tracking router added successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Cross-video tracking router not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Error adding cross-video tracking router: {e}")
 
 
 @app.get("/")
