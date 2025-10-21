@@ -6,6 +6,7 @@ import logging
 
 import uvicorn
 from api.analytics import router as analytics_router
+from api.camera import camera_router, initialize_camera_services
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -31,6 +32,20 @@ app.add_middleware(
 
 # Include routers
 app.include_router(analytics_router, prefix="/api/v1", tags=["analytics"])
+app.include_router(camera_router, tags=["camera"])
+
+
+# Initialize camera services on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on application startup."""
+    try:
+        # Initialize camera services
+        initialize_camera_services()
+        logging.info("✅ PPL Meta Mini started with camera support")
+    except Exception as e:
+        logging.error(f"❌ Failed to initialize camera services: {e}")
+        logging.info("⚠️ PPL Meta Mini started without camera support")
 
 
 @app.get("/")
@@ -44,6 +59,9 @@ async def root():
             "health": "/health",
             "docs": "/docs",
             "upload_and_analyze": "/api/v1/upload-and-analyze",
+            "camera_detect": "/api/v1/camera/detect-and-connect",
+            "camera_record": "/api/v1/camera/record-and-analyze",
+            "camera_status": "/api/v1/camera/status",
         },
     }
 

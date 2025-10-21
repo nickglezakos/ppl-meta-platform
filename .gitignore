@@ -302,6 +302,16 @@ reports/
 *.bak
 *.backup
 
+# Archive files
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.rar
+*.7z
+
 # =============================================
 # GIT & VERSION CONTROL
 # =============================================
