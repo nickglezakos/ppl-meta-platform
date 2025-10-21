@@ -1,7 +1,9 @@
 """
 Analytics API endpoints for PPL Meta Mini.
+Enhanced with graceful cancellation support.
 """
 
+import asyncio
 import io
 import logging
 import os
@@ -14,7 +16,7 @@ import numpy as np
 import pandas as pd
 from core.face_detection import MiniFaceDetectionService
 from core.face_grouping import FaceGroupingEngine
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from services.video_preprocessor import VideoPreprocessor
@@ -46,6 +48,7 @@ class GroupingRequest(BaseModel):
 
 @router.post("/upload-and-analyze")
 async def upload_and_analyze_video(
+    request: Request,
     file: UploadFile = File(...),
     max_faces_per_frame: int = 10,
     proximity_threshold: float = 50.0,
@@ -55,9 +58,17 @@ async def upload_and_analyze_video(
     frame_interval: int = Query(15, description="Frame sampling interval"),
 ):
     """
-    Upload video file first, then analyze from stored location.
+    Upload video file first, then analyze from stored location with graceful cancellation support.
     This follows the Media service pattern to test if temporary file
     handling is causing issues.
+    
+    Args:
+        request: FastAPI Request object for cancellation detection
+        file: Uploaded video file
+        max_faces_per_frame: Maximum faces to detect per frame
+        proximity_threshold: Face proximity threshold for grouping
+        confidence_threshold: Face detection confidence threshold
+        frame_interval: Frame sampling interval
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
@@ -68,9 +79,14 @@ async def upload_and_analyze_video(
         )
 
     try:
-        logger.info(f"Upload-and-analyze for: {file.filename}")
-        logger.info(f"File content type: {file.content_type}")
-        logger.info(f"File size: {file.size}")
+        # Check if client disconnected before starting
+        if await request.is_disconnected():
+            logger.info("⚠️ Client disconnected before video analysis started")
+            return {"status": "cancelled", "message": "Request was cancelled by client"}
+        
+        logger.info("Upload-and-analyze for: %s", file.filename)
+        logger.info("File content type: %s", file.content_type)
+        logger.info("File size: %s", file.size)
 
         # Step 0: Cleanup old files - keep only the last 3 files in both directories
         def cleanup_old_files(directory_path, keep_count=3):
@@ -163,13 +179,14 @@ async def upload_and_analyze_video(
         else:
             logger.info("Video preprocessing not needed")
 
-        # Step 3: Now analyze from the final video path
+        # Step 3: Now analyze from the final video path with cancellation support
         return await analyze_video_from_path(
             final_video_path,
             max_faces_per_frame,
             proximity_threshold,
             confidence_threshold,
             frame_interval,
+            request=request,
         )
 
     except Exception as e:
@@ -183,9 +200,19 @@ async def analyze_video_from_path(
     proximity_threshold: float = 50.0,
     confidence_threshold: float = 0.5,
     frame_interval: int = 15,
+    request: Request = None,
 ):
     """
     Analyze video from file path - this is the core analysis function.
+    Enhanced with graceful cancellation support when request is provided.
+    
+    Args:
+        video_path: Path to the video file
+        max_faces_per_frame: Maximum faces to detect per frame
+        proximity_threshold: Face proximity threshold for grouping
+        confidence_threshold: Face detection confidence threshold
+        frame_interval: Frame sampling interval
+        request: Optional FastAPI Request object for cancellation detection
     """
     try:
         logger.info(f"Starting video analysis from path: {video_path}")
@@ -214,14 +241,23 @@ async def analyze_video_from_path(
         total_faces = 0
 
         for frame_number in frames_to_analyze:
-            logger.debug(f"Processing frame {frame_number}")
+            # Check for client disconnection during frame processing (if request provided)
+            if request and await request.is_disconnected():
+                logger.info("⚠️ Client disconnected during frame processing, stopping analysis...")
+                cap.release()
+                return {
+                    "status": "cancelled", 
+                    "message": "Request was cancelled during video analysis"
+                }
+            
+            logger.debug("Processing frame %d", frame_number)
 
             # Set frame position
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ret, frame = cap.read()
 
             if not ret:
-                logger.warning(f"Could not read frame {frame_number}")
+                logger.warning("Could not read frame %d", frame_number)
                 continue
 
             # Detect faces in frame

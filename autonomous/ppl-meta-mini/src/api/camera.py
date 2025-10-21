@@ -1,13 +1,15 @@
 """
 Camera API endpoints for PPL Meta Mini - Upgrade 2 Implementation
 Provides USB camera detection, connection, and recording endpoints.
+Enhanced with graceful cancellation support.
 """
 
+import asyncio
 import logging
 import time
 from typing import Dict, Any, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile, Request
 from pydantic import BaseModel, Field
 
 from services.enhanced_camera_manager import EnhancedCameraManager
@@ -71,9 +73,12 @@ def initialize_camera_services():
 
 
 @camera_router.post("/detect-and-connect", response_model=CameraDetectionResponse)
-async def detect_and_connect_camera():
+async def detect_and_connect_camera(request: Request):
     """
-    Detect and connect to the first available USB camera.
+    Detect and connect to the first available USB camera with graceful cancellation support.
+    
+    Args:
+        request: FastAPI Request object for cancellation detection
     
     Returns:
         CameraDetectionResponse: Camera detection and connection status
@@ -87,8 +92,40 @@ async def detect_and_connect_camera():
     logger.info("🔍 Starting camera detection and connection...")
     
     try:
-        # Detect available cameras
-        cameras = await camera_manager.detect_cameras()
+        # Check if client has disconnected before starting
+        if await request.is_disconnected():
+            logger.info("⚠️ Client disconnected before camera detection started")
+            return CameraDetectionResponse(
+                status="cancelled",
+                camera_detected=False,
+                connection_status="cancelled",
+                error_message="Request was cancelled by client"
+            )
+        
+        # Create a task for camera detection that can be cancelled
+        detection_task = asyncio.create_task(camera_manager.detect_cameras())
+        
+        # Monitor for client disconnection during detection
+        while not detection_task.done():
+            if await request.is_disconnected():
+                logger.info("⚠️ Client disconnected during camera detection, cancelling...")
+                detection_task.cancel()
+                try:
+                    await detection_task
+                except asyncio.CancelledError:
+                    logger.info("✅ Camera detection task successfully cancelled")
+                return CameraDetectionResponse(
+                    status="cancelled",
+                    camera_detected=False,
+                    connection_status="cancelled",
+                    error_message="Request was cancelled by client during detection"
+                )
+            
+            # Small delay to check disconnection status
+            await asyncio.sleep(0.1)
+        
+        # Get detection results
+        cameras = await detection_task
         
         if not cameras:
             return CameraDetectionResponse(
@@ -98,11 +135,43 @@ async def detect_and_connect_camera():
                 error_message="No USB cameras detected"
             )
         
+        # Check disconnection before attempting connection
+        if await request.is_disconnected():
+            logger.info("⚠️ Client disconnected before camera connection")
+            return CameraDetectionResponse(
+                status="cancelled",
+                camera_detected=True,
+                connection_status="cancelled",
+                error_message="Request was cancelled before connection attempt"
+            )
+        
         # Connect to the first available camera
         first_camera = cameras[0]
         camera_index = first_camera["index"]
         
-        connection_success = await camera_manager.connect_camera(camera_index)
+        # Create cancellable connection task
+        connection_task = asyncio.create_task(camera_manager.connect_camera(camera_index))
+        
+        # Monitor for disconnection during connection
+        while not connection_task.done():
+            if await request.is_disconnected():
+                logger.info("⚠️ Client disconnected during camera connection, cancelling...")
+                connection_task.cancel()
+                try:
+                    await connection_task
+                except asyncio.CancelledError:
+                    logger.info("✅ Camera connection task successfully cancelled")
+                return CameraDetectionResponse(
+                    status="cancelled",
+                    camera_detected=True,
+                    camera_info=first_camera,
+                    connection_status="cancelled",
+                    error_message="Request was cancelled during connection"
+                )
+            
+            await asyncio.sleep(0.1)
+        
+        connection_success = await connection_task
         
         if connection_success:
             camera_info = await camera_manager.get_camera_info()
@@ -122,6 +191,15 @@ async def detect_and_connect_camera():
                 error_message="Failed to connect to detected camera"
             )
     
+    except asyncio.CancelledError:
+        logger.info("✅ Camera detection/connection was gracefully cancelled")
+        return CameraDetectionResponse(
+            status="cancelled",
+            camera_detected=False,
+            connection_status="cancelled",
+            error_message="Operation was cancelled"
+        )
+    
     except Exception as e:
         logger.error(f"❌ Camera detection/connection error: {e}")
         return CameraDetectionResponse(
@@ -133,11 +211,16 @@ async def detect_and_connect_camera():
 
 
 @camera_router.post("/record-and-analyze", response_model=RecordingResponse)
-async def record_and_analyze_video(request: RecordingRequest):
+async def record_and_analyze_video(
+    fastapi_request: Request,
+    request: RecordingRequest
+):
     """
     Record video from connected USB camera and analyze for faces and age estimation.
+    Enhanced with graceful cancellation support.
     
     Args:
+        fastapi_request: FastAPI Request object for cancellation detection
         request: Recording parameters (duration, quality, auto_delete)
         
     Returns:
@@ -194,9 +277,21 @@ async def record_and_analyze_video(request: RecordingRequest):
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
         
-        # Analyze the recorded video using existing pipeline
+        # Check for cancellation before analysis
+        if await fastapi_request.is_disconnected():
+            logger.info("⚠️ Client disconnected before video analysis")
+            # Cleanup temporary file
+            if temp_file_path:
+                temp_storage.cleanup_temp_file(temp_file_path)
+            return RecordingResponse(
+                recording_status="cancelled",
+                error_message="Request was cancelled before video analysis",
+                processing_time_ms=int((time.time() - start_time) * 1000)
+            )
+        
+        # Analyze the recorded video using existing pipeline with cancellation support
         logger.info("🔍 Starting video analysis...")
-        analysis_results = await analyze_video_from_path(recorded_path)
+        analysis_results = await analyze_video_from_path(recorded_path, request=fastapi_request)
         
         # Calculate processing time
         processing_time_ms = int((time.time() - start_time) * 1000)
