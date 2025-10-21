@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Stream Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .stream-container { border: 2px solid #333; margin: 20px 0; }
+        img { max-width: 100%; height: auto; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>Stream Test</h1>
+    <div id="status">Loading...</div>
+    
+    <div class="stream-container">
+        <img id="stream" src="" alt="Loading stream..." style="display: none;" />
+    </div>
+    
+    <button onclick="testStream()">Test Stream</button>
+    <button onclick="createNewSession()">Create New Session</button>
+    
+    <script>
+        const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3IiwiZXhwIjoxNzYwNzc5MDQxfQ.mZT3CKlOBMKBsrEwtR3Qm_1UpkCKb6EjP_cjuJO9-cQ';
+        const GATEWAY_URL = 'http://localhost:8080';
+        
+        async function createNewSession() {
+            try {
+                document.getElementById('status').innerHTML = 'Creating new session...';
+                
+                const response = await fetch(`${GATEWAY_URL}/api/v1/auth/streaming-session/usb_camera_0`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${TOKEN}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Session created:', data);
+                    document.getElementById('status').innerHTML = `<span class="success">Session created: ${data.session_id}</span>`;
+                    
+                    // Test the stream immediately
+                    const fullUrl = `${GATEWAY_URL}${data.streaming_url}`;
+                    testStreamUrl(fullUrl);
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                console.error('Error creating session:', error);
+                document.getElementById('status').innerHTML = `<span class="error">Error: ${error.message}</span>`;
+            }
+        }
+        
+        function testStreamUrl(url) {
+            const img = document.getElementById('stream');
+            
+            img.onload = function() {
+                console.log('Stream loaded successfully');
+                document.getElementById('status').innerHTML += '<br><span class="success">Stream is working!</span>';
+                img.style.display = 'block';
+            };
+            
+            img.onerror = function() {
+                console.error('Stream failed to load');
+                document.getElementById('status').innerHTML += '<br><span class="error">Stream failed to load</span>';
+            };
+            
+            console.log('Testing stream URL:', url);
+            img.src = url;
+        }
+        
+        function testStream() {
+            // Use the known session URL from Flutter logs
+            const testUrl = 'http://localhost:8080/api/v1/streaming/usb_camera_0/video-session/S5fN_Y4KL2_hT3U62qqehZkajv3NK7SSzJktxmlYEVg';
+            testStreamUrl(testUrl);
+        }
+        
+        // Auto-create session on load
+        window.onload = function() {
+            createNewSession();
+        };
+    </script>
+</body>
+</html>

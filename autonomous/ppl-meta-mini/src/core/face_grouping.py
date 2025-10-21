@@ -81,16 +81,61 @@ class FaceGroupingEngine:
         # Round the quality score to the third digit
         return round(quality_score, 3)
 
+    def calculate_enhanced_age_estimate(
+        self, unprocessed_age: float, distance: float, quality_score: float
+    ) -> Dict[str, Any]:
+        """
+        Calculate enhanced age estimate based on PPL Meta Mini Upgrade 1 specifications.
+        
+        Args:
+            unprocessed_age: Raw age estimation from DeepFace
+            distance: Distance from camera (calculated from face size)
+            quality_score: Image quality score (0-1)
+            
+        Returns:
+            Dict containing both unprocessed_age and categorical age_estimate
+        """
+        # Validation criteria
+        age_threshold = 30.0
+        distance_valid = 2.0 < distance <= 10.0
+        quality_valid = quality_score > 0.250
+        
+        # Determine age category
+        is_adult = unprocessed_age >= age_threshold
+        criteria_met = distance_valid and quality_valid
+        
+        # Apply decision logic from Upgrade 1 specifications
+        if is_adult:
+            if criteria_met:
+                age_estimate = "passed"
+            else:
+                age_estimate = "passed repeat"
+        else:  # Minor (age < 30)
+            if criteria_met:
+                age_estimate = "check"
+            else:
+                age_estimate = "check repeat"
+        
+        return {
+            "unprocessed_age": float(unprocessed_age),
+            "age_estimate": str(age_estimate),
+            "validation_details": {
+                "age_threshold_met": bool(is_adult),
+                "distance_valid": bool(distance_valid),
+                "quality_valid": bool(quality_valid),
+                "all_criteria_met": bool(criteria_met)
+            }
+        }
+
     def apply_advanced_grouping(
         self,
         df: pd.DataFrame,
         max_faces_per_frame: int = None,  # Accept parameter but calculate dynamically
-        proximity_threshold: float = 50.0,  # Accept but not used in notebook algorithm
+        proximity_threshold: float = 50.0,  # Accept but not used in algorithm
         video_path: str = None,  # Add video path for quality analysis
     ) -> Dict[str, Any]:
         """
         Apply advanced face grouping algorithm using percentage-based tolerance matching.
-        This is the exact notebook implementation for face classification and tracking.
 
         Algorithm:
         1. Process frames chronologically
@@ -647,24 +692,27 @@ class FaceGroupingEngine:
                         if isinstance(analysis, list):
                             analysis = analysis[0]
 
-                        estimated_age = analysis["age"]
+                        # Prefer explicit unprocessed_age field per Upgrade 1
+                        unprocessed_age_raw = analysis.get("age")
 
-                        best_face_info["age_detection"] = {
-                            "estimated_age": estimated_age,
-                        }
+                        # Convert numpy types to native Python float when possible
+                        try:
+                            unprocessed_age_value = float(unprocessed_age_raw)
+                            best_face_info["age_detection"] = {
+                                "unprocessed_age": unprocessed_age_value
+                            }
+                        except Exception:
+                            # If conversion fails, mark as Unknown
+                            best_face_info["age_detection"] = {"unprocessed_age": "Unknown"}
 
-                        print(f"  ✅ Age detected: {estimated_age} years")
+                        print(f"  ✅ Age detected: {unprocessed_age_raw} years")
 
                     except Exception as age_error:
                         print(f"  ⚠️ Age detection failed: {age_error}")
-                        best_face_info["age_detection"] = {
-                            "estimated_age": "Unknown",
-                        }
+                        best_face_info["age_detection"] = {}
                 else:
                     if best_face_info:
-                        best_face_info["age_detection"] = {
-                            "estimated_age": "Unknown",
-                        }
+                        best_face_info["age_detection"] = {}
 
                 # Calculate distance from camera based on face size (larger face = closer)
                 if best_face_info:
@@ -674,7 +722,69 @@ class FaceGroupingEngine:
                     face_area = face_width * face_height
                     # Use inverse of area as distance (larger area = smaller distance)
                     distance = 1000000 / max(face_area, 1)  # Prevent division by zero
-                    best_face_info["distance"] = round(distance, 2)
+                    best_face_info["distance"] = float(round(distance, 2))
+                    
+                    # Apply enhanced age estimation if age detection was successful
+                    age_data = best_face_info.get("age_detection", {})
+                    unprocessed_age_val = age_data.get("unprocessed_age")
+
+                    # Try to coerce to float to accept numpy types too
+                    has_valid_age = False
+                    try:
+                        age_float = float(unprocessed_age_val)
+                        # Also guard against NaN
+                        if not (age_float is None or (isinstance(age_float, float) and (age_float != age_float))):
+                            has_valid_age = True
+                    except Exception:
+                        has_valid_age = False
+
+                    if has_valid_age:
+                        # Calculate enhanced age estimate using Upgrade 1 logic
+                        enhanced_result = self.calculate_enhanced_age_estimate(
+                            unprocessed_age=age_float,
+                            distance=best_face_info["distance"],
+                            quality_score=best_face_info["quality_score"],
+                        )
+
+                        # Update age detection with enhanced fields (ensuring native types)
+                        best_face_info["age_detection"].update(
+                            {
+                                "unprocessed_age": float(enhanced_result.get("unprocessed_age")),
+                                "age_estimate": str(enhanced_result.get("age_estimate")),
+                                "validation_details": {
+                                    "age_threshold_met": bool(
+                                        enhanced_result["validation_details"].get("age_threshold_met", False)
+                                    ),
+                                    "distance_valid": bool(
+                                        enhanced_result["validation_details"].get("distance_valid", False)
+                                    ),
+                                    "quality_valid": bool(
+                                        enhanced_result["validation_details"].get("quality_valid", False)
+                                    ),
+                                    "all_criteria_met": bool(
+                                        enhanced_result["validation_details"].get("all_criteria_met", False)
+                                    ),
+                                },
+                            }
+                        )
+
+                        print(
+                            f"  🎯 Enhanced age estimate: {enhanced_result['age_estimate']} "
+                            f"(unprocessed: {enhanced_result['unprocessed_age']}, "
+                            f"criteria_met: {enhanced_result['validation_details']['all_criteria_met']})"
+                        )
+                    else:
+                        # Handle unknown age case
+                        best_face_info["age_detection"].update({
+                            "unprocessed_age": "Unknown",
+                            "age_estimate": "check repeat",  # Default to most cautious category
+                            "validation_details": {
+                                "age_threshold_met": False,
+                                "distance_valid": False,
+                                "quality_valid": False,
+                                "all_criteria_met": False
+                            }
+                        })
 
                 # Store the best face info (remove the actual image crop to save memory)
                 if best_face_info:
@@ -684,7 +794,8 @@ class FaceGroupingEngine:
                     print(
                         f"  🏆 Best face for group {group_id}: Face {best_face_info['face_id']} "
                         f"(Quality: {best_face_info['quality_score']}, "
-                        f"Age: {best_face_info['age_detection']['estimated_age']}, "
+                        f"Age Estimate: {best_face_info['age_detection'].get('age_estimate', 'Unknown')}, "
+                        f"Unprocessed Age: {best_face_info['age_detection'].get('unprocessed_age', 'Unknown')}, "
                         f"Distance: {best_face_info['distance']})"
                     )
 

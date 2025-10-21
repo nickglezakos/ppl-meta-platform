@@ -11,6 +11,16 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 
+
+PPL meta mini
+
+cd /Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-mini
+source venv/bin/activate
+python src/main.py
+
+http://0.0.0.0:8004
+
+
 mediaItem.uuid: d66948d7-e26d-4c71-9e7b-f3694d0bd132
 mediaItem.uuid: 2be5fab4-5d50-41bd-ab18-cfe069818d01
 mediaItem.uuid: 60aa5a20-c161-457b-8f44-5fb63bb1c7c1

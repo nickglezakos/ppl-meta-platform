@@ -111,6 +111,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include API routers
+try:
+    from api.v1.cross_video_tracking import router as cross_video_router
+    app.include_router(cross_video_router)
+    logger.info("✅ Cross-video tracking API endpoints loaded")
+except ImportError as e:
+    logger.warning(f"⚠️  Cross-video tracking endpoints not available: {e}")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to load cross-video tracking endpoints: {e}")
+
 # API Endpoints with Real Functionality
 
 
