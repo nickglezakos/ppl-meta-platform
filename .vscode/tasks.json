@@ -235,7 +235,7 @@
 		{
 			"label": "🔧 Start PPL Meta Mini Service",
 			"type": "shell",
-			"command": "cd ppl-meta-mini/src && python main.py",
+			"command": "cd autonomous/ppl-meta-mini/src && python main.py",
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []
@@ -259,7 +259,39 @@
 		{
 			"label": "🧪 Test PPL Meta Mini Complete Pipeline",
 			"type": "shell",
-			"command": "cd ppl-meta-mini && python demo_pipeline.py",
+			"command": "cd autonomous/ppl-meta-mini && python demo_pipeline.py",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🌐 Start PPL Meta Mini with Apache Proxy",
+			"type": "shell",
+			"command": "${workspaceFolder}/scripts/start-apache-proxy.sh",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop PPL Meta Mini with Apache Proxy",
+			"type": "shell",
+			"command": "${workspaceFolder}/scripts/stop-apache-proxy.sh",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🔧 Install Apache (macOS)",
+			"type": "shell",
+			"command": "brew install httpd && echo '✅ Apache installed. Configure with APACHE_MACOS_SETUP.md'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Test Apache Proxy Health",
+			"type": "shell",
+			"command": "echo '🏥 Testing Apache Proxy...' && curl -s http://localhost:8080/ppl-health | python3 -m json.tool 2>/dev/null || echo 'Apache proxy not responding' && echo '' && echo 'Direct service:' && curl -s http://localhost:8004/health | python3 -m json.tool 2>/dev/null || echo 'Direct service not responding'",
 			"group": "test",
 			"isBackground": false,
 			"problemMatcher": []

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPL Meta Mini - Apache Proxy</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+        }
+        h1 { text-align: center; margin-bottom: 30px; }
+        .status { 
+            display: flex; 
+            align-items: center; 
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+        .status-icon { 
+            width: 20px; 
+            height: 20px; 
+            border-radius: 50%; 
+            margin-right: 10px;
+        }
+        .healthy { background: #4CAF50; }
+        .error { background: #f44336; }
+        .endpoints {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .endpoint {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            text-decoration: none;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .endpoint:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        .endpoint h3 { margin: 0 0 10px 0; color: #ffeb3b; }
+        .endpoint p { margin: 5px 0; opacity: 0.9; }
+        .api-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 PPL Meta Mini - Apache Proxy</h1>
+        
+        <div class="status">
+            <div class="status-icon healthy"></div>
+            <strong>Apache Proxy: Active on Port 8080</strong>
+        </div>
+        
+        <div class="status" id="ppl-status">
+            <div class="status-icon" id="ppl-icon"></div>
+            <span id="ppl-text">Checking PPL Meta Mini Service...</span>
+        </div>
+
+        <div class="endpoints">
+            <a href="/ppl-docs" class="endpoint">
+                <h3>📚 API Documentation</h3>
+                <p>Interactive Swagger UI</p>
+                <p><code>/ppl-docs</code></p>
+            </a>
+            
+            <a href="/ppl-health" class="endpoint">
+                <h3>🏥 Health Check</h3>
+                <p>Service status monitoring</p>
+                <p><code>/ppl-health</code></p>
+            </a>
+            
+            <div class="endpoint">
+                <h3>📹 Camera API</h3>
+                <p>Camera detection & analysis</p>
+                <p><code>/ppl-api/camera/*</code></p>
+            </div>
+            
+            <div class="endpoint">
+                <h3>🎬 Video Analysis</h3>
+                <p>Upload and analyze videos</p>
+                <p><code>/ppl-api/upload-and-analyze</code></p>
+            </div>
+        </div>
+
+        <div class="api-info">
+            <h3>🔗 Available Endpoints</h3>
+            <p><strong>Health Check:</strong> <code>GET /ppl-health</code></p>
+            <p><strong>API Documentation:</strong> <code>GET /ppl-docs</code></p>
+            <p><strong>Camera Detection:</strong> <code>POST /ppl-api/camera/detect-and-connect</code></p>
+            <p><strong>Video Analysis:</strong> <code>POST /ppl-api/upload-and-analyze</code></p>
+            <p><strong>Camera Recording:</strong> <code>POST /ppl-api/camera/record-and-analyze</code></p>
+        </div>
+
+        <div class="api-info">
+            <h3>🛠️ Direct Access</h3>
+            <p><strong>FastAPI Service:</strong> <a href="http://localhost:8004/docs" style="color: #ffeb3b;">http://localhost:8004/docs</a></p>
+            <p><strong>Apache Proxy:</strong> <a href="http://localhost:8080/ppl-docs" style="color: #ffeb3b;">http://localhost:8080/ppl-docs</a></p>
+        </div>
+    </div>
+
+    <script>
+        // Check PPL Meta Mini service status
+        fetch('/ppl-health')
+            .then(response => response.json())
+            .then(data => {
+                const icon = document.getElementById('ppl-icon');
+                const text = document.getElementById('ppl-text');
+                
+                if (data.status === 'healthy') {
+                    icon.className = 'status-icon healthy';
+                    text.innerHTML = `<strong>PPL Meta Mini: ${data.service} v${data.version} - Healthy</strong>`;
+                } else {
+                    icon.className = 'status-icon error';
+                    text.innerHTML = '<strong>PPL Meta Mini: Unhealthy</strong>';
+                }
+            })
+            .catch(error => {
+                const icon = document.getElementById('ppl-icon');
+                const text = document.getElementById('ppl-text');
+                icon.className = 'status-icon error';
+                text.innerHTML = '<strong>PPL Meta Mini: Service Unavailable</strong>';
+            });
+    </script>
+</body>
+</html>
