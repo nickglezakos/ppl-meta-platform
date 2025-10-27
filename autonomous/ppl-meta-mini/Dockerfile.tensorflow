@@ -1,12 +1,24 @@
 # Multi-stage Docker build for PPL Meta Mini with TensorFlow
+# Supports both Debian Bookworm and Bullseye with guaranteed dlib compilation
+# Build arguments for platform compatibility
+ARG BASE_IMAGE=python:3.11-slim
+ARG PPL_VERSION=2.19.19
+
 # Stage 1: Builder with dlib compilation
-FROM python:3.11-slim as builder
+FROM ${BASE_IMAGE} AS builder
+
+# Import build arguments into the stage
+ARG PPL_VERSION=2.19.19
+
+# Metadata
+LABEL version="${PPL_VERSION}" \
+      description="PPL Meta Mini v${PPL_VERSION} - Autonomous Face Analytics Service" \
+      maintainer="Nick Glezakos <nick@pplmeta.com>"
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
     build-essential \
     pkg-config \
-    cmake \
     libopenblas-dev \
     liblapack-dev \
     libx11-dev \
@@ -14,16 +26,20 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     wget \
     curl \
-    git
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install cmake 3.24+ for ARM64 if needed
-RUN if [ "$(uname -m)" = "aarch64" ]; then \
-    curl -L https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.24.3-linux-aarch64.tar.gz | tar xz -C /opt && \
-    ln -sf /opt/cmake-3.24.3-linux-aarch64/bin/* /usr/local/bin/; \
-    fi
+# Copy and execute universal CMake installation script
+COPY setup_cmake.sh /tmp/setup_cmake.sh
+RUN chmod +x /tmp/setup_cmake.sh && \
+    /tmp/setup_cmake.sh && \
+    rm /tmp/setup_cmake.sh
 
-# Verify cmake installation
-RUN cmake --version
+# Verify cmake installation and dlib compilation readiness
+RUN cmake --version && \
+    echo "✅ CMake installation verified" && \
+    echo "✅ Build environment ready for dlib compilation"
 
 # Set working directory
 WORKDIR /app
@@ -45,7 +61,14 @@ RUN mkdir -p /app/dist && \
     find /app/dist -name "*.so" -exec echo "Built: {}" \;
 
 # Stage 2: Runtime image
-FROM python:3.11-slim as runtime
+FROM ${BASE_IMAGE} AS runtime
+
+# Import build arguments
+ARG PPL_VERSION=2.19.19
+
+# Runtime metadata
+LABEL version="${PPL_VERSION}" \
+      description="PPL Meta Mini v${PPL_VERSION} - Runtime Image"
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -71,13 +94,26 @@ COPY --from=builder /app/dist/src ./src
 # Copy Python packages from builder (including dlib, TensorFlow, DeepFace)
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 
+# Set Python path to include /app for proper imports
+ENV PYTHONPATH="/app:${PYTHONPATH}"
+
 # Test installations
 RUN python -c "import dlib; print('Runtime: dlib successfully imported'); print('dlib version:', dlib.__version__ if hasattr(dlib, '__version__') else '20.0.0')"
 RUN python -c "import tensorflow as tf; print('Runtime: TensorFlow successfully imported'); print('TF version:', tf.__version__)"
 RUN python -c "from deepface import DeepFace; print('Runtime: DeepFace successfully imported')"
 
+# Test FastAPI application imports
+RUN python -c "\
+import sys; \
+sys.path.insert(0, '/app/src'); \
+from main import app; \
+print('Runtime: FastAPI application imported successfully')"
+
 # Create uploads directory
 RUN mkdir -p uploads
+
+# Set PYTHONPATH for proper imports
+ENV PYTHONPATH=/app/src
 
 # Expose port
 EXPOSE 8004

@@ -231,10 +231,34 @@ class FaceDetectionSessionManager:
             # Step 1: Check for stored faces in Vision Service
             logger.info("🔍 Step 1: Checking for stored faces...")
             vision_url = f"http://localhost:8003/faces/media/{media_id}"
-            response = requests.get(vision_url, timeout=15)
-
+            logger.info(f"🔍 Vision URL: {vision_url}")
+            
+            # Add cache-busting headers to prevent HTTP caching issues
+            headers = {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+            response = requests.get(vision_url, headers=headers, timeout=15)
+            
+            logger.info(f"🔍 Vision response status: {response.status_code}")
+            logger.info(f"🔍 RAW Vision response text (first 200 chars): {response.text[:200]}")
+            
             if response.status_code == 200:
-                faces_data = response.json()
+                # Parse JSON from text to avoid response.json() caching issues
+                import json
+                response_text = str(response.text)  # Force copy of string
+                faces_data = json.loads(response_text)
+                
+                # Immediately check what we parsed
+                parsed_media_id = str(faces_data.get('media_id', 'NONE'))
+                logger.info(f"🔍 IMMEDIATELY after json.loads, media_id: {parsed_media_id}")
+                logger.info(f"🔍 faces_data object id: {id(faces_data)}")
+                logger.info(f"🔍 Vision response media_id: {faces_data.get('media_id')}")
+                logger.info(f"🔍 Expected media_id: {media_id}")
+                logger.info(f"🔍 Media IDs match: {faces_data.get('media_id') == media_id}")
+                logger.info(f"🔍 Has stored faces: {faces_data.get('has_stored_faces', False)}")
+                logger.info(f"🔍 Total faces: {faces_data.get('total_faces', 0)}")
 
                 # Check if we have stored faces
                 if faces_data.get("has_stored_faces", False):

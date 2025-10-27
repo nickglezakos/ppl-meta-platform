@@ -4,6 +4,7 @@ import 'package:video_player/video_player.dart';
 import '../models/media_models.dart';
 import '../models/face_detection_models.dart';
 import '../services/media_api_client.dart';
+import '../services/orchestrator_api_client.dart'; // Import for Enhanced Logic V2 API
 import '../services/distance_color_service.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/simple_video_face_detection_overlay.dart';
@@ -43,6 +44,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   ProcessingStatus? _processingStatus;
   List<FaceDetection>? _storedFaceData;
   bool _isLoadingWorkflowData = true;
+  bool _isLoadingFaces = false; // Track face loading state
   String? _workflowError;
   String _faceDataSource = 'none'; // Track data source for color coding
   
@@ -68,13 +70,15 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     _faceDataCache = ref.read(faceDataCacheProvider);
     _mediaFaceDataNotifier = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid).notifier);
     
-    // Trigger face data loading if not already loaded
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        debugPrint('POST-FRAME: Triggering face data load for ${widget.mediaItem.uuid}');
-        _mediaFaceDataNotifier.loadFaces();
-      }
-    });
+    // [FIX] DISABLED automatic provider face loading - the overlay now handles this directly
+    // The overlay calls Enhanced Logic V2 API directly in _checkForStoredFaces()
+    // Old code was causing duplicate API calls:
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   if (mounted) {
+    //     debugPrint('POST-FRAME: Triggering face data load for ${widget.mediaItem.uuid}');
+    //     _mediaFaceDataNotifier.loadFaces();
+    //   }
+    // });
     
     _initializeSmartPlayback();
   }
@@ -161,11 +165,10 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     }
   }
   
-  /// Smooth transition face updates with fade-in/fade-out
+  /// Smooth transition face updates with instant appearance and smooth fade-out
   void _updateFacesWithTransitions(int currentFrameNumber, int totalFaces) {
-    const int fadeFrames = 3; // Fade over 3 frames
-    const int preShowFrames = 2; // Show 2 frames early
-    const int postShowFrames = 2; // Keep 2 frames after
+    const int preShowFrames = 0; // No fade in - instant appearance
+    const int postShowFrames = 18; // Extended fade out - 18 frames (~600ms at 30fps)
     
     List<FaceDetection> visibleFaces = [];
     Map<FaceDetection, double> newOpacities = {};
@@ -176,10 +179,6 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     final baseStartIndex = (currentFrameNumber % 30) * facesPerFrame;
     final baseEndIndex = (baseStartIndex + facesPerFrame).clamp(0, totalFaces);
     
-    // Extended window for smooth transitions
-    final extendedStartIndex = ((currentFrameNumber - preShowFrames) % 30) * facesPerFrame;
-    final extendedEndIndex = ((currentFrameNumber + postShowFrames) % 30) * facesPerFrame;
-    
     for (int i = 0; i < totalFaces; i++) {
       final face = _allStoredFaces[i];
       
@@ -188,24 +187,19 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       double opacity = 1.0;
       
       if (i >= baseStartIndex && i < baseEndIndex) {
-        // Face is in main display window
+        // Face is in main display window - INSTANT FULL OPACITY
         shouldShow = true;
         opacity = 1.0;
       } else {
-        // Check if face should fade in or out
-        final distanceFromStart = (i - baseStartIndex).abs();
+        // Check if face should fade out (no fade in)
         final distanceFromEnd = (i - baseEndIndex).abs();
         
-        if (distanceFromStart <= preShowFrames * facesPerFrame) {
-          // Fade in phase
-          shouldShow = true;
-          final fadeProgress = 1.0 - (distanceFromStart / (preShowFrames * facesPerFrame));
-          opacity = (fadeProgress * fadeProgress).clamp(0.0, 1.0); // Ease-in curve
-        } else if (distanceFromEnd <= postShowFrames * facesPerFrame) {
-          // Fade out phase
+        if (i < baseStartIndex && distanceFromEnd <= postShowFrames * facesPerFrame) {
+          // Fade out phase only - smooth gradual disappearance
           shouldShow = true;
           final fadeProgress = 1.0 - (distanceFromEnd / (postShowFrames * facesPerFrame));
-          opacity = (fadeProgress * fadeProgress).clamp(0.0, 1.0); // Ease-out curve
+          // Cubic easing for smoother, more gradual fade out
+          opacity = (fadeProgress * fadeProgress * fadeProgress).clamp(0.0, 1.0);
         }
       }
       
@@ -593,13 +587,22 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
 
   /// Build video player with appropriate overlay strategy
   Widget _buildVideoPlayerWithOverlay(String videoUrl, bool useStoredFaceData, List<FaceDetection> facesToDisplay, String dataSource) {
-    if (useStoredFaceData && facesToDisplay.isNotEmpty) {
-      // Workflow 5: Use stored face data for optimized performance
-      return _buildOptimizedVideoPlayer(videoUrl, facesToDisplay, dataSource);
-    } else {
-      // Workflow 4 or real-time: Use session-based or real-time overlay
-      return _buildSessionBasedVideoPlayer(videoUrl);
+    // [FIX] ALWAYS use OptimizedFacePainter to prevent SimpleFaceDetectionOverlay cache issues
+    // The old logic switched between paths based on cache state, causing inconsistent rendering
+    // Now we ALWAYS use OptimizedFacePainter (multicolor GREEN rectangles)
+    // If no faces available yet, we'll make the API call first
+    
+    if (facesToDisplay.isEmpty) {
+      // No faces in cache yet - need to load them first
+      debugPrint('[OVERLAY STRATEGY] No faces available, loading via Enhanced Logic V2...');
+      _loadFacesViaEnhancedLogicV2();
+      // Show video player without overlay while loading
+      return _buildBasicVideoPlayerForLoading(videoUrl);
     }
+    
+    // We have faces - use OptimizedFacePainter
+    debugPrint('[OVERLAY STRATEGY] Using OptimizedFacePainter with ${facesToDisplay.length} faces from $dataSource');
+    return _buildOptimizedVideoPlayer(videoUrl, facesToDisplay, dataSource);
   }
 
   /// Build optimized video player for Workflow 5 (stored face data)
@@ -682,6 +685,103 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         }
       },
     );
+  }
+
+  /// Build basic video player while faces are loading
+  Widget _buildBasicVideoPlayerForLoading(String videoUrl) {
+    return VideoPlayerWidget(
+      videoUrl: videoUrl,
+      headers: widget.headers,
+      collectionId: widget.collectionId,
+      onControllerReady: (controller) {
+        _videoController = controller;
+        if (controller != null) {
+          widget.onControllerReady?.call(controller);
+        }
+      },
+    );
+  }
+
+  /// Load faces via Enhanced Logic V2 API and update state
+  Future<void> _loadFacesViaEnhancedLogicV2() async {
+    if (_isLoadingFaces) {
+      debugPrint('[LOAD FACES] Already loading, skipping duplicate call');
+      return;
+    }
+    
+    try {
+      setState(() {
+        _isLoadingFaces = true;
+      });
+      
+      debugPrint('[LOAD FACES] Calling Enhanced Logic V2 for ${widget.mediaItem.uuid}');
+      
+      final orchestratorClient = ref.read(orchestratorApiClientProvider);
+      final response = await orchestratorClient.getEnhancedLogicV2Response(widget.mediaItem.uuid);
+      
+      if (response.isSuccess && response.data != null && response.data!.faces.isNotEmpty) {
+        final enhancedData = response.data!;
+        
+        // Convert Enhanced Logic V2 faces to FaceDetection objects
+        final List<FaceDetection> faces = enhancedData.faces.map((face) {
+          return FaceDetection(
+            boundingBox: FaceBoundingBox(
+              left: face.bbox[0],
+              top: face.bbox[1],
+              width: face.bbox[2] - face.bbox[0],  // right - left = width
+              height: face.bbox[3] - face.bbox[1], // bottom - top = height
+            ),
+            confidence: face.confidence,
+            method: face.method,
+          );
+        }).toList();
+        
+        // Store in global cache
+        // Convert to frame-based structure for memory cache
+        final globalManager = FaceDataMemoryManager.instance;
+        final memoryCache = <int, List<FaceDetection>>{};
+        final storedFacesByFrame = <String, List<FaceDetection>>{};
+        
+        for (final face in enhancedData.faces) {
+          final frameNum = face.frameNumber;
+          final frameKey = 'frame_$frameNum';
+          
+          final faceDetection = FaceDetection(
+            boundingBox: FaceBoundingBox(
+              left: face.bbox[0],
+              top: face.bbox[1],
+              width: face.bbox[2] - face.bbox[0],
+              height: face.bbox[3] - face.bbox[1],
+            ),
+            confidence: face.confidence,
+            method: face.method,
+          );
+          
+          memoryCache.putIfAbsent(frameNum, () => []).add(faceDetection);
+          storedFacesByFrame.putIfAbsent(frameKey, () => []).add(faceDetection);
+        }
+        
+        globalManager.storeFaceData(widget.mediaItem.uuid, memoryCache, storedFacesByFrame);
+        
+        setState(() {
+          _storedFaceData = faces;
+          _faceDataSource = 'enhanced_logic_v2_api';
+          _isLoadingFaces = false;
+        });
+        
+        debugPrint('[LOAD FACES] ✅ Loaded ${faces.length} faces from Enhanced Logic V2');
+      } else {
+        debugPrint('[LOAD FACES] ⚠️ No faces returned from Enhanced Logic V2');
+        setState(() {
+          _isLoadingFaces = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[LOAD FACES] ❌ Error loading faces: $e');
+      setState(() {
+        _isLoadingFaces = false;
+      });
+    }
   }
 
   /// Build optimal video URL based on playback mode

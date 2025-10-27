@@ -1,5 +1,6 @@
 /// PPL Meta Frontend - Person Objects API Client
-/// 
+library;
+
 /// API client for PPL Thread (Person Objects) functionality integration.
 /// Provides access to Vision Service person objects endpoints and handles
 /// data transformation between the backend and frontend models.
@@ -11,7 +12,6 @@
 /// - Error handling and logging
 /// - Type-safe data transformation
 
-import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -22,12 +22,85 @@ import '../core/config/app_config.dart';
 
 class PersonObjectsApiClient {
   late final ApiClient _apiClient;
+  late final Dio _orchestratorDio;
+  late final Dio _visionDio;
   final DiscoveryServiceClient _discoveryService = DiscoveryServiceClient();
   
   static const String _logName = 'PersonObjectsApiClient';
   
   PersonObjectsApiClient([ApiClient? apiClient]) {
+    // Use provided ApiClient (which has auth token) or create new one
     _apiClient = apiClient ?? ApiClient(AppConfig.instance);
+    
+    // Create dedicated Dio instances for different services
+    // This prevents race conditions from concurrent requests to different services
+    _orchestratorDio = Dio(BaseOptions(
+      baseUrl: 'http://localhost:8002',
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    ));
+    
+    _visionDio = Dio(BaseOptions(
+      baseUrl: 'http://localhost:8003',
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 60),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    ));
+    
+    // Add auth token interceptor to orchestrator Dio
+    // This reads the token from the provided ApiClient instance
+    _orchestratorDio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final token = _apiClient.authToken;
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+            debugPrint('🔐 PersonObjects[Orchestrator]: Adding auth token (${token.length} chars)');
+          } else {
+            debugPrint('⚠️ PersonObjects[Orchestrator]: No auth token available!');
+          }
+          handler.next(options);
+        },
+      ),
+    );
+    
+    // Add auth token interceptor to vision Dio
+    _visionDio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          final token = _apiClient.authToken;
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+            debugPrint('🔐 PersonObjects[Vision]: Adding auth token (${token.length} chars)');
+          } else {
+            debugPrint('⚠️ PersonObjects[Vision]: No auth token available!');
+          }
+          handler.next(options);
+        },
+      ),
+    );
+    
+    // Add logging in debug mode
+    if (kDebugMode) {
+      _orchestratorDio.interceptors.add(LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+        logPrint: (object) => debugPrint('PersonObjects[Orchestrator]: $object'),
+      ));
+      
+      _visionDio.interceptors.add(LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+        logPrint: (object) => debugPrint('PersonObjects[Vision]: $object'),
+      ));
+    }
   }
   
   /// Get person objects for a media item (via Orchestrator endpoint)
@@ -45,16 +118,8 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // Use Person Objects endpoint directly to Orchestrator
-      final orchestratorUrl = 'http://localhost:8002';
-      final originalBaseUrl = _apiClient.dio.options.baseUrl;
-      _apiClient.dio.options.baseUrl = orchestratorUrl;
-      
-      final response = await _apiClient.get(
-        '/person-objects/$mediaUuid',
-      );
-      
-      _apiClient.dio.options.baseUrl = originalBaseUrl;
+      // Use dedicated Orchestrator Dio instance (no baseUrl modification needed)
+      final response = await _orchestratorDio.get('/person-objects/$mediaUuid');
 
       developer.log(
         'Orchestrator response: status=${response.statusCode}, data=${response.data}',
@@ -181,19 +246,11 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // Use gateway routing instead of direct service discovery
-      final visionServiceUrl = 'http://localhost:8080';
-
-      // Temporarily set base URL to Vision service via gateway
-      final originalBaseUrl = _apiClient.dio.options.baseUrl;
-      _apiClient.dio.options.baseUrl = visionServiceUrl;
-      
+      // Use dedicated Vision Dio instance (routes through gateway at 8080)
+      // Note: Vision service endpoints are accessible via gateway proxy
       final response = await _apiClient.get(
         '/api/v1/person-objects/sessions/$sessionUuid',
       );
-      
-      // Restore original base URL
-      _apiClient.dio.options.baseUrl = originalBaseUrl;
 
       if (response.statusCode == 200 && response.data != null) {
         final personObjects = PersonObjectsData.fromJson(response.data);
@@ -239,8 +296,6 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // Use gateway routing instead of direct service discovery
-      final visionServiceUrl = 'http://localhost:8080';
 
       final requestBody = {
         'session_uuid': sessionUuid,
@@ -250,17 +305,11 @@ class PersonObjectsApiClient {
         if (workflowMetadata != null) 'workflow_metadata': workflowMetadata,
       };
 
-      // Temporarily set base URL to Vision service via gateway
-      final originalBaseUrl = _apiClient.dio.options.baseUrl;
-      _apiClient.dio.options.baseUrl = visionServiceUrl;
-      
+      // Use main ApiClient (routes through gateway at 8080)
       final response = await _apiClient.post(
         '/api/v1/person-objects/workflows/start',
         data: requestBody,
       );
-      
-      // Restore original base URL
-      _apiClient.dio.options.baseUrl = originalBaseUrl;
 
       if (response.statusCode == 200 && response.data != null) {
         final personObjects = PersonObjectsData.fromJson(response.data);
@@ -295,19 +344,11 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // Use gateway routing instead of direct service discovery
-      final visionServiceUrl = 'http://localhost:8080';
 
-      // Temporarily set base URL to Vision service via gateway
-      final originalBaseUrl = _apiClient.dio.options.baseUrl;
-      _apiClient.dio.options.baseUrl = visionServiceUrl;
-      
+      // Use main ApiClient (routes through gateway at 8080)
       final response = await _apiClient.get(
         '/api/v1/person-objects/workflows/$workflowId/status',
       );
-      
-      // Restore original base URL
-      _apiClient.dio.options.baseUrl = originalBaseUrl;
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
@@ -338,19 +379,11 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // Use gateway routing instead of direct service discovery
-      final visionServiceUrl = 'http://localhost:8080';
 
-      // Temporarily set base URL to Vision service via gateway
-      final originalBaseUrl = _apiClient.dio.options.baseUrl;
-      _apiClient.dio.options.baseUrl = visionServiceUrl;
-      
+      // Use main ApiClient (routes through gateway at 8080)
       final response = await _apiClient.get(
         '/api/v1/person-objects/sessions/$sessionUuid/statistics',
       );
-      
-      // Restore original base URL
-      _apiClient.dio.options.baseUrl = originalBaseUrl;
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
@@ -691,13 +724,8 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // Use gateway routing instead of direct service discovery
-      final visionServiceUrl = 'http://localhost:8080';
 
-      // Temporarily set base URL to Vision service via gateway
-      final originalBaseUrl = _apiClient.dio.options.baseUrl;
-      _apiClient.dio.options.baseUrl = visionServiceUrl;
-      
+      // Use main ApiClient (routes through gateway at 8080)
       try {
         // Create a face detection session using the correct Vision Service endpoint
         final response = await _apiClient.post(
@@ -735,9 +763,13 @@ class PersonObjectsApiClient {
         );
         return null;
         
-      } finally {
-        // Restore original base URL
-        _apiClient.dio.options.baseUrl = originalBaseUrl;
+      } catch (e) {
+        developer.log(
+          'Failed to create session - error: $e',
+          name: _logName,
+          error: e,
+        );
+        return null;
       }
       
     } catch (e) {
@@ -760,18 +792,11 @@ class PersonObjectsApiClient {
       
       debugPrint('🎯 PPL THREAD: Triggering legacy media workflow for: $mediaUuid');
 
-      // Use gateway routing instead of direct service discovery
-      final visionEndpoint = 'http://localhost:8080';
-      
-      final originalBaseUrl = _apiClient.dio.options.baseUrl;
       
       try {
-        // Set base URL to Vision Service via gateway
-        _apiClient.dio.options.baseUrl = visionEndpoint;
+        debugPrint('🔗 VISION ENDPOINT: Using gateway (http://localhost:8080) for PPL Thread workflow');
         
-        debugPrint('🔗 VISION ENDPOINT: Using $visionEndpoint for PPL Thread workflow');
-        
-        // Call the PPL Thread workflow trigger endpoint
+        // Call the PPL Thread workflow trigger endpoint (routes through gateway)
         final response = await _apiClient.post(
           '/api/v1/person-objects/workflow/trigger',
           data: {
@@ -797,9 +822,9 @@ class PersonObjectsApiClient {
           throw Exception('PPL Thread workflow failed: ${response.statusCode}');
         }
         
-      } finally {
-        // Restore original base URL
-        _apiClient.dio.options.baseUrl = originalBaseUrl;
+      } catch (e) {
+        debugPrint('❌ PPL THREAD ERROR: $e');
+        throw e;
       }
       
     } catch (e) {

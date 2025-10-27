@@ -327,6 +327,10 @@ hello_nuitka.build/
 hello_nuitka.dist/
 hello_nuitka.onefile-build/
 
+# PPL Meta Mini - Autonomous service ignores
+autonomous/ppl-meta-mini/tests/
+autonomous/ppl-meta-mini/docs/
+
 # Legacy directories that shouldn't be tracked
 ppl-meta-legacy/
 ppl_meta_new.bfg-report/

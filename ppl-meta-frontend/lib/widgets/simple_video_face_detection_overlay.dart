@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 import '../services/media_api_client.dart'; // Import for FaceDetection class
+import '../services/orchestrator_api_client.dart'; // Import for Enhanced Logic V2 API
 import '../core/providers/features_provider.dart';
 import '../core/api/api_client.dart';
 import '../providers/face_data_providers.dart'; // Import face data providers
@@ -314,6 +315,18 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     try {
       debugPrint('[DEBUG] OVERLAY INSTANCE #$_instanceId: Checking for stored faces for media ID: $_mediaId');
       
+      // [RACE PROTECTION] Prevent concurrent API calls - this was causing cache contamination!
+      // First video loads correctly with single request, but subsequent videos were making
+      // multiple overlapping requests causing response mixup.
+      if (_isProcessingVideo) {
+        debugPrint('⚠️ [RACE PROTECTION] OVERLAY #$_instanceId: Already processing video faces, skipping duplicate call for $_mediaId');
+        return;
+      }
+      
+      setState(() {
+        _isProcessingVideo = true;
+      });
+      
       // For embedded face detection, skip all API calls - faces are in the video stream
       if (widget.useEmbeddedFaceDetection) {
         debugPrint('[TARGET] Using embedded face detection - skipping API calls');
@@ -347,45 +360,91 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
             setState(() {
               _hasStoredFaces = true;
               _isVideoReady = true;
+              _isProcessingVideo = false;  // Reset flag on cache hit
             });
             _startStoredFacePlayback();
             return;
           }
         } else {
-          debugPrint('🔍 OVERLAY INSTANCE #$_instanceId: GLOBAL CACHE MISS: No face data in global cache, checking providers...');
-        }
-        
-        // Check global face data providers
-        final faceDataState = ref.read(mediaFaceDataProvider(_mediaId!));
-        if (faceDataState.hasData && faceDataState.faces.isNotEmpty) {
-          debugPrint('[TARGET] OVERLAY INSTANCE #$_instanceId: GLOBAL PROVIDER HIT: Found ${faceDataState.faces.length} faces in global provider cache');
-          await _storeCachedFacesInProvider(faceDataState.faces);
-          return;
-        } else {
-          debugPrint('🔍 OVERLAY INSTANCE #$_instanceId: GLOBAL PROVIDER MISS: No face data in global provider, trying Vision API...');
+          debugPrint('🔍 OVERLAY INSTANCE #$_instanceId: GLOBAL CACHE MISS: No face data in global cache for $_mediaId');
+          debugPrint('🔍 OVERLAY INSTANCE #$_instanceId: Calling Enhanced Logic V2 API directly (bypassing Flutter provider cache)...');
         }
       }
       
-      // Try to load face data using Orchestrator-based providers
-      debugPrint('🔍 OVERLAY INSTANCE #$_instanceId: Loading faces via Orchestrator providers...');
+      // Call Enhanced Logic V2 API directly (bypassing problematic provider caching)
+      // The backend has its own caching system, so we don't need Flutter-side caching
+      debugPrint('🔍 OVERLAY INSTANCE #$_instanceId: Loading faces via Enhanced Logic V2 direct API call...');
+      debugPrint('🔍 OVERLAY INSTANCE #$_instanceId: Current _mediaId = $_mediaId');
       
-      // Trigger face loading through provider (wrapped in Future.microtask to avoid lifecycle conflicts)
       Future.microtask(() async {
         try {
-          final notifier = ref.read(mediaFaceDataProvider(_mediaId!).notifier);
-          await notifier.loadFaces();
+          // Capture media ID at the start to prevent race conditions
+          final currentMediaId = _mediaId;
+          if (currentMediaId == null) {
+            debugPrint('⚠️ OVERLAY INSTANCE #$_instanceId: Media ID is null, aborting');
+            return;
+          }
           
-          // Wait a moment for provider to update, then check for the data
-          await Future.delayed(const Duration(milliseconds: 500));
+          debugPrint('🔒 OVERLAY INSTANCE #$_instanceId: Locked media ID for this request: $currentMediaId');
           
-          // Get the loaded face data
-          final faceData = ref.read(mediaFaceDataProvider(_mediaId!));
-          debugPrint('📊 Orchestrator Provider Response: success=${!faceData.hasError}, totalFaces=${faceData.totalCount}');
+          // Get orchestrator API client directly
+          final orchestratorClient = ref.read(orchestratorApiClientProvider);
           
-          if (faceData.hasData && faceData.faces.isNotEmpty) {
-            // Store in global cache and update overlay
-            await _storeCachedFacesInProvider(faceData.faces);
-            debugPrint('✅ OVERLAY INSTANCE #$_instanceId: Successfully processed ${faceData.faces.length} Enhanced Logic V2 faces');
+          debugPrint('📡 OVERLAY INSTANCE #$_instanceId: Calling Enhanced Logic V2 for media $currentMediaId...');
+          final response = await orchestratorClient.getEnhancedLogicV2Response(currentMediaId);
+          
+          // Verify media ID hasn't changed during the API call
+          if (_mediaId != currentMediaId) {
+            debugPrint('⚠️ CRITICAL: Media ID changed during API call! Started with $currentMediaId, now $_mediaId. Aborting.');
+            return;
+          }
+          
+          debugPrint('📊 Enhanced Logic V2 Direct Response for $currentMediaId: success=${response.isSuccess}, totalFaces=${response.data?.totalFaces ?? 0}');
+          
+          if (response.isSuccess && response.data != null) {
+            final enhancedV2Data = response.data!;
+            
+            // DEBUG: Print first face to verify media_id in response
+            if (enhancedV2Data.faces.isNotEmpty) {
+              final firstFace = enhancedV2Data.faces.first;
+              debugPrint('🔍 DEBUG: First face frame=${firstFace.frameNumber}, bbox=${firstFace.bbox}, method=${firstFace.method}');
+            }
+            debugPrint('🔍 DEBUG: Response mediaId from backend: ${response.data?.mediaId ?? "not provided"}');
+            debugPrint('🔍 DEBUG: Expected mediaId: $currentMediaId');
+            
+            // Convert Enhanced Logic V2 faces to FaceDetection objects
+            final List<FaceDetection> faces = enhancedV2Data.faces.map((face) {
+              return FaceDetection(
+                id: 'enhanced_v2_face_${enhancedV2Data.faces.indexOf(face)}',
+                mediaId: currentMediaId,  // Use locked media ID
+                boundingBox: FaceBoundingBox(
+                  left: face.bbox[0],
+                  top: face.bbox[1],
+                  width: face.bbox[2] - face.bbox[0],  // right - left = width
+                  height: face.bbox[3] - face.bbox[1], // bottom - top = height
+                ),
+                confidence: face.confidence,
+                timestamp: DateTime.now(),
+                method: face.method,
+                metadata: {
+                  'frame_number': face.frameNumber,
+                  'original_timestamp': face.timestamp,
+                  'source': 'enhanced_v2',
+                },
+              );
+            }).toList();
+            
+            debugPrint('✅ OVERLAY INSTANCE #$_instanceId: Converted ${faces.length} Enhanced Logic V2 faces for media $currentMediaId');
+            
+            // Final verification before storing
+            if (_mediaId != currentMediaId) {
+              debugPrint('⚠️ CRITICAL: Media ID changed before storing! Expected $currentMediaId, now $_mediaId. Discarding faces.');
+              return;
+            }
+            
+            // Store in memory cache and start playback
+            await _storeCachedFacesInProvider(faces);
+            debugPrint('✅ OVERLAY INSTANCE #$_instanceId: Successfully processed ${faces.length} Enhanced Logic V2 faces for media $currentMediaId');
           } else {
             debugPrint('❌ OVERLAY INSTANCE #$_instanceId: No face data available after Enhanced Logic V2 call');
             // Set video ready even without faces so video can play
@@ -1022,18 +1081,9 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       error: (_, __) => false,
     );
     
-    // Watch for Enhanced Logic V2 data updates
-    if (_mediaId != null) {
-      final faceData = ref.watch(mediaFaceDataProvider(_mediaId!));
-      if (faceData.hasData && faceData.faces.isNotEmpty && _memoryCache.isEmpty && !_isProcessingVideo) {
-        debugPrint('🎯 OVERLAY INSTANCE #$_instanceId: Enhanced Logic V2 data available in provider, loading to overlay...');
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          if (mounted) {
-            await _storeCachedFacesInProvider(faceData.faces);
-          }
-        });
-      }
-    }
+    // [FIX] REMOVED ref.watch() that was triggering automatic provider loading
+    // We now call Enhanced Logic V2 API directly in _checkForStoredFaces() to avoid double API calls
+    // The old code had: ref.watch(mediaFaceDataProvider(_mediaId!)) which auto-triggered loading
     
     debugPrint('🎛️ BUILD: Face detection enabled: $faceDetectionEnabled, widget enabled: ${widget.enabled}');
     debugPrint('🎛️ BUILD: Video ready: $_isVideoReady, processing: $_isProcessingVideo, stored faces: $_hasStoredFaces');

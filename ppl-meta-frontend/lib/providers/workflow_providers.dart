@@ -36,7 +36,7 @@ import 'face_data_providers.dart';
 final workflowApiClientProvider = Provider<WorkflowApiClient>((ref) {
   final apiClient = ref.watch(apiClientProvider);
   return WorkflowApiClient(
-    baseUrl: 'http://localhost:8003', // ppl-meta-vision service
+    baseUrl: 'http://localhost:8080', // Use Gateway - it proxies to correct services
     apiClient: apiClient,
   );
 });

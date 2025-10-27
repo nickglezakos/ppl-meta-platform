@@ -40,11 +40,12 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   void initState() {
     super.initState();
     
-    // Automatically load face data when media loads
-    // Note: Person objects workflow is now auto-triggered by FaceAndPersonCountWidget
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      EnhancedAutoFaceLoader.loadFacesForMedia(ref, widget.mediaItem.uuid);
-    });
+    // [FIX] DISABLED automatic face loading via provider - overlay handles this directly now
+    // The overlay calls Enhanced Logic V2 API directly in _checkForStoredFaces()
+    // Old code was causing duplicate API calls with the overlay's direct call
+    // WidgetsBinding.instance.addPostFrameCallback((_) {
+    //   EnhancedAutoFaceLoader.loadFacesForMedia(ref, widget.mediaItem.uuid);
+    // });
   }
 
   @override

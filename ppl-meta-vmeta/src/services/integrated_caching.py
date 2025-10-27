@@ -68,7 +68,8 @@ class IntegratedCachingService:
         end_time: datetime,
         config: CrossVideoTrackingConfig,
         background: bool = True,
-        force_reprocess: bool = False
+        force_reprocess: bool = False,
+        auth_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Execute cache-aware cross-video individual tracking.
@@ -97,7 +98,8 @@ class IntegratedCachingService:
                 collections=collections,
                 start_time=start_time,
                 end_time=end_time,
-                config=config
+                config=config,
+                auth_token=auth_token
             )
             
             session_uuid = str(session.session_uuid)

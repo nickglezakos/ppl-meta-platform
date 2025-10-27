@@ -213,6 +213,13 @@ def get_faces_by_media_id(
     media_id: str, frame_number: Optional[int] = None
 ) -> List[Dict]:
     """Retrieve face detections for a media file."""
+    global vision_database
+    
+    # Use real database if available
+    if vision_database and vision_database.connection:
+        return vision_database.get_face_detections(media_id, frame_number)
+    
+    # Fallback to in-memory database (for development/testing)
     results = [d for d in face_detections_db if d["media_id"] == media_id]
 
     if frame_number is not None:
@@ -582,11 +589,20 @@ async def process_media(request: MediaProcessingRequest):
 @app.get("/faces/media/{media_id}", summary="Get Faces for Media")
 async def get_media_faces(media_id: str, confidence_threshold: Optional[float] = 0.5):
     """Get all face detections for a specific media file."""
+    print(f"🔍 [VISION ENDPOINT] Received request for media_id: {media_id}")
+    
     faces = get_faces_by_media_id(media_id)
+    
+    print(f"🔍 [VISION ENDPOINT] Query returned {len(faces)} faces")
+    if faces:
+        print(f"🔍 [VISION ENDPOINT] First face media_id: {faces[0].get('media_id')}")
 
     # Filter by confidence if specified
     if confidence_threshold:
         faces = [f for f in faces if f["confidence"] >= confidence_threshold]
+    
+    print(f"🔍 [VISION ENDPOINT] After confidence filter: {len(faces)} faces")
+    print(f"🔍 [VISION ENDPOINT] Returning response with media_id: {media_id}")
 
     return {"media_id": media_id, "total_faces": len(faces), "faces": faces}
 

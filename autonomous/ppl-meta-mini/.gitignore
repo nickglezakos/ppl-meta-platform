@@ -1,0 +1,49 @@
+# PPL Meta Mini - Local .gitignore
+# Excludes tests and docs directories from git tracking
+
+# Test directories and files
+tests/
+test_*.py
+*_test.py
+
+# Documentation
+docs/
+*.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Storage and temporary files
+storage/
+temp/
+*.tmp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archive files
+archive/
+*.tar
+*.tar.gz
+*.zip

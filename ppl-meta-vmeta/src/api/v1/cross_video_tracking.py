@@ -9,7 +9,7 @@ Created: October 20, 2025
 Author: PPL Meta Platform Team
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from uuid import UUID
@@ -55,6 +55,14 @@ except ImportError:
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+# Helper function to extract auth token from request
+def extract_auth_token(request: Request) -> Optional[str]:
+    """Extract Bearer token from Authorization header."""
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        return auth_header[7:]  # Remove 'Bearer ' prefix
+    return None
 
 # Request/Response Models
 class CreateTrackingSessionRequest(BaseModel):
@@ -139,7 +147,8 @@ router = APIRouter(
 
 @router.post("/sessions", response_model=TrackingSessionResponse)
 async def create_tracking_session(
-    request: CreateTrackingSessionRequest,
+    request_body: CreateTrackingSessionRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db_connection = Depends(get_db_connection)
@@ -151,21 +160,25 @@ async def create_tracking_session(
     with intelligent cache utilization.
     """
     try:
+        # Extract auth token from request headers
+        auth_token = extract_auth_token(request)
+        
         # Initialize integrated caching service
         caching_service = IntegratedCachingService(db_connection)
         
         # Use default config if not provided
-        config = request.algorithm_config or CrossVideoTrackingConfig()
+        config = request_body.algorithm_config or CrossVideoTrackingConfig()
         
         # Execute cache-aware tracking
         result = await caching_service.execute_cache_aware_tracking(
             user_id=current_user['user_id'],
-            collections=request.collections,
-            start_time=request.start_time,
-            end_time=request.end_time,
+            collections=request_body.collections,
+            start_time=request_body.start_time,
+            end_time=request_body.end_time,
             config=config,
-            background=request.background_processing,
-            force_reprocess=request.force_reprocess
+            background=request_body.background_processing,
+            force_reprocess=request_body.force_reprocess,
+            auth_token=auth_token  # Pass auth token through
         )
         
         if not result.get('success', True):

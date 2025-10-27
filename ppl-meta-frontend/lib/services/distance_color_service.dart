@@ -15,18 +15,18 @@ class DistanceColorService {
   // =============================================================================
   
   /// Standard PPL Meta distance color scheme
-  /// Based on the technical specification:
-  /// - Red: Very close (< 10m) - CRITICAL proximity
-  /// - Orange: Close (10-20m) - WARNING proximity  
-  /// - Yellow: Medium (20-30m) - CAUTION proximity
-  /// - Green: Far (30-50m) - SAFE distance
-  /// - Blue: Very far (> 50m) - DISTANT
+  /// Green gradient based on distance/size:
+  /// - Dark Green: Very close/large (< 10m) - Largest faces
+  /// - Medium-Dark Green: Close/large (10-20m)
+  /// - Medium Green: Medium distance/size (20-30m)
+  /// - Medium-Light Green: Far/small (30-50m)
+  /// - Light Green: Very far/small (> 50m) - Smallest faces
   static Color getDistanceColor(double distance) {
-    if (distance < 10) return const Color(0xFFE53E3E); // Red
-    if (distance < 20) return const Color(0xFFFF8C00); // Orange
-    if (distance < 30) return const Color(0xFFFFD700); // Yellow  
-    if (distance < 50) return const Color(0xFF38A169); // Green
-    return const Color(0xFF3182CE); // Blue
+    if (distance < 10) return const Color(0xFF1B5E20); // Dark Green (closest/largest)
+    if (distance < 20) return const Color(0xFF2E7D32); // Medium-Dark Green
+    if (distance < 30) return const Color(0xFF388E3C); // Medium Green  
+    if (distance < 50) return const Color(0xFF66BB6A); // Medium-Light Green
+    return const Color(0xFF81C784); // Light Green (farthest/smallest)
   }
   
   /// Get a lighter version of the distance color for backgrounds
@@ -53,20 +53,20 @@ class DistanceColorService {
   
   /// Get human-readable distance description for accessibility
   static String getDistanceDescription(double distance) {
-    if (distance < 10) return 'Very Close';
-    if (distance < 20) return 'Close';
+    if (distance < 10) return 'Very Close (Largest)';
+    if (distance < 20) return 'Close (Large)';
     if (distance < 30) return 'Medium Distance';
-    if (distance < 50) return 'Far';
-    return 'Very Far';
+    if (distance < 50) return 'Far (Small)';
+    return 'Very Far (Smallest)';
   }
   
   /// Get color name for UI display and accessibility
   static String getColorName(double distance) {
-    if (distance < 10) return 'Red';
-    if (distance < 20) return 'Orange';
-    if (distance < 30) return 'Yellow';
-    if (distance < 50) return 'Green';
-    return 'Blue';
+    if (distance < 10) return 'Dark Green';
+    if (distance < 20) return 'Medium-Dark Green';
+    if (distance < 30) return 'Medium Green';
+    if (distance < 50) return 'Medium-Light Green';
+    return 'Light Green';
   }
   
   /// Get priority level for sorting/filtering

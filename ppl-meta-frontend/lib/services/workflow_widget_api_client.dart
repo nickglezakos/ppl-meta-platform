@@ -4,7 +4,6 @@ import '../core/api/api_client.dart';
 import '../core/config/app_config.dart';
 import '../models/workflow_widget_models.dart';
 import '../models/api_response.dart';
-import 'auth_manager.dart';
 
 /// Workflow Widget API client for authenticated widget endpoints
 /// Handles processing status, analytics, and health monitoring for Flutter widgets
@@ -19,10 +18,11 @@ class WorkflowWidgetApiClient {
     required dynamic authManager, // Changed from AuthManager to dynamic
   }) : baseUrl = baseUrl ?? 'http://localhost:8080', // Use gateway URL
         _authManager = authManager {
-    // Use provided ApiClient or create new one
-    _apiClient = apiClient ?? ApiClient(AppConfig.instance);
+    // ALWAYS create our own ApiClient to avoid baseUrl conflicts
+    // Do NOT reuse the shared instance as it causes baseUrl to be overwritten
+    _apiClient = ApiClient(AppConfig.instance);
     
-    // Configure for workflow widget APIs
+    // Configure for workflow widget APIs - safe because this is our own instance
     _apiClient.dio.options.baseUrl = this.baseUrl;
     _apiClient.dio.options.connectTimeout = const Duration(seconds: 30);
     _apiClient.dio.options.receiveTimeout = const Duration(seconds: 60);
@@ -99,6 +99,13 @@ class WorkflowWidgetApiClient {
         message: 'Widget processing status retrieved successfully',
       );
     } on DioException catch (e) {
+      // 404 is expected when endpoint doesn't exist on backend yet - don't log as error
+      if (e.response?.statusCode == 404) {
+        debugPrint('ℹ️ Widget processing status endpoint not available (404) - feature not implemented yet');
+        return ApiResponse<WidgetStatusResponse>.error(
+          'Processing status not available',
+        );
+      }
       debugPrint('❌ Error getting widget processing status: $e');
       return ApiResponse<WidgetStatusResponse>.error(
         _handleDioError(e, 'Failed to get widget processing status'),

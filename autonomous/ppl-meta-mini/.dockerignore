@@ -49,6 +49,7 @@ tests/
 # Documentation
 *.md
 docs/
+docs/
 
 # Git
 .git/

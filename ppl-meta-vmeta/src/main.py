@@ -108,13 +108,13 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytic
 
 # Add cross-video tracking router with error handling
 try:
-    from api.v1.cross_video_tracking import router as cross_video_router
+    from api.v1.cross_video_tracking_simple import router as cross_video_router
     app.include_router(
         cross_video_router,
         prefix="/api/v1/cross-video",
         tags=["cross-video-tracking"]
     )
-    logger.info("✅ Cross-video tracking router added successfully")
+    logger.info("✅ Cross-video tracking router (simple) added successfully")
 except ImportError as e:
     logger.warning(f"⚠️ Cross-video tracking router not available: {e}")
 except Exception as e:
