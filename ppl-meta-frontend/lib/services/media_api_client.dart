@@ -450,11 +450,12 @@ class MediaApiClient {
 
       print('DEBUG: MediaApiClient searchMedia - general search queryParams: $queryParams');
       
-      // Use gateway routing instead of direct service discovery
-      final fullUrl = 'http://localhost:8080/api/v1/media/search';
+      // Use ApiClient.get() to ensure proper authorization headers
+      final response = await _apiClient.get(
+        '/api/v1/media/search',
+        queryParameters: queryParams,
+      );
       
-      print('DEBUG: MediaApiClient searchMedia - using gateway URL: $fullUrl');
-      final response = await _apiClient.dio.get(fullUrl, queryParameters: queryParams);
       print('DEBUG: MediaApiClient searchMedia - response received, status: ${response.statusCode}');
       print('DEBUG: MediaApiClient searchMedia - response data type: ${response.data.runtimeType}');
       print('DEBUG: MediaApiClient searchMedia - response length: ${(response.data as List).length}');
@@ -876,14 +877,8 @@ class MediaApiClient {
 
   /// Helper method to make requests to Gateway service for user-related endpoints
   Future<Map<String, dynamic>> _makeGatewayRequest(String endpoint) async {
-    const gatewayBaseUrl = 'http://localhost:8080';
-    
-    final response = await _apiClient.dio.get(
-      '$gatewayBaseUrl$endpoint',
-      options: Options(
-        headers: _apiClient.dio.options.headers,
-      ),
-    );
+    // Use ApiClient.get() to ensure proper authorization headers
+    final response = await _apiClient.get(endpoint);
     
     return response.data as Map<String, dynamic>;
   }

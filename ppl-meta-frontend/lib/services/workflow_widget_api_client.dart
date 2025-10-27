@@ -85,7 +85,7 @@ class WorkflowWidgetApiClient {
     bool includeProgress = true,
   }) async {
     try {
-      final response = await _apiClient.dio.get(
+      final response = await _apiClient.get(
         '/api/v1/processing-status/$mediaUuid/widget',
         queryParameters: {
           'include_progress': includeProgress,
@@ -123,7 +123,7 @@ class WorkflowWidgetApiClient {
     required String mediaUuid,
   }) async {
     try {
-      final response = await _apiClient.dio.get(
+      final response = await _apiClient.get(
         '/api/v1/processing-status/$mediaUuid/analytics',
       );
 
@@ -153,7 +153,7 @@ class WorkflowWidgetApiClient {
   /// Get system health status for monitoring widgets
   Future<ApiResponse<SystemHealthResponse>> getProcessingSystemHealth() async {
     try {
-      final response = await _apiClient.dio.get(
+      final response = await _apiClient.get(
         '/api/v1/processing-status/health',
       );
 
@@ -185,7 +185,7 @@ class WorkflowWidgetApiClient {
     int limit = 10,
   }) async {
     try {
-      final response = await _apiClient.dio.get(
+      final response = await _apiClient.get(
         '/api/v1/sessions/active/overview',
         queryParameters: {
           'limit': limit,

@@ -11,6 +11,7 @@ import '../widgets/custom_app_bar.dart';
 import '../widgets/collection_organization_widget.dart';
 import '../widgets/collection_picker_dialog.dart';
 import '../widgets/media_details_dialog.dart';
+import '../widgets/collections_search_dialog.dart';
 import '../services/media_organization_service.dart';
 import '../providers/media_organization_providers.dart';
 
@@ -34,6 +35,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   List<MediaItem> _selectedItems = [];
   bool _showOrganizationWidget = false;
   bool _isProcessing = false;
+  
+  // Date/time filtering state
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   @override
   void initState() {
@@ -48,12 +53,25 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
   // Method to build media gallery only when needed
   ResponsiveMediaGallery _buildMediaGallery(ApiClient apiClient) {
+    // Create MediaSearchFilters with date/time range if set
+    MediaSearchFilters? filters;
+    if (_startDate != null || _endDate != null) {
+      filters = MediaSearchFilters(
+        startDate: _startDate,
+        endDate: _endDate,
+        sortBy: 'created_at',
+        sortOrder: 'desc',
+      );
+    }
+    
     if (_mediaGallery == null || 
         _mediaGallery!.collectionId != _selectedCollection!.id ||
-        _mediaGallery!.enableSelection != _isSelectionMode) {
+        _mediaGallery!.enableSelection != _isSelectionMode ||
+        _mediaGallery!.filters != filters) {
       _mediaGallery = ResponsiveMediaGallery(
-        key: ValueKey(_selectedCollection!.id), // Use collection ID as key
+        key: ValueKey('${_selectedCollection!.id}_${_startDate}_${_endDate}'), // Include dates in key
         collectionId: _selectedCollection!.id,
+        filters: filters,
         enableSelection: _isSelectionMode,
         enableInfiniteScroll: true,
         apiClient: apiClient,
@@ -140,6 +158,17 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                     tooltip: 'Exit selection',
                   ),
                 ] else ...[
+                  // Search button
+                  IconButton(
+                    onPressed: _showSearchDialog,
+                    icon: Icon(
+                      _startDate != null || _endDate != null 
+                          ? Icons.filter_alt 
+                          : Icons.search,
+                    ),
+                    tooltip: 'Search by date/time',
+                  ),
+                  
                   // Enter selection mode
                   IconButton(
                     onPressed: _enterSelectionMode,
@@ -452,6 +481,25 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         ],
       ),
     ) ?? false;
+  }
+
+  /// Show search dialog for date/time filtering
+  Future<void> _showSearchDialog() async {
+    await showDialog(
+      context: context,
+      builder: (context) => CollectionsSearchDialog(
+        initialStartDate: _startDate,
+        initialEndDate: _endDate,
+        onApply: (startDate, endDate) {
+          setState(() {
+            _startDate = startDate;
+            _endDate = endDate;
+            // Force rebuild of media gallery with new filters
+            _mediaGallery = null;
+          });
+        },
+      ),
+    );
   }
 
   /// Toggle organization widget visibility
