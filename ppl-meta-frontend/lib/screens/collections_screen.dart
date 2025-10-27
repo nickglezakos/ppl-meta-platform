@@ -13,6 +13,7 @@ import '../widgets/collection_picker_dialog.dart';
 import '../widgets/media_details_dialog.dart';
 import '../widgets/collections_search_dialog.dart';
 import '../services/media_organization_service.dart';
+import '../services/media_api_client.dart';
 import '../providers/media_organization_providers.dart';
 
 /// Collections screen with management and media display
@@ -39,6 +40,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   // Date/time filtering state
   DateTime? _startDate;
   DateTime? _endDate;
+  
+  // Cross-video tracking state
+  int? _individualsCount;
+  bool _isLoadingIndividuals = false;
+  String? _trackingSessionUuid;
 
   @override
   void initState() {
@@ -245,6 +251,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         // Collection header
         _buildCollectionHeader(),
         
+        // Date/Time filter information bar (if filters are active)
+        if (_startDate != null || _endDate != null)
+          _buildFilterInfoBar(),
+        
         // Organization widget (if shown)
         if (_showOrganizationWidget && _selectedItems.isNotEmpty)
           Container(
@@ -374,6 +384,469 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     );
   }
 
+  /// Build filter information bar
+  Widget _buildFilterInfoBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.05),
+        border: const Border(
+          bottom: BorderSide(color: AppColors.border),
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 600;
+          final isMedium = constraints.maxWidth >= 600 && constraints.maxWidth < 900;
+          
+          if (isNarrow) {
+            // Mobile layout: Stack vertically
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.filter_alt,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.xs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (_startDate != null) _buildDateTimeChip('From', _startDate!),
+                          if (_endDate != null) _buildDateTimeChip('To', _endDate!),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _clearFilters,
+                      icon: const Icon(Icons.clear, size: 20),
+                      tooltip: 'Clear filters',
+                      color: AppColors.textSecondary,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    Text(
+                      'Individuals: ',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    if (_isLoadingIndividuals)
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      Text(
+                        _individualsCount?.toString() ?? 'Loading...',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    const SizedBox(width: AppSpacing.xs),
+                    TextButton.icon(
+                      onPressed: _showIndividualsDetails,
+                      icon: const Icon(Icons.info_outline, size: 14),
+                      label: const Text('Details', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.sm,
+                          vertical: AppSpacing.xs,
+                        ),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          } else if (isMedium) {
+            // Tablet layout: Wrap if needed
+            return Row(
+              children: [
+                const Icon(
+                  Icons.filter_alt,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.xs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (_startDate != null) _buildDateTimeChip('From', _startDate!),
+                      if (_endDate != null) _buildDateTimeChip('To', _endDate!),
+                      if (_startDate != null || _endDate != null) ...[
+                        Text(
+                          'Individuals: ',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        if (_isLoadingIndividuals)
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          Text(
+                            _individualsCount?.toString() ?? 'Loading...',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        TextButton.icon(
+                          onPressed: _showIndividualsDetails,
+                          icon: const Icon(Icons.info_outline, size: 16),
+                          label: const Text('Details'),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                              vertical: AppSpacing.xs,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: _clearFilters,
+                  icon: const Icon(Icons.clear, size: 20),
+                  tooltip: 'Clear filters',
+                  color: AppColors.textSecondary,
+                ),
+              ],
+            );
+          } else {
+            // Desktop layout: Single row
+            return Row(
+              children: [
+                const Icon(
+                  Icons.filter_alt,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Row(
+                    children: [
+                      if (_startDate != null) ...[
+                        Text(
+                          'From: ',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          _formatDateTime(_startDate!),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                      if (_startDate != null && _endDate != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                          child: Text(
+                            '•',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      if (_endDate != null) ...[
+                        Text(
+                          'To: ',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        Text(
+                          _formatDateTime(_endDate!),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                      // Individuals filter section
+                      if (_startDate != null || _endDate != null) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                          child: Text(
+                            '•',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'Individuals: ',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        if (_isLoadingIndividuals)
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          Text(
+                            _individualsCount?.toString() ?? 'Loading...',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        const SizedBox(width: AppSpacing.sm),
+                        TextButton.icon(
+                          onPressed: _showIndividualsDetails,
+                          icon: const Icon(Icons.info_outline, size: 16),
+                          label: const Text('Details'),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                              vertical: AppSpacing.xs,
+                            ),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                // Clear filters button
+                IconButton(
+                  onPressed: _clearFilters,
+                  icon: const Icon(Icons.clear, size: 20),
+                  tooltip: 'Clear filters',
+                  color: AppColors.textSecondary,
+                ),
+              ],
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  /// Build date/time chip for compact display
+  Widget _buildDateTimeChip(String label, DateTime dateTime) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(
+          color: AppColors.primary.withOpacity(0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: AppTextStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          Text(
+            _formatDateTime(dateTime),
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Clear all filters
+  void _clearFilters() {
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _mediaGallery = null; // Force rebuild
+    });
+  }
+
+  /// Format date/time for display
+  String _formatDateTime(DateTime dateTime) {
+    return '${dateTime.month}/${dateTime.day}/${dateTime.year} '
+           '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Show individuals filter details dialog
+  Future<void> _showIndividualsDetails() async {
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Individuals Filter'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Currently showing media for:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            if (_individualsCount != null)
+              Text('• ${ _individualsCount} unique individual${_individualsCount == 1 ? '' : 's'} detected across videos'),
+            if (_individualsCount == null)
+              const Text('• Loading individual count...'),
+            const SizedBox(height: 8),
+            Text('• Time range: ${_formatDateTime(_startDate!)} to ${_formatDateTime(_endDate!)}'),
+            const SizedBox(height: 8),
+            Text('• Collection: ${_selectedCollection!.name}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Fetch individuals count from cross-video tracking
+  Future<void> _fetchIndividualsCount() async {
+    if (_startDate == null || _endDate == null || _selectedCollection == null) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingIndividuals = true;
+      _individualsCount = null;
+    });
+
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final mediaApiClient = MediaApiClient(apiClient);
+
+      // Create cross-video tracking session
+      // Use cameraDeviceId if available (for camera-linked collections),
+      // otherwise use UUID, then fallback to id
+      final collectionIdentifier = _selectedCollection!.cameraDeviceId ?? 
+                                   _selectedCollection!.uuid ?? 
+                                   _selectedCollection!.id;
+      
+      final createResponse = await mediaApiClient.createCrossVideoTrackingSession(
+        collectionName: collectionIdentifier,
+        startTime: _startDate!,
+        endTime: _endDate!,
+      );
+
+      if (createResponse.success && createResponse.data != null) {
+        final sessionUuid = createResponse.data!['session_uuid'] as String;
+        _trackingSessionUuid = sessionUuid;
+
+        // Poll for session completion
+        await _pollTrackingSessionStatus(mediaApiClient, sessionUuid);
+      } else {
+        print('ERROR: Failed to create tracking session: ${createResponse.error}');
+        setState(() {
+          _individualsCount = 0;
+          _isLoadingIndividuals = false;
+        });
+      }
+    } catch (e) {
+      print('ERROR: Exception fetching individuals count: $e');
+      setState(() {
+        _individualsCount = 0;
+        _isLoadingIndividuals = false;
+      });
+    }
+  }
+
+  /// Poll tracking session status until completed
+  Future<void> _pollTrackingSessionStatus(MediaApiClient apiClient, String sessionUuid) async {
+    int attempts = 0;
+    const maxAttempts = 30; // 30 seconds max
+    const pollInterval = Duration(seconds: 1);
+
+    while (attempts < maxAttempts) {
+      try {
+        final statusResponse = await apiClient.getCrossVideoTrackingSessionStatus(
+          sessionUuid: sessionUuid,
+        );
+
+        if (statusResponse.success && statusResponse.data != null) {
+          final status = statusResponse.data!['status'] as String;
+          
+          if (status == 'completed') {
+            final individualsFound = statusResponse.data!['individuals_found'] as int? ?? 0;
+            setState(() {
+              _individualsCount = individualsFound;
+              _isLoadingIndividuals = false;
+            });
+            return;
+          } else if (status == 'failed') {
+            print('ERROR: Tracking session failed');
+            setState(() {
+              _individualsCount = 0;
+              _isLoadingIndividuals = false;
+            });
+            return;
+          }
+        }
+
+        await Future.delayed(pollInterval);
+        attempts++;
+      } catch (e) {
+        print('ERROR: Exception polling tracking session: $e');
+        break;
+      }
+    }
+
+    // Timeout
+    print('WARNING: Tracking session polling timed out');
+    setState(() {
+      _individualsCount = 0;
+      _isLoadingIndividuals = false;
+    });
+  }
+
   /// Enter selection mode
   void _enterSelectionMode() {
     setState(() {
@@ -484,6 +957,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   }
 
   /// Show search dialog for date/time filtering
+  /// Show search dialog for date/time filtering
   Future<void> _showSearchDialog() async {
     await showDialog(
       context: context,
@@ -497,6 +971,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             // Force rebuild of media gallery with new filters
             _mediaGallery = null;
           });
+          
+          // Fetch individuals count from vmeta service
+          _fetchIndividualsCount();
         },
       ),
     );

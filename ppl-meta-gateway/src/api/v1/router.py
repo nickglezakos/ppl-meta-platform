@@ -89,6 +89,7 @@ SERVICES = {
     "orchestrator": "http://localhost:8002",
     "vision": "http://localhost:8003",
     "cameras": "http://localhost:8005",
+    "vmeta": "http://localhost:8008",
 }
 
 # Add validation support
@@ -1400,3 +1401,78 @@ async def trigger_ppl_thread_workflow(request: Request):
 async def get_person_objects_for_media(request: Request):
     """Proxy get person objects data to Orchestrator service."""
     return await _proxy_to_orchestrator_service(request)
+
+
+# vmeta Service Helper Function
+async def _proxy_to_vmeta_service(request: Request) -> Response:
+    """Helper function to proxy requests to the vmeta service."""
+    try:
+        # Get the original path and method
+        path = str(request.url.path)
+        method = request.method
+
+        # Construct the target URL
+        target_url = f"{SERVICES['vmeta']}{path}"
+
+        # Get request body if present
+        body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
+            body = await request.body()
+
+        # Get headers (exclude host to avoid conflicts)
+        headers = dict(request.headers)
+        headers.pop("host", None)
+
+        # Make the proxy request
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.request(
+                method=method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                params=dict(request.query_params),
+            )
+
+            # Return the response
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get(
+                    "content-type", "application/json"
+                ),
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"vmeta service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal vmeta proxy error: {str(e)}"
+        )
+
+
+# vmeta Service Routes - Cross-Video Individual Tracking
+@api_router.post("/cross-video/individuals/tracking/sessions")
+async def create_cross_video_tracking_session(request: Request):
+    """Proxy cross-video tracking session creation to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/cross-video/individuals/tracking/sessions/{session_uuid}")
+async def get_cross_video_tracking_session_status(request: Request):
+    """Proxy cross-video tracking session status to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/cross-video/individuals/tracking/sessions/{session_uuid}/results")
+async def get_cross_video_tracking_session_results(request: Request):
+    """Proxy cross-video tracking session results to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.delete("/cross-video/individuals/tracking/sessions/{session_uuid}")
+async def cancel_cross_video_tracking_session(request: Request):
+    """Proxy cross-video tracking session cancellation to vmeta service."""
+    return await _proxy_to_vmeta_service(request)

@@ -61,7 +61,7 @@ class CrossVideoTrackingConfig(BaseModel):
     """
     
     # Configuration metadata
-    config_name: str = Field(description="Configuration name identifier")
+    config_name: str = Field(default="default", description="Configuration name identifier")
     description: Optional[str] = Field(default=None, description="Configuration description")
     is_default: bool = Field(default=False, description="Whether this is the default configuration")
     

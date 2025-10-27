@@ -414,7 +414,7 @@ class SessionManager:
                         if all_videos else 0
                     )
                 },
-                'algorithm_config': session.algorithm_config.dict(),
+                'algorithm_config': session.algorithm_config.model_dump() if hasattr(session.algorithm_config, 'model_dump') else session.algorithm_config.dict(),
                 'created_at': datetime.utcnow().isoformat()
             }
             
@@ -607,7 +607,7 @@ class SessionManager:
                 session.start_time,
                 session.end_time,
                 session.config_hash,
-                json.dumps(session.algorithm_config.dict()),
+                json.dumps(session.algorithm_config.model_dump() if hasattr(session.algorithm_config, 'model_dump') else session.algorithm_config.dict()),
                 session.status.value,
                 session.total_videos,
                 session.cache_hits,

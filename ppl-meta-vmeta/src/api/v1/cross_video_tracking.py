@@ -169,6 +169,11 @@ async def create_tracking_session(
         # Use default config if not provided
         config = request_body.algorithm_config or CrossVideoTrackingConfig()
         
+        # DEBUG: Log the config
+        logger.info(f"DEBUG: Config object: {config}")
+        logger.info(f"DEBUG: Config dict: {config.dict() if hasattr(config, 'dict') else 'NO DICT'}")
+        logger.info(f"DEBUG: Config model_dump: {config.model_dump() if hasattr(config, 'model_dump') else 'NO MODEL_DUMP'}")
+        
         # Execute cache-aware tracking
         result = await caching_service.execute_cache_aware_tracking(
             user_id=current_user['user_id'],

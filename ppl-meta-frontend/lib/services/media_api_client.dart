@@ -882,6 +882,63 @@ class MediaApiClient {
     
     return response.data as Map<String, dynamic>;
   }
+
+  /// Create cross-video individual tracking session with vmeta service
+  Future<ApiResponse<Map<String, dynamic>>> createCrossVideoTrackingSession({
+    required String collectionName,
+    required DateTime startTime,
+    required DateTime endTime,
+  }) async {
+    try {
+      final requestBody = {
+        'collections': [collectionName],
+        'start_time': startTime.toIso8601String(),
+        'end_time': endTime.toIso8601String(),
+        'background_processing': true,
+        'algorithm_config': {
+          'max_gap_seconds': 10,
+          'iou_threshold': 0.3,
+          'min_overlap_confidence': 0.5,
+        },
+      };
+
+      print('DEBUG: Creating cross-video tracking session with: $requestBody');
+      
+      final response = await _apiClient.post(
+        '/api/v1/cross-video/individuals/tracking/sessions',
+        data: requestBody,
+      );
+
+      print('DEBUG: Cross-video tracking session created: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      print('ERROR: Failed to create tracking session: ${e.response?.data}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('ERROR: Unexpected error creating tracking session: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get cross-video tracking session status
+  Future<ApiResponse<Map<String, dynamic>>> getCrossVideoTrackingSessionStatus({
+    required String sessionUuid,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/cross-video/individuals/tracking/sessions/$sessionUuid',
+      );
+
+      print('DEBUG: Tracking session status: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
 }
 
 /// Single frame face detection result model for real-time detection
