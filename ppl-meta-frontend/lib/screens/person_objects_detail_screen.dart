@@ -32,7 +32,7 @@ class _PersonObjectsDetailScreenState
   
   late TabController _tabController;
   final Set<String> _debuggedFaces = {}; // Cache for debug output
-  String _routesDisplayMode = 'path'; // 'path' or 'scatter'
+  String _routesDisplayMode = 'scatter'; // 'path' or 'scatter' - default to scatter
   
   // Cache for routes data to prevent excessive API calls
   Map<String, dynamic>? _cachedRoutesData;
@@ -1501,7 +1501,10 @@ class _PersonObjectsDetailScreenState
             }
 
             final routesData = snapshot.data;
-            if (routesData == null || routesData['person_groups'] == null) {
+            // Check for both 'group_tracking' (new API) and 'person_groups' (legacy)
+            final personGroupsData = routesData?['group_tracking'] ?? routesData?['person_groups'];
+            
+            if (routesData == null || personGroupsData == null || (personGroupsData as List).isEmpty) {
               return const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1514,7 +1517,7 @@ class _PersonObjectsDetailScreenState
               );
             }
 
-            final personGroups = routesData['person_groups'] as List<dynamic>;
+            final personGroups = personGroupsData as List<dynamic>;
             
             return SingleChildScrollView(
               child: Column(
@@ -1796,27 +1799,41 @@ class _PersonObjectsDetailScreenState
     _isLoadingRoutes = true;
     
     try {
-      // Use PersonObjectsApiClient to get raw Orchestrator response
-      final personObjectsClient = ref.read(personObjectsApiClientProvider);
-      
-      // Call the PersonObjects endpoint via Orchestrator (port 8002)
-      print('🔍 Routes DEBUG: Fetching routes data for media: ${widget.mediaItem.uuid}');
-      
-      // Make direct request to orchestrator to get route data in expected format
-      // The getPersonObjectsForMedia returns PersonObjectsData which doesn't have route data
-      // So we need to make a raw request to get the full response
+      // Get authenticated API client
       final apiClient = ref.read(apiClientProvider);
-      final response = await personObjectsClient.getPersonObjectsForMedia(widget.mediaItem.uuid);
       
-      if (response != null && response.success) {
-        // For now, return null since the model doesn't support routes
-        // The orchestrator endpoint needs to return route data in the response
-        print('✅ Routes DEBUG: Got person objects data, but route data not yet available in model');
-        return null;
-      } else {
-        print('❌ Routes DEBUG: No person objects data returned');
-        return null;
+      print('🔍 Routes DEBUG: Fetching person objects data for media: ${widget.mediaItem.uuid}');
+      
+      // Use the Orchestrator endpoint via Gateway (add /api/v1 prefix manually)
+      final personObjectsResponse = await apiClient.get(
+        '/api/v1/orchestrator/person-objects/${widget.mediaItem.uuid}',
+      );
+      
+      if (personObjectsResponse.statusCode == 200 && personObjectsResponse.data != null) {
+        final data = personObjectsResponse.data as Map<String, dynamic>;
+        
+        // Check if person objects exist
+        final success = data['success'] as bool? ?? false;
+        final status = data['status'] as String? ?? '';
+        
+        if (success && status == 'completed') {
+          print('✅ Routes DEBUG: Person objects found with route data!');
+          
+          // The Orchestrator response already contains all the data we need
+          // including person_groups with movement_tracking and route_points
+          print('✅ Routes DEBUG: Successfully fetched person objects data from Orchestrator');
+          
+          // Cache the response
+          _cachedRoutesData = data;
+          
+          return data;
+        } else {
+          print('ℹ️ Routes DEBUG: Person objects not processed yet - status: $status');
+        }
       }
+      
+      print('❌ Routes DEBUG: Could not find person objects data');
+      return null;
     } catch (e) {
       print('❌ Routes DEBUG: Error fetching routes data: $e');
       return null; // Return null instead of throwing to prevent UI crashes
