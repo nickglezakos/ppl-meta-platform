@@ -939,6 +939,53 @@ class MediaApiClient {
       return ApiResponse.error('Unexpected error: $e');
     }
   }
+
+  /// Get individuals from cross-video tracking session (Phase 5)
+  Future<ApiResponse<Map<String, dynamic>>> getCrossVideoIndividuals({
+    required String sessionUuid,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/cross-video/individuals/tracking/sessions/$sessionUuid/individuals',
+      );
+
+      print('DEBUG: Cross-video individuals: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get aggregated individual analysis from vmeta backend (Phase 6)
+  /// 
+  /// This endpoint returns complete analysis data for an individual including:
+  /// - All video appearances across multiple videos
+  /// - Temporal analysis (first seen, last seen, duration)
+  /// - Aggregated confidence scores
+  /// - Person object UUIDs for each appearance
+  /// 
+  /// Note: Requires session_uuid as query parameter to filter appearances by session
+  Future<ApiResponse<Map<String, dynamic>>> getIndividualAggregatedAnalysis({
+    required String individualUuid,
+    required String sessionUuid,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/cross-video/individuals/tracking/individuals/$individualUuid/aggregated-analysis?session_uuid=$sessionUuid',
+      );
+
+      print('DEBUG: Aggregated individual analysis: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
 }
 
 /// Single frame face detection result model for real-time detection

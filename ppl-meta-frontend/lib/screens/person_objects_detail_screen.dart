@@ -7,19 +7,34 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../models/person_objects_models.dart';
+import '../models/cross_video_analysis_models.dart';
 import '../providers/person_objects_provider.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/media_models.dart';
 import '../core/api/api_client.dart';
+import '../services/media_api_client.dart';
 
 /// Detailed screen for viewing person objects results and analysis
+/// 
+/// Supports two modes:
+/// 1. Single-video mode: Displays analysis for one video (mediaItem)
+/// 2. Cross-video mode: Displays aggregated analysis across multiple videos (crossVideoContext)
 class PersonObjectsDetailScreen extends ConsumerStatefulWidget {
-  final MediaItem mediaItem;
+  // Single-video mode
+  final MediaItem? mediaItem;
+  
+  // Cross-video mode
+  final CrossVideoAnalysisContext? crossVideoContext;
 
   const PersonObjectsDetailScreen({
     super.key,
-    required this.mediaItem,
-  });
+    this.mediaItem,
+    this.crossVideoContext,
+  }) : assert(
+    (mediaItem != null && crossVideoContext == null) ||
+    (mediaItem == null && crossVideoContext != null),
+    'Either mediaItem or crossVideoContext must be provided, but not both',
+  );
 
   @override
   ConsumerState<PersonObjectsDetailScreen> createState() => 
@@ -37,11 +52,26 @@ class _PersonObjectsDetailScreenState
   // Cache for routes data to prevent excessive API calls
   Map<String, dynamic>? _cachedRoutesData;
   bool _isLoadingRoutes = false;
+  
+  // Cross-video analysis state
+  bool _isCrossVideoMode = false;
+  List<AggregatedIndividualAnalysis>? _aggregatedAnalyses;
+  bool _isLoadingCrossVideoData = false;
+  String? _crossVideoError;
 
   @override
   void initState() {
     super.initState();
+    
+    // Determine mode
+    _isCrossVideoMode = widget.crossVideoContext != null;
+    
     _tabController = TabController(length: 4, vsync: this);
+    
+    // Load cross-video data if in that mode
+    if (_isCrossVideoMode) {
+      _loadCrossVideoData();
+    }
   }
 
   @override
@@ -54,61 +84,181 @@ class _PersonObjectsDetailScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'Person Objects Analysis',
+        title: _isCrossVideoMode 
+            ? 'Cross-Video Individual Analysis' 
+            : 'Person Objects Analysis',
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh Analysis',
-            onPressed: () => _refreshAnalysis(),
+            onPressed: () => _isCrossVideoMode 
+                ? _loadCrossVideoData() 
+                : _refreshAnalysis(),
           ),
-          IconButton(
-            icon: const Icon(Icons.play_arrow),
-            tooltip: 'Trigger New Analysis',
-            onPressed: () => _triggerNewAnalysis(),
-          ),
+          if (!_isCrossVideoMode)
+            IconButton(
+              icon: const Icon(Icons.play_arrow),
+              tooltip: 'Trigger New Analysis',
+              onPressed: () => _triggerNewAnalysis(),
+            ),
         ],
       ),
-      body: Column(
-        children: [
-          TabBar(
+      body: _isCrossVideoMode 
+          ? _buildCrossVideoView() 
+          : _buildSingleVideoView(),
+    );
+  }
+
+  /// Build single-video analysis view (existing functionality)
+  Widget _buildSingleVideoView() {
+    return Column(
+      children: [
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.groups),
+              text: 'Persons',
+            ),
+            Tab(
+              icon: Icon(Icons.route),
+              text: 'Routes',
+            ),
+            Tab(
+              icon: Icon(Icons.analytics),
+              text: 'Overview',
+            ),
+            Tab(
+              icon: Icon(Icons.face),
+              text: 'Face Details',
+            ),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
             controller: _tabController,
-            tabs: const [
-              Tab(
-                icon: Icon(Icons.groups),
-                text: 'Persons',
-              ),
-              Tab(
-                icon: Icon(Icons.route),
-                text: 'Routes',
-              ),
-              Tab(
-                icon: Icon(Icons.analytics),
-                text: 'Overview',
-              ),
-              Tab(
-                icon: Icon(Icons.face),
-                text: 'Face Details',
-              ),
+            children: [
+              _buildPersonGroupsTab(),
+              _buildRoutesTab(),
+              _buildOverviewTab(),
+              _buildFaceDetailsTab(),
             ],
           ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPersonGroupsTab(),
-                _buildRoutesTab(),
-                _buildOverviewTab(),
-                _buildFaceDetailsTab(),
-              ],
+        ),
+      ],
+    );
+  }
+
+  /// Build cross-video analysis view
+  Widget _buildCrossVideoView() {
+    if (_isLoadingCrossVideoData) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Loading cross-video analysis data...'),
+            SizedBox(height: 8),
+            Text(
+              'Fetching person objects from multiple videos',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
+          ],
+        ),
+      );
+    }
+    
+    if (_crossVideoError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(_crossVideoError!),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _loadCrossVideoData,
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return const Center(
+        child: Text('No individual data available'),
+      );
+    }
+    
+    // Use EXACT SAME TABS as single-video mode
+    return Column(
+      children: [
+        _buildCrossVideoHeader(),
+        TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(
+              icon: Icon(Icons.groups),
+              text: 'Individuals',
+            ),
+            Tab(
+              icon: Icon(Icons.route),
+              text: 'Routes',
+            ),
+            Tab(
+              icon: Icon(Icons.analytics),
+              text: 'Statistics',
+            ),
+            Tab(
+              icon: Icon(Icons.face),
+              text: 'Best Faces',
+            ),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildIndividualsTabCrossVideo(),
+              _buildRoutesTabCrossVideo(),
+              _buildStatisticsTabCrossVideo(),
+              _buildFacesTabCrossVideo(),
+            ],
           ),
+        ),
+      ],
+    );
+  }
+
+  /// Build cross-video header with session info
+  Widget _buildCrossVideoHeader() {
+    final context = widget.crossVideoContext!;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Colors.blue.shade50,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Cross-Video Analysis',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text('Session: ${context.sessionUuid.substring(0, 8)}...'),
+          Text('Individuals: ${_aggregatedAnalyses?.length ?? 0}'),
+          Text('Total Videos: ${context.totalVideos}'),
+          if (context.collections.isNotEmpty)
+            Text('Collections: ${context.collections.join(", ")}'),
         ],
       ),
     );
   }
 
   Widget _buildOverviewTab() {
-    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem.uuid));
+    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem!.uuid));
     final workflowState = ref.watch(personObjectsWorkflowControllerProvider);
 
     return SingleChildScrollView(
@@ -177,7 +327,7 @@ class _PersonObjectsDetailScreenState
   }
 
   Widget _buildPersonGroupsTab() {
-    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem.uuid));
+    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem!.uuid));
 
     return dataAsync.when(
       data: (data) {
@@ -781,7 +931,7 @@ class _PersonObjectsDetailScreenState
   }
 
   Widget _buildFaceDetailsTab() {
-    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem.uuid));
+    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem!.uuid));
 
     return dataAsync.when(
       data: (data) {
@@ -1026,14 +1176,14 @@ class _PersonObjectsDetailScreenState
   }
 
   void _refreshAnalysis() {
-    ref.invalidate(personObjectsDataProvider(widget.mediaItem.uuid));
+    ref.invalidate(personObjectsDataProvider(widget.mediaItem!.uuid));
     ref.invalidate(personObjectsWorkflowControllerProvider);
   }
 
   void _triggerNewAnalysis() async {
     try {
       final controller = ref.read(personObjectsWorkflowControllerProvider.notifier);
-      await controller.autoTriggerWorkflow(widget.mediaItem.uuid);
+      await controller.autoTriggerWorkflow(widget.mediaItem!.uuid);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1052,6 +1202,70 @@ class _PersonObjectsDetailScreenState
           ),
         );
       }
+    }
+  }
+
+  /// Load cross-video analysis data from backend
+  Future<void> _loadCrossVideoData() async {
+    if (!_isCrossVideoMode || widget.crossVideoContext == null) return;
+    
+    setState(() {
+      _isLoadingCrossVideoData = true;
+      _crossVideoError = null;
+    });
+    
+    try {
+      final context = widget.crossVideoContext!;
+      final apiClient = ref.read(apiClientProvider);
+      final mediaApiClient = MediaApiClient(apiClient);
+      
+      final aggregatedAnalyses = <AggregatedIndividualAnalysis>[];
+      
+      // For each individual UUID, call the backend endpoint
+      // Backend does ALL the heavy lifting:
+      // - Fetches appearances from database
+      // - Calls Orchestrator for person objects
+      // - Selects best quality
+      // - Aggregates routes chronologically
+      for (final individualUuid in context.individualUuids) {
+        final response = await mediaApiClient.getIndividualAggregatedAnalysis(
+          individualUuid: individualUuid,
+          sessionUuid: context.sessionUuid,
+        );
+        
+        if (response.success && response.data != null) {
+          // Parse response into model
+          final analysis = AggregatedIndividualAnalysis.fromJson(
+            response.data as Map<String, dynamic>
+          );
+          aggregatedAnalyses.add(analysis);
+        } else {
+          print('Failed to fetch analysis for individual $individualUuid: ${response.error}');
+          // Continue with other individuals even if one fails
+        }
+      }
+      
+      if (aggregatedAnalyses.isEmpty) {
+        setState(() {
+          _crossVideoError = 'No individual data could be loaded';
+          _isLoadingCrossVideoData = false;
+        });
+        return;
+      }
+      
+      setState(() {
+        _aggregatedAnalyses = aggregatedAnalyses;
+        _isLoadingCrossVideoData = false;
+      });
+      
+      print('✅ Loaded cross-video data for ${aggregatedAnalyses.length} individuals');
+      
+    } catch (e) {
+      setState(() {
+        _crossVideoError = 'Failed to load cross-video data: $e';
+        _isLoadingCrossVideoData = false;
+      });
+      print('❌ Error loading cross-video data: $e');
     }
   }
 
@@ -1124,7 +1338,7 @@ class _PersonObjectsDetailScreenState
       if (bbox == null || bbox.length < 4) {
         if (shouldDebug) print('Warning: bbox is null or invalid, falling back to full frame image');
         // Fallback to showing the full frame image
-        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
         final apiClient = ref.read(apiClientProvider);
         return Image.network(
           frameUrl,
@@ -1175,7 +1389,7 @@ class _PersonObjectsDetailScreenState
       // Validate expanded bounding box dimensions
       if (expandedWidth <= 0 || expandedHeight <= 0) {
         print('Warning: Invalid expanded bbox dimensions (width: $expandedWidth, height: $expandedHeight), using fallback');
-        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
         final apiClient = ref.read(apiClientProvider);
         return Image.network(
           frameUrl,
@@ -1194,7 +1408,7 @@ class _PersonObjectsDetailScreenState
       }
       
       // Get the full frame image first
-      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
       
       // For now, return the full frame and crop it in Flutter since backend doesn't support cropping
       // TODO: When backend supports crop parameters, use: frameUrl + '&crop=$x,$y,$width,$height'
@@ -1290,7 +1504,7 @@ class _PersonObjectsDetailScreenState
   /// Build frame image widget using the frame extraction API
   Future<Widget> _buildFrameImage(int frameNumber) async {
     try {
-      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/$frameNumber?format=jpeg';
+      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
       final apiClient = ref.read(apiClientProvider);
       
       return Image.network(
@@ -1452,7 +1666,7 @@ class _PersonObjectsDetailScreenState
   }
 
   Widget _buildRoutesTab() {
-    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem.uuid));
+    final dataAsync = ref.watch(personObjectsDataProvider(widget.mediaItem!.uuid));
 
     return dataAsync.when(
       data: (data) {
@@ -1802,11 +2016,11 @@ class _PersonObjectsDetailScreenState
       // Get authenticated API client
       final apiClient = ref.read(apiClientProvider);
       
-      print('🔍 Routes DEBUG: Fetching person objects data for media: ${widget.mediaItem.uuid}');
+      print('🔍 Routes DEBUG: Fetching person objects data for media: ${widget.mediaItem!.uuid}');
       
       // Use the Orchestrator endpoint via Gateway (add /api/v1 prefix manually)
       final personObjectsResponse = await apiClient.get(
-        '/api/v1/orchestrator/person-objects/${widget.mediaItem.uuid}',
+        '/api/v1/orchestrator/person-objects/${widget.mediaItem!.uuid}',
       );
       
       if (personObjectsResponse.statusCode == 200 && personObjectsResponse.data != null) {
@@ -1844,10 +2058,10 @@ class _PersonObjectsDetailScreenState
 
   Future<Size?> _getFrameDimensions() async {
     try {
-      print('🖼️ Frame Dimensions DEBUG: Getting dimensions for media: ${widget.mediaItem.uuid}');
+      print('🖼️ Frame Dimensions DEBUG: Getting dimensions for media: ${widget.mediaItem!.uuid}');
       
       // Try method 1: Load frame using HTTP image provider
-      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem.uuid}/frame/0?format=jpeg';
+      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/0?format=jpeg';
       final apiClient = ref.read(apiClientProvider);
       
       // Create headers for authenticated request
@@ -1878,8 +2092,8 @@ class _PersonObjectsDetailScreenState
       }
       
       // Method 2: Fallback to media metadata if available
-      if (widget.mediaItem.metadata != null) {
-        final metadata = widget.mediaItem.metadata!;
+      if (widget.mediaItem!.metadata != null) {
+        final metadata = widget.mediaItem!.metadata!;
         if (metadata['width'] != null && metadata['height'] != null) {
           final size = Size(
             (metadata['width'] as num).toDouble(),
@@ -2898,4 +3112,834 @@ class TopViewRoutesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// ============================================================
+// CROSS-VIDEO TAB METHODS
+// ============================================================
+
+/// Extension on PersonObjectsDetailScreenState for cross-video tabs
+extension CrossVideoTabs on _PersonObjectsDetailScreenState {
+  /// Build Individuals tab for cross-video mode
+  Widget _buildIndividualsTabCrossVideo() {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return const Center(
+        child: Text('No individuals available'),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _aggregatedAnalyses!.length,
+      itemBuilder: (context, index) {
+        final analysis = _aggregatedAnalyses![index];
+        return _buildIndividualCard(analysis, index);
+      },
+    );
+  }
+
+  /// Build individual card showing aggregated data
+  Widget _buildIndividualCard(AggregatedIndividualAnalysis analysis, int index) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Individual icon (placeholder for face)
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.person,
+                    size: 40,
+                    color: Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Individual info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Individual ${analysis.individualId}',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'UUID: ${analysis.individualUuid.substring(0, 8)}...',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildStatChip('Appearances', '${analysis.totalAppearances}'),
+                      const SizedBox(height: 4),
+                      _buildStatChip('Videos', '${analysis.uniqueVideos}'),
+                      const SizedBox(height: 4),
+                      _buildStatChip('Confidence', '${(analysis.averageConfidence * 100).toStringAsFixed(0)}%'),
+                      const SizedBox(height: 4),
+                      _buildStatChip('Duration', analysis.formattedDuration),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatChip(String label, String value) {
+    return Row(
+      children: [
+        Text(
+          '$label: ',
+          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQualityMetric(String label, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, size: 20, color: Colors.blue),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        Text(
+          label,
+          style: TextStyle(color: Colors.grey[600], fontSize: 10),
+        ),
+      ],
+    );
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds < 60) return '${seconds}s';
+    if (seconds < 3600) return '${(seconds / 60).toStringAsFixed(1)}m';
+    return '${(seconds / 3600).toStringAsFixed(1)}h';
+  }
+
+  /// Build Routes tab for cross-video mode
+  Widget _buildRoutesTabCrossVideo() {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return const Center(child: Text('No appearance data available'));
+    }
+
+    // Use FutureBuilder to fetch route data from all videos
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchCrossVideoRoutesData(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Loading route data from videos...'),
+              ],
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error loading routes: ${snapshot.error}'),
+              ],
+            ),
+          );
+        }
+
+        final personGroups = snapshot.data;
+        if (personGroups == null || personGroups.isEmpty) {
+          return const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.route_outlined, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text('No route data available'),
+                SizedBox(height: 8),
+                Text(
+                  'Route data could not be loaded from videos',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        print('🚦 CROSS-VIDEO ROUTES: Successfully loaded ${personGroups.length} person groups with route data');
+
+        // Now use the SAME visualization as single-video mode
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              // Routes visualization header
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.route, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Cross-Video Movement Routes',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            'Unified routes from ${personGroups.length} individual(s) across multiple videos',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Display mode toggle
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.visibility, size: 16, color: Colors.grey),
+                          const SizedBox(width: 4),
+                          DropdownButton<String>(
+                            value: _routesDisplayMode,
+                            isDense: true,
+                            underline: Container(),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'path',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.timeline, size: 16),
+                                    SizedBox(width: 4),
+                                    Text('Path'),
+                                  ],
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: 'scatter',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.scatter_plot, size: 16),
+                                    SizedBox(width: 4),
+                                    Text('Scatter'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            onChanged: (String? newValue) {
+                              if (newValue != null) {
+                                setState(() {
+                                  _routesDisplayMode = newValue;
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Routes canvas
+              const SizedBox(height: 8),
+              _buildCrossVideoRoutesCanvas(personGroups),
+              
+              // Legend
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: _buildRoutesLegend(personGroups),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCrossVideoRoutesCanvas(List<Map<String, dynamic>> personGroups) {
+    // Use standard video dimensions for cross-video routes
+    const frameDimensions = Size(1920, 1080);
+    
+    return Column(
+      children: [
+        // ROW 1: Camera View
+        Container(
+          height: frameDimensions.height + 56,
+          child: Column(
+            children: [
+              // Camera view header
+              Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.videocam, size: 16, color: Colors.blue),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Unified Camera View (${frameDimensions.width.toInt()}×${frameDimensions.height.toInt()}px)',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Camera view container
+              Center(
+                child: Container(
+                  width: frameDimensions.width,
+                  height: frameDimensions.height,
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CustomPaint(
+                      painter: RoutesPainter(
+                        personGroups,
+                        frameDimensions: frameDimensions,
+                        displayMode: _routesDisplayMode,
+                      ),
+                      size: Size(frameDimensions.width, frameDimensions.height),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // ROW 2: Top View
+        Container(
+          height: frameDimensions.height + 56,
+          child: Column(
+            children: [
+              // Top view header
+              Container(
+                height: 40,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.map, size: 16, color: Colors.green),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Unified Top View (${frameDimensions.height.toInt()}×${frameDimensions.height.toInt()}px)',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Top view container
+              Center(
+                child: Container(
+                  width: frameDimensions.height,
+                  height: frameDimensions.height,
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CustomPaint(
+                      painter: TopViewRoutesPainter(
+                        personGroups,
+                        displayMode: _routesDisplayMode,
+                      ),
+                      size: Size(frameDimensions.height, frameDimensions.height),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Fetch route data from all videos in cross-video appearances
+  Future<List<Map<String, dynamic>>> _fetchCrossVideoRoutesData() async {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return [];
+    }
+
+    print('🚦 CROSS-VIDEO ROUTES: Starting fetch for ${_aggregatedAnalyses!.length} individuals');
+
+    final apiClient = ref.read(apiClientProvider);
+    final personGroups = <Map<String, dynamic>>[];
+
+    // Get all unique video UUIDs from all appearances
+    final allVideoUuids = <String>{};
+    for (final analysis in _aggregatedAnalyses!) {
+      for (final appearance in analysis.appearances) {
+        allVideoUuids.add(appearance.videoUuid);
+      }
+    }
+
+    print('🚦 CROSS-VIDEO ROUTES: Found ${allVideoUuids.length} unique videos');
+
+    // Fetch person objects data for each video
+    final videoRoutesMap = <String, Map<String, dynamic>>{};
+    
+    for (final videoUuid in allVideoUuids) {
+      try {
+        print('🚦 CROSS-VIDEO ROUTES: Fetching routes from video $videoUuid');
+        
+        final response = await apiClient.get(
+          '/api/v1/orchestrator/person-objects/$videoUuid',
+        );
+
+        if (response.statusCode == 200 && response.data != null) {
+          final data = response.data as Map<String, dynamic>;
+          final success = data['success'] as bool? ?? false;
+          final status = data['status'] as String? ?? '';
+
+          if (success && status == 'completed') {
+            videoRoutesMap[videoUuid] = data;
+            print('🚦 CROSS-VIDEO ROUTES: ✅ Got routes for video $videoUuid');
+          } else {
+            print('🚦 CROSS-VIDEO ROUTES: ⚠️ Video $videoUuid not processed (status: $status)');
+          }
+        }
+      } catch (e) {
+        print('🚦 CROSS-VIDEO ROUTES: ❌ Error fetching routes for video $videoUuid: $e');
+      }
+    }
+
+    print('🚦 CROSS-VIDEO ROUTES: Successfully loaded routes from ${videoRoutesMap.length}/${allVideoUuids.length} videos');
+
+    // Now combine route data for each individual across all videos
+    for (int i = 0; i < _aggregatedAnalyses!.length; i++) {
+      final analysis = _aggregatedAnalyses![i];
+      final individualId = analysis.individualId;
+      
+      print('🚦 CROSS-VIDEO ROUTES: Processing individual $i ($individualId)');
+      print('🚦   Individual has ${analysis.appearances.length} appearances');
+
+      final allRoutePoints = <Map<String, dynamic>>[];
+
+      // For each appearance of this individual
+      for (int ai = 0; ai < analysis.appearances.length; ai++) {
+        final appearance = analysis.appearances[ai];
+        final videoUuid = appearance.videoUuid;
+        final personObjectUuid = appearance.personObjectUuid;
+        
+        print('🚦   Appearance $ai: video=${videoUuid.substring(0, 8)}, person_object=${personObjectUuid.substring(0, 8)}');
+
+        // Get the routes data for this video
+        final videoData = videoRoutesMap[videoUuid];
+        if (videoData == null) {
+          print('🚦   ⚠️ No route data for video $videoUuid');
+          continue;
+        }
+
+        // Find the person group that matches this person_object_uuid
+        final personGroupsData = videoData['group_tracking'] ?? videoData['person_groups'];
+        if (personGroupsData == null) {
+          print('🚦   ⚠️ No person_groups in video data');
+          continue;
+        }
+
+        final personGroupsList = personGroupsData as List<dynamic>;
+        
+        print('🚦   Video has ${personGroupsList.length} person group(s)');
+        
+        // IMPORTANT: Since the person_object_uuid in cross-video tracking is mock/fake,
+        // we'll use ALL person groups from this video appearance.
+        // For most cases there's only 1 person per video, so this works well.
+        // For videos with multiple people, we take all routes (future: need better matching)
+        
+        for (int gi = 0; gi < personGroupsList.length; gi++) {
+          final group = personGroupsList[gi] as Map<String, dynamic>;
+          
+          print('🚦     Processing group $gi (${group['person_id']})');
+          
+          // Extract route points from this group
+          final movementTracking = group['movement_tracking'] as Map<String, dynamic>?;
+          if (movementTracking != null) {
+            final routePoints = movementTracking['route_points'] as List<dynamic>? ?? [];
+            
+            print('🚦       ✅ Found ${routePoints.length} route points from ${group['person_id']}');
+            
+            // Add all route points from this group
+            for (final point in routePoints) {
+              allRoutePoints.add(point as Map<String, dynamic>);
+            }
+          } else {
+            print('🚦       ⚠️ No movement_tracking in group');
+          }
+        }
+      }
+
+      if (allRoutePoints.isEmpty) {
+        print('🚦 Individual $i: ⚠️ No route points found');
+        continue;
+      }
+
+      // Sort all route points by timestamp or frame_number
+      allRoutePoints.sort((a, b) {
+        // Handle different timestamp formats
+        try {
+          final timestampA = a['timestamp'];
+          final timestampB = b['timestamp'];
+          
+          // If timestamp is a string (ISO format), parse as DateTime
+          if (timestampA is String && timestampB is String) {
+            final timeA = DateTime.parse(timestampA);
+            final timeB = DateTime.parse(timestampB);
+            return timeA.compareTo(timeB);
+          }
+          
+          // If timestamp is a number (Unix timestamp or frame number), compare directly
+          if (timestampA is num && timestampB is num) {
+            return timestampA.compareTo(timestampB);
+          }
+          
+          // Fallback: try to use frame_number if timestamp comparison fails
+          final frameA = a['frame_number'] as num? ?? 0;
+          final frameB = b['frame_number'] as num? ?? 0;
+          return frameA.compareTo(frameB);
+        } catch (e) {
+          print('🚦 Warning: Could not compare timestamps: $e');
+          // Fallback to frame number
+          final frameA = a['frame_number'] as num? ?? 0;
+          final frameB = b['frame_number'] as num? ?? 0;
+          return frameA.compareTo(frameB);
+        }
+      });
+
+      print('🚦 Individual $i: ✅ Combined ${allRoutePoints.length} route points from ${analysis.appearances.length} appearances');
+
+      // Create unified person group
+      personGroups.add({
+        'person_id': individualId,
+        'total_detections': allRoutePoints.length,
+        'movement_tracking': {
+          'route_points': allRoutePoints,
+          'total_distance': 0.0,
+          'movement_duration': analysis.totalDurationSeconds,
+        },
+      });
+    }
+
+    print('🚦 CROSS-VIDEO ROUTES: ✅ Final result: ${personGroups.length} person groups with route data');
+    return personGroups;
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    try {
+      DateTime dt;
+      if (timestamp is String) {
+        dt = DateTime.parse(timestamp);
+      } else if (timestamp is DateTime) {
+        dt = timestamp;
+      } else {
+        return timestamp.toString();
+      }
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return timestamp.toString();
+    }
+  }
+
+  /// Build Statistics tab for cross-video mode
+  Widget _buildStatisticsTabCrossVideo() {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return const Center(child: Text('No statistics available'));
+    }
+
+    // Calculate aggregate statistics across all individuals
+    int totalAppearances = 0;
+    int totalUniqueVideos = 0;
+    double sumConfidence = 0;
+    double totalDurationSeconds = 0;
+    DateTime? earliestSeen;
+    DateTime? latestSeen;
+
+    for (final analysis in _aggregatedAnalyses!) {
+      totalAppearances += analysis.totalAppearances;
+      totalUniqueVideos = math.max(totalUniqueVideos, analysis.uniqueVideos);
+      sumConfidence += analysis.averageConfidence;
+      totalDurationSeconds += analysis.totalDurationSeconds;
+      
+      if (earliestSeen == null || analysis.firstSeen.isBefore(earliestSeen)) {
+        earliestSeen = analysis.firstSeen;
+      }
+      if (latestSeen == null || analysis.lastSeen.isAfter(latestSeen)) {
+        latestSeen = analysis.lastSeen;
+      }
+    }
+
+    final avgConfidence = _aggregatedAnalyses!.isNotEmpty 
+        ? sumConfidence / _aggregatedAnalyses!.length 
+        : 0.0;
+    
+    final totalDurationDays = (totalDurationSeconds / 86400).floor();
+    final totalDurationHours = ((totalDurationSeconds % 86400) / 3600).floor();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildStatCard(
+          'Total Individuals',
+          '${_aggregatedAnalyses!.length}',
+          Icons.people,
+          Colors.blue,
+        ),
+        _buildStatCard(
+          'Total Appearances',
+          '$totalAppearances',
+          Icons.visibility,
+          Colors.green,
+        ),
+        _buildStatCard(
+          'Unique Videos',
+          '$totalUniqueVideos',
+          Icons.video_library,
+          Colors.purple,
+        ),
+        _buildStatCard(
+          'Average Confidence',
+          '${(avgConfidence * 100).toStringAsFixed(1)}%',
+          Icons.verified,
+          Colors.amber,
+        ),
+        _buildStatCard(
+          'Total Duration',
+          '$totalDurationDays days, $totalDurationHours hours',
+          Icons.timer,
+          Colors.orange,
+        ),
+        if (earliestSeen != null && latestSeen != null) ...[
+          _buildStatCard(
+            'First Appearance',
+            _formatTimestamp(earliestSeen),
+            Icons.schedule,
+            Colors.teal,
+          ),
+          _buildStatCard(
+            'Last Appearance',
+            _formatTimestamp(latestSeen),
+            Icons.update,
+            Colors.indigo,
+          ),
+        ],
+        _buildStatCard(
+          'Time Span',
+          earliestSeen != null && latestSeen != null 
+              ? '${latestSeen.difference(earliestSeen).inDays} days'
+              : 'N/A',
+          Icons.date_range,
+          Colors.cyan,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build Best Faces tab for cross-video mode
+  Widget _buildFacesTabCrossVideo() {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return const Center(child: Text('No data available'));
+    }
+
+    // Phase 6 doesn't include face images - would need to fetch from Orchestrator
+    // using person_object_uuids from each appearance
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.face,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Face images not yet available',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Face data can be retrieved from Orchestrator\nusing person object UUIDs from appearances',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Available person object UUIDs: ${_aggregatedAnalyses!.fold<int>(0, (sum, a) => sum + a.personObjectUuids.length)}',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFaceCard(FaceData face, String individualId) {
+    final qualityScore = face.qualityScore * 100;
+    
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+              child: face.imageUrl != null
+                  ? Image.network(
+                      face.imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.person, size: 48),
+                      ),
+                    )
+                  : Container(
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.person, size: 48),
+                    ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Individual $individualId',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.star, size: 14, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${qualityScore.toStringAsFixed(1)}%',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Conf: ${(face.confidence * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

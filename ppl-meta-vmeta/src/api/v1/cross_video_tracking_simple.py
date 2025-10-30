@@ -155,7 +155,11 @@ async def create_tracking_session(
             end_time_naive,
             "initialized",
             config_hash,
-            json.dumps(request.algorithm_config or {})
+            json.dumps(request.algorithm_config) if request.algorithm_config else json.dumps({
+                "iou_threshold": 0.3,
+                "max_gap_seconds": 10,
+                "min_overlap_confidence": 0.5
+            })
             )
         
         logger.info(f"Created tracking session {session_uuid} for collections: {request.collections}")
@@ -568,8 +572,8 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                     person_object_uuid,
                                     start_timestamp, end_timestamp,
                                     entry_bbox, exit_bbox,
-                                    confidence
-                                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                    confidence, session_uuid
+                                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                             """,
                                 individual_uuid,
                                 video["uuid"],
@@ -582,7 +586,8 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                 ) + timedelta(seconds=30),
                                 [100 + i*10, 200 + i*10, 150 + i*10, 300 + i*10],
                                 [110 + i*10, 210 + i*10, 160 + i*10, 310 + i*10],
-                                0.85
+                                0.85,
+                                session_uuid  # Add session_uuid to link appearance to session
                             )
                     except Exception as e:
                         # Debug: appearance creation failed
@@ -844,3 +849,231 @@ async def discover_videos_in_collection(collections: List[str], start_time: date
             except Exception:
                 pass
         return []
+
+
+# ============================================================================
+# PHASE 5 & 6 ENDPOINTS - Required for Flutter integration
+# ============================================================================
+
+@router.get("/sessions/{session_uuid}/individuals")
+async def get_session_individuals(
+    session_uuid: str,
+    http_request: Request
+):
+    """
+    Phase 5: Get list of unique individuals found in a completed tracking session.
+    
+    Returns metadata for each individual including:
+    - individual_uuid: Unique identifier
+    - appearance_count: Number of times individual appears
+    - video_count: Number of unique videos
+    - first_seen/last_seen: Time range of appearances
+    - confidence_score: Average confidence across appearances
+    
+    Required for Flutter navigation to individual analysis.
+    """
+    try:
+        logger.info(f"Phase 5: Getting individuals for session {session_uuid}")
+        
+        # Get database client
+        db_client = get_database_client()
+        
+        # Validate session exists and is completed
+        async with db_client.pool.acquire() as conn:
+            session = await conn.fetchrow(
+                """
+                SELECT session_uuid, status, total_videos, individuals_found
+                FROM tracking_sessions
+                WHERE session_uuid = $1
+                """,
+                session_uuid
+            )
+            
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found")
+            
+            # Status can be 'COMPLETED' or 'completed' depending on database
+            if session['status'].upper() != 'COMPLETED':
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Session is not completed. Current status: {session['status']}"
+                )
+            
+            # Get individual metadata from tracking results
+            # Query individuals that have appearances in THIS specific session
+            individuals = await conn.fetch(
+                """
+                SELECT 
+                    i.individual_uuid,
+                    i.individual_id,
+                    COUNT(*) as appearance_count,
+                    COUNT(DISTINCT iva.video_uuid) as video_count,
+                    MIN(iva.start_timestamp) as first_seen,
+                    MAX(iva.end_timestamp) as last_seen,
+                    i.confidence_score as avg_confidence
+                FROM individuals i
+                JOIN individual_video_appearances iva ON i.individual_uuid = iva.individual_uuid
+                WHERE iva.session_uuid = $1
+                GROUP BY i.individual_uuid, i.individual_id, i.confidence_score
+                ORDER BY appearance_count DESC, first_seen ASC
+                """,
+                session_uuid
+            )
+            
+            # Format response
+            individuals_list = [
+                {
+                    "individual_uuid": str(ind['individual_uuid']),
+                    "individual_id": ind['individual_id'],
+                    "total_appearances": ind['appearance_count'],
+                    "total_videos": ind['video_count'],
+                    "first_seen": ind['first_seen'].isoformat() if ind['first_seen'] else None,
+                    "last_seen": ind['last_seen'].isoformat() if ind['last_seen'] else None,
+                    "confidence_score": round(float(ind['avg_confidence']), 3) if ind['avg_confidence'] else 0.0
+                }
+                for ind in individuals
+            ]
+            
+            logger.info(f"Phase 5: Found {len(individuals_list)} individuals in session {session_uuid}")
+            
+            return {
+                "session_uuid": session_uuid,
+                "total_individuals": len(individuals_list),
+                "individuals": individuals_list
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Phase 5 error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/individuals/{individual_uuid}/aggregated-analysis")
+async def get_individual_aggregated_analysis(
+    individual_uuid: str,
+    session_uuid: str,
+    http_request: Request
+):
+    """
+    Phase 6: Get comprehensive aggregated analysis for a specific individual.
+    
+    Returns:
+    - Best quality person object (from Orchestrator)
+    - All appearances chronologically
+    - Aggregated routes and movement patterns
+    - Temporal analysis
+    
+    Required for Flutter individual detail view.
+    """
+    try:
+        logger.info(f"Phase 6: Getting aggregated analysis for individual {individual_uuid} in session {session_uuid}")
+        
+        # Get database client
+        db_client = get_database_client()
+        
+        # Validate session and individual
+        async with db_client.pool.acquire() as conn:
+            session = await conn.fetchrow(
+                """
+                SELECT status FROM tracking_sessions
+                WHERE session_uuid = $1
+                """,
+                session_uuid
+            )
+            
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found")
+            
+            # Status can be 'COMPLETED' or 'completed' depending on database
+            if session['status'].upper() != 'COMPLETED':
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Session is not completed. Current status: {session['status']}"
+                )
+            
+            # Get all appearances for this individual IN THIS SESSION
+            appearances = await conn.fetch(
+                """
+                SELECT 
+                    iva.individual_uuid,
+                    i.individual_id,
+                    iva.video_uuid,
+                    iva.person_object_uuid,
+                    iva.start_timestamp,
+                    iva.end_timestamp,
+                    iva.entry_bbox,
+                    iva.exit_bbox,
+                    iva.confidence
+                FROM individual_video_appearances iva
+                JOIN individuals i ON iva.individual_uuid = i.individual_uuid
+                WHERE iva.individual_uuid = $1 AND iva.session_uuid = $2
+                ORDER BY iva.start_timestamp ASC
+                """,
+                individual_uuid,
+                session_uuid
+            )
+            
+            if not appearances:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Individual {individual_uuid} not found in session {session_uuid}"
+                )
+            
+            # Format appearances
+            appearances_list = []
+            person_object_uuids = []
+            
+            for app in appearances:
+                appearances_list.append({
+                    "individual_uuid": str(app['individual_uuid']),
+                    "video_uuid": str(app['video_uuid']),
+                    "person_object_uuid": str(app['person_object_uuid']),
+                    "start_timestamp": app['start_timestamp'].isoformat() if app['start_timestamp'] else None,
+                    "end_timestamp": app['end_timestamp'].isoformat() if app['end_timestamp'] else None,
+                    "entry_bbox": list(app['entry_bbox']) if app['entry_bbox'] else None,
+                    "exit_bbox": list(app['exit_bbox']) if app['exit_bbox'] else None,
+                    "confidence_score": round(float(app['confidence']), 3) if app['confidence'] else 0.0
+                })
+                person_object_uuids.append(str(app['person_object_uuid']))
+            
+            # Calculate aggregated metrics
+            first_appearance = appearances[0]
+            last_appearance = appearances[-1]
+            
+            total_duration = 0
+            if first_appearance['start_timestamp'] and last_appearance['end_timestamp']:
+                total_duration = (
+                    last_appearance['end_timestamp'] - first_appearance['start_timestamp']
+                ).total_seconds()
+            
+            avg_confidence = sum(
+                float(app['confidence']) for app in appearances if app['confidence']
+            ) / len(appearances)
+            
+            # Build response
+            response = {
+                "individual_uuid": individual_uuid,
+                "individual_id": first_appearance['individual_id'],
+                "session_uuid": session_uuid,
+                "total_appearances": len(appearances),
+                "unique_videos": len(set(str(app['video_uuid']) for app in appearances)),
+                "first_seen": first_appearance['start_timestamp'].isoformat() if first_appearance['start_timestamp'] else None,
+                "last_seen": last_appearance['end_timestamp'].isoformat() if last_appearance['end_timestamp'] else None,
+                "total_duration_seconds": round(total_duration, 2),
+                "average_confidence": round(avg_confidence, 3),
+                "appearances": appearances_list,
+                "person_object_uuids": person_object_uuids,
+                "analysis_timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            logger.info(f"Phase 6: Returning aggregated analysis for individual {individual_uuid}")
+            logger.info(f"  Appearances: {len(appearances)}, Videos: {response['unique_videos']}, Duration: {total_duration}s")
+            
+            return response
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Phase 6 error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

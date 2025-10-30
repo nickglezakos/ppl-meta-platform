@@ -588,6 +588,355 @@ async def get_cache_status(
         )
 
 
+@router.get("/sessions/{session_uuid}/individuals")
+async def get_session_individuals(
+    session_uuid: str,
+    request: Request,
+    db_connection = Depends(get_db_connection)
+):
+    """
+    Get list of unique individuals found in a completed tracking session.
+    
+    Returns metadata for each individual including:
+    - individual_uuid: Unique identifier
+    - appearance_count: Number of times individual appears
+    - video_count: Number of unique videos
+    - first_seen/last_seen: Time range of appearances
+    - confidence_score: Average confidence across appearances
+    
+    Phase 5 Implementation - Required for Flutter navigation to individual analysis.
+    """
+    try:
+        from uuid import UUID
+        
+        # Extract auth token (for logging/auditing)
+        auth_token = extract_auth_token(request)
+        
+        # Validate session UUID format
+        try:
+            session_id = UUID(session_uuid)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid session UUID format: {session_uuid}"
+            )
+        
+        # Initialize integrated caching service
+        caching_service = IntegratedCachingService(db_connection)
+        
+        # Get tracking session from repository
+        from ...database.repository import CrossVideoTrackingRepository
+        
+        # Get repository from caching service or create new one
+        if hasattr(caching_service, 'repository'):
+            repository = caching_service.repository
+        else:
+            # Fallback: create repository if not available
+            logger.warning("Repository not found in caching service, creating new instance")
+            connection_string = db_connection  # Assuming db_connection is connection string
+            repository = CrossVideoTrackingRepository(connection_string)
+            await repository.initialize()
+        
+        # Get session to verify it exists and is completed
+        session = await repository.get_tracking_session(session_id)
+        
+        if not session:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Tracking session not found: {session_uuid}"
+            )
+        
+        # Check session status
+        if session.status != SessionStatus.COMPLETED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Session not completed yet (status: {session.status.value}). Please wait for session to complete."
+            )
+        
+        # Get individuals from repository
+        individuals = await repository.get_session_individuals(session_id)
+        
+        if not individuals:
+            logger.info(f"No individuals found in session {session_uuid}")
+            return {
+                "session_uuid": session_uuid,
+                "total_individuals": 0,
+                "individuals": []
+            }
+        
+        # Build response with individual metadata
+        individuals_list = []
+        for individual in individuals:
+            # Get unique video count
+            unique_videos = set(
+                app.video_id for app in individual.video_appearances
+            ) if individual.video_appearances else set()
+            
+            individuals_list.append({
+                "individual_uuid": str(individual.id),
+                "individual_id": f"ind_{str(individual.id)[:8]}",
+                "confidence_score": individual.confidence_score,
+                "total_appearances": individual.total_appearances,
+                "total_videos": len(unique_videos),
+                "first_seen": individual.first_seen_at.isoformat() if individual.first_seen_at else None,
+                "last_seen": individual.last_seen_at.isoformat() if individual.last_seen_at else None
+            })
+        
+        logger.info(
+            f"✅ Retrieved {len(individuals_list)} individuals from session {session_uuid}"
+        )
+        
+        return {
+            "session_uuid": session_uuid,
+            "total_individuals": len(individuals_list),
+            "individuals": individuals_list
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get session individuals: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.get("/individuals/{individual_uuid}/aggregated-analysis")
+async def get_individual_aggregated_analysis(
+    individual_uuid: str,
+    session_uuid: str = Query(..., description="UUID of the tracking session"),
+    request: Request = None,
+    db_connection = Depends(get_db_connection)
+):
+    """
+    Get comprehensive aggregated analysis for an individual across multiple videos.
+    
+    This endpoint aggregates all data for a single individual including:
+    - All video appearances with person objects
+    - Best quality appearance selection
+    - Chronological route aggregation
+    - Quality metrics and statistics
+    
+    Phase 6 Implementation - Returns ready-to-display data for PersonObjectsDetailScreen.
+    
+    Args:
+        individual_uuid: UUID of the individual to analyze
+        session_uuid: UUID of the tracking session
+        request: FastAPI request object for auth token extraction
+        
+    Returns:
+        Comprehensive individual analysis data structure
+    """
+    try:
+        from uuid import UUID as UUID_TYPE
+        from datetime import datetime
+        
+        # Import helper services
+        from ..services.orchestrator_client import fetch_multiple_person_objects
+        from ..services.quality_selector import select_best_quality_object, calculate_quality_score
+        from ..services.route_aggregator import aggregate_routes_chronologically
+        
+        # Extract auth token for Orchestrator calls
+        auth_token = extract_auth_token(request)
+        if not auth_token:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication token required"
+            )
+        
+        # Validate UUIDs
+        try:
+            individual_id = UUID_TYPE(individual_uuid)
+            session_id = UUID_TYPE(session_uuid)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid UUID format: {str(e)}"
+            )
+        
+        # Initialize services
+        caching_service = IntegratedCachingService(db_connection)
+        
+        # Get repository
+        from database.repository import CrossVideoTrackingRepository
+        
+        if hasattr(caching_service, 'repository'):
+            repository = caching_service.repository
+        else:
+            logger.warning("Repository not found in caching service, creating new instance")
+            repository = CrossVideoTrackingRepository(db_connection)
+            await repository.initialize()
+        
+        # Get session to verify it exists
+        session = await repository.get_tracking_session(session_id)
+        if not session:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Session not found: {session_uuid}"
+            )
+        
+        # Get individuals from session
+        individuals = await repository.get_session_individuals(session_id)
+        
+        # Find our specific individual
+        individual = None
+        for ind in individuals:
+            if str(ind.id) == individual_uuid:
+                individual = ind
+                break
+        
+        if not individual:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Individual {individual_uuid} not found in session {session_uuid}"
+            )
+        
+        # Get video appearances
+        if not individual.video_appearances:
+            logger.warning(f"No appearances found for individual {individual_uuid}")
+            return {
+                "individual_uuid": individual_uuid,
+                "session_uuid": session_uuid,
+                "appearances": [],
+                "best_quality_appearance": None,
+                "aggregated_route": {
+                    "total_segments": 0,
+                    "chronological_path": []
+                },
+                "metadata": {
+                    "appearance_count": 0,
+                    "video_count": 0,
+                    "collections": [],
+                    "first_seen": None,
+                    "last_seen": None
+                }
+            }
+        
+        # Build video_uuid to person_id mapping
+        video_person_map = {}
+        for appearance in individual.video_appearances:
+            video_person_map[appearance.video_id] = appearance.person_id
+        
+        # Fetch person objects from Orchestrator for all videos
+        logger.info(f"Fetching person objects for {len(video_person_map)} videos")
+        person_objects = await fetch_multiple_person_objects(
+            video_person_map=video_person_map,
+            auth_token=auth_token
+        )
+        
+        if not person_objects:
+            logger.warning(f"No person objects returned from Orchestrator for individual {individual_uuid}")
+            # Return partial data
+            appearances_list = []
+            for appearance in individual.video_appearances:
+                appearances_list.append({
+                    "video_uuid": appearance.video_id,
+                    "timestamp": appearance.timestamp.isoformat(),
+                    "person_id": appearance.person_id,
+                    "confidence": appearance.confidence_score,
+                    "bounding_box": {
+                        "x": appearance.bounding_box.x,
+                        "y": appearance.bounding_box.y,
+                        "width": appearance.bounding_box.width,
+                        "height": appearance.bounding_box.height
+                    } if appearance.bounding_box else None
+                })
+            
+            return {
+                "individual_uuid": individual_uuid,
+                "session_uuid": session_uuid,
+                "appearances": appearances_list,
+                "best_quality_appearance": appearances_list[0] if appearances_list else None,
+                "aggregated_route": {
+                    "total_segments": len(appearances_list),
+                    "chronological_path": []
+                },
+                "metadata": {
+                    "appearance_count": len(appearances_list),
+                    "video_count": len(set(a.video_id for a in individual.video_appearances)),
+                    "collections": [],
+                    "first_seen": individual.first_seen_at.isoformat() if individual.first_seen_at else None,
+                    "last_seen": individual.last_seen_at.isoformat() if individual.last_seen_at else None
+                }
+            }
+        
+        # Build enriched appearances list
+        enriched_appearances = []
+        for person_obj in person_objects:
+            video_uuid = person_obj.get('video_uuid')
+            
+            # Find matching appearance from database
+            matching_appearance = None
+            for appearance in individual.video_appearances:
+                if appearance.video_id == video_uuid:
+                    matching_appearance = appearance
+                    break
+            
+            if matching_appearance:
+                enriched_appearances.append({
+                    "video_uuid": video_uuid,
+                    "timestamp": matching_appearance.timestamp.isoformat(),
+                    "person_id": person_obj.get('person_id'),
+                    "person_object": person_obj,
+                    "confidence": matching_appearance.confidence_score,
+                    "quality_score": calculate_quality_score(person_obj) if person_obj else 0.0
+                })
+        
+        # Select best quality appearance
+        best_quality = select_best_quality_object(person_objects) if person_objects else None
+        best_quality_appearance = None
+        if best_quality:
+            for appearance in enriched_appearances:
+                if appearance['person_object'] == best_quality:
+                    best_quality_appearance = appearance
+                    break
+        
+        # Aggregate routes chronologically
+        aggregated_route = {
+            "total_segments": len(enriched_appearances),
+            "chronological_path": aggregate_routes_chronologically(person_objects) if person_objects else []
+        }
+        
+        # Calculate metadata
+        unique_videos = set(a.video_id for a in individual.video_appearances)
+        metadata = {
+            "appearance_count": len(enriched_appearances),
+            "video_count": len(unique_videos),
+            "collections": list(session.collections) if hasattr(session, 'collections') else [],
+            "first_seen": individual.first_seen_at.isoformat() if individual.first_seen_at else None,
+            "last_seen": individual.last_seen_at.isoformat() if individual.last_seen_at else None,
+            "time_span_seconds": (
+                (individual.last_seen_at - individual.first_seen_at).total_seconds()
+                if individual.first_seen_at and individual.last_seen_at
+                else 0
+            )
+        }
+        
+        logger.info(
+            f"✅ Retrieved aggregated analysis for individual {individual_uuid}: "
+            f"{len(enriched_appearances)} appearances, {len(unique_videos)} videos"
+        )
+        
+        return {
+            "individual_uuid": individual_uuid,
+            "session_uuid": session_uuid,
+            "appearances": enriched_appearances,
+            "best_quality_appearance": best_quality_appearance,
+            "aggregated_route": aggregated_route,
+            "metadata": metadata
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Failed to get aggregated analysis: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+
 @router.post("/cache/optimize")
 async def optimize_cache_storage(
     max_age_days: int = Query(30, ge=1, le=365),

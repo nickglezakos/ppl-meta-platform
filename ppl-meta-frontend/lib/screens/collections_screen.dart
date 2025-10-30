@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../core/theme/app_theme.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
+import '../models/cross_video_analysis_models.dart';
 import '../core/models/collection_models.dart';
 import '../widgets/collection_management.dart';
 import '../widgets/responsive_media_gallery.dart';
@@ -15,6 +16,7 @@ import '../widgets/collections_search_dialog.dart';
 import '../services/media_organization_service.dart';
 import '../services/media_api_client.dart';
 import '../providers/media_organization_providers.dart';
+import 'person_objects_detail_screen.dart';
 
 /// Collections screen with management and media display
 class CollectionsScreen extends ConsumerStatefulWidget {
@@ -45,6 +47,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   int? _individualsCount;
   bool _isLoadingIndividuals = false;
   String? _trackingSessionUuid;
+  Map<String, dynamic>? _trackingSessionData;
 
   @override
   void initState() {
@@ -719,24 +722,31 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Individuals Filter'),
+        title: const Text('Cross-Video Tracking Details'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Currently showing media for:',
-              style: TextStyle(fontWeight: FontWeight.w600),
+              'Session Information:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
             ),
             const SizedBox(height: 12),
+            if (_trackingSessionUuid != null)
+              Text('Session: ${_trackingSessionUuid!.substring(0, 8)}...'),
             if (_individualsCount != null)
-              Text('• ${ _individualsCount} unique individual${_individualsCount == 1 ? '' : 's'} detected across videos'),
+              Text('• $_individualsCount unique individual${_individualsCount == 1 ? '' : 's'} detected'),
             if (_individualsCount == null)
               const Text('• Loading individual count...'),
             const SizedBox(height: 8),
             Text('• Time range: ${_formatDateTime(_startDate!)} to ${_formatDateTime(_endDate!)}'),
             const SizedBox(height: 8),
             Text('• Collection: ${_selectedCollection!.name}'),
+            if (_trackingSessionData != null) ...[
+              const SizedBox(height: 8),
+              Text('• Total videos: ${_trackingSessionData!['total_videos'] ?? 'N/A'}'),
+              Text('• Status: ${_trackingSessionData!['status'] ?? 'Unknown'}'),
+            ],
           ],
         ),
         actions: [
@@ -744,7 +754,119 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Close'),
           ),
+          if (_individualsCount != null && _individualsCount! > 0 && _trackingSessionUuid != null)
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog first
+                _navigateToIndividualAnalysis();
+              },
+              icon: const Icon(Icons.analytics),
+              label: const Text('Analysis'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+            ),
         ],
+      ),
+    );
+  }
+
+  /// Navigate to individual analysis screen
+  Future<void> _navigateToIndividualAnalysis() async {
+    if (_trackingSessionUuid == null || _trackingSessionData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No tracking session data available')),
+      );
+      return;
+    }
+
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      final apiClient = ref.read(apiClientProvider);
+      final mediaApiClient = MediaApiClient(apiClient);
+
+      // Fetch individuals data from vmeta endpoint
+      final individualsResponse = await mediaApiClient.getCrossVideoIndividuals(
+        sessionUuid: _trackingSessionUuid!,
+      );
+
+      // Dismiss loading
+      if (mounted) Navigator.pop(context);
+
+      if (individualsResponse.success && individualsResponse.data != null) {
+        final individuals = individualsResponse.data!['individuals'] as List<dynamic>;
+
+        if (individuals.isEmpty) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No individuals found in tracking session')),
+            );
+          }
+          return;
+        }
+
+        // Extract individual UUIDs
+        final individualUuids = individuals
+            .map((ind) => ind['individual_uuid'] as String)
+            .toList();
+
+        // Navigate to person details screen with cross-video context
+        _navigateToCrossVideoAnalysis(
+          individualUuids: individualUuids,
+          sessionUuid: _trackingSessionUuid!,
+          sessionData: _trackingSessionData!,
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to fetch individuals data: ${individualsResponse.error}'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Dismiss loading if still showing
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  /// Navigate to cross-video analysis with context
+  void _navigateToCrossVideoAnalysis({
+    required List<String> individualUuids,
+    required String sessionUuid,
+    required Map<String, dynamic> sessionData,
+  }) {
+    final context = CrossVideoAnalysisContext(
+      individualUuids: individualUuids,
+      sessionUuid: sessionUuid,
+      sessionData: sessionData,
+    );
+    
+    // Navigate using MaterialPageRoute (direct navigation)
+    // TODO: Update to use go_router when PersonObjectsDetailScreen is updated
+    Navigator.of(this.context).push(
+      MaterialPageRoute(
+        builder: (ctx) => PersonObjectsDetailScreen(
+          crossVideoContext: context,
+        ),
       ),
     );
   }
@@ -819,6 +941,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             setState(() {
               _individualsCount = individualsFound;
               _isLoadingIndividuals = false;
+              _trackingSessionData = statusResponse.data; // Store full session data
             });
             return;
           } else if (status == 'failed') {

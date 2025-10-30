@@ -11,6 +11,10 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 
+collections: {usb_camera_0}
+start_time: 2025-10-13 08:06:00 (naive timestamp - will be interpreted as Athens time)
+end_time: 2025-10-29 08:06:00 (naive timestamp - will be interpreted as Athens time)
+
 
 PPL meta mini
 

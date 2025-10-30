@@ -1476,3 +1476,19 @@ async def get_cross_video_tracking_session_results(request: Request):
 async def cancel_cross_video_tracking_session(request: Request):
     """Proxy cross-video tracking session cancellation to vmeta service."""
     return await _proxy_to_vmeta_service(request)
+
+
+# Phase 5: Get individuals list from tracking session
+@api_router.get("/cross-video/individuals/tracking/sessions/{session_uuid}/individuals")
+async def get_session_individuals(request: Request):
+    """Proxy request to get individuals list from tracking session to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+# Phase 6: Get aggregated analysis for individual
+@api_router.get("/cross-video/individuals/tracking/individuals/{individual_uuid}/aggregated-analysis")
+async def get_individual_aggregated_analysis(request: Request):
+    """Proxy request to get aggregated individual analysis to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+

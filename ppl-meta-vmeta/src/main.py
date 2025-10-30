@@ -114,7 +114,7 @@ try:
         prefix="/api/v1/cross-video",
         tags=["cross-video-tracking"]
     )
-    logger.info("✅ Cross-video tracking router (simple) added successfully")
+    logger.info("✅ Cross-video tracking router (simple + Phase 5/6) added successfully")
 except ImportError as e:
     logger.warning(f"⚠️ Cross-video tracking router not available: {e}")
 except Exception as e:
