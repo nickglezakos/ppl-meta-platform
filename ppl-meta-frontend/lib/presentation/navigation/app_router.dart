@@ -193,6 +193,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/media-preview/:videoUuid',
+        name: 'media-preview-by-uuid',
+        builder: (context, state) {
+          final videoUuid = state.pathParameters['videoUuid']!;
+          // Create a minimal MediaItem with just the UUID
+          // The screen will fetch the full details from the API
+          final mediaItem = MediaItem(
+            mediaId: '0', // Placeholder - will be loaded from API
+            uuid: videoUuid,
+            originalFilename: 'Loading...',
+            mediaType: MediaType.video,
+            fileSize: 0,
+            filePath: '',
+            uploadedAt: DateTime.now(),
+            isPublic: false,
+          );
+          return ProviderScreenWrapper(
+            child: EnhancedMediaPreviewScreen(mediaItem: mediaItem),
+          );
+        },
+      ),
+      GoRoute(
         path: '/camera-media-sync',
         name: 'camera-media-sync',
         builder: (context, state) => ProviderScreenWrapper(

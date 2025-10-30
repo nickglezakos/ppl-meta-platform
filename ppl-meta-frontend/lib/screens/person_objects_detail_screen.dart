@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'dart:ui' as ui;
 import 'dart:io';
 import 'dart:async';
@@ -58,6 +59,9 @@ class _PersonObjectsDetailScreenState
   List<AggregatedIndividualAnalysis>? _aggregatedAnalyses;
   bool _isLoadingCrossVideoData = false;
   String? _crossVideoError;
+  
+  // Track expanded individuals in cross-video mode
+  final Set<String> _expandedIndividuals = {};
 
   @override
   void initState() {
@@ -3140,61 +3144,206 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
 
   /// Build individual card showing aggregated data
   Widget _buildIndividualCard(AggregatedIndividualAnalysis analysis, int index) {
+    final isExpanded = _expandedIndividuals.contains(analysis.individualUuid);
+    
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // Individual icon (placeholder for face)
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.person,
-                    size: 40,
-                    color: Colors.blue,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                // Individual info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        children: [
+          // Main card content - clickable
+          InkWell(
+            onTap: () {
+              setState(() {
+                if (isExpanded) {
+                  _expandedIndividuals.remove(analysis.individualUuid);
+                } else {
+                  _expandedIndividuals.add(analysis.individualUuid);
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Text(
-                        'Individual ${analysis.individualId}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                      // Individual icon (placeholder for face)
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.person,
+                          size: 40,
+                          color: Colors.blue,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'UUID: ${analysis.individualUuid.substring(0, 8)}...',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      const SizedBox(width: 16),
+                      // Individual info
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Individual ${analysis.individualId}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'UUID: ${analysis.individualUuid.substring(0, 8)}...',
+                              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                            ),
+                            const SizedBox(height: 8),
+                            _buildStatChip('Appearances', '${analysis.totalAppearances}'),
+                            const SizedBox(height: 4),
+                            _buildStatChip('Videos', '${analysis.uniqueVideos}'),
+                            const SizedBox(height: 4),
+                            _buildStatChip('Confidence', '${(analysis.averageConfidence * 100).toStringAsFixed(0)}%'),
+                            const SizedBox(height: 4),
+                            _buildStatChip('Duration', analysis.formattedDuration),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                      _buildStatChip('Appearances', '${analysis.totalAppearances}'),
-                      const SizedBox(height: 4),
-                      _buildStatChip('Videos', '${analysis.uniqueVideos}'),
-                      const SizedBox(height: 4),
-                      _buildStatChip('Confidence', '${(analysis.averageConfidence * 100).toStringAsFixed(0)}%'),
-                      const SizedBox(height: 4),
-                      _buildStatChip('Duration', analysis.formattedDuration),
+                      // Expand/collapse icon
+                      Icon(
+                        isExpanded ? Icons.expand_less : Icons.expand_more,
+                        color: Colors.grey[600],
+                      ),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+          ),
+          
+          // Expanded content - person object appearances
+          if (isExpanded) ...[
+            const Divider(height: 1),
+            _buildExpandedAppearances(analysis),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Build expanded section showing all person object appearances
+  Widget _buildExpandedAppearances(AggregatedIndividualAnalysis analysis) {
+    return Container(
+      color: Theme.of(context).colorScheme.surface.withOpacity(0.3),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        itemCount: analysis.appearances.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 8),
+        itemBuilder: (context, index) {
+          final appearance = analysis.appearances[index];
+          return _buildAppearanceCard(appearance, index);
+        },
+      ),
+    );
+  }
+
+  /// Build a single appearance card (same UX as individual card)
+  Widget _buildAppearanceCard(IndividualAppearance appearance, int index) {
+    return GestureDetector(
+      onTap: () {
+        print('🎬 Navigating to media preview for video: ${appearance.videoUuid}');
+        // Navigate to media preview screen with the video UUID using GoRouter
+        context.go('/media-preview/${appearance.videoUuid}');
+      },
+      child: Card(
+        margin: EdgeInsets.zero,
+        elevation: 1,
+        color: Theme.of(context).cardColor,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Person object icon with play indicator
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(
+                      Icons.face,
+                      size: 32,
+                      color: Colors.green,
+                    ),
+                    Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.blue,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow,
+                          size: 12,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Appearance info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Appearance ${index + 1}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Video: ${appearance.videoUuid.substring(0, 8)}...',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 11),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Object: ${appearance.personObjectUuid.substring(0, 8)}...',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 11),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildStatChip('Start', _formatTimestamp(appearance.startTimestamp)),
+                    const SizedBox(height: 2),
+                    _buildStatChip('End', _formatTimestamp(appearance.endTimestamp)),
+                    const SizedBox(height: 2),
+                    _buildStatChip('Duration', appearance.formattedDuration),
+                    const SizedBox(height: 2),
+                    _buildStatChip('Confidence', '${(appearance.confidenceScore * 100).toStringAsFixed(0)}%'),
+                  ],
+                ),
+              ),
+              // Tap indicator icon
+              Icon(
+                Icons.chevron_right,
+                color: Colors.grey[600],
+                size: 20,
+              ),
+            ],
+          ),
         ),
       ),
     );
