@@ -1,0 +1,65 @@
+[Unit]
+Description=PPL Meta vmeta MVR Background Processor
+Documentation=https://github.com/nickglezakos/ppl-meta-platform
+After=network.target postgresql.service vmeta.service
+Requires=vmeta.service
+PartOf=vmeta.service
+
+[Service]
+Type=simple
+User=vmeta
+Group=vmeta
+WorkingDirectory=/opt/ppl-meta/vmeta
+
+# Environment
+Environment="PATH=/opt/ppl-meta/vmeta/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONPATH=/opt/ppl-meta/vmeta/src"
+EnvironmentFile=/etc/ppl-meta/vmeta.env
+
+# Start command (separate worker process)
+ExecStart=/opt/ppl-meta/vmeta/venv/bin/python \
+    -m background.mvr_worker \
+    --workers 4 \
+    --log-level INFO
+
+# Pre-start checks
+ExecStartPre=/bin/sh -c 'test -f /opt/ppl-meta/vmeta/venv/bin/python || exit 1'
+ExecStartPre=/bin/sh -c 'systemctl is-active vmeta.service || exit 1'
+
+# Restart policy (independent of main service)
+Restart=always
+RestartSec=15
+StartLimitInterval=300
+StartLimitBurst=5
+
+# Resource limits (lighter than main service)
+LimitNOFILE=32768
+LimitNPROC=2048
+
+# Memory limits (1GB max)
+MemoryMax=1G
+MemoryHigh=900M
+
+# CPU limits (2 cores max)
+CPUQuota=200%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/ppl-meta/vmeta
+ReadWritePaths=/var/run/ppl-meta/vmeta
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=60  # Longer timeout for processing completion
+
+# Standard output/error
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vmeta-mvr-worker
+
+[Install]
+WantedBy=multi-user.target

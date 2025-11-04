@@ -1,0 +1,78 @@
+[Unit]
+Description=PPL Meta vmeta Service
+Documentation=https://github.com/nickglezakos/ppl-meta-platform
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=notify
+User=vmeta
+Group=vmeta
+WorkingDirectory=/opt/ppl-meta/vmeta
+
+# Environment
+Environment="PATH=/opt/ppl-meta/vmeta/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONPATH=/opt/ppl-meta/vmeta/src"
+EnvironmentFile=/etc/ppl-meta/vmeta.env
+
+# Start command
+ExecStart=/opt/ppl-meta/vmeta/venv/bin/uvicorn \
+    src.main:app \
+    --host 0.0.0.0 \
+    --port 8008 \
+    --workers 4 \
+    --log-config /opt/ppl-meta/vmeta/config/logging.yaml \
+    --no-access-log
+
+# Pre-start checks
+ExecStartPre=/bin/sh -c 'test -f /opt/ppl-meta/vmeta/venv/bin/uvicorn || exit 1'
+ExecStartPre=/bin/sh -c 'test -f /etc/ppl-meta/vmeta.env || exit 1'
+
+# Health check
+WatchdogSec=30
+NotifyAccess=all
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=200
+StartLimitBurst=5
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Memory limits (2GB max)
+MemoryMax=2G
+MemoryHigh=1.8G
+
+# CPU limits (4 cores max)
+CPUQuota=400%
+
+# I/O limits
+IOWeight=100
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/ppl-meta/vmeta
+ReadWritePaths=/var/run/ppl-meta/vmeta
+
+# Capabilities
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Standard output/error
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vmeta
+
+[Install]
+WantedBy=multi-user.target

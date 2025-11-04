@@ -986,6 +986,94 @@ class MediaApiClient {
       return ApiResponse.error('Unexpected error: $e');
     }
   }
+
+  /// Manually merge selected individuals with embedding validation
+  /// 
+  /// This endpoint validates face embedding similarity before merging individuals.
+  /// Used in the Flutter UI when users manually select individuals to merge.
+  /// The backend generates facial embeddings from face crops and validates
+  /// similarity against a threshold before executing the merge.
+  /// 
+  /// Request parameters:
+  /// - individual_uuids: List of individual UUIDs to merge (minimum 2)
+  /// - session_uuid: Session identifier for filtering
+  /// - similarity_threshold: Minimum similarity score (default 0.75)
+  /// 
+  /// Returns:
+  /// - predominant_individual_uuid: The UUID of the predominant individual
+  /// - merged_individual_uuids: List of UUIDs that were merged
+  /// - similarity_score: Calculated similarity score
+  /// - statistics: Merge statistics (appearances transferred, etc.)
+  Future<ApiResponse<Map<String, dynamic>>> mergeIndividuals({
+    required List<String> individualUuids,
+    required String sessionUuid,
+    double similarityThreshold = 0.6,
+  }) async {
+    try {
+      final requestBody = {
+        'individual_uuids': individualUuids,
+        'session_uuid': sessionUuid,
+        'similarity_threshold': similarityThreshold,
+        'triggered_by': 'flutter_ui_manual_selection',
+      };
+
+      print('DEBUG: Merging individuals with: $requestBody');
+
+      final response = await _apiClient.post(
+        '/api/v1/cross-video/individuals/tracking/merge',
+        data: requestBody,
+      );
+
+      print('DEBUG: Individuals merged successfully: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      print('ERROR: Failed to merge individuals: ${e.response?.data}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('ERROR: Unexpected error merging individuals: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Batch match and merge individuals using MVR-People matching
+  /// 
+  /// This endpoint processes a list of individual UUIDs and automatically merges
+  /// duplicates based on MVR-People similarity scores. Used for cross-video tracking
+  /// to reduce duplicate individuals into unique persons.
+  /// 
+  /// Returns counters:
+  /// - original_count: Number of individuals before merging
+  /// - unique_count: Number of unique individuals after merging
+  /// - merge_count: Number of duplicates merged
+  Future<ApiResponse<Map<String, dynamic>>> batchMatchAndMerge({
+    required List<String> individualUuids,
+    double threshold = 0.85,
+    String triggeredBy = 'cross_video_tracking_session',
+    String? sessionUuid,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/batch-match-and-merge',
+        data: {
+          'individual_uuids': individualUuids,
+          'threshold': threshold,
+          'triggered_by': triggeredBy,
+          if (sessionUuid != null) 'session_uuid': sessionUuid,
+        },
+      );
+
+      print('🔄 Batch merge result: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      print('❌ Batch merge failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('❌ Batch merge unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
 }
 
 /// Single frame face detection result model for real-time detection

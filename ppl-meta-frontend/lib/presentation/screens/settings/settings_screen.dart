@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/settings/network_settings_section.dart';
 import '../../widgets/settings/storage_settings_section.dart';
 import '../../widgets/settings/workflow_settings_section.dart';
+import 'cross_video_tracking_section.dart';
 import '../../../widgets/custom_app_bar.dart';
 import '../../../core/theme/app_theme.dart';
 
@@ -24,6 +25,11 @@ class SettingsScreen extends ConsumerWidget {
             // Workflow Settings Section
             WorkflowSettingsSection(),
             
+            SizedBox(height: 24),
+
+            // Cross-Video Tracking Section (Merge Individuals Rules)
+            CrossVideoTrackingSection(),
+
             SizedBox(height: 24),
             
             // Network Settings Section

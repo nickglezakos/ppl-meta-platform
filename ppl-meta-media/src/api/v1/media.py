@@ -328,6 +328,9 @@ async def search_media(
     is_public: Optional[bool] = None,
     start_date: Optional[str] = None,  # ISO 8601 date string
     end_date: Optional[str] = None,  # ISO 8601 date string
+    start_time: Optional[str] = None,  # Alias for start_date (vmeta compatibility)
+    end_time: Optional[str] = None,  # Alias for end_date (vmeta compatibility)
+    collection: Optional[str] = None,  # Alias for collection_id (vmeta compatibility)
     collection_id: Optional[str] = None,  # Filter by specific collection
     collection_ids: Optional[
         str
@@ -337,7 +340,11 @@ async def search_media(
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Search authenticated user's media with various filters."""
+    """Search authenticated user's media with various filters.
+    
+    Time filtering uses start_timestamp (recording time) for camera videos,
+    falls back to created_at for other media types.
+    """
     try:
         media_service = MediaService(db)
 
@@ -353,33 +360,39 @@ async def search_media(
                     status_code=400, detail=f"Invalid media type: {e}"
                 ) from e
 
-        # Parse date parameters if provided
+        # Parse date parameters if provided (support both start_date and start_time)
         parsed_start_date = None
         parsed_end_date = None
 
-        if start_date:
+        start_param = start_time or start_date
+        end_param = end_time or end_date
+
+        if start_param:
             try:
                 # Handle ISO format with Z timezone
-                date_str = start_date.replace("Z", "+00:00")
+                date_str = start_param.replace("Z", "+00:00")
                 parsed_start_date = datetime.fromisoformat(date_str)
             except ValueError as e:
                 raise HTTPException(
-                    status_code=400, detail=f"Invalid start_date format: {e}"
+                    status_code=400, detail=f"Invalid start time/date format: {e}"
                 ) from e
 
-        if end_date:
+        if end_param:
             try:
                 # Handle ISO format with Z timezone
-                date_str = end_date.replace("Z", "+00:00")
+                date_str = end_param.replace("Z", "+00:00")
                 parsed_end_date = datetime.fromisoformat(date_str)
             except ValueError as e:
                 raise HTTPException(
-                    status_code=400, detail=f"Invalid end_date format: {e}"
+                    status_code=400, detail=f"Invalid end time/date format: {e}"
                 ) from e
+
+        # Support both collection and collection_id parameters
+        effective_collection_id = collection or collection_id
 
         # Debug collection filtering
         logger.info(
-            f"DEBUG API: collection_id={collection_id}, collection_ids={collection_ids}"
+            f"DEBUG API: collection={collection}, collection_id={collection_id}, effective={effective_collection_id}, collection_ids={collection_ids}"
         )
         if collection_ids:
             parsed_collection_ids = collection_ids.split(",")
@@ -395,7 +408,7 @@ async def search_media(
             is_public=is_public,
             date_from=parsed_start_date,
             date_to=parsed_end_date,
-            collection_id=collection_id,
+            collection_id=effective_collection_id,
             collection_ids=parsed_collection_ids,
             page=page,
             page_size=page_size,
@@ -466,6 +479,64 @@ async def list_collections(
 
         return [MediaCollectionResponse.model_validate(col) for col in collections]
 
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("/collections/lookup")
+async def lookup_collection(
+    name: Optional[str] = None,
+    uuid: Optional[str] = None,
+    id: Optional[int] = None,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Lookup collection by name, UUID, or ID and return its identifiers.
+    
+    This endpoint helps resolve collection names to IDs/UUIDs for filtering.
+    Supports partial name matching (e.g., 'usb_camera_0' matches 'usb_camera_0 Collection').
+    """
+    try:
+        from ...models.media import MediaCollection
+        from sqlalchemy import or_
+        
+        query = db.query(MediaCollection).filter(
+            MediaCollection.created_by == UUID(current_user.user_id)
+        )
+        
+        if name:
+            # Support both exact match and partial match with LIKE
+            query = query.filter(
+                or_(
+                    MediaCollection.name == name,
+                    MediaCollection.name.ilike(f"{name}%"),
+                    MediaCollection.name.ilike(f"%{name}%")
+                )
+            )
+        elif uuid:
+            query = query.filter(MediaCollection.uuid == UUID(uuid))
+        elif id:
+            query = query.filter(MediaCollection.id == id)
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail="Must provide name, uuid, or id parameter"
+            )
+        
+        collection = query.first()
+        
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        
+        return {
+            "id": collection.id,
+            "uuid": str(collection.uuid),
+            "name": collection.name,
+            "description": collection.description,
+        }
+    
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 

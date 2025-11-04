@@ -16,6 +16,7 @@ class GeneralSettings {
   final int maxLogEntries;
   final bool debugMode;
   final bool performanceMonitoring;
+  final String mergeIndividualsRule; // 'none', 'semi', or 'auto'
 
   GeneralSettings({
     required this.darkTheme,
@@ -25,6 +26,7 @@ class GeneralSettings {
     required this.maxLogEntries,
     required this.debugMode,
     required this.performanceMonitoring,
+    required this.mergeIndividualsRule,
   });
 
   factory GeneralSettings.fromJson(Map<String, dynamic> json) =>
@@ -41,6 +43,7 @@ class GeneralSettings {
       maxLogEntries: 1000,
       debugMode: false,
       performanceMonitoring: true,
+      mergeIndividualsRule: 'none',
     );
   }
 
@@ -52,6 +55,7 @@ class GeneralSettings {
     int? maxLogEntries,
     bool? debugMode,
     bool? performanceMonitoring,
+    String? mergeIndividualsRule,
   }) {
     return GeneralSettings(
       darkTheme: darkTheme ?? this.darkTheme,
@@ -61,6 +65,7 @@ class GeneralSettings {
       maxLogEntries: maxLogEntries ?? this.maxLogEntries,
       debugMode: debugMode ?? this.debugMode,
       performanceMonitoring: performanceMonitoring ?? this.performanceMonitoring,
+      mergeIndividualsRule: mergeIndividualsRule ?? this.mergeIndividualsRule,
     );
   }
 }

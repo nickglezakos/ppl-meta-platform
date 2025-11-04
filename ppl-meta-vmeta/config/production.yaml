@@ -1,0 +1,369 @@
+# ============================================================================
+# PPL Meta vmeta Service - Production Configuration
+# ============================================================================
+#
+# YAML configuration for production deployment
+#
+# Version: 1.0.0
+# Date: November 1, 2025
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Service Configuration
+# ----------------------------------------------------------------------------
+service:
+  name: "vmeta"
+  version: "1.0.0"
+  environment: "production"
+  debug: false
+  
+  # Server settings
+  server:
+    host: "0.0.0.0"
+    port: 8008
+    workers: 4
+    worker_class: "uvicorn.workers.UvicornWorker"
+    timeout: 300
+    keepalive: 5
+    max_requests: 10000
+    max_requests_jitter: 1000
+  
+  # Graceful shutdown
+  shutdown:
+    timeout: 30
+    wait_for_workers: true
+
+# ----------------------------------------------------------------------------
+# Database Configuration
+# ----------------------------------------------------------------------------
+database:
+  # PostgreSQL connection
+  connection:
+    host: "${DB_HOST}"
+    port: 5432
+    database: "${DB_NAME}"
+    user: "${DB_USER}"
+    password: "${DB_PASSWORD}"
+  
+  # Connection pool (optimized for production)
+  pool:
+    min_size: 10
+    max_size: 50
+    max_queries: 50000
+    max_inactive_connection_lifetime: 300
+    timeout: 30
+    command_timeout: 60
+    
+  # Query optimization
+  query:
+    timeout: 30
+    statement_cache_size: 100
+    prepared_statement_cache_size: 100
+    
+  # pgvector settings
+  pgvector:
+    index_type: "ivfflat"
+    lists: 100
+    probes: 10
+    maintenance_work_mem: "256MB"
+
+# ----------------------------------------------------------------------------
+# MVR-People Configuration
+# ----------------------------------------------------------------------------
+mvr_people:
+  # Enable MVR features
+  enabled: true
+  auto_create: true
+  auto_match: true
+  auto_merge: false  # Requires manual approval in production
+  
+  # ML Models
+  models:
+    face:
+      name: "Facenet512"
+      path: "/opt/ppl-meta/vmeta/models/facenet512.h5"
+      batch_size: 32
+      cache_embeddings: true
+      cache_size: 1000
+      
+    age:
+      name: "AgeEstimator"
+      path: "/opt/ppl-meta/vmeta/models/age_estimator.h5"
+      tolerance_years: 5
+      
+    gender:
+      name: "GenderClassifier"
+      path: "/opt/ppl-meta/vmeta/models/gender_classifier.h5"
+      confidence_threshold: 0.6
+  
+  # Matching configuration
+  matching:
+    similarity_threshold: 0.85
+    quality_threshold: 0.7
+    min_faces_for_merge: 2
+    max_merge_candidates: 10
+    
+  # Quality scoring
+  quality:
+    weights:
+      sharpness: 0.3
+      brightness: 0.2
+      size: 0.3
+      frontal: 0.2
+    min_quality: 0.5
+    
+  # Background processing
+  background:
+    enabled: true
+    workers: 4
+    queue_size: 1000
+    batch_size: 50
+    max_retries: 3
+    retry_delay: 5.0
+    processing_interval: 60
+    
+  # Data retention
+  retention:
+    orphaned_mvr_days: 90
+    audit_log_days: 365
+    cleanup_enabled: true
+    cleanup_schedule: "0 2 * * 0"  # Sunday 2 AM
+
+# ----------------------------------------------------------------------------
+# External Services
+# ----------------------------------------------------------------------------
+external_services:
+  orchestrator:
+    url: "${ORCHESTRATOR_URL}"
+    timeout: 30
+    retry_attempts: 3
+    retry_delay: 2
+    
+  discovery:
+    url: "${DISCOVERY_URL}"
+    timeout: 10
+    enabled: true
+    register_on_start: true
+    heartbeat_interval: 30
+    health_check_path: "/health"
+    
+  gateway:
+    url: "${GATEWAY_URL}"
+    timeout: 30
+
+# ----------------------------------------------------------------------------
+# Authentication & Security
+# ----------------------------------------------------------------------------
+security:
+  # JWT Configuration
+  jwt:
+    secret_key: "${JWT_SECRET_KEY}"
+    algorithm: "HS256"
+    expiration_hours: 24
+    issuer: "vmeta-service"
+    
+  # CORS Configuration
+  cors:
+    enabled: true
+    allow_origins:
+      - "${PRODUCTION_ORIGIN_1}"
+      - "${PRODUCTION_ORIGIN_2}"
+    allow_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "PATCH"
+    allow_headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Request-ID"
+    allow_credentials: true
+    max_age: 3600
+    
+  # Rate limiting
+  rate_limiting:
+    enabled: true
+    default_limit: "100/minute"
+    burst_limit: 150
+    endpoints:
+      "/api/v1/mvr-people/create": "10/minute"
+      "/api/v1/mvr-people/search": "50/minute"
+      "/health": "1000/minute"
+      
+  # API Keys (if using)
+  api_keys:
+    enabled: false
+    header_name: "X-API-Key"
+
+# ----------------------------------------------------------------------------
+# Logging Configuration
+# ----------------------------------------------------------------------------
+logging:
+  # Global settings
+  level: "INFO"
+  format: "json"
+  output: "file"
+  
+  # File logging
+  file:
+    path: "/var/log/ppl-meta/vmeta/vmeta.log"
+    max_size: "100MB"
+    backup_count: 10
+    rotation: "daily"
+    
+  # Console logging (for container environments)
+  console:
+    enabled: true
+    level: "INFO"
+    
+  # Component-specific levels
+  components:
+    database: "WARNING"
+    mvr: "INFO"
+    api: "INFO"
+    background: "INFO"
+    ml: "INFO"
+    
+  # Structured logging fields
+  fields:
+    timestamp: true
+    level: true
+    logger: true
+    caller: true
+    trace_id: true
+    service: "vmeta"
+    environment: "production"
+    
+  # Log sampling (for high-volume logs)
+  sampling:
+    enabled: false
+    rate: 0.1  # Log 10% of requests
+
+# ----------------------------------------------------------------------------
+# Monitoring & Observability
+# ----------------------------------------------------------------------------
+monitoring:
+  # Metrics
+  metrics:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+    include_process_metrics: true
+    include_system_metrics: true
+    
+  # Health checks
+  health:
+    enabled: true
+    path: "/health"
+    include_database: true
+    include_mvr: true
+    include_ml_models: true
+    timeout: 5
+    
+  # Tracing (OpenTelemetry)
+  tracing:
+    enabled: false
+    endpoint: "${JAEGER_ENDPOINT}"
+    sample_rate: 0.1
+    service_name: "vmeta"
+    
+  # Alerting
+  alerts:
+    enabled: true
+    channels:
+      - type: "email"
+        recipients: "${ALERT_EMAILS}"
+      - type: "slack"
+        webhook: "${SLACK_WEBHOOK}"
+    rules:
+      - name: "high_error_rate"
+        condition: "error_rate > 0.05"
+        severity: "critical"
+      - name: "high_latency"
+        condition: "p95_latency > 5000"
+        severity: "warning"
+      - name: "database_pool_saturation"
+        condition: "db_pool_usage > 0.9"
+        severity: "critical"
+
+# ----------------------------------------------------------------------------
+# Performance & Resource Management
+# ----------------------------------------------------------------------------
+performance:
+  # Resource limits
+  resources:
+    max_memory_mb: 2048
+    max_cpu_cores: 4
+    max_open_files: 65536
+    
+  # Request limits
+  requests:
+    max_size_mb: 50
+    max_concurrent: 100
+    timeout: 300
+    
+  # Upload limits
+  uploads:
+    max_size_mb: 100
+    allowed_types:
+      - "image/jpeg"
+      - "image/png"
+      - "video/mp4"
+      
+  # Caching
+  cache:
+    enabled: true
+    type: "redis"
+    redis_url: "${REDIS_URL}"
+    ttl: 3600
+    max_size: 1000
+    key_prefix: "vmeta:"
+    
+  # Connection pooling (HTTP clients)
+  http_pool:
+    max_connections: 100
+    max_keepalive: 50
+    timeout: 30
+
+# ----------------------------------------------------------------------------
+# Feature Flags
+# ----------------------------------------------------------------------------
+features:
+  mvr_auto_match: true
+  mvr_auto_merge: false
+  background_processing: true
+  batch_operations: true
+  analytics: true
+  experimental_features: false
+
+# ----------------------------------------------------------------------------
+# Backup & Recovery
+# ----------------------------------------------------------------------------
+backup:
+  enabled: true
+  schedule: "0 3 * * *"  # Daily at 3 AM
+  retention_days: 30
+  path: "/var/backups/ppl-meta/vmeta"
+  include_database: true
+  include_ml_models: false
+  compress: true
+
+# ----------------------------------------------------------------------------
+# Development Overrides (not used in production)
+# ----------------------------------------------------------------------------
+# These settings are ignored when environment=production
+development:
+  debug: true
+  log_level: "DEBUG"
+  auto_reload: true
+  show_error_details: true
+
+# ----------------------------------------------------------------------------
+# Testing Configuration (not used in production)
+# ----------------------------------------------------------------------------
+# These settings are ignored when environment=production
+testing:
+  mock_external_services: false
+  test_database: "ppl_meta_test"
+  seed_data: false

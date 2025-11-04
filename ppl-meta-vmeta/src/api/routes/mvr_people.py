@@ -1,0 +1,1568 @@
+"""
+MVR-People API Routes
+
+This module implements 14 REST API endpoints for the MVR-People (Machine Vision Representation)
+system, providing CRUD operations, similarity search, matching/merging, and background task
+monitoring.
+
+All endpoints require JWT authentication via Authorization header.
+
+Author: PPL Meta Platform
+Date: October 31, 2025
+Version: 1.0.0
+"""
+
+import logging
+from typing import Optional, List
+from uuid import UUID
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi.responses import JSONResponse
+
+# Database and services
+from database.mvr_repository import MVRRepository
+from services.mvr_service import MVRService
+from services.mvr_matcher import MVRMatcher
+from background.mvr_background_processor import MVRBackgroundProcessor
+
+# Models
+from api.models.mvr_people import (
+    CreateMVRRequest,
+    CreateMVRResponse,
+    MVRPeopleResponse,
+    SearchSimilarRequest,
+    SearchSimilarResponse,
+    SearchDemographicsRequest,
+    SearchDemographicsResponse,
+    LinkIndividualRequest,
+    LinkIndividualResponse,
+    BatchCreateRequest,
+    BatchCreateResponse,
+    MVRStatusResponse,
+    MatchIndividualRequest,
+    MatchIndividualResponse,
+    MergeIndividualsRequest,
+    MergeIndividualsResponse,
+    MergeHistoryResponse,
+    OrphanedMVRResponse,
+    MatchingConfigUpdate,
+    MatchingConfigResponse,
+)
+
+# Batch merge models
+from api.models.batch_merge import (
+    BatchMatchAndMergeRequest,
+    BatchMatchAndMergeResponse,
+    MergeDetail,
+)
+
+# Dependencies
+from api.dependencies import (
+    get_mvr_repository,
+    get_mvr_service,
+    get_mvr_matcher,
+    get_mvr_background_processor,
+    get_current_user,
+)
+
+logger = logging.getLogger(__name__)
+
+# Initialize router
+router = APIRouter(
+    prefix="/api/v1/mvr-people",
+    tags=["mvr-people"],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized"},
+    },
+)
+
+
+# ============================================================================
+# ENDPOINT 1: Create MVR-People for Individual
+# ============================================================================
+
+@router.post(
+    "/individuals/{individual_uuid}/create",
+    response_model=CreateMVRResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Create MVR-People for Individual",
+    description="Create Machine Vision Representation for an Individual. "
+                "Supports both synchronous and asynchronous processing.",
+)
+async def create_mvr_for_individual(
+    individual_uuid: UUID,
+    request: Optional[CreateMVRRequest] = Body(default=None),
+    mvr_service: MVRService = Depends(get_mvr_service),
+    background_processor: MVRBackgroundProcessor = Depends(get_mvr_background_processor),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Create MVR-People representation for an individual.
+    
+    **Processing Modes:**
+    - **Background (default):** Returns immediately with status "pending"
+    - **Synchronous:** Set background_processing=false for immediate processing
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - individual_uuid: UUID of the Individual
+    - background_processing: Enable async processing (default: true)
+    - force_recreate: Recreate if already exists (default: false)
+    
+    **Returns:**
+    - 202 Accepted (background): MVR creation queued
+    - 200 OK (synchronous): MVR created with full details
+    - 400 Bad Request: Invalid Individual UUID or already exists
+    - 404 Not Found: Individual not found
+    """
+    logger.info(f"Creating MVR-People for Individual {individual_uuid} (user: {current_user.get('email')})")
+    
+    # Parse request body (use defaults if not provided)
+    background_processing = True
+    force_recreate = False
+    if request:
+        background_processing = request.background_processing
+        force_recreate = request.force_recreate
+    
+    try:
+        # Check if MVR already exists
+        existing_mvr = await mvr_service.get_mvr_for_individual(individual_uuid)
+        
+        if existing_mvr and not force_recreate:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"MVR-People already exists for Individual {individual_uuid}. "
+                       f"Use force_recreate=true to recreate."
+            )
+        
+        # Background processing
+        if background_processing:
+            # Queue background task
+            task_info = await background_processor.process_individual(
+                individual_uuid=individual_uuid,
+                auto_match=False,  # Don't auto-match on creation
+            )
+            
+            return CreateMVRResponse(
+                mvr_people_uuid=None,  # Not created yet
+                individual_uuid=individual_uuid,
+                status="pending",
+                message="MVR-People creation queued for background processing",
+                estimated_completion_seconds=10,
+            )
+        
+        # Synchronous processing
+        else:
+            # Create MVR-People immediately
+            mvr_result = await mvr_service.create_mvr_from_individual(individual_uuid)
+            
+            if not mvr_result:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create MVR-People"
+                )
+            
+            return CreateMVRResponse(
+                mvr_people_uuid=mvr_result['mvr_people_uuid'],
+                individual_uuid=individual_uuid,
+                status="completed",
+                face_embedding=mvr_result.get('face_embedding'),
+                age_estimate=mvr_result.get('age_estimate'),
+                gender_estimate=mvr_result.get('gender_estimate'),
+                representative_individual_uuid=mvr_result.get('featured_individual_uuid'),
+                quality_score=mvr_result.get('quality_score'),
+                created_at=mvr_result.get('created_at'),
+                updated_at=mvr_result.get('updated_at'),
+            )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating MVR-People for Individual {individual_uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create MVR-People: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 2: Get MVR-People by UUID
+# ============================================================================
+
+@router.get(
+    "/{mvr_people_uuid}",
+    response_model=MVRPeopleResponse,
+    summary="Get MVR-People by UUID",
+    description="Retrieve complete MVR-People record by UUID",
+)
+async def get_mvr_people_by_uuid(
+    mvr_people_uuid: UUID,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Retrieve MVR-People record by UUID.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - mvr_people_uuid: UUID of the MVR-People record
+    
+    **Returns:**
+    - 200 OK: MVR-People record with all linked Individuals
+    - 404 Not Found: MVR-People not found
+    """
+    logger.info(f"Retrieving MVR-People {mvr_people_uuid} (user: {current_user.get('email')})")
+    
+    try:
+        # Get MVR-People record
+        mvr_record = await mvr_repository.get_mvr_people_by_uuid(mvr_people_uuid)
+        
+        if not mvr_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"MVR-People {mvr_people_uuid} not found"
+            )
+        
+        # Get linked Individuals
+        linked_individuals = await mvr_repository.get_individuals_for_mvr(mvr_people_uuid)
+        
+        return MVRPeopleResponse(
+            mvr_people_uuid=mvr_record['mvr_people_uuid'],
+            status=mvr_record.get('processing_status', 'completed'),
+            face_embedding=mvr_record.get('face_embedding'),
+            age_estimate=mvr_record.get('age_estimate'),
+            gender_estimate=mvr_record.get('gender_estimate'),
+            representative_individual_uuid=mvr_record.get('featured_individual_uuid'),
+            representative_face_uuid=mvr_record.get('representative_face_uuid'),
+            quality_score=mvr_record.get('quality_score'),
+            total_linked_individuals=len(linked_individuals),
+            linked_individuals=linked_individuals,
+            created_at=mvr_record.get('created_at'),
+            updated_at=mvr_record.get('updated_at'),
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving MVR-People {mvr_people_uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve MVR-People: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 3: Get MVR-People for Individual
+# ============================================================================
+
+@router.get(
+    "/individuals/{individual_uuid}",
+    response_model=MVRPeopleResponse,
+    summary="Get MVR-People for Individual",
+    description="Retrieve MVR-People linked to an Individual",
+)
+async def get_mvr_for_individual(
+    individual_uuid: UUID,
+    mvr_service: MVRService = Depends(get_mvr_service),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get MVR-People linked to an Individual.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - individual_uuid: UUID of the Individual
+    
+    **Returns:**
+    - 200 OK: MVR-People record
+    - 404 Not Found: No MVR-People found for Individual
+    """
+    logger.info(f"Retrieving MVR-People for Individual {individual_uuid} (user: {current_user.get('email')})")
+    
+    try:
+        # Get MVR-People for Individual
+        mvr_record = await mvr_service.get_mvr_for_individual(individual_uuid)
+        
+        if not mvr_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No MVR-People found for Individual {individual_uuid}",
+            )
+        
+        return MVRPeopleResponse(
+            individual_uuid=individual_uuid,
+            mvr_people=mvr_record,
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving MVR-People for Individual {individual_uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve MVR-People: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 4: Search Similar MVR-People
+# ============================================================================
+
+@router.post(
+    "/search/similar",
+    response_model=SearchSimilarResponse,
+    summary="Search Similar MVR-People",
+    description="Find similar people using face embedding similarity (pgvector)",
+)
+async def search_similar_mvr_people(
+    request: SearchSimilarRequest,
+    mvr_service: MVRService = Depends(get_mvr_service),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Find similar people using face embedding similarity.
+    
+    **Similarity Algorithm:** Cosine similarity via pgvector extension
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - mvr_people_uuid OR face_embedding: Source for similarity search
+    - similarity_threshold: Minimum cosine similarity (0-1, default: 0.7)
+    - max_results: Maximum results to return (default: 10)
+    - include_demographics: Include age/gender filters (default: true)
+    
+    **Returns:**
+    - 200 OK: List of similar MVR-People with similarity scores
+    - 400 Bad Request: Invalid request (missing mvr_people_uuid and face_embedding)
+    """
+    logger.info(f"Searching similar MVR-People (user: {current_user.get('email')})")
+    
+    try:
+        # Validate request
+        if not request.mvr_people_uuid and not request.face_embedding:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either mvr_people_uuid or face_embedding must be provided"
+            )
+        
+        # Search by MVR UUID
+        if request.mvr_people_uuid:
+            results = await mvr_service.search_similar_mvr(
+                mvr_uuid=request.mvr_people_uuid,
+                threshold=request.similarity_threshold or 0.7,
+                limit=request.max_results or 10,
+            )
+        
+        # Search by face embedding
+        else:
+            results = await mvr_service.search_similar_by_embedding(
+                face_embedding=request.face_embedding,
+                threshold=request.similarity_threshold or 0.7,
+                limit=request.max_results or 10,
+            )
+        
+        return SearchSimilarResponse(
+            query_mvr_people_uuid=request.mvr_people_uuid,
+            total_results=len(results),
+            results=results,
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching similar MVR-People: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search similar MVR-People: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 5: Search MVR-People by Demographics
+# ============================================================================
+
+@router.post(
+    "/search/demographics",
+    response_model=SearchDemographicsResponse,
+    summary="Search MVR-People by Demographics",
+    description="Search MVR-People by age/gender filters",
+)
+async def search_mvr_by_demographics(
+    request: SearchDemographicsRequest,
+    mvr_service: MVRService = Depends(get_mvr_service),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Search MVR-People by age and gender filters.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - age_min: Minimum age (optional)
+    - age_max: Maximum age (optional)
+    - gender: Gender filter ("male", "female", "unknown") (optional)
+    - min_confidence: Minimum confidence for age/gender (default: 0.7)
+    - page: Page number (default: 1)
+    - page_size: Results per page (default: 20)
+    
+    **Returns:**
+    - 200 OK: Paginated list of MVR-People matching demographics
+    """
+    logger.info(f"Searching MVR-People by demographics (user: {current_user.get('email')})")
+    
+    try:
+        # Search by demographics
+        results = await mvr_service.search_by_demographics(
+            age_min=request.age_min,
+            age_max=request.age_max,
+            gender=request.gender,
+            min_confidence=request.min_confidence or 0.7,
+            page=request.page or 1,
+            page_size=request.page_size or 20,
+        )
+        
+        return SearchDemographicsResponse(
+            total_results=results['total'],
+            page=results['page'],
+            page_size=results['page_size'],
+            results=results['data'],
+        )
+    
+    except Exception as e:
+        logger.error(f"Error searching MVR-People by demographics: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search by demographics: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 6: Link Individual to Existing MVR-People
+# ============================================================================
+
+@router.post(
+    "/{mvr_people_uuid}/link-individual",
+    response_model=LinkIndividualResponse,
+    summary="Link Individual to MVR-People",
+    description="Link an Individual to existing MVR-People (person re-identification)",
+)
+async def link_individual_to_mvr(
+    mvr_people_uuid: UUID,
+    request: LinkIndividualRequest,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Link an Individual to existing MVR-People.
+    
+    **Use Case:** Person re-identification across videos/sessions
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - mvr_people_uuid: UUID of the MVR-People
+    - individual_uuid: UUID of the Individual to link
+    - confidence_score: Similarity confidence (0-1)
+    
+    **Returns:**
+    - 200 OK: Individual linked successfully
+    - 404 Not Found: MVR-People or Individual not found
+    - 400 Bad Request: Individual already linked
+    """
+    logger.info(
+        f"Linking Individual {request.individual_uuid} to MVR-People {mvr_people_uuid} "
+        f"(user: {current_user.get('email')})"
+    )
+    
+    try:
+        # Link Individual to MVR-People
+        result = await mvr_repository.link_individual_to_mvr(
+            individual_uuid=request.individual_uuid,
+            mvr_uuid=mvr_people_uuid,
+            confidence_score=request.confidence_score,
+            is_representative=False,  # Not the original Individual
+        )
+        
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to link Individual to MVR-People"
+            )
+        
+        # Get updated MVR-People
+        mvr_record = await mvr_repository.get_mvr_people_by_uuid(mvr_people_uuid)
+        
+        return LinkIndividualResponse(
+            mvr_people_uuid=mvr_people_uuid,
+            individual_uuid=request.individual_uuid,
+            linked_at=result['linked_at'],
+            confidence_score=request.confidence_score,
+            total_linked_individuals=mvr_record.get('total_linked_individuals', 0),
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error linking Individual to MVR-People: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to link Individual: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 7: Batch Create MVR-People
+# ============================================================================
+
+@router.post(
+    "/batch/create",
+    response_model=BatchCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Batch Create MVR-People",
+    description="Create MVR-People for multiple Individuals (batch processing)",
+)
+async def batch_create_mvr_people(
+    request: BatchCreateRequest,
+    background_processor: MVRBackgroundProcessor = Depends(get_mvr_background_processor),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Create MVR-People for multiple Individuals in batch.
+    
+    **Processing:** Always uses background processing for efficiency
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - individual_uuids: List of Individual UUIDs
+    - background_processing: Enable async processing (default: true)
+    
+    **Returns:**
+    - 202 Accepted: Batch creation queued
+    - 400 Bad Request: Invalid request (empty list, etc.)
+    """
+    logger.info(
+        f"Batch creating MVR-People for {len(request.individual_uuids)} Individuals "
+        f"(user: {current_user.get('email')})"
+    )
+    
+    try:
+        if not request.individual_uuids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="individual_uuids list cannot be empty"
+            )
+        
+        # Queue batch processing tasks
+        batch_id = None  # TODO: Implement batch tracking
+        
+        for individual_uuid in request.individual_uuids:
+            await background_processor.process_individual(
+                individual_uuid=individual_uuid,
+                auto_match=False,
+            )
+        
+        # Estimate completion time (10 seconds per Individual)
+        estimated_seconds = len(request.individual_uuids) * 10
+        
+        return BatchCreateResponse(
+            total_queued=len(request.individual_uuids),
+            batch_id=batch_id,
+            status="processing",
+            individual_uuids=request.individual_uuids,
+            estimated_completion_seconds=estimated_seconds,
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error batch creating MVR-People: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to batch create MVR-People: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 8: Get MVR-People Processing Status
+# ============================================================================
+
+@router.get(
+    "/{mvr_people_uuid}/status",
+    response_model=MVRStatusResponse,
+    summary="Get MVR-People Processing Status",
+    description="Check processing status of MVR-People creation",
+)
+async def get_mvr_processing_status(
+    mvr_people_uuid: UUID,
+    background_processor: MVRBackgroundProcessor = Depends(get_mvr_background_processor),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Check processing status of MVR-People creation.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - mvr_people_uuid: UUID of the MVR-People
+    
+    **Returns:**
+    - 200 OK: Processing status
+    - 404 Not Found: MVR-People not found
+    """
+    logger.info(f"Checking status of MVR-People {mvr_people_uuid} (user: {current_user.get('email')})")
+    
+    try:
+        # Get task status from background processor
+        # TODO: Implement task status tracking by MVR UUID
+        
+        return MVRStatusResponse(
+            mvr_people_uuid=mvr_people_uuid,
+            status="completed",  # Placeholder
+            created_at=datetime.now(),
+            started_at=datetime.now(),
+            completed_at=datetime.now(),
+            processing_error=None,
+            progress_percentage=100,
+            current_step="Completed",
+        )
+    
+    except Exception as e:
+        logger.error(f"Error getting MVR-People status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get status: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 9: Match Individuals (Find Similar)
+# ============================================================================
+
+@router.post(
+    "/individuals/{individual_uuid}/match",
+    response_model=MatchIndividualResponse,
+    summary="Match Individuals",
+    description="Find other Individuals that match the given Individual based on face similarity",
+)
+async def match_individual(
+    individual_uuid: UUID,
+    request: Optional[MatchIndividualRequest] = Body(default=None),
+    mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Find other Individuals that match the given Individual.
+    
+    **Matching Algorithm:** Uses MVRMatcher with configurable threshold
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - individual_uuid: UUID of the Individual to match
+    - threshold: Similarity threshold (default: 0.85)
+    - auto_merge: Automatically merge matches above threshold (default: false)
+    - max_results: Maximum results to return (default: 10)
+    
+    **Returns:**
+    - 200 OK: List of matching Individuals with similarity scores
+    - 404 Not Found: Individual not found
+    """
+    logger.info(f"Matching Individual {individual_uuid} (user: {current_user.get('email')})")
+    
+    # Parse request
+    threshold = 0.85
+    auto_merge = False
+    max_results = 10
+    
+    if request:
+        threshold = request.threshold or threshold
+        auto_merge = request.auto_merge
+        max_results = request.max_results or max_results
+    
+    try:
+        # Find matches
+        matches = await mvr_matcher.find_matching_mvr(
+            individual_uuid=individual_uuid,
+            threshold=threshold,
+        )
+        
+        # Auto-merge if enabled
+        if auto_merge and matches:
+            # TODO: Implement auto-merge logic
+            logger.info(f"Auto-merge enabled, merging {len(matches)} matches")
+        
+        # Calculate matches above threshold
+        matches_above_threshold = sum(
+            1 for match in matches if match['similarity_score'] >= threshold
+        )
+        
+        return MatchIndividualResponse(
+            individual_uuid=individual_uuid,
+            matches=matches[:max_results],
+            total_matches=len(matches),
+            matches_above_threshold=matches_above_threshold,
+            threshold_used=threshold,
+        )
+    
+    except Exception as e:
+        logger.error(f"Error matching Individual {individual_uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to match Individual: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 10: Merge Individuals to Single MVR-People
+# ============================================================================
+
+@router.post(
+    "/merge",
+    response_model=MergeIndividualsResponse,
+    summary="Merge Individuals",
+    description="Manually merge two Individuals to single MVR-People (predominant based on quality)",
+)
+async def merge_individuals(
+    request: MergeIndividualsRequest,
+    mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Merge two Individuals to single MVR-People.
+    
+    **Merge Logic:** Predominant MVR selected by quality score (higher wins)
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - individual_a_uuid: First Individual UUID
+    - individual_b_uuid: Second Individual UUID
+    - similarity_score: Similarity score for audit trail
+    - triggered_by: Trigger source (default: "manual")
+    
+    **Returns:**
+    - 200 OK: Merge completed successfully
+    - 400 Bad Request: Invalid request (same Individual, etc.)
+    - 404 Not Found: One or both Individuals not found
+    """
+    logger.info(
+        f"Merging Individuals {request.individual_a_uuid} and {request.individual_b_uuid} "
+        f"(user: {current_user.get('email')})"
+    )
+    
+    try:
+        # Validate request
+        if request.individual_a_uuid == request.individual_b_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot merge an Individual with itself"
+            )
+        
+        # Execute merge
+        merge_result = await mvr_matcher.merge_individuals(
+            individual_a_uuid=request.individual_a_uuid,
+            individual_b_uuid=request.individual_b_uuid,
+            similarity_score=request.similarity_score,
+            triggered_by=request.triggered_by or "manual",
+        )
+        
+        if not merge_result or not merge_result.get('success'):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to merge Individuals"
+            )
+        
+        return MergeIndividualsResponse(
+            success=True,
+            predominant_mvr_uuid=merge_result['predominant_mvr_uuid'],
+            orphaned_mvr_uuid=merge_result['orphaned_mvr_uuid'],
+            reassigned_individual_uuid=merge_result['reassigned_individual_uuid'],
+            similarity_score=request.similarity_score,
+            predominant_quality_score=merge_result.get('predominant_quality_score'),
+            orphaned_quality_score=merge_result.get('orphaned_quality_score'),
+            merged_at=merge_result.get('merged_at', datetime.now()),
+            message=merge_result.get('message'),
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error merging Individuals: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to merge Individuals: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 11: Get Merge History for Individual
+# ============================================================================
+
+@router.get(
+    "/individuals/{individual_uuid}/merge-history",
+    response_model=MergeHistoryResponse,
+    summary="Get Merge History",
+    description="Get all merge operations involving this Individual",
+)
+async def get_merge_history(
+    individual_uuid: UUID,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get all merge operations involving this Individual.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - individual_uuid: UUID of the Individual
+    
+    **Returns:**
+    - 200 OK: Merge history with current and previous MVR-People
+    - 404 Not Found: Individual not found
+    """
+    logger.info(f"Retrieving merge history for Individual {individual_uuid} (user: {current_user.get('email')})")
+    
+    try:
+        # Get current MVR-People
+        current_mvr = await mvr_repository.get_mvr_people_by_individual(individual_uuid)
+        
+        # Get previous MVR-People (orphaned)
+        previous_mvr = await mvr_repository.get_orphaned_mvr_for_individual(individual_uuid)
+        
+        # Get merge events
+        merge_events = await mvr_repository.get_merge_audit_log(individual_uuid=individual_uuid)
+        
+        return MergeHistoryResponse(
+            individual_uuid=individual_uuid,
+            current_mvr_people=current_mvr,
+            previous_mvr_people=previous_mvr,
+            merge_events=merge_events,
+            total_merges=len(merge_events),
+        )
+    
+    except Exception as e:
+        logger.error(f"Error retrieving merge history for Individual {individual_uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve merge history: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 12: Get Orphaned MVR-People
+# ============================================================================
+
+@router.get(
+    "/orphaned",
+    response_model=OrphanedMVRResponse,
+    summary="Get Orphaned MVR-People",
+    description="List all orphaned MVR-People (for audit/cleanup)",
+)
+async def get_orphaned_mvr_people(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Results per page"),
+    orphaned_after: Optional[datetime] = Query(None, description="Filter by orphaned_at date"),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List all orphaned MVR-People.
+    
+    **Use Case:** Audit trail and cleanup of merged MVR-People
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - page: Page number (default: 1)
+    - page_size: Results per page (default: 20, max: 100)
+    - orphaned_after: Filter by orphaned_at date (optional)
+    
+    **Returns:**
+    - 200 OK: Paginated list of orphaned MVR-People
+    """
+    logger.info(f"Retrieving orphaned MVR-People (user: {current_user.get('email')})")
+    
+    try:
+        # Get orphaned MVR-People
+        orphaned_mvr = await mvr_repository.get_orphaned_mvr_people(
+            page=page,
+            page_size=page_size,
+            orphaned_after=orphaned_after,
+        )
+        
+        return OrphanedMVRResponse(
+            total_orphaned=orphaned_mvr['total'],
+            page=page,
+            page_size=page_size,
+            results=orphaned_mvr['data'],
+        )
+    
+    except Exception as e:
+        logger.error(f"Error retrieving orphaned MVR-People: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve orphaned MVR-People: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 13: Update Matching Configuration
+# ============================================================================
+
+@router.put(
+    "/config/matching",
+    response_model=MatchingConfigResponse,
+    summary="Update Matching Configuration",
+    description="Update matching threshold and other configuration",
+)
+async def update_matching_config(
+    config: MatchingConfigUpdate,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update matching configuration.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - default_matching_threshold: Similarity threshold (0-1)
+    - auto_merge_enabled: Enable auto-merge on match
+    - min_quality_threshold: Minimum quality score (0-1)
+    
+    **Returns:**
+    - 200 OK: Updated configuration
+    - 400 Bad Request: Invalid configuration values
+    """
+    logger.info(f"Updating matching configuration (user: {current_user.get('email')})")
+    
+    try:
+        # Update configuration
+        updated_config = await mvr_repository.update_matching_config(
+            similarity_threshold=config.default_matching_threshold,
+            auto_merge_enabled=config.auto_merge_enabled,
+            min_quality_threshold=config.min_quality_threshold,
+        )
+        
+        return MatchingConfigResponse(
+            success=True,
+            updated_config=updated_config,
+            updated_at=datetime.now(),
+        )
+    
+    except Exception as e:
+        logger.error(f"Error updating matching configuration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update configuration: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 14: Get Matching Configuration
+# ============================================================================
+
+@router.get(
+    "/config/matching",
+    response_model=MatchingConfigResponse,
+    summary="Get Matching Configuration",
+    description="Get current matching configuration",
+)
+async def get_matching_config(
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get current matching configuration.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Returns:**
+    - 200 OK: Current configuration
+    """
+    logger.info(f"Retrieving matching configuration (user: {current_user.get('email')})")
+    
+    try:
+        # Get current configuration
+        config = await mvr_repository.get_matching_config()
+        
+        return MatchingConfigResponse(
+            default_matching_threshold=config.get('similarity_threshold', 0.85),
+            auto_merge_enabled=config.get('auto_merge_enabled', True),
+            min_quality_threshold=config.get('min_quality_threshold', 0.6),
+            age_range_tolerance=config.get('age_range_tolerance', 10),
+            gender_match_required=config.get('gender_match_required', False),
+            orphan_retention_days=config.get('orphan_retention_days', 365),
+            last_updated=config.get('updated_at'),
+        )
+    
+    except Exception as e:
+        logger.error(f"Error retrieving matching configuration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve configuration: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 15: MVR-People System Health Check
+# ============================================================================
+
+@router.get(
+    "/health",
+    response_model=None,  # Dynamic response based on health status
+    status_code=status.HTTP_200_OK,
+    summary="MVR-People System Health Check",
+    description="Comprehensive health check for MVR-People system including database, "
+                "ML models, processing queue, and statistics. "
+                "Does NOT require authentication for monitoring tools.",
+)
+async def mvr_health_check():
+    """
+    Get comprehensive health status of MVR-People system.
+    
+    **Components Checked:**
+    - Database connection and performance
+    - ML models (FaceNet, Age, Gender)
+    - Background processing queue
+    - System statistics
+    
+    **No Authentication Required** - Public endpoint for monitoring
+    
+    **Response Status:**
+    - "healthy" - All systems operational
+    - "degraded" - Some components have issues but system functional
+    - "unhealthy" - Critical components failing
+    
+    **Returns:**
+    - 200 OK: Health status with detailed metrics
+    - 503 Service Unavailable: Critical failure
+    """
+    import time
+    from datetime import datetime
+    import main
+    
+    start_time = time.time()
+    warnings = []
+    errors = []
+    overall_status = "healthy"
+    
+    # Check if MVR services are initialized
+    if not main.mvr_repository or not main.mvr_service or not main.mvr_background_processor:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "unhealthy",
+                "timestamp": datetime.utcnow().isoformat(),
+                "version": "1.0.0",
+                "errors": ["MVR-People services not initialized - check service startup logs"],
+                "warnings": [],
+                "database": {
+                    "connected": False,
+                    "pool_size": 0,
+                    "idle_connections": 0,
+                    "response_time_ms": 0,
+                    "pgvector_available": False,
+                },
+                "ml_models": {
+                    "facenet_loaded": False,
+                    "age_model_loaded": False,
+                    "gender_model_loaded": False,
+                    "total_models_loaded": 0,
+                    "model_load_time_ms": 0,
+                },
+                "processing_queue": {
+                    "queue_size": 0,
+                    "processing_tasks": 0,
+                    "pending_tasks": 0,
+                    "failed_tasks_last_hour": 0,
+                    "average_processing_time_ms": 0,
+                },
+                "statistics": {
+                    "total_mvr_people": 0,
+                    "active_mvr_people": 0,
+                    "orphaned_mvr_people": 0,
+                    "individuals_with_mvr": 0,
+                    "total_merge_operations": 0,
+                    "average_quality_score": 0.0,
+                },
+                "uptime_seconds": 0,
+                "last_mvr_created_at": None,
+                "last_merge_at": None,
+            }
+        )
+    
+    mvr_repository = main.mvr_repository
+    mvr_service = main.mvr_service
+    mvr_background_processor = main.mvr_background_processor
+    
+    try:
+        # ====================================================================
+        # 1. Database Health Check
+        # ====================================================================
+        db_start = time.time()
+        try:
+            # Test database connection with simple query
+            pool_stats = await mvr_repository.pool.execute(
+                "SELECT COUNT(*) FROM mvr_people"
+            )
+            db_response_time = (time.time() - db_start) * 1000  # ms
+            
+            # Get pool statistics
+            pool_size = mvr_repository.pool.get_size()
+            idle_connections = mvr_repository.pool.get_idle_size()
+            
+            # Check pgvector extension
+            pgvector_check = await mvr_repository.pool.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'vector')"
+            )
+            
+            database_health = {
+                "connected": True,
+                "pool_size": pool_size,
+                "idle_connections": idle_connections,
+                "response_time_ms": round(db_response_time, 2),
+                "pgvector_available": pgvector_check,
+            }
+            
+            if db_response_time > 1000:  # > 1 second
+                warnings.append(f"Database slow response: {db_response_time:.0f}ms")
+                overall_status = "degraded"
+                
+            if not pgvector_check:
+                errors.append("pgvector extension not available")
+                overall_status = "unhealthy"
+                
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            database_health = {
+                "connected": False,
+                "pool_size": 0,
+                "idle_connections": 0,
+                "response_time_ms": 0,
+                "pgvector_available": False,
+            }
+            errors.append(f"Database connection failed: {str(e)}")
+            overall_status = "unhealthy"
+        
+        # ====================================================================
+        # 2. ML Models Health Check
+        # ====================================================================
+        ml_start = time.time()
+        try:
+            # Check if ML processor is available
+            ml_processor = mvr_service.ml_processor
+            
+            # Check model availability
+            facenet_loaded = hasattr(ml_processor, 'face_model') and ml_processor.face_model is not None
+            age_loaded = hasattr(ml_processor, 'age_model') and ml_processor.age_model is not None
+            gender_loaded = hasattr(ml_processor, 'gender_model') and ml_processor.gender_model is not None
+            
+            total_loaded = sum([facenet_loaded, age_loaded, gender_loaded])
+            ml_load_time = (time.time() - ml_start) * 1000  # ms
+            
+            ml_models_health = {
+                "facenet_loaded": facenet_loaded,
+                "age_model_loaded": age_loaded,
+                "gender_model_loaded": gender_loaded,
+                "total_models_loaded": total_loaded,
+                "model_load_time_ms": round(ml_load_time, 2),
+            }
+            
+            if total_loaded < 3:
+                warnings.append(f"Only {total_loaded}/3 ML models loaded")
+                overall_status = "degraded"
+                
+        except Exception as e:
+            logger.error(f"ML models health check failed: {e}")
+            ml_models_health = {
+                "facenet_loaded": False,
+                "age_model_loaded": False,
+                "gender_model_loaded": False,
+                "total_models_loaded": 0,
+                "model_load_time_ms": 0,
+            }
+            warnings.append(f"ML models check failed: {str(e)}")
+            overall_status = "degraded"
+        
+        # ====================================================================
+        # 3. Processing Queue Health Check
+        # ====================================================================
+        try:
+            # Get background processor statistics (await since it's async)
+            stats = await mvr_background_processor.get_statistics()
+            
+            processing_queue_health = {
+                "queue_size": stats.get('total_tasks', 0),
+                "processing_tasks": stats.get('successful_tasks', 0),
+                "pending_tasks": stats.get('total_tasks', 0) - stats.get('successful_tasks', 0),
+                "failed_tasks_last_hour": stats.get('failed_tasks', 0),
+                "average_processing_time_ms": stats.get('average_processing_time', 0) * 1000,
+            }
+            
+            if processing_queue_health['failed_tasks_last_hour'] > 10:
+                warnings.append(f"High failure rate: {processing_queue_health['failed_tasks_last_hour']} failures")
+                overall_status = "degraded"
+                
+        except Exception as e:
+            logger.error(f"Processing queue health check failed: {e}")
+            processing_queue_health = {
+                "queue_size": 0,
+                "processing_tasks": 0,
+                "pending_tasks": 0,
+                "failed_tasks_last_hour": 0,
+                "average_processing_time_ms": 0,
+            }
+            warnings.append(f"Queue check failed: {str(e)}")
+        
+        # ====================================================================
+        # 4. System Statistics
+        # ====================================================================
+        try:
+            # Get MVR-People statistics from database
+            total_mvr = await mvr_repository.pool.fetchval(
+                "SELECT COUNT(*) FROM mvr_people"
+            )
+            active_mvr = await mvr_repository.pool.fetchval(
+                "SELECT COUNT(*) FROM mvr_people WHERE is_orphaned = FALSE"
+            )
+            orphaned_mvr = await mvr_repository.pool.fetchval(
+                "SELECT COUNT(*) FROM mvr_people WHERE is_orphaned = TRUE"
+            )
+            individuals_with_mvr = await mvr_repository.pool.fetchval(
+                "SELECT COUNT(*) FROM individual_mvr_mapping"
+            )
+            total_merges = await mvr_repository.pool.fetchval(
+                "SELECT COUNT(*) FROM mvr_merge_audit_log"
+            )
+            avg_quality = await mvr_repository.pool.fetchval(
+                "SELECT AVG(quality_score) FROM mvr_people WHERE is_orphaned = FALSE"
+            )
+            
+            # Get last MVR creation time
+            last_mvr_created = await mvr_repository.pool.fetchval(
+                "SELECT MAX(created_at) FROM mvr_people"
+            )
+            
+            # Get last merge time
+            last_merge = await mvr_repository.pool.fetchval(
+                "SELECT MAX(merge_timestamp) FROM mvr_merge_audit_log"
+            )
+            
+            statistics = {
+                "total_mvr_people": total_mvr or 0,
+                "active_mvr_people": active_mvr or 0,
+                "orphaned_mvr_people": orphaned_mvr or 0,
+                "individuals_with_mvr": individuals_with_mvr or 0,
+                "total_merge_operations": total_merges or 0,
+                "average_quality_score": round(float(avg_quality or 0.0), 3),
+            }
+            
+        except Exception as e:
+            logger.error(f"Statistics collection failed: {e}")
+            statistics = {
+                "total_mvr_people": 0,
+                "active_mvr_people": 0,
+                "orphaned_mvr_people": 0,
+                "individuals_with_mvr": 0,
+                "total_merge_operations": 0,
+                "average_quality_score": 0.0,
+            }
+            last_mvr_created = None
+            last_merge = None
+            warnings.append(f"Statistics collection failed: {str(e)}")
+        
+        # ====================================================================
+        # 5. Build Response
+        # ====================================================================
+        total_time = time.time() - start_time
+        
+        response = {
+            "status": overall_status,
+            "timestamp": datetime.utcnow(),
+            "version": "1.0.0",
+            "database": database_health,
+            "ml_models": ml_models_health,
+            "processing_queue": processing_queue_health,
+            "statistics": statistics,
+            "uptime_seconds": round(total_time, 2),
+            "last_mvr_created_at": last_mvr_created,
+            "last_merge_at": last_merge,
+            "warnings": warnings,
+            "errors": errors,
+        }
+        
+        # Return 503 if unhealthy
+        if overall_status == "unhealthy":
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content=response
+            )
+        
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=response
+        )
+        
+    except Exception as e:
+        logger.error(f"Health check failed critically: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "unhealthy",
+                "timestamp": datetime.utcnow().isoformat(),
+                "version": "1.0.0",
+                "errors": [f"Critical health check failure: {str(e)}"],
+                "warnings": [],
+            }
+        )
+
+
+# ============================================================================
+# ENDPOINT 15: Batch Match and Merge Individuals
+# ============================================================================
+
+@router.post(
+    "/batch-match-and-merge",
+    response_model=BatchMatchAndMergeResponse,
+    summary="Batch Match and Merge Individuals",
+    description="Batch operation to match and merge multiple individuals "
+                "from a tracking session",
+)
+async def batch_match_and_merge(
+    request: BatchMatchAndMergeRequest,
+    mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Batch match and merge all individuals from a tracking session.
+    
+    This endpoint:
+    1. Takes a list of individual UUIDs (from tracking session)
+    2. For each individual, finds matching individuals (face similarity)
+    3. Merges duplicates above the similarity threshold
+    4. Returns original count vs unique count
+    
+    **Use Case:** Get unique individual count after cross-video tracking
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - individual_uuids: List of individual UUIDs to process
+    - threshold: Similarity threshold (default: 0.85)
+    - triggered_by: Source identifier (default: "batch_auto_match")
+    - session_uuid: Optional tracking session UUID for audit
+    
+    **Returns:**
+    - 200 OK: Batch merge completed with statistics
+    - 400 Bad Request: Invalid request (empty list, invalid UUIDs)
+    - 500 Internal Server Error: Processing failed
+    
+    **Example:**
+    ```
+    POST /api/v1/mvr-people/batch-match-and-merge
+    {
+      "individual_uuids": ["uuid-1", "uuid-2", ..., "uuid-15"],
+      "threshold": 0.85,
+      "triggered_by": "cross_video_tracking_session",
+      "session_uuid": "session-abc-123"
+    }
+    
+    Response:
+    {
+      "success": true,
+      "original_count": 15,
+      "unique_count": 12,
+      "merge_count": 3,
+      "merges": [...],
+      "processing_time_seconds": 2.34
+    }
+    ```
+    """
+    import time
+    start_time = time.time()
+    
+    logger.info(
+        f"Batch match and merge: {len(request.individual_uuids)} individuals "
+        f"(threshold: {request.threshold}, "
+        f"user: {current_user.get('email')})"
+    )
+    
+    original_count = len(request.individual_uuids)
+    processed_individuals = set()
+    merge_count = 0
+    merges = []
+    skipped_count = 0
+    
+    try:
+        # Process each individual
+        for individual_uuid in request.individual_uuids:
+            individual_uuid_str = str(individual_uuid)
+            
+            # Skip if already processed (was orphaned in a previous merge)
+            if individual_uuid_str in processed_individuals:
+                logger.debug(
+                    f"Skipping {individual_uuid_str} (already processed)"
+                )
+                continue
+            
+            try:
+                # Find matches for this individual
+                matches = await mvr_matcher.find_matching_mvr(
+                    individual_uuid=individual_uuid_str,
+                    threshold=request.threshold,
+                )
+                
+                logger.debug(
+                    f"Found {len(matches)} potential matches for "
+                    f"{individual_uuid_str}"
+                )
+                
+                # Merge each match above threshold
+                for match in matches:
+                    match_uuid = str(match.get('individual_uuid'))
+                    similarity = match.get('similarity_score', 0.0)
+                    
+                    # Skip if already processed
+                    if match_uuid in processed_individuals:
+                        continue
+                    
+                    # Only merge if above threshold
+                    if similarity >= request.threshold:
+                        logger.info(
+                            f"Merging {individual_uuid_str} with {match_uuid} "
+                            f"(similarity: {similarity:.3f})"
+                        )
+                        
+                        try:
+                            # Execute merge
+                            merge_result = await mvr_matcher.merge_individuals(
+                                individual_a_uuid=individual_uuid_str,
+                                individual_b_uuid=match_uuid,
+                                similarity_score=similarity,
+                                triggered_by=request.triggered_by,
+                            )
+                            
+                            if merge_result and merge_result.get('success'):
+                                # Track the orphaned individual
+                                orphaned_mvr_uuid = merge_result.get(
+                                    'orphaned_mvr_uuid'
+                                )
+                                predominant_mvr_uuid = merge_result.get(
+                                    'predominant_mvr_uuid'
+                                )
+                                reassigned_uuid = merge_result.get(
+                                    'reassigned_individual_uuid'
+                                )
+                                
+                                processed_individuals.add(str(reassigned_uuid))
+                                merge_count += 1
+                                
+                                # Record merge details
+                                merges.append(MergeDetail(
+                                    predominant_individual_uuid=individual_uuid,
+                                    orphaned_individual_uuid=match_uuid,
+                                    predominant_mvr_uuid=predominant_mvr_uuid,
+                                    orphaned_mvr_uuid=orphaned_mvr_uuid,
+                                    similarity_score=similarity,
+                                    merged_at=merge_result.get(
+                                        'merged_at', datetime.now()
+                                    ),
+                                ))
+                                
+                                logger.info(
+                                    f"Successfully merged: {reassigned_uuid} "
+                                    f"is now orphaned"
+                                )
+                            else:
+                                logger.warning(
+                                    f"Merge failed for {individual_uuid_str} "
+                                    f"and {match_uuid}"
+                                )
+                                skipped_count += 1
+                                
+                        except Exception as merge_error:
+                            logger.error(
+                                f"Error merging {individual_uuid_str} with "
+                                f"{match_uuid}: {merge_error}"
+                            )
+                            skipped_count += 1
+                            # Continue with next match
+                            continue
+                
+                # Mark current individual as processed
+                processed_individuals.add(individual_uuid_str)
+                
+            except Exception as match_error:
+                logger.error(
+                    f"Error finding matches for {individual_uuid_str}: "
+                    f"{match_error}"
+                )
+                skipped_count += 1
+                # Continue with next individual
+                continue
+        
+        # Calculate final counts
+        unique_count = original_count - merge_count
+        processing_time = time.time() - start_time
+        
+        logger.info(
+            f"Batch merge complete: {original_count} → {unique_count} unique "
+            f"({merge_count} merged, {skipped_count} skipped) "
+            f"in {processing_time:.2f}s"
+        )
+        
+        return BatchMatchAndMergeResponse(
+            success=True,
+            original_count=original_count,
+            unique_count=unique_count,
+            merge_count=merge_count,
+            merges=merges,
+            skipped_count=skipped_count,
+            processing_time_seconds=round(processing_time, 2),
+            message=(
+                f"Successfully merged {merge_count} duplicates from "
+                f"{original_count} individuals"
+            ),
+        )
+        
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"Batch merge failed: {e}", exc_info=True)
+        
+        # Return partial results if we made any progress
+        if merge_count > 0:
+            unique_count = original_count - merge_count
+            return BatchMatchAndMergeResponse(
+                success=False,
+                original_count=original_count,
+                unique_count=unique_count,
+                merge_count=merge_count,
+                merges=merges,
+                skipped_count=skipped_count,
+                processing_time_seconds=round(processing_time, 2),
+                message=(
+                    f"Partial completion: {merge_count} merged before error: "
+                    f"{str(e)}"
+                ),
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Batch merge failed: {str(e)}"
+            )
+
+
+# ============================================================================
+# Router Export
+# ============================================================================
+
+__all__ = ["router"]

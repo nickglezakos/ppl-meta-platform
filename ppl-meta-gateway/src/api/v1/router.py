@@ -1492,3 +1492,18 @@ async def get_individual_aggregated_analysis(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+# Manual merge endpoint for cross-video individuals
+@api_router.post("/cross-video/individuals/tracking/merge")
+async def merge_individuals_manual(request: Request):
+    """Proxy request to manually merge selected individuals to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+# MVR-People Service Routes
+@api_router.post("/mvr-people/batch-match-and-merge")
+async def batch_match_and_merge(request: Request):
+    """Proxy batch match and merge request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+

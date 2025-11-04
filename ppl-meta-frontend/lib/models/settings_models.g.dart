@@ -15,6 +15,7 @@ GeneralSettings _$GeneralSettingsFromJson(Map<String, dynamic> json) =>
       maxLogEntries: (json['maxLogEntries'] as num).toInt(),
       debugMode: json['debugMode'] as bool,
       performanceMonitoring: json['performanceMonitoring'] as bool,
+      mergeIndividualsRule: json['mergeIndividualsRule'] as String,
     );
 
 Map<String, dynamic> _$GeneralSettingsToJson(GeneralSettings instance) =>
@@ -26,6 +27,7 @@ Map<String, dynamic> _$GeneralSettingsToJson(GeneralSettings instance) =>
       'maxLogEntries': instance.maxLogEntries,
       'debugMode': instance.debugMode,
       'performanceMonitoring': instance.performanceMonitoring,
+      'mergeIndividualsRule': instance.mergeIndividualsRule,
     };
 
 DetectionSettings _$DetectionSettingsFromJson(Map<String, dynamic> json) =>

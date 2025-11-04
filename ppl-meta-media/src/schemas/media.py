@@ -212,6 +212,8 @@ class MediaResponse(MediaBase):
     is_archived: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
+    start_timestamp: Optional[datetime] = None  # Recording start time
+    end_timestamp: Optional[datetime] = None    # Recording end time
     thumbnail_url: Optional[str] = None
     url: Optional[str] = None
     collections: Optional[List[Dict[str, Any]]] = Field(default_factory=list)

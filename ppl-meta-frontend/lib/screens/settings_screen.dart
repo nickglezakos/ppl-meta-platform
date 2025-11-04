@@ -122,6 +122,55 @@ class GeneralSettingsTab extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
+            _buildSectionHeader('Cross-Video Tracking'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.merge_type),
+                      title: const Text('Merge Individuals Rules'),
+                      subtitle: const Text('How to handle duplicate individuals'),
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('No automatic merging'),
+                      subtitle: const Text('Manual selection only'),
+                      value: 'none',
+                      groupValue: data.mergeIndividualsRule,
+                      onChanged: (value) {
+                        if (value != null) {
+                          notifier.updateMergeIndividualsRule(value);
+                        }
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Semi-automatic merging'),
+                      subtitle: const Text('Suggest merges, require confirmation'),
+                      value: 'semi',
+                      groupValue: data.mergeIndividualsRule,
+                      onChanged: (value) {
+                        if (value != null) {
+                          notifier.updateMergeIndividualsRule(value);
+                        }
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Automatic merging'),
+                      subtitle: const Text('Automatically merge similar individuals'),
+                      value: 'auto',
+                      groupValue: data.mergeIndividualsRule,
+                      onChanged: (value) {
+                        if (value != null) {
+                          notifier.updateMergeIndividualsRule(value);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
             _buildSectionHeader('System Configuration'),
             Card(
               child: Padding(

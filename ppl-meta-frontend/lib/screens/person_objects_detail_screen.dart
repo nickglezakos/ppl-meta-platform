@@ -62,6 +62,12 @@ class _PersonObjectsDetailScreenState
   
   // Track expanded individuals in cross-video mode
   final Set<String> _expandedIndividuals = {};
+  
+  // Track selected individuals for merging
+  final Set<String> _selectedIndividuals = {};
+  
+  // Similarity threshold for merging (adjustable by user)
+  double _similarityThreshold = 0.6;
 
   @override
   void initState() {
@@ -110,6 +116,14 @@ class _PersonObjectsDetailScreenState
       body: _isCrossVideoMode 
           ? _buildCrossVideoView() 
           : _buildSingleVideoView(),
+      floatingActionButton: _isCrossVideoMode && _selectedIndividuals.length >= 2
+          ? FloatingActionButton.extended(
+              onPressed: _showMergeConfirmationDialog,
+              icon: const Icon(Icons.merge),
+              label: Text('Merge ${_selectedIndividuals.length} Individuals'),
+              backgroundColor: Colors.blue,
+            )
+          : null,
     );
   }
 
@@ -1270,6 +1284,208 @@ class _PersonObjectsDetailScreenState
         _isLoadingCrossVideoData = false;
       });
       print('❌ Error loading cross-video data: $e');
+    }
+  }
+
+  /// Show confirmation dialog for merging individuals
+  Future<void> _showMergeConfirmationDialog() async {
+    if (_selectedIndividuals.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least 2 individuals to merge'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    // Local state for the slider in the dialog
+    double dialogThreshold = _similarityThreshold;
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Merge Individuals'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Are you sure you want to merge ${_selectedIndividuals.length} individuals?'),
+                const SizedBox(height: 16),
+                const Text(
+                  'The system will validate face similarity before merging. '
+                  'Individuals with similar facial embeddings will be combined into one.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Similarity Threshold:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Slider(
+                        value: dialogThreshold,
+                        min: 0.3,
+                        max: 0.95,
+                        divisions: 13,
+                        label: '${(dialogThreshold * 100).toStringAsFixed(0)}%',
+                        onChanged: (value) {
+                          setState(() {
+                            dialogThreshold = value;
+                          });
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 60,
+                      child: Text(
+                        '${(dialogThreshold * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  dialogThreshold < 0.5
+                      ? 'Very permissive - may merge different people'
+                      : dialogThreshold < 0.7
+                          ? 'Moderate - good for varied angles/lighting'
+                          : 'Strict - only very similar faces',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: dialogThreshold < 0.5 ? Colors.orange : Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Selected individuals:\n${_selectedIndividuals.map((uuid) => '• ${uuid.substring(0, 8)}...').join('\n')}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                // Update the threshold before closing
+                this.setState(() {
+                  _similarityThreshold = dialogThreshold;
+                });
+                Navigator.of(context).pop(true);
+              },
+              child: const Text('Merge'),
+            ),
+          ],
+        ),
+      ),
+    );
+    
+    if (confirmed == true) {
+      await _executeMerge();
+    }
+  }
+
+  /// Execute the merge operation
+  Future<void> _executeMerge() async {
+    if (_selectedIndividuals.isEmpty || widget.crossVideoContext == null) return;
+    
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Merging individuals...',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+      ),
+    );
+    
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final mediaApiClient = MediaApiClient(apiClient);
+      
+      final response = await mediaApiClient.mergeIndividuals(
+        individualUuids: _selectedIndividuals.toList(),
+        sessionUuid: widget.crossVideoContext!.sessionUuid,
+        similarityThreshold: _similarityThreshold,
+      );
+      
+      // Dismiss loading indicator
+      if (mounted) Navigator.of(context).pop();
+      
+      if (response.success && response.data != null) {
+        final data = response.data!;
+        final predominantUuid = data['predominant_individual_uuid'] as String;
+        final mergedCount = (data['merged_individual_uuids'] as List).length;
+        final similarityScore = data['similarity_score'] as double?;
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Successfully merged $mergedCount individuals\n'
+                'Similarity: ${similarityScore != null ? (similarityScore * 100).toStringAsFixed(1) : "N/A"}%',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        
+        // Clear selection and reload data
+        setState(() {
+          _selectedIndividuals.clear();
+        });
+        await _loadCrossVideoData();
+        
+      } else {
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Merge failed: ${response.error ?? "Unknown error"}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Dismiss loading indicator
+      if (mounted) Navigator.of(context).pop();
+      
+      // Show error message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Merge error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      print('❌ Error merging individuals: $e');
     }
   }
 
@@ -3145,12 +3361,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   /// Build individual card showing aggregated data
   Widget _buildIndividualCard(AggregatedIndividualAnalysis analysis, int index) {
     final isExpanded = _expandedIndividuals.contains(analysis.individualUuid);
+    final isSelected = _selectedIndividuals.contains(analysis.individualUuid);
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Column(
         children: [
-          // Main card content - clickable
+          // Main card content - clickable with checkbox
           InkWell(
             onTap: () {
               setState(() {
@@ -3168,6 +3385,20 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                 children: [
                   Row(
                     children: [
+                      // Checkbox for selection
+                      Checkbox(
+                        value: isSelected,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              _selectedIndividuals.add(analysis.individualUuid);
+                            } else {
+                              _selectedIndividuals.remove(analysis.individualUuid);
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 8),
                       // Individual icon (placeholder for face)
                       Container(
                         width: 60,

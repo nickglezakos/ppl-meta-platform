@@ -35,12 +35,21 @@ db_client: VmetaDatabaseClient = None
 embedding_service: EmbeddingService = None
 workflow_service: WorkflowService = None
 
+# MVR-People services (lazy loaded)
+mvr_repository = None
+mvr_service = None
+mvr_matcher = None
+mvr_background_processor = None
+mvr_integration_hook = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle manager for vmeta service."""
 
     global db_client, embedding_service, workflow_service
+    global mvr_repository, mvr_service, mvr_matcher
+    global mvr_background_processor, mvr_integration_hook
 
     try:
         logger.info("🚀 Starting PPL Meta vmeta Service")
@@ -64,6 +73,68 @@ async def lifespan(app: FastAPI):
             database_client=db_client, embedding_service=embedding_service
         )
 
+        # Initialize MVR-People services (lazy initialization)
+        try:
+            logger.info("🧬 Initializing MVR-People services...")
+            from database.mvr_repository import MVRRepository
+            from services.mvr_service import MVRService
+            from services.mvr_matcher import MVRMatcher
+            from ml.mvr_processor import MVRProcessor
+            from background.mvr_background_processor import (
+                MVRBackgroundProcessor
+            )
+            from background.mvr_integration_hook import MVRIntegrationHook
+            from background import mvr_helper
+            import asyncpg
+
+            # Create connection pool for MVR repository
+            mvr_pool = await asyncpg.create_pool(
+                host=settings.DB_HOST,
+                port=settings.DB_PORT,
+                user=settings.DB_USER,
+                password=settings.DB_PASSWORD,
+                database=settings.DB_NAME,
+                min_size=2,
+                max_size=10
+            )
+
+            mvr_repository = MVRRepository(connection_pool=mvr_pool)
+
+            # Initialize ML processor
+            ml_processor = MVRProcessor()
+
+            mvr_service = MVRService(
+                repository=mvr_repository,
+                ml_processor=ml_processor
+            )
+            mvr_matcher = MVRMatcher(
+                repository=mvr_repository,
+                ml_processor=ml_processor
+            )
+
+            mvr_background_processor = MVRBackgroundProcessor(
+                mvr_service=mvr_service,
+                mvr_matcher=mvr_matcher,
+                max_retries=3,
+                retry_delay=5.0
+            )
+
+            mvr_integration_hook = MVRIntegrationHook(
+                background_processor=mvr_background_processor
+            )
+
+            # Register hook globally for easy access
+            mvr_helper.set_mvr_integration_hook(mvr_integration_hook)
+
+            # Store pool for cleanup
+            app.state.mvr_pool = mvr_pool
+
+            logger.info("✅ MVR-People services initialized successfully")
+
+        except Exception as e:
+            logger.warning(f"⚠️ MVR-People services not initialized: {e}")
+            logger.warning("⚠️ MVR-People features will not be available")
+
         # Register with service discovery
         # await register_with_discovery()
 
@@ -78,6 +149,8 @@ async def lifespan(app: FastAPI):
     finally:
         # Cleanup
         logger.info("🧹 Shutting down vmeta service...")
+        if hasattr(app.state, 'mvr_pool') and app.state.mvr_pool:
+            await app.state.mvr_pool.close()
         if db_client:
             await db_client.close()
         logger.info("✅ vmeta service shutdown completed")
@@ -119,6 +192,19 @@ except ImportError as e:
     logger.warning(f"⚠️ Cross-video tracking router not available: {e}")
 except Exception as e:
     logger.error(f"❌ Error adding cross-video tracking router: {e}")
+
+# Add MVR-People API router with error handling
+try:
+    from api.routes.mvr_people import router as mvr_people_router
+    app.include_router(
+        mvr_people_router,
+        tags=["mvr-people"]
+    )
+    logger.info("✅ MVR-People API router added successfully (14 endpoints)")
+except ImportError as e:
+    logger.warning(f"⚠️ MVR-People API router not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Error adding MVR-People API router: {e}")
 
 
 @app.get("/")

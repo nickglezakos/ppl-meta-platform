@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
 import '../models/settings_models.dart';
@@ -18,25 +17,11 @@ class SettingsStorageService {
   static const String _cameraSettingsKey = 'camera_settings';
   static const String _automationSettingsKey = 'automation_settings';
 
-  Future<String> get _localPath async {
-    final directory = await getApplicationDocumentsDirectory();
-    return '${directory.path}/ppl_meta_settings';
-  }
-
-  Future<File> _getSettingsFile(String key) async {
-    final path = await _localPath;
-    final dir = Directory(path);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    return File('$path/$key.json');
-  }
-
   Future<void> saveSettings<T>(String key, T settings) async {
     try {
-      final file = await _getSettingsFile(key);
+      final prefs = await SharedPreferences.getInstance();
       final jsonString = jsonEncode((settings as dynamic).toJson());
-      await file.writeAsString(jsonString);
+      await prefs.setString(key, jsonString);
     } catch (e) {
       throw Exception('Failed to save settings: $e');
     }
@@ -44,12 +29,12 @@ class SettingsStorageService {
 
   Future<T?> loadSettings<T>(String key, T Function(Map<String, dynamic>) fromJson) async {
     try {
-      final file = await _getSettingsFile(key);
-      if (!await file.exists()) {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonString = prefs.getString(key);
+      if (jsonString == null) {
         return null;
       }
       
-      final jsonString = await file.readAsString();
       final jsonMap = jsonDecode(jsonString) as Map<String, dynamic>;
       return fromJson(jsonMap);
     } catch (e) {
@@ -59,10 +44,8 @@ class SettingsStorageService {
 
   Future<void> deleteSettings(String key) async {
     try {
-      final file = await _getSettingsFile(key);
-      if (await file.exists()) {
-        await file.delete();
-      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
     } catch (e) {
       // Ignore deletion errors
     }
@@ -87,12 +70,15 @@ class SettingsStorageService {
         version: '1.0.0',
         metadata: {
           'app_version': '1.0.0',
-          'platform': Platform.operatingSystem,
+          'exported_at': DateTime.now().toIso8601String(),
         },
       );
 
-      final file = File(filePath);
-      await file.writeAsString(jsonEncode(bundle.toJson()));
+      // For web, we'll use the file_picker to save
+      // For now, just return the JSON string that can be downloaded
+      final jsonString = jsonEncode(bundle.toJson());
+      // TODO: Implement web-compatible file download
+      throw UnimplementedError('Export not yet implemented for web');
     } catch (e) {
       throw Exception('Failed to export settings: $e');
     }
@@ -100,41 +86,9 @@ class SettingsStorageService {
 
   Future<ConfigurationBundle> importAllSettings(String filePath) async {
     try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        throw Exception('Settings file not found');
-      }
-
-      final jsonString = await file.readAsString();
-      final jsonMap = jsonDecode(jsonString) as Map<String, dynamic>;
-      final bundle = ConfigurationBundle.fromJson(jsonMap);
-
-      // Validate settings before importing
-      final generalValidation = SettingsValidation.validateGeneralSettings(bundle.general);
-      final detectionValidation = SettingsValidation.validateDetectionSettings(bundle.detection);
-      final cameraValidation = SettingsValidation.validateCameraSettings(bundle.camera);
-      final automationValidation = SettingsValidation.validateAutomationSettings(bundle.automation);
-
-      if (!generalValidation.isValid) {
-        throw Exception('Invalid general settings: ${generalValidation.errorMessage}');
-      }
-      if (!detectionValidation.isValid) {
-        throw Exception('Invalid detection settings: ${detectionValidation.errorMessage}');
-      }
-      if (!cameraValidation.isValid) {
-        throw Exception('Invalid camera settings: ${cameraValidation.errorMessage}');
-      }
-      if (!automationValidation.isValid) {
-        throw Exception('Invalid automation settings: ${automationValidation.errorMessage}');
-      }
-
-      // Save imported settings
-      await saveSettings(_generalSettingsKey, bundle.general);
-      await saveSettings(_detectionSettingsKey, bundle.detection);
-      await saveSettings(_cameraSettingsKey, bundle.camera);
-      await saveSettings(_automationSettingsKey, bundle.automation);
-
-      return bundle;
+      // For web, this would use file_picker to read the file
+      // For now, throw unimplemented
+      throw UnimplementedError('Import not yet implemented for web');
     } catch (e) {
       throw Exception('Failed to import settings: $e');
     }
@@ -230,6 +184,13 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
     final currentSettings = state.valueOrNull;
     if (currentSettings != null) {
       await _saveSettings(currentSettings.copyWith(performanceMonitoring: performanceMonitoring));
+    }
+  }
+
+  Future<void> updateMergeIndividualsRule(String rule) async {
+    final currentSettings = state.valueOrNull;
+    if (currentSettings != null) {
+      await _saveSettings(currentSettings.copyWith(mergeIndividualsRule: rule));
     }
   }
 }
@@ -782,7 +743,8 @@ class ImportExportNotifier extends StateNotifier<ImportExportState> {
   }
 
   Future<String> _getDefaultBackupPath() async {
-    final directory = await getApplicationDocumentsDirectory();
-    return '${directory.path}/ppl_meta_backups';
+    // For web, return a default path (not actually used for file operations)
+    // For mobile/desktop, this would use path_provider
+    return '/ppl_meta_backups';
   }
 }

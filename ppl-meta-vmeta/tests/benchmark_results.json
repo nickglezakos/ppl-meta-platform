@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-11-01T09:33:36.520283",
+  "targets": {
+    "mvr_creation_seconds": 2.0,
+    "similarity_search_ms": 100.0,
+    "background_processing_per_min": 50,
+    "merge_operation_seconds": 5.0
+  },
+  "results": [
+    {
+      "benchmark": "mvr_creation",
+      "passed": false,
+      "error": "No successful iterations"
+    },
+    {
+      "benchmark": "similarity_search",
+      "passed": false,
+      "error": "No successful searches"
+    },
+    {
+      "benchmark": "merge_operations",
+      "passed": true,
+      "target_seconds": 5.0,
+      "average_seconds": 1.1046696424484252,
+      "median_seconds": 1.1048274040222168,
+      "min_seconds": 1.1037917137145996,
+      "max_seconds": 1.1049931049346924,
+      "std_dev_seconds": 0.00041284208570251335,
+      "successful": 10,
+      "failed": 0,
+      "total": 10
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "passed": 1,
+    "failed": 2
+  }
+}

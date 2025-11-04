@@ -1,0 +1,308 @@
+# ============================================================================
+# PPL Meta vmeta Service - Production Logging Configuration
+# ============================================================================
+#
+# Python logging configuration for production deployment
+#
+# Version: 1.0.0
+# Date: November 1, 2025
+# ============================================================================
+
+version: 1
+disable_existing_loggers: false
+
+# ----------------------------------------------------------------------------
+# Formatters
+# ----------------------------------------------------------------------------
+formatters:
+  # JSON formatter for structured logging (production)
+  json:
+    (): pythonjsonlogger.jsonlogger.JsonFormatter
+    format: "%(asctime)s %(name)s %(levelname)s %(message)s %(pathname)s %(lineno)d %(funcName)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+    
+  # Standard text formatter (development/debugging)
+  standard:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+    
+  # Detailed formatter (includes trace info)
+  detailed:
+    format: "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d:%(funcName)s] - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+    
+  # Access log formatter
+  access:
+    format: "%(asctime)s - %(remote_addr)s - %(method)s %(path)s %(status)s - %(duration)sms"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+# ----------------------------------------------------------------------------
+# Filters
+# ----------------------------------------------------------------------------
+filters:
+  # Add request ID to log records
+  request_id:
+    (): logging_filters.RequestIDFilter
+    
+  # Filter sensitive data
+  sensitive_data:
+    (): logging_filters.SensitiveDataFilter
+    patterns:
+      - "password"
+      - "token"
+      - "secret"
+      - "api_key"
+
+# ----------------------------------------------------------------------------
+# Handlers
+# ----------------------------------------------------------------------------
+handlers:
+  # Console handler (for container environments)
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: json
+    stream: ext://sys.stdout
+    filters:
+      - request_id
+      - sensitive_data
+  
+  # Main application log file
+  file_main:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: json
+    filename: /var/log/ppl-meta/vmeta/vmeta.log
+    when: midnight
+    interval: 1
+    backupCount: 30
+    encoding: utf8
+    filters:
+      - request_id
+      - sensitive_data
+  
+  # Error log file (errors only)
+  file_error:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: ERROR
+    formatter: detailed
+    filename: /var/log/ppl-meta/vmeta/vmeta-error.log
+    when: midnight
+    interval: 1
+    backupCount: 90
+    encoding: utf8
+    filters:
+      - request_id
+      - sensitive_data
+  
+  # MVR-specific log file
+  file_mvr:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: json
+    filename: /var/log/ppl-meta/vmeta/mvr-people.log
+    when: midnight
+    interval: 1
+    backupCount: 30
+    encoding: utf8
+    filters:
+      - request_id
+      - sensitive_data
+  
+  # Database log file
+  file_database:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: WARNING
+    formatter: json
+    filename: /var/log/ppl-meta/vmeta/database.log
+    when: midnight
+    interval: 1
+    backupCount: 7
+    encoding: utf8
+  
+  # API access log
+  file_access:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: access
+    filename: /var/log/ppl-meta/vmeta/access.log
+    when: midnight
+    interval: 1
+    backupCount: 30
+    encoding: utf8
+  
+  # Performance/metrics log
+  file_performance:
+    class: logging.handlers.TimedRotatingFileHandler
+    level: INFO
+    formatter: json
+    filename: /var/log/ppl-meta/vmeta/performance.log
+    when: midnight
+    interval: 1
+    backupCount: 7
+    encoding: utf8
+  
+  # Syslog handler (optional, for centralized logging)
+  syslog:
+    class: logging.handlers.SysLogHandler
+    level: WARNING
+    formatter: json
+    address: /dev/log
+    facility: local0
+
+# ----------------------------------------------------------------------------
+# Loggers
+# ----------------------------------------------------------------------------
+loggers:
+  # Root logger
+  root:
+    level: INFO
+    handlers:
+      - console
+      - file_main
+      - file_error
+    propagate: false
+  
+  # Application logger
+  vmeta:
+    level: INFO
+    handlers:
+      - console
+      - file_main
+      - file_error
+    propagate: false
+  
+  # MVR-People loggers
+  mvr:
+    level: INFO
+    handlers:
+      - console
+      - file_mvr
+      - file_error
+    propagate: false
+    
+  mvr.repository:
+    level: INFO
+    handlers:
+      - console
+      - file_mvr
+    propagate: false
+    
+  mvr.service:
+    level: INFO
+    handlers:
+      - console
+      - file_mvr
+    propagate: false
+    
+  mvr.matcher:
+    level: INFO
+    handlers:
+      - console
+      - file_mvr
+    propagate: false
+    
+  mvr.background:
+    level: INFO
+    handlers:
+      - console
+      - file_mvr
+    propagate: false
+    
+  mvr.ml:
+    level: INFO
+    handlers:
+      - console
+      - file_mvr
+    propagate: false
+  
+  # Database logger
+  database:
+    level: WARNING
+    handlers:
+      - console
+      - file_database
+    propagate: false
+    
+  asyncpg:
+    level: WARNING
+    handlers:
+      - file_database
+    propagate: false
+  
+  # API logger
+  api:
+    level: INFO
+    handlers:
+      - console
+      - file_main
+    propagate: false
+    
+  fastapi:
+    level: INFO
+    handlers:
+      - console
+      - file_main
+    propagate: false
+    
+  uvicorn:
+    level: INFO
+    handlers:
+      - console
+      - file_main
+    propagate: false
+    
+  uvicorn.access:
+    level: INFO
+    handlers:
+      - file_access
+    propagate: false
+  
+  # External services
+  httpx:
+    level: WARNING
+    handlers:
+      - console
+      - file_main
+    propagate: false
+    
+  aiohttp:
+    level: WARNING
+    handlers:
+      - console
+      - file_main
+    propagate: false
+  
+  # Performance/metrics
+  performance:
+    level: INFO
+    handlers:
+      - file_performance
+    propagate: false
+
+# ----------------------------------------------------------------------------
+# Configuration Notes
+# ----------------------------------------------------------------------------
+# 
+# Log Levels:
+#   - DEBUG: Detailed information, typically of interest only when diagnosing problems
+#   - INFO: Confirmation that things are working as expected
+#   - WARNING: An indication that something unexpected happened
+#   - ERROR: A serious problem, the software has not been able to perform some function
+#   - CRITICAL: A very serious error, the program itself may be unable to continue
+#
+# Log Rotation:
+#   - Main logs: Daily rotation, 30 days retention
+#   - Error logs: Daily rotation, 90 days retention
+#   - Database logs: Daily rotation, 7 days retention
+#   - Performance logs: Daily rotation, 7 days retention
+#
+# Log Formats:
+#   - Production: JSON (for log aggregation and analysis)
+#   - Development: Standard text (for readability)
+#
+# Filters:
+#   - request_id: Adds request ID for request tracing
+#   - sensitive_data: Removes sensitive information from logs
+#
+# ============================================================================

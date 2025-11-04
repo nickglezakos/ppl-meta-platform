@@ -1,0 +1,26 @@
+{
+  "status": "healthy",
+  "service": "vmeta",
+  "version": "1.0.0",
+  "description": "Vector-based facial embeddings and analytics",
+  "timestamp": "2025-11-01T06:55:04.783613",
+  "mvr_people": {
+    "mvr_people_available": true,
+    "database": {
+      "connected": true,
+      "pool_size": 2,
+      "idle_connections": 2
+    },
+    "ml_models": {
+      "total_loaded": 0,
+      "total_expected": 3
+    },
+    "statistics": {
+      "total_mvr_people": 1,
+      "active_mvr_people": 1,
+      "orphaned_mvr_people": 0,
+      "individuals_with_mvr": 0
+    }
+  },
+  "response_time_ms": 2.02
+}

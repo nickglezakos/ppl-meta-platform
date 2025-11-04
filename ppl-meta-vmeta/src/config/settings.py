@@ -5,6 +5,10 @@ Vector-based facial embeddings and person detection analytics
 
 import os
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 class VmetaSettings:
     """vmeta service configuration settings."""
@@ -32,6 +36,11 @@ class VmetaSettings:
     
     # Service discovery configuration
     DISCOVERY_SERVICE_URL = os.getenv("DISCOVERY_SERVICE_URL", "http://localhost:8006")
+    
+    # Authentication configuration (must match node service)
+    SECRET_KEY = os.getenv("SECRET_KEY", "default-secret-key-change-in-production")
+    JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
     
     # Performance configuration  
     MAX_BATCH_SIZE = int(os.getenv("MAX_BATCH_SIZE", "32"))

@@ -84,6 +84,10 @@ class Media(BaseModel):
     # Location and context (optional)
     location_data = Column(JSON, nullable=True)  # GPS coordinates, city, etc.
     capture_timestamp = Column(DateTime(timezone=True), nullable=True)
+    
+    # Recording timestamps (for camera recordings)
+    start_timestamp = Column(DateTime(timezone=True), nullable=True)
+    end_timestamp = Column(DateTime(timezone=True), nullable=True)
 
     # Grouping and organization
     title = Column(String(255), nullable=True)

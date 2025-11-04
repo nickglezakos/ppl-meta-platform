@@ -362,6 +362,22 @@ class CrossVideoTrackingRepository:
             )
             
             logger.info(f"✅ Created individual: {individual_uuid}")
+            
+            # Trigger MVR-People creation (Phase 5 Integration)
+            try:
+                from background.mvr_helper import trigger_mvr_creation
+                await trigger_mvr_creation(individual_uuid)
+                logger.info(
+                    f"🧬 Triggered MVR-People creation for Individual "
+                    f"{individual_uuid}"
+                )
+            except Exception as mvr_error:
+                # Don't fail Individual creation if MVR creation fails
+                logger.warning(
+                    f"⚠️ MVR-People creation trigger failed for "
+                    f"{individual_uuid}: {mvr_error}"
+                )
+            
             return individual_uuid
             
         except Exception as e:

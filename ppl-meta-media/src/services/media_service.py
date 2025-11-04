@@ -171,11 +171,38 @@ class MediaService:
         if search_request.is_public is not None:
             query = query.filter(Media.is_public == search_request.is_public)
 
+        # Date filtering: prefer start_timestamp for camera videos, fall back to created_at
         if search_request.date_from:
-            query = query.filter(Media.created_at >= search_request.date_from)
+            # Use start_timestamp for filtering when available (camera recordings),
+            # otherwise fall back to created_at (uploaded media)
+            query = query.filter(
+                or_(
+                    and_(
+                        Media.start_timestamp.isnot(None),
+                        Media.start_timestamp >= search_request.date_from
+                    ),
+                    and_(
+                        Media.start_timestamp.is_(None),
+                        Media.created_at >= search_request.date_from
+                    )
+                )
+            )
 
         if search_request.date_to:
-            query = query.filter(Media.created_at <= search_request.date_to)
+            # Use start_timestamp for filtering when available (camera recordings),
+            # otherwise fall back to created_at (uploaded media)
+            query = query.filter(
+                or_(
+                    and_(
+                        Media.start_timestamp.isnot(None),
+                        Media.start_timestamp <= search_request.date_to
+                    ),
+                    and_(
+                        Media.start_timestamp.is_(None),
+                        Media.created_at <= search_request.date_to
+                    )
+                )
+            )
 
         # Filter by collection if specified
         if search_request.collection_id or search_request.collection_ids:
@@ -211,7 +238,7 @@ class MediaService:
                     )
                     collection_exists = None
 
-                    # Try to parse as UUID first, then as integer ID
+                    # Try to parse as UUID first, then as integer ID, then as name
                     try:
                         # Try UUID first
                         collection_uuid = UUID(collection_filter)
@@ -241,9 +268,23 @@ class MediaService:
                                 .first()
                             )
                         except (ValueError, TypeError):
-                            # Invalid collection_id format
-                            print(f"🔍 DEBUG: Invalid collection_id format")
-                            collection_exists = None
+                            # Not an integer either, try as collection name
+                            print(f"🔍 DEBUG: Not an integer, trying as collection name")
+                            # Support partial name matching (e.g., 'usb_camera_0' matches 'usb_camera_0 Collection')
+                            collection_exists = (
+                                self.db.query(MediaCollection)
+                                .filter(
+                                    MediaCollection.created_by == search_request.uploaded_by,
+                                    or_(
+                                        MediaCollection.name == collection_filter,
+                                        MediaCollection.name.ilike(f"{collection_filter}%"),
+                                        MediaCollection.name.ilike(f"%{collection_filter}%")
+                                    )
+                                )
+                                .first()
+                            )
+                            if collection_exists:
+                                print(f"🔍 DEBUG: Found by name match: {collection_exists.name}")
 
                     if collection_exists:
                         print(

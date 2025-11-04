@@ -12,6 +12,7 @@ from .security import router as security_router
 from .storage import router as storage_router
 from .streaming import router as streaming_router
 from .user import router as user_router
+from .vmeta_proxy import router as vmeta_proxy_router
 
 # Create v1 API router
 v1_router = APIRouter(prefix="/api/v1")
@@ -25,5 +26,6 @@ v1_router.include_router(security_router)
 v1_router.include_router(streaming_router)
 v1_router.include_router(storage_router)
 v1_router.include_router(workflow_router)  # Phase 2: Enhanced workflows
+v1_router.include_router(vmeta_proxy_router)  # vmeta MVR-People proxy
 
 __all__ = ["v1_router"]
