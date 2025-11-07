@@ -1,15 +1,58 @@
 # Cross-Video Individual Tracking Architecture
 
 **Service**: ppl-meta-vmeta  
-**Endpoint**: `/api/v1/cross-video/individuals/tracking/sessions`  
-**Version**: 2.1  
-**Last Updated**: November 6, 2025
+**Primary Endpoints**: 
+- `/api/v1/cross-video/individuals/tracking/sessions` (Session Management)
+- `/api/v1/cross-video/sessions/{session_uuid}/individuals` (MVR Aggregated Display)
+- `/api/v1/cross-video/individuals/{individual_uuid}/aggregated-analysis` (Individual Details)
+
+**Version**: 2.19.29  
+**Last Updated**: November 7, 2025
+
+---
+
+## Executive Summary
+
+The PPL Meta Platform's cross-video tracking system provides **end-to-end person tracking across multiple videos** with intelligent merging and aggregation. The system consists of two major components working in concert:
+
+### Backend (ppl-meta-vmeta)
+- **Multi-Video Recognition (MVR)**: Identifies when person detections across different videos represent the same individual
+- **Temporal Grouping**: Groups consecutive videos (60-second window) for efficient processing
+- **Embedding-Based Merging**: Uses DeepFace Facenet512 embeddings with transitive similarity (DFS algorithm) to merge individuals across video groups
+- **Atomic Transactions**: Single-transaction database operations for reliability
+- **MVR Aggregation**: Presents merged individuals as unified entities with combined statistics
+
+### Frontend (Flutter)
+- **Real-Time Session Monitoring**: Tracks session processing status with live updates
+- **Smart Counter Display**: Shows "6 individuals → 1 unique" with proper MVR aggregation
+- **MVR-Aware Navigation**: Displays merged individuals as single entities in analysis screens
+- **Aggregated Detail Views**: Shows combined appearances, routes, and statistics from all merged identities
+- **Optimized API Usage**: Disabled redundant batch merge (merging happens during session processing)
+
+### Key Achievement (v2.19.29)
+**Problem**: Flutter displayed 6 separate individuals even after backend merged them into 1 MVR person.  
+**Solution**: Modified backend endpoints to return **MVR-aggregated data** instead of raw individuals, and enhanced Flutter to navigate using MVR person UUIDs.
+
+**Result**: 
+- ✅ Analysis screen shows **1 merged person** with **12 total appearances** (not 6 separate people)
+- ✅ Counter displays **"6 → 1 unique"** correctly
+- ✅ Individual detail view aggregates **all appearances** from merged identities
+- ✅ Complete temporal span: **First seen Nov 5, last seen Nov 7**
 
 ---
 
 ## Overview
 
-The cross-video tracking system identifies and tracks individuals across multiple videos recorded in temporal proximity. It uses a sophisticated multi-stage pipeline that groups consecutive videos, matches person objects within groups using temporal logic, and optionally merges individuals across groups using facial embeddings.
+The cross-video tracking system identifies and tracks individuals across multiple videos recorded in temporal proximity. It uses a sophisticated multi-stage pipeline that:
+
+1. **Groups consecutive videos** (60-second window threshold)
+2. **Matches person objects** within groups using temporal logic
+3. **Generates facial embeddings** from cropped faces (160×160, Facenet512)
+4. **Merges individuals** across groups using transitive similarity (DFS connected components)
+5. **Creates MVR people** representing unique individuals with mappings to all merged identities
+6. **Presents aggregated data** to Flutter UI showing merged individuals as unified entities
+
+The system is designed for **reliability** (atomic transactions), **performance** (concurrent data preload), and **accuracy** (transitive similarity ensures A~B~C merges correctly).
 
 ---
 
@@ -1035,6 +1078,887 @@ Expected output when merge works:
 ```
 
 This means 4 individuals were initially found, but embedding-based merge reduced them to 2 unique people.
+
+---
+
+## Stage 7: MVR Aggregated Display (v2.19.29)
+
+### Purpose
+
+**Critical Feature**: Present merged individuals to Flutter UI as **unified entities** rather than separate records. This ensures the user sees "1 person with 12 appearances" instead of "6 separate people with 2 appearances each."
+
+### Problem Statement
+
+**Before v2.19.29**:
+- Backend successfully merged 6 individuals into 1 MVR person (database level)
+- Counter displayed correctly: "6 individuals → 1 unique"
+- **BUT**: Analysis screen showed 6 separate individuals (wrong!)
+- **Root cause**: API endpoints returned raw `individuals` table data, not MVR-aggregated data
+
+### Solution Architecture
+
+Modified two critical endpoints to return **MVR-aware responses**:
+
+1. **`GET /api/v1/cross-video/sessions/{session_uuid}/individuals`**
+   - Returns list of **unique MVR people** (not raw individuals)
+   - Aggregates appearances from ALL individuals mapped to each MVR person
+   - Shows combined statistics (total appearances, videos, time range)
+
+2. **`GET /api/v1/cross-video/individuals/{individual_uuid}/aggregated-analysis`**
+   - Detects if UUID is MVR person or individual
+   - For MVR: Aggregates appearances from ALL mapped individuals
+   - For individual: Returns direct appearances (backwards compatible)
+
+### Implementation Details
+
+#### Endpoint 1: Get Session Individuals (MVR-Aggregated)
+
+**File**: `ppl-meta-vmeta/src/api/v1/cross_video_tracking_simple.py`
+**Function**: `get_session_individuals()` (lines 2809-2990)
+
+**Logic Flow**:
+
+```python
+async def get_session_individuals(session_uuid: str):
+    """
+    Returns MVR-aggregated individuals when available.
+    Falls back to raw individuals for backwards compatibility.
+    """
+    
+    # Step 1: Check if MVR people exist for this session
+    session = await conn.fetchrow("""
+        SELECT unique_mvr_people_count 
+        FROM tracking_sessions 
+        WHERE session_uuid = $1
+    """, session_uuid)
+    
+    mvr_count = session.get('unique_mvr_people_count', 0)
+    
+    if mvr_count and mvr_count > 0:
+        # Step 2: Return MVR-aggregated data
+        mvr_people = await conn.fetch("""
+            SELECT 
+                mp.mvr_people_uuid,
+                mp.featured_individual_uuid,
+                COUNT(DISTINCT iva.person_object_uuid) 
+                    as appearance_count,
+                COUNT(DISTINCT iva.video_uuid) as video_count,
+                MIN(iva.start_timestamp) as first_seen,
+                MAX(iva.end_timestamp) as last_seen,
+                AVG(imm.confidence_score) as avg_confidence
+            FROM individual_mvr_mapping imm
+            JOIN mvr_people mp 
+                ON imm.mvr_people_uuid = mp.mvr_people_uuid
+            JOIN session_individuals si 
+                ON imm.individual_uuid = si.individual_uuid
+            LEFT JOIN individual_video_appearances iva 
+                ON imm.individual_uuid = iva.individual_uuid
+            WHERE si.session_uuid = $1
+            GROUP BY mp.mvr_people_uuid, mp.featured_individual_uuid
+            ORDER BY appearance_count DESC, first_seen ASC
+        """, session_uuid)
+        
+        # Step 3: Format response with MVR person UUIDs
+        return {
+            "session_uuid": session_uuid,
+            "total_individuals": len(mvr_people),  # Count of MVR people
+            "individuals": [
+                {
+                    "individual_uuid": str(mvr['mvr_people_uuid']),
+                    "individual_id": f"mvr_{mvr['mvr_people_uuid'][:8]}",
+                    "total_appearances": mvr['appearance_count'],
+                    "total_videos": mvr['video_count'],
+                    "first_seen": mvr['first_seen'].isoformat(),
+                    "last_seen": mvr['last_seen'].isoformat(),
+                    "confidence_score": round(float(mvr['avg_confidence']), 3)
+                }
+                for mvr in mvr_people
+            ]
+        }
+    
+    else:
+        # Step 4: No MVR - return raw individuals (backwards compatible)
+        individuals = await conn.fetch("""
+            SELECT i.individual_uuid, i.individual_id, ...
+            FROM individuals i
+            JOIN session_individuals si ...
+            WHERE si.session_uuid = $1
+        """, session_uuid)
+        
+        return {
+            "session_uuid": session_uuid,
+            "total_individuals": len(individuals),
+            "individuals": [...]
+        }
+```
+
+**Key Changes**:
+- Query joins through `individual_mvr_mapping` to get MVR people
+- Aggregates appearances using `COUNT(DISTINCT iva.person_object_uuid)`
+- Groups by `mvr_people_uuid` (not `individual_uuid`)
+- Returns MVR person UUID as `individual_uuid` field (Flutter compatibility)
+- Uses `AVG(imm.confidence_score)` from mapping table (not appearance table)
+
+**Example Response** (Before vs After):
+
+**Before v2.19.29** (Wrong):
+```json
+{
+  "session_uuid": "2e814274-...",
+  "total_individuals": 3,
+  "individuals": [
+    {
+      "individual_uuid": "96839237-...",
+      "total_appearances": 2,
+      "total_videos": 2
+    },
+    {
+      "individual_uuid": "ce8d0476-...",
+      "total_appearances": 2,
+      "total_videos": 2
+    },
+    {
+      "individual_uuid": "4f1f1f11-...",
+      "total_appearances": 2,
+      "total_videos": 2
+    }
+  ]
+}
+```
+
+**After v2.19.29** (Correct):
+```json
+{
+  "session_uuid": "2e814274-...",
+  "total_individuals": 1,
+  "individuals": [
+    {
+      "individual_uuid": "51c8da07-...",
+      "individual_id": "mvr_51c8da07",
+      "total_appearances": 6,
+      "total_videos": 6,
+      "first_seen": "2025-11-06T09:58:27.372271",
+      "last_seen": "2025-11-07T07:50:44.682503",
+      "confidence_score": 0.782
+    }
+  ]
+}
+```
+
+**Impact**: Flutter now receives 1 MVR person with aggregated stats (6 total appearances) instead of 3 separate individuals.
+
+#### Endpoint 2: Get Individual Aggregated Analysis (MVR-Aware)
+
+**File**: `ppl-meta-vmeta/src/api/v1/cross_video_tracking_simple.py`
+**Function**: `get_individual_aggregated_analysis()` (lines 3004-3200)
+
+**Problem**: Flutter passes MVR person UUID to this endpoint, but old code only handled individual UUIDs, resulting in empty data.
+
+**Solution**: Detect UUID type and query accordingly.
+
+**Logic Flow**:
+
+```python
+async def get_individual_aggregated_analysis(
+    individual_uuid: str, 
+    session_uuid: str
+):
+    """
+    Returns aggregated analysis for individual OR MVR person.
+    Detects UUID type and queries appropriate table.
+    """
+    
+    # Step 1: Check if UUID is MVR person UUID
+    mvr_check = await conn.fetchrow("""
+        SELECT mvr_people_uuid 
+        FROM mvr_people
+        WHERE mvr_people_uuid = $1
+    """, individual_uuid)
+    
+    if mvr_check:
+        # Step 2a: It's an MVR person - aggregate from ALL mapped individuals
+        logger.info(
+            "UUID is MVR person, aggregating appearances "
+            "from all mapped individuals"
+        )
+        
+        appearances = await conn.fetch("""
+            SELECT 
+                iva.individual_uuid,
+                i.individual_id,
+                iva.video_uuid,
+                iva.person_object_uuid,
+                iva.start_timestamp,
+                iva.end_timestamp,
+                iva.entry_bbox,
+                iva.exit_bbox,
+                iva.confidence
+            FROM individual_mvr_mapping imm
+            JOIN individual_video_appearances iva
+                ON imm.individual_uuid = iva.individual_uuid
+            JOIN individuals i
+                ON iva.individual_uuid = i.individual_uuid
+            WHERE imm.mvr_people_uuid = $1
+            ORDER BY iva.start_timestamp ASC
+        """, individual_uuid)
+    
+    else:
+        # Step 2b: Regular individual - get direct appearances
+        logger.info("UUID is individual, getting appearances directly")
+        
+        appearances = await conn.fetch("""
+            SELECT 
+                iva.individual_uuid,
+                i.individual_id,
+                iva.video_uuid,
+                ...
+            FROM individual_video_appearances iva
+            JOIN individuals i
+                ON iva.individual_uuid = i.individual_uuid
+            WHERE iva.individual_uuid = $1
+            ORDER BY iva.start_timestamp ASC
+        """, individual_uuid)
+    
+    # Step 3: Return aggregated analysis
+    return {
+        "individual_uuid": individual_uuid,
+        "session_uuid": session_uuid,
+        "total_appearances": len(appearances),
+        "unique_videos": len(set(a['video_uuid'] for a in appearances)),
+        "first_seen": appearances[0]['start_timestamp'].isoformat(),
+        "last_seen": appearances[-1]['end_timestamp'].isoformat(),
+        "appearances": [...],
+        "person_object_uuids": [...]
+    }
+```
+
+**Key Changes**:
+- Added MVR detection: `SELECT * FROM mvr_people WHERE mvr_people_uuid = $1`
+- For MVR: Join through `individual_mvr_mapping` to get all appearances
+- For individual: Direct query (backwards compatible)
+- Aggregates appearances from ALL mapped individuals
+- Returns combined statistics (total appearances, time range)
+
+**Example Response**:
+
+**Before v2.19.29** (Empty data):
+```json
+{
+  "individual_uuid": "33051629-...",
+  "total_appearances": 0,
+  "unique_videos": 0,
+  "first_seen": "",
+  "last_seen": "",
+  "appearances": []
+}
+```
+
+**After v2.19.29** (Aggregated data):
+```json
+{
+  "individual_uuid": "33051629-...",
+  "total_appearances": 12,
+  "unique_videos": 12,
+  "first_seen": "2025-11-05T08:42:32.754037",
+  "last_seen": "2025-11-07T07:50:44.682503",
+  "appearances": [
+    {
+      "video_uuid": "a9c5f963-...",
+      "person_object_uuid": "317ffa7d-...",
+      "start_timestamp": "2025-11-05T08:42:32.754037",
+      "end_timestamp": "2025-11-05T08:42:52.889032",
+      "confidence_score": 0.85
+    },
+    // ... 11 more appearances from all merged individuals
+  ]
+}
+```
+
+**Impact**: Flutter detail view now shows all 12 appearances aggregated from 6 merged individuals.
+
+### Database Schema Used
+
+**MVR Tables** (created during Stage 6 - Phase C):
+
+```sql
+-- MVR People: Unique individuals across the entire system
+CREATE TABLE mvr_people (
+    mvr_people_uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    featured_individual_uuid UUID REFERENCES individuals(individual_uuid),
+    face_embedding vector(512),  -- Facenet512 embedding
+    confidence_score FLOAT CHECK (confidence_score >= 0 AND confidence_score <= 1),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Individual to MVR Mapping: Links individuals to MVR people
+CREATE TABLE individual_mvr_mapping (
+    individual_uuid UUID REFERENCES individuals(individual_uuid),
+    mvr_people_uuid UUID REFERENCES mvr_people(mvr_people_uuid),
+    confidence_score FLOAT CHECK (confidence_score >= 0 AND confidence_score <= 1),
+    merge_reason VARCHAR(50),  -- 'temporal', 'embedding', 'manual'
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (individual_uuid, mvr_people_uuid)
+);
+```
+
+**Query Pattern**:
+
+```sql
+-- Get MVR people for session with aggregated appearances
+SELECT 
+    mp.mvr_people_uuid,
+    COUNT(DISTINCT iva.person_object_uuid) as total_appearances,
+    COUNT(DISTINCT iva.video_uuid) as total_videos,
+    MIN(iva.start_timestamp) as first_seen,
+    MAX(iva.end_timestamp) as last_seen
+FROM session_individuals si
+JOIN individual_mvr_mapping imm 
+    ON si.individual_uuid = imm.individual_uuid
+JOIN mvr_people mp 
+    ON imm.mvr_people_uuid = mp.mvr_people_uuid
+LEFT JOIN individual_video_appearances iva 
+    ON imm.individual_uuid = iva.individual_uuid
+WHERE si.session_uuid = '2e814274-...'
+GROUP BY mp.mvr_people_uuid;
+```
+
+### Testing Results
+
+**Test Session**: `63600218-465a-40ae-80c1-d41a69ea69b9`
+- **Collection**: `usb_camera_0`
+- **Time Range**: Nov 5-7, 2025
+- **Videos**: 12 videos processed
+
+**Results**:
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| `individuals_found` | 6 | Initial individuals from temporal matching |
+| `unique_mvr_people_count` | 1 | After embedding-based merge |
+| MVR Endpoint: `total_individuals` | 1 | ✅ Correct |
+| MVR Endpoint: `total_appearances` | 12 | ✅ Aggregated (2×6) |
+| MVR Endpoint: `total_videos` | 12 | ✅ All videos |
+| First Seen | Nov 5, 08:42 | ✅ Earliest across all merged |
+| Last Seen | Nov 7, 07:50 | ✅ Latest across all merged |
+| Confidence Score | 0.733 | ✅ Average from mappings |
+
+**Validation Query**:
+
+```bash
+# Test the individuals endpoint
+curl -s 'http://localhost:8080/api/v1/cross-video/individuals/tracking/sessions/63600218-.../individuals' \
+  -H 'Authorization: Bearer <token>' | \
+  python3 -c "import sys, json; d=json.load(sys.stdin); \
+    print(f\"Total: {d['total_individuals']}\"); \
+    print(f\"Appearances: {d['individuals'][0]['total_appearances']}\"); \
+    print(f\"Videos: {d['individuals'][0]['total_videos']}\")"
+```
+
+Output:
+```
+Total: 1
+Appearances: 12
+Videos: 12
+```
+
+✅ **Success**: 6 individuals merged into 1 MVR person, displayed correctly in Flutter!
+
+---
+
+## Stage 8: Flutter UI Integration
+
+### Purpose
+
+Display MVR-aggregated individuals in the Flutter mobile app with proper navigation, counters, and detail views.
+
+### Architecture Overview
+
+**Flutter App Structure**:
+```
+lib/
+├── screens/
+│   ├── collections_screen.dart       # Main collections view
+│   └── cross_video_analysis_screen.dart  # Individual analysis
+├── services/
+│   ├── api_client.dart                # Base API client
+│   └── media_api_client.dart          # Cross-video API methods
+└── models/
+    └── cross_video_models.dart        # Data models
+```
+
+### Implementation Details
+
+#### Component 1: Collections Screen (Session Management)
+
+**File**: `ppl-meta-frontend/lib/screens/collections_screen.dart`
+
+**Key Features**:
+1. **Session Creation**: Initiates cross-video tracking for selected collection + time range
+2. **Status Polling**: Monitors session completion with real-time updates
+3. **Smart Counter**: Displays "6 individuals → 1 unique" from session status
+4. **Auto-Merge Disabled**: Trusts backend merge, no redundant API calls
+
+**Session Creation Flow**:
+
+```dart
+Future<void> _startCrossVideoTracking(...) async {
+  try {
+    print('🚀 Starting cross-video tracking session...');
+    
+    // Step 1: Create tracking session
+    final sessionResponse = await mediaApiClient.createCrossVideoSession(
+      collections: [_selectedCollection!.id],
+      startTime: _selectedStartDate!,
+      endTime: _selectedEndDate!,
+      backgroundProcessing: true,  // Don't block UI
+      forceReprocess: false         // Use cache when available
+    );
+    
+    if (!sessionResponse.success) {
+      throw Exception('Failed to create session');
+    }
+    
+    final sessionUuid = sessionResponse.data['session_uuid'];
+    print('   Session UUID: $sessionUuid');
+    
+    // Step 2: Poll for completion
+    await _pollSessionStatus(sessionUuid);
+    
+  } catch (e) {
+    print('❌ Error starting tracking: $e');
+    _showError('Failed to start cross-video tracking');
+  }
+}
+```
+
+**Status Polling**:
+
+```dart
+Future<void> _pollSessionStatus(String sessionUuid) async {
+  const maxAttempts = 60;  // 60 × 2s = 2 minutes timeout
+  int attempts = 0;
+  
+  while (attempts < maxAttempts) {
+    await Future.delayed(Duration(seconds: 2));
+    
+    // Step 1: Get session status
+    final statusResponse = await mediaApiClient.getCrossVideoSessionStatus(
+      sessionUuid: sessionUuid
+    );
+    
+    if (!statusResponse.success) {
+      print('⚠️ Failed to get session status');
+      continue;
+    }
+    
+    final status = statusResponse.data['status'];
+    print('   Session status: $status');
+    
+    // Step 2: Check if completed
+    if (status == 'completed') {
+      final individualsFound = statusResponse.data['individuals_found'] ?? 0;
+      final uniqueMvrCount = statusResponse.data['unique_mvr_people_count'] ?? individualsFound;
+      
+      print('✅ Session completed!');
+      print('   Individuals found: $individualsFound');
+      print('   Unique MVR people: $uniqueMvrCount');
+      
+      // Step 3: Update UI with counter
+      setState(() {
+        _individualsCount = individualsFound;
+        _uniqueMvrCount = uniqueMvrCount;
+      });
+      
+      // Step 4: Navigate to analysis screen
+      await _navigateToCrossVideoAnalysis(sessionUuid);
+      break;
+    }
+    
+    attempts++;
+  }
+}
+```
+
+**Counter Display**:
+
+```dart
+Widget _buildCrossVideoCounter() {
+  return Card(
+    child: Padding(
+      padding: EdgeInsets.all(16.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Cross-Video Analysis',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          Text(
+            _uniqueMvrCount > 0
+                ? 'Individuals: $_individualsCount → $_uniqueMvrCount unique'
+                : 'Individuals: $_individualsCount',
+            style: TextStyle(
+              fontSize: 16,
+              color: _uniqueMvrCount < _individualsCount 
+                  ? Colors.green  // Merge happened!
+                  : Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+```
+
+**Auto-Merge Disabled** (v2.19.29):
+
+```dart
+Future<void> _autoMergeDuplicates(...) async {
+  try {
+    print('🔄 Auto-merge: Session processing already merged individuals');
+    print('  Original count: $originalCount');
+    print('  Unique count already set from session status: $_uniqueMvrCount');
+    print('  Skipping redundant batch merge call');
+    
+    // The merge already happened during session processing!
+    // unique_mvr_people_count from session status is the correct value.
+    // No need to call batchMatchAndMerge() again.
+    
+    /* DISABLED - Merge already happens during session processing
+    final mergeResponse = await apiClient.batchMatchAndMerge(...);
+    setState(() {
+      _uniqueMvrCount = uniqueCount;
+    });
+    */
+  } catch (e) {
+    print('❌ Auto-merge error: $e');
+  }
+}
+```
+
+**Why Disabled**:
+- Merge happens during session processing (Stage 6)
+- Backend returns `unique_mvr_people_count` in session status
+- Calling batch merge again would overwrite correct value
+- Result: Counter displays correctly from session status
+
+#### Component 2: API Client (MVR-Aware Methods)
+
+**File**: `ppl-meta-frontend/lib/services/media_api_client.dart`
+
+**Method 1: Get Cross-Video Individuals** (MVR-aggregated):
+
+```dart
+Future<ApiResponse<Map<String, dynamic>>> getCrossVideoIndividuals({
+  required String sessionUuid,
+}) async {
+  try {
+    print('### API CLIENT - GET CROSS-VIDEO INDIVIDUALS ###');
+    print('   Session UUID: $sessionUuid');
+    
+    // Call MVR-aggregated endpoint
+    final response = await _client.get(
+      '/api/v1/cross-video/individuals/tracking/sessions/$sessionUuid/individuals',
+    );
+    
+    if (response.statusCode == 200) {
+      final data = response.data as Map<String, dynamic>;
+      
+      print('✅ Response received:');
+      print('   Total individuals: ${data['total_individuals']}');
+      
+      // These are MVR people, not raw individuals
+      final individuals = data['individuals'] as List;
+      for (var ind in individuals) {
+        print('   - ${ind['individual_id']}: '
+              '${ind['total_appearances']} appearances, '
+              '${ind['total_videos']} videos');
+      }
+      
+      return ApiResponse.success(data);
+    } else {
+      return ApiResponse.error('Failed to get individuals');
+    }
+  } catch (e) {
+    print('❌ Error getting individuals: $e');
+    return ApiResponse.error(e.toString());
+  }
+}
+```
+
+**Method 2: Get Individual Aggregated Analysis** (MVR-aware):
+
+```dart
+Future<ApiResponse<Map<String, dynamic>>> getIndividualAggregatedAnalysis({
+  required String individualUuid,  // Can be MVR person UUID or individual UUID
+  required String sessionUuid,
+}) async {
+  try {
+    print('### API CLIENT - GET INDIVIDUAL ANALYSIS ###');
+    print('   Individual UUID: $individualUuid');
+    print('   Session UUID: $sessionUuid');
+    
+    // Backend detects if UUID is MVR person and aggregates accordingly
+    final response = await _client.get(
+      '/api/v1/cross-video/individuals/tracking/individuals/$individualUuid/aggregated-analysis',
+      queryParameters: {'session_uuid': sessionUuid},
+    );
+    
+    if (response.statusCode == 200) {
+      final data = response.data as Map<String, dynamic>;
+      
+      print('✅ Analysis received:');
+      print('   Total appearances: ${data['total_appearances']}');
+      print('   Unique videos: ${data['unique_videos']}');
+      print('   First seen: ${data['first_seen']}');
+      print('   Last seen: ${data['last_seen']}');
+      
+      return ApiResponse.success(data);
+    } else {
+      return ApiResponse.error('Failed to get analysis');
+    }
+  } catch (e) {
+    print('❌ Error getting analysis: $e');
+    return ApiResponse.error(e.toString());
+  }
+}
+```
+
+#### Component 3: Cross-Video Analysis Screen
+
+**File**: `ppl-meta-frontend/lib/screens/cross_video_analysis_screen.dart`
+
+**Key Features**:
+1. **MVR-Aware Display**: Shows merged individuals as single entities
+2. **Aggregated Statistics**: Total appearances, videos, time range from all merged identities
+3. **Navigation**: Uses MVR person UUID for detail navigation
+4. **Time Range**: Displays complete temporal span
+
+**Load Individuals**:
+
+```dart
+Future<void> _loadCrossVideoData() async {
+  try {
+    print('🔄 Loading cross-video data for session: $_sessionUuid');
+    
+    // Step 1: Get MVR-aggregated individuals
+    final individualsResponse = await mediaApiClient.getCrossVideoIndividuals(
+      sessionUuid: _sessionUuid,
+    );
+    
+    if (!individualsResponse.success) {
+      throw Exception('Failed to load individuals');
+    }
+    
+    final data = individualsResponse.data!;
+    final individualsList = data['individuals'] as List;
+    
+    print('DEBUG: Cross-video individuals: $data');
+    print('✅ Loaded cross-video data for ${individualsList.length} individuals');
+    
+    // Step 2: Parse into models
+    setState(() {
+      _individuals = individualsList.map((ind) => 
+        CrossVideoIndividual.fromJson(ind)
+      ).toList();
+      _isLoading = false;
+    });
+    
+  } catch (e) {
+    print('❌ Error loading cross-video data: $e');
+    setState(() {
+      _error = e.toString();
+      _isLoading = false;
+    });
+  }
+}
+```
+
+**Display Individual Cards**:
+
+```dart
+Widget _buildIndividualCard(CrossVideoIndividual individual) {
+  return Card(
+    child: ListTile(
+      leading: CircleAvatar(
+        child: Text(individual.individualId.substring(0, 3).toUpperCase()),
+      ),
+      title: Text(
+        individual.individualId,
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${individual.totalAppearances} appearances'),
+          Text('${individual.totalVideos} videos'),
+          Text(
+            '${_formatDateTime(individual.firstSeen)} → '
+            '${_formatDateTime(individual.lastSeen)}',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+      trailing: Icon(Icons.chevron_right),
+      onTap: () => _navigateToIndividualDetail(individual),
+    ),
+  );
+}
+```
+
+**Navigate to Detail**:
+
+```dart
+void _navigateToIndividualDetail(CrossVideoIndividual individual) async {
+  print('🔍 Navigating to individual detail: ${individual.individualUuid}');
+  
+  try {
+    // Pass MVR person UUID to analysis endpoint
+    final analysisResponse = await mediaApiClient.getIndividualAggregatedAnalysis(
+      individualUuid: individual.individualUuid,  // MVR person UUID
+      sessionUuid: _sessionUuid,
+    );
+    
+    if (analysisResponse.success) {
+      final analysis = analysisResponse.data!;
+      
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => IndividualDetailScreen(
+            individual: individual,
+            analysis: analysis,
+            sessionUuid: _sessionUuid,
+          ),
+        ),
+      );
+    } else {
+      _showError('Failed to load individual analysis');
+    }
+  } catch (e) {
+    print('❌ Error navigating to detail: $e');
+    _showError(e.toString());
+  }
+}
+```
+
+### Flutter UI Flow
+
+**Complete User Journey**:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ 1. COLLECTIONS SCREEN                                               │
+│    User selects collection + time range                             │
+│    Tap "Start Cross-Video Tracking"                                 │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 2. SESSION CREATION                                                 │
+│    POST /api/v1/cross-video/individuals/tracking/sessions           │
+│    Response: { session_uuid: "abc123...", status: "initialized" }   │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 3. STATUS POLLING (every 2 seconds)                                │
+│    GET /api/v1/cross-video/individuals/tracking/sessions/abc123     │
+│    Wait for status: "completed"                                     │
+│    Extract: individuals_found=6, unique_mvr_people_count=1          │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 4. COUNTER DISPLAY                                                  │
+│    Show: "Individuals: 6 → 1 unique" (green highlight)              │
+│    Auto-merge disabled (merge already done in backend)              │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 5. ANALYSIS SCREEN                                                  │
+│    GET /api/v1/cross-video/.../sessions/abc123/individuals          │
+│    Response: { total_individuals: 1, individuals: [MVR person] }    │
+│    Display 1 card: "mvr_51c8da07, 12 appearances, 12 videos"        │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ 6. INDIVIDUAL DETAIL (tap on card)                                 │
+│    GET /api/v1/cross-video/.../individuals/51c8da07.../analysis     │
+│    Backend detects MVR UUID, aggregates from all mapped individuals │
+│    Response: { total_appearances: 12, appearances: [...] }          │
+│    Display all 12 appearances with videos, timestamps, routes       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### User Experience
+
+**Before v2.19.29** (Wrong):
+1. User sees counter: "6 individuals → 1 unique" ✅ Correct
+2. Taps "View Analysis"
+3. **Analysis screen shows 6 separate individuals** ❌ Wrong
+4. User confused: "Why does it say 1 unique but show 6?"
+
+**After v2.19.29** (Correct):
+1. User sees counter: "6 individuals → 1 unique" ✅ Correct
+2. Taps "View Analysis"
+3. **Analysis screen shows 1 merged individual** ✅ Correct
+4. Individual card shows: "12 appearances across 12 videos" ✅ Aggregated
+5. Taps on individual
+6. **Detail view shows all 12 appearances** ✅ Complete data
+7. User satisfied: "Perfect, that's the same person in all videos!"
+
+### Flutter Debug Output
+
+**Session Status Response**:
+```
+### API CLIENT - GET SESSION STATUS ###
+   Status Code: 200
+   Response Data: {
+     session_uuid: 63600218-465a-40ae-80c1-d41a69ea69b9,
+     status: completed,
+     total_videos: 12,
+     individuals_found: 6,
+     unique_mvr_people_count: 1,
+     cache_hits: 0
+   }
+
+SETTING UNIQUE COUNT FROM API: 1
+FLUTTER WILL DISPLAY: "Individuals: 6 → 1 unique"
+```
+
+**Individuals Response**:
+```
+DEBUG: Cross-video individuals: {
+  session_uuid: 63600218-465a-40ae-80c1-d41a69ea69b9,
+  total_individuals: 1,
+  individuals: [
+    {
+      individual_uuid: 33051629-9b18-4a98-8009-0914e554a61c,
+      individual_id: mvr_33051629,
+      total_appearances: 12,
+      total_videos: 12,
+      first_seen: 2025-11-05T08:42:32.754037,
+      last_seen: 2025-11-07T07:50:44.682503,
+      confidence_score: 0.733
+    }
+  ]
+}
+
+✅ Loaded cross-video data for 1 individuals
+```
+
+**Individual Analysis Response**:
+```
+### API CLIENT - GET INDIVIDUAL ANALYSIS ###
+   Individual UUID: 33051629-9b18-4a98-8009-0914e554a61c
+   Session UUID: 63600218-465a-40ae-80c1-d41a69ea69b9
+
+✅ Analysis received:
+   Total appearances: 12
+   Unique videos: 12
+   First seen: 2025-11-05T08:42:32.754037
+   Last seen: 2025-11-07T07:50:44.682503
+```
 
 ---
 
