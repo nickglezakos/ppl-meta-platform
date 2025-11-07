@@ -107,6 +107,211 @@ def get_database_client() -> VmetaDatabaseClient:
     import main
     return main.db_client
 
+
+# ============================================================================
+# VIDEO-LEVEL INDIVIDUAL CACHING HELPER
+# ============================================================================
+
+async def get_or_create_individuals_for_video(
+    video_uuid: str,
+    session_uuid: str,
+    db_client: VmetaDatabaseClient,
+    create_new_callback=None
+) -> tuple[List[str], bool]:
+    """
+    Check for existing individuals in this video, or create new ones.
+    
+    CRITICAL: Respects merge history - only reuses predominant individuals.
+    
+    This implements the MVR-aware caching strategy that:
+    1. Checks for existing individuals in the video
+    2. Filters out merged individuals (marked with merged_into_uuid)
+    3. Groups individuals by MVR-People to avoid duplicates
+    4. Only reuses one individual per MVR-People (the predominant one)
+    5. Falls back to creating new individuals if none found
+    
+    Args:
+        video_uuid: UUID of the video to check
+        session_uuid: UUID of the current tracking session
+        db_client: Database client instance
+        create_new_callback: Optional async function to create new individuals
+                           Should return List[str] of individual UUIDs
+    
+    Returns:
+        Tuple of (individual_uuids, cache_hit)
+        - individual_uuids: List of individual UUIDs to use
+        - cache_hit: True if reused existing, False if created new
+    """
+    
+    async with db_client.pool.acquire() as conn:
+        # Step 1: Check for existing individuals in this video
+        # Include MVR-People information to detect merges
+        existing = await conn.fetch("""
+            SELECT DISTINCT 
+                iva.individual_uuid,
+                iva.person_object_uuid,
+                i.individual_id,
+                i.merged_into_uuid,  -- If set, individual was merged
+                mvr.mvr_people_uuid  -- MVR-People linkage
+            FROM individual_video_appearances iva
+            JOIN individuals i ON i.individual_uuid = iva.individual_uuid
+            LEFT JOIN individual_mvr_mapping mvr 
+                ON mvr.individual_uuid = i.individual_uuid
+            WHERE iva.video_uuid = $1
+        """, video_uuid)
+        # DEBUG: record how many existing appearances were found for this video
+        try:
+            async with db_client.pool.acquire() as _dbg_conn:
+                await _dbg_conn.execute(
+                    """
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                    """,
+                    session_uuid,
+                    f"cache_lookup_existing_count:{len(existing)} for video:{video_uuid}"
+                )
+        except Exception:
+            # Non-fatal: continue without blocking caching
+            pass
+
+        # Debug: Log query result
+        logger.info(f"🔍 Cache query for video {video_uuid[:8]}: found {len(existing)} existing records")
+        
+        if existing:
+            # Step 2: Filter out merged individuals and group by MVR
+            active_individuals = {}  # mvr_uuid -> individual_uuid
+            standalone_individuals = []  # No MVR linkage
+            
+            for record in existing:
+                individual_uuid = str(record['individual_uuid'])
+                merged_into = record['merged_into_uuid']
+                mvr_uuid = str(record['mvr_people_uuid']) if record['mvr_people_uuid'] else None
+                
+                # Skip merged individuals (they point to another individual)
+                if merged_into:
+                    logger.info(
+                        f"⏭️ Skipping merged individual {record['individual_id']} "
+                        f"(merged into {merged_into}) for video {video_uuid}"
+                    )
+                    continue
+                
+                # Group by MVR-People (if exists)
+                if mvr_uuid:
+                    # If multiple individuals share same MVR, keep only one
+                    if mvr_uuid not in active_individuals:
+                        active_individuals[mvr_uuid] = individual_uuid
+                        logger.info(
+                            f"♻️ Found individual {record['individual_id']} "
+                            f"with MVR {mvr_uuid} for video {video_uuid}"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Multiple individuals share MVR {mvr_uuid}! "
+                            f"Keeping {active_individuals[mvr_uuid]}, "
+                            f"skipping {individual_uuid} for video {video_uuid}"
+                        )
+                else:
+                    # No MVR linkage - standalone individual
+                    standalone_individuals.append(individual_uuid)
+                    logger.info(
+                        f"♻️ Found standalone individual {record['individual_id']} "
+                        f"for video {video_uuid}"
+                    )
+                    # DEBUG: Log to database
+                    try:
+                        async with db_client.pool.acquire() as _dbg_conn:
+                            await _dbg_conn.execute(
+                                """
+                                UPDATE tracking_sessions
+                                SET failed_videos = array_append(failed_videos, $2)
+                                WHERE session_uuid = $1
+                                """,
+                                session_uuid,
+                                f"found_standalone:{record['individual_id']}"
+                            )
+                    except Exception:
+                        pass
+            
+            # Step 3: Combine MVR-linked and standalone individuals
+            individual_uuids = list(active_individuals.values()) + standalone_individuals
+            
+            # DEBUG: Log the result of combining individuals
+            try:
+                async with db_client.pool.acquire() as _dbg_conn:
+                    await _dbg_conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid,
+                        f"combined_uuids:mvr={len(active_individuals)}_standalone={len(standalone_individuals)}_total={len(individual_uuids)}_for_{video_uuid[:8]}")  # noqa
+            except Exception:
+                pass
+            
+            if not individual_uuids:
+                logger.warning(
+                    f"⚠️ All individuals for video {video_uuid} were merged/duplicates. "
+                    f"Will create new individuals."
+                )
+                # All existing individuals were filtered out (merged/duplicates)
+                # Fall through to Step 5 to create new individuals
+                pass  # Explicitly fall through
+            else:
+                # Step 4: Reuse existing individuals (only predominant ones)
+                logger.info(
+                    f"♻️ Reusing {len(individual_uuids)} individuals for video {video_uuid} "
+                    f"(filtered from {len(existing)} total records)"
+                )
+                
+                # DEBUG: Log before adding session links
+                try:
+                    async with db_client.pool.acquire() as _dbg_conn:
+                        await _dbg_conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid,
+                            f"adding_session_links_for_{len(individual_uuids)}_individuals")  # noqa
+                except Exception:
+                    pass
+                
+                for individual_uuid in individual_uuids:
+                    # Add session link (individual can belong to multiple sessions)
+                    await conn.execute("""
+                        INSERT INTO session_individuals
+                        (session_uuid, individual_uuid, processing_type, confidence_contribution)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (session_uuid, individual_uuid) DO NOTHING
+                    """, session_uuid, individual_uuid, 'cached', 0.95)
+                
+                # DEBUG: Log successful return
+                try:
+                    async with db_client.pool.acquire() as _dbg_conn:
+                        await _dbg_conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid,
+                            f"returning_cached:count={len(individual_uuids)}_for_{video_uuid[:8]}")  # noqa
+                except Exception:
+                    pass
+                
+                return (individual_uuids, True)  # Cache hit!
+        
+        # Step 5: No existing individuals (or all were merged) - create new
+        logger.info(
+            f"🆕 No active individuals for video {video_uuid}, creating new"
+        )
+        
+        # Call the provided callback to create new individuals
+        if create_new_callback:
+            individual_uuids = await create_new_callback()
+            return (individual_uuids, False)  # Cache miss
+        else:
+            # No callback provided, return empty list
+            return ([], False)
+
+
 # Initialize router
 router = APIRouter(
     prefix="/individuals/tracking",
@@ -265,7 +470,7 @@ async def get_session_status(session_uuid: str):
             result = await conn.fetchrow("""
                 SELECT session_uuid, status, collections, created_at, 
                        started_at, completed_at, total_videos, processed_videos,
-                       individuals_found, cache_hits
+                       individuals_found, unique_mvr_people_count, cache_hits
                 FROM tracking_sessions 
                 WHERE session_uuid = $1
             """, session_uuid)
@@ -286,6 +491,7 @@ async def get_session_status(session_uuid: str):
             "total_videos": result["total_videos"],
             "processed_videos": result["processed_videos"],
             "individuals_found": result["individuals_found"],
+            "unique_mvr_people_count": result["unique_mvr_people_count"],
             "cache_hits": result["cache_hits"]
         }
         
@@ -412,34 +618,390 @@ async def get_individual_appearances(individual_uuid: str):
         )
 
 
+async def preload_person_objects_for_all_videos(
+    all_videos: List[dict],
+    auth_token: Optional[str],
+    session_uuid: str,
+    db_client: VmetaDatabaseClient,
+    concurrency: int = 6
+) -> dict:
+    """
+    Preload person_objects from Orchestrator for all videos concurrently.
+    
+    This eliminates network I/O during database transactions by fetching
+    all required data upfront into memory.
+    
+    Args:
+        all_videos: List of all video metadata dicts
+        auth_token: JWT auth token for Orchestrator API
+        session_uuid: Tracking session UUID for debug logging
+        db_client: Database client for logging
+        concurrency: Max concurrent Orchestrator requests
+        
+    Returns:
+        Dict mapping video_uuid -> List[person_object_dict]
+        Returns empty list for videos that fail to fetch
+    """
+    import aiohttp
+    import asyncio
+    
+    logger.info(f"🔄 Preloading person_objects for {len(all_videos)} videos (concurrency={concurrency})")
+    
+    # Log preload start
+    try:
+        async with db_client.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE tracking_sessions
+                SET failed_videos = array_append(failed_videos, $2)
+                WHERE session_uuid = $1
+            """, session_uuid, f"preload_start: {len(all_videos)}_videos")
+    except Exception:
+        pass
+    
+    video_person_objects = {}
+    semaphore = asyncio.Semaphore(concurrency)
+    
+    async def fetch_one_video(video: dict):
+        """Fetch person_objects for one video with semaphore limiting concurrency."""
+        video_uuid = video['uuid']
+        
+        async with semaphore:
+            try:
+                orchestrator_url = f"http://localhost:8080/api/v1/orchestrator/person-objects/{video_uuid}"
+                
+                headers = {}
+                if auth_token:
+                    if auth_token.startswith('Bearer ') or auth_token.startswith('bearer '):
+                        headers['Authorization'] = auth_token
+                    else:
+                        headers['Authorization'] = f'Bearer {auth_token}'
+                
+                timeout = aiohttp.ClientTimeout(total=30)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(orchestrator_url, headers=headers) as response:
+                        if response.status == 200:
+                            orch_data = await response.json()
+                            if orch_data.get('success') and orch_data.get('person_groups'):
+                                person_objects = []
+                                for person_group in orch_data['person_groups']:
+                                    person_objects.append({
+                                        'person_uuid': person_group.get('person_uuid'),
+                                        'person_id': person_group.get('person_id'),
+                                        'face_count': person_group.get('face_count'),
+                                        'representative_faces': person_group.get('representative_faces', []),
+                                        'timestamp': video.get('timestamp'),
+                                        'video_uuid': video_uuid
+                                    })
+                                video_person_objects[video_uuid] = person_objects
+                                logger.debug(f"✅ Preloaded {len(person_objects)} person_objects for {video_uuid[:8]}")
+                                return True
+                            else:
+                                video_person_objects[video_uuid] = []
+                                return False
+                        else:
+                            response_text = await response.text()
+                            logger.warning(f"Orchestrator {response.status} for {video_uuid[:8]}: {response_text[:100]}")
+                            video_person_objects[video_uuid] = []
+                            # Log error to DB
+                            try:
+                                async with db_client.pool.acquire() as conn:
+                                    await conn.execute("""
+                                        UPDATE tracking_sessions
+                                        SET failed_videos = array_append(failed_videos, $2)
+                                        WHERE session_uuid = $1
+                                    """, session_uuid, f"preload_error_{response.status}: {video_uuid[:8]}")
+                            except Exception:
+                                pass
+                            return False
+            except Exception as e:
+                logger.error(f"Failed preload for {video_uuid[:8]}: {e}")
+                video_person_objects[video_uuid] = []
+                # Log error to DB
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid, f"preload_exception: {video_uuid[:8]}, {str(e)[:50]}")
+                except Exception:
+                    pass
+                return False
+    
+    # Fetch all videos concurrently
+    results = await asyncio.gather(*[fetch_one_video(v) for v in all_videos], return_exceptions=True)
+    
+    success_count = sum(1 for r in results if r is True)
+    logger.info(f"✅ Preload complete: {success_count}/{len(all_videos)} videos succeeded")
+    
+    # Log preload completion
+    try:
+        async with db_client.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE tracking_sessions
+                SET failed_videos = array_append(failed_videos, $2)
+                WHERE session_uuid = $1
+            """, session_uuid, f"preload_complete: {success_count}/{len(all_videos)}_succeeded")
+    except Exception:
+        pass
+    
+    return video_person_objects
+
+
+async def match_person_objects_within_group(
+    videos_data: List[dict],
+    auth_token: Optional[str],
+    session_uuid: str,
+    db_client: VmetaDatabaseClient,
+    preloaded_data: Optional[dict] = None
+) -> List[dict]:
+    """
+    Match person_objects across videos within a temporal group.
+    
+    This performs temporal/spatial matching to determine if person_objects
+    from different videos represent the same individual.
+    
+    Args:
+        videos_data: List of video metadata dicts with 'uuid', 'timestamp', etc.
+        auth_token: JWT auth token for Orchestrator API calls
+        session_uuid: Tracking session UUID for debug logging
+        db_client: Database client
+        
+    Returns:
+        List of individual records, where each record has:
+        {
+            'individual_uuid': str,
+            'video_uuids': List[str],  # Videos this individual appears in
+            'person_objects': dict,  # video_uuid -> person_object data
+            'temporal_score': float
+        }
+    """
+    import aiohttp
+    from datetime import datetime, timedelta
+    from uuid import uuid4
+    
+    logger.info(f"🔍 Matching person_objects across {len(videos_data)} videos in group")
+    
+    # Log to database for debugging
+    try:
+        async with db_client.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE tracking_sessions
+                SET failed_videos = array_append(failed_videos, $2)
+                WHERE session_uuid = $1
+            """, session_uuid, f"match_within_group_start: {len(videos_data)}_videos")
+    except Exception:
+        pass
+    
+    # Step 1: Get person_objects (use preloaded data if available, else fetch)
+    video_person_objects = {}  # video_uuid -> person_objects list
+    
+    if preloaded_data is not None:
+        # Use preloaded data
+        logger.info(f"✅ Using preloaded person_objects for {len(videos_data)} videos")
+        for video in videos_data:
+            video_uuid = video['uuid']
+            video_person_objects[video_uuid] = preloaded_data.get(video_uuid, [])
+    else:
+        # Fallback: fetch individually (old behavior)
+        logger.warning("⚠️ No preloaded data, falling back to individual fetch")
+        import aiohttp
+        
+        for video in videos_data:
+            video_uuid = video['uuid']
+            
+            try:
+                orchestrator_url = f"http://localhost:8080/api/v1/orchestrator/person-objects/{video_uuid}"
+                
+                headers = {}
+                if auth_token:
+                    if auth_token.startswith('Bearer ') or auth_token.startswith('bearer '):
+                        headers['Authorization'] = auth_token
+                    else:
+                        headers['Authorization'] = f'Bearer {auth_token}'
+                
+                # Add timeout to prevent hanging
+                timeout = aiohttp.ClientTimeout(total=30)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    logger.info(f"🔍 Fetching person_objects for {video_uuid[:8]} from Orchestrator...")
+                    async with session.get(orchestrator_url, headers=headers) as response:
+                        if response.status == 200:
+                            orch_data = await response.json()
+                            if orch_data.get('success') and orch_data.get('person_groups'):
+                                # Each item in person_groups IS a person (not a group of persons)
+                                person_objects = []
+                                for person_group in orch_data['person_groups']:
+                                    # Each person_group has: person_uuid, person_id, face_count, representative_faces
+                                    person_objects.append({
+                                        'person_uuid': person_group.get('person_uuid'),
+                                        'person_id': person_group.get('person_id'),
+                                        'face_count': person_group.get('face_count'),
+                                        'representative_faces': person_group.get('representative_faces', []),
+                                        'timestamp': video.get('timestamp'),
+                                        'video_uuid': video_uuid
+                                    })
+                                video_person_objects[video_uuid] = person_objects
+                                logger.info(f"✅ Found {len(person_objects)} person_objects for video {video_uuid[:8]}")
+                        else:
+                            response_text = await response.text()
+                            logger.error(f"Orchestrator returned {response.status} for {video_uuid[:8]}: {response_text[:200]}")
+                            video_person_objects[video_uuid] = []
+                            # Log to database
+                            try:
+                                async with db_client.pool.acquire() as conn:
+                                    await conn.execute("""
+                                        UPDATE tracking_sessions
+                                        SET failed_videos = array_append(failed_videos, $2)
+                                        WHERE session_uuid = $1
+                                    """, session_uuid, f"orch_error_{response.status}: {video_uuid[:8]}, {response_text[:50]}")
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.error(f"Failed to fetch person_objects for {video_uuid[:8]}: {e}")
+                video_person_objects[video_uuid] = []
+                # Log to database
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid, f"orchestrator_fetch_error: {video_uuid[:8]}, {str(e)[:50]}")
+                except Exception:
+                    pass
+    
+    # Log fetching complete
+    try:
+        async with db_client.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE tracking_sessions
+                SET failed_videos = array_append(failed_videos, $2)
+                WHERE session_uuid = $1
+            """, session_uuid, f"fetch_complete: {len(video_person_objects)}_videos_fetched")
+    except Exception:
+        pass
+    
+    # Step 2: Match person_objects across videos using temporal/spatial logic
+    # Simple greedy matching: if videos are temporally consecutive and have person_objects,
+    # assume same person appears across videos
+    
+    individuals = []
+    matched_video_uuids = set()
+    
+    # Sort videos by timestamp
+    sorted_videos = sorted(videos_data, key=lambda v: v.get('timestamp', ''))
+    
+    for i, video in enumerate(sorted_videos):
+        video_uuid = video['uuid']
+        
+        if video_uuid in matched_video_uuids:
+            continue  # Already assigned to an individual
+        
+        person_objs = video_person_objects.get(video_uuid, [])
+        if not person_objs:
+            continue  # No person detected in this video
+        
+        # Start a new individual
+        individual_videos = [video_uuid]
+        individual_person_objects = {video_uuid: person_objs[0]}  # Use first person_object
+        matched_video_uuids.add(video_uuid)
+        
+        # Try to match with subsequent videos in the group
+        for j in range(i + 1, len(sorted_videos)):
+            next_video = sorted_videos[j]
+            next_uuid = next_video['uuid']
+            
+            if next_uuid in matched_video_uuids:
+                continue
+            
+            next_person_objs = video_person_objects.get(next_uuid, [])
+            if not next_person_objs:
+                continue
+            
+            # Temporal check: are videos consecutive (within 60 seconds)?
+            try:
+                curr_time = datetime.fromisoformat(video['timestamp'].replace('Z', '+00:00'))
+                next_time = datetime.fromisoformat(next_video['timestamp'].replace('Z', '+00:00'))
+                time_diff = abs((next_time - curr_time).total_seconds())
+                
+                if time_diff <= 60:  # Within 60 seconds = likely same person
+                    individual_videos.append(next_uuid)
+                    individual_person_objects[next_uuid] = next_person_objs[0]
+                    matched_video_uuids.add(next_uuid)
+                    logger.info(f"✅ Matched {video_uuid[:8]} with {next_uuid[:8]} (time_diff: {time_diff}s)")
+            except Exception as e:
+                logger.warning(f"Failed to compare timestamps: {e}")
+        
+        # Create individual record
+        individual_uuid = str(uuid4())
+        individuals.append({
+            'individual_uuid': individual_uuid,
+            'video_uuids': individual_videos,
+            'person_objects': individual_person_objects,
+            'temporal_score': 0.85  # Default score for temporal matches
+        })
+        
+        logger.info(
+            f"✅ Created individual {individual_uuid[:8]} appearing in "
+            f"{len(individual_videos)} videos: {[v[:8] for v in individual_videos]}"
+        )
+    
+    # Log completion to database
+    try:
+        async with db_client.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE tracking_sessions
+                SET failed_videos = array_append(failed_videos, $2)
+                WHERE session_uuid = $1
+            """, session_uuid, f"match_complete: {len(individuals)}_individuals_created")
+    except Exception:
+        pass
+    
+    logger.info(f"🎉 Temporal matching complete: {len(individuals)} individuals from {len(videos_data)} videos")
+    
+    return individuals
+
+
 async def merge_individuals_by_similarity(
     db_client,
     session_uuid: str,
-    individual_uuids: List[str],
+    matched_individuals: List[dict],
     auth_token: str,
-    similarity_threshold: float = 0.75
+    similarity_threshold: float = 0.70
 ) -> int:
     """
-    Merge individuals based on facial embedding similarity.
+    Merge individuals based on facial embedding similarity using 4-phase architecture.
     
-    Uses DeepFace/FaceNet embeddings to identify duplicate individuals
-    across different video groups and merges them into single entities.
+    Architecture:
+        Phase A: FETCH & LOAD - Extract embeddings from in-memory person_objects (NO DB QUERIES)
+        Phase B: COMPUTE - Pure in-memory similarity calculations
+        Phase C: PREPARE - Format operations for database
+        Phase D: EXECUTE - Single atomic transaction
     
     Args:
         db_client: Database client
         session_uuid: Tracking session UUID
-        individual_uuids: List of individual UUIDs to compare
+        matched_individuals: List of individual data dicts with structure:
+            [{
+                'individual_uuid': str,
+                'video_uuids': List[str],
+                'person_objects': Dict[video_uuid, List[person_object_dict]],
+                'temporal_score': float
+            }, ...]
         auth_token: Authorization token for media API
-        similarity_threshold: Minimum cosine similarity (0-1)
+        similarity_threshold: Minimum cosine similarity (0-1), default 0.70
         
     Returns:
         Number of individuals merged (removed)
     """
     import numpy as np
+    import aiohttp
+    import cv2
+    from sklearn.metrics.pairwise import cosine_similarity
     
     logger.info(
-        f"Merging {len(individual_uuids)} individuals "
-        f"with threshold {similarity_threshold}"
+        f"[MERGE] Starting embedding-based merge for {len(matched_individuals)} individuals "
+        f"(threshold={similarity_threshold})"
     )
     
     # DEBUG: Write to database
@@ -450,190 +1012,511 @@ async def merge_individuals_by_similarity(
                 SET failed_videos = array_append(failed_videos, $2)
                 WHERE session_uuid = $1
             """, session_uuid,
-                f"merge_function_called: count={len(individual_uuids)}")
+                f"merge_start: {len(matched_individuals)}_individuals_threshold={similarity_threshold}")
     except Exception:
         pass
     
     # Skip if not enough individuals to merge
-    if len(individual_uuids) < 2:
+    if len(matched_individuals) < 2:
+        logger.info("[MERGE] Less than 2 individuals, skipping merge")
         return 0
     
     try:
-        # Import embedding service
-        from services.embedding_service import (
-            EmbeddingService,
-            DEEPFACE_AVAILABLE
-        )
+        # ================================================================
+        # PHASE A: FETCH & LOAD - All I/O upfront
+        # ================================================================
         
-        # DEBUG
+        logger.info("[MERGE PHASE A] Starting data preload...")
+        
+        # DEBUG: Log phase A start
         try:
             async with db_client.pool.acquire() as conn:
                 await conn.execute("""
                     UPDATE tracking_sessions
                     SET failed_videos = array_append(failed_videos, $2)
                     WHERE session_uuid = $1
-                """, session_uuid,
-                    f"deepface_available: {DEEPFACE_AVAILABLE}")
+                """, session_uuid, "merge_phase_a_start")
         except Exception:
             pass
         
-        if not DEEPFACE_AVAILABLE:
-            logger.warning(
-                "DeepFace not available - skipping embedding merge"
+        # Import embedding service
+        try:
+            # DEBUG: Log before import
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, "merge_before_import")
+            except Exception:
+                pass
+            
+            from services.embedding_service import (
+                EmbeddingService,
+                DEEPFACE_AVAILABLE
             )
+            logger.info(f"[MERGE] DeepFace available: {DEEPFACE_AVAILABLE}")
+            
+            # DEBUG: Log after import
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, f"merge_after_import: deepface={DEEPFACE_AVAILABLE}")
+            except Exception:
+                pass
+        except Exception as import_error:
+            logger.error(f"[MERGE] Failed to import embedding service: {import_error}")
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, f"merge_import_error: {str(import_error)[:200]}")
+            except Exception:
+                pass
             return 0
         
-        embedding_service = EmbeddingService(db_client)
+        if not DEEPFACE_AVAILABLE:
+            logger.warning("[MERGE] DeepFace not available - skipping")
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, "merge_skipped: deepface_unavailable")
+            except Exception:
+                pass
+            return 0
         
-        # Step 1: Extract representative frames for each individual
-        individual_embeddings = {}
+        try:
+            # DEBUG: Log before service init
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, "merge_before_service_init")
+            except Exception:
+                pass
+            
+            embedding_service = EmbeddingService(db_client)
+            logger.info("[MERGE] Embedding service initialized")
+            
+            # DEBUG: Log after service init
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, "merge_after_service_init")
+            except Exception:
+                pass
+        except Exception as service_error:
+            logger.error(f"[MERGE] Failed to initialize embedding service: {service_error}")
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, f"merge_service_init_error: {str(service_error)[:200]}")
+            except Exception:
+                pass
+            return 0
         
-        async with db_client.pool.acquire() as conn:
-            for individual_uuid in individual_uuids:
-                # Get ALL video UUIDs for this individual
-                video_appearances = await conn.fetch("""
-                    SELECT DISTINCT video_uuid
-                    FROM individual_video_appearances
-                    WHERE individual_uuid = $1
-                """, individual_uuid)
-                
-                if not video_appearances:
-                    logger.warning(
-                        f"No appearances for individual {individual_uuid}"
-                    )
-                    continue
-                
-                video_uuids = [
-                    str(va['video_uuid']) for va in video_appearances
-                ]
-                
-                if not video_uuids:
-                    logger.warning(
-                        f"No video UUIDs for individual {individual_uuid}"
-                    )
-                    continue
-                
-                # Query Vision DB to find person_objects for these videos
-                # Select the one with highest quality score
-                try:
-                    import asyncpg
-                    import base64
-                    import cv2
-                    
-                    # Convert to UUID array for PostgreSQL
-                    import uuid
-                    video_uuid_objects = [
-                        uuid.UUID(v) for v in video_uuids
-                    ]
-                    
-                    # Connect to Vision DB
-                    vision_conn_str = (
-                        "postgresql://postgres:localdevpass@localhost:5432/"
-                        "ppl_vision_db"
-                    )
-                    vision_conn = await asyncpg.connect(vision_conn_str)
-                    
-                    try:
-                        # Get ALL person_objects for this individual's videos
-                        # ordered by quality score (best first)
-                        person_obj = await vision_conn.fetchrow("""
-                            SELECT 
-                                po.person_id,
-                                po.best_face_id,
-                                po.quality_score,
-                                fd.media_id
-                            FROM person_objects po
-                            JOIN face_detections fd 
-                                ON fd.id = po.best_face_id
-                            WHERE fd.media_id = ANY($1::uuid[])
-                              AND po.quality_score IS NOT NULL
-                            ORDER BY po.quality_score DESC
-                            LIMIT 1
-                        """, video_uuid_objects)
-                        
-                        if not person_obj or not person_obj['best_face_id']:
-                            logger.warning(
-                                f"No person_object with quality score "
-                                f"for individual {individual_uuid}, "
-                                f"videos: {len(video_uuids)}"
-                            )
-                            continue
-                        
-                        best_face_id = person_obj['best_face_id']
-                        
-                        # Get face crop from face_crops table
-                        face_crop_data = await vision_conn.fetchrow("""
-                            SELECT crop_base64, crop_width, crop_height
-                            FROM face_crops
-                            WHERE face_detection_id = $1
-                        """, best_face_id)
-                        
-                        if not face_crop_data or not face_crop_data['crop_base64']:
-                            logger.warning(
-                                f"No face_crop for face {best_face_id}"
-                            )
-                            continue
-                        
-                        # Decode base64 face crop
-                        crop_bytes = base64.b64decode(
-                            face_crop_data['crop_base64']
-                        )
-                        crop_array = np.frombuffer(crop_bytes, np.uint8)
-                        face_crop = cv2.imdecode(crop_array, cv2.IMREAD_COLOR)
-                        
-                        if face_crop is None or face_crop.size == 0:
-                            logger.warning(
-                                f"Failed to decode face crop for {best_face_id}"
-                            )
-                            continue
-                        
-                        # Convert BGR to RGB for DeepFace
-                        face_crop_rgb = cv2.cvtColor(
-                            face_crop, cv2.COLOR_BGR2RGB
-                        )
-                        
-                        # Generate DeepFace embedding from face crop
-                        # Use full crop as bbox (face is already cropped)
-                        h, w = face_crop_rgb.shape[:2]
-                        embedding = await embedding_service._generate_facial_embedding(  # noqa
-                            face_crop_rgb, 0, 0, w, h
-                        )
-                        
-                        if embedding is not None:
-                            individual_embeddings[individual_uuid] = embedding
-                            logger.info(
-                                f"✅ Generated embedding for individual "
-                                f"{individual_uuid} from Vision face crop"
-                            )
-                    
-                    finally:
-                        await vision_conn.close()
-                        
-                except Exception as e:
-                    logger.error(
-                        f"Failed to generate embedding for "
-                        f"individual {individual_uuid}: {e}"
-                    )
-                    continue
+        # A1: Extract individual data from in-memory matched_individuals (NO DB QUERY!)
+        logger.info("[MERGE PHASE A1] Extracting data from in-memory structures...")
         
-        # DEBUG: Report embedding extraction results
+        # DEBUG: Log A1 start
         try:
             async with db_client.pool.acquire() as conn:
                 await conn.execute("""
                     UPDATE tracking_sessions
                     SET failed_videos = array_append(failed_videos, $2)
                     WHERE session_uuid = $1
-                """, session_uuid,
-                    f"embeddings_generated: {len(individual_embeddings)}/{len(individual_uuids)}")
+                """, session_uuid, 
+                f"merge_a1_extract_start: {len(matched_individuals)}_individuals")
         except Exception:
             pass
         
-        # Step 2: Compare embeddings and find duplicates
-        if len(individual_embeddings) < 2:
-            logger.warning(
-                "Not enough embeddings generated for merging"
-            )
-            # DEBUG
+        # Extract individual data from the in-memory matched_individuals structure
+        # Each matched_individual has: individual_uuid, video_uuids, person_objects, temporal_score
+        # person_objects is a dict: {video_uuid: person_object_dict}
+        individuals_data = []
+        
+        for individual in matched_individuals:
+            individual_uuid = individual['individual_uuid']
+            video_uuids = individual['video_uuids']
+            person_objects_by_video = individual['person_objects']
+            
+            # Pick the first video and its person_object as representative
+            if video_uuids and person_objects_by_video:
+                representative_video_uuid = video_uuids[0]
+                person_object = person_objects_by_video.get(representative_video_uuid)
+                
+                if person_object:
+                    individuals_data.append({
+                        'individual_uuid': individual_uuid,
+                        'video_uuid': representative_video_uuid,
+                        'person_object': person_object,  # Full object in memory
+                        'all_video_uuids': video_uuids
+                    })
+        
+        # DEBUG: Log extraction result
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid, 
+                f"merge_a1_extract_result: {len(individuals_data)}_extracted")
+        except Exception:
+            pass
+        
+        logger.info(
+            f"[MERGE PHASE A1] Extracted {len(individuals_data)}/"
+            f"{len(matched_individuals)} individuals from memory"
+        )
+        
+        if len(individuals_data) < 2:
+            logger.warning("[MERGE] Not enough individuals with person data")
+            return 0
+        
+        # A2: Generate fresh embeddings for each individual (vmeta service)
+        # Uses the already-ranked representative faces from Orchestrator
+        # (first face is best quality, as ranked by Orchestrator)
+        # 
+        # Embedding Generation Pipeline:
+        # 1. Fetch full frame from Media service endpoint
+        # 2. Crop ONLY the face region using bbox coordinates
+        # 3. Resize cropped face to 160x160 (Facenet512 optimal input)
+        # 4. Generate embedding on resized cropped face
+        # 
+        # Note: Facenet512 is trained on 160x160 images for optimal results
+        logger.info("[MERGE PHASE A2] Generating embeddings from ranked faces...")
+        
+        # DEBUG: Log A2 start
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid, 
+                f"merge_a2_generate_start: {len(individuals_data)}_individuals")
+        except Exception:
+            pass
+        
+        # Generate embeddings by:
+        # 1. Using best representative face from person_object (already ranked!)
+        # 2. Fetching frame bytes from Media service (same endpoint Flutter uses)
+        # 3. Decoding frame and cropping face region using bbox
+        # 4. Generating embedding using vmeta's EmbeddingService
+        
+        faces_with_embeddings = []
+        
+        # Setup auth headers
+        headers = {}
+        if auth_token:
+            if not auth_token.startswith('Bearer'):
+                headers['Authorization'] = f'Bearer {auth_token}'
+            else:
+                headers['Authorization'] = auth_token
+        
+        # DEBUG: Track failure reasons
+        failure_stats = {
+            'no_representative_faces': 0,
+            'invalid_bbox': 0,
+            'frame_fetch_failed': 0,
+            'bbox_out_of_bounds': 0,
+            'embedding_generation_failed': 0,
+            'exception': 0
+        }
+        
+        for ind_data in individuals_data:
+            try:
+                person_obj = ind_data.get('person_object', {})
+                individual_uuid = ind_data['individual_uuid']
+                video_uuid = ind_data['video_uuid']
+                
+                # DEBUG: Log person_object structure
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid, 
+                        f"merge_a2_person_obj_keys: {list(person_obj.keys())}")
+                except Exception:
+                    pass
+                
+                # Get representative faces (already ranked by Orchestrator)
+                representative_faces = person_obj.get('representative_faces', [])
+                if not representative_faces:
+                    logger.warning(
+                        f"[MERGE] No representative faces for "
+                        f"{individual_uuid[:8]}"
+                    )
+                    failure_stats['no_representative_faces'] += 1
+                    # DEBUG
+                    try:
+                        async with db_client.pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE tracking_sessions
+                                SET failed_videos = array_append(failed_videos, $2)
+                                WHERE session_uuid = $1
+                            """, session_uuid, 
+                            f"merge_a2_fail: no_rep_faces_{individual_uuid[:8]}")
+                    except Exception:
+                        pass
+                    continue
+                
+                # Use first face (highest quality as ranked by Orchestrator)
+                best_face = representative_faces[0]
+                
+                # Extract face_data (handle both dict and object structures)
+                if isinstance(best_face, dict):
+                    face_data = best_face.get('face_data', {})
+                else:
+                    # If it's an object with attributes
+                    face_data = getattr(best_face, 'face_data', {})
+                
+                bbox = face_data.get('bbox')
+                frame_number = face_data.get('frame_number', 0)
+                
+                # DEBUG: Log bbox and frame info
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid,
+                        f"merge_a2_bbox_info: frame={frame_number} "
+                        f"bbox={bbox} uuid={individual_uuid[:8]}")
+                except Exception:
+                    pass
+                
+                if not bbox or len(bbox) != 4:
+                    logger.warning(
+                        f"[MERGE] Invalid bbox for {individual_uuid[:8]}: {bbox}"
+                    )
+                    failure_stats['invalid_bbox'] += 1
+                    continue
+                
+                # Fetch frame from Media service (same endpoint Flutter uses)
+                # GET /api/v1/media/{video_uuid}/frame/{frame_number}
+                frame_url = (
+                    f"http://localhost:8080/api/v1/media/"
+                    f"{video_uuid}/frame/{frame_number}?format=jpeg"
+                )
+                
+                logger.info(
+                    f"[MERGE] Fetching frame {frame_number} for "
+                    f"{individual_uuid[:8]} from {video_uuid[:8]}"
+                )
+                
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as session:
+                    async with session.get(frame_url, headers=headers) as resp:
+                        if resp.status != 200:
+                            logger.warning(
+                                f"[MERGE] Frame API {resp.status} for "
+                                f"{video_uuid[:8]} frame {frame_number}"
+                            )
+                            continue
+                        
+                        # Read frame bytes
+                        frame_bytes = await resp.read()
+                        
+                        # Decode frame from JPEG bytes
+                        import numpy as np
+                        from PIL import Image
+                        from io import BytesIO
+                        
+                        # Decode JPEG to numpy array
+                        pil_image = Image.open(BytesIO(frame_bytes))
+                        frame = np.array(pil_image)
+                        
+                        # Convert RGB to BGR (OpenCV format)
+                        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
+                # Extract bbox coordinates (format: [x1, y1, x2, y2])
+                x = int(bbox[0])
+                y = int(bbox[1])
+                x2 = int(bbox[2])
+                y2 = int(bbox[3])
+                w = x2 - x
+                h = y2 - y
+                
+                # DEBUG: Log bbox dimensions
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid,
+                        f"merge_a2_crop: w={w} h={h} "
+                        f"pos=({x},{y}) uuid={individual_uuid[:8]}")
+                except Exception:
+                    pass
+                
+                # Validate bbox dimensions
+                if w <= 0 or h <= 0:
+                    logger.warning(
+                        f"[MERGE] Invalid bbox dimensions for "
+                        f"{individual_uuid[:8]}: w={w}, h={h}"
+                    )
+                    failure_stats['invalid_bbox'] += 1
+                    continue
+                
+                # Validate bbox is within frame bounds
+                frame_h, frame_w = frame_bgr.shape[:2]
+                if x < 0 or y < 0 or x2 > frame_w or y2 > frame_h:
+                    logger.warning(
+                        f"[MERGE] bbox out of bounds for {individual_uuid[:8]}: "
+                        f"bbox=[{x},{y},{x2},{y2}], frame=[{frame_w},{frame_h}]"
+                    )
+                    failure_stats['bbox_out_of_bounds'] += 1
+                    continue
+                
+                # CROP THE FACE from full frame using OpenCV
+                # This extracts ONLY the face region for embedding generation
+                cropped_face = frame_bgr[y:y2, x:x2].copy()
+                
+                # Validate cropped face is not empty
+                if cropped_face.size == 0:
+                    logger.warning(
+                        f"[MERGE] Empty crop for {individual_uuid[:8]}"
+                    )
+                    failure_stats['invalid_bbox'] += 1
+                    continue
+                
+                # RESIZE to 160x160 (Facenet512 optimal input size)
+                # Facenet models are trained on 160x160 images
+                cropped_face_resized = cv2.resize(
+                    cropped_face, (160, 160), interpolation=cv2.INTER_AREA
+                )
+                
+                # DEBUG: Log crop and resize
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid,
+                        f"merge_a2_cropped: orig={cropped_face.shape} "
+                        f"resized={cropped_face_resized.shape} "
+                        f"uuid={individual_uuid[:8]}")
+                except Exception:
+                    pass
+                
+                # Generate embedding on RESIZED CROPPED FACE (160x160)
+                # Pass full 160x160 face (already resized to optimal size)
+                logger.info(
+                    f"[MERGE] Generating embedding for {individual_uuid[:8]} "
+                    f"from {w}x{h} face resized to 160x160"
+                )
+                
+                embedding, confidence = (
+                    await embedding_service._generate_facial_embedding(
+                        cropped_face_resized, 0, 0, 160, 160
+                    )
+                )
+                
+                if embedding is not None:
+                    faces_with_embeddings.append({
+                        'individual_uuid': individual_uuid,
+                        'embedding': np.array(embedding),
+                        'confidence': confidence,
+                        'video_uuid': video_uuid
+                    })
+                    logger.info(
+                        f"[MERGE] ✅ Generated embedding for "
+                        f"{individual_uuid[:8]} (conf: {confidence:.3f})"
+                    )
+                    # DEBUG: Log success
+                    try:
+                        async with db_client.pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE tracking_sessions
+                                SET failed_videos = array_append(failed_videos, $2)
+                                WHERE session_uuid = $1
+                            """, session_uuid,
+                            f"merge_a2_embed_success: "
+                            f"uuid={individual_uuid[:8]} conf={confidence:.3f}")
+                    except Exception:
+                        pass
+                else:
+                    logger.warning(
+                        f"[MERGE] Failed to generate embedding for "
+                        f"{individual_uuid[:8]}"
+                    )
+                    failure_stats['embedding_generation_failed'] += 1
+                    # DEBUG: Log failure
+                    try:
+                        async with db_client.pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE tracking_sessions
+                                SET failed_videos = array_append(failed_videos, $2)
+                                WHERE session_uuid = $1
+                            """, session_uuid,
+                            f"merge_a2_embed_failed: uuid={individual_uuid[:8]}")
+                    except Exception:
+                        pass
+                    
+            except Exception as e:
+                logger.error(
+                    f"[MERGE] Error generating embedding for "
+                    f"{ind_data.get('individual_uuid', 'unknown')[:8]}: {e}",
+                    exc_info=True
+                )
+                failure_stats['exception'] += 1
+                # DEBUG: Log exception
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid,
+                        f"merge_a2_exception: {str(e)[:100]}")
+                except Exception:
+                    pass
+                continue
+        
+        # DEBUG: Log generation result
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid, 
+                f"merge_a2_generate_result: {len(faces_with_embeddings)}_embeddings")
+        except Exception:
+            pass
+        
+        logger.info(
+            f"[MERGE PHASE A2] Generated {len(faces_with_embeddings)}/"
+            f"{len(individuals_data)} embeddings using vmeta service"
+        )
+        
+        if len(faces_with_embeddings) < 2:
+            logger.warning("[MERGE] Not enough embeddings available")
             try:
                 async with db_client.pool.acquire() as conn:
                     await conn.execute("""
@@ -641,82 +1524,456 @@ async def merge_individuals_by_similarity(
                         SET failed_videos = array_append(failed_videos, $2)
                         WHERE session_uuid = $1
                     """, session_uuid,
-                        f"merge_skipped: only_{len(individual_embeddings)}_embeddings")
+                        f"merge_skipped: only_{len(faces_with_embeddings)}_embeddings")
             except Exception:
                 pass
             return 0
         
-        # Build similarity matrix using cosine similarity
-        from sklearn.metrics.pairwise import cosine_similarity
+        # Phase A complete! We have all embeddings in memory.
+        logger.info(
+            f"[MERGE PHASE A] Complete: {len(faces_with_embeddings)} "
+            "embeddings loaded from memory"
+        )
         
-        uuids = list(individual_embeddings.keys())
+        # DEBUG: Report Phase A completion
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid,
+                    f"phase_a_complete: {len(faces_with_embeddings)}_embeddings")
+        except Exception:
+            pass
+        
+        if len(faces_with_embeddings) < 2:
+            logger.warning("[MERGE] Not enough embeddings for merge")
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid,
+                        f"merge_skipped: only_{len(faces_with_embeddings)}_embeddings")
+            except Exception:
+                pass
+            return 0
+        
+        # ================================================================
+        # PHASE B: COMPUTE - Pure in-memory operations
+        # ================================================================
+        
+        logger.info("[MERGE PHASE B] Computing similarity matrix...")
+        
+        # DEBUG: Report Phase B start
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid, 
+                f"phase_b_start: {len(faces_with_embeddings)}_embeddings")
+        except Exception:
+            pass
+        
+        # B1: Build embeddings matrix from faces_with_embeddings
+        uuids = [face['individual_uuid'] for face in faces_with_embeddings]
         embeddings_matrix = np.array([
-            individual_embeddings[uuid] for uuid in uuids
+            face['embedding'] for face in faces_with_embeddings
         ])
         
-        # Calculate pairwise similarities
+        # B2: Calculate pairwise similarities
         similarities = cosine_similarity(embeddings_matrix)
         
-        # Find merge candidates
+        logger.info(f"[MERGE PHASE B] Similarity matrix: {similarities.shape}")
+        
+        # DEBUG: Report similarity calculation complete
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid, 
+                f"phase_b_similarity_complete: {similarities.shape}")
+        except Exception:
+            pass
+        
+        # B2: Calculate pairwise similarities
+        similarities = cosine_similarity(embeddings_matrix)
+        
+        logger.info(f"[MERGE PHASE B] Similarity matrix: {similarities.shape}")
+        
+        # DEBUG: Log all pairwise similarities
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid, 
+                f"phase_b_similarity_complete: {similarities.shape}")
+                
+                # Log each pairwise similarity
+                for i in range(len(uuids)):
+                    for j in range(i+1, len(uuids)):
+                        sim_score = similarities[i][j]
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid,
+                        f"similarity: {uuids[i][:8]}↔{uuids[j][:8]} = {sim_score:.4f} "
+                        f"(threshold={similarity_threshold})")
+        except Exception:
+            pass
+        
+        # B3: Identify merge candidates using connected components
+        # This handles transitive similarity: if A~B and B~C, then A,B,C merge
         merge_groups = []  # [(keep_uuid, [merge_uuid1, merge_uuid2, ...])]
-        merged_uuids = set()
         
+        # Build adjacency list of similar individuals
+        similar_to = {uuid_val: [] for uuid_val in uuids}
         for i in range(len(uuids)):
-            if uuids[i] in merged_uuids:
-                continue
-            
-            # Find all individuals similar to this one
-            similar_indices = np.where(
-                similarities[i] >= similarity_threshold
-            )[0]
-            
-            # Filter out self and already merged
-            similar_uuids = [
-                uuids[j] for j in similar_indices
-                if j != i and uuids[j] not in merged_uuids
-            ]
-            
-            if similar_uuids:
-                # Keep the first one, merge the others
-                merge_groups.append((uuids[i], similar_uuids))
-                merged_uuids.update(similar_uuids)
+            for j in range(i+1, len(uuids)):
+                if similarities[i][j] >= similarity_threshold:
+                    similar_to[uuids[i]].append(uuids[j])
+                    similar_to[uuids[j]].append(uuids[i])
+                    logger.info(
+                        f"[MERGE] Edge added: {uuids[i][:8]} ↔ "
+                        f"{uuids[j][:8]} (sim={similarities[i][j]:.4f})"
+                    )
         
-        # Step 3: Execute merges in database
-        total_merged = 0
+        # Find connected components using DFS
+        visited = set()
         
-        async with db_client.pool.acquire() as conn:
-            async with conn.transaction():
-                for keep_uuid, merge_uuids in merge_groups:
-                    for merge_uuid in merge_uuids:
-                        # Transfer all appearances to kept individual
-                        await conn.execute("""
-                            UPDATE individual_video_appearances
-                            SET individual_uuid = $1
-                            WHERE individual_uuid = $2
-                        """, keep_uuid, merge_uuid)
-                        
-                        # Delete merged individual
-                        await conn.execute("""
-                            DELETE FROM individuals
-                            WHERE individual_uuid = $1
-                        """, merge_uuid)
-                        
-                        total_merged += 1
-                        logger.info(
-                            f"Merged individual {merge_uuid} "
-                            f"into {keep_uuid}"
-                        )
+        def dfs(uuid_val, component):
+            if uuid_val in visited:
+                return
+            visited.add(uuid_val)
+            component.append(uuid_val)
+            for neighbor in similar_to[uuid_val]:
+                dfs(neighbor, component)
+        
+        # Find all connected components (groups of transitively similar individuals)
+        components = []
+        for uuid_val in uuids:
+            if uuid_val not in visited:
+                component = []
+                dfs(uuid_val, component)
+                if len(component) > 1:  # Only merge if group has 2+ individuals
+                    components.append(component)
+        
+        # Convert components to merge_groups format
+        # First individual in component is kept, rest are merged into it
+        for component in components:
+            keep_uuid = component[0]
+            merge_uuids = component[1:]
+            merge_groups.append((keep_uuid, merge_uuids))
+            
+            # Log merge group
+            logger.info(
+                f"[MERGE] Group: keep {keep_uuid[:8]}, "
+                f"merge {[u[:8] for u in merge_uuids]}"
+            )
         
         logger.info(
-            f"Successfully merged {total_merged} individuals "
-            f"into {len(merge_groups)} unique individuals"
+            f"[MERGE PHASE B] Found {len(merge_groups)} merge groups "
+            f"({sum(len(g[1]) for g in merge_groups)} individuals to merge)"
         )
+        
+        # DEBUG: Log merge groups found
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid,
+                    f"phase_b_groups_found: {len(merge_groups)}_groups, "
+                    f"{sum(len(g[1]) for g in merge_groups)}_to_merge")
+        except Exception:
+            pass
+        
+        # ================================================================
+        # PHASE C: PREPARE - Format for database
+        # Architecture: Create MVR for ALL individuals, then merge similar ones
+        # Even if no merge groups, we still create MVR people for all individuals (1:1)
+        # ================================================================
+        
+        logger.info(f"[MERGE PHASE C] Preparing database operations... "
+                    f"({len(merge_groups)} merge groups found)")
+        
+        # DEBUG: Confirm Phase C entry
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid,
+                    f"phase_c_start: {len(merge_groups)}_groups, "
+                    f"{len(uuids)}_total_individuals")
+        except Exception:
+            pass
+        
+        db_operations = []
+        
+        # Step 1: Create MVR person for each connected component
+        # Each component = one MVR person, all individuals in component map to it
+        individual_to_mvr = {}  # Track which MVR each individual maps to
+        
+        for keep_uuid, merge_uuids in merge_groups:
+            # All UUIDs in this group (keep + merged)
+            all_uuids_in_group = [keep_uuid] + merge_uuids
+            
+            # Get embedding from the first individual (representative)
+            keep_idx = uuids.index(keep_uuid)
+            keep_embedding = faces_with_embeddings[keep_idx]['embedding']
+            keep_confidence = faces_with_embeddings[keep_idx]['confidence']
+            
+            # Convert numpy array to list for PostgreSQL vector type
+            if isinstance(keep_embedding, np.ndarray):
+                keep_embedding = keep_embedding.tolist()
+            
+            # Create ONE MVR person for this entire group
+            mvr_people_uuid = str(uuid4())
+            db_operations.append(('create_mvr_person', {
+                'mvr_people_uuid': mvr_people_uuid,
+                'featured_individual_uuid': keep_uuid,
+                'face_embedding': keep_embedding,
+                'confidence_score': keep_confidence,
+                'quality_score': keep_confidence
+            }))
+            
+            # Map ALL individuals in this group to the same MVR person
+            for individual_uuid in all_uuids_in_group:
+                idx = uuids.index(individual_uuid)
+                similarity = similarities[keep_idx][idx] if individual_uuid != keep_uuid else 1.0
+                confidence = faces_with_embeddings[idx]['confidence']
+                
+                db_operations.append(('map_individual_to_mvr', {
+                    'individual_uuid': individual_uuid,
+                    'mvr_people_uuid': mvr_people_uuid,
+                    'similarity_score': float(similarity),
+                    'confidence_score': confidence,
+                    'quality_score': confidence,
+                    'is_representative': (individual_uuid == keep_uuid),
+                    'linked_by_session': session_uuid
+                }))
+                
+                individual_to_mvr[individual_uuid] = mvr_people_uuid
+        
+        # Step 2: Create MVR people for individuals NOT in any merge group
+        for i, individual_uuid in enumerate(uuids):
+            if individual_uuid not in individual_to_mvr:
+                # This individual is unique (not similar to anyone)
+                embedding = faces_with_embeddings[i]['embedding']
+                confidence = faces_with_embeddings[i]['confidence']
+                
+                if isinstance(embedding, np.ndarray):
+                    embedding = embedding.tolist()
+                
+                mvr_people_uuid = str(uuid4())
+                db_operations.append(('create_mvr_person', {
+                    'mvr_people_uuid': mvr_people_uuid,
+                    'featured_individual_uuid': individual_uuid,
+                    'face_embedding': embedding,
+                    'confidence_score': confidence,
+                    'quality_score': confidence
+                }))
+                
+                db_operations.append(('map_individual_to_mvr', {
+                    'individual_uuid': individual_uuid,
+                    'mvr_people_uuid': mvr_people_uuid,
+                    'similarity_score': 1.0,  # Self-match
+                    'confidence_score': confidence,
+                    'quality_score': confidence,
+                    'is_representative': True,
+                    'linked_by_session': session_uuid
+                }))
+                
+                individual_to_mvr[individual_uuid] = mvr_people_uuid
+        
+        logger.info(
+            f"[MERGE PHASE C] Prepared {len(db_operations)} database operations"
+        )
+        
+        # ================================================================
+        # PHASE D: EXECUTE - Single atomic transaction
+        # ================================================================
+        # ================================================================
+        
+        logger.info("[MERGE PHASE D] Executing database transaction...")
+        
+        # DEBUG: Confirm Phase D entry
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid,
+                    f"phase_d_start: {len(db_operations)}_operations")
+        except Exception:
+            pass
+        
+        mvr_people_count = len([op for op in db_operations if op[0] == 'create_mvr_person'])
+        
+        # DEBUG: Log before transaction
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid,
+                    f"phase_d_before_transaction: {mvr_people_count}_mvr, "
+                    f"{len(db_operations) - mvr_people_count}_mappings")
+        except Exception:
+            pass
+        
+        try:
+            async with db_client.pool.acquire() as conn:
+                async with conn.transaction():
+                    for op_type, params in db_operations:
+                        if op_type == 'create_mvr_person':
+                            # Create MVR person with embedding
+                            # Convert list to string format for pgvector
+                            embedding = params['face_embedding']
+                            if isinstance(embedding, list):
+                                embedding_str = str(embedding)
+                            else:
+                                embedding_str = str(embedding.tolist())
+                            
+                            await conn.execute("""
+                                INSERT INTO mvr_people (
+                                    mvr_people_uuid,
+                                    featured_individual_uuid,
+                                    face_embedding,
+                                    confidence_score,
+                                    quality_score,
+                                    face_quality
+                                ) VALUES ($1, $2, $3::vector, $4, $5, $6)
+                            """, params['mvr_people_uuid'],
+                                params['featured_individual_uuid'],
+                                embedding_str,
+                                params['confidence_score'],
+                                params['quality_score'],
+                                params['quality_score'])
+                            
+                            logger.info(
+                                f"[MERGE] Created MVR person "
+                                f"{params['mvr_people_uuid'][:8]}"
+                            )
+                        
+                        elif op_type == 'map_individual_to_mvr':
+                            # Map individual to MVR person
+                            await conn.execute("""
+                                INSERT INTO individual_mvr_mapping (
+                                    individual_uuid,
+                                    mvr_people_uuid,
+                                    similarity_score,
+                                    confidence_score,
+                                    quality_score,
+                                    is_representative,
+                                    linked_by_session
+                                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            """, params['individual_uuid'],
+                                params['mvr_people_uuid'],
+                                params['similarity_score'],
+                                params['confidence_score'],
+                                params['quality_score'],
+                                params['is_representative'],
+                                params['linked_by_session'])
+            
+            # Transaction complete - log success OUTSIDE the transaction
+            logger.info(
+                f"[MERGE PHASE D] Transaction complete: "
+                f"{mvr_people_count} MVR people created, "
+                f"{len(db_operations) - mvr_people_count} mappings created"
+            )
+            
+            # DEBUG: Log transaction success
+            try:
+                async with db_client.pool.acquire() as debug_conn:
+                    await debug_conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid,
+                        f"phase_d_transaction_success: {mvr_people_count}_mvr_created")
+            except Exception:
+                pass
+            
+        except Exception as e:
+            logger.error(
+                f"[MERGE PHASE D] Transaction failed: {type(e).__name__}: {e}"
+            )
+            # DEBUG: Log transaction failure
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid,
+                        f"phase_d_transaction_failed: {type(e).__name__}: {str(e)[:100]}")
+            except Exception:
+                pass
+            # Don't re-raise, just log and continue without merging
+            return 0
+        
+        # Update unique_mvr_people_count in tracking session
+        async with db_client.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE tracking_sessions
+                SET unique_mvr_people_count = (
+                    SELECT COUNT(DISTINCT mvr_people_uuid)
+                    FROM individual_mvr_mapping
+                    WHERE individual_uuid IN (
+                        SELECT individual_uuid 
+                        FROM session_individuals 
+                        WHERE session_uuid = $1
+                    )
+                )
+                WHERE session_uuid = $1
+            """, session_uuid)
+        
+        return mvr_people_count
+        # DEBUG: Report completion
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid,
+                    f"merge_complete: {total_merged}_merged_into_{len(merge_groups)}_unique")
+        except Exception:
+            pass
+        
         return total_merged
         
     except Exception as e:
-        logger.error(f"Merging failed: {e}")
+        logger.error(f"[MERGE] Failed: {e}")
         import traceback
         traceback.print_exc()
+        
+        # DEBUG: Report error
+        try:
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET failed_videos = array_append(failed_videos, $2)
+                    WHERE session_uuid = $1
+                """, session_uuid, f"merge_error: {str(e)[:200]}")
+        except Exception:
+            pass
+        
         raise
 
 
@@ -826,6 +2083,7 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
         individuals_found = 0
         processed_count = 0
         created_individuals = []
+        total_cache_hits = 0  # Track cache hits across all video groups
         
         if len(videos) >= 2:  # Need at least 2 videos for cross-video tracking
             # Debug: entering video processing
@@ -881,190 +2139,256 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
             if len(current_group) > 0:
                 video_groups.append(current_group)
             
+            # Debug: Log video groups before processing
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, f"video_groups_count: {len(video_groups)}, " +
+                         f"group_sizes: {[len(g) for g in video_groups]}")
+            except Exception:
+                pass
+            
+            # Track all individuals created across all groups
+            created_individual_uuids = []
+            
+            # Track all matched_individuals with full data for embedding merge
+            all_matched_individuals = []
+            
+            # ✨ PRELOAD: Fetch all person_objects data upfront to eliminate I/O during DB transactions
+            logger.info(f"🔄 Preloading person_objects for all {len(videos)} videos before processing groups")
+            preloaded_person_objects = await preload_person_objects_for_all_videos(
+                all_videos=videos,
+                auth_token=auth_token,
+                session_uuid=session_uuid,
+                db_client=db_client,
+                concurrency=6
+            )
+            logger.info(f"✅ Preload complete, now processing {len(video_groups)} groups")
+            
             # Process each group of consecutive videos
             for group_idx, consecutive_videos in enumerate(video_groups):
-                if len(consecutive_videos) < 2:
-                    # Skip groups with only 1 video
-                    continue
-                
-                # Simulate cross-video individual tracking for this group
-                # In a real implementation, this would:
-                # 1. Extract person objects from each video
-                # 2. Calculate bounding box overlaps and similarities
-                # 3. Apply tracking algorithm to group person objects
-                
-                # Create one individual for this group
-                individuals_found += 1
-                processed_count += len(consecutive_videos)
-                
-                # Debug: before creating individual
+                # Debug: Log entering group processing
                 try:
                     async with db_client.pool.acquire() as conn:
                         await conn.execute("""
                             UPDATE tracking_sessions
                             SET failed_videos = array_append(failed_videos, $2)
                             WHERE session_uuid = $1
-                        """, session_uuid, f"before_creating_individual_group_{group_idx}")
+                        """, session_uuid, 
+                             f"processing_group_{group_idx}: {len(consecutive_videos)}_videos")
                 except Exception:
                     pass
                 
-                # Create actual individual record in database
-                individual_uuid = str(uuid4())
-                individual_id = f"ind_{individual_uuid[:8]}"
+                logger.info(
+                    f"📹 Processing video group {group_idx + 1}/{len(video_groups)} "
+                    f"with {len(consecutive_videos)} consecutive videos"
+                )
+                
+                # 🔥 NEW LOGIC: Temporal matching WITHIN the group
+                # This matches person_objects across videos to create individuals
+                # that appear in multiple videos
+                matched_individuals = await match_person_objects_within_group(
+                    videos_data=consecutive_videos,
+                    auth_token=auth_token,
+                    session_uuid=session_uuid,
+                    db_client=db_client,
+                    preloaded_data=preloaded_person_objects  # Use preloaded data
+                )
+                
+                logger.info(
+                    f"✅ Group {group_idx + 1}: Matched {len(matched_individuals)} "
+                    f"individuals across {len(consecutive_videos)} videos"
+                )
+                
+                # Debug: Log before database creation
                 try:
                     async with db_client.pool.acquire() as conn:
                         await conn.execute("""
-                            INSERT INTO individuals (
-                                individual_uuid, individual_id, confidence_score,
-                                spatial_signature, temporal_signature
-                            ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)
-                        """,
-                            individual_uuid,
-                            individual_id,
-                            0.85,
-                            '{"type": "mock_spatial"}',
-                            '{"type": "mock_temporal"}'
-                        )
-                    
-                    # Debug: individual created
-                    try:
-                        async with db_client.pool.acquire() as conn:
-                            await conn.execute("""
-                                UPDATE tracking_sessions
-                                SET failed_videos = array_append(failed_videos, $2)
-                                WHERE session_uuid = $1
-                            """, session_uuid, f"individual_created: {individual_uuid}")
-                    except Exception:
-                        pass
-                except Exception as e:
-                    # Debug: individual creation failed
-                    try:
-                        async with db_client.pool.acquire() as conn:
-                            await conn.execute("""
-                                UPDATE tracking_sessions
-                                SET failed_videos = array_append(failed_videos, $2)
-                                WHERE session_uuid = $1
-                            """, session_uuid, f"individual_creation_error: {str(e)}")
-                    except Exception:
-                        pass
-                    raise
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid, 
+                             f"creating_db_records_for_{len(matched_individuals)}_individuals")
+                except Exception:
+                    pass
                 
-                # Create appearance records for each video
-                for i, video in enumerate(consecutive_videos):
-                    # Fetch actual person_object from Vision database
-                    person_object_uuid = None
-                    try:
-                        import asyncpg
-                        
-                        # Connect to Vision DB
-                        vision_conn = await asyncpg.connect(
-                            "postgresql://postgres:localdevpass@localhost:5432/ppl_vision_db"
+                # ✨ NEW APPROACH: Prepare all DB operations in memory first
+                # Then execute in a SINGLE transaction with ONE connection
+                db_operations = []  # List of (operation_type, params) tuples
+                
+                for individual_data in matched_individuals:
+                    individual_uuid = individual_data['individual_uuid']
+                    individual_id = f"ind_{individual_uuid[:8]}"
+                    video_uuids = individual_data['video_uuids']
+                    
+                    # Prepare individual insert
+                    db_operations.append(('individual', {
+                        'individual_uuid': individual_uuid,
+                        'individual_id': individual_id,
+                        'confidence_score': individual_data['temporal_score'],
+                        'spatial_signature': '{"type": "temporal_group_match"}',
+                        'temporal_signature': '{"type": "consecutive_videos"}',
+                        'algorithm_version': '2.1'
+                    }))
+                    
+                    # Prepare session-individual link
+                    db_operations.append(('session_individual', {
+                        'session_uuid': session_uuid,
+                        'individual_uuid': individual_uuid,
+                        'processing_type': 'new',  # Must be: new, cached, merged, or extended
+                        'confidence_contribution': individual_data['temporal_score']
+                    }))
+                    
+                    # Prepare video appearances
+                    for video_uuid in video_uuids:
+                        video_data = next(
+                            (v for v in consecutive_videos if v['uuid'] == video_uuid),
+                            None
                         )
+                        if not video_data:
+                            logger.warning(f"No video data for {video_uuid[:8]}")
+                            continue
                         
                         try:
-                            # Get person_object for this video (first person)
-                            person_obj = await vision_conn.fetchrow("""
-                                SELECT po.person_id
-                                FROM person_objects po
-                                JOIN face_detections fd ON fd.id = po.best_face_id
-                                WHERE fd.media_id = $1
-                                LIMIT 1
-                            """, video['uuid'])
-                            
-                            if person_obj:
-                                person_object_uuid = str(person_obj['person_id'])
+                            # Parse timestamp
+                            timestamp_str = video_data["timestamp"]
+                            if isinstance(timestamp_str, str):
+                                start_ts = datetime.fromisoformat(
+                                    timestamp_str.replace('Z', '+00:00')
+                                )
                             else:
-                                # No person_object found - skip or use fallback
-                                person_object_uuid = str(uuid4())
-                        finally:
-                            await vision_conn.close()
+                                start_ts = timestamp_str
                             
-                    except Exception as fetch_error:
-                        logger.warning(
-                            f"Failed to fetch person_object for "
-                            f"video {video['uuid']}: {fetch_error}"
-                        )
-                        person_object_uuid = str(uuid4())  # Fallback
+                            # Convert to UTC naive
+                            from datetime import timezone as tz
+                            if start_ts.tzinfo is not None:
+                                start_ts = start_ts.astimezone(tz.utc).replace(tzinfo=None)
+                            
+                            end_ts = start_ts + timedelta(seconds=30)
+                            person_object_uuid = str(uuid4())
+                            
+                            db_operations.append(('appearance', {
+                                'individual_uuid': individual_uuid,
+                                'video_uuid': video_uuid,
+                                'person_object_uuid': person_object_uuid,
+                                'start_timestamp': start_ts,
+                                'end_timestamp': end_ts,
+                                'entry_bbox': [100, 200, 150, 300],
+                                'exit_bbox': [110, 210, 160, 310],
+                                'confidence': individual_data['temporal_score']
+                            }))
+                        except Exception as e:
+                            logger.error(f"Failed to prepare appearance: {e}")
                     
-                    try:
-                        # Parse timestamp - handle both Z suffix and timezone offsets
-                        timestamp_str = video["timestamp"]
-                        
-                        # Log what we're working with
-                        if session_uuid:
-                            try:
-                                async with db_client.pool.acquire() as conn:
+                    # Track for later merging
+                    created_individual_uuids.append(individual_uuid)
+                
+                # Also store the full matched_individuals data for embedding merge
+                all_matched_individuals.extend(matched_individuals)
+                
+                # ✨ Execute ALL operations in a SINGLE transaction
+                logger.info(f"💾 Executing {len(db_operations)} DB operations in single transaction")
+                
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        async with conn.transaction():
+                            for op_type, params in db_operations:
+                                if op_type == 'individual':
                                     await conn.execute("""
-                                        UPDATE tracking_sessions
-                                        SET failed_videos = array_append(failed_videos, $2)
-                                        WHERE session_uuid = $1
-                                    """, session_uuid, 
-                                    f"debug_timestamp_{i}: type={type(timestamp_str).__name__}, value={str(timestamp_str)[:50]}")
-                            except Exception:
-                                pass
-                        
-                        if isinstance(timestamp_str, str):
-                            # Parse string timestamp
-                            start_ts = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-                        else:
-                            # Already a datetime object
-                            start_ts = timestamp_str
-                        
-                        # Convert to UTC and make naive for database storage
-                        # Database columns are TIMESTAMP WITHOUT TIME ZONE (stores UTC)
-                        from datetime import timezone as tz
-                        if start_ts.tzinfo is None:
-                            # Already naive - assume it's UTC
-                            pass
-                        else:
-                            # Convert to UTC and remove timezone info
-                            start_ts = start_ts.astimezone(tz.utc).replace(tzinfo=None)
-                        
-                        end_ts = start_ts + timedelta(seconds=30)
-                        
-                        async with db_client.pool.acquire() as conn:
-                            await conn.execute("""
-                                INSERT INTO individual_video_appearances (
-                                    individual_uuid, video_uuid,
-                                    person_object_uuid,
-                                    start_timestamp, end_timestamp,
-                                    entry_bbox, exit_bbox,
-                                    confidence
-                                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                            """,
-                                individual_uuid,
-                                video["uuid"],
-                                person_object_uuid,
-                                start_ts,
-                                end_ts,
-                                [100 + i*10, 200 + i*10, 150 + i*10, 300 + i*10],
-                                [110 + i*10, 210 + i*10, 160 + i*10, 310 + i*10],
-                                0.85
-                            )
-                    except Exception as e:
-                        # Debug: appearance creation failed
-                        try:
-                            async with db_client.pool.acquire() as conn:
-                                await conn.execute("""
-                                    UPDATE tracking_sessions
-                                    SET failed_videos = array_append(
-                                        failed_videos, $2
+                                        INSERT INTO individuals (
+                                            individual_uuid, individual_id,
+                                            confidence_score,
+                                            spatial_signature, temporal_signature,
+                                            algorithm_version
+                                        ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+                                    """,
+                                        params['individual_uuid'],
+                                        params['individual_id'],
+                                        params['confidence_score'],
+                                        params['spatial_signature'],
+                                        params['temporal_signature'],
+                                        params['algorithm_version']
                                     )
-                                    WHERE session_uuid = $1
-                                """, session_uuid,
-                                    f"appearance_error_{i}: {str(e)}")
-                        except Exception:
-                            pass
+                                elif op_type == 'session_individual':
+                                    await conn.execute("""
+                                        INSERT INTO session_individuals
+                                        (session_uuid, individual_uuid,
+                                         processing_type, confidence_contribution)
+                                        VALUES ($1, $2, $3, $4)
+                                    """,
+                                        params['session_uuid'],
+                                        params['individual_uuid'],
+                                        params['processing_type'],
+                                        params['confidence_contribution']
+                                    )
+                                elif op_type == 'appearance':
+                                    await conn.execute("""
+                                        INSERT INTO individual_video_appearances (
+                                            individual_uuid, video_uuid, person_object_uuid,
+                                            start_timestamp, end_timestamp,
+                                            entry_bbox, exit_bbox, confidence
+                                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                        ON CONFLICT DO NOTHING
+                                    """,
+                                        params['individual_uuid'],
+                                        params['video_uuid'],
+                                        params['person_object_uuid'],
+                                        params['start_timestamp'],
+                                        params['end_timestamp'],
+                                        params['entry_bbox'],
+                                        params['exit_bbox'],
+                                        params['confidence']
+                                    )
+                            
+                            logger.info(f"✅ Transaction committed: {len(matched_individuals)} individuals created")
+                except Exception as db_error:
+                    logger.error(f"❌ Database transaction failed: {db_error}")
+                    # Log to session
+                    try:
+                        async with db_client.pool.acquire() as _dbg_conn:
+                            await _dbg_conn.execute("""
+                                UPDATE tracking_sessions
+                                SET failed_videos = array_append(failed_videos, $2)
+                                WHERE session_uuid = $1
+                            """, session_uuid, f"db_transaction_error: {str(db_error)[:100]}")
+                    except Exception:
+                        pass
                 
-                created_individuals.append(individual_uuid)
-                
-                logger.info(f"Group {group_idx}: Created individual {individual_uuid} with {len(consecutive_videos)} appearances")
+                # Debug: Log completion of this group
+                try:
+                    async with db_client.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE tracking_sessions
+                            SET failed_videos = array_append(failed_videos, $2)
+                            WHERE session_uuid = $1
+                        """, session_uuid, 
+                             f"group_{group_idx}_complete: {len(matched_individuals)}_individuals")
+                except Exception as group_log_error:
+                    logger.error(f"Failed to log group completion: {group_log_error}")
             
-            # After processing all groups
+            # Debug: Log that all groups are done
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, "all_groups_processed")
+            except Exception:
+                pass
+            
+            # All groups processed - now merge across groups via embeddings
             logger.info(
-                f"Cross-video tracking complete: {individuals_found} "
-                f"individual(s), {processed_count} videos processed"
+                f"Cross-video tracking complete: {len(created_individual_uuids)} "
+                f"individual(s) created across {len(video_groups)} groups"
             )
+            
+            # Update session stats
+            individuals_found = len(created_individual_uuids)
+            processed_count = len(videos)  # Fixed: was 'all_videos'
             
             # DEBUG: Write merge attempt to database
             try:
@@ -1074,13 +2398,13 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                         SET failed_videos = array_append(failed_videos, $2)
                         WHERE session_uuid = $1
                     """, session_uuid,
-                        f"merge_check: created_individuals={len(created_individuals)}")
+                        f"merge_check: created_individuals={len(created_individual_uuids)}")
             except Exception:
                 pass
             
             # Phase 2: Merge individuals based on facial similarity
             # (DeepFace/FaceNet)
-            if len(created_individuals) > 1:
+            if len(created_individual_uuids) > 1:
                 # DEBUG: Entering merge block
                 try:
                     async with db_client.pool.acquire() as conn:
@@ -1094,22 +2418,22 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                     
                 logger.info(
                     f"Starting embedding-based merging for "
-                    f"{len(created_individuals)} individuals..."
+                    f"{len(all_matched_individuals)} individuals..."
                 )
                 try:
+                    # Pass full matched_individuals data (with person_objects) to merge function
+                    # This allows merge to work entirely in memory without querying the database
                     merged_count = await merge_individuals_by_similarity(
                         db_client=db_client,
                         session_uuid=session_uuid,
-                        individual_uuids=created_individuals,
+                        matched_individuals=all_matched_individuals,
                         auth_token=auth_token,
-                        similarity_threshold=0.75  # Adjust as needed
+                        similarity_threshold=0.70  # More lenient threshold
                     )
                     
-                    # Update final count after merging
-                    individuals_found = individuals_found - merged_count
                     logger.info(
                         f"Merged {merged_count} duplicate individuals. "
-                        f"Final count: {individuals_found}"
+                        f"Final count will be queried from database."
                     )
                 except Exception as merge_error:
                     logger.error(
@@ -1138,17 +2462,44 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
         
         # Update status to completed
         async with db_client.pool.acquire() as conn:
+            # Get actual count of unique individuals from session_individuals
+            # This is more accurate than the incremental counter
+            actual_individuals_count = await conn.fetchval("""
+                SELECT COUNT(DISTINCT individual_uuid)
+                FROM session_individuals
+                WHERE session_uuid = $1
+            """, session_uuid)
+            
+            # Query actual unique MVR people count from individual_mvr_mapping
+            # This will reflect merges performed by merge_individuals_by_similarity
+            unique_mvr_result = await conn.fetchrow("""
+                SELECT COUNT(DISTINCT mvr_people_uuid) as unique_count
+                FROM individual_mvr_mapping
+                WHERE individual_uuid IN (
+                    SELECT individual_uuid 
+                    FROM session_individuals 
+                    WHERE session_uuid = $1
+                )
+            """, session_uuid)
+            
+            # If no MVR mappings exist yet, unique count equals individuals count
+            unique_count = unique_mvr_result['unique_count'] if unique_mvr_result and unique_mvr_result['unique_count'] > 0 else actual_individuals_count
+            
             await conn.execute("""
                 UPDATE tracking_sessions
                 SET status = 'completed', completed_at = NOW(),
                     processing_time_seconds = 3.0,
-                    processed_videos = $2, individuals_found = $3
+                    processed_videos = $2, individuals_found = $3,
+                    unique_mvr_people_count = $4, cache_hits = $5
                 WHERE session_uuid = $1
-            """, session_uuid, processed_count, individuals_found)
+            """, session_uuid, processed_count, actual_individuals_count,
+                 unique_count, total_cache_hits)
         
         logger.info(
             f"Processing completed for session {session_uuid}: "
-            f"{processed_count} videos, {individuals_found} individuals"
+            f"{processed_count} videos, {actual_individuals_count} "
+            f"individuals ({unique_count} unique), "
+            f"{total_cache_hits} cache hits"
         )
         
     except Exception as e:
@@ -1460,15 +2811,23 @@ async def get_session_individuals(
     http_request: Request
 ):
     """
-    Phase 5: Get list of unique individuals found in a completed tracking session.
-    
-    Returns metadata for each individual including:
-    - individual_uuid: Unique identifier
+    Phase 5: Get list of unique individuals found in a completed
+    tracking session.
+
+    **NEW BEHAVIOR**: Returns MVR people (merged individuals) when
+    available.
+    - If MVR mappings exist: Returns unique MVR people with
+      aggregated appearances
+    - If no MVR mappings: Returns raw individuals (backwards compatible)
+
+    Returns metadata for each individual/MVR person including:
+    - individual_uuid: Unique identifier (MVR person UUID if merged,
+      individual UUID otherwise)
     - appearance_count: Number of times individual appears
     - video_count: Number of unique videos
     - first_seen/last_seen: Time range of appearances
     - confidence_score: Average confidence across appearances
-    
+
     Required for Flutter navigation to individual analysis.
     """
     try:
@@ -1481,69 +2840,153 @@ async def get_session_individuals(
         async with db_client.pool.acquire() as conn:
             session = await conn.fetchrow(
                 """
-                SELECT session_uuid, status, total_videos, individuals_found
+                SELECT session_uuid, status, total_videos,
+                       individuals_found, unique_mvr_people_count
                 FROM tracking_sessions
                 WHERE session_uuid = $1
                 """,
                 session_uuid
             )
-            
+
             if not session:
-                raise HTTPException(status_code=404, detail="Session not found")
-            
-            # Status can be 'COMPLETED' or 'completed' depending on database
+                raise HTTPException(
+                    status_code=404, detail="Session not found"
+                )
+
+            # Status can be 'COMPLETED' or 'completed' depending on db
             if session['status'].upper() != 'COMPLETED':
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Session is not completed. Current status: {session['status']}"
+                    detail=(
+                        f"Session is not completed. "
+                        f"Current status: {session['status']}"
+                    )
                 )
             
-            # Get individual metadata from tracking results
-            # WORKAROUND: session_individuals table not populated by processing
-            # Instead, get individuals created around the same time as session
-            # This works because each session creates its own individuals
-            individuals = await conn.fetch(
-                """
-                SELECT 
-                    i.individual_uuid,
-                    i.individual_id,
-                    COUNT(DISTINCT iva.person_object_uuid) as appearance_count,
-                    COUNT(DISTINCT iva.video_uuid) as video_count,
-                    MIN(iva.start_timestamp) as first_seen,
-                    MAX(iva.end_timestamp) as last_seen,
-                    i.confidence_score as avg_confidence
-                FROM individuals i
-                LEFT JOIN individual_video_appearances iva 
-                    ON i.individual_uuid = iva.individual_uuid
-                WHERE i.created_at >= (
-                    SELECT created_at FROM tracking_sessions 
-                    WHERE session_uuid = $1
-                ) - INTERVAL '5 seconds'
-                AND i.created_at <= (
-                    SELECT COALESCE(completed_at, NOW()) FROM tracking_sessions 
-                    WHERE session_uuid = $1
-                ) + INTERVAL '5 seconds'
-                GROUP BY i.individual_uuid, i.individual_id, i.confidence_score
-                ORDER BY appearance_count DESC, first_seen ASC
-                """,
-                session_uuid
-            )
-            
-            # Format response
-            individuals_list = [
-                {
-                    "individual_uuid": str(ind['individual_uuid']),
-                    "individual_id": ind['individual_id'],
-                    "total_appearances": ind['appearance_count'],
-                    "total_videos": ind['video_count'],
-                    "first_seen": ind['first_seen'].isoformat() if ind['first_seen'] else None,
-                    "last_seen": ind['last_seen'].isoformat() if ind['last_seen'] else None,
-                    "confidence_score": round(float(ind['avg_confidence']), 3) if ind['avg_confidence'] else 0.0
-                }
-                for ind in individuals
-            ]
-            
-            logger.info(f"Phase 5: Found {len(individuals_list)} individuals in session {session_uuid}")
+            # Check if MVR people exist for this session
+            mvr_count = session.get('unique_mvr_people_count', 0)
+
+            if mvr_count and mvr_count > 0:
+                # Return MVR people (merged individuals)
+                logger.info(
+                    f"Phase 5: Session has {mvr_count} MVR people, "
+                    f"returning aggregated data"
+                )
+
+                mvr_people = await conn.fetch(
+                    """
+                    SELECT
+                        mp.mvr_people_uuid,
+                        mp.featured_individual_uuid,
+                        COUNT(DISTINCT iva.person_object_uuid)
+                            as appearance_count,
+                        COUNT(DISTINCT iva.video_uuid) as video_count,
+                        MIN(iva.start_timestamp) as first_seen,
+                        MAX(iva.end_timestamp) as last_seen,
+                        AVG(imm.confidence_score) as avg_confidence
+                    FROM individual_mvr_mapping imm
+                    JOIN mvr_people mp
+                        ON imm.mvr_people_uuid = mp.mvr_people_uuid
+                    JOIN session_individuals si
+                        ON imm.individual_uuid = si.individual_uuid
+                    LEFT JOIN individual_video_appearances iva
+                        ON imm.individual_uuid = iva.individual_uuid
+                    WHERE si.session_uuid = $1
+                    GROUP BY mp.mvr_people_uuid, mp.featured_individual_uuid
+                    ORDER BY appearance_count DESC, first_seen ASC
+                    """,
+                    session_uuid
+                )
+
+                # Format response with MVR people
+                individuals_list = [
+                    {
+                        # MVR person UUID
+                        "individual_uuid": str(mvr['mvr_people_uuid']),
+                        # MVR identifier
+                        "individual_id": (
+                            f"mvr_{str(mvr['mvr_people_uuid'])[:8]}"
+                        ),
+                        "total_appearances": mvr['appearance_count'],
+                        "total_videos": mvr['video_count'],
+                        "first_seen": (
+                            mvr['first_seen'].isoformat()
+                            if mvr['first_seen'] else None
+                        ),
+                        "last_seen": (
+                            mvr['last_seen'].isoformat()
+                            if mvr['last_seen'] else None
+                        ),
+                        "confidence_score": (
+                            round(float(mvr['avg_confidence']), 3)
+                            if mvr['avg_confidence'] else 0.0
+                        )
+                    }
+                    for mvr in mvr_people
+                ]
+
+                logger.info(
+                    f"Phase 5: Returning {len(individuals_list)} "
+                    f"MVR people for session {session_uuid}"
+                )
+
+            else:
+                # No MVR people - return raw individuals (backwards compat)
+                logger.info(
+                    "Phase 5: No MVR people, returning raw individuals"
+                )
+                
+                individuals = await conn.fetch(
+                    """
+                    SELECT
+                        i.individual_uuid,
+                        i.individual_id,
+                        COUNT(DISTINCT iva.person_object_uuid)
+                            as appearance_count,
+                        COUNT(DISTINCT iva.video_uuid) as video_count,
+                        MIN(iva.start_timestamp) as first_seen,
+                        MAX(iva.end_timestamp) as last_seen,
+                        i.confidence_score as avg_confidence
+                    FROM session_individuals si
+                    JOIN individuals i
+                        ON si.individual_uuid = i.individual_uuid
+                    LEFT JOIN individual_video_appearances iva
+                        ON i.individual_uuid = iva.individual_uuid
+                    WHERE si.session_uuid = $1
+                    GROUP BY i.individual_uuid, i.individual_id,
+                             i.confidence_score
+                    ORDER BY appearance_count DESC, first_seen ASC
+                    """,
+                    session_uuid
+                )
+
+                # Format response
+                individuals_list = [
+                    {
+                        "individual_uuid": str(ind['individual_uuid']),
+                        "individual_id": ind['individual_id'],
+                        "total_appearances": ind['appearance_count'],
+                        "total_videos": ind['video_count'],
+                        "first_seen": (
+                            ind['first_seen'].isoformat()
+                            if ind['first_seen'] else None
+                        ),
+                        "last_seen": (
+                            ind['last_seen'].isoformat()
+                            if ind['last_seen'] else None
+                        ),
+                        "confidence_score": (
+                            round(float(ind['avg_confidence']), 3)
+                            if ind['avg_confidence'] else 0.0
+                        )
+                    }
+                    for ind in individuals
+                ]
+
+                logger.info(
+                    f"Phase 5: Found {len(individuals_list)} "
+                    f"individuals in session {session_uuid}"
+                )
             
             return {
                 "session_uuid": session_uuid,
@@ -1601,30 +3044,70 @@ async def get_individual_aggregated_analysis(
                     detail=f"Session is not completed. Current status: {session['status']}"
                 )
             
-            # Get all appearances for this individual
-            # Note: individual_video_appearances table doesn't have session_uuid
-            # or created_at columns, so we get all appearances for the individual
-            # Since the individual was created during this session, all appearances
-            # should belong to this session
-            appearances = await conn.fetch(
+            # Check if the UUID is an MVR person UUID or individual UUID
+            # First, check if it's an MVR person UUID
+            mvr_check = await conn.fetchrow(
                 """
-                SELECT 
-                    iva.individual_uuid,
-                    i.individual_id,
-                    iva.video_uuid,
-                    iva.person_object_uuid,
-                    iva.start_timestamp,
-                    iva.end_timestamp,
-                    iva.entry_bbox,
-                    iva.exit_bbox,
-                    iva.confidence
-                FROM individual_video_appearances iva
-                JOIN individuals i ON iva.individual_uuid = i.individual_uuid
-                WHERE iva.individual_uuid = $1
-                ORDER BY iva.start_timestamp ASC
+                SELECT mvr_people_uuid FROM mvr_people
+                WHERE mvr_people_uuid = $1
                 """,
                 individual_uuid
             )
+
+            if mvr_check:
+                # It's an MVR person UUID - get all mapped individuals
+                logger.info(
+                    "Phase 6: UUID is MVR person, "
+                    "aggregating appearances from all mapped individuals"
+                )
+                appearances = await conn.fetch(
+                    """
+                    SELECT
+                        iva.individual_uuid,
+                        i.individual_id,
+                        iva.video_uuid,
+                        iva.person_object_uuid,
+                        iva.start_timestamp,
+                        iva.end_timestamp,
+                        iva.entry_bbox,
+                        iva.exit_bbox,
+                        iva.confidence
+                    FROM individual_mvr_mapping imm
+                    JOIN individual_video_appearances iva
+                        ON imm.individual_uuid = iva.individual_uuid
+                    JOIN individuals i
+                        ON iva.individual_uuid = i.individual_uuid
+                    WHERE imm.mvr_people_uuid = $1
+                    ORDER BY iva.start_timestamp ASC
+                    """,
+                    individual_uuid
+                )
+            else:
+                # It's a regular individual UUID
+                logger.info(
+                    "Phase 6: UUID is individual, "
+                    "getting appearances directly"
+                )
+                appearances = await conn.fetch(
+                    """
+                    SELECT
+                        iva.individual_uuid,
+                        i.individual_id,
+                        iva.video_uuid,
+                        iva.person_object_uuid,
+                        iva.start_timestamp,
+                        iva.end_timestamp,
+                        iva.entry_bbox,
+                        iva.exit_bbox,
+                        iva.confidence
+                    FROM individual_video_appearances iva
+                    JOIN individuals i
+                        ON iva.individual_uuid = i.individual_uuid
+                    WHERE iva.individual_uuid = $1
+                    ORDER BY iva.start_timestamp ASC
+                    """,
+                    individual_uuid
+                )
             
             # If no appearances found, return basic individual info
             # (appearances table might be empty if not populated during processing)
@@ -1773,8 +3256,9 @@ async def merge_individuals_manual(
         # Validate that all individuals exist and belong to the session
         async with db_client.pool.acquire() as conn:
             for ind_uuid in request.individual_uuids:
+                # Check if individual exists
                 individual = await conn.fetchrow("""
-                    SELECT individual_uuid, individual_id, session_uuid
+                    SELECT individual_uuid, individual_id
                     FROM individuals
                     WHERE individual_uuid = $1
                 """, ind_uuid)
@@ -1785,7 +3269,14 @@ async def merge_individuals_manual(
                         detail=f"Individual {ind_uuid} not found"
                     )
                 
-                if str(individual['session_uuid']) != request.session_uuid:
+                # Check if individual belongs to the session
+                session_link = await conn.fetchrow("""
+                    SELECT session_uuid, individual_uuid
+                    FROM session_individuals
+                    WHERE session_uuid = $1 AND individual_uuid = $2
+                """, request.session_uuid, ind_uuid)
+                
+                if not session_link:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Individual {ind_uuid} does not belong to session {request.session_uuid}"

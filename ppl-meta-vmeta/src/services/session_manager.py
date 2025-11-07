@@ -528,6 +528,18 @@ class SessionManager:
                     'error': 'Session not found'
                 }
             
+            # Get unique_mvr_people_count from database
+            unique_count = 0
+            try:
+                async with self.db_client.pool.acquire() as conn:
+                    unique_count = await conn.fetchval("""
+                        SELECT unique_mvr_people_count
+                        FROM tracking_sessions
+                        WHERE session_uuid = $1
+                    """, session_uuid) or 0
+            except Exception:
+                pass
+            
             return {
                 'session_uuid': session_uuid,
                 'status': session.status.value,
@@ -537,6 +549,7 @@ class SessionManager:
                 'total_videos': session.total_videos,
                 'processed_videos': session.processed_videos,
                 'individuals_found': session.individuals_found,
+                'unique_mvr_people_count': unique_count,
                 'is_active': False,
                 'created_at': session.created_at,
                 'started_at': session.started_at,

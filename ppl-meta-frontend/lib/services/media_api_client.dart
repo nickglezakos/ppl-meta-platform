@@ -448,46 +448,17 @@ class MediaApiClient {
         },
       };
 
-      print('DEBUG: MediaApiClient searchMedia - general search queryParams: $queryParams');
-      
       // Use ApiClient.get() to ensure proper authorization headers
       final response = await _apiClient.get(
         '/api/v1/media/search',
         queryParameters: queryParams,
       );
       
-      print('DEBUG: MediaApiClient searchMedia - response received, status: ${response.statusCode}');
-      print('DEBUG: MediaApiClient searchMedia - response data type: ${response.data.runtimeType}');
-      print('DEBUG: MediaApiClient searchMedia - response length: ${(response.data as List).length}');
-      
-      // Show complete first item JSON for debugging
-      if ((response.data as List).isNotEmpty) {
-        print('DEBUG: Complete first item JSON: ${(response.data as List)[0]}');
-      }
-      
       // The backend returns a list directly, not wrapped in a response object
       final items = (response.data as List)
-          .map((json) {
-            print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            print('DEBUG: Processing JSON item:');
-            print('  - original_filename: ${json['original_filename']}');
-            print('  - device_name field exists: ${json.containsKey('device_name')}');
-            print('  - device_name value: ${json['device_name']}');
-            print('  - device_name type: ${json['device_name'].runtimeType}');
-            print('  - All keys in JSON: ${json.keys.toList()}');
-            
-            final mediaItem = MediaItem.fromJson(json);
-            print('  - After parsing - MediaItem.deviceName: ${mediaItem.deviceName}');
-            print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            return mediaItem;
-          })
+          .map((json) => MediaItem.fromJson(json))
           .where((item) => !item.isArchived) // Filter out archived (deleted) items
           .toList();
-      
-      print('DEBUG: MediaApiClient searchMedia - parsed ${items.length} items');
-      if (items.isNotEmpty) {
-        print('DEBUG: First item after parsing - originalFilename: ${items[0].originalFilename}, deviceName: ${items[0].deviceName}');
-      }
       
       // Create MediaListResponse with the items (simplified without JSON serialization)
       final searchResponse = MediaListResponse(
@@ -926,9 +897,34 @@ class MediaApiClient {
     required String sessionUuid,
   }) async {
     try {
+      print('');
+      print('### API CLIENT - GET SESSION STATUS ###');
+      print('=' * 80);
+      print('REQUEST:');
+      print('   Endpoint: /api/v1/cross-video/individuals/tracking/sessions/$sessionUuid');
+      
       final response = await _apiClient.get(
         '/api/v1/cross-video/individuals/tracking/sessions/$sessionUuid',
       );
+
+      print('');
+      print('RAW HTTP RESPONSE:');
+      print('   Status Code: ${response.statusCode}');
+      print('   Response Type: ${response.data.runtimeType}');
+      print('   Response Data: ${response.data}');
+      
+      final data = response.data as Map<String, dynamic>;
+      print('');
+      print('PARSED RESPONSE FIELDS:');
+      print('   session_uuid: ${data['session_uuid']}');
+      print('   status: ${data['status']}');
+      print('   individuals_found: ${data['individuals_found']}');
+      print('   unique_mvr_people_count: ${data['unique_mvr_people_count']}');
+      print('   cache_hits: ${data['cache_hits']}');
+      print('   total_videos: ${data['total_videos']}');
+      print('   processed_videos: ${data['processed_videos']}');
+      print('=' * 80);
+      print('');
 
       print('DEBUG: Tracking session status: ${response.data}');
       

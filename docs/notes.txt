@@ -2,6 +2,18 @@
 logo
 https://www.cleanpng.com/png-pixel-art-stock-photography-halo-1228277/
 
+*************************************************
+
+Speed optimization
+computational loops: numba
+distributed processing :  ray
+larger than memory datasets: dask
+production profiling: pyspy
+https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-finish-f20516db1d02?source=friends_link&sk=3a1bcf9cca420e102bd2a432d040addb
+
+*************************************************
+
+
 
 - **Email**: `fresh.user@example.com`
 - **Password**: `NewPassword234!`
@@ -88,3 +100,28 @@ on3 -m json.tool
 
 
 
+EXCELLENT! I found the problem! Look at this critical section of your debug output:
+
+The values are correctly set to 1 → 1, but then look what happens next:
+
+The auto-merge is being triggered! This is likely resetting the _uniqueMvrCount back to 0. Let me check the auto-merge code:
+
+Read collections_screen.dart, lines 1100 to 1195
+
+FOUND IT! Look at lines 1137-1142:
+
+The auto-merge function is getting an empty individuals list and setting _uniqueMvrCount = 0!
+
+The backend correctly returns unique_mvr_people_count: 1, but then when Flutter calls the /individuals endpoint, it gets an empty list and resets the counter to 0.
+
+
+
+
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % psql postgresql://postgres@localhost:
+5432/ppl_meta_vmeta -c "SELECT unnest(failed_videos) as log FROM tracking_sessions WHERE ses
+sion_uuid = '39f70da4-76e2-42d3-921c-7a21fd7b8359';" | grep -E "(phase_d|transaction)" | tai
+l -10
+ phase_d_start: 4_operations
+ phase_d_before_transaction: 1_mvr, 3_mappings
+
+ 

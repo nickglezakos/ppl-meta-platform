@@ -42,13 +42,24 @@ class ApiClient {
       ),
     );
 
-    // Add logging interceptor for development
+    // Add logging interceptor for development (minimal logging)
     if (_config.isDevelopment) {
       _dio.interceptors.add(LogInterceptor(
-        requestBody: true,
-        responseBody: true,
-        requestHeader: true,
-        responseHeader: true,
+        requestBody: false,  // Disable request body logging
+        responseBody: false,  // Disable response body logging to prevent flooding
+        requestHeader: false,
+        responseHeader: false,
+        logPrint: (object) {
+          final str = object.toString();
+          // Only log request/response lines, not bodies
+          if (str.contains('*** Request ***') || str.contains('*** Response ***')) {
+            if (str.length > 300) {
+              print(str.substring(0, 300) + '... [truncated]');
+            } else {
+              print(str);
+            }
+          }
+        },
       ));
     }
   }

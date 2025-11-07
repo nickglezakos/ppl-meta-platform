@@ -103,9 +103,14 @@ async def lifespan(app: FastAPI):
             # Initialize ML processor
             ml_processor = MVRProcessor()
 
+            # Initialize orchestrator client for fetching person objects
+            from utils.orchestrator_client import OrchestratorClient
+            orchestrator_client = OrchestratorClient()
+
             mvr_service = MVRService(
                 repository=mvr_repository,
-                ml_processor=ml_processor
+                ml_processor=ml_processor,
+                orchestrator_client=orchestrator_client
             )
             mvr_matcher = MVRMatcher(
                 repository=mvr_repository,

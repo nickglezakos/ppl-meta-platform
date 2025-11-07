@@ -129,7 +129,9 @@ async def create_mvr_for_individual(
     
     try:
         # Check if MVR already exists
-        existing_mvr = await mvr_service.get_mvr_for_individual(individual_uuid)
+        existing_mvr = await mvr_service.get_mvr_people_for_individual(
+            individual_uuid
+        )
         
         if existing_mvr and not force_recreate:
             raise HTTPException(
@@ -157,7 +159,7 @@ async def create_mvr_for_individual(
         # Synchronous processing
         else:
             # Create MVR-People immediately
-            mvr_result = await mvr_service.create_mvr_from_individual(individual_uuid)
+            mvr_result = await mvr_service.create_mvr_people_from_individual(individual_uuid)
             
             if not mvr_result:
                 raise HTTPException(
@@ -1415,11 +1417,98 @@ async def batch_match_and_merge(
                 continue
             
             try:
-                # Find matches for this individual
-                matches = await mvr_matcher.find_matching_mvr(
-                    individual_uuid=individual_uuid_str,
-                    threshold=request.threshold,
+                # Get or create MVR record for this individual
+                mvr_record = await mvr_matcher.repository.get_mvr_people_by_individual(
+                    individual_uuid=individual_uuid_str
                 )
+                
+                # If no MVR exists, create one from the individual
+                if not mvr_record:
+                    logger.info(
+                        f"No MVR record for {individual_uuid_str}, "
+                        f"creating MVR from individual"
+                    )
+                    try:
+                        # Get mvr_service dependency
+                        from background.mvr_helper import get_mvr_service
+                        mvr_svc = get_mvr_service()
+                        if not mvr_svc:
+                            logger.warning(
+                                f"MVR service not available, skipping "
+                                f"{individual_uuid_str}"
+                            )
+                            skipped_count += 1
+                            continue
+                        
+                        # Create MVR from individual
+                        mvr_result = await mvr_svc.create_mvr_people_from_individual(
+                            individual_uuid=individual_uuid_str
+                        )
+                        
+                        if not mvr_result or not mvr_result.get('success'):
+                            logger.warning(
+                                f"Failed to create MVR for "
+                                f"{individual_uuid_str}, skipping"
+                            )
+                            skipped_count += 1
+                            continue
+                        
+                        # Now get the created MVR record
+                        mvr_record = await mvr_matcher.repository.get_mvr_people_by_individual(
+                            individual_uuid=individual_uuid_str
+                        )
+                        
+                        if not mvr_record:
+                            logger.warning(
+                                f"Created MVR but couldn't retrieve it for "
+                                f"{individual_uuid_str}, skipping"
+                            )
+                            skipped_count += 1
+                            continue
+                            
+                    except Exception as create_error:
+                        logger.error(
+                            f"Error creating MVR for {individual_uuid_str}: "
+                            f"{create_error}"
+                        )
+                        skipped_count += 1
+                        continue
+                
+                # Extract face embedding
+                face_embedding_data = mvr_record.get('face_embedding')
+                if not face_embedding_data:
+                    logger.warning(
+                        f"No face embedding for {individual_uuid_str}, "
+                        f"skipping"
+                    )
+                    skipped_count += 1
+                    continue
+                
+                # Convert to numpy array if needed
+                import numpy as np
+                if isinstance(face_embedding_data, list):
+                    face_embedding = np.array(
+                        face_embedding_data, dtype=np.float32
+                    )
+                elif isinstance(face_embedding_data, np.ndarray):
+                    face_embedding = face_embedding_data
+                else:
+                    logger.warning(
+                        f"Invalid embedding format for {individual_uuid_str}, "
+                        f"skipping"
+                    )
+                    skipped_count += 1
+                    continue
+                
+                # Find matches for this individual
+                match = await mvr_matcher.find_matching_mvr(
+                    individual_uuid=individual_uuid_str,
+                    face_embedding=face_embedding,
+                    similarity_threshold=request.threshold,
+                )
+                
+                # Convert single match to list for loop compatibility
+                matches = [match] if match else []
                 
                 logger.debug(
                     f"Found {len(matches)} potential matches for "

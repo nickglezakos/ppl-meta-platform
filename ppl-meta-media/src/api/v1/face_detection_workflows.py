@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from src.auth import AuthUser, get_current_user
@@ -43,6 +44,9 @@ media_face_detection = MediaFaceDetectionService()
 
 # Create router for workflow-enabled face detection
 workflow_router = APIRouter(prefix="/workflow", tags=["face-detection-workflows"])
+
+# Security for extracting JWT tokens
+security = HTTPBearer()
 
 
 class WorkflowFaceDetectionRequest(BaseModel):
@@ -89,6 +93,7 @@ class WorkflowStatusResponse(BaseModel):
 async def start_bulk_face_detection_workflow(
     request: WorkflowFaceDetectionRequest,
     current_user: AuthUser = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
     """
@@ -130,16 +135,22 @@ async def start_bulk_face_detection_workflow(
         # Create workflow execution context for background task
         workflow_context = {
             "workflow_id": workflow_id,
-            "user_id": current_user.user_id,
             "media_ids": validated_media,
+            "user_id": current_user.user_id,
             "method": request.method,
             "confidence_threshold": request.confidence_threshold,
             "store_results": request.store_results,
-            "metadata": request.workflow_metadata,
-            "priority": request.processing_priority,
+            "frames_per_second": request.frames_per_second,
             "created_at": datetime.now(),
             "status": "queued",
+            "authorization_token": credentials.credentials,
         }
+
+        # 🔐 DEBUG: Confirm authorization token is present
+        logger.info(
+            f"🔐 WORKFLOW AUTH: Token present = "
+            f"{bool(credentials.credentials)} for workflow {workflow_id}"
+        )
 
         # Start background processing using asyncio instead of FastAPI BackgroundTasks
         asyncio.create_task(process_bulk_face_detection_workflow(workflow_context))
@@ -434,12 +445,16 @@ async def process_bulk_face_detection_workflow(workflow_context: Dict[str, Any])
         # Send all results to Vision Service for storage with session tracking
         if vision_results:
             try:
+                # Get authorization token from workflow context
+                auth_token = workflow_context.get("authorization_token")
+                
                 # 🎯 KEY FIX: Use session-aware endpoint for automatic session creation and PPL Thread triggering
                 vision_response = (
                     await vision_client.send_bulk_face_detection_results_with_sessions(
                         workflow_id=workflow_id,
                         results=vision_results,
                         source_service="ppl-meta-media",
+                        authorization=auth_token,
                     )
                 )
 

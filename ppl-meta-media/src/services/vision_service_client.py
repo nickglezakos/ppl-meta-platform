@@ -129,6 +129,7 @@ class VisionServiceClient:
         workflow_id: str,
         results: List[Dict[str, Any]],
         source_service: str = "ppl-meta-media",
+        authorization: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Send bulk face detection results to Vision Service with session tracking.
@@ -142,6 +143,7 @@ class VisionServiceClient:
             workflow_id: Identifier for the workflow that generated results
             results: List of media results with face detection data
             source_service: Name of the source service (default: ppl-meta-media)
+            authorization: JWT token for authentication (Bearer token)
 
         Returns:
             Response from Vision Service with session tracking summary
@@ -197,11 +199,29 @@ class VisionServiceClient:
                             "metadata": media_data["metadata"],
                         }
 
+                        # 🔒 Add authorization header if provided
+                        headers = {}
+                        if authorization:
+                            headers["Authorization"] = f"Bearer {authorization}"
+                            logger.info(
+                                f"🔐 AUTH: Sending to Vision Service WITH auth "
+                                f"(media {media_id})"
+                            )
+                        else:
+                            logger.warning(
+                                f"⚠️ AUTH: Sending to Vision Service WITHOUT auth "
+                                f"(media {media_id})"
+                            )
+
                         logger.info(
-                            f"🎯 SESSION-AWARE: Sending {len(media_data['faces_by_frame'])} frames for media {media_id}"
+                            f"🎯 SESSION-AWARE: Sending "
+                            f"{len(media_data['faces_by_frame'])} frames "
+                            f"for media {media_id}"
                         )
 
-                        async with session.post(endpoint_url, json=payload) as response:
+                        async with session.post(
+                            endpoint_url, json=payload, headers=headers
+                        ) as response:
                             if response.status == 200:
                                 response_data = await response.json()
                                 successful_media += 1

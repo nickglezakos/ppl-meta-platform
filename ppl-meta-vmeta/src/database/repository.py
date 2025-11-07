@@ -352,7 +352,7 @@ class CrossVideoTrackingRepository:
             """,
                 session_id,
                 individual_uuid,
-                'primary',
+                'new',
                 confidence_score
             )
             

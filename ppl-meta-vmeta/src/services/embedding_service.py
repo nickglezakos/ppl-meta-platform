@@ -337,12 +337,43 @@ class EmbeddingService:
                 detector_backend=self.detector_backend,
             )
 
-            if embedding_result and len(embedding_result) > 0:
-                embedding = embedding_result[0]["embedding"]
+            # DeepFace.represent may return different shapes depending on version:
+            # - a list of dicts: [{"embedding": [...]}, ...]
+            # - a flat list of floats (the embedding vector)
+            # - a numpy array
+            embedding = None
 
-                # Calculate confidence based on face quality metrics
+            # If it's a numpy array
+            if isinstance(embedding_result, np.ndarray):
+                embedding = embedding_result.tolist()
+
+            # If it's a list
+            elif isinstance(embedding_result, list):
+                if len(embedding_result) == 0:
+                    embedding = None
+                else:
+                    first = embedding_result[0]
+                    # Case: list of dicts with 'embedding' key
+                    if isinstance(first, dict) and "embedding" in first:
+                        embedding = first["embedding"]
+                    else:
+                        # Case: flat list of floats
+                        if all(isinstance(x, (int, float)) for x in embedding_result):
+                            embedding = embedding_result
+                        # Or list starting with numeric types
+                        elif isinstance(first, (int, float)):
+                            embedding = embedding_result
+                        # Or nested list/tuple
+                        elif isinstance(first, (list, tuple, np.ndarray)):
+                            # Try to coerce the first element
+                            try:
+                                embedding = list(first)
+                            except Exception:
+                                embedding = None
+
+            # If we found an embedding, compute confidence and return
+            if embedding is not None and len(embedding) > 0:
                 confidence = self._calculate_embedding_confidence(face_img)
-
                 return embedding, confidence
 
         except Exception as e:

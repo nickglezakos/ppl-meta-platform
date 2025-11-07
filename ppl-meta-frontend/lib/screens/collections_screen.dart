@@ -458,33 +458,44 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     else
-                      Row(
-                        children: [
-                          Text(
-                            '${_individualsCount ?? 0}',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            ' → ',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          Text(
-                            _uniqueCountIsFallback 
-                              ? '[]' 
-                              : '${_uniqueMvrCount ?? 0} unique',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: _uniqueCountIsFallback 
-                                ? AppColors.error 
-                                : AppColors.success,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
+                      Builder(
+                        builder: (context) {
+                          // DEBUG: Print current counter values when UI renders
+                          print('RENDERING COUNTER UI:');
+                          print('   _individualsCount = $_individualsCount');
+                          print('   _uniqueMvrCount = $_uniqueMvrCount');
+                          print('   _uniqueCountIsFallback = $_uniqueCountIsFallback');
+                          print('   Display will be: $_individualsCount → ${_uniqueCountIsFallback ? "[]" : "$_uniqueMvrCount unique"}');
+                          
+                          return Row(
+                            children: [
+                              Text(
+                                '${_individualsCount ?? 0}',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                ' → ',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              Text(
+                                _uniqueCountIsFallback 
+                                  ? '[]' 
+                                  : '${_uniqueMvrCount ?? 0} unique',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: _uniqueCountIsFallback 
+                                    ? AppColors.error 
+                                    : AppColors.success,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     const SizedBox(width: AppSpacing.xs),
                     TextButton.icon(
@@ -975,19 +986,34 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
           final status = statusResponse.data!['status'] as String;
           final individualsFound = statusResponse.data!['individuals_found'] as int? ?? 0;
           
-          print('📡 Session Status Response:');
+          print('');
+          print('### FLUTTER COUNTER DEBUG - DETAILED API RESPONSE ###');
+          print('=' * 80);
+          print('Session Status Response:');
           print('   Status: $status');
-          print('   Full response data: ${statusResponse.data}');
-          print('   individuals_found (ORIGINAL COUNT): $individualsFound');
+          print('   Session UUID: $sessionUuid');
+          print('');
+          print('FULL RAW API RESPONSE DATA:');
+          print('   ${statusResponse.data}');
+          print('');
+          print('CHECKING ALL COUNTER FIELDS:');
+          print('   individuals_found: ${statusResponse.data!['individuals_found']} (type: ${statusResponse.data!['individuals_found']?.runtimeType})');
+          print('   unique_mvr_people_count: ${statusResponse.data!['unique_mvr_people_count']} (type: ${statusResponse.data!['unique_mvr_people_count']?.runtimeType})');
+          print('   cache_hits: ${statusResponse.data!['cache_hits']} (type: ${statusResponse.data!['cache_hits']?.runtimeType})');
+          print('   total_videos: ${statusResponse.data!['total_videos']}');
+          print('   processed_videos: ${statusResponse.data!['processed_videos']}');
+          print('');
           
           // Check if API actually returned unique_mvr_people_count
           final hasUniqueCount = statusResponse.data!.containsKey('unique_mvr_people_count');
           final uniqueMvrCount = statusResponse.data!['unique_mvr_people_count'] as int?;
           
-          print('   Has unique_mvr_people_count field: $hasUniqueCount');
-          if (hasUniqueCount) {
-            print('   unique_mvr_people_count value: $uniqueMvrCount');
-          }
+          print('UNIQUE COUNT FIELD CHECK:');
+          print('   Field exists in response: $hasUniqueCount');
+          print('   Field value: $uniqueMvrCount');
+          print('   Field is null: ${uniqueMvrCount == null}');
+          print('   Field is 0: ${uniqueMvrCount == 0}');
+          print('');
           
           // Update counters on every poll (not just when completed)
           setState(() {
@@ -997,23 +1023,31 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
               // API returned real unique count
               _uniqueMvrCount = uniqueMvrCount;
               _uniqueCountIsFallback = false;
+              print('SETTING UNIQUE COUNT FROM API: $_uniqueMvrCount');
             } else {
               // API didn't return unique count, using fallback
               _uniqueMvrCount = individualsFound;
               _uniqueCountIsFallback = true;
+              print('WARNING - USING FALLBACK COUNT: $_uniqueMvrCount (hasUniqueCount=$hasUniqueCount, uniqueMvrCount=$uniqueMvrCount)');
             }
           });
           
-          print('🎯 UI Counter Update:');
-          print('   Counter 1 (Original): $_individualsCount');
-          print('   Counter 2 (Unique): $_uniqueMvrCount');
-          print('   Is Fallback: $_uniqueCountIsFallback');
-          print('   Display: $_individualsCount -> ${_uniqueCountIsFallback ? "[]" : "$_uniqueMvrCount unique"}');
+          print('');
+          print('FINAL UI COUNTER VALUES (AFTER setState):');
+          print('=' * 80);
+          print('   _individualsCount: $_individualsCount');
+          print('   _uniqueMvrCount: $_uniqueMvrCount');
+          print('   _uniqueCountIsFallback: $_uniqueCountIsFallback');
+          print('');
+          print('FLUTTER WILL DISPLAY:');
+          print('   "Individuals: $_individualsCount → ${_uniqueCountIsFallback ? "[]" : "$_uniqueMvrCount unique"}"');
+          print('=' * 80);
+          print('');
           
           if (status == 'completed') {
             print('');
             print('=' * 80);
-            print('🏁 SESSION COMPLETED!');
+            print('SESSION COMPLETED!');
             print('=' * 80);
             print('   Original individuals found: $individualsFound');
             print('   Now triggering auto-merge...');
@@ -1063,11 +1097,15 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   /// 
   /// This function is called when a cross-video tracking session completes.
   /// It retrieves all individuals from the session and uses the batch merge
-  /// endpoint to identify and merge duplicates based on MVR-People similarity.
+  /// Auto-merge duplicates after cross-video tracking session completes.
+  /// 
+  /// NOTE: Automatic merging now happens during session processing via
+  /// merge_individuals_by_similarity(). The session status already contains
+  /// the correct unique_mvr_people_count. This function is now a no-op.
   /// 
   /// Updates the UI counters:
   /// - _individualsCount: Original count before merging (already set)
-  /// - _uniqueMvrCount: Unique count after merging duplicates
+  /// - _uniqueMvrCount: Already set from session status (unique_mvr_people_count)
   /// - _uniqueCountIsFallback: Set to false when real merge data is available
   Future<void> _autoMergeDuplicates(
     MediaApiClient apiClient,
@@ -1075,22 +1113,32 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     int originalCount,
   ) async {
     try {
-      print('🔄 Starting auto-merge for session $sessionUuid...');
-      print('  Found $originalCount individuals to process');
-
+      print('🔄 Auto-merge: Session processing already merged individuals');
+      print('  Original count: $originalCount');
+      print('  Unique count already set from session status: $_uniqueMvrCount');
+      print('  Skipping redundant batch merge call');
+      
+      // The merge already happened during session processing!
+      // unique_mvr_people_count from session status is the correct value.
+      // No need to call batchMatchAndMerge() again.
+      // The merge already happened during session processing!
+      // unique_mvr_people_count from session status is the correct value.
+      // No need to call batchMatchAndMerge() again.
+      
+      /* DISABLED - Merge already happens during session processing
       // Step 1: Get all individuals from the session
       final individualsResponse = await apiClient.getCrossVideoIndividuals(
         sessionUuid: sessionUuid,
       );
 
       if (!individualsResponse.success || individualsResponse.data == null) {
-        print('❌ Failed to get session individuals: ${individualsResponse.error}');
+        print('ERROR - Failed to get session individuals: ${individualsResponse.error}');
         print('   Response data: ${individualsResponse.data}');
         // Keep fallback values (already set in polling function)
         return;
       }
 
-      print('✅ Got session individuals response: ${individualsResponse.data}');
+      print('Got session individuals response: ${individualsResponse.data}');
 
       // Step 2: Extract individual UUIDs from the response
       final individuals = individualsResponse.data!['individuals'] as List<dynamic>? ?? [];
@@ -1098,13 +1146,12 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       print('📊 Individuals count in response: ${individuals.length}');
       
       if (individuals.isEmpty) {
-        print('⚠️ No individuals found in session, skipping merge');
+        print('WARNING - No individuals found in session, skipping merge');
         print('   Expected $originalCount but got 0 from API');
         print('   This might indicate the session completed but individuals endpoint is empty');
-        setState(() {
-          _uniqueMvrCount = 0;
-          _uniqueCountIsFallback = false;
-        });
+        print('   KEEPING existing counter values from session status');
+        // DON'T reset to 0! The session status already has the correct unique_mvr_people_count
+        // Just skip the merge operation
         return;
       }
 
@@ -1124,7 +1171,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       // Step 3: Call batch match and merge endpoint
       final mergeResponse = await apiClient.batchMatchAndMerge(
         individualUuids: individualUuids,
-        threshold: 0.85, // 85% similarity threshold
+        threshold: 0.65, // 65% similarity threshold
         triggeredBy: 'cross_video_tracking_session',
         sessionUuid: sessionUuid,
       );
@@ -1151,6 +1198,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         _uniqueMvrCount = uniqueCount;
         _uniqueCountIsFallback = false; // We have real merge data now
       });
+      */
 
     } catch (e) {
       print('❌ Auto-merge error: $e');
