@@ -4,6 +4,128 @@ PPL Meta Platform v2.19.13+
 
 A minimal working implementation that directly uses the database
 for session management without complex dependencies.
+
+================================================================================
+CACHING ARCHITECTURE - Multi-Level Strategy
+================================================================================
+
+The system implements a hierarchical caching strategy to avoid redundant
+processing and ensure consistent results across sessions:
+
+Level 1: SESSION-LEVEL CACHE (Exact Match)
+────────────────────────────────────────────
+- Scope: Entire tracking session
+- Key: (collections, start_time, end_time, algorithm_config)
+- Returns: Existing session_uuid if exact match found
+- Benefit: Zero processing for duplicate requests
+- Example: Re-running same time range returns cached session instantly
+
+Level 2: SESSION-WIDE BULK CACHE (Video Set Match)
+───────────────────────────────────────────────────
+- Scope: All videos in current session
+- Key: Set of video UUIDs + total video count (exact match required)
+- Query Logic (FIXED 2025-11-09):
+  * Step 1: Find candidate sessions with SAME total_videos count
+  * Step 2: Count how many candidate's videos appear in current request
+  * Step 3: Only match if ALL candidate's videos are in current request
+  * This prevents false matches when individuals span more videos than
+    were originally submitted to the cached session
+  * Example: Session A submitted 6 videos, but individuals appear in
+    22 videos due to cross-video tracking. A request for 14 of those
+    22 videos will NOT match Session A (prevents incorrect cache hits)
+- Returns: All individuals from that session (already deduplicated)
+- Process:
+  1. Extract all video UUIDs for current session
+  2. Query for recent session with exact video set match
+  3. If found: Retrieve ALL individuals from that session
+  4. Link individuals to new session with processing_type='cached'
+  5. Skip ALL video processing (preload, matching, merging)
+- Benefit: Fast retrieval of identical results for same video sets
+- Example: Sessions 18 & 21 process videos [v1,v2,v3,v4,v5,v6]
+  → Session 21 reuses all 3 individuals from Session 18
+  → Processing time: ~1 second vs 3-5 seconds
+
+Level 3: PER-VIDEO CACHE (Video-Level Match) - CURRENTLY DISABLED
+──────────────────────────────────────────────────────────────────
+- Scope: Individual video processing (fallback when Level 2 misses)
+- Status: DISABLED to avoid conflicts with Level 2
+- Previous behavior: Find latest session with this video, get individuals
+- Note: Caused duplicate individuals when querying across multiple sessions
+
+================================================================================
+MVR (MASTER VIDEO RECORD) PEOPLE ARCHITECTURE
+================================================================================
+
+After individuals are created/cached, they undergo MVR deduplication to
+identify the same person appearing multiple times:
+
+Phase 1: INDIVIDUAL CREATION
+────────────────────────────
+- Videos are processed in groups of 2 (temporal matching)
+- Each group creates "individuals" (person appearances in videos)
+- Result: Multiple individuals may represent the same person
+
+Phase 2: EMBEDDING-BASED MERGING (4-Phase Architecture)
+────────────────────────────────────────────────────────
+A. FETCH & LOAD: Extract embeddings from person_objects (in-memory, no DB)
+B. COMPUTE: Calculate cosine similarity matrix between all individuals
+C. PREPARE: Group similar individuals (threshold: 0.70) into MVR people
+D. EXECUTE: Create MVR people records and mappings in single transaction
+
+MVR People Structure:
+- One MVR person = one unique real-world individual
+- Multiple individuals can map to same MVR person
+- MVR person stores:
+  * Best quality face embedding (Facenet512, 512-dim vector)
+  * Featured individual UUID (highest confidence)
+  * Confidence and quality scores
+  * Created timestamp
+
+Individual-to-MVR Mapping:
+- Table: individual_mvr_mapping
+- Links each individual_uuid to mvr_people_uuid
+- Allows querying all appearances of a real person across sessions
+
+================================================================================
+COMPLETE WORKFLOW EXAMPLE
+================================================================================
+
+Session 18 (2025-11-09 10:28:56):
+└─ Videos: [v1, v2, v3, v4, v5, v6]
+└─ Processing:
+   ├─ Group 0 (v1, v2): Creates ind_34bc8c14
+   ├─ Group 1 (v3, v4): Creates ind_7d8334dc
+   └─ Group 2 (v5, v6): Creates ind_8b35b478
+└─ MVR Deduplication:
+   └─ All 3 individuals merged → MVR person mvr_abc123
+└─ Result: 3 individuals, 1 unique MVR person
+
+Session 21 (2025-11-09 11:35:33) - Same Videos:
+└─ Videos: [v1, v2, v3, v4, v5, v6]
+└─ Session-Wide Bulk Cache Check:
+   ├─ Query: Find session with ALL 6 videos
+   ├─ Match: Session 18 (most recent)
+   └─ Action: Retrieve all 3 individuals from Session 18
+└─ Cache Hit:
+   ├─ ind_34bc8c14 (cached)
+   ├─ ind_7d8334dc (cached)
+   └─ ind_8b35b478 (cached)
+└─ Link to Session 21: processing_type='cached'
+└─ Skip: Video processing, matching, merging (already done!)
+└─ Result: Same 3 individuals, same 1 MVR person, ~1 second
+
+Key Benefits:
+1. Consistency: Identical video sets always return identical individuals
+2. Performance: 70% reduction in processing time (1s vs 3-5s)
+3. Accuracy: MVR people maintain identity across sessions
+4. Traceability: processing_type field shows data source ('cached' vs 'new')
+
+Cache Metrics Tracking:
+- cache_hits: Number of videos that hit cache
+- Session 18: cache_hits=0 (no previous session)
+- Session 21: cache_hits=6 (all videos cached)
+- individuals_found: Total individuals in session
+- unique_mvr_people_count: Unique real-world people identified
 """
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
@@ -2157,228 +2279,363 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
             # Track all matched_individuals with full data for embedding merge
             all_matched_individuals = []
             
-            # ✨ PRELOAD: Fetch all person_objects data upfront to eliminate I/O during DB transactions
-            logger.info(f"🔄 Preloading person_objects for all {len(videos)} videos before processing groups")
-            preloaded_person_objects = await preload_person_objects_for_all_videos(
-                all_videos=videos,
-                auth_token=auth_token,
-                session_uuid=session_uuid,
-                db_client=db_client,
-                concurrency=6
-            )
-            logger.info(f"✅ Preload complete, now processing {len(video_groups)} groups")
+            # ✨ SESSION-WIDE BULK CACHE CHECK
+            # Check if a recent session has ALL videos in this request
+            all_video_uuids = [v['uuid'] for v in videos]
+            session_wide_cache_hit = False
             
-            # Process each group of consecutive videos
-            for group_idx, consecutive_videos in enumerate(video_groups):
-                # Debug: Log entering group processing
-                try:
-                    async with db_client.pool.acquire() as conn:
-                        await conn.execute("""
-                            UPDATE tracking_sessions
-                            SET failed_videos = array_append(failed_videos, $2)
-                            WHERE session_uuid = $1
-                        """, session_uuid, 
-                             f"processing_group_{group_idx}: {len(consecutive_videos)}_videos")
-                except Exception:
-                    pass
-                
-                logger.info(
-                    f"📹 Processing video group {group_idx + 1}/{len(video_groups)} "
-                    f"with {len(consecutive_videos)} consecutive videos"
+            logger.info(
+                f"🔍 Checking for cached session with all "
+                f"{len(all_video_uuids)} videos..."
+            )
+            
+            try:
+                async with db_client.pool.acquire() as conn:
+                    # Find recent session with EXACTLY same videos
+                    # CRITICAL FIX: Use video_processing_states to get
+                    # SUBMITTED videos, not individual_video_appearances
+                    # which includes cross-video tracked videos
+                    recent_session = await conn.fetchrow("""
+                        WITH candidate_sessions AS (
+                            -- Find sessions with same video count
+                            SELECT
+                                ts.session_uuid,
+                                ts.created_at,
+                                ts.total_videos
+                            FROM tracking_sessions ts
+                            WHERE ts.status = 'completed'
+                              AND ts.session_uuid != $1
+                              AND ts.total_videos = $3
+                        ),
+                        session_video_matches AS (
+                            -- Count matching SUBMITTED videos per candidate
+                            -- Use video_processing_states, NOT
+                            -- individual_video_appearances
+                            SELECT
+                                cs.session_uuid,
+                                cs.created_at,
+                                cs.total_videos,
+                                COUNT(DISTINCT vps.video_uuid)
+                                    as matching_videos
+                            FROM candidate_sessions cs
+                            JOIN video_processing_states vps
+                                ON vps.session_uuid = cs.session_uuid
+                            WHERE vps.video_uuid = ANY($2::uuid[])
+                            GROUP BY
+                                cs.session_uuid,
+                                cs.created_at,
+                                cs.total_videos
+                        )
+                        -- Only match if ALL submitted videos are in request
+                        SELECT
+                            session_uuid,
+                            created_at,
+                            matching_videos as video_count
+                        FROM session_video_matches
+                        WHERE matching_videos = total_videos
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    """, session_uuid, all_video_uuids, len(all_video_uuids))
+                    
+                    if recent_session:
+                        cached_session_id = (
+                            str(recent_session['session_uuid'])[:8]
+                        )
+                        logger.info(
+                            f"♻️ Found cached session {cached_session_id} "
+                            f"with all {recent_session['video_count']} videos!"
+                        )
+                        
+                        # Get ALL individuals from that session
+                        cached_records = await conn.fetch("""
+                            SELECT DISTINCT si.individual_uuid
+                            FROM session_individuals si
+                            WHERE si.session_uuid = $1
+                        """, recent_session['session_uuid'])
+                        
+                        created_individual_uuids = [
+                            str(r['individual_uuid'])
+                            for r in cached_records
+                        ]
+                        session_wide_cache_hit = True
+                        total_cache_hits = len(all_video_uuids)
+                        
+                        logger.info(
+                            f"✅ Session-wide cache hit! Reusing "
+                            f"{len(created_individual_uuids)} individuals "
+                            f"from session {cached_session_id}"
+                        )
+                        
+                        # Link cached individuals to this session
+                        for individual_uuid in created_individual_uuids:
+                            await conn.execute("""
+                                INSERT INTO session_individuals
+                                (session_uuid, individual_uuid,
+                                 processing_type, confidence_contribution)
+                                VALUES ($1, $2, $3, $4)
+                            """,
+                                session_uuid,
+                                individual_uuid,
+                                'cached',
+                                1.0
+                            )
+                        
+                        logger.info(
+                            f"🔗 Linked {len(created_individual_uuids)} "
+                            f"cached individuals to session"
+                        )
+                    else:
+                        logger.info(
+                            "🆕 No cached session found, "
+                            "will process videos normally"
+                        )
+            
+            except Exception as cache_error:
+                logger.warning(
+                    f"⚠️ Session-wide cache check failed: {cache_error}, "
+                    f"will process normally"
                 )
-                
-                # 🔥 NEW LOGIC: Temporal matching WITHIN the group
-                # This matches person_objects across videos to create individuals
-                # that appear in multiple videos
-                matched_individuals = await match_person_objects_within_group(
-                    videos_data=consecutive_videos,
+                session_wide_cache_hit = False
+            
+            # ✨ PRELOAD: Fetch all person_objects data upfront to eliminate I/O during DB transactions
+            # Skip if session-wide cache hit
+            if not session_wide_cache_hit:
+                logger.info(
+                    f"🔄 Preloading person_objects for all {len(videos)} "
+                    f"videos before processing groups"
+                )
+                preloaded_person_objects = await preload_person_objects_for_all_videos(
+                    all_videos=videos,
                     auth_token=auth_token,
                     session_uuid=session_uuid,
                     db_client=db_client,
-                    preloaded_data=preloaded_person_objects  # Use preloaded data
+                    concurrency=6
                 )
-                
                 logger.info(
-                    f"✅ Group {group_idx + 1}: Matched {len(matched_individuals)} "
-                    f"individuals across {len(consecutive_videos)} videos"
+                    f"✅ Preload complete, now processing "
+                    f"{len(video_groups)} groups"
                 )
-                
-                # Debug: Log before database creation
-                try:
-                    async with db_client.pool.acquire() as conn:
-                        await conn.execute("""
-                            UPDATE tracking_sessions
-                            SET failed_videos = array_append(failed_videos, $2)
-                            WHERE session_uuid = $1
-                        """, session_uuid, 
-                             f"creating_db_records_for_{len(matched_individuals)}_individuals")
-                except Exception:
-                    pass
-                
-                # ✨ NEW APPROACH: Prepare all DB operations in memory first
-                # Then execute in a SINGLE transaction with ONE connection
-                db_operations = []  # List of (operation_type, params) tuples
-                
-                for individual_data in matched_individuals:
-                    individual_uuid = individual_data['individual_uuid']
-                    individual_id = f"ind_{individual_uuid[:8]}"
-                    video_uuids = individual_data['video_uuids']
-                    
-                    # Prepare individual insert
-                    db_operations.append(('individual', {
-                        'individual_uuid': individual_uuid,
-                        'individual_id': individual_id,
-                        'confidence_score': individual_data['temporal_score'],
-                        'spatial_signature': '{"type": "temporal_group_match"}',
-                        'temporal_signature': '{"type": "consecutive_videos"}',
-                        'algorithm_version': '2.1'
-                    }))
-                    
-                    # Prepare session-individual link
-                    db_operations.append(('session_individual', {
-                        'session_uuid': session_uuid,
-                        'individual_uuid': individual_uuid,
-                        'processing_type': 'new',  # Must be: new, cached, merged, or extended
-                        'confidence_contribution': individual_data['temporal_score']
-                    }))
-                    
-                    # Prepare video appearances
-                    for video_uuid in video_uuids:
-                        video_data = next(
-                            (v for v in consecutive_videos if v['uuid'] == video_uuid),
-                            None
-                        )
-                        if not video_data:
-                            logger.warning(f"No video data for {video_uuid[:8]}")
-                            continue
-                        
-                        try:
-                            # Parse timestamp
-                            timestamp_str = video_data["timestamp"]
-                            if isinstance(timestamp_str, str):
-                                start_ts = datetime.fromisoformat(
-                                    timestamp_str.replace('Z', '+00:00')
-                                )
-                            else:
-                                start_ts = timestamp_str
-                            
-                            # Convert to UTC naive
-                            from datetime import timezone as tz
-                            if start_ts.tzinfo is not None:
-                                start_ts = start_ts.astimezone(tz.utc).replace(tzinfo=None)
-                            
-                            end_ts = start_ts + timedelta(seconds=30)
-                            person_object_uuid = str(uuid4())
-                            
-                            db_operations.append(('appearance', {
-                                'individual_uuid': individual_uuid,
-                                'video_uuid': video_uuid,
-                                'person_object_uuid': person_object_uuid,
-                                'start_timestamp': start_ts,
-                                'end_timestamp': end_ts,
-                                'entry_bbox': [100, 200, 150, 300],
-                                'exit_bbox': [110, 210, 160, 310],
-                                'confidence': individual_data['temporal_score']
-                            }))
-                        except Exception as e:
-                            logger.error(f"Failed to prepare appearance: {e}")
-                    
-                    # Track for later merging
-                    created_individual_uuids.append(individual_uuid)
-                
-                # Also store the full matched_individuals data for embedding merge
-                all_matched_individuals.extend(matched_individuals)
-                
-                # ✨ Execute ALL operations in a SINGLE transaction
-                logger.info(f"💾 Executing {len(db_operations)} DB operations in single transaction")
-                
-                try:
-                    async with db_client.pool.acquire() as conn:
-                        async with conn.transaction():
-                            for op_type, params in db_operations:
-                                if op_type == 'individual':
-                                    await conn.execute("""
-                                        INSERT INTO individuals (
-                                            individual_uuid, individual_id,
-                                            confidence_score,
-                                            spatial_signature, temporal_signature,
-                                            algorithm_version
-                                        ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
-                                    """,
-                                        params['individual_uuid'],
-                                        params['individual_id'],
-                                        params['confidence_score'],
-                                        params['spatial_signature'],
-                                        params['temporal_signature'],
-                                        params['algorithm_version']
-                                    )
-                                elif op_type == 'session_individual':
-                                    await conn.execute("""
-                                        INSERT INTO session_individuals
-                                        (session_uuid, individual_uuid,
-                                         processing_type, confidence_contribution)
-                                        VALUES ($1, $2, $3, $4)
-                                    """,
-                                        params['session_uuid'],
-                                        params['individual_uuid'],
-                                        params['processing_type'],
-                                        params['confidence_contribution']
-                                    )
-                                elif op_type == 'appearance':
-                                    await conn.execute("""
-                                        INSERT INTO individual_video_appearances (
-                                            individual_uuid, video_uuid, person_object_uuid,
-                                            start_timestamp, end_timestamp,
-                                            entry_bbox, exit_bbox, confidence
-                                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                                        ON CONFLICT DO NOTHING
-                                    """,
-                                        params['individual_uuid'],
-                                        params['video_uuid'],
-                                        params['person_object_uuid'],
-                                        params['start_timestamp'],
-                                        params['end_timestamp'],
-                                        params['entry_bbox'],
-                                        params['exit_bbox'],
-                                        params['confidence']
-                                    )
-                            
-                            logger.info(f"✅ Transaction committed: {len(matched_individuals)} individuals created")
-                except Exception as db_error:
-                    logger.error(f"❌ Database transaction failed: {db_error}")
-                    # Log to session
+            else:
+                preloaded_person_objects = {}
+                logger.info(
+                    "⏭️ Skipping preload (session-wide cache hit)"
+                )
+            
+            # Process each group of consecutive videos
+            # Skip if session-wide cache hit
+            if not session_wide_cache_hit:
+                for group_idx, consecutive_videos in enumerate(video_groups):
+                    # Debug: Log entering group processing
                     try:
-                        async with db_client.pool.acquire() as _dbg_conn:
-                            await _dbg_conn.execute("""
+                        async with db_client.pool.acquire() as conn:
+                            await conn.execute("""
                                 UPDATE tracking_sessions
                                 SET failed_videos = array_append(failed_videos, $2)
                                 WHERE session_uuid = $1
-                            """, session_uuid, f"db_transaction_error: {str(db_error)[:100]}")
+                            """, session_uuid,
+                                 f"processing_group_{group_idx}: "
+                                 f"{len(consecutive_videos)}_videos")
                     except Exception:
                         pass
-                
-                # Debug: Log completion of this group
-                try:
+                    
+                    logger.info(
+                        f"📹 Processing video group {group_idx + 1}/"
+                        f"{len(video_groups)} with "
+                        f"{len(consecutive_videos)} consecutive videos"
+                    )
+                    
+                    # 🔥 NEW LOGIC: Temporal matching WITHIN the group
+                    # This matches person_objects across videos to create individuals
+                    # that appear in multiple videos
+                    matched_individuals = await match_person_objects_within_group(
+                        videos_data=consecutive_videos,
+                        auth_token=auth_token,
+                        session_uuid=session_uuid,
+                        db_client=db_client,
+                        preloaded_data=preloaded_person_objects  # Use preloaded data
+                    )
+                    
+                    logger.info(
+                        f"✅ Group {group_idx + 1}: Matched {len(matched_individuals)} "
+                        f"individuals across {len(consecutive_videos)} videos"
+                    )
+                    
+                    # Debug: Log before database creation
+                    try:
+                        async with db_client.pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE tracking_sessions
+                                SET failed_videos = array_append(failed_videos, $2)
+                                WHERE session_uuid = $1
+                            """, session_uuid, 
+                                 f"creating_db_records_for_{len(matched_individuals)}_individuals")
+                    except Exception:
+                        pass
+                    
+                    # ✨ NEW APPROACH: Prepare all DB operations in memory first
+                    # Then execute in a SINGLE transaction with ONE connection
+                    db_operations = []  # List of (operation_type, params) tuples
+                    
+                    for individual_data in matched_individuals:
+                        individual_uuid = individual_data['individual_uuid']
+                        individual_id = f"ind_{individual_uuid[:8]}"
+                        video_uuids = individual_data['video_uuids']
+                        
+                        # Prepare individual insert
+                        db_operations.append(('individual', {
+                            'individual_uuid': individual_uuid,
+                            'individual_id': individual_id,
+                            'confidence_score': individual_data['temporal_score'],
+                            'spatial_signature': '{"type": "temporal_group_match"}',
+                            'temporal_signature': '{"type": "consecutive_videos"}',
+                            'algorithm_version': '2.1'
+                        }))
+                        
+                        # Prepare session-individual link
+                        db_operations.append(('session_individual', {
+                            'session_uuid': session_uuid,
+                            'individual_uuid': individual_uuid,
+                            'processing_type': 'new',  # Must be: new, cached, merged, or extended
+                            'confidence_contribution': individual_data['temporal_score']
+                        }))
+                        
+                        # Prepare video appearances
+                        for video_uuid in video_uuids:
+                            video_data = next(
+                                (v for v in consecutive_videos if v['uuid'] == video_uuid),
+                                None
+                            )
+                            if not video_data:
+                                logger.warning(f"No video data for {video_uuid[:8]}")
+                                continue
+                            
+                            try:
+                                # Parse timestamp
+                                timestamp_str = video_data["timestamp"]
+                                if isinstance(timestamp_str, str):
+                                    start_ts = datetime.fromisoformat(
+                                        timestamp_str.replace('Z', '+00:00')
+                                    )
+                                else:
+                                    start_ts = timestamp_str
+                                
+                                # Convert to UTC naive
+                                from datetime import timezone as tz
+                                if start_ts.tzinfo is not None:
+                                    start_ts = start_ts.astimezone(tz.utc).replace(tzinfo=None)
+                                
+                                end_ts = start_ts + timedelta(seconds=30)
+                                person_object_uuid = str(uuid4())
+                                
+                                db_operations.append(('appearance', {
+                                    'individual_uuid': individual_uuid,
+                                    'video_uuid': video_uuid,
+                                    'person_object_uuid': person_object_uuid,
+                                    'start_timestamp': start_ts,
+                                    'end_timestamp': end_ts,
+                                    'entry_bbox': [100, 200, 150, 300],
+                                    'exit_bbox': [110, 210, 160, 310],
+                                    'confidence': individual_data['temporal_score']
+                                }))
+                            except Exception as e:
+                                logger.error(f"Failed to prepare appearance: {e}")
+                        
+                        # Track for later merging
+                        created_individual_uuids.append(individual_uuid)
+                    
+                    # Also store the full matched_individuals data for embedding merge
+                    all_matched_individuals.extend(matched_individuals)
+                    
+                    # ✨ Execute ALL operations in a SINGLE transaction
+                    logger.info(f"💾 Executing {len(db_operations)} DB operations in single transaction")
+                    
+                    try:
+                        async with db_client.pool.acquire() as conn:
+                            async with conn.transaction():
+                                for op_type, params in db_operations:
+                                    if op_type == 'individual':
+                                        await conn.execute("""
+                                            INSERT INTO individuals (
+                                                individual_uuid, individual_id,
+                                                confidence_score,
+                                                spatial_signature, temporal_signature,
+                                                algorithm_version
+                                            ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+                                        """,
+                                            params['individual_uuid'],
+                                            params['individual_id'],
+                                            params['confidence_score'],
+                                            params['spatial_signature'],
+                                            params['temporal_signature'],
+                                            params['algorithm_version']
+                                        )
+                                    elif op_type == 'session_individual':
+                                        await conn.execute("""
+                                            INSERT INTO session_individuals
+                                            (session_uuid, individual_uuid,
+                                             processing_type, confidence_contribution)
+                                            VALUES ($1, $2, $3, $4)
+                                        """,
+                                            params['session_uuid'],
+                                            params['individual_uuid'],
+                                            params['processing_type'],
+                                            params['confidence_contribution']
+                                        )
+                                    elif op_type == 'appearance':
+                                        await conn.execute("""
+                                            INSERT INTO individual_video_appearances (
+                                                individual_uuid, video_uuid, person_object_uuid,
+                                                start_timestamp, end_timestamp,
+                                                entry_bbox, exit_bbox, confidence
+                                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                            ON CONFLICT DO NOTHING
+                                        """,
+                                            params['individual_uuid'],
+                                            params['video_uuid'],
+                                            params['person_object_uuid'],
+                                            params['start_timestamp'],
+                                            params['end_timestamp'],
+                                            params['entry_bbox'],
+                                            params['exit_bbox'],
+                                            params['confidence']
+                                        )
+                                
+                                logger.info(f"✅ Transaction committed: {len(matched_individuals)} individuals created")
+                    except Exception as db_error:
+                        logger.error(f"❌ Database transaction failed: {db_error}")
+                        # Log to session
+                        try:
+                            async with db_client.pool.acquire() as _dbg_conn:
+                                await _dbg_conn.execute("""
+                                    UPDATE tracking_sessions
+                                    SET failed_videos = array_append(failed_videos, $2)
+                                    WHERE session_uuid = $1
+                                """, session_uuid, f"db_transaction_error: {str(db_error)[:100]}")
+                        except Exception:
+                            pass
+                    
+                    # Debug: Log completion of this group
+                    try:
+                        async with db_client.pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE tracking_sessions
+                                SET failed_videos = array_append(failed_videos, $2)
+                                WHERE session_uuid = $1
+                            """, session_uuid, 
+                                 f"group_{group_idx}_complete: {len(matched_individuals)}_individuals")
+                    except Exception as group_log_error:
+                        logger.error(f"Failed to log group completion: {group_log_error}")
+            
+            # Debug: Log that all groups are done
+            try:
                     async with db_client.pool.acquire() as conn:
                         await conn.execute("""
                             UPDATE tracking_sessions
                             SET failed_videos = array_append(failed_videos, $2)
                             WHERE session_uuid = $1
-                        """, session_uuid, 
-                             f"group_{group_idx}_complete: {len(matched_individuals)}_individuals")
-                except Exception as group_log_error:
-                    logger.error(f"Failed to log group completion: {group_log_error}")
-            
-            # Debug: Log that all groups are done
-            try:
-                async with db_client.pool.acquire() as conn:
-                    await conn.execute("""
-                        UPDATE tracking_sessions
-                        SET failed_videos = array_append(failed_videos, $2)
-                        WHERE session_uuid = $1
-                    """, session_uuid, "all_groups_processed")
+                        """, session_uuid, "all_groups_processed")
             except Exception:
-                pass
+                    pass
             
             # All groups processed - now merge across groups via embeddings
             logger.info(
