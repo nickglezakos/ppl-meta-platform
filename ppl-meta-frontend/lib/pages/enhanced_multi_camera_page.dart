@@ -4,6 +4,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:go_router/go_router.dart';
 import '../core/models/camera.dart';
 import '../core/providers/camera_providers.dart';
+import '../core/services/auth_service.dart';
 import '../widgets/enhanced_camera_card.dart';
 import '../widgets/recording_session_widget.dart';
 import '../services/recording_session_service.dart';
@@ -32,6 +33,18 @@ class _EnhancedMultiCameraPageState extends ConsumerState<EnhancedMultiCameraPag
     _tabController = TabController(length: 3, vsync: this);
     _initializeServices();
     _loadStatistics();
+    
+    // Load cameras when the page initializes, but only if authenticated
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authService = ref.read(authServiceProvider);
+      authService.getToken().then((token) {
+        if (token != null && token.isNotEmpty) {
+          ref.read(cameraListProvider.notifier).loadCameras();
+        } else {
+          print('⚠️ Skipping camera loading - user not authenticated');
+        }
+      });
+    });
   }
 
   @override

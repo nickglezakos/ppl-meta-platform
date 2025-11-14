@@ -74,54 +74,140 @@ llama3.1:latest            46e0c10c039e    4.9 GB    3 days ago
 
 
 
-Individuals filter for a single collection: No of Individuals, first video start date | last video start date
 
+**************************************************************************
 
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % 
+I need a background process that has its own endpoint and is applied per collection.
+The background process is named tracking background process and it does the following:
+a) executes the cross video tracking endpoint for specific tracking batches of videos in the collection 
+and b)stores the results of the cross video tracking to history logs.
 
-sleep 3 && curl -s "http://localhost:8080/api/v1/cross-video/individuals/tracking/sessions/f7484e31-74a0-4a29-8a84-72f2774dd31d" | pyth
-on3 -m json.tool
-{
-    "session_uuid": "f7484e31-74a0-4a29-8a84-72f2774dd31d",
-    "status": "completed",
-    "collections": [
-        "usb_camera_0"
-    ],
-    "created_at": "2025-11-03T08:45:03.882299",
-    "started_at": "2025-11-03T08:45:03.885071",
-    "completed_at": "2025-11-03T08:45:03.970564",
-    "total_videos": 5,
-    "processed_videos": 5,
-    "individuals_found": 1,
-    "cache_hits": 0
-}
+The tracking background process has the following functionalities:
+1.
+It can be activated and deactivated by the user. When activated it executes tracking batches in the background.
+2.
+Upon activation the user defines the timeframe of activation (start - end).
+3.
+It has a tracking batch value which is the number of videos it activates the cross video tracking
+endpoint for. The tracking batch value has a default value and can also be modified via the user.
+The default value is 3. That means that is executes the cross vodeo tracking endpoint for batches
+of 3 videos each.
+4.
+To execute a batch, it first gets the start detatime and end datetime data of the batch
+and then executes the cross video tracking endpoint. The start datetime of the batch is the start
+datetime of the first video and the last datetime of the batch is the last datetime of the last video.
+If there are videos left after sorting the entire activation span that are less than the tracking batch value 
+it executes the tracking process on them as a single batch regardless.
+5.
+It stores the timeframes it has been succefully executed (history logs).
+6.
+It stores the results of the cross video tracking endpoint per batch.
+7.
+Upon execution the tracking background process checks its history logs for batches that have produced results whithin the timeframe of activation. 
+If there are any such batch results stored it skips them.
 
-
-
-
-
-EXCELLENT! I found the problem! Look at this critical section of your debug output:
-
-The values are correctly set to 1 → 1, but then look what happens next:
-
-The auto-merge is being triggered! This is likely resetting the _uniqueMvrCount back to 0. Let me check the auto-merge code:
-
-Read collections_screen.dart, lines 1100 to 1195
-
-FOUND IT! Look at lines 1137-1142:
-
-The auto-merge function is getting an empty individuals list and setting _uniqueMvrCount = 0!
-
-The backend correctly returns unique_mvr_people_count: 1, but then when Flutter calls the /individuals endpoint, it gets an empty list and resets the counter to 0.
+**************************************************************************
 
 
 
 
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % psql postgresql://postgres@localhost:
-5432/ppl_meta_vmeta -c "SELECT unnest(failed_videos) as log FROM tracking_sessions WHERE ses
-sion_uuid = '39f70da4-76e2-42d3-921c-7a21fd7b8359';" | grep -E "(phase_d|transaction)" | tai
-l -10
- phase_d_start: 4_operations
- phase_d_before_transaction: 1_mvr, 3_mappings
+
+
+
+
+
+ 
+
+**************************************************************************
+
+Functionalities
+
+recording
+  snapshot
+  stream
+
+------> get from media service the video saving settings per camera
+                stream snapshot
+                stream
+                  video segments
+                    duration
+                    intervals
+------> individuals: counter, routes / heatmap, activity derivatives (velocity, energy)
+          for a stream snapshot (a single video)
+          for a product template session preset
+          for a unresctricted time frame (avg. for counter for the total video segments)
+------> person counter
+          for a stream snapshot (a single video)
+          for a product template session preset
+          for a unresctricted time frame (MVR uniqueness on the MVR level)
+
+
+
+basic person detection
+  indoviduals counter
+  age | gender
+  position | route
+  activity 
+
+
+advanced person detection
+  everything in basic person detection
+  persons counter
+  Machine Vision ID
+  Attendance control
+  Unauthorized access
+  Person of Interest Collections
+  Schedule rules
+  Appearance tracking
+  Video Playback
+
+modules
+  Cameras
+  Collections
+    Camera
+    User
+  Reports
+  Insights
+
+Product Templates
+
+Intelligent Signage
+  Personalized Video Playlists
+  Marketing Campaings
+  Audience Insights
+  Contractor account
+
+Gate Activity
+  People Counter
+  Audience Insights
+
+Room & Gate Protection 
+  Attendance control
+  Unauthorized Activity Warnings
+  Person of Interest Warnings
+  Person of Interest Search
+  Activity Warnings
+  Activity Insights
+  Forensics
+
+Underage Detector
+  Instant Underage Warnings
+  Audience Insights
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
  

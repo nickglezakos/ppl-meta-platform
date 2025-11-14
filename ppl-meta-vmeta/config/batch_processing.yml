@@ -1,0 +1,206 @@
+# Batch Processing Configuration
+# This configuration file defines settings for the continuous individuals and MVR pipeline
+# that automatically processes batches of videos after face detection completion.
+
+# Global Configuration (default settings for all collections)
+global:
+  # Batch size threshold (number of videos that trigger batch processing)
+  batch_size_threshold: 5
+  
+  # Partial batch handling
+  partial_batch:
+    # Minimum videos required to process a partial batch
+    min_videos: 2
+    
+    # Timeout in minutes before triggering partial batch processing
+    timeout_minutes: 10
+    
+    # Maximum hours to wait for batch completion before force-processing
+    max_wait_hours: 24
+    
+    # Primary trigger: Recording stop event
+    recording_stop_event:
+      enabled: true
+      # Delay in seconds after recording stop before triggering
+      trigger_delay_seconds: 2
+    
+    # Fallback trigger: Timeout
+    timeout_fallback:
+      enabled: true
+  
+  # Concurrency settings
+  concurrency:
+    # Maximum number of batches processing concurrently
+    max_concurrent_batches: 3
+    
+    # Number of dedicated worker processes
+    worker_pool_size: 3
+  
+  # Resource limits
+  resources:
+    # Maximum memory per batch in GB
+    max_batch_memory_gb: 2
+    
+    # Maximum videos per processing session
+    max_videos_per_session: 10
+    
+    # Maximum processing time per batch in seconds
+    max_processing_time_seconds: 300
+  
+  # Event configuration
+  events:
+    # Use event-driven triggering
+    event_triggering_enabled: true
+    
+    # Use polling as fallback if events fail
+    polling_fallback_enabled: true
+    
+    # Polling interval in seconds when using fallback
+    polling_interval_seconds: 30
+
+# Collection-specific overrides (optional)
+# Uncomment and customize for specific collections
+collections:
+  # Example: High-priority collection with smaller batches
+  # collection-uuid-123:
+  #   batch_size_threshold: 3
+  #   partial_batch:
+  #     min_videos: 1
+  #     timeout_minutes: 5
+  #   concurrency:
+  #     max_concurrent_batches: 5
+  
+  # Example: Low-priority collection with larger batches
+  # collection-uuid-456:
+  #   batch_size_threshold: 10
+  #   partial_batch:
+  #     min_videos: 5
+  #     timeout_minutes: 30
+
+# Caching configuration
+caching:
+  # Two-level caching: Individual detection + MVR people
+  enabled: true
+  
+  # Individual detection cache TTL (seconds)
+  individual_cache_ttl: 3600  # 1 hour
+  
+  # MVR people cache TTL (seconds)
+  mvr_people_cache_ttl: 7200  # 2 hours
+  
+  # Cache key strategy
+  individual_cache_key: "{face_uuid}_{detection_params_hash}"
+  mvr_cache_key: "{collection_id}_{batch_number}"
+  
+  # Cache backend (redis recommended for production)
+  backend: "redis"  # Options: "redis", "memory"
+  
+  # Redis configuration (if using redis backend)
+  redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    password: null
+    max_connections: 10
+
+# Processing pipeline configuration
+pipeline:
+  # Individual detection settings
+  individuals:
+    # Confidence threshold for face detection
+    confidence_threshold: 0.7
+    
+    # Skip processing if face already has individual_id
+    skip_if_exists: true
+    
+    # Batch size for parallel processing
+    batch_processing_size: 10
+  
+  # MVR people generation settings
+  mvr_people:
+    # Minimum faces required to create MVR person
+    min_faces_per_person: 3
+    
+    # Confidence threshold for face grouping
+    grouping_confidence_threshold: 0.8
+    
+    # Enable incremental MVR updates
+    incremental_updates: true
+
+# Monitoring and logging
+monitoring:
+  # Enable detailed performance metrics
+  metrics_enabled: true
+  
+  # Log level for batch processing
+  log_level: "INFO"  # Options: "DEBUG", "INFO", "WARNING", "ERROR"
+  
+  # Enable performance profiling
+  profiling_enabled: false
+  
+  # Metrics export interval (seconds)
+  metrics_export_interval: 60
+  
+  # Alert thresholds
+  alerts:
+    # Alert if batch processing exceeds this time (seconds)
+    slow_batch_threshold: 600
+    
+    # Alert if cache hit rate drops below this percentage
+    low_cache_hit_rate: 30
+    
+    # Alert if this many consecutive batches fail
+    consecutive_failures: 3
+
+# Error handling and retries
+error_handling:
+  # Maximum retry attempts for failed batches
+  max_retries: 3
+  
+  # Retry delay strategy
+  retry_strategy: "exponential_backoff"  # Options: "fixed", "exponential_backoff"
+  
+  # Initial retry delay (seconds)
+  initial_retry_delay: 5
+  
+  # Maximum retry delay (seconds)
+  max_retry_delay: 300
+  
+  # Mark batch as failed after max retries
+  fail_after_max_retries: true
+  
+  # Dead letter queue for failed batches
+  dead_letter_queue:
+    enabled: true
+    max_size: 100
+
+# Development/Testing settings
+development:
+  # Use mock data for testing
+  use_mock_data: false
+  
+  # Enable debug logging
+  debug_mode: false
+  
+  # Simulate slow processing for testing
+  simulate_slow_processing: false
+  
+  # Slow processing delay (seconds)
+  slow_processing_delay: 5
+
+# Feature flags
+features:
+  # Enable partial batch processing
+  partial_batches: true
+  
+  # Enable event-driven triggering
+  event_driven: true
+  
+  # Enable caching
+  caching: true
+  
+  # Enable performance monitoring
+  monitoring: true
+  
+  # Enable automatic retry on failure
+  auto_retry: true

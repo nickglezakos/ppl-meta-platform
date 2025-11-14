@@ -214,7 +214,8 @@ class _PersonObjectsDetailScreenState
     // Use EXACT SAME TABS as single-video mode
     return Column(
       children: [
-        _buildCrossVideoHeader(),
+        // COMMENTED OUT: Cross-Video Analysis header not needed
+        // _buildCrossVideoHeader(),
         TabBar(
           controller: _tabController,
           tabs: const [

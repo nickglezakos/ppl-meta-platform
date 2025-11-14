@@ -2075,6 +2075,552 @@ psql -U postgres -d ppl_meta_vmeta -c "
 
 ---
 
+## Caching Architecture
+
+### Current Implementation: Individual-Level Caching
+
+The system implements **individual-level caching** to avoid redundant person detection and tracking when videos have already been processed.
+
+#### How It Works
+
+**1. Cache Check Before Processing**
+
+When a session is created, the system checks if videos have already been processed:
+
+```python
+async def check_existing_individuals_for_video(
+    video_uuid: str,
+    session_uuid: str,
+    conn,
+    db_client
+):
+    """
+    Check if video already has individuals assigned.
+    Returns (individual_uuids, is_cache_hit)
+    """
+    
+    # Step 1: Query for existing individuals linked to this video
+    existing = await conn.fetch("""
+        SELECT DISTINCT i.individual_uuid
+        FROM individuals i
+        JOIN individual_video_appearances iva 
+            ON i.individual_uuid = iva.individual_uuid
+        WHERE iva.video_uuid = $1
+    """, video_uuid)
+    
+    if not existing:
+        return ([], False)  # No cache - need to create new
+    
+    # Step 2: Filter out merged/duplicate individuals
+    # Only keep "predominant" individuals (not merged into others)
+    individual_uuids = []
+    for record in existing:
+        ind_uuid = record['individual_uuid']
+        
+        # Check if individual was merged into MVR person
+        mvr_mapping = await conn.fetchrow("""
+            SELECT mvr_people_uuid 
+            FROM individual_mvr_mapping
+            WHERE individual_uuid = $1
+        """, ind_uuid)
+        
+        if mvr_mapping:
+            # Individual was merged - skip it
+            continue
+        
+        individual_uuids.append(ind_uuid)
+    
+    if not individual_uuids:
+        # All individuals were merged - create new
+        return ([], False)
+    
+    # Step 3: Link cached individuals to new session
+    for individual_uuid in individual_uuids:
+        await conn.execute("""
+            INSERT INTO session_individuals
+            (session_uuid, individual_uuid, processing_type, confidence_contribution)
+            VALUES ($1, $2, 'cached', 0.95)
+            ON CONFLICT (session_uuid, individual_uuid) DO NOTHING
+        """, session_uuid, individual_uuid)
+    
+    return (individual_uuids, True)  # Cache hit!
+```
+
+**2. Cache Hit Flow**
+
+```
+Video Already Processed
+         ↓
+Query individual_video_appearances table
+         ↓
+Found individuals for video UUID
+         ↓
+Filter out merged individuals (check individual_mvr_mapping)
+         ↓
+Link remaining individuals to new session (processing_type='cached')
+         ↓
+Skip temporal matching & DB persistence
+         ↓
+✅ Cache hit! (~3s saved per video)
+```
+
+**3. Session-Level Cache**
+
+The system also caches **entire sessions** with identical parameters:
+
+```python
+# Check for existing completed session
+if not force_reprocess:
+    cached_session = await conn.fetchrow("""
+        SELECT session_uuid, individuals_found, unique_mvr_people_count
+        FROM tracking_sessions
+        WHERE collections = $1
+          AND start_time = $2
+          AND end_time = $3
+          AND config_hash = $4
+          AND status = 'completed'
+          AND total_videos > 0
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, request.collections, start_time, end_time, config_hash)
+    
+    if cached_session:
+        # Return existing session (don't reprocess)
+        return TrackingSessionResponse(
+            session_uuid=cached_session['session_uuid'],
+            status='completed',
+            cache_hit_rate=1.0,
+            ...
+        )
+```
+
+#### Cache Statistics
+
+**Tracked Metrics**:
+- `cache_hits`: Number of videos that used cached individuals
+- `cache_hit_rate`: Percentage of videos using cache (0.0 to 1.0)
+
+**Example**:
+```json
+{
+  "session_uuid": "abc123...",
+  "total_videos": 10,
+  "cache_hits": 7,
+  "cache_hit_rate": 0.7
+}
+```
+
+**Interpretation**: 7 out of 10 videos reused existing individuals, 3 created new.
+
+### Current Limitation: No MVR-Level Caching
+
+**Problem**: The current caching operates at the **individual level** only. It does not cache:
+
+1. **MVR People Records**: Each session regenerates embeddings and recreates MVR people, even if the same individuals were already merged in a previous session
+2. **Embedding Computations**: Facenet512 embeddings are recalculated every time (expensive operation)
+3. **Similarity Matrices**: Cosine similarity calculations are repeated for the same individual pairs
+4. **Merge Groups**: DFS connected components analysis is recomputed
+
+**Impact**:
+- ❌ **Redundant embedding generation** (~1-2s per individual)
+- ❌ **Redundant similarity computation** (O(N²) for N individuals)
+- ❌ **Redundant MVR person creation** (duplicate database records)
+- ❌ **Inconsistent MVR person UUIDs** (same person gets different UUIDs across sessions)
+
+**Example Scenario**:
+
+```
+Session 1 (Nov 6 videos):
+  - Creates individuals: A, B, C
+  - Generates embeddings for A, B, C
+  - Merges A+B → MVR person X (UUID: mvr_abc123)
+  
+Session 2 (Nov 6-7 videos):
+  - Reuses individuals: A, B, C (✅ cached)
+  - Generates embeddings for A, B, C again (❌ not cached)
+  - Merges A+B → MVR person Y (UUID: mvr_def456) (❌ different UUID!)
+  
+Result:
+  ❌ Same person (A+B) has TWO MVR person records
+  ❌ Flutter shows duplicate people across sessions
+```
+
+---
+
+## Proposal: MVR-Level Caching
+
+### Architecture Overview
+
+Implement **multi-tier caching** that reuses not only individuals but also MVR people and their embeddings.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ TIER 1: Individual Cache (Current)                                 │
+│   - Reuse individuals for videos already processed                  │
+│   - Link cached individuals to new session                          │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ TIER 2: MVR Embedding Cache (NEW)                                  │
+│   - Store embeddings in mvr_people.face_embedding                   │
+│   - Reuse embeddings instead of regenerating                        │
+│   - Cache key: individual_uuid                                      │
+└──────────────────────┬──────────────────────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│ TIER 3: MVR Person Cache (NEW)                                     │
+│   - Check if individuals already have MVR mappings                  │
+│   - Reuse existing MVR person UUIDs                                 │
+│   - Ensure consistent person identity across sessions               │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Plan
+
+#### Phase 1: Embedding Cache (Priority: HIGH)
+
+**Goal**: Store embeddings persistently and reuse them instead of regenerating.
+
+**Database Schema Changes**:
+
+```sql
+-- Option A: Store in mvr_people table (current schema already has this!)
+ALTER TABLE mvr_people 
+  ALTER COLUMN face_embedding SET NOT NULL;  -- Make required
+
+-- Option B: Create separate embedding cache table (more flexible)
+CREATE TABLE individual_embeddings_cache (
+    individual_uuid UUID PRIMARY KEY REFERENCES individuals(individual_uuid),
+    face_embedding vector(512) NOT NULL,
+    embedding_model VARCHAR(50) DEFAULT 'Facenet512',
+    embedding_confidence FLOAT CHECK (embedding_confidence >= 0 AND embedding_confidence <= 1),
+    source_video_uuid UUID,
+    source_frame_number INTEGER,
+    bbox INTEGER[4],  -- [x, y, w, h] of face used for embedding
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_individual_embeddings_cache_individual 
+    ON individual_embeddings_cache(individual_uuid);
+```
+
+**Modified Merge Flow**:
+
+```python
+# Phase A: Fetch embeddings (with caching)
+async def fetch_embeddings_with_cache(
+    individuals_data: List[dict],
+    session_uuid: str,
+    db_client
+) -> List[dict]:
+    """
+    Fetch embeddings for individuals, using cache when available.
+    """
+    faces_with_embeddings = []
+    cache_hits = 0
+    cache_misses = 0
+    
+    async with db_client.pool.acquire() as conn:
+        for ind_data in individuals_data:
+            individual_uuid = ind_data['individual_uuid']
+            
+            # Step 1: Check cache for existing embedding
+            cached_embedding = await conn.fetchrow("""
+                SELECT face_embedding, embedding_confidence
+                FROM individual_embeddings_cache
+                WHERE individual_uuid = $1
+            """, individual_uuid)
+            
+            if cached_embedding:
+                # Cache hit! Use stored embedding
+                embedding_vector = np.frombuffer(
+                    cached_embedding['face_embedding'],
+                    dtype=np.float32
+                )
+                
+                faces_with_embeddings.append({
+                    'individual_uuid': individual_uuid,
+                    'embedding': embedding_vector,
+                    'confidence': cached_embedding['embedding_confidence'],
+                    'cached': True
+                })
+                
+                cache_hits += 1
+                logger.info(f"✅ Embedding cache hit for {individual_uuid[:8]}")
+                continue
+            
+            # Step 2: Cache miss - generate new embedding
+            # (existing embedding generation code)
+            embedding, confidence = await generate_embedding(ind_data)
+            
+            if embedding is not None:
+                # Step 3: Store in cache for future use
+                await conn.execute("""
+                    INSERT INTO individual_embeddings_cache
+                    (individual_uuid, face_embedding, embedding_confidence,
+                     source_video_uuid, source_frame_number, bbox)
+                    VALUES ($1, $2::vector, $3, $4, $5, $6)
+                    ON CONFLICT (individual_uuid) 
+                    DO UPDATE SET 
+                        face_embedding = EXCLUDED.face_embedding,
+                        embedding_confidence = EXCLUDED.embedding_confidence,
+                        updated_at = NOW()
+                """, individual_uuid, embedding.tobytes(), confidence,
+                     video_uuid, frame_number, bbox)
+                
+                faces_with_embeddings.append({
+                    'individual_uuid': individual_uuid,
+                    'embedding': embedding,
+                    'confidence': confidence,
+                    'cached': False
+                })
+                
+                cache_misses += 1
+                logger.info(f"🆕 Generated and cached embedding for {individual_uuid[:8]}")
+    
+    logger.info(
+        f"Embedding cache: {cache_hits} hits, {cache_misses} misses "
+        f"(hit rate: {cache_hits/(cache_hits+cache_misses)*100:.1f}%)"
+    )
+    
+    return faces_with_embeddings
+```
+
+**Benefits**:
+- ✅ **3-5x faster merge** (skip expensive embedding generation)
+- ✅ **Consistent embeddings** (same individual always has same embedding)
+- ✅ **Reduced API load** (no Media service calls for cached embeddings)
+
+#### Phase 2: MVR Person Cache (Priority: MEDIUM)
+
+**Goal**: Reuse existing MVR person records instead of creating duplicates.
+
+**Modified Merge Flow**:
+
+```python
+# Phase C: Prepare MVR operations (with caching)
+async def prepare_mvr_operations_with_cache(
+    merge_groups: List[Tuple[str, List[str]]],
+    embeddings_data: dict,
+    session_uuid: str,
+    db_client
+) -> Tuple[List[tuple], int]:
+    """
+    Prepare MVR operations, reusing existing MVR people when possible.
+    """
+    db_operations = []
+    individual_to_mvr = {}
+    mvr_people_count = 0
+    mvr_cache_hits = 0
+    
+    async with db_client.pool.acquire() as conn:
+        for keep_uuid, merge_uuids in merge_groups:
+            all_uuids_in_group = [keep_uuid] + merge_uuids
+            
+            # Step 1: Check if ANY individual in group already has MVR mapping
+            existing_mvr = await conn.fetchrow("""
+                SELECT DISTINCT mvr_people_uuid, featured_individual_uuid
+                FROM individual_mvr_mapping
+                WHERE individual_uuid = ANY($1)
+                LIMIT 1
+            """, all_uuids_in_group)
+            
+            if existing_mvr:
+                # Cache hit! Reuse existing MVR person
+                mvr_people_uuid = existing_mvr['mvr_people_uuid']
+                mvr_cache_hits += 1
+                
+                logger.info(
+                    f"♻️ Reusing existing MVR person {mvr_people_uuid[:8]} "
+                    f"for group of {len(all_uuids_in_group)} individuals"
+                )
+                
+                # Map all individuals in group to existing MVR person
+                for individual_uuid in all_uuids_in_group:
+                    # Check if mapping already exists
+                    existing_mapping = await conn.fetchrow("""
+                        SELECT individual_uuid 
+                        FROM individual_mvr_mapping
+                        WHERE individual_uuid = $1 
+                          AND mvr_people_uuid = $2
+                    """, individual_uuid, mvr_people_uuid)
+                    
+                    if not existing_mapping:
+                        # Create new mapping for this individual
+                        db_operations.append(('map_individual_to_mvr', {
+                            'individual_uuid': individual_uuid,
+                            'mvr_people_uuid': mvr_people_uuid,
+                            'confidence_score': 0.95,
+                            'merge_reason': 'cached_mvr_reuse',
+                            'similarity_score': 1.0
+                        }))
+                    
+                    individual_to_mvr[individual_uuid] = mvr_people_uuid
+            
+            else:
+                # Cache miss - create new MVR person (existing logic)
+                mvr_people_uuid = str(uuid4())
+                keep_embedding = embeddings_data[keep_uuid]['embedding']
+                
+                db_operations.append(('create_mvr_person', {
+                    'mvr_people_uuid': mvr_people_uuid,
+                    'featured_individual_uuid': keep_uuid,
+                    'face_embedding': keep_embedding,
+                    'confidence_score': embeddings_data[keep_uuid]['confidence']
+                }))
+                
+                # Map all individuals to new MVR person
+                for individual_uuid in all_uuids_in_group:
+                    db_operations.append(('map_individual_to_mvr', {
+                        'individual_uuid': individual_uuid,
+                        'mvr_people_uuid': mvr_people_uuid,
+                        'confidence_score': 0.95,
+                        'merge_reason': 'embedding_similarity',
+                        'similarity_score': 0.92
+                    }))
+                    
+                    individual_to_mvr[individual_uuid] = mvr_people_uuid
+                
+                mvr_people_count += 1
+        
+        # Handle non-merged individuals (existing logic)
+        # ...
+    
+    logger.info(
+        f"MVR cache: {mvr_cache_hits} reused, {mvr_people_count} new "
+        f"(reuse rate: {mvr_cache_hits/(mvr_cache_hits+mvr_people_count)*100:.1f}%)"
+    )
+    
+    return (db_operations, mvr_people_count)
+```
+
+**Benefits**:
+- ✅ **Consistent MVR person UUIDs** across sessions
+- ✅ **No duplicate MVR records** for same person
+- ✅ **Flutter shows same person** across all sessions
+- ✅ **Historical tracking** (person's complete timeline across all sessions)
+
+#### Phase 3: Smart Cache Invalidation (Priority: LOW)
+
+**Goal**: Invalidate cache when embeddings become stale or person appearance changes significantly.
+
+**Invalidation Triggers**:
+
+1. **Manual Invalidation**: User marks individual as "different person"
+2. **Confidence Threshold**: New embedding has significantly different confidence
+3. **Time-Based**: Embeddings older than 30 days are regenerated
+4. **Quality Upgrade**: Higher resolution video available, regenerate embedding
+
+**Implementation**:
+
+```python
+async def should_invalidate_embedding(
+    individual_uuid: str,
+    cached_embedding_data: dict,
+    new_video_quality: float,
+    db_client
+) -> bool:
+    """
+    Determine if cached embedding should be invalidated.
+    """
+    # Check age
+    age_days = (datetime.now() - cached_embedding_data['created_at']).days
+    if age_days > 30:
+        return True  # Stale cache
+    
+    # Check quality upgrade
+    cached_quality = cached_embedding_data.get('source_video_quality', 0.5)
+    if new_video_quality > cached_quality * 1.5:
+        return True  # Much better quality available
+    
+    # Check manual invalidation flag
+    async with db_client.pool.acquire() as conn:
+        flag = await conn.fetchval("""
+            SELECT invalidate_embedding_cache
+            FROM individuals
+            WHERE individual_uuid = $1
+        """, individual_uuid)
+        
+        if flag:
+            return True  # Manually invalidated
+    
+    return False  # Cache is valid
+```
+
+### Deployment Strategy
+
+**Phase 1 Rollout** (Embedding Cache):
+1. **Week 1**: Deploy embedding cache table + modified merge flow
+2. **Week 2**: Monitor cache hit rates and performance improvements
+3. **Week 3**: Backfill embeddings for existing individuals
+
+**Phase 2 Rollout** (MVR Person Cache):
+1. **Week 4**: Deploy MVR person reuse logic
+2. **Week 5**: Monitor for duplicate MVR person issues
+3. **Week 6**: Clean up duplicate MVR records (merge tool)
+
+**Phase 3 Rollout** (Cache Invalidation):
+1. **Week 7**: Deploy invalidation triggers
+2. **Week 8**: Add Flutter UI for manual invalidation
+3. **Week 9**: Performance tuning and optimization
+
+### Performance Impact
+
+**Expected Improvements**:
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Embedding generation time | 1-2s/individual | 0.01s/individual (cached) | **100-200x faster** |
+| Session processing time | 25s (4 videos, 2 individuals) | 10s (with cache) | **2.5x faster** |
+| Duplicate MVR records | 2-3 per person | 1 per person | **100% reduction** |
+| API calls to Media service | 2 per individual | 0 (cached) | **100% reduction** |
+| Database writes | 10 operations/merge | 3 operations/merge | **70% reduction** |
+
+**Cache Hit Rate Expectations**:
+
+- **First session**: 0% (cold cache)
+- **Subsequent sessions** (same videos): 100% (individuals + embeddings cached)
+- **Overlapping sessions** (some videos overlap): 50-80% (partial cache hits)
+- **Long-term steady state**: 70-90% (most videos processed before)
+
+### Monitoring & Metrics
+
+**New Metrics to Track**:
+
+```python
+# Add to tracking_sessions table
+ALTER TABLE tracking_sessions ADD COLUMN embedding_cache_hits INTEGER DEFAULT 0;
+ALTER TABLE tracking_sessions ADD COLUMN embedding_cache_misses INTEGER DEFAULT 0;
+ALTER TABLE tracking_sessions ADD COLUMN mvr_cache_hits INTEGER DEFAULT 0;
+ALTER TABLE tracking_sessions ADD COLUMN mvr_cache_misses INTEGER DEFAULT 0;
+
+# Query for cache analytics
+SELECT 
+    session_uuid,
+    cache_hits as individual_cache_hits,
+    embedding_cache_hits,
+    mvr_cache_hits,
+    ROUND(
+        (cache_hits::float + embedding_cache_hits + mvr_cache_hits) /
+        NULLIF(total_videos + individuals_found + unique_mvr_people_count, 0),
+        2
+    ) as overall_cache_efficiency
+FROM tracking_sessions
+WHERE status = 'completed'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+**Dashboard Metrics**:
+- Overall cache efficiency (percentage)
+- Cache hit rate by tier (individual / embedding / MVR)
+- Time saved by caching (estimated)
+- Storage used by embedding cache (GB)
+- Cache invalidation rate (per day)
+
+---
+
 ## Debug Logging
 
 All major steps log to `tracking_sessions.failed_videos` JSONB array for visibility:

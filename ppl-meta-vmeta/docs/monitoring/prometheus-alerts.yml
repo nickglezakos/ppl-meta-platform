@@ -1,0 +1,450 @@
+# Prometheus Alerting Rules for Batch Processing Pipeline
+# PPL Meta Platform - vmeta Service
+# 
+# These rules monitor the continuous individuals and MVR pipeline
+# and alert when issues are detected.
+#
+# Severity Levels:
+# - critical: Immediate action required, service degraded
+# - warning: Attention needed, potential issue developing
+# - info: Informational, no action required
+
+groups:
+  - name: batch_processing
+    interval: 30s
+    rules:
+      
+      # ==========================================
+      # CRITICAL ALERTS
+      # ==========================================
+      
+      - alert: HighBatchErrorRate
+        expr: |
+          (
+            sum(rate(batch_processing_total{status="failed"}[5m]))
+            /
+            sum(rate(batch_processing_total[5m]))
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: critical
+          component: batch_processing
+          team: platform
+        annotations:
+          summary: "High batch processing error rate detected"
+          description: |
+            Batch processing error rate is {{ $value | humanizePercentage }}
+            (threshold: 10%).
+            More than 10% of batches are failing in the last 5 minutes.
+            
+            Check:
+            - Application logs for error patterns
+            - Orchestrator service health
+            - Media service availability
+            - Database connectivity
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/batch-high-error-rate
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: WorkerPoolExhausted
+        expr: |
+          worker_pool_active_workers >= worker_pool_size
+          AND
+          worker_pool_queue_size > 10
+        for: 10m
+        labels:
+          severity: critical
+          component: batch_processing
+          team: platform
+        annotations:
+          summary: "Worker pool exhausted and queue building up"
+          description: |
+            All workers are busy ({{ $value }} active) and queue has
+            {{ with query "worker_pool_queue_size" }}{{ . | first | value }}{{ end }} items waiting.
+            
+            This indicates:
+            - Worker pool size too small for current load
+            - Slow batch processing
+            - Potential bottleneck
+            
+            Immediate actions:
+            - Check if batches are stuck
+            - Review processing times
+            - Consider scaling workers
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/worker-pool-exhausted
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: WebSocketDisconnected
+        expr: |
+          camera_event_websocket_connected == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: event_integration
+          team: platform
+        annotations:
+          summary: "WebSocket connection to Camera Service lost"
+          description: |
+            WebSocket connection to Camera Service has been disconnected
+            for more than 2 minutes.
+            
+            Impact:
+            - Recording stop events not received
+            - Partial batch triggering degraded
+            - Falling back to timeout-based triggering
+            
+            Check:
+            - Camera Service health
+            - Network connectivity
+            - WebSocket reconnection logs
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/websocket-disconnected
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: BatchProcessingStalled
+        expr: |
+          (
+            time() - batch_processing_last_completion_timestamp_seconds > 600
+          )
+          AND
+          batch_processing_current_size > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: batch_processing
+          team: platform
+        annotations:
+          summary: "Batch processing appears stalled"
+          description: |
+            No batch has completed in the last 10 minutes, but batches
+            are accumulating.
+            
+            Possible causes:
+            - Worker deadlock
+            - Database connection lost
+            - Orchestrator service unavailable
+            - Processing stuck in infinite loop
+            
+            Immediate actions:
+            - Check worker pool health
+            - Review application logs
+            - Check service dependencies
+            - May need service restart
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/batch-stalled
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          database_pool_active_connections 
+          / 
+          database_pool_max_connections > 0.90
+        for: 5m
+        labels:
+          severity: critical
+          component: database
+          team: platform
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: |
+            Database connection pool is {{ $value | humanizePercentage }} utilized
+            (threshold: 90%).
+            
+            This may cause:
+            - Connection timeouts
+            - Failed batch operations
+            - Service degradation
+            
+            Actions:
+            - Check for connection leaks
+            - Review long-running queries
+            - Consider increasing pool size
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/db-pool-exhausted
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      # ==========================================
+      # WARNING ALERTS
+      # ==========================================
+      
+      - alert: BatchProcessingSlowdown
+        expr: |
+          histogram_quantile(0.95, 
+            rate(batch_processing_duration_seconds_bucket[15m])
+          ) > 120
+        for: 15m
+        labels:
+          severity: warning
+          component: batch_processing
+          team: platform
+        annotations:
+          summary: "Batch processing slower than normal"
+          description: |
+            95th percentile batch processing time is {{ $value | humanizeDuration }}
+            (threshold: 2 minutes).
+            
+            This may indicate:
+            - Increased load
+            - Resource contention
+            - Slow external service (Orchestrator/Media)
+            - Database performance degradation
+            
+            Monitor and investigate if persists.
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/batch-slowdown
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: CacheHitRateLow
+        expr: |
+          avg(cache_hit_rate{cache_level="individual"}) < 20
+        for: 30m
+        labels:
+          severity: warning
+          component: caching
+          team: platform
+        annotations:
+          summary: "Individual cache hit rate unusually low"
+          description: |
+            Individual cache hit rate is {{ $value | humanize }}%
+            (expected: >40% after warmup).
+            
+            Possible causes:
+            - Cache not warming up properly
+            - New collections with no cache data
+            - Cache eviction too aggressive
+            - High turnover of unique faces
+            
+            Review cache configuration and warmup strategy.
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/cache-hit-rate-low
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: IncompleteBatchesAccumulating
+        expr: |
+          incomplete_batches_waiting > 5
+        for: 30m
+        labels:
+          severity: warning
+          component: batch_processing
+          team: platform
+        annotations:
+          summary: "Incomplete batches accumulating"
+          description: |
+            {{ $value }} batches are waiting for more videos.
+            
+            This may indicate:
+            - Timeout not triggering properly
+            - Recording stop events not received
+            - Collections with low video frequency
+            
+            Review:
+            - Partial batch timeout configuration
+            - WebSocket connection status
+            - Collection activity levels
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/incomplete-batches
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: HighWebSocketReconnectionRate
+        expr: |
+          rate(camera_event_websocket_reconnections_total[5m]) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+          component: event_integration
+          team: platform
+        annotations:
+          summary: "Frequent WebSocket reconnections"
+          description: |
+            WebSocket is reconnecting {{ $value }} times per second.
+            
+            This indicates:
+            - Unstable network connection
+            - Camera Service restarts
+            - Connection timeout issues
+            
+            Monitor network and Camera Service health.
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/websocket-reconnects
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: DatabaseQueryLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            rate(database_query_duration_seconds_bucket[10m])
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+          team: platform
+        annotations:
+          summary: "Database query latency elevated"
+          description: |
+            95th percentile database query time is {{ $value | humanizeDuration }}
+            (threshold: 500ms).
+            
+            Possible causes:
+            - Database load increased
+            - Missing indexes
+            - Long-running queries
+            - Database needs optimization
+            
+            Review slow query log and consider optimization.
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/db-latency-high
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: MemoryUsageHigh
+        expr: |
+          process_resident_memory_bytes 
+          / 
+          machine_memory_bytes > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          component: service
+          team: platform
+        annotations:
+          summary: "Service memory usage high"
+          description: |
+            vmeta service is using {{ $value | humanizePercentage }} of available memory
+            (threshold: 80%).
+            
+            Actions:
+            - Check for memory leaks
+            - Review batch size configuration
+            - Consider increasing memory limits
+            - Monitor for OOM kills
+            
+            Runbook: https://docs.ppl-meta.internal/runbooks/memory-high
+          dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      # ==========================================
+      # INFO ALERTS
+      # ==========================================
+      
+      - alert: BatchProcessingEnabledForCollection
+        expr: |
+          changes(batch_processing_total[1h]) > 0
+          unless
+          batch_processing_total offset 1h
+        for: 5m
+        labels:
+          severity: info
+          component: batch_processing
+          team: platform
+        annotations:
+          summary: "Batch processing enabled for new collection"
+          description: |
+            Batch processing has started for collection {{ $labels.collection_id }}.
+            
+            This is informational - monitor for any issues during initial batches.
+            
+            Dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+      
+      
+      - alert: HighCacheHitRate
+        expr: |
+          avg(cache_hit_rate{cache_level="individual"}) > 70
+        for: 1h
+        labels:
+          severity: info
+          component: caching
+          team: platform
+        annotations:
+          summary: "Excellent cache performance"
+          description: |
+            Individual cache hit rate is {{ $value | humanize }}%
+            (excellent threshold: >70%).
+            
+            Cache is performing very well! This means:
+            - Faster batch processing
+            - Lower load on Orchestrator
+            - Efficient resource usage
+            
+            Dashboard: https://grafana.ppl-meta.internal/d/batch-processing
+
+# ==========================================
+# ALERTMANAGER CONFIGURATION EXAMPLE
+# ==========================================
+#
+# Add to alertmanager.yml:
+#
+# route:
+#   receiver: 'default'
+#   group_by: ['alertname', 'component']
+#   group_wait: 10s
+#   group_interval: 10s
+#   repeat_interval: 12h
+#   
+#   routes:
+#     - match:
+#         severity: critical
+#         component: batch_processing
+#       receiver: 'pagerduty'
+#       continue: true
+#     
+#     - match:
+#         severity: warning
+#         component: batch_processing
+#       receiver: 'slack'
+#       continue: true
+#     
+#     - match:
+#         severity: info
+#       receiver: 'slack-info'
+#
+# receivers:
+#   - name: 'pagerduty'
+#     pagerduty_configs:
+#       - service_key: '<pagerduty-integration-key>'
+#         description: '{{ .CommonAnnotations.summary }}'
+#   
+#   - name: 'slack'
+#     slack_configs:
+#       - api_url: '<slack-webhook-url>'
+#         channel: '#platform-alerts'
+#         title: '{{ .CommonAnnotations.summary }}'
+#         text: '{{ .CommonAnnotations.description }}'
+#   
+#   - name: 'slack-info'
+#     slack_configs:
+#       - api_url: '<slack-webhook-url>'
+#         channel: '#platform-info'
+#         title: '{{ .CommonAnnotations.summary }}'
+#
+# ==========================================
+# TESTING ALERTS
+# ==========================================
+#
+# To test alert firing:
+#
+# 1. Simulate high error rate:
+#    curl -X POST http://localhost:8008/api/test/simulate-errors?count=100
+#
+# 2. Exhaust worker pool:
+#    for i in {1..20}; do
+#      curl -X POST http://localhost:8008/api/v1/batch-processing/trigger &
+#    done
+#
+# 3. Disconnect WebSocket:
+#    # Stop Camera Service temporarily
+#
+# 4. Check alert status:
+#    curl http://prometheus:9090/api/v1/alerts | jq '.data.alerts'
+#
+# 5. Verify Alertmanager received alerts:
+#    curl http://alertmanager:9093/api/v1/alerts | jq '.'

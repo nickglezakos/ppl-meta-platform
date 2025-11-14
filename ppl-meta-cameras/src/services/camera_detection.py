@@ -1914,7 +1914,18 @@ class CameraDetectionService:
                 del self.active_recordings[device_id]
 
     async def _rotate_to_next_segment(self, device_id: str, session_service):
-        """Rotate to next segment file and update recording session."""
+        """
+        Rotate to next segment file and update recording session.
+        
+        This function is called every segment_duration seconds during
+        recording. It closes the current segment, saves it to the session
+        database, uploads it immediately to the media service, and creates
+        the next segment file.
+        
+        The immediate upload enables the continuous pipeline to trigger
+        face detection and batch processing as segments are recorded,
+        rather than waiting until the entire recording session is complete.
+        """
         try:
             recording_info = self.active_recordings.get(device_id)
             if not recording_info:
@@ -1943,6 +1954,38 @@ class CameraDetectionService:
             logger.info(
                 f"🎬 [SEGMENT] Added segment {segment_filename} to session {session_uuid}"
             )
+
+            # Upload completed segment immediately to media service
+            logger.info(
+                f"🎬 [SEGMENT] Uploading completed segment {segment_filename} "
+                f"to media service..."
+            )
+            segment_recording_info = recording_info.copy()
+            segment_recording_info["current_segment_path"] = (
+                current_segment_path
+            )
+            
+            user_id = recording_info.get("user_id")
+            if user_id:
+                upload_result = await self._upload_recording_to_collection(
+                    segment_recording_info, user_id
+                )
+                if upload_result:
+                    media_uuid = upload_result.get('media_uuid')
+                    logger.info(
+                        f"🎬 [SEGMENT] ✅ Segment {segment_filename} uploaded "
+                        f"to media service: {media_uuid}"
+                    )
+                else:
+                    logger.error(
+                        f"🎬 [SEGMENT] ❌ Failed to upload segment "
+                        f"{segment_filename} to media service"
+                    )
+            else:
+                logger.warning(
+                    f"🎬 [SEGMENT] ⚠️ No user_id found in recording_info, "
+                    f"skipping upload for {segment_filename}"
+                )
 
             # Create next segment
             next_index = current_segment_index + 1

@@ -198,7 +198,7 @@ All core features have been implemented and documented:
 - Health monitoring and metrics
 - Development and testing tools
 
-📝 **See [Development Issues Document](docs/PPL_META_CAMERAS_DEVELOPMENT_ISSUES.md) for detailed implementation status and achievements.**
+📝 **See [Development Issues Document](docs/archive/PPL_META_CAMERAS_DEVELOPMENT_ISSUES.md) for detailed implementation status and achievements.**
 
 ## Example Usage
 
