@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Callable, Awaitable
 from uuid import UUID, uuid4
 
-from ..models.batch_processing import (
+from models.batch_processing import (
     BatchProcessingState,
     BatchProcessingConfig,
     BatchVideoAssignment,
@@ -32,8 +32,8 @@ from ..models.batch_processing import (
     TriggerReason,
     BatchTriggerResponse
 )
-from ..database.batch_repository import BatchProcessingRepository
-from .batch_config import BatchConfigService
+from database.batch_repository import BatchProcessingRepository
+from services.batch_config import BatchConfigService
 
 logger = logging.getLogger(__name__)
 

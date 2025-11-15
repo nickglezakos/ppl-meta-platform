@@ -319,6 +319,30 @@ async def start_recording(
             f"{recording_session.session_uuid} for camera {device_id}"
         )
 
+        # Notify VMeta service of recording start for polling activation
+        try:
+            import httpx
+            from datetime import datetime
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    "http://localhost:8008/api/v1/recording/started",
+                    json={
+                        "collection_id": device_id,
+                        "session_uuid": recording_session.session_uuid,
+                        "device_id": device_id,
+                        "user_id": current_user.get("sub") or "",
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "metadata": {}
+                    },
+                    headers={"Authorization": f"Bearer {credentials.credentials}"}
+                )
+                logger.info(
+                    f"📹 Notified VMeta of recording start: {recording_session.session_uuid}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to notify VMeta of recording start: {e}")
+            # Don't fail the recording if VMeta notification fails
+
         return {
             "status": "success",
             "message": f"Recording started for camera {device_id}",
@@ -374,6 +398,34 @@ async def stop_recording(
             f"Duration: {recording_result.get('duration_seconds')}s, "
             f"File: {recording_result.get('file_path')}"
         )
+
+        # Notify VMeta service of recording stop for final batch processing
+        try:
+            import httpx
+            from datetime import datetime
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    "http://localhost:8008/api/v1/recording/stopped",
+                    json={
+                        "collection_id": device_id,
+                        "session_uuid": recording_result.get("session_uuid", ""),
+                        "device_id": device_id,
+                        "user_id": current_user.get("sub") or "",
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "video_count": recording_result.get("segment_count", 0),
+                        "metadata": {
+                            "duration_seconds": recording_result.get("duration_seconds"),
+                            "file_size_bytes": recording_result.get("file_size_bytes")
+                        }
+                    }
+                )
+                logger.info(
+                    f"🛑 Notified VMeta of recording stop: {recording_result.get('session_uuid')} "
+                    f"({recording_result.get('segment_count', 0)} videos)"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to notify VMeta of recording stop: {e}")
+            # Don't fail the stop operation if VMeta notification fails
 
         return {
             "status": "success",

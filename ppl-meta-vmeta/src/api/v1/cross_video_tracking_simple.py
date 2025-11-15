@@ -155,6 +155,11 @@ class CreateTrackingSessionRequest(BaseModel):
     collections: List[str] = Field(..., min_items=1, max_items=10)
     start_time: datetime
     end_time: datetime
+    video_uuids: Optional[List[str]] = Field(
+        None, 
+        description="Optional explicit list of video UUIDs to process. "
+                    "If provided, skips time-based video discovery."
+    )
     algorithm_config: Optional[Dict[str, Any]] = None
     background_processing: bool = True
     force_reprocess: bool = False
@@ -510,8 +515,8 @@ async def create_tracking_session(
             await conn.execute("""
                 INSERT INTO tracking_sessions (
                     session_uuid, user_id, collections, start_time, end_time,
-                    status, config_hash, algorithm_config
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    status, config_hash, algorithm_config, video_uuids
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             """, 
             session_uuid,
             "system_user",  # Default user for now
@@ -524,7 +529,8 @@ async def create_tracking_session(
                 "iou_threshold": 0.3,
                 "max_gap_seconds": 10,
                 "min_overlap_confidence": 0.5
-            })
+            }),
+            request.video_uuids if request.video_uuids else []  # Explicit video UUIDs
             )
         
         logger.info(f"Created tracking session {session_uuid} for collections: {request.collections}")
@@ -559,18 +565,52 @@ async def create_tracking_session(
         except Exception:
             logger.debug("Failed to write create_auth_preview for session %s", session_uuid)
 
-        # Schedule background processing if requested
+        # Always trigger processing (background or synchronous)
         if request.background_processing:
-            # Pass auth header through to the background worker so it can call gateway/media with auth
+            # Process in background
+            logger.info(f"Scheduling background processing for session {session_uuid}")
             background_tasks.add_task(process_tracking_session, session_uuid, auth_header)
-        
-        return TrackingSessionResponse(
-            session_uuid=session_uuid,
-            status="initialized",
-            message="Session created successfully",
-            cache_hit_rate=0.0,
-            total_videos=0
-        )
+            
+            return TrackingSessionResponse(
+                session_uuid=session_uuid,
+                status="initialized",
+                message="Session created successfully, processing in background",
+                cache_hit_rate=0.0,
+                total_videos=0
+            )
+        else:
+            # Process synchronously (wait for completion)
+            logger.info(f"Starting synchronous processing for session {session_uuid}")
+            try:
+                await process_tracking_session(session_uuid, auth_header)
+                
+                # Get final session status
+                db_client = get_database_client()
+                async with db_client.pool.acquire() as conn:
+                    final_result = await conn.fetchrow("""
+                        SELECT status, total_videos, processed_videos, 
+                               individuals_found, unique_mvr_people_count
+                        FROM tracking_sessions 
+                        WHERE session_uuid = $1
+                    """, session_uuid)
+                
+                return TrackingSessionResponse(
+                    session_uuid=session_uuid,
+                    status=final_result["status"] if final_result else "completed",
+                    message="Session completed successfully",
+                    cache_hit_rate=0.0,
+                    total_videos=final_result["total_videos"] if final_result else 0
+                )
+                
+            except Exception as e:
+                logger.error(f"Synchronous processing failed: {e}")
+                return TrackingSessionResponse(
+                    session_uuid=session_uuid,
+                    status="failed",
+                    message=f"Processing failed: {str(e)}",
+                    cache_hit_rate=0.0,
+                    total_videos=0
+                )
         
     except Exception as e:
         logger.error(f"Failed to create tracking session: {e}")
@@ -2126,9 +2166,9 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                 WHERE session_uuid = $1
             """, session_uuid)
             
-            # Get session details
+        # Get session details including video_uuids if provided
             session = await conn.fetchrow("""
-                SELECT collections, start_time, end_time, algorithm_config
+                SELECT collections, start_time, end_time, algorithm_config, video_uuids
                 FROM tracking_sessions WHERE session_uuid = $1
             """, session_uuid)
         
@@ -2137,14 +2177,28 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
         
         logger.info(f"Processing session {session_uuid} for collections: {session['collections']}")
         
-        # Discover videos in the collection within time range
-        videos = await discover_videos_in_collection(
-            session['collections'], 
-            session['start_time'], 
-            session['end_time'],
-            auth_token=auth_token,
-            session_uuid=session_uuid
-        )
+        # Check if explicit video_uuids were provided
+        if session.get('video_uuids') and len(session['video_uuids']) > 0:
+            logger.info(f"Using explicit video_uuids: {len(session['video_uuids'])} videos")
+            # Convert UUIDs to video objects for processing
+            videos = []
+            for video_uuid in session['video_uuids']:
+                videos.append({
+                    "uuid": video_uuid,
+                    "collection": session['collections'][0] if session['collections'] else "unknown",
+                    "timestamp": session['start_time'].isoformat() if session['start_time'] else None,
+                    "duration": 30  # Default duration
+                })
+        else:
+            # Discover videos in the collection within time range (legacy behavior)
+            logger.info("No explicit video_uuids provided, using time-based discovery")
+            videos = await discover_videos_in_collection(
+                session['collections'], 
+                session['start_time'], 
+                session['end_time'],
+                auth_token=auth_token,
+                session_uuid=session_uuid
+            )
 
         # Persist a short discovery debug marker into the session row so we can inspect what the
         # background worker actually saw even when stdout logs are not easily accessible.

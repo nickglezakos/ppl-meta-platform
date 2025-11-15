@@ -18,13 +18,13 @@ from typing import Optional, Dict, Any, Callable, Awaitable
 from datetime import datetime
 from uuid import UUID
 
-from ..models.batch_processing import (
+from models.batch_processing import (
     VideoCompletionEvent,
     RecordingStopEvent,
     BatchTriggerResponse
 )
-from ..models.events import EventType
-from .batch_monitor import BatchMonitor
+from models.events import EventType
+from services.batch_monitor import BatchMonitor
 
 logger = logging.getLogger(__name__)
 

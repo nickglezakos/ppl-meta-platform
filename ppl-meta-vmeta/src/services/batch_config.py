@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
-from ..models.batch_processing import BatchProcessingConfig
-from ..database.batch_repository import BatchProcessingRepository
+from models.batch_processing import BatchProcessingConfig
+from database.batch_repository import BatchProcessingRepository
 
 
 logger = logging.getLogger(__name__)

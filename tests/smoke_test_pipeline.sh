@@ -45,30 +45,57 @@ echo ""
 echo -e "${CYAN}━━━ STEP 1: Check Recent Videos from usb_camera_0 ━━━${NC}"
 echo ""
 
-VIDEOS=$(curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/videos?limit=50")
+# Correct endpoint: /api/v1/media/search
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/v1/media/search?limit=50&order_by=created_at&order=desc" \
+  > /tmp/smoke_test_videos.json
+
+# Debug: Check if we got data
+if [ ! -s /tmp/smoke_test_videos.json ]; then
+    echo -e "${RED}❌ Failed to fetch videos from Media service${NC}"
+    echo "   Curl command failed or returned empty response"
+    echo ""
+else
+    FILE_SIZE=$(wc -c < /tmp/smoke_test_videos.json)
+    echo -e "${BLUE}📊 Received ${FILE_SIZE} bytes of data${NC}"
+    echo ""
+fi
 
 # Analyze videos and extract session info
-eval $(echo "$VIDEOS" | python3 << 'EOF'
+python3 << 'EOF'
 import sys
 import json
 from datetime import datetime
 
 try:
-    data = json.load(sys.stdin)
-    videos = data.get('videos', [])
+    # Read from temp file instead of stdin
+    with open('/tmp/smoke_test_videos.json', 'r') as f:
+        input_data = f.read().strip()
+    
+    if not input_data:
+        print("❌ No data received from Media service")
+        sys.exit(0)
+    
+    data = json.loads(input_data)
+    
+    # Handle list response from /api/v1/media/search (returns array directly)
+    if isinstance(data, list):
+        videos = data
+    else:
+        videos = data.get('videos', data.get('media', []))
     
     if not videos:
-        print("print '❌ No videos found'")
+        print("❌ No videos found")
         sys.exit(0)
     
     # Filter videos from usb_camera_0
     camera_videos = []
     for v in videos:
         title = v.get('title', '')
+        filename = v.get('filename', '')
         metadata = v.get('metadata', {})
         # Check if video is from usb_camera_0
-        if 'usb_camera_0' in title.lower() or 'usb_camera_0' in str(metadata):
+        if 'usb_camera_0' in title.lower() or 'usb_camera_0' in filename.lower() or 'usb_camera_0' in str(metadata):
             camera_videos.append(v)
     
     if not camera_videos:
@@ -83,155 +110,118 @@ try:
         start_time = first_video.get('created_at', '')
         end_time = last_video.get('created_at', '')
         
-        print(f"echo '✅ Found {len(camera_videos)} recent video segments'")
-        print(f"echo '   First video: {start_time}'")
-        print(f"echo '   Last video: {end_time}'")
-        print(f"echo '   Segments: {len(camera_videos)}'")
-        print("echo ''")
+        print(f"✅ Found {len(camera_videos)} recent video segments")
+        print(f"   First video: {start_time}")
+        print(f"   Last video: {end_time}")
+        print(f"   Segments: {len(camera_videos)}")
+        print("")
         
-        # Export variables
-        print(f"START_TIME='{start_time}'")
-        print(f"END_TIME='{end_time}'")
-        print(f"VIDEO_COUNT={len(camera_videos)}")
-        print(f"CAMERA_ID='usb_camera_0'")
+        # Write session info to temp file for later use
+        with open('/tmp/smoke_test_session.txt', 'w') as f:
+            f.write(f"START_TIME={start_time}\n")
+            f.write(f"END_TIME={end_time}\n")
+            f.write(f"VIDEO_COUNT={len(camera_videos)}\n")
+            f.write(f"CAMERA_ID=usb_camera_0\n")
         
         # Show recent videos
-        print("echo 'Recent video segments:'")
+        print("Recent video segments:")
         for i, v in enumerate(camera_videos[:10], 1):
-            title = v.get('title', 'Untitled')[:60]
-            uuid = v.get('uuid', 'N/A')
-            print(f"echo '   {i}. {title}'")
-            print(f"echo '      UUID: {uuid}'")
+            title = v.get('title', v.get('filename', 'Untitled'))[:60]
+            uuid = v.get('uuid', v.get('id', 'N/A'))
+            print(f"   {i}. {title}")
+            print(f"      UUID: {uuid}")
     else:
-        print("echo '⚠️  No videos found'")
-    
-except Exception as e:
-    print(f"echo '❌ Error: {e}'")
-EOF
-)
-
-echo ""
-
-################################################################################
-# STEP 2: Check Videos from Session
-################################################################################
-echo -e "${CYAN}━━━ STEP 2: Check Videos from Session ━━━${NC}"
-echo ""
-
-VIDEOS=$(curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8000/api/v1/videos?limit=50")
-
-echo "$VIDEOS" | python3 << EOF
-import sys
-import json
-from datetime import datetime, timedelta
-
-try:
-    data = json.load(sys.stdin)
-    videos = data.get('videos', [])
-    
-    # Parse session times
-    start_time_str = "$START_TIME"
-    
-    # Filter videos from this session (rough estimate based on time)
-    session_videos = []
-    
-    for v in videos:
-        # Simple check: if video title contains camera ID or is recent
-        if "$CAMERA_ID" in v.get('title', '') or "$CAMERA_ID" in str(v.get('metadata', {})):
-            session_videos.append(v)
-    
-    if not session_videos:
-        # If no camera-specific videos, just take recent ones
-        session_videos = videos[:15]
-    
-    print(f"✅ Found {len(session_videos)} videos from session:")
-    for i, v in enumerate(session_videos[:15], 1):
-        title = v.get('title', 'Untitled')
-        uuid = v.get('uuid', 'N/A')
-        print(f"   {i}. {title[:50]}")
-        print(f"      UUID: {uuid}")
-    
-    print("")
-    print(f"EXPORT:VIDEO_COUNT={len(session_videos)}")
+        print("⚠️  No videos found")
     
 except Exception as e:
     print(f"❌ Error: {e}")
-    sys.exit(1)
 EOF
+
+# Load session variables from temp file
+if [ -f /tmp/smoke_test_session.txt ]; then
+    source /tmp/smoke_test_session.txt
+fi
+
+echo ""
+
+################################################################################
+# STEP 2: Check Individual Tracking Sessions
+################################################################################
+echo -e "${CYAN}━━━ STEP 2: Check Individual Tracking Sessions ━━━${NC}"
+echo ""
+
+# Query database directly for tracking sessions since there's no list endpoint
+PGPASSWORD=postgres psql -h localhost -U postgres -d ppl_meta_vmeta -t -c \
+  "SELECT COUNT(*) FROM tracking_sessions WHERE status = 'completed';" \
+  2>/dev/null > /tmp/session_count.txt
+
+SESSION_COUNT=$(cat /tmp/session_count.txt | tr -d ' ')
+
+if [ -z "$SESSION_COUNT" ] || [ "$SESSION_COUNT" = "0" ]; then
+    echo "⚠️  No completed tracking sessions found"
+    echo "   Note: Run 'python3 simple_batch_trigger.py' to process videos with faces"
+    echo ""
+else
+    echo "✅ Found $SESSION_COUNT completed tracking session(s)"
+    echo ""
+    
+    # Get details of most recent sessions
+    PGPASSWORD=postgres psql -h localhost -U postgres -d ppl_meta_vmeta -c \
+      "SELECT 
+         session_uuid, 
+         status, 
+         total_videos, 
+         individuals_found, 
+         unique_mvr_people_count,
+         to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') as created,
+         to_char(completed_at, 'YYYY-MM-DD HH24:MI:SS') as completed
+       FROM tracking_sessions 
+       WHERE status = 'completed'
+       ORDER BY completed_at DESC 
+       LIMIT 5;" \
+      2>/dev/null
+    
+    echo ""
+fi
 
 ################################################################################
 # STEP 3: Check MVR People Created After Session Start
 ################################################################################
-echo -e "${CYAN}━━━ STEP 3: Check MVR People Created After Session Start ━━━${NC}"
+echo -e "${CYAN}━━━ STEP 3: Check MVR People Created ━━━${NC}"
 echo ""
 
-MVR_PEOPLE=$(curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8008/api/v1/mvr-people?limit=50")
+# Query database directly for MVR people count
+PGPASSWORD=postgres psql -h localhost -U postgres -d ppl_meta_vmeta -t -c \
+  "SELECT COUNT(*) FROM mvr_people;" \
+  2>/dev/null > /tmp/mvr_count.txt
 
-echo "$MVR_PEOPLE" | python3 << EOF
-import sys
-import json
-from datetime import datetime
+MVR_COUNT=$(cat /tmp/mvr_count.txt | tr -d ' ')
 
-try:
-    data = json.load(sys.stdin)
+if [ -z "$MVR_COUNT" ] || [ "$MVR_COUNT" = "0" ]; then
+    echo "⚠️  No MVR people found"
+    echo "   This means no unique individuals have been identified yet"
+    echo "   Run 'python3 simple_batch_trigger.py' to process videos"
+    echo ""
+else
+    echo "✅ Found $MVR_COUNT MVR person/people in database"
+    echo ""
     
-    # Handle both list and dict responses
-    if isinstance(data, list):
-        people = data
-    else:
-        people = data.get('people', data.get('mvr_people', []))
+    # Get details of MVR people
+    PGPASSWORD=postgres psql -h localhost -U postgres -d ppl_meta_vmeta -c \
+      "SELECT 
+         mvr_person_uuid,
+         source,
+         total_appearances,
+         confidence_score,
+         to_char(first_seen, 'YYYY-MM-DD HH24:MI:SS') as first_seen,
+         to_char(last_seen, 'YYYY-MM-DD HH24:MI:SS') as last_seen
+       FROM mvr_people 
+       ORDER BY last_seen DESC 
+       LIMIT 10;" \
+      2>/dev/null
     
-    start_time_str = "$START_TIME"
-    
-    # Try to parse start time
-    try:
-        if 'T' in start_time_str:
-            start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-        else:
-            start_time = None
-    except:
-        start_time = None
-    
-    # Filter MVR people created after session start
-    session_people = []
-    for p in people:
-        created_at_str = p.get('created_at', '')
-        try:
-            if 'T' in created_at_str:
-                created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-                if start_time and created_at >= start_time:
-                    session_people.append(p)
-                elif not start_time:
-                    session_people.append(p)
-        except:
-            session_people.append(p)  # Include if we can't parse
-    
-    if not session_people and people:
-        # If filtering failed, show all recent
-        session_people = people[:10]
-    
-    print(f"✅ Found {len(session_people)} MVR people:")
-    for i, p in enumerate(session_people[:10], 1):
-        mvr_id = p.get('mvr_id', p.get('id', 'N/A'))
-        person_name = p.get('person_name', p.get('name', 'Unknown'))
-        created_at = p.get('created_at', 'N/A')
-        print(f"   {i}. MVR ID: {mvr_id}")
-        print(f"      Name: {person_name}")
-        print(f"      Created: {created_at}")
-    
-    print("")
-    print(f"EXPORT:MVR_COUNT={len(session_people)}")
-    
-except json.JSONDecodeError as e:
-    print(f"⚠️  Could not parse MVR people data")
-    print(f"   This might be expected if the endpoint format is different")
-    print("")
-except Exception as e:
-    print(f"⚠️  Error checking MVR people: {e}")
-    print("")
-EOF
+    echo ""
+fi
 
 ################################################################################
 # STEP 4: Check Batch Processing History
@@ -239,62 +229,42 @@ EOF
 echo -e "${CYAN}━━━ STEP 4: Check Batch Processing History ━━━${NC}"
 echo ""
 
-BATCH_HISTORY=$(curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8008/api/v1/batch-processing/history?user_id=${USER_ID}&limit=10")
+# Note: Batch processing history is separate from tracking sessions
+# It's used for the continuous pipeline that monitors videos and triggers automatically
+# For now, check if the table exists and has any records
 
-echo "$BATCH_HISTORY" | python3 << 'EOF'
-import sys
-import json
+PGPASSWORD=postgres psql -h localhost -U postgres -d ppl_meta_vmeta -t -c \
+  "SELECT COUNT(*) FROM batch_processing_history;" \
+  2>/dev/null > /tmp/batch_count.txt
 
-try:
-    data = json.load(sys.stdin)
-    batches = data.get('batches', [])
+BATCH_COUNT=$(cat /tmp/batch_count.txt | tr -d ' ')
+
+if [ -z "$BATCH_COUNT" ] || [ "$BATCH_COUNT" = "0" ]; then
+    echo "⚠️  No batch processing history found"
+    echo "   Note: Batch processing is for continuous pipeline automation"
+    echo "   Manual processing via simple_batch_trigger.py works independently"
+    echo ""
+else
+    echo "✅ Found $BATCH_COUNT batch(es) in history"
+    echo ""
     
-    if not batches:
-        print("⚠️  No batch processing history found")
-        print("   This could mean:")
-        print("   • Batch processing hasn't triggered yet")
-        print("   • Videos are still being processed")
-        print("   • Face detection is still running")
-        print("")
-    else:
-        print(f"✅ Found {len(batches)} processed batch(es):")
-        print("")
-        
-        for i, batch in enumerate(batches, 1):
-            batch_num = batch.get('batch_number', i)
-            batch_uuid = batch.get('batch_uuid', 'N/A')
-            status = batch.get('status', 'unknown')
-            trigger = batch.get('trigger_reason', 'N/A')
-            video_count = batch.get('video_count', 0)
-            
-            individuals_created = batch.get('individuals_created', 0)
-            individuals_cached = batch.get('individuals_cached', 0)
-            mvr_created = batch.get('mvr_people_created', 0)
-            mvr_cached = batch.get('mvr_people_cached', 0)
-            cache_rate = batch.get('cache_hit_rate', 0)
-            proc_time = batch.get('processing_time_seconds', 0)
-            
-            print(f"   Batch #{batch_num} [{status}]")
-            print(f"   ├─ UUID: {batch_uuid}")
-            print(f"   ├─ Trigger: {trigger}")
-            print(f"   ├─ Videos: {video_count}")
-            print(f"   ├─ 👤 Individuals: {individuals_created} created, {individuals_cached} cached")
-            print(f"   ├─ 👥 MVR People: {mvr_created} created, {mvr_cached} cached")
-            print(f"   ├─ 💾 Cache Rate: {cache_rate}%")
-            print(f"   └─ ⏱️  Time: {proc_time}s")
-            print("")
-        
-        print(f"EXPORT:BATCH_COUNT={len(batches)}")
+    PGPASSWORD=postgres psql -h localhost -U postgres -d ppl_meta_vmeta -c \
+      "SELECT 
+         batch_uuid,
+         collection_id,
+         video_count,
+         individuals_created,
+         mvr_people_created,
+         status,
+         trigger_reason,
+         to_char(completed_at, 'YYYY-MM-DD HH24:MI:SS') as completed
+       FROM batch_processing_history 
+       ORDER BY completed_at DESC 
+       LIMIT 5;" \
+      2>/dev/null
     
-except json.JSONDecodeError:
-    print("⚠️  Could not parse batch history")
-    print("   Service may not be responding or data format changed")
-    print("")
-except Exception as e:
-    print(f"⚠️  Error: {e}")
-    print("")
-EOF
+    echo ""
+fi
 
 ################################################################################
 # Summary

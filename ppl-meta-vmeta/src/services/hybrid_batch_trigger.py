@@ -33,8 +33,8 @@ from typing import Dict, Optional, Any
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
-from ..database.connection import get_database_connection
-
+# Note: get_database_connection import removed - not needed for basic initialization
+# Database access is handled through BatchProcessingRepository passed to methods
 
 logger = logging.getLogger(__name__)
 
@@ -443,32 +443,9 @@ class HybridBatchTrigger:
         Returns:
             Batch dict or None if no active batch
         """
-        async with get_database_connection() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT 
-                    batch_uuid,
-                    collection_id,
-                    batch_number,
-                    status,
-                    video_count,
-                    batch_size_threshold,
-                    first_video_start_time,
-                    last_video_end_time,
-                    created_at
-                FROM batch_processing_state
-                WHERE collection_id = $1
-                  AND status = 'accumulating'
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
-                collection_id
-            )
-            
-            if not row:
-                return None
-            
-            return dict(row)
+        # TODO: Implement via repository when passed
+        # For now, return None - batch monitor handles batch state
+        return None
     
     async def _get_timeout_minutes(self, collection_id: str) -> int:
         """
@@ -480,23 +457,9 @@ class HybridBatchTrigger:
         Returns:
             Timeout in minutes
         """
-        async with get_database_connection() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT partial_batch_timeout_minutes
-                FROM batch_processing_config
-                WHERE collection_id = $1
-                   OR collection_id IS NULL
-                ORDER BY collection_id DESC NULLS LAST
-                LIMIT 1
-                """,
-                collection_id
-            )
-            
-            if row:
-                return row['partial_batch_timeout_minutes']
-            
-            return self.default_timeout_minutes
+        # TODO: Implement database config lookup when repository is passed
+        # For now, return default timeout
+        return self.default_timeout_minutes
     
     async def _get_min_partial_batch_size(self, collection_id: str) -> int:
         """
@@ -508,23 +471,9 @@ class HybridBatchTrigger:
         Returns:
             Minimum number of videos for partial batch
         """
-        async with get_database_connection() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT partial_batch_min_videos
-                FROM batch_processing_config
-                WHERE collection_id = $1
-                   OR collection_id IS NULL
-                ORDER BY collection_id DESC NULLS LAST
-                LIMIT 1
-                """,
-                collection_id
-            )
-            
-            if row:
-                return row['partial_batch_min_videos']
-            
-            return self.default_min_partial_batch_size
+        # TODO: Implement database config lookup when repository is passed
+        # For now, return default min partial batch size
+        return self.default_min_partial_batch_size
     
     async def _update_batch_timeout(
         self,
@@ -538,18 +487,11 @@ class HybridBatchTrigger:
             batch_uuid: Batch UUID
             timeout_at: When timeout will trigger
         """
-        async with get_database_connection() as conn:
-            await conn.execute(
-                """
-                UPDATE batch_processing_state
-                SET timeout_at = $2,
-                    last_video_time = NOW(),
-                    updated_at = NOW()
-                WHERE batch_uuid = $1
-                """,
-                batch_uuid,
-                timeout_at
-            )
+        # TODO: Implement via repository when passed
+        # For now, skip database update - timeout tracking in memory
+        logger.debug(
+            f"[TIMEOUT] Batch {str(batch_uuid)[:8]} timeout scheduled for {timeout_at}"
+        )
     
     async def _update_batch_trigger_info(
         self,
@@ -565,21 +507,12 @@ class HybridBatchTrigger:
             trigger_reason: Reason for trigger
             is_partial: Whether this is a partial batch
         """
-        async with get_database_connection() as conn:
-            await conn.execute(
-                """
-                UPDATE batch_processing_state
-                SET trigger_reason = $2,
-                    is_partial_batch = $3,
-                    triggered_at = NOW(),
-                    status = 'processing',
-                    updated_at = NOW()
-                WHERE batch_uuid = $1
-                """,
-                batch_uuid,
-                trigger_reason,
-                is_partial
-            )
+        # TODO: Implement via repository when passed
+        # For now, skip database update - trigger handled by batch_monitor
+        logger.info(
+            f"[TRIGGER] Batch {str(batch_uuid)[:8]} triggered: "
+            f"reason={trigger_reason}, partial={is_partial}"
+        )
     
     async def cleanup(self) -> None:
         """

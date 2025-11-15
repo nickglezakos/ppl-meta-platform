@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, validator
 
 from api.dependencies import get_current_user
-from database.batch_repository import BatchRepository
+from database.batch_repository import BatchProcessingRepository
 from services.batch_monitor import BatchMonitor
 from services.hybrid_batch_trigger import HybridBatchTrigger
 from services.pipeline_executor import PipelineExecutor
@@ -229,16 +229,16 @@ class HealthCheckResponse(BaseModel):
 # ============================================================================
 
 # These will be set at startup
-_batch_repository: Optional[BatchRepository] = None
+_batch_repository: Optional[BatchProcessingRepository] = None
 _batch_monitor: Optional[BatchMonitor] = None
 _hybrid_trigger: Optional[HybridBatchTrigger] = None
 _pipeline_executor: Optional[PipelineExecutor] = None
 
 
 def set_batch_services(
-    repository: BatchRepository,
+    repository: BatchProcessingRepository,
     monitor: BatchMonitor,
-    trigger: HybridBatchTrigger,
+    trigger: Optional[HybridBatchTrigger],  # Made optional
     executor: PipelineExecutor
 ):
     """Initialize batch processing services (called at startup)."""
@@ -249,7 +249,7 @@ def set_batch_services(
     _pipeline_executor = executor
 
 
-def get_batch_repository() -> BatchRepository:
+def get_batch_repository() -> BatchProcessingRepository:
     """Dependency for batch repository."""
     if _batch_repository is None:
         raise HTTPException(
@@ -303,7 +303,7 @@ def get_pipeline_executor() -> PipelineExecutor:
 async def get_batch_status(
     collection_id: Optional[str] = Query(None, description="Filter by collection ID"),
     user: dict = Depends(get_current_user),
-    repository: BatchRepository = Depends(get_batch_repository)
+    repository: BatchProcessingRepository = Depends(get_batch_repository)
 ) -> List[BatchStatusResponse]:
     """
     Get current status of batch processing.
@@ -397,7 +397,7 @@ async def get_batch_history(
     limit: int = Query(50, ge=1, le=200, description="Number of results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     user: dict = Depends(get_current_user),
-    repository: BatchRepository = Depends(get_batch_repository)
+    repository: BatchProcessingRepository = Depends(get_batch_repository)
 ) -> BatchHistoryResponse:
     """
     Get batch processing history with pagination.
@@ -498,7 +498,7 @@ async def get_batch_history(
 async def trigger_batch(
     request: TriggerBatchRequest,
     user: dict = Depends(get_current_user),
-    repository: BatchRepository = Depends(get_batch_repository),
+    repository: BatchProcessingRepository = Depends(get_batch_repository),
     monitor: BatchMonitor = Depends(get_batch_monitor)
 ) -> TriggerBatchResponse:
     """
@@ -572,7 +572,7 @@ async def trigger_batch(
 )
 async def get_batch_config(
     user: dict = Depends(get_current_user),
-    repository: BatchRepository = Depends(get_batch_repository)
+    repository: BatchProcessingRepository = Depends(get_batch_repository)
 ) -> BatchConfigResponse:
     """
     Get current batch processing configuration.
@@ -628,7 +628,7 @@ async def get_batch_config(
 async def update_batch_config(
     request: UpdateConfigRequest,
     user: dict = Depends(get_current_user),
-    repository: BatchRepository = Depends(get_batch_repository)
+    repository: BatchProcessingRepository = Depends(get_batch_repository)
 ) -> UpdateConfigResponse:
     """
     Update batch processing configuration.
@@ -716,7 +716,7 @@ async def update_batch_config(
 async def update_batch_size(
     request: UpdateBatchSizeRequest,
     user: dict = Depends(get_current_user),
-    repository: BatchRepository = Depends(get_batch_repository)
+    repository: BatchProcessingRepository = Depends(get_batch_repository)
 ) -> UpdateBatchSizeResponse:
     """
     Update batch size threshold.
@@ -830,7 +830,7 @@ async def update_batch_size(
 )
 async def get_incomplete_batches(
     user: dict = Depends(get_current_user),
-    repository: BatchRepository = Depends(get_batch_repository)
+    repository: BatchProcessingRepository = Depends(get_batch_repository)
 ) -> IncompleteBatchesResponse:
     """
     Get incomplete batches.
@@ -895,7 +895,7 @@ async def get_incomplete_batches(
     tags=["Batch Processing"]
 )
 async def health_check(
-    repository: BatchRepository = Depends(get_batch_repository),
+    repository: BatchProcessingRepository = Depends(get_batch_repository),
     monitor: BatchMonitor = Depends(get_batch_monitor),
     trigger: HybridBatchTrigger = Depends(get_hybrid_trigger),
     executor: PipelineExecutor = Depends(get_pipeline_executor)
