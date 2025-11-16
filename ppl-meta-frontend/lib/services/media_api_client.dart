@@ -989,6 +989,10 @@ class MediaApiClient {
   /// without filtering by session. Ideal for MVR search results where individuals
   /// may span multiple sessions or have no session association.
   /// 
+  /// Optional date filtering:
+  /// - startTime: Filter appearances starting after this time
+  /// - endTime: Filter appearances ending before this time
+  /// 
   /// Returns:
   /// - individual_uuid: UUID of the individual
   /// - total_appearances: Total number of appearances across all videos
@@ -998,13 +1002,74 @@ class MediaApiClient {
   /// - appearances: List of all video appearances with details
   Future<ApiResponse<Map<String, dynamic>>> getIndividualAnalysisNoSession({
     required String individualUuid,
+    DateTime? startTime,
+    DateTime? endTime,
   }) async {
     try {
+      // Build query parameters
+      final queryParams = <String>[];
+      if (startTime != null) {
+        queryParams.add('start_time=${startTime.toUtc().toIso8601String()}');
+      }
+      if (endTime != null) {
+        queryParams.add('end_time=${endTime.toUtc().toIso8601String()}');
+      }
+      
+      final queryString = queryParams.isNotEmpty ? '?${queryParams.join('&')}' : '';
+      
       final response = await _apiClient.get(
-        '/api/v1/mvr-people/individuals/$individualUuid/analysis',
+        '/api/v1/mvr-people/individuals/$individualUuid/analysis$queryString',
       );
 
       print('DEBUG: Individual analysis (no session): ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get MVR person analysis (consolidated individual data)
+  /// 
+  /// This endpoint returns consolidated analysis for an MVR person, which
+  /// represents multiple individuals merged into a single identity.
+  /// 
+  /// Optional date filtering:
+  /// - startTime: Filter appearances starting after this time
+  /// - endTime: Filter appearances ending before this time
+  /// 
+  /// Returns:
+  /// - mvr_person_uuid: UUID of the MVR person
+  /// - individual_uuids: List of constituent individual UUIDs
+  /// - total_appearances: Total appearances across all individuals
+  /// - unique_videos: Number of unique videos
+  /// - first_seen: Timestamp of first appearance
+  /// - last_seen: Timestamp of last appearance
+  /// - appearances: Consolidated list of all appearances
+  Future<ApiResponse<Map<String, dynamic>>> getMVRPersonAnalysis({
+    required String mvrPersonUuid,
+    DateTime? startTime,
+    DateTime? endTime,
+  }) async {
+    try {
+      // Build query parameters
+      final queryParams = <String>[];
+      if (startTime != null) {
+        queryParams.add('start_time=${startTime.toUtc().toIso8601String()}');
+      }
+      if (endTime != null) {
+        queryParams.add('end_time=${endTime.toUtc().toIso8601String()}');
+      }
+      
+      final queryString = queryParams.isNotEmpty ? '?${queryParams.join('&')}' : '';
+      
+      final response = await _apiClient.get(
+        '/api/v1/mvr-people/mvr-person/$mvrPersonUuid/analysis$queryString',
+      );
+
+      print('DEBUG: MVR person analysis: ${response.data}');
       
       return ApiResponse.success(response.data as Map<String, dynamic>);
     } on DioException catch (e) {

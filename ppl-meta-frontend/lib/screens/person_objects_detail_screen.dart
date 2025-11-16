@@ -1243,13 +1243,86 @@ class _PersonObjectsDetailScreenState
       
       print('📊 Loading analysis for ${context.individualUuids.length} individuals');
 
-      // For each individual UUID, call the session-less endpoint
-      // This endpoint works without requiring a tracking session
-      for (final individualUuid in context.individualUuids) {
-        try {
-          final response = await mediaApiClient.getIndividualAnalysisNoSession(
-            individualUuid: individualUuid,
-          );
+      // Extract date range from search parameters if available
+      DateTime? startTime;
+      DateTime? endTime;
+      if (context.sessionData['search_parameters'] != null) {
+        final searchParams = context.sessionData['search_parameters'] as Map<String, dynamic>;
+        if (searchParams['start_time'] != null) {
+          startTime = DateTime.parse(searchParams['start_time'] as String);
+          print('📅 Filtering by start_time: $startTime');
+        }
+        if (searchParams['end_time'] != null) {
+          endTime = DateTime.parse(searchParams['end_time'] as String);
+          print('📅 Filtering by end_time: $endTime');
+        }
+      }
+
+      // Check if we're loading MVR people or individuals
+      // If search_results exists, we're loading MVR people (consolidated)
+      final bool loadingMVRPeople = context.sessionData['search_results'] != null;
+
+      if (loadingMVRPeople) {
+        print('📊 Loading MVR person data (consolidated individuals)');
+        // For each MVR person UUID, call the MVR person endpoint
+        for (final mvrPersonUuid in context.individualUuids) {
+          try {
+            final response = await mediaApiClient.getMVRPersonAnalysis(
+              mvrPersonUuid: mvrPersonUuid,
+              startTime: startTime,
+              endTime: endTime,
+            );
+            
+            if (response.success && response.data != null) {
+              // Convert the response to AggregatedIndividualAnalysis
+              final data = response.data!;
+              final analysis = AggregatedIndividualAnalysis(
+                individualUuid: data['mvr_person_uuid'] as String,
+                individualId: data['mvr_person_uuid'] as String,
+                sessionUuid: context.sessionUuid,
+                totalAppearances: data['total_appearances'] as int,
+                uniqueVideos: data['unique_videos'] as int,
+                firstSeen: DateTime.parse(data['first_seen'] as String),
+                lastSeen: DateTime.parse(data['last_seen'] as String),
+                totalDurationSeconds: 0.0,
+                averageConfidence: 0.0,
+                appearances: (data['appearances'] as List)
+                    .map((app) => IndividualAppearance(
+                          individualUuid: app['individual_uuid'] as String,
+                          videoUuid: app['video_uuid'] as String,
+                          personObjectUuid: app['person_object_uuid'] as String,
+                          startTimestamp: DateTime.parse(app['start_timestamp'] as String),
+                          endTimestamp: DateTime.parse(app['end_timestamp'] as String),
+                          confidenceScore: (app['confidence'] as num).toDouble(),
+                          entryBbox: null,
+                          exitBbox: null,
+                        ))
+                    .toList(),
+                personObjectUuids: (data['appearances'] as List)
+                    .map((app) => app['person_object_uuid'] as String)
+                    .toList(),
+                analysisTimestamp: DateTime.now(),
+              );
+
+              aggregatedAnalyses.add(analysis);
+              print('✅ Loaded MVR person $mvrPersonUuid: ${analysis.totalAppearances} appearances');
+            } else {
+              print('⚠️ Failed to load MVR person $mvrPersonUuid: ${response.error}');
+            }
+          } catch (e) {
+            print('❌ Error loading MVR person $mvrPersonUuid: $e');
+          }
+        }
+      } else {
+        print('📊 Loading individual data');
+        // For each individual UUID, call the session-less endpoint
+        for (final individualUuid in context.individualUuids) {
+          try {
+            final response = await mediaApiClient.getIndividualAnalysisNoSession(
+              individualUuid: individualUuid,
+              startTime: startTime,
+              endTime: endTime,
+            );
           
           if (response.success && response.data != null) {
             // Convert the response to AggregatedIndividualAnalysis
@@ -1289,6 +1362,7 @@ class _PersonObjectsDetailScreenState
           }
         } catch (e) {
           print('❌ Error loading analysis for individual $individualUuid: $e');
+        }
         }
       }
       

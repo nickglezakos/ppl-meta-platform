@@ -855,23 +855,18 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         return;
       }
 
-      // Extract individual UUIDs from all MVR people
-      // Each MVR person has an array of individual_uuids that represent
-      // the individuals that were merged into this MVR person
-      final Set<String> allIndividualUuids = {};
-      for (var mvr in mvrPeople) {
-        final individualUuids = (mvr['individual_uuids'] as List<dynamic>)
-            .map((uuid) => uuid.toString())
-            .toList();
-        allIndividualUuids.addAll(individualUuids);
-      }
+      // Extract MVR person UUIDs (not individual UUIDs)
+      // We want to display the 11 MVR people, not the 72 constituent individuals
+      final List<String> mvrPersonUuids = mvrPeople
+          .map((mvr) => mvr['mvr_people_uuid'].toString())
+          .toList();
 
-      print('📊 Navigating to analysis with ${allIndividualUuids.length} individuals from ${mvrPeople.length} MVR people');
+      print('📊 Navigating to analysis with ${mvrPersonUuids.length} MVR people');
 
       // Navigate to person details screen with cross-video context
-      // Note: We use a dummy session UUID since we don't have a tracking session
+      // Pass MVR person UUIDs instead of individual UUIDs
       _navigateToCrossVideoAnalysis(
-        individualUuids: allIndividualUuids.toList(),
+        individualUuids: mvrPersonUuids, // Actually MVR person UUIDs
         sessionUuid: 'mvr_search_${DateTime.now().millisecondsSinceEpoch}',
         sessionData: _trackingSessionData!,
       );

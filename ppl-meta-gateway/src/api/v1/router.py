@@ -1518,3 +1518,9 @@ async def get_individual_analysis_no_session(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.get("/mvr-people/mvr-person/{mvr_person_uuid}/analysis")
+async def get_mvr_person_analysis(request: Request):
+    """Proxy MVR person analysis to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+

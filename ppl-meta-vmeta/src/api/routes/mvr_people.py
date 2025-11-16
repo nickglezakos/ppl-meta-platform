@@ -1856,11 +1856,13 @@ async def search_mvr_people_by_collection(
     description=(
         "Get individual appearance analysis without requiring a "
         "tracking session. Returns all appearances for the individual "
-        "across all videos."
+        "across all videos. Optionally filter by date range."
     ),
 )
 async def get_individual_analysis_no_session(
     individual_uuid: str,
+    start_time: Optional[datetime] = Query(None),
+    end_time: Optional[datetime] = Query(None),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
     current_user: dict = Depends(get_current_user),
 ):
@@ -1888,8 +1890,37 @@ async def get_individual_analysis_no_session(
     try:
         # Get database connection from the repository's pool
         async with mvr_repository.pool.acquire() as conn:
-            # Get all appearances for this individual
-            query = """
+            # Build query with optional date filtering
+            query_conditions = ["iva.individual_uuid = $1"]
+            query_params: list = [individual_uuid]
+            
+            # Add date range filtering if provided
+            if start_time:
+                # Convert to naive if timezone-aware
+                start_naive = (
+                    start_time.replace(tzinfo=None)
+                    if start_time.tzinfo
+                    else start_time
+                )
+                query_conditions.append(
+                    f"iva.start_timestamp >= ${len(query_params) + 1}"
+                )
+                query_params.append(start_naive)
+            
+            if end_time:
+                # Convert to naive if timezone-aware
+                end_naive = (
+                    end_time.replace(tzinfo=None)
+                    if end_time.tzinfo
+                    else end_time
+                )
+                query_conditions.append(
+                    f"iva.end_timestamp <= ${len(query_params) + 1}"
+                )
+                query_params.append(end_naive)
+            
+            # Build the final query
+            query = f"""
                 SELECT
                     iva.video_uuid,
                     iva.person_object_uuid,
@@ -1897,11 +1928,11 @@ async def get_individual_analysis_no_session(
                     iva.end_timestamp,
                     iva.confidence
                 FROM individual_video_appearances iva
-                WHERE iva.individual_uuid = $1
+                WHERE {' AND '.join(query_conditions)}
                 ORDER BY iva.start_timestamp ASC
             """
             
-            appearances_rows = await conn.fetch(query, individual_uuid)
+            appearances_rows = await conn.fetch(query, *query_params)
             
             if not appearances_rows:
                 return {
@@ -1948,6 +1979,174 @@ async def get_individual_analysis_no_session(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch individual analysis: {str(e)}"
+        ) from e
+
+
+# ============================================================================
+# ENDPOINT 17: Get MVR Person Analysis (Consolidated Individual Data)
+# ============================================================================
+
+@router.get(
+    "/mvr-person/{mvr_person_uuid}/analysis",
+    summary="Get MVR Person Analysis",
+    description=(
+        "Get consolidated analysis for an MVR person, which represents "
+        "multiple individuals merged into a single identity. Returns "
+        "aggregated data across all constituent individuals."
+    ),
+)
+async def get_mvr_person_analysis(
+    mvr_person_uuid: str,
+    start_time: Optional[datetime] = Query(None),
+    end_time: Optional[datetime] = Query(None),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get consolidated analysis for an MVR person.
+    
+    An MVR person represents multiple individuals that have been merged
+    based on face recognition similarity. This endpoint returns aggregated
+    data across all constituent individuals.
+    
+    Returns:
+    - mvr_person_uuid: UUID of the MVR person
+    - individual_uuids: List of constituent individual UUIDs
+    - total_appearances: Total appearances across all individuals
+    - unique_videos: Number of unique videos
+    - first_seen: Earliest appearance timestamp
+    - last_seen: Latest appearance timestamp
+    - appearances: Consolidated list of all appearances
+    """
+    logger.info(
+        "Fetching MVR person analysis for %s (user: %s)",
+        mvr_person_uuid,
+        current_user.get('email')
+    )
+    
+    try:
+        async with mvr_repository.pool.acquire() as conn:
+            # Get all individuals for this MVR person
+            individuals_query = """
+                SELECT individual_uuid
+                FROM individual_mvr_mapping
+                WHERE mvr_people_uuid = $1
+            """
+            
+            individual_rows = await conn.fetch(
+                individuals_query, mvr_person_uuid
+            )
+            
+            if not individual_rows:
+                return {
+                    "mvr_person_uuid": mvr_person_uuid,
+                    "individual_uuids": [],
+                    "total_appearances": 0,
+                    "unique_videos": 0,
+                    "appearances": []
+                }
+            
+            individual_uuids = [
+                str(row['individual_uuid']) for row in individual_rows
+            ]
+            
+            # Build query to get all appearances for these individuals
+            query_conditions = [
+                f"iva.individual_uuid = ANY(${1})"
+            ]
+            query_params: list = [individual_uuids]
+            
+            # Add date range filtering if provided
+            if start_time:
+                start_naive = (
+                    start_time.replace(tzinfo=None)
+                    if start_time.tzinfo
+                    else start_time
+                )
+                query_conditions.append(
+                    f"iva.start_timestamp >= ${len(query_params) + 1}"
+                )
+                query_params.append(start_naive)
+            
+            if end_time:
+                end_naive = (
+                    end_time.replace(tzinfo=None)
+                    if end_time.tzinfo
+                    else end_time
+                )
+                query_conditions.append(
+                    f"iva.end_timestamp <= ${len(query_params) + 1}"
+                )
+                query_params.append(end_naive)
+            
+            # Query all appearances
+            appearances_query = f"""
+                SELECT
+                    iva.individual_uuid,
+                    iva.video_uuid,
+                    iva.person_object_uuid,
+                    iva.start_timestamp,
+                    iva.end_timestamp,
+                    iva.confidence
+                FROM individual_video_appearances iva
+                WHERE {' AND '.join(query_conditions)}
+                ORDER BY iva.start_timestamp ASC
+            """
+            
+            appearances_rows = await conn.fetch(
+                appearances_query, *query_params
+            )
+            
+            if not appearances_rows:
+                return {
+                    "mvr_person_uuid": mvr_person_uuid,
+                    "individual_uuids": individual_uuids,
+                    "total_appearances": 0,
+                    "unique_videos": 0,
+                    "appearances": []
+                }
+            
+            # Build appearances list
+            appearances = [
+                {
+                    "individual_uuid": str(row['individual_uuid']),
+                    "video_uuid": str(row['video_uuid']),
+                    "person_object_uuid": str(row['person_object_uuid']),
+                    "start_timestamp": row['start_timestamp'].isoformat(),
+                    "end_timestamp": row['end_timestamp'].isoformat(),
+                    "confidence": float(row['confidence'])
+                }
+                for row in appearances_rows
+            ]
+            
+            # Calculate statistics
+            unique_videos = len(
+                set(app['video_uuid'] for app in appearances)
+            )
+            first_seen = min(
+                row['start_timestamp'] for row in appearances_rows
+            )
+            last_seen = max(
+                row['end_timestamp'] for row in appearances_rows
+            )
+            
+            return {
+                "mvr_person_uuid": mvr_person_uuid,
+                "individual_uuids": individual_uuids,
+                "total_appearances": len(appearances),
+                "unique_videos": unique_videos,
+                "first_seen": first_seen.isoformat(),
+                "last_seen": last_seen.isoformat(),
+                "appearances": appearances
+            }
+            
+    except Exception as e:
+        logger.error(
+            "Error fetching MVR person analysis: %s", e, exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch MVR person analysis: {str(e)}"
         ) from e
 
 
