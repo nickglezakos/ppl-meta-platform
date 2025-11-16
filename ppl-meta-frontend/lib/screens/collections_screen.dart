@@ -819,10 +819,13 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   }
 
   /// Navigate to individual analysis screen
+  /// 
+  /// MODIFIED: Now works with MVR search results instead of tracking session.
+  /// Extracts MVR people UUIDs from search results for analysis navigation.
   Future<void> _navigateToIndividualAnalysis() async {
-    if (_trackingSessionUuid == null || _trackingSessionData == null) {
+    if (_trackingSessionData == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No tracking session data available')),
+        const SnackBar(content: Text('No MVR search data available')),
       );
       return;
     }
@@ -837,49 +840,41 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         ),
       );
 
-      final apiClient = ref.read(apiClientProvider);
-      final mediaApiClient = MediaApiClient(apiClient);
-
-      // Fetch individuals data from vmeta endpoint
-      final individualsResponse = await mediaApiClient.getCrossVideoIndividuals(
-        sessionUuid: _trackingSessionUuid!,
-      );
+      // Extract MVR people from search results
+      final mvrPeople = _trackingSessionData!['search_results'] as List<dynamic>;
 
       // Dismiss loading
       if (mounted) Navigator.pop(context);
 
-      if (individualsResponse.success && individualsResponse.data != null) {
-        final individuals = individualsResponse.data!['individuals'] as List<dynamic>;
-
-        if (individuals.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No individuals found in tracking session')),
-            );
-          }
-          return;
-        }
-
-        // Extract individual UUIDs
-        final individualUuids = individuals
-            .map((ind) => ind['individual_uuid'] as String)
-            .toList();
-
-        // Navigate to person details screen with cross-video context
-        _navigateToCrossVideoAnalysis(
-          individualUuids: individualUuids,
-          sessionUuid: _trackingSessionUuid!,
-          sessionData: _trackingSessionData!,
-        );
-      } else {
+      if (mvrPeople.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to fetch individuals data: ${individualsResponse.error}'),
-            ),
+            const SnackBar(content: Text('No MVR people found in search results')),
           );
         }
+        return;
       }
+
+      // Extract individual UUIDs from all MVR people
+      // Each MVR person has an array of individual_uuids that represent
+      // the individuals that were merged into this MVR person
+      final Set<String> allIndividualUuids = {};
+      for (var mvr in mvrPeople) {
+        final individualUuids = (mvr['individual_uuids'] as List<dynamic>)
+            .map((uuid) => uuid.toString())
+            .toList();
+        allIndividualUuids.addAll(individualUuids);
+      }
+
+      print('📊 Navigating to analysis with ${allIndividualUuids.length} individuals from ${mvrPeople.length} MVR people');
+
+      // Navigate to person details screen with cross-video context
+      // Note: We use a dummy session UUID since we don't have a tracking session
+      _navigateToCrossVideoAnalysis(
+        individualUuids: allIndividualUuids.toList(),
+        sessionUuid: 'mvr_search_${DateTime.now().millisecondsSinceEpoch}',
+        sessionData: _trackingSessionData!,
+      );
     } catch (e) {
       // Dismiss loading if still showing
       if (mounted && Navigator.canPop(context)) {
@@ -918,6 +913,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   }
 
   /// Fetch individuals count from cross-video tracking
+  /// 
+  /// MODIFIED: Now searches for existing MVR people instead of creating
+  /// a new tracking session. This fetches cached/existing analysis results
+  /// without triggering any merge operations.
   Future<void> _fetchIndividualsCount() async {
     if (_startDate == null || _endDate == null || _selectedCollection == null) {
       return;
@@ -933,27 +932,60 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       final apiClient = ref.read(apiClientProvider);
       final mediaApiClient = MediaApiClient(apiClient);
 
-      // Create cross-video tracking session
       // Use cameraDeviceId if available (for camera-linked collections),
       // otherwise use UUID, then fallback to id
       final collectionIdentifier = _selectedCollection!.cameraDeviceId ?? 
                                    _selectedCollection!.uuid ?? 
                                    _selectedCollection!.id;
       
-      final createResponse = await mediaApiClient.createCrossVideoTrackingSession(
+      print('🔍 Searching existing MVR people for collection: $collectionIdentifier');
+      print('   Date range: ${_startDate!.toIso8601String()} to ${_endDate!.toIso8601String()}');
+      
+      // Search for existing MVR people (no merge operations)
+      final searchResponse = await mediaApiClient.searchMVRPeopleByCollection(
         collectionName: collectionIdentifier,
         startTime: _startDate!,
         endTime: _endDate!,
+        limit: 500,
       );
 
-      if (createResponse.success && createResponse.data != null) {
-        final sessionUuid = createResponse.data!['session_uuid'] as String;
-        _trackingSessionUuid = sessionUuid;
-
-        // Poll for session completion
-        await _pollTrackingSessionStatus(mediaApiClient, sessionUuid);
+      if (searchResponse.success && searchResponse.data != null) {
+        final mvrPeople = searchResponse.data!['mvr_people'] as List<dynamic>;
+        final totalResults = searchResponse.data!['total_results'] as int;
+        
+        print('✅ Found $totalResults existing MVR people');
+        
+        // Each MVR person represents a unique individual (already merged)
+        // Count total appearances across all MVR people
+        int totalAppearances = 0;
+        for (var mvr in mvrPeople) {
+          totalAppearances += (mvr['total_appearances'] as int? ?? 0);
+        }
+        
+        setState(() {
+          _individualsCount = totalAppearances; // Total original detections
+          _uniqueMvrCount = totalResults;  // Unique people (already merged)
+          _uniqueCountIsFallback = false;
+          _isLoadingIndividuals = false;
+          
+          // Set a dummy tracking session UUID so the Analysis button appears
+          _trackingSessionUuid = 'mvr_search_${DateTime.now().millisecondsSinceEpoch}';
+          
+          // Store MVR search results for navigation to analysis screen
+          _trackingSessionData = {
+            'search_results': mvrPeople,
+            'total_mvr_people': totalResults,
+            'total_appearances': totalAppearances,
+            'search_parameters': searchResponse.data!['search_parameters'],
+          };
+        });
+        
+        print('📊 MVR Search Results:');
+        print('   Total appearances: $totalAppearances');
+        print('   Unique MVR people: $totalResults');
+        
       } else {
-        print('ERROR: Failed to create tracking session: ${createResponse.error}');
+        print('ERROR: Failed to search MVR people: ${searchResponse.error}');
         setState(() {
           _individualsCount = 0;
           _uniqueMvrCount = 0;
@@ -961,7 +993,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         });
       }
     } catch (e) {
-      print('ERROR: Exception fetching individuals count: $e');
+      print('ERROR: Exception searching MVR people: $e');
       setState(() {
         _individualsCount = 0;
         _uniqueMvrCount = 0;

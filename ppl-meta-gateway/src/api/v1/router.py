@@ -1506,4 +1506,15 @@ async def batch_match_and_merge(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/search/by-collection")
+async def search_mvr_people_by_collection(request: Request):
+    """Proxy MVR people search by collection request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/mvr-people/individuals/{individual_uuid}/analysis")
+async def get_individual_analysis_no_session(request: Request):
+    """Proxy individual analysis without session to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
 

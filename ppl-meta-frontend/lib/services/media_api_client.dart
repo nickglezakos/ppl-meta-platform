@@ -983,6 +983,37 @@ class MediaApiClient {
     }
   }
 
+  /// Get individual analysis without requiring a session UUID
+  /// 
+  /// This endpoint returns all appearances for an individual across all videos
+  /// without filtering by session. Ideal for MVR search results where individuals
+  /// may span multiple sessions or have no session association.
+  /// 
+  /// Returns:
+  /// - individual_uuid: UUID of the individual
+  /// - total_appearances: Total number of appearances across all videos
+  /// - unique_videos: Number of unique videos
+  /// - first_seen: Timestamp of first appearance
+  /// - last_seen: Timestamp of last appearance
+  /// - appearances: List of all video appearances with details
+  Future<ApiResponse<Map<String, dynamic>>> getIndividualAnalysisNoSession({
+    required String individualUuid,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/mvr-people/individuals/$individualUuid/analysis',
+      );
+
+      print('DEBUG: Individual analysis (no session): ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   /// Manually merge selected individuals with embedding validation
   /// 
   /// This endpoint validates face embedding similarity before merging individuals.
@@ -1070,7 +1101,51 @@ class MediaApiClient {
       return ApiResponse.error('Unexpected error: $e');
     }
   }
+
+  /// Search existing MVR people by collection and date range
+  /// 
+  /// This endpoint fetches EXISTING MVR people and their linked individuals
+  /// that were created within the specified time range for a collection.
+  /// It does NOT trigger any merge operations - only retrieves cached data.
+  /// 
+  /// Use this for the search modal to display existing analysis results
+  /// without reprocessing or merging.
+  /// 
+  /// Returns:
+  /// - success: bool
+  /// - total_results: int
+  /// - mvr_people: List of MVR people with appearances and aggregated data
+  /// - search_parameters: Search criteria used
+  Future<ApiResponse<Map<String, dynamic>>> searchMVRPeopleByCollection({
+    required String collectionName,
+    required DateTime startTime,
+    required DateTime endTime,
+    int limit = 100,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/search/by-collection',
+        data: {
+          'collection_name': collectionName,
+          'start_time': startTime.toIso8601String(),
+          'end_time': endTime.toIso8601String(),
+          'limit': limit,
+        },
+      );
+
+      print('🔍 Search MVR people result: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      print('❌ Search MVR people failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('❌ Search MVR people unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
 }
+
 
 /// Single frame face detection result model for real-time detection
 class SingleFrameFaceDetectionResult {

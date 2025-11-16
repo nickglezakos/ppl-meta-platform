@@ -1225,6 +1225,7 @@ class _PersonObjectsDetailScreenState
   }
 
   /// Load cross-video analysis data from backend
+  /// Uses the new session-less endpoint for MVR search results
   Future<void> _loadCrossVideoData() async {
     if (!_isCrossVideoMode || widget.crossVideoContext == null) return;
     
@@ -1240,27 +1241,54 @@ class _PersonObjectsDetailScreenState
       
       final aggregatedAnalyses = <AggregatedIndividualAnalysis>[];
       
-      // For each individual UUID, call the backend endpoint
-      // Backend does ALL the heavy lifting:
-      // - Fetches appearances from database
-      // - Calls Orchestrator for person objects
-      // - Selects best quality
-      // - Aggregates routes chronologically
+      print('📊 Loading analysis for ${context.individualUuids.length} individuals');
+
+      // For each individual UUID, call the session-less endpoint
+      // This endpoint works without requiring a tracking session
       for (final individualUuid in context.individualUuids) {
-        final response = await mediaApiClient.getIndividualAggregatedAnalysis(
-          individualUuid: individualUuid,
-          sessionUuid: context.sessionUuid,
-        );
-        
-        if (response.success && response.data != null) {
-          // Parse response into model
-          final analysis = AggregatedIndividualAnalysis.fromJson(
-            response.data as Map<String, dynamic>
+        try {
+          final response = await mediaApiClient.getIndividualAnalysisNoSession(
+            individualUuid: individualUuid,
           );
-          aggregatedAnalyses.add(analysis);
-        } else {
-          print('Failed to fetch analysis for individual $individualUuid: ${response.error}');
-          // Continue with other individuals even if one fails
+          
+          if (response.success && response.data != null) {
+            // Convert the response to AggregatedIndividualAnalysis
+            final data = response.data!;
+            final analysis = AggregatedIndividualAnalysis(
+              individualUuid: data['individual_uuid'] as String,
+              individualId: data['individual_uuid'] as String,
+              sessionUuid: context.sessionUuid, // Use context session for display
+              totalAppearances: data['total_appearances'] as int,
+              uniqueVideos: data['unique_videos'] as int,
+              firstSeen: DateTime.parse(data['first_seen'] as String),
+              lastSeen: DateTime.parse(data['last_seen'] as String),
+              totalDurationSeconds: 0.0, // Not provided by session-less endpoint
+              averageConfidence: 0.0, // Calculate from appearances if needed
+              appearances: (data['appearances'] as List)
+                  .map((app) => IndividualAppearance(
+                        individualUuid: data['individual_uuid'] as String,
+                        videoUuid: app['video_uuid'] as String,
+                        personObjectUuid: app['person_object_uuid'] as String,
+                        startTimestamp: DateTime.parse(app['start_timestamp'] as String),
+                        endTimestamp: DateTime.parse(app['end_timestamp'] as String),
+                        confidenceScore: (app['confidence'] as num).toDouble(),
+                        entryBbox: null,
+                        exitBbox: null,
+                      ))
+                  .toList(),
+              personObjectUuids: (data['appearances'] as List)
+                  .map((app) => app['person_object_uuid'] as String)
+                  .toList(),
+              analysisTimestamp: DateTime.now(),
+            );
+
+            aggregatedAnalyses.add(analysis);
+            print('✅ Loaded analysis for individual $individualUuid: ${analysis.totalAppearances} appearances');
+          } else {
+            print('⚠️ Failed to load analysis for individual $individualUuid: ${response.error}');
+          }
+        } catch (e) {
+          print('❌ Error loading analysis for individual $individualUuid: $e');
         }
       }
       
