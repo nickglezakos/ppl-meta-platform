@@ -207,6 +207,9 @@ async def lifespan(app: FastAPI):
             # batch_monitor.set_hybrid_trigger(hybrid_trigger)
             
             # Create and start polling fallback manager
+            # NOTE: Collection IDs are now dynamically managed via recording events.
+            # The polling manager will monitor ALL active recordings from Camera service
+            # recording start/stop events, not a single hardcoded collection.
             polling_manager = PollingFallbackManager(
                 batch_monitor=batch_monitor,
                 poll_interval_seconds=30,  # Check every 30 seconds
@@ -216,7 +219,7 @@ async def lifespan(app: FastAPI):
                 vmeta_url="http://localhost:8008",
                 node_url="http://localhost:8001",
                 batch_size=5,  # Trigger after 5 videos
-                collection_id="usb_camera_0",
+                collection_id=None,  # Dynamic - managed by recording events
                 pipeline_executor=pipeline_executor  # Pass executor for explicit video_uuids
             )
             

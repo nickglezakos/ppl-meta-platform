@@ -27,6 +27,9 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 
+
+
+
 collections: {usb_camera_0}
 start_time: 2025-10-13 08:06:00 (naive timestamp - will be interpreted as Athens time)
 end_time: 2025-10-29 08:06:00 (naive timestamp - will be interpreted as Athens time)
@@ -108,8 +111,36 @@ If there are any such batch results stored it skips them.
 
 **************************************************************************
 
+curl -X POST 'http://localhost:8008/api/v1/cross-video/individuals/tracking/sessions' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "collections": ["usb_camera_0"],
+    "start_time": "2025-11-17T11:20:00",
+    "end_time": "2025-11-17T11:30:00",
+    "background_processing": true,
+    "force_reprocess": false
+  }' 2>/dev/null | python3 -m json.tool
 
-
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % export TOKEN="eyJhbGciOiJIUzI1NiIsInR5
+cCI6IkpXVCJ9.eyJzdWIiOiI3IiwiZXhwIjoxNzYzNDUyNDU0fQ.cvaaAgNdoKJLa2IppgZuLSm_t55DKuv4CVlUcW1bK
+tY" && curl -s "http://localhost:8008/api/v1/cross-video/individuals/tracking/sessions/e8182c
+cc-8f3f-425c-97ca-13213f3e379e" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+{
+    "session_uuid": "e8182ccc-8f3f-425c-97ca-13213f3e379e",
+    "status": "completed",
+    "collections": [
+        "usb_camera_0"
+    ],
+    "created_at": "2025-11-18T07:24:31.831944",
+    "started_at": "2025-11-18T07:24:31.864854",
+    "completed_at": "2025-11-18T07:24:36.008805",
+    "total_videos": 8,
+    "processed_videos": 8,
+    "individuals_found": 4,
+    "unique_mvr_people_count": 1,
+    "cache_hits": 0
+}
 
 
 
@@ -196,18 +227,110 @@ Underage Detector
 
 
 
+********************
 
 
+nickglezakos: Based on the continue individuals and mvr pipeline document a test was created: chmod +x /Users/nickgklezakos/Documents/ppl-meta-code/tests/test_continuous_pipeline_e2e.sh
 
+please give me the steps of the test before we run it
 
+GitHub Copilot: I'll read the test script to show you the steps it performs. 
 
+Read [](file:///Users/nickgklezakos/Documents/ppl-meta-code/tests/test_continuous_pipeline_e2e.sh#1-1), lines 1 to 200
 
+Read [](file:///Users/nickgklezakos/Documents/ppl-meta-code/tests/test_continuous_pipeline_e2e.sh#200-200), lines 200 to 476
 
+Based on the test script, here are the **steps of the Continuous Individuals and MVR Pipeline End-to-End Test**:
 
+## Test Overview
+- **Duration**: ~7-8 minutes (6.5 min recording + processing)
+- **Records**: 13 video segments (30 seconds each)
+- **Processes**: 3 batches automatically (5, 5, 3 videos)
+- **Validates**: Automatic triggering, two-level caching, and MVR creation
 
+---
 
+## Step-by-Step Breakdown
 
+### **STEP 1: Setup and Configuration**
+1. **Health Check** - Verifies all services are running:
+   - Gateway (8080), Node (8001), Media (8000), Orchestrator (8002)
+   - Vision (8003), Cameras (8005), Discovery (8006), Bootcore (8007), vmeta (8008)
 
+2. **Authentication** - Logs in and obtains auth token
 
+3. **Camera Detection** - Detects available cameras and selects the first one
 
- 
+4. **Batch Configuration** - Sets batch size to 5 videos
+
+5. **Enable Face Detection** - Enables face detection on save (Enhanced Logic V2)
+
+---
+
+### **STEP 2: Start Camera Recording**
+- Starts recording with the detected camera
+- Configuration: 30s segments, 1080p, 30fps, h264 codec
+- Returns a session UUID for tracking
+
+---
+
+### **STEP 3: Monitor Batch 1 (Videos 1-5)**
+- Records segments 1-5 (2.5 minutes)
+- After each segment:
+  - Waits 30 seconds for recording
+  - Waits 5 seconds for face detection completion
+  - Checks batch accumulation status
+- **Expected**: Batch threshold reached after 5 videos
+
+---
+
+### **STEP 4: Verify Batch 1 Processing**
+- Confirms batch triggered with `trigger_reason="threshold_reached"`
+- Monitors pipeline execution (two-level caching)
+- Reports results:
+  - Individuals created/cached
+  - MVR people created/cached
+  - Cache hit rate
+  - Processing time
+
+---
+
+### **STEP 5: Monitor Batch 2 (Videos 6-10)**
+- Records segments 6-10 (2.5 minutes)
+- Same monitoring process as Batch 1
+- **Expected**: Second threshold trigger after 5 more videos
+
+---
+
+### **STEP 6: Verify Batch 2 Processing**
+- Same verification as Batch 1
+- **Expected**: Higher cache hit rate (reusing individuals from Batch 1)
+
+---
+
+### **STEP 7: Monitor Remaining Videos (11-13)**
+- Records segments 11-13 (1.5 minutes)
+- Monitors accumulation (partial batch)
+
+---
+
+### **STEP 8: Stop Recording & Verify Partial Batch**
+- Stops the recording session
+- **Expected**: Batch 3 triggers with `trigger_reason="recording_stopped"`
+- Verifies 3 videos processed (partial batch)
+
+---
+
+### **STEP 9: Generate Final Report**
+- Shows test summary and duration
+- Lists all 3 batch UUIDs
+- Confirms all validations:
+  - ✅ Automatic batch triggering at threshold
+  - ✅ Event-driven face detection tracking
+  - ✅ Recording stop event triggering partial batch
+  - ✅ Two-level caching functional
+  - ✅ Cache hit rate improvement across batches
+  - ✅ Concurrent batch processing working
+
+---
+

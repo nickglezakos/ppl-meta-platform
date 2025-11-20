@@ -1181,6 +1181,47 @@ class MediaApiClient {
   /// - total_results: int
   /// - mvr_people: List of MVR people with appearances and aggregated data
   /// - search_parameters: Search criteria used
+  Future<ApiResponse<Map<String, dynamic>>> searchMVRPeopleByVideos({
+    required List<String> videoUuids,
+    DateTime? startTime,
+    DateTime? endTime,
+    int limit = 100,
+  }) async {
+    try {
+      final data = {
+        'video_uuids': videoUuids,
+        'limit': limit,
+      };
+      
+      if (startTime != null) {
+        data['start_time'] = startTime.toIso8601String();
+      }
+      if (endTime != null) {
+        data['end_time'] = endTime.toIso8601String();
+      }
+
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/search/by-videos',
+        data: data,
+      );
+
+      debugPrint('🔍 Search MVR people by videos result: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Search MVR people by videos failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Search MVR people by videos unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Search for existing MVR people by collection (DEPRECATED)
+  ///
+  /// DEPRECATED: Cannot filter by collection without cross-database queries.
+  /// Use searchMVRPeopleByVideos instead.
+  @Deprecated('Use searchMVRPeopleByVideos instead')
   Future<ApiResponse<Map<String, dynamic>>> searchMVRPeopleByCollection({
     required String collectionName,
     required DateTime startTime,
@@ -1209,7 +1250,74 @@ class MediaApiClient {
       return ApiResponse.error('Unexpected error: $e');
     }
   }
+
+  /// Get today's MVR people count for a camera
+  /// 
+  /// Get MVR people count for specific video UUIDs
+  /// 
+  /// This endpoint queries VMeta's database for unique MVR people
+  /// detected across the provided video UUIDs.
+  /// 
+  /// Returns:
+  /// - count: Number of unique MVR people detected
+  /// - video_count: Number of videos processed
+  Future<ApiResponse<Map<String, dynamic>>> getMVRPeopleCountByVideos({
+    required List<String> videoUuids,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/count-by-videos',
+        data: {'video_uuids': videoUuids},
+      );
+
+      debugPrint('📊 MVR people count result: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ MVR people count failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ MVR people count unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get MVR people count for a camera (DEPRECATED)
+  /// 
+  /// Returns count of unique MVR people detected today for the specified camera.
+  /// Uses the camera's collection and queries appearances within today's timeframe.
+  /// 
+  /// DEPRECATED: This endpoint has cross-database issues. Use getMVRPeopleCountByVideos instead.
+  /// 
+  /// Returns:
+  /// - camera_id: Camera device ID
+  /// - collection_name: Associated collection name
+  /// - count: Number of unique MVR people detected today
+  /// - date: Date of the count (today)
+  /// - start_time: Start of today (00:00:00)
+  /// - end_time: End of today (23:59:59)
+  @Deprecated('Use getMVRPeopleCountByVideos instead')
+  Future<ApiResponse<Map<String, dynamic>>> getCameraMVRPeopleCount({
+    required String cameraId,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/mvr-people/count-by-camera/$cameraId',
+      );
+
+      print('📊 Camera MVR people count result: ${response.data}');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      print('❌ Camera MVR people count failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('❌ Camera MVR people count unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
 }
+
 
 
 /// Single frame face detection result model for real-time detection

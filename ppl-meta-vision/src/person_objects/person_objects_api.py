@@ -117,6 +117,80 @@ class PersonObjectsWorkflowRequest(BaseModel):
         }
 
 
+class PersonObjectsFromFacesRequest(BaseModel):
+    """Request model for starting person objects workflow from in-memory faces."""
+
+    session_uuid: str = Field(
+        ...,
+        description="Face detection session UUID to associate with",
+        min_length=36,
+        max_length=36,
+    )
+    face_detections: List[Dict[str, Any]] = Field(
+        ...,
+        description="Face detection data from Enhanced Logic V2",
+        min_items=1,
+    )
+    tolerance_percent: float = Field(
+        default=20.0,
+        description="Position matching tolerance percentage (5.0-50.0)",
+        ge=5.0,
+        le=50.0,
+    )
+    enable_quality_analysis: bool = Field(
+        default=True, description="Enable best face quality analysis"
+    )
+    enable_age_detection: bool = Field(
+        default=True, description="Enable age estimation (future enhancement)"
+    )
+    workflow_metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional workflow metadata"
+    )
+
+    @validator("session_uuid")
+    def validate_session_uuid(cls, v):
+        """Validate session UUID format."""
+        if not v or len(v) != 36:
+            raise ValueError("session_uuid must be a valid UUID string")
+        return v
+
+    @validator("face_detections")
+    def validate_face_detections(cls, v):
+        """Validate face detection data has required fields."""
+        required_fields = ["id", "frame_number", "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2", "confidence"]
+        for face in v:
+            for field in required_fields:
+                if field not in face:
+                    raise ValueError(f"Face detection missing required field: {field}")
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "session_uuid": "550e8400-e29b-41d4-a716-446655440002",
+                "face_detections": [
+                    {
+                        "id": 12345,
+                        "frame_number": 1,
+                        "bbox_x1": 100,
+                        "bbox_y1": 200,
+                        "bbox_x2": 300,
+                        "bbox_y2": 400,
+                        "confidence": 0.95,
+                        "method": "enhanced_logic_v2",
+                    }
+                ],
+                "tolerance_percent": 20.0,
+                "enable_quality_analysis": True,
+                "enable_age_detection": True,
+                "workflow_metadata": {
+                    "source": "enhanced_logic_v2",
+                    "orchestrator_triggered": True,
+                },
+            }
+        }
+
+
 class GroupTrackingItem(BaseModel):
     """Individual group tracking item in PPL Mini format."""
 
@@ -311,6 +385,89 @@ async def start_person_objects_workflow(
             "API: Workflow completed successfully for session %s: %s",
             request.session_uuid,
             result["workflow_id"],
+        )
+
+        return PersonObjectsWorkflowResponse(**result)
+
+    except ValueError as e:
+        # Input validation or session not found
+        logger.warning(
+            "API: Bad request for session %s: %s", request.session_uuid, str(e)
+        )
+        raise HTTPException(
+            status_code=400 if "not found" not in str(e).lower() else 404, detail=str(e)
+        )
+    except RuntimeError as e:
+        # Workflow processing error
+        logger.error(
+            "API: Workflow failed for session %s: %s", request.session_uuid, str(e)
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        # Unexpected error
+        logger.error(
+            "API: Unexpected error for session %s: %s", request.session_uuid, str(e)
+        )
+        raise HTTPException(status_code=500, detail=f"Workflow failed: {str(e)}")
+
+
+@router.post("/workflows/start-from-faces", response_model=PersonObjectsWorkflowResponse)
+async def start_person_objects_workflow_from_faces(
+    request: PersonObjectsFromFacesRequest, database=Depends(get_vision_database)
+):
+    """
+    Start PPL Thread workflow from in-memory face detections (NO DATABASE LOOKUP).
+
+    This endpoint is optimized for Enhanced Logic V2 integration - it accepts
+    face detection data directly in memory, bypassing the database query step.
+    This is faster and avoids timing issues with session commits.
+
+    The workflow process:
+    1. Validates the face detection session exists
+    2. Uses provided face_detections array (NO database query)
+    3. Applies percentage-based tracking algorithm (Phase 2)
+    4. Performs quality analysis and best face selection
+    5. Stores results in database (Phase 1 schema)
+    6. Returns PPL Meta Mini compatible response format
+
+    Args:
+        request: Workflow configuration with face_detections array
+        database: Vision Service database dependency
+
+    Returns:
+        Complete person objects data in PPL Meta Mini format
+
+    Raises:
+        HTTPException 400: Invalid request parameters or missing required fields
+        HTTPException 404: Session not found
+        HTTPException 500: Workflow processing error
+    """
+    logger.info(
+        "API: Starting person objects workflow from %d in-memory faces for session %s",
+        len(request.face_detections),
+        request.session_uuid,
+    )
+
+    try:
+        # Initialize workflow controller
+        controller = PPLThreadWorkflowController(database)
+
+        # Execute workflow with in-memory face data (now async method)
+        result = await controller.start_person_objects_workflow_from_faces(
+            face_detections=request.face_detections,
+            session_uuid=request.session_uuid,
+            tolerance_percent=request.tolerance_percent,
+            enable_quality_analysis=request.enable_quality_analysis,
+            enable_age_detection=request.enable_age_detection,
+            workflow_metadata=request.workflow_metadata,
+        )
+
+        logger.info(
+            "API: Workflow completed successfully for session %s: %s (%d persons from %d faces)",
+            request.session_uuid,
+            result["workflow_id"],
+            result.get("merged_groups", 0),
+            len(request.face_detections),
         )
 
         return PersonObjectsWorkflowResponse(**result)

@@ -314,7 +314,7 @@ class PollingFallbackManager:
         vmeta_url: str = "http://localhost:8008",
         node_url: str = "http://localhost:8001",
         batch_size: int = 5,
-        collection_id: str = "usb_camera_0",
+        collection_id: Optional[str] = None,
         pipeline_executor: Any = None,
     ):
         """
@@ -329,7 +329,8 @@ class PollingFallbackManager:
             vmeta_url: VMeta service URL
             node_url: Node service URL for auth
             batch_size: Videos per batch (incremental triggers)
-            collection_id: Default camera collection to monitor
+            collection_id: DEPRECATED - collections now managed dynamically
+                          via recording events (start/stop). Leave as None.
         """
         self.batch_monitor = batch_monitor
         self.poll_interval = poll_interval_seconds
@@ -339,7 +340,7 @@ class PollingFallbackManager:
         self.vmeta_url = vmeta_url
         self.node_url = node_url
         self.batch_size = batch_size
-        self.collection_id = collection_id
+        self.collection_id = collection_id  # DEPRECATED - kept for fallback only
         
         # Recording sessions tracking
         self._active_recordings = {}  # {collection_id: session_info}
@@ -350,8 +351,8 @@ class PollingFallbackManager:
         self._shutdown_event = asyncio.Event()
         
         # State tracking per recording
-        self._processed_videos = set()
-        self._pending_videos = []  # Videos waiting to batch
+        self._processed_videos = set()  # All processed video UUIDs across collections
+        self._pending_videos_by_collection = {}  # {collection_id: [videos]} - separate queues per collection
         self._auth_token = None
         self._token_expires = None
         # Optional local executor for explicit video-based tracking
@@ -398,46 +399,18 @@ class PollingFallbackManager:
         """
         On startup, mark all existing videos as processed.
         This prevents reprocessing old videos after service restart.
-        """
-        try:
-            import httpx
-            
-            # Get auth token
-            if not await self._ensure_auth_token():
-                logger.warning("Failed to get auth token for initialization")
-                return
-            
-            # Get all existing videos from collection
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                headers = {"Authorization": f"Bearer {self._auth_token}"}
-                
-                response = await client.get(
-                    f"{self.media_url}/api/v1/media/search"
-                    f"?collection_id={self.collection_id}"
-                    f"&page_size=100&order_by=created_at&order=desc",
-                    headers=headers
-                )
-                
-                if response.status_code == 200:
-                    videos = response.json()
-                    for video in videos:
-                        uuid = video.get('uuid')
-                        if uuid:
-                            self._processed_videos.add(uuid)
-                    
-                    logger.info(
-                        f"📦 Initialized with {len(self._processed_videos)} "
-                        f"existing videos marked as processed"
-                    )
-                else:
-                    logger.warning(
-                        f"Failed to initialize processed videos: "
-                        f"status {response.status_code}"
-                    )
         
-        except Exception as e:
-            logger.warning(f"Error initializing processed videos: {e}")
-            # Don't fail startup if this fails
+        NOTE: With dynamic collection management, we skip initialization.
+        Videos will be discovered via recording events and processed from that point.
+        Old videos won't be reprocessed since they weren't part of a recording session.
+        """
+        logger.info(
+            "📦 Using dynamic collection management - "
+            "no pre-initialization needed. Videos will be tracked "
+            "per recording session from recording start events."
+        )
+        # No-op - we rely on recording events to define the scope
+        return
     
     async def start_recording(
         self,
@@ -502,21 +475,27 @@ class PollingFallbackManager:
         
         self._stats['recordings_stopped'] += 1
         
-        # Trigger final batch for all remaining pending videos
+        # Trigger final batch for all remaining pending videos in THIS collection
         videos_processed = 0
-        if self._pending_videos:
-            logger.info(
-                f"Processing final batch: {len(self._pending_videos)} "
-                f"remaining videos"
-            )
+        if not hasattr(self, '_pending_videos_by_collection'):
+            self._pending_videos_by_collection = {}
+        
+        if collection_id in self._pending_videos_by_collection:
+            pending_videos = self._pending_videos_by_collection[collection_id]
             
-            await self._trigger_batch_processing(
-                self._pending_videos,
-                is_final=True
-            )
-            
-            videos_processed = len(self._pending_videos)
-            self._pending_videos = []
+            if pending_videos:
+                logger.info(
+                    f"Processing final batch for {collection_id}: {len(pending_videos)} "
+                    f"remaining videos"
+                )
+                
+                await self._trigger_batch_processing(
+                    pending_videos,
+                    is_final=True
+                )
+                
+                videos_processed = len(pending_videos)
+                self._pending_videos_by_collection[collection_id] = []
         
         logger.info(
             f"✅ Recording {collection_id} stopped. "
@@ -620,108 +599,135 @@ class PollingFallbackManager:
                 logger.warning("Failed to get auth token, skipping poll")
                 return
             
-            # Get recent videos from Media service
+            # Get active collection IDs from recording events
+            # If no active recordings, skip polling (wait for recording start event)
+            active_collection_ids = list(self._active_recordings.keys())
+            
+            if not active_collection_ids:
+                logger.debug(
+                    "No active recordings - skipping poll "
+                    "(waiting for recording start event)"
+                )
+                return
+            
+            logger.debug(
+                f"Polling for videos from {len(active_collection_ids)} "
+                f"active collection(s): {active_collection_ids}"
+            )
+            
+            # Process each collection SEPARATELY - each gets its own batch pipeline
             async with httpx.AsyncClient(timeout=10.0) as client:
                 headers = {"Authorization": f"Bearer {self._auth_token}"}
                 
-                # Query with reasonable limit for active recording
-                # page_size=20 allows discovering videos fast enough
-                response = await client.get(
-                    f"{self.media_url}/api/v1/media/search"
-                    f"?collection_id={self.collection_id}"
-                    f"&page_size=20&order_by=created_at&order=desc",
-                    headers=headers
-                )
-                
-                if response.status_code != 200:
-                    logger.debug(f"Media service returned {response.status_code}")
-                    return
-                
-                videos = response.json()
-                
-                # Get recording start time for filtering
-                recording_start_time = None
-                if self._active_recordings:
-                    # Use the earliest active recording start time
-                    recording_start_time = min(
-                        rec['started_at'] 
-                        for rec in self._active_recordings.values()
-                    )
-                
-                # Filter to videos created AFTER recording started
-                # (prevents reprocessing old videos after service restart)
-                from datetime import timedelta
-                if recording_start_time:
-                    # Allow 30 seconds buffer before recording start
-                    cutoff_time = recording_start_time - timedelta(seconds=30)
-                else:
-                    # Fallback: last 2 hours if no active recording
-                    cutoff_time = datetime.utcnow() - timedelta(hours=2)
-                
-                recent_videos = []
-                
-                for video in videos:
-                    created_at_str = video.get('created_at', '')
+                # Query each active collection separately
+                for coll_id in active_collection_ids:
                     try:
-                        # Parse ISO format timestamp
-                        if created_at_str:
-                            # Remove timezone info for comparison
-                            created_str = created_at_str.split('+')[0].split('Z')[0]
-                            created_dt = datetime.fromisoformat(created_str)
-                            
-                            if created_dt > cutoff_time:
+                        # Query with reasonable limit for active recording
+                        # page_size=20 allows discovering videos fast enough
+                        response = await client.get(
+                            f"{self.media_url}/api/v1/media/search"
+                            f"?collection_id={coll_id}"
+                            f"&page_size=20&order_by=created_at&order=desc",
+                            headers=headers
+                        )
+                        
+                        if response.status_code != 200:
+                            logger.debug(f"Media service returned {response.status_code} for collection {coll_id}")
+                            continue
+                        
+                        collection_videos = response.json()
+                        logger.debug(f"Found {len(collection_videos)} videos from collection {coll_id}")
+                        
+                        # Get recording start time for THIS collection
+                        recording_start_time = None
+                        if coll_id in self._active_recordings:
+                            recording_start_time = self._active_recordings[coll_id]['started_at']
+                        
+                        # Filter to videos created AFTER this collection's recording started
+                        if recording_start_time:
+                            # Allow 30 seconds buffer before recording start
+                            cutoff_time = recording_start_time - timedelta(seconds=30)
+                        else:
+                            # Fallback: last 2 hours if no active recording
+                            cutoff_time = datetime.utcnow() - timedelta(hours=2)
+                        
+                        recent_videos = []
+                        
+                        for video in collection_videos:
+                            created_at_str = video.get('created_at', '')
+                            try:
+                                # Parse ISO format timestamp
+                                if created_at_str:
+                                    # Remove timezone info for comparison
+                                    created_str = created_at_str.split('+')[0].split('Z')[0]
+                                    created_dt = datetime.fromisoformat(created_str)
+                                    
+                                    if created_dt > cutoff_time:
+                                        recent_videos.append(video)
+                            except Exception:
+                                # If parsing fails, include the video
                                 recent_videos.append(video)
-                    except Exception:
-                        # If parsing fails, include the video
-                        recent_videos.append(video)
-                
-                logger.debug(
-                    f"Found {len(videos)} videos, "
-                    f"{len(recent_videos)} created after recording start"
-                )
-                
-                # Filter out already processed videos
-                new_videos = []
-                for video in recent_videos:
-                    uuid = video.get('uuid')
-                    if not uuid or uuid in self._processed_videos:
+                        
+                        logger.debug(
+                            f"Collection {coll_id}: {len(collection_videos)} videos, "
+                            f"{len(recent_videos)} created after recording start"
+                        )
+                        
+                        # Filter out already processed videos and check for faces
+                        new_videos = []
+                        for video in recent_videos:
+                            uuid = video.get('uuid')
+                            if not uuid or uuid in self._processed_videos:
+                                continue
+                            
+                            # Check if video has faces
+                            has_faces, face_count = await self._check_video_faces(
+                                client, headers, uuid
+                            )
+                            
+                            if has_faces:
+                                logger.info(
+                                    f"Collection {coll_id}: Found video {uuid[:8]}... with {face_count} faces"
+                                )
+                                new_videos.append(video)
+                                self._processed_videos.add(uuid)
+                                self._stats['videos_discovered'] += 1
+                        
+                        # Add to THIS collection's pending queue
+                        if not hasattr(self, '_pending_videos_by_collection'):
+                            self._pending_videos_by_collection = {}
+                        
+                        if coll_id not in self._pending_videos_by_collection:
+                            self._pending_videos_by_collection[coll_id] = []
+                        
+                        self._pending_videos_by_collection[coll_id].extend(new_videos)
+                        
+                        # Check if THIS collection has enough videos for a batch
+                        pending_count = len(self._pending_videos_by_collection[coll_id])
+                        if pending_count >= self.batch_size:
+                            # Trigger batch for exactly batch_size videos from THIS collection only
+                            videos_to_process = self._pending_videos_by_collection[coll_id][:self.batch_size]
+                            self._pending_videos_by_collection[coll_id] = self._pending_videos_by_collection[coll_id][self.batch_size:]
+                            
+                            logger.info(
+                                f"🚀 Triggering batch for collection {coll_id}: {len(videos_to_process)} videos"
+                            )
+                            await self._trigger_batch_processing(videos_to_process)
+                            
+                            # Check if this collection has another batch ready
+                            if len(self._pending_videos_by_collection[coll_id]) >= self.batch_size:
+                                logger.info(
+                                    f"Collection {coll_id}: Another batch ready! "
+                                    f"{len(self._pending_videos_by_collection[coll_id])} videos pending"
+                                )
+                        elif pending_count > 0:
+                            logger.info(
+                                f"Collection {coll_id}: Pending {pending_count}/{self.batch_size} videos (waiting for more)"
+                            )
+                    
+                    except Exception as e:
+                        logger.warning(f"Error processing collection {coll_id}: {e}")
                         continue
-                    
-                    # No need to check collection - already filtered by query
-                    
-                    # Check if video has faces
-                    has_faces, face_count = await self._check_video_faces(
-                        client, headers, uuid
-                    )
-                    
-                    if has_faces:
-                        logger.info(
-                            f"Found video {uuid[:8]}... with {face_count} faces"
-                        )
-                        new_videos.append(video)
-                        self._pending_videos.append(video)
-                        self._processed_videos.add(uuid)
-                        self._stats['videos_discovered'] += 1
-                
-                # Check if we have enough videos to trigger batch
-                if len(self._pending_videos) >= self.batch_size:
-                    # Trigger for exactly batch_size videos
-                    videos_to_process = self._pending_videos[:self.batch_size]
-                    self._pending_videos = self._pending_videos[self.batch_size:]
-                    
-                    await self._trigger_batch_processing(videos_to_process)
-                    
-                    # Check if we have another batch ready
-                    if len(self._pending_videos) >= self.batch_size:
-                        logger.info(
-                            f"Another batch ready! "
-                            f"{len(self._pending_videos)} videos pending"
-                        )
-                elif self._pending_videos:
-                    logger.info(
-                        f"Pending videos: {len(self._pending_videos)}"
-                        f"/{self.batch_size} (waiting for more)"
-                    )
         
         except Exception as e:
             logger.error(f"Error in _poll_for_videos: {e}", exc_info=True)
@@ -882,6 +888,19 @@ class PollingFallbackManager:
         Returns:
             Status dictionary with recordings and statistics
         """
+        # Calculate total pending videos across all collections
+        total_pending = sum(
+            len(videos) 
+            for videos in self._pending_videos_by_collection.values()
+        )
+        
+        # Per-collection pending counts
+        pending_by_collection = {
+            coll_id: len(videos)
+            for coll_id, videos in self._pending_videos_by_collection.items()
+            if videos  # Only include collections with pending videos
+        }
+        
         return {
             'enabled': self.enabled,
             'running': self._running,
@@ -895,37 +914,81 @@ class PollingFallbackManager:
                     'duration_seconds': (
                         datetime.utcnow() - info['started_at']
                     ).total_seconds(),
-                    'batches_triggered': info.get('batches_triggered', 0)
+                    'batches_triggered': info.get('batches_triggered', 0),
+                    'pending_videos': pending_by_collection.get(coll_id, 0)
                 }
                 for coll_id, info in self._active_recordings.items()
             },
-            'pending_videos': len(self._pending_videos),
+            'total_pending_videos': total_pending,
+            'pending_by_collection': pending_by_collection,
             'statistics': self._stats
         }
     
-    async def manual_trigger(self) -> dict:
+    async def manual_trigger(self, collection_id: str = None) -> dict:
         """
         Manually trigger batch processing for pending videos.
         Useful for testing and debugging.
         
+        Args:
+            collection_id: Optional specific collection to trigger.
+                          If None, triggers all collections.
+        
         Returns:
             Result dictionary
         """
-        if not self._pending_videos:
+        if not self._pending_videos_by_collection:
             return {
                 'status': 'no_videos',
                 'message': 'No pending videos to process'
             }
         
-        video_count = len(self._pending_videos)
-        await self._trigger_batch_processing(
-            self._pending_videos,
-            is_final=False
-        )
-        self._pending_videos = []
+        # If specific collection requested
+        if collection_id:
+            if collection_id not in self._pending_videos_by_collection:
+                return {
+                    'status': 'not_found',
+                    'message': f'No pending videos for collection {collection_id}'
+                }
+            
+            pending_videos = self._pending_videos_by_collection[collection_id]
+            if not pending_videos:
+                return {
+                    'status': 'no_videos',
+                    'message': f'No pending videos for collection {collection_id}'
+                }
+            
+            video_count = len(pending_videos)
+            await self._trigger_batch_processing(pending_videos, is_final=False)
+            self._pending_videos_by_collection[collection_id] = []
+            
+            return {
+                'status': 'success',
+                'collection_id': collection_id,
+                'videos_processed': video_count,
+                'message': f'Manually triggered batch for collection {collection_id}: {video_count} videos'
+            }
+        
+        # Trigger all collections
+        total_videos = 0
+        collections_triggered = []
+        
+        for coll_id, pending_videos in list(self._pending_videos_by_collection.items()):
+            if pending_videos:
+                video_count = len(pending_videos)
+                await self._trigger_batch_processing(pending_videos, is_final=False)
+                self._pending_videos_by_collection[coll_id] = []
+                total_videos += video_count
+                collections_triggered.append(coll_id)
+        
+        if total_videos == 0:
+            return {
+                'status': 'no_videos',
+                'message': 'No pending videos to process'
+            }
         
         return {
             'status': 'success',
-            'videos_processed': video_count,
-            'message': f'Manually triggered batch for {video_count} videos'
+            'videos_processed': total_videos,
+            'collections': collections_triggered,
+            'message': f'Manually triggered batches for {len(collections_triggered)} collections: {total_videos} videos'
         }

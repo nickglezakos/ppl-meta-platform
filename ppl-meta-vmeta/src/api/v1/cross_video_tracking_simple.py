@@ -136,6 +136,7 @@ import logging
 import json
 import hashlib
 import asyncio
+import httpx
 
 from pydantic import BaseModel, Field
 
@@ -155,11 +156,7 @@ class CreateTrackingSessionRequest(BaseModel):
     collections: List[str] = Field(..., min_items=1, max_items=10)
     start_time: datetime
     end_time: datetime
-    video_uuids: Optional[List[str]] = Field(
-        None, 
-        description="Optional explicit list of video UUIDs to process. "
-                    "If provided, skips time-based video discovery."
-    )
+    video_uuids: Optional[List[str]] = None  # Explicit video UUIDs - skip time-based query if provided
     algorithm_config: Optional[Dict[str, Any]] = None
     background_processing: bool = True
     force_reprocess: bool = False
@@ -510,8 +507,12 @@ async def create_tracking_session(
         # No cache hit - create new session
         logger.info(f"Cache MISS: Creating new session {session_uuid}")
         
-        # Store session in database  
+        # Store session in database (including video_uuids if provided)
         async with db_client.pool.acquire() as conn:
+            # Prepare video_uuids for storage
+            # CRITICAL: Pass as Python list, not JSON string - asyncpg handles JSONB conversion
+            video_uuids_list = request.video_uuids if request.video_uuids else None
+            
             await conn.execute("""
                 INSERT INTO tracking_sessions (
                     session_uuid, user_id, collections, start_time, end_time,
@@ -530,7 +531,7 @@ async def create_tracking_session(
                 "max_gap_seconds": 10,
                 "min_overlap_confidence": 0.5
             }),
-            request.video_uuids if request.video_uuids else []  # Explicit video UUIDs
+            video_uuids_list  # Pass as list, asyncpg converts to JSONB
             )
         
         logger.info(f"Created tracking session {session_uuid} for collections: {request.collections}")
@@ -565,52 +566,18 @@ async def create_tracking_session(
         except Exception:
             logger.debug("Failed to write create_auth_preview for session %s", session_uuid)
 
-        # Always trigger processing (background or synchronous)
+        # Schedule background processing if requested
         if request.background_processing:
-            # Process in background
-            logger.info(f"Scheduling background processing for session {session_uuid}")
+            # Pass auth header through to the background worker so it can call gateway/media with auth
             background_tasks.add_task(process_tracking_session, session_uuid, auth_header)
-            
-            return TrackingSessionResponse(
-                session_uuid=session_uuid,
-                status="initialized",
-                message="Session created successfully, processing in background",
-                cache_hit_rate=0.0,
-                total_videos=0
-            )
-        else:
-            # Process synchronously (wait for completion)
-            logger.info(f"Starting synchronous processing for session {session_uuid}")
-            try:
-                await process_tracking_session(session_uuid, auth_header)
-                
-                # Get final session status
-                db_client = get_database_client()
-                async with db_client.pool.acquire() as conn:
-                    final_result = await conn.fetchrow("""
-                        SELECT status, total_videos, processed_videos, 
-                               individuals_found, unique_mvr_people_count
-                        FROM tracking_sessions 
-                        WHERE session_uuid = $1
-                    """, session_uuid)
-                
-                return TrackingSessionResponse(
-                    session_uuid=session_uuid,
-                    status=final_result["status"] if final_result else "completed",
-                    message="Session completed successfully",
-                    cache_hit_rate=0.0,
-                    total_videos=final_result["total_videos"] if final_result else 0
-                )
-                
-            except Exception as e:
-                logger.error(f"Synchronous processing failed: {e}")
-                return TrackingSessionResponse(
-                    session_uuid=session_uuid,
-                    status="failed",
-                    message=f"Processing failed: {str(e)}",
-                    cache_hit_rate=0.0,
-                    total_videos=0
-                )
+        
+        return TrackingSessionResponse(
+            session_uuid=session_uuid,
+            status="initialized",
+            message="Session created successfully",
+            cache_hit_rate=0.0,
+            total_videos=0
+        )
         
     except Exception as e:
         logger.error(f"Failed to create tracking session: {e}")
@@ -2166,32 +2133,70 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                 WHERE session_uuid = $1
             """, session_uuid)
             
-        # Get session details including video_uuids if provided
+            # Get session details (include video_uuids for optimization)
             session = await conn.fetchrow("""
-                SELECT collections, start_time, end_time, algorithm_config, video_uuids
+                SELECT collections, start_time, end_time, algorithm_config, 
+                       video_uuids
                 FROM tracking_sessions WHERE session_uuid = $1
             """, session_uuid)
         
         if not session:
             raise ValueError(f"Session {session_uuid} not found")
         
-        logger.info(f"Processing session {session_uuid} for collections: {session['collections']}")
+        logger.info(
+            f"Processing session {session_uuid} for collections: "
+            f"{session['collections']}"
+        )
         
-        # Check if explicit video_uuids were provided
-        if session.get('video_uuids') and len(session['video_uuids']) > 0:
-            logger.info(f"Using explicit video_uuids: {len(session['video_uuids'])} videos")
-            # Convert UUIDs to video objects for processing
+        # Check if session has explicit video_uuids (stored as JSONB)
+        video_uuids_json = session.get('video_uuids')
+        video_uuids_list = None
+        if video_uuids_json:
+            try:
+                # Parse JSONB to Python list
+                if isinstance(video_uuids_json, str):
+                    video_uuids_list = json.loads(video_uuids_json)
+                else:
+                    video_uuids_list = video_uuids_json
+            except Exception as e:
+                logger.warning(f"Failed to parse video_uuids: {e}")
+        
+        if video_uuids_list:
+            # OPTIMIZATION: Use explicit video_uuids, skip time-based query
+            logger.info(f"Using explicit video_uuids: {len(video_uuids_list)} videos")
+            
+            # Fetch video metadata directly by UUIDs
             videos = []
-            for video_uuid in session['video_uuids']:
-                videos.append({
-                    "uuid": video_uuid,
-                    "collection": session['collections'][0] if session['collections'] else "unknown",
-                    "timestamp": session['start_time'].isoformat() if session['start_time'] else None,
-                    "duration": 30  # Default duration
-                })
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                for video_uuid in video_uuids_list:
+                    try:
+                        headers = {}
+                        if auth_token:
+                            headers['Authorization'] = f'Bearer {auth_token}' if not auth_token.startswith('Bearer ') else auth_token
+                        
+                        # Query media service for video metadata
+                        response = await client.get(
+                            f"http://localhost:8080/api/v1/media/{video_uuid}",
+                            headers=headers
+                        )
+                        
+                        if response.status_code == 200:
+                            video_data = response.json()
+                            videos.append({
+                                'uuid': video_uuid,
+                                'id': video_data.get('id'),
+                                'timestamp': video_data.get('created_at') or video_data.get('timestamp'),
+                                'collection': video_data.get('collection_id') or session['collections'][0]
+                            })
+                        else:
+                            logger.warning(f"Failed to fetch video {video_uuid}: {response.status_code}")
+                    except Exception as e:
+                        logger.error(f"Error fetching video {video_uuid}: {e}")
+            
+            logger.info(f"Fetched metadata for {len(videos)}/{len(video_uuids_list)} videos")
         else:
-            # Discover videos in the collection within time range (legacy behavior)
-            logger.info("No explicit video_uuids provided, using time-based discovery")
+            # LEGACY: Discover videos by time range
+            logger.info("Using time-based video discovery (no video_uuids provided)")
             videos = await discover_videos_in_collection(
                 session['collections'], 
                 session['start_time'], 
@@ -2272,6 +2277,52 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                     """, session_uuid, "entering_video_processing")
             except Exception:
                 pass
+            
+            # CRITICAL STEP: Call Enhanced Logic V2 to create person_objects from stored_faces
+            logger.info(f"Calling Enhanced Logic V2 for {len(videos)} videos to create person_objects...")
+            enhanced_v2_success = 0
+            enhanced_v2_failed = 0
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                for video in videos:
+                    video_uuid = video.get('uuid') or video.get('id')
+                    try:
+                        headers = {}
+                        if auth_token:
+                            headers['Authorization'] = f'Bearer {auth_token}' if not auth_token.startswith('Bearer ') else auth_token
+                        
+                        # Call Enhanced Logic V2 endpoint
+                        response = await client.post(
+                            f"http://localhost:8002/api/v1/media/{video_uuid}/faces/enhanced-v2",
+                            json={},
+                            headers=headers
+                        )
+                        
+                        if response.status_code in [200, 201]:
+                            result = response.json()
+                            person_count = result.get('person_groups_count', 0)
+                            logger.info(f"✅ Enhanced V2 for {video_uuid[:8]}: {person_count} person_objects created")
+                            enhanced_v2_success += 1
+                        else:
+                            logger.warning(f"Enhanced V2 failed for {video_uuid[:8]}: {response.status_code}")
+                            enhanced_v2_failed += 1
+                    except Exception as e:
+                        logger.error(f"Enhanced V2 error for {video_uuid[:8]}: {e}")
+                        enhanced_v2_failed += 1
+            
+            logger.info(f"Enhanced Logic V2 completed: {enhanced_v2_success} success, {enhanced_v2_failed} failed")
+            
+            # Log Enhanced V2 results to DB
+            try:
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, f"enhanced_v2_results: {enhanced_v2_success}_success_{enhanced_v2_failed}_failed")
+            except Exception:
+                pass
+            
             # Process any consecutive videos from the discovered videos
             # Sort videos by timestamp to ensure proper sequence
             videos_sorted = sorted(videos, key=lambda v: v.get('timestamp', ''))
@@ -3612,12 +3663,16 @@ async def merge_individuals_manual(
                 embedding_service = EmbeddingService(db_client)
                 individual_embeddings = {}
                 
-                # Extract embeddings for each individual
+                # Extract embeddings for each individual using REST API
+                # (no direct DB access to other services)
+                import aiohttp
+                import cv2
+                
                 for ind_uuid in request.individual_uuids:
-                    # Get best quality face crop from Vision DB
+                    # Get video appearances for this individual
                     async with db_client.pool.acquire() as conn:
                         video_appearances = await conn.fetch("""
-                            SELECT DISTINCT video_uuid
+                            SELECT DISTINCT video_uuid, person_object_uuid
                             FROM individual_video_appearances
                             WHERE individual_uuid = $1
                         """, ind_uuid)
@@ -3625,63 +3680,122 @@ async def merge_individuals_manual(
                         if not video_appearances:
                             continue
                         
-                        video_uuids = [str(va['video_uuid']) for va in video_appearances]
+                        # Use first video's person_object to get face data
+                        video_uuid = str(video_appearances[0]['video_uuid'])
                     
-                    # Query Vision DB for best face crop
+                    # Call Orchestrator API via Gateway to get person objects
+                    # (proper microservice pattern - no direct DB access)
                     try:
-                        import asyncpg
-                        import base64
-                        import cv2
-                        import uuid
-                        
-                        video_uuid_objects = [uuid.UUID(v) for v in video_uuids]
-                        
-                        vision_conn = await asyncpg.connect(
-                            "postgresql://postgres:localdevpass@localhost:5432/ppl_vision_db"
+                        orchestrator_url = (
+                            f"http://localhost:8080/api/v1/orchestrator/"
+                            f"person-objects/{video_uuid}"
                         )
                         
-                        try:
-                            person_obj = await vision_conn.fetchrow("""
-                                SELECT 
-                                    po.person_id,
-                                    po.best_face_id,
-                                    po.quality_score
-                                FROM person_objects po
-                                JOIN face_detections fd 
-                                    ON fd.id = po.best_face_id
-                                WHERE fd.media_id = ANY($1::uuid[])
-                                  AND po.quality_score IS NOT NULL
-                                ORDER BY po.quality_score DESC
-                                LIMIT 1
-                            """, video_uuid_objects)
-                            
-                            if person_obj and person_obj['best_face_id']:
-                                face_crop_data = await vision_conn.fetchrow("""
-                                    SELECT crop_base64
-                                    FROM face_crops
-                                    WHERE face_detection_id = $1
-                                """, person_obj['best_face_id'])
+                        headers = {}
+                        if auth_token:
+                            if not auth_token.startswith('Bearer'):
+                                headers['Authorization'] = f'Bearer {auth_token}'
+                            else:
+                                headers['Authorization'] = auth_token
+                        
+                        timeout = aiohttp.ClientTimeout(total=30)
+                        async with aiohttp.ClientSession(
+                            timeout=timeout
+                        ) as session:
+                            async with session.get(
+                                orchestrator_url, headers=headers
+                            ) as response:
+                                if response.status != 200:
+                                    logger.warning(
+                                        f"Orchestrator returned {response.status} "
+                                        f"for {video_uuid[:8]}"
+                                    )
+                                    continue
                                 
-                                if face_crop_data and face_crop_data['crop_base64']:
-                                    crop_bytes = base64.b64decode(face_crop_data['crop_base64'])
-                                    crop_array = np.frombuffer(crop_bytes, np.uint8)
-                                    face_crop = cv2.imdecode(crop_array, cv2.IMREAD_COLOR)
+                                orch_data = await response.json()
+                                if not (orch_data.get('success') and 
+                                        orch_data.get('person_groups')):
+                                    continue
+                                
+                                # Get first person object (best quality)
+                                person_group = orch_data['person_groups'][0]
+                                rep_faces = person_group.get(
+                                    'representative_faces', []
+                                )
+                                
+                                if not rep_faces:
+                                    continue
+                                
+                                # Use first face (highest quality)
+                                best_face = rep_faces[0]
+                                face_data = best_face.get('face_data', {})
+                                bbox = face_data.get('bbox')
+                                frame_number = face_data.get('frame_number', 0)
+                                
+                                if not bbox or len(bbox) != 4:
+                                    continue
+                                
+                                # Fetch frame from Media service via Gateway
+                                frame_url = (
+                                    f"http://localhost:8080/api/v1/media/"
+                                    f"{video_uuid}/frame/{frame_number}"
+                                    f"?format=jpeg"
+                                )
+                                
+                                async with session.get(
+                                    frame_url, headers=headers
+                                ) as frame_resp:
+                                    if frame_resp.status != 200:
+                                        continue
                                     
-                                    if face_crop is not None and face_crop.size > 0:
-                                        face_crop_rgb = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
-                                        h, w = face_crop_rgb.shape[:2]
-                                        
-                                        embedding, _ = await embedding_service._generate_facial_embedding(
-                                            face_crop_rgb, 0, 0, w, h
+                                    # Decode frame
+                                    frame_bytes = await frame_resp.read()
+                                    from PIL import Image
+                                    from io import BytesIO
+                                    
+                                    pil_image = Image.open(
+                                        BytesIO(frame_bytes)
+                                    )
+                                    frame = np.array(pil_image)
+                                    frame_bgr = cv2.cvtColor(
+                                        frame, cv2.COLOR_RGB2BGR
+                                    )
+                                    
+                                    # Crop and resize face
+                                    x, y = int(bbox[0]), int(bbox[1])
+                                    x2, y2 = int(bbox[2]), int(bbox[3])
+                                    
+                                    cropped = frame_bgr[y:y2, x:x2].copy()
+                                    if cropped.size == 0:
+                                        continue
+                                    
+                                    resized = cv2.resize(
+                                        cropped, (160, 160),
+                                        interpolation=cv2.INTER_AREA
+                                    )
+                                    
+                                    # Generate embedding
+                                    embedding, _ = (
+                                        await embedding_service
+                                        ._generate_facial_embedding(
+                                            resized, 0, 0, 160, 160
                                         )
-                                        
-                                        if embedding is not None:
-                                            individual_embeddings[ind_uuid] = embedding
-                                            logger.info(f"Generated embedding for {ind_uuid}")
-                        finally:
-                            await vision_conn.close()
+                                    )
+                                    
+                                    if embedding is not None:
+                                        individual_embeddings[ind_uuid] = (
+                                            embedding
+                                        )
+                                        logger.info(
+                                            f"Generated embedding for "
+                                            f"{ind_uuid[:8]} via REST API"
+                                        )
+                        
                     except Exception as e:
-                        logger.error(f"Failed to get embedding for {ind_uuid}: {e}")
+                        logger.error(
+                            f"Failed to get embedding for {ind_uuid[:8]} "
+                            f"via REST API: {e}"
+                        )
                         continue
                 
                 # Calculate average similarity if we have embeddings

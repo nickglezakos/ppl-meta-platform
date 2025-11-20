@@ -1512,6 +1512,18 @@ async def search_mvr_people_by_collection(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/search/by-videos")
+async def search_mvr_people_by_videos(request: Request):
+    """Proxy MVR people search by videos request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/mvr-people/count-by-videos")
+async def count_mvr_people_by_videos(request: Request):
+    """Proxy MVR people count by videos request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.get("/mvr-people/individuals/{individual_uuid}/analysis")
 async def get_individual_analysis_no_session(request: Request):
     """Proxy individual analysis without session to vmeta service."""
@@ -1523,4 +1535,15 @@ async def get_mvr_person_analysis(request: Request):
     """Proxy MVR person analysis to vmeta service."""
     return await _proxy_to_vmeta_service(request)
 
+
+@api_router.get("/mvr-people/count-by-camera/{camera_id}")
+async def get_camera_mvr_people_count(request: Request):
+    """Proxy camera MVR people count request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/mvr-people/count-by-collection/{collection_name}")
+async def get_collection_mvr_people_count(request: Request):
+    """Proxy collection MVR people count request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
 

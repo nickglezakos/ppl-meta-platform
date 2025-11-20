@@ -491,12 +491,13 @@ class PipelineExecutor:
         Returns:
             List of video metadata dictionaries
         """
-        url = f"{self.media_service_url}/api/v1/videos"
+        # Use Media search endpoint, not non-existent /api/v1/videos
+        url = f"{self.media_service_url}/api/v1/media/search"
         
         params = {
             "collection_id": collection_id,
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat(),
+            "date_from": start_time.isoformat(),
+            "date_to": end_time.isoformat(),
             "limit": 100  # Batch size should be < 100
         }
         
@@ -508,8 +509,9 @@ class PipelineExecutor:
                     f"{error_text}"
                 )
             
+            # Media search returns a list directly, not wrapped in "videos" key
             data = await response.json()
-            return data.get("videos", [])
+            return data if isinstance(data, list) else []
     
     async def _create_tracking_session(
         self,

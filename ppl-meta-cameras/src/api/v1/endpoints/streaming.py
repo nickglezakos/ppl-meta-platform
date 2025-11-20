@@ -247,6 +247,11 @@ async def start_recording(
     """Start recording from a specific camera with session tracking."""
 
     try:
+        # 🔍 DEBUG: Log current_user to investigate user_id issue
+        logger.info(f"🔍 [RECORD-START] current_user: {current_user}")
+        logger.info(f"🔍 [RECORD-START] current_user.get('sub'): {current_user.get('sub')}")
+        logger.info(f"🔍 [RECORD-START] device_id: {device_id}")
+        
         # Verify camera exists and supports recording
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
         if not camera:
@@ -287,17 +292,26 @@ async def start_recording(
             "quality_preset": "balanced",
         }
 
+        # Extract user_id from JWT token
+        user_id_from_token = current_user.get("sub")
+        if not user_id_from_token:
+            logger.error(f"🔍 [START-RECORDING] current_user: {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid authentication token: missing user ID"
+            )
+
         # Create recording session
         recording_session = session_service.create_session(
             camera_device_id=device_id,
-            user_id=current_user.get("sub") or "",
+            user_id=user_id_from_token,
             recording_config=recording_config,
         )
 
         # Start recording with session tracking
         recording_info = await camera_service.start_recording_with_session(
             device_id=device_id,
-            user_id=current_user.get("sub") or "",
+            user_id=user_id_from_token,
             quality="high",
             auth_token=credentials.credentials,
             session_uuid=recording_session.session_uuid,
@@ -381,8 +395,17 @@ async def stop_recording(
             )
 
         # Stop recording and get recording info
+        # Extract user_id from JWT token
+        user_id_from_token = current_user.get("sub")
+        if not user_id_from_token:
+            logger.error(f"🔍 [STOP-RECORDING] current_user has no 'sub': {current_user}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid authentication token: missing user ID"
+            )
+        
         recording_result = await camera_service.stop_recording(
-            device_id=device_id, user_id=current_user.get("sub")
+            device_id=device_id, user_id=user_id_from_token
         )
 
         if not recording_result:

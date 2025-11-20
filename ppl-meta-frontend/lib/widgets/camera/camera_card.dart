@@ -19,7 +19,7 @@ import '../../services/orchestrator_api_client.dart';
 import '../../services/media_api_client.dart';
 
 /// Enhanced camera card with integrated status monitoring
-class CameraCard extends ConsumerWidget {
+class CameraCard extends ConsumerStatefulWidget {
   final Camera camera;
   final bool showStream;
 
@@ -30,8 +30,97 @@ class CameraCard extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+  ConsumerState<CameraCard> createState() => _CameraCardState();
+}
+
+class _CameraCardState extends ConsumerState<CameraCard> {
+  int? _mvrPeopleCount;
+  bool _isLoadingCount = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchMVRPeopleCount();
+  }
+
+  Future<void> _fetchMVRPeopleCount({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    if (!mounted) return; // Check before starting
+    
+    setState(() {
+      _isLoadingCount = true;
+    });
+
+    try {
+      final mediaApiClient = ref.read(mediaApiClientProvider);
+      
+      debugPrint('🔍 Fetching MVR count for camera: ${widget.camera.name}');
+      
+      // Default to today's date range if not specified
+      final now = DateTime.now();
+      final effectiveStartDate = startDate ?? DateTime(now.year, now.month, now.day, 0, 0, 0);
+      final effectiveEndDate = endDate ?? DateTime(now.year, now.month, now.day, 23, 59, 59);
+      
+      // Step 1: Get videos from this camera's collection in date range
+      final searchResponse = await mediaApiClient.searchMedia(
+        collectionId: widget.camera.deviceId, // Collection identifier
+        mediaType: MediaType.video,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
+        limit: 100, // Get up to 100 videos
+      );
+
+      if (!mounted) return;
+
+      if (!searchResponse.success || searchResponse.data == null || searchResponse.data!.items.isEmpty) {
+        debugPrint('   No videos found for camera today');
+        setState(() {
+          _mvrPeopleCount = 0;
+          _isLoadingCount = false;
+        });
+        return;
+      }
+
+      // Step 2: Extract video UUIDs
+      final videoUuids = searchResponse.data!.items.map((media) => media.uuid).toList();
+      debugPrint('   Found ${videoUuids.length} videos today');
+
+      // Step 3: Get MVR people count for these videos
+      final countResponse = await mediaApiClient.getMVRPeopleCountByVideos(
+        videoUuids: videoUuids,
+      );
+
+      if (!mounted) return;
+
+      if (countResponse.success && countResponse.data != null) {
+        final count = countResponse.data!['count'] as int? ?? 0;
+        debugPrint('   MVR people count: $count');
+        setState(() {
+          _mvrPeopleCount = count;
+          _isLoadingCount = false;
+        });
+      } else {
+        debugPrint('   Count request failed: ${countResponse.error}');
+        setState(() {
+          _mvrPeopleCount = 0;
+          _isLoadingCount = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching MVR people count: $e');
+      if (!mounted) return;
+      setState(() {
+        _mvrPeopleCount = 0;
+        _isLoadingCount = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = widget.camera.type == CameraType.mobile || widget.camera.isMobileCamera;
     
     return Card(
       margin: EdgeInsets.zero,
@@ -44,7 +133,7 @@ class CameraCard extends ConsumerWidget {
             // Camera header
             _buildCameraHeader(context, ref),
             
-            if (showStream && (camera.isConnected || camera.isActive)) ...[
+            if (widget.showStream && (widget.camera.isConnected || widget.camera.isActive)) ...[
               const SizedBox(height: 16),
               _buildStreamSection(),
             ],
@@ -58,7 +147,7 @@ class CameraCard extends ConsumerWidget {
   }
 
   Widget _buildCameraHeader(BuildContext context, WidgetRef ref) {
-    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+    final isMobile = widget.camera.type == CameraType.mobile || widget.camera.isMobileCamera;
     
     return Row(
       children: [
@@ -66,12 +155,12 @@ class CameraCard extends ConsumerWidget {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: _getStatusColor(camera.status).withOpacity(0.1),
+            color: _getStatusColor(widget.camera.status).withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             isMobile ? Icons.smartphone : Icons.camera_alt,
-            color: _getStatusColor(camera.status),
+            color: _getStatusColor(widget.camera.status),
             size: 24,
           ),
         ),
@@ -87,7 +176,7 @@ class CameraCard extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      camera.name,
+                      widget.camera.name,
                       style: OfflineFonts.inter(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -112,12 +201,15 @@ class CameraCard extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 6),
                   ],
+                  // NEW: Detected persons counter badge
+                  _buildDetectedPersonsCounter(),
                 ],
               ),
               const SizedBox(height: 4),
               Text(
-                'ID: ${camera.deviceId}',
+                'ID: ${widget.camera.deviceId}',
                 style: OfflineFonts.inter(
                   fontSize: 12,
                   color: AppColors.textSecondary,
@@ -130,17 +222,17 @@ class CameraCard extends ConsumerWidget {
                     width: 8,
                     height: 8,
                     decoration: BoxDecoration(
-                      color: _getStatusColor(camera.status),
+                      color: _getStatusColor(widget.camera.status),
                       shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    camera.status.toUpperCase(),
+                    widget.camera.status.toUpperCase(),
                     style: OfflineFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: _getStatusColor(camera.status),
+                      color: _getStatusColor(widget.camera.status),
                     ),
                   ),
                 ],
@@ -157,7 +249,7 @@ class CameraCard extends ConsumerWidget {
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
-            camera.resolution ?? 'Unknown',
+            widget.camera.resolution ?? 'Unknown',
             style: OfflineFonts.inter(
               fontSize: 10,
               fontWeight: FontWeight.w500,
@@ -169,8 +261,81 @@ class CameraCard extends ConsumerWidget {
     );
   }
 
+  // NEW: Build detected persons counter badge
+  Widget _buildDetectedPersonsCounter() {
+    if (_isLoadingCount) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 10,
+              height: 10,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Loading...',
+              style: OfflineFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final count = _mvrPeopleCount ?? 0;
+    final hasDetections = count > 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: hasDetections 
+            ? Colors.green.withOpacity(0.1) 
+            : Colors.grey.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: hasDetections 
+              ? Colors.green.withOpacity(0.3) 
+              : Colors.grey.withOpacity(0.3),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.person,
+            size: 12,
+            color: hasDetections ? Colors.green.shade700 : Colors.grey.shade600,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '$count',
+            style: OfflineFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: hasDetections ? Colors.green.shade700 : Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStreamSection() {
-    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+    final isMobile = widget.camera.type == CameraType.mobile || widget.camera.isMobileCamera;
     
     return SizedBox(
       height: isMobile ? 320 : 240, // Taller container for mobile cameras to accommodate portrait aspect ratio
@@ -179,7 +344,7 @@ class CameraCard extends ConsumerWidget {
         child: Container(
           color: Colors.black, // Black background to show letterboxing clearly
           child: CameraStreamPlayerSimple(
-            cameraId: camera.deviceId,
+            cameraId: widget.camera.deviceId,
             width: double.infinity,
             height: isMobile ? 320 : 240,
           ),
@@ -190,9 +355,9 @@ class CameraCard extends ConsumerWidget {
 
   Widget _buildActionButtons(BuildContext context, WidgetRef ref) {
     final cameraService = ref.read(cameraServiceProvider);
-    final isConnected = camera.isConnected;
-    final isRTSP = camera.type == CameraType.rtsp;
-    final isMobile = camera.type == CameraType.mobile || camera.isMobileCamera;
+    final isConnected = widget.camera.isConnected;
+    final isRTSP = widget.camera.type == CameraType.rtsp;
+    final isMobile = widget.camera.type == CameraType.mobile || widget.camera.isMobileCamera;
     
     return Column(
       children: [
@@ -205,9 +370,9 @@ class CameraCard extends ConsumerWidget {
                 onPressed: () async {
                   try {
                     if (isConnected) {
-                      await cameraService.disconnectCamera(camera.deviceId);
+                      await cameraService.disconnectCamera(widget.camera.deviceId);
                     } else {
-                      await cameraService.connectCamera(camera.deviceId);
+                      await cameraService.connectCamera(widget.camera.deviceId);
                     }
                     // Refresh camera list
                     ref.read(cameraListProvider.notifier).loadCameras();
@@ -242,12 +407,12 @@ class CameraCard extends ConsumerWidget {
                 onPressed: isConnected ? () async {
                   try {
                     // Capture snapshot from camera
-                    final result = await cameraService.captureSnapshot(camera.deviceId);
+                    final result = await cameraService.captureSnapshot(widget.camera.deviceId);
                     
                     // Auto-upload to media service and associate with camera collection
                     try {
                           final snapshotCollectionService = ref.read(snapshotCollectionServiceProvider);
-                          await snapshotCollectionService.captureAndAssignToCollection(camera.deviceId, result);
+                          await snapshotCollectionService.captureAndAssignToCollection(widget.camera.deviceId, result);
                           debugPrint('✅ Snapshot uploaded successfully to camera collection');
                         } catch (uploadError) {
                           debugPrint('⚠️ Snapshot captured locally but upload failed: $uploadError');
@@ -301,17 +466,17 @@ class CameraCard extends ConsumerWidget {
                         final cameraCollectionService = ref.read(cameraCollectionServiceProvider);
                         
                         // Use camera's actual name for better collection matching
-                        final collectionId = await cameraCollectionService.getCameraCollectionIdWithName(camera.deviceId, camera.name);
+                        final collectionId = await cameraCollectionService.getCameraCollectionIdWithName(widget.camera.deviceId, widget.camera.name);
                         if (collectionId != null && context.mounted) {
-                          print('🎯 Camera ${camera.name} (${camera.deviceId}) navigating to collection: $collectionId');
+                          print('🎯 Camera ${widget.camera.name} (${widget.camera.deviceId}) navigating to collection: $collectionId');
                           context.go('/collections?initialCollectionId=$collectionId');
                         } else if (context.mounted) {
                           // Fallback to general collections if no specific collection found
-                          print('❌ No collection found for camera ${camera.name} (${camera.deviceId}), falling back to general collections');
+                          print('❌ No collection found for camera ${widget.camera.name} (${widget.camera.deviceId}), falling back to general collections');
                           context.go('/collections');
                         }
                       } catch (e) {
-                        print('❌ Error getting collection for camera ${camera.name} (${camera.deviceId}): $e');
+                        print('❌ Error getting collection for camera ${widget.camera.name} (${widget.camera.deviceId}): $e');
                         if (context.mounted) {
                           context.go('/collections');
                         }
@@ -385,22 +550,22 @@ class CameraCard extends ConsumerWidget {
       /// Check if camera supports recording
       bool _cameraSupportsRecording() {
         // Check metadata first for explicit supports_recording flag
-        if (camera.metadata?['supports_recording'] == true) {
+        if (widget.camera.metadata?['supports_recording'] == true) {
           return true;
         }
         
         // USB cameras typically support recording
-        if (camera.type == CameraType.usb) {
+        if (widget.camera.type == CameraType.usb) {
           return true;
         }
         
         // Mobile cameras support recording (H.264 codec)
-        if (camera.type == CameraType.mobile || camera.isMobileCamera) {
+        if (widget.camera.type == CameraType.mobile || widget.camera.isMobileCamera) {
           return true;
         }
         
         // RTSP cameras support recording (same as USB cameras, direct stream recording)
-        if (camera.type == CameraType.rtsp) {
+        if (widget.camera.type == CameraType.rtsp) {
           return true;
         }
         
@@ -410,8 +575,8 @@ class CameraCard extends ConsumerWidget {
 
       /// Build recording controls for the camera
       Widget _buildRecordingControls(WidgetRef ref) {
-        final recordingState = ref.watch(cameraRecordingProvider(camera.deviceId));
-        final recordingNotifier = ref.read(cameraRecordingProvider(camera.deviceId).notifier);
+        final recordingState = ref.watch(cameraRecordingProvider(widget.camera.deviceId));
+        final recordingNotifier = ref.read(cameraRecordingProvider(widget.camera.deviceId).notifier);
 
         return Row(
           children: [
@@ -650,7 +815,7 @@ class CameraCard extends ConsumerWidget {
           // First get recent media files from this camera to process
           final mediaClient = ref.read(mediaApiClientProvider);
           final mediaResponse = await mediaClient.searchMedia(
-            query: camera.name,
+            query: widget.camera.name,
             mediaType: MediaType.video,
             limit: 5, // Get last 5 videos from this camera
           );
@@ -659,7 +824,7 @@ class CameraCard extends ConsumerWidget {
           if (mediaResponse.success && mediaResponse.data != null) {
             // Get media IDs from recent recordings
             mediaIds = mediaResponse.data!.items
-                .where((media) => media.originalFilename?.contains(camera.deviceId) == true)
+                .where((media) => media.originalFilename?.contains(widget.camera.deviceId) == true)
                 .take(3) // Process last 3 recordings
                 .map((media) => media.uuid)
                 .toList();
@@ -816,17 +981,17 @@ class CameraCard extends ConsumerWidget {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: Text('Workflow Status - ${camera.name}'),
+            title: Text('Workflow Status - ${widget.camera.name}'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Camera: ${camera.name}',
+                  'Camera: ${widget.camera.name}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                Text('Device ID: ${camera.deviceId}'),
+                Text('Device ID: ${widget.camera.deviceId}'),
                 const SizedBox(height: 16),
                 const Text(
                   'Active Workflows:',
@@ -1030,13 +1195,13 @@ class CameraCard extends ConsumerWidget {
   void _showEditRTSPDialog(BuildContext context, WidgetRef ref) {
     // Convert Camera to RTSPCamera for editing
     final rtspCamera = RTSPCamera(
-      id: camera.id.toString(),
-      name: camera.name,
-      host: camera.streamUrl?.replaceFirst('rtsp://', '').split('@').last.split('/').first ?? '',
+      id: widget.camera.id.toString(),
+      name: widget.camera.name,
+      host: widget.camera.streamUrl?.replaceFirst('rtsp://', '').split('@').last.split('/').first ?? '',
       port: 554, // Default RTSP port
       username: '', // We don't store credentials in Camera model
       password: '',
-      streamPath: camera.streamUrl?.split('/').last ?? '/stream',
+      streamPath: widget.camera.streamUrl?.split('/').last ?? '/stream',
       transport: RTSPTransport.tcp,
       profile: RTSPProfile.main,
     );
@@ -1061,7 +1226,7 @@ class CameraCard extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete RTSP Camera'),
-        content: Text('Are you sure you want to delete "${camera.name}"?\n\nThis action cannot be undone.'),
+        content: Text('Are you sure you want to delete "${widget.camera.name}"?\n\nThis action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -1087,12 +1252,12 @@ class CameraCard extends ConsumerWidget {
   Future<void> _deleteRTSPCamera(BuildContext context, WidgetRef ref) async {
     try {
       final cameraActions = ref.read(cameraActionsProvider);
-      final success = await cameraActions.removeRTSPCamera(camera.deviceId);
+      final success = await cameraActions.removeRTSPCamera(widget.camera.deviceId);
       
       if (success && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('RTSP camera "${camera.name}" deleted successfully'),
+            content: Text('RTSP camera "${widget.camera.name}" deleted successfully'),
             backgroundColor: Colors.green,
           ),
         );
@@ -1101,7 +1266,7 @@ class CameraCard extends ConsumerWidget {
       } else if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete RTSP camera "${camera.name}"'),
+            content: Text('Failed to delete RTSP camera "${widget.camera.name}"'),
             backgroundColor: Colors.red,
           ),
         );

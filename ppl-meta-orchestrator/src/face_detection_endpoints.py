@@ -23,7 +23,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from service_clients import ServiceClientManager
@@ -58,14 +58,46 @@ except ImportError as e:
 
 
 # Security setup
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # Don't auto-error, we'll handle validation
+
+# Internal service token for service-to-service auth
+import os
+INTERNAL_SERVICE_TOKEN = os.getenv(
+    "INTERNAL_SERVICE_TOKEN",
+    "ppl-meta-internal-service-secret-key-change-in-production"
+)
 
 
 def get_auth_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    x_service_name: Optional[str] = Header(None, alias="X-Service-Name"),
 ) -> str:
-    """Extract and validate authentication token."""
-    return credentials.credentials
+    """
+    Extract and validate authentication token.
+    
+    Accepts both:
+    1. User authentication tokens (from mobile/web apps)
+    2. Internal service tokens (from other microservices)
+    
+    Internal service requests are identified by:
+    - Authorization: Bearer <INTERNAL_SERVICE_TOKEN>
+    - X-Service-Name header with service name
+    """
+    if not credentials:
+        # No auth provided - this might be okay for internal endpoints
+        # Return empty string to indicate no auth (caller can decide if required)
+        return ""
+    
+    token = credentials.credentials
+    
+    # Check if this is an internal service request
+    if token == INTERNAL_SERVICE_TOKEN:
+        # Valid internal service token
+        logger.debug(f"Internal service request from: {x_service_name or 'unknown'}")
+        return token
+    
+    # Otherwise, assume it's a user token (caller will validate with Node service)
+    return token
 
 
 # Router for face detection endpoints
@@ -227,6 +259,20 @@ class FaceDetectionSessionManager:
         logger.info(f"🆔 Starting Enhanced Logic V2 for media {media_id}")
         logger.info(f"   🎯 Session UUID: {session_uuid}")
 
+        # Step 0: Create session record in Vision Service database
+        # This is required for person-objects workflow
+        logger.info("💾 Step 0: Creating face detection session record...")
+        session_creation_result = await self._create_vision_session(
+            session_uuid, media_id, auth_token
+        )
+        
+        # Check if session creation succeeded
+        if not session_creation_result.get("success", False):
+            logger.error(
+                f"❌ Session creation failed: {session_creation_result.get('error', 'Unknown error')}"
+            )
+            # Continue anyway - person-objects workflow will handle missing session
+
         try:
             # Step 1: Check for stored faces in Vision Service
             logger.info("🔍 Step 1: Checking for stored faces...")
@@ -288,6 +334,14 @@ class FaceDetectionSessionManager:
                         f"✅ Enhanced {len(enhanced_faces)} faces with distance data"
                     )
 
+                    # ✨ STEP 1.5: Trigger person-objects workflow (IN-MEMORY MODE!)
+                    # Pass enhanced_faces directly to avoid database query timing issues
+                    logger.info("🧑 Step 1.5: Creating person objects from IN-MEMORY faces...")
+                    person_objects_result = await self._trigger_person_objects_workflow(
+                        session_uuid, auth_token, face_detections=enhanced_faces
+                    )
+                    logger.info(f"✅ Person objects workflow: {person_objects_result}")
+
                     processing_time = time.time() - start_time
 
                     return {
@@ -299,9 +353,12 @@ class FaceDetectionSessionManager:
                         "faces": enhanced_faces,  # Now includes distance data
                         "faces_by_frame": faces_by_frame,
                         "processing_time": processing_time,
+                        "person_objects_created": person_objects_result.get("person_count", 0),
+                        "person_objects_workflow_id": person_objects_result.get("workflow_id"),
                         "message": (
                             f"Retrieved {stored_face_count} stored faces "
-                            f"with distance calculations from existing session data"
+                            f"with distance calculations from existing session data, "
+                            f"created {person_objects_result.get('person_count', 0)} person objects"
                         ),
                     }
                 else:
@@ -378,7 +435,16 @@ class FaceDetectionSessionManager:
             )
 
             # Create headers with Authorization token
-            headers = {"Authorization": f"Bearer {auth_token}"}
+            # Use service token if auth_token is empty (internal service call)
+            if auth_token and auth_token != INTERNAL_SERVICE_TOKEN:
+                # Pass through user token
+                headers = {"Authorization": f"Bearer {auth_token}"}
+            else:
+                # Use internal service token for service-to-service call
+                headers = {
+                    "Authorization": f"Bearer {INTERNAL_SERVICE_TOKEN}",
+                    "X-Service-Name": "ppl-meta-orchestrator",
+                }
 
             # Call bulk-process with frame sampling
             # URL includes force_process and frame_interval parameters
@@ -424,6 +490,14 @@ class FaceDetectionSessionManager:
                         f"✅ Enhanced {len(enhanced_faces)} faces with distance data"
                     )
 
+                    # ✨ STEP 2.5: Trigger person-objects workflow (IN-MEMORY MODE!)
+                    # Pass enhanced_faces directly to avoid database query timing issues
+                    logger.info("🧑 Step 2.5: Creating person objects from IN-MEMORY real-time faces...")
+                    person_objects_result = await self._trigger_person_objects_workflow(
+                        session_uuid, auth_token, face_detections=enhanced_faces
+                    )
+                    logger.info(f"✅ Person objects workflow: {person_objects_result}")
+
                     processing_time = time.time() - start_time
 
                     # Create session linkage for future use
@@ -446,9 +520,12 @@ class FaceDetectionSessionManager:
                         "processing_time": processing_time,
                         "session_data": session_data,
                         "detection_result": detection_data,
+                        "person_objects_created": person_objects_result.get("person_count", 0),
+                        "person_objects_workflow_id": person_objects_result.get("workflow_id"),
                         "message": (
                             f"Detected {detected_face_count} faces "
-                            f"via real-time processing with distance calculations"
+                            f"via real-time processing with distance calculations, "
+                            f"created {person_objects_result.get('person_count', 0)} person objects"
                         ),
                     }
                 else:
@@ -496,6 +573,213 @@ class FaceDetectionSessionManager:
                 "error": str(e),
                 "message": f"Real-time detection error: {e}",
             }
+
+    async def _create_vision_session(
+        self, session_uuid: str, media_id: str, auth_token: str
+    ) -> Dict[str, Any]:
+        """
+        Create a face detection session record in Vision Service database.
+
+        This is required before calling person-objects workflow because the
+        workflow needs to look up the session to find associated face detections.
+
+        Args:
+            session_uuid: The session UUID to create
+            media_id: The media UUID this session processes
+            auth_token: Authentication token (user or service token)
+
+        Returns:
+            dict: Session creation result
+        """
+        try:
+            # Vision Service session creation endpoint (correct path)
+            session_url = "http://localhost:8003/sessions/start"
+
+            # Prepare session data matching FaceDetectionSessionRequest model
+            session_data = {
+                "session_uuid": session_uuid,
+                "media_uuid": media_id,
+                "session_type": "streaming",  # Must be streaming/upload/batch
+            }
+
+            # Create headers with Authorization token
+            if auth_token and auth_token != INTERNAL_SERVICE_TOKEN:
+                headers = {
+                    "Authorization": f"Bearer {auth_token}",
+                    "Content-Type": "application/json",
+                }
+            else:
+                headers = {
+                    "Authorization": f"Bearer {INTERNAL_SERVICE_TOKEN}",
+                    "X-Service-Name": "ppl-meta-orchestrator",
+                    "Content-Type": "application/json",
+                }
+
+            logger.info(f"💾 Creating session {session_uuid} in Vision database...")
+
+            # Call Vision Service to create session
+            response = requests.post(
+                session_url,
+                json=session_data,
+                headers=headers,
+                timeout=10,
+            )
+
+            if response.status_code in [200, 201]:
+                logger.info(f"✅ Session {session_uuid} created successfully")
+                return {"success": True, "session_uuid": session_uuid}
+            else:
+                logger.warning(
+                    f"⚠️ Session creation returned {response.status_code}: {response.text}"
+                )
+                return {
+                    "success": False,
+                    "error": f"Status {response.status_code}",
+                    "session_uuid": session_uuid,
+                }
+
+        except Exception as e:
+            logger.error(f"❌ Error creating Vision session: {e}")
+            return {"success": False, "error": str(e), "session_uuid": session_uuid}
+
+    async def _trigger_person_objects_workflow(
+        self, session_uuid: str, auth_token: str, face_detections: List[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Trigger person-objects workflow in Vision Service to create person_objects.
+
+        This is CRITICAL for the continuous pipeline because:
+        - person_objects are required for cross-video tracking
+        - Cross-video tracking creates individuals
+        - Individuals are aggregated into MVR people
+        - Without person_objects, the entire pipeline is blocked
+
+        Args:
+            session_uuid: The face detection session UUID
+            auth_token: Authentication token (user or service token)
+            face_detections: Optional list of face detection dicts from Enhanced Logic V2
+                           If provided, uses in-memory mode (faster, no database query)
+                           If None, uses session-based mode (queries database)
+
+        Returns:
+            dict: Person objects workflow result with person_count and workflow_id
+        """
+        try:
+            # Choose endpoint based on whether we have face_detections in memory
+            if face_detections:
+                # NEW: Use in-memory endpoint with face data (FASTER!)
+                person_objects_url = (
+                    "http://localhost:8003/api/v1/person-objects/workflows/start-from-faces"
+                )
+
+                # Prepare request body with face detections
+                request_data = {
+                    "session_uuid": session_uuid,
+                    "face_detections": face_detections,
+                    "tolerance_percent": 20.0,
+                    "enable_quality_analysis": True,
+                    "enable_age_detection": True,
+                    "workflow_metadata": {
+                        "source": "enhanced_logic_v2",
+                        "orchestrator_triggered": True,
+                        "in_memory_mode": True,
+                    },
+                }
+
+                logger.info(
+                    f"🧑 Calling person-objects workflow (IN-MEMORY MODE) for session {session_uuid} with {len(face_detections)} faces..."
+                )
+            else:
+                # OLD: Use session-based endpoint (queries database)
+                person_objects_url = (
+                    "http://localhost:8003/api/v1/person-objects/workflows/start"
+                )
+
+                # Prepare request body
+                request_data = {
+                    "session_uuid": session_uuid,
+                    "tolerance_percent": 20.0,
+                    "enable_quality_analysis": True,
+                    "enable_age_detection": True,
+                }
+
+                logger.info(
+                    f"🧑 Calling person-objects workflow (DATABASE MODE) for session {session_uuid}..."
+                )
+
+            # Create headers with Authorization token
+            # Use service token if auth_token is empty (internal service call)
+            if auth_token and auth_token != INTERNAL_SERVICE_TOKEN:
+                # Pass through user token
+                headers = {"Authorization": f"Bearer {auth_token}"}
+            else:
+                # Use internal service token for service-to-service call
+                headers = {
+                    "Authorization": f"Bearer {INTERNAL_SERVICE_TOKEN}",
+                    "X-Service-Name": "ppl-meta-orchestrator",
+                }
+
+            # Call Vision Service person-objects workflow endpoint
+            response = requests.post(
+                person_objects_url,
+                json=request_data,
+                headers=headers,
+                timeout=30,
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                # Person-objects workflow returns merged_groups count
+                person_count = result.get("merged_groups", 0)
+                workflow_id = result.get("workflow_id", "unknown")
+
+                logger.info(
+                    f"✅ Person objects workflow succeeded: "
+                    f"{person_count} person objects created (workflow: {workflow_id})"
+                )
+
+                return {
+                    "success": True,
+                    "person_count": person_count,
+                    "workflow_id": workflow_id,
+                    "session_uuid": session_uuid,
+                }
+            else:
+                error_msg = f"Person objects workflow failed: {response.status_code}"
+                logger.error(f"❌ {error_msg}")
+                logger.error(f"❌ Response body: {response.text[:500]}")  # First 500 chars
+
+                return {
+                    "success": False,
+                    "person_count": 0,
+                    "error": error_msg,
+                    "response_body": response.text[:200],
+                    "session_uuid": session_uuid,
+                }
+
+        except Exception as e:
+            import traceback
+            logger.error(f"❌ Error triggering person objects workflow: {e}")
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "person_count": 0,
+                "error": str(e),
+                "session_uuid": session_uuid,
+            }
+
+    # NOTE: Batch accumulation for cross-video tracking should be implemented
+    # in the vmeta service, not here. The Orchestrator's job is to:
+    # 1. Detect faces (Enhanced Logic V2) ✅
+    # 2. Create person_objects ✅
+    # 3. Notify vmeta that face detection completed (TODO)
+    # 
+    # The vmeta service should:
+    # - Subscribe to face_detection_complete events
+    # - Accumulate videos per collection until batch threshold reached
+    # - Trigger cross-video tracking automatically
+    # 
+    # See: docs/guides/developer/continuous-individuals-and-mvr-pipeline.md
 
     async def trigger_orchestrator_processing(
         self, request: FaceDetectionRequest

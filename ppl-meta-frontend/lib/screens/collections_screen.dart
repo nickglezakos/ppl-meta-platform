@@ -936,11 +936,33 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       print('🔍 Searching existing MVR people for collection: $collectionIdentifier');
       print('   Date range: ${_startDate!.toIso8601String()} to ${_endDate!.toIso8601String()}');
       
-      // Search for existing MVR people (no merge operations)
-      final searchResponse = await mediaApiClient.searchMVRPeopleByCollection(
-        collectionName: collectionIdentifier,
-        startTime: _startDate!,
-        endTime: _endDate!,
+      // Step 1: Get all videos from this collection within date range
+      final mediaResponse = await mediaApiClient.searchMedia(
+        collectionId: collectionIdentifier,
+        mediaType: MediaType.video,
+        startDate: _startDate,
+        endDate: _endDate,
+        limit: 500,
+      );
+
+      if (!mediaResponse.success || mediaResponse.data == null || mediaResponse.data!.items.isEmpty) {
+        print('   No videos found for collection');
+        setState(() {
+          _individualsCount = 0;
+          _uniqueMvrCount = 0;
+          _isLoadingIndividuals = false;
+        });
+        return;
+      }
+
+      final videoUuids = mediaResponse.data!.items.map((media) => media.uuid).toList();
+      print('   Found ${videoUuids.length} videos in collection');
+      
+      // Step 2: Search for existing MVR people in these videos
+      final searchResponse = await mediaApiClient.searchMVRPeopleByVideos(
+        videoUuids: videoUuids,
+        startTime: _startDate,
+        endTime: _endDate,
         limit: 500,
       );
 

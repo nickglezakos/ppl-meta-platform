@@ -93,6 +93,16 @@ async def _trigger_enhanced_logic_v2_for_media(
     to process face detection for newly uploaded videos.
     """
     try:
+        # Import service auth utilities
+        import sys
+        from pathlib import Path
+        # Add shared module to path
+        shared_path = Path(__file__).parent.parent.parent.parent.parent / "shared"
+        if str(shared_path) not in sys.path:
+            sys.path.insert(0, str(shared_path))
+        
+        from auth.service_auth import get_service_auth_headers
+        
         # Service URLs
         ORCHESTRATOR_SERVICE_URL = "http://localhost:8002"
 
@@ -102,11 +112,8 @@ async def _trigger_enhanced_logic_v2_for_media(
             f"{media_uuid}/faces/enhanced-v2"
         )
 
-        # Prepare headers - use service-to-service communication
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
+        # Prepare headers with service-to-service authentication
+        headers = get_service_auth_headers("ppl-meta-media")
 
         # For now, we'll make a simple GET request
         # In the future, this could include user context if needed
@@ -301,16 +308,20 @@ async def upload_media(
         media_response.url = urls["url"]
 
         # 🎯 AUTO-TRIGGER: Enhanced Logic V2 for video uploads
-        if media.media_type == MediaType.VIDEO:
-            try:
-                await _trigger_enhanced_logic_v2_for_media(
-                    str(media.uuid), current_user=None
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to trigger Enhanced Logic V2 for uploaded media "
-                    f"{media.uuid}: {e}"
-                )
+        # ⚠️ DISABLED - November 20, 2025
+        # Note: This trigger is for bulk upload endpoint, NOT needed for continuous pipeline.
+        # The continuous pipeline uses Camera service auto-trigger instead.
+        # Only re-enable if bulk upload workflow needs automatic face detection.
+        # if media.media_type == MediaType.VIDEO:
+        #     try:
+        #         await _trigger_enhanced_logic_v2_for_media(
+        #             str(media.uuid), current_user=None
+        #         )
+        #     except Exception as e:
+        #         logger.warning(
+        #             f"Failed to trigger Enhanced Logic V2 for uploaded media "
+        #             f"{media.uuid}: {e}"
+        #         )
 
         return media_response
 
@@ -836,13 +847,16 @@ async def reorder_collection_items(
 async def get_media(
     media_id: str,
     user_id: Optional[str] = None,
+    current_user: Optional[AuthUser] = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Get media by ID with access control."""
     try:
         media_service = MediaService(db)
+        # Use authenticated user if no user_id provided
+        effective_user_id = user_id or (current_user.user_id if current_user else None)
         media = await media_service.get_media(
-            media_id, user_id=UUID(user_id) if user_id else None
+            media_id, user_id=UUID(effective_user_id) if effective_user_id else None
         )
 
         if not media:
@@ -1154,7 +1168,7 @@ def get_media_access_check(
 
         return {
             "media": media,
-            "file_path": os.path.join("./storage", str(media.file_path)),
+            "file_path": str(media.file_path),  # Use exact database path
             "mime_type": str(media.mime_type),
             "filename": str(media.original_filename or media.filename),
         }

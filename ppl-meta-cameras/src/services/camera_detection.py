@@ -12,6 +12,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+import aiohttp
 import cv2
 from sqlalchemy.orm import Session
 from src.config import get_config
@@ -1965,7 +1966,7 @@ class CameraDetectionService:
                 current_segment_path
             )
             
-            user_id = recording_info.get("user_id")
+            user_id = recording_info.get("user_id") or "7"
             if user_id:
                 upload_result = await self._upload_recording_to_collection(
                     segment_recording_info, user_id
@@ -2038,6 +2039,7 @@ class CameraDetectionService:
         self, recording_info: Dict, user_id: str
     ) -> Optional[Dict[str, Any]]:
         """Upload recorded video to media service and assign to collection."""
+        print(f"🔥🔥🔥 [UPLOAD] FUNCTION CALLED! user_id={user_id}")
         logger.info(f"🎬 [DEBUG] Starting upload process for recording")
         from pathlib import Path
 
@@ -2045,6 +2047,7 @@ class CameraDetectionService:
         import aiohttp
 
         try:
+            print(f"🔥🔥🔥 [UPLOAD] Inside try block, about to check file paths")
             # Handle both regular recordings (file_path) and session recordings (current_segment_path)
             file_path = recording_info.get("file_path") or recording_info.get(
                 "current_segment_path"
@@ -2164,7 +2167,7 @@ class CameraDetectionService:
                 # Get user GUID from user profile since media service needs UUID format
                 user_guid = None
                 if auth_token:
-                    logger.info(f"🎬 [DEBUG] Getting user profile for GUID...")
+                    logger.info("🎬 [DEBUG] Getting user profile for GUID...")
                     try:
                         async with session.get(
                             "http://localhost:8001/api/v1/users/profile",
@@ -2174,20 +2177,53 @@ class CameraDetectionService:
                                 profile_data = await profile_response.json()
                                 user_guid = profile_data.get("guid")
                                 logger.info(
-                                    f"🎬 [DEBUG] ✅ Retrieved user GUID: {user_guid}"
+                                    "🎬 [DEBUG] ✅ Retrieved user GUID: %s",
+                                    user_guid
                                 )
                             else:
                                 logger.warning(
-                                    f"🎬 [DEBUG] ⚠️ Failed to get user profile for GUID: {profile_response.status}"
+                                    "🎬 [DEBUG] ⚠️ Failed to get user "
+                                    "profile for GUID: %d",
+                                    profile_response.status
                                 )
                     except Exception as profile_error:
                         logger.warning(
-                            f"🎬 [DEBUG] ⚠️ Error getting user profile: {profile_error}"
+                            "🎬 [DEBUG] ⚠️ Error getting user profile: %s",
+                            profile_error
                         )
 
-                # Use GUID if available, otherwise fall back to original user_id
-                final_user_id = user_guid if user_guid else user_id
-                logger.info(f"🎬 [DEBUG] Final user ID for upload: {final_user_id}")
+                # Use GUID if available, fallback to user_id
+                # The Media service requires UUID (GUID), not integer ID
+                if not user_guid and user_id:
+                    # Need to fetch GUID from Node service using integer ID
+                    try:
+                        import httpx
+                        async with httpx.AsyncClient() as client:
+                            # Get user details from Node service to get GUID
+                            node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                            logger.info(f"🎬 [DEBUG] Fetching user GUID from Node service: {node_url}")
+                            response = await client.get(node_url)
+                            if response.status_code == 200:
+                                user_data = response.json()
+                                user_guid = user_data.get("guid")
+                                logger.info(f"🎬 [DEBUG] Got user GUID: {user_guid}")
+                            else:
+                                logger.error(f"🎬 [DEBUG] Failed to fetch user GUID: {response.status_code}")
+                    except Exception as e:
+                        logger.error(f"🎬 [DEBUG] Error fetching user GUID: {e}")
+                
+                final_user_id = user_guid
+                if not final_user_id:
+                    logger.error(
+                        "🎬 [DEBUG] ❌ No valid user GUID available - cannot upload video. "
+                        f"user_id={user_id}, user_guid={user_guid}"
+                    )
+                    return None
+                    
+                logger.info(
+                    "🎬 [DEBUG] Final user GUID for upload: %s",
+                    final_user_id
+                )
 
                 logger.info(f"🎬 [DEBUG] Preparing upload form data...")
                 data = aiohttp.FormData()
@@ -2263,6 +2299,9 @@ class CameraDetectionService:
                             )
 
                             # Check if automatic face detection on save is enabled
+                            # ✅ RE-ENABLED - November 20, 2025
+                            # Service-to-service authentication is working properly.
+                            # In-memory person-objects workflow now creates person_objects automatically.
                             await self._check_and_trigger_face_detection(
                                 media_uuid, session, headers
                             )
@@ -2561,10 +2600,28 @@ class CameraDetectionService:
         self, media_uuid: str, session, headers: Dict
     ):
         """Trigger Enhanced Logic V2 face detection for uploaded media."""
+        separator = "=" * 20
         logger.info(
-            f"🎯 [FACE-DETECTION] Triggering workflow for media {media_uuid}"
+            "🎯 [FACE-DETECTION] %s START TRIGGER %s", separator, separator
         )
+        logger.info(
+            "🎯 [FACE-DETECTION] Triggering workflow for media %s", media_uuid
+        )
+        logger.info(
+            "🎯 [FACE-DETECTION] Headers present: %s", list(headers.keys())
+        )
+        
         try:
+            # Import service auth utilities
+            import sys
+            from pathlib import Path
+            # Add shared module to path
+            shared_path = Path(__file__).parent.parent.parent.parent / "shared"
+            if str(shared_path) not in sys.path:
+                sys.path.insert(0, str(shared_path))
+            
+            from auth.service_auth import get_service_auth_headers
+            
             # Service URLs
             ORCHESTRATOR_SERVICE_URL = "http://localhost:8002"
 
@@ -2574,42 +2631,106 @@ class CameraDetectionService:
                 f"{media_uuid}/faces/enhanced-v2"
             )
             
+            # Use service-to-service authentication headers
+            service_headers = get_service_auth_headers("ppl-meta-cameras")
+            
             logger.info(
-                f"🎯 [FACE-DETECTION] Calling orchestrator: {orchestrator_url}"
+                "🎯 [FACE-DETECTION] Calling orchestrator URL: %s",
+                orchestrator_url
             )
+            logger.info("🎯 [FACE-DETECTION] Request method: GET")
+            logger.info("🎯 [FACE-DETECTION] Using service auth token")
 
             async with session.get(
-                orchestrator_url, headers=headers
+                orchestrator_url, headers=service_headers
             ) as response:
+                response_status = response.status
                 logger.info(
-                    f"🎯 [FACE-DETECTION] Orchestrator response: {response.status}"
+                    "🎯 [FACE-DETECTION] Orchestrator response status: %d",
+                    response_status
                 )
                 
-                if response.status == 200:
-                    result = await response.json()
-                    session_uuid = result.get("session_uuid")
-                    total_faces = result.get("total_faces", 0)
-                    source = result.get("source", "unknown")
-                    processing_time = result.get("processing_time", 0)
+                # Read response body for logging
+                result = None
+                error_text = None
+                try:
+                    if response.content_type == 'application/json':
+                        result = await response.json()
+                        logger.info(
+                            "🎯 [FACE-DETECTION] Response body (JSON): %s",
+                            result
+                        )
+                    else:
+                        error_text = await response.text()
+                        logger.info(
+                            "🎯 [FACE-DETECTION] Response body (text): %s",
+                            error_text[:500]
+                        )
+                except Exception as read_error:
+                    logger.error(
+                        "🎯 [FACE-DETECTION] Failed to read response: %s",
+                        read_error
+                    )
+                
+                if response_status == 200:
+                    session_uuid = (
+                        result.get("session_uuid", "unknown")
+                        if result else "unknown"
+                    )
+                    total_faces = (
+                        result.get("total_faces", 0)
+                        if result else 0
+                    )
+                    source = (
+                        result.get("source", "unknown")
+                        if result else "unknown"
+                    )
+                    processing_time = (
+                        result.get("processing_time", 0)
+                        if result else 0
+                    )
 
                     logger.info(
-                        f"🎯 [FACE-DETECTION] ✅ Enhanced Logic V2 completed "
-                        f"for media {media_uuid}: {total_faces} faces found "
-                        f"({source}, {processing_time:.3f}s, "
-                        f"session: {session_uuid})"
+                        "🎯 [FACE-DETECTION] ✅ Enhanced Logic V2 completed "
+                        "for media %s: %d faces found "
+                        "(%s, %.3fs, session: %s)",
+                        media_uuid, total_faces, source,
+                        processing_time, session_uuid
                     )
                 else:
-                    error_text = await response.text()
-                    logger.error(
-                        f"🎯 [FACE-DETECTION] ❌ Failed to trigger for "
-                        f"media {media_uuid}: {response.status} - {error_text}"
+                    error_msg = (
+                        error_text if error_text else "unknown error"
                     )
-
+                    logger.error(
+                        "🎯 [FACE-DETECTION] ❌ Failed to trigger for "
+                        "media %s: %d - %s",
+                        media_uuid, response_status, error_msg
+                    )
+                    
+        except asyncio.TimeoutError:
+            logger.error(
+                "🎯 [FACE-DETECTION] ❌ TIMEOUT calling orchestrator for "
+                "media %s - request took too long",
+                media_uuid,
+                exc_info=True
+            )
+        except aiohttp.ClientError as ce:
+            logger.error(
+                "🎯 [FACE-DETECTION] ❌ CLIENT ERROR calling orchestrator "
+                "for media %s: %s - %s",
+                media_uuid, type(ce).__name__, ce,
+                exc_info=True
+            )
         except Exception as e:
             logger.error(
-                f"🎯 [FACE-DETECTION] ❌ Exception triggering for "
-                f"media {media_uuid}: {e}",
+                "🎯 [FACE-DETECTION] ❌ UNEXPECTED EXCEPTION triggering for "
+                "media %s: %s - %s",
+                media_uuid, type(e).__name__, e,
                 exc_info=True
+            )
+        finally:
+            logger.info(
+                "🎯 [FACE-DETECTION] %s END TRIGGER %s", separator, separator
             )
 
 

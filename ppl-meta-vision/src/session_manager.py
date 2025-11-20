@@ -111,7 +111,7 @@ class SessionManager:
                             """
                             INSERT INTO face_detection_sessions 
                             (session_uuid, media_uuid, camera_device_uuid, session_type, 
-                             started_at, processing_status, total_faces_detected, metadata)
+                             started_at, processing_status, total_faces_detected, session_metadata)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                             (
@@ -176,7 +176,9 @@ class SessionManager:
             )
 
             return SessionStartResponse(
-                session=session_model, message="Session created successfully"
+                success=True,
+                session=session_model,
+                message="Session created successfully",
             )
 
         except Exception as e:

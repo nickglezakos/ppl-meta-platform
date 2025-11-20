@@ -1659,13 +1659,298 @@ async def batch_match_and_merge(
 
 
 # ============================================================================
-# ENDPOINT: Search Existing MVR People by Collection and Date Range
+# ENDPOINT: Search Existing MVR People by Video UUIDs
 # ============================================================================
+
+@router.post(
+    "/search/by-videos",
+    response_model=MVRPeopleSearchResponse,
+    summary="Search Existing MVR People by Video UUIDs",
+    description="Search for existing MVR people detected in specific videos. "
+                "Returns cached/existing data without triggering any merge "
+                "operations. Only queries VMeta's own database.",
+)
+async def search_mvr_people_by_videos(
+    video_uuids: List[str] = Body(
+        ..., embed=True, description="List of video UUIDs to search"
+    ),
+    start_time: Optional[datetime] = Body(
+        None, description="Optional start time filter"
+    ),
+    end_time: Optional[datetime] = Body(
+        None, description="Optional end time filter"
+    ),
+    limit: int = Body(100, description="Max results (default: 100, max: 500)"),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Search for existing MVR people detected in specific videos.
+    
+    This endpoint fetches EXISTING MVR people and their linked individuals
+    that appear in the provided video UUIDs. It does NOT trigger any merge
+    operations - it only retrieves cached data.
+    
+    **Use Case:** Fetch existing MVR analysis results for a collection's
+    videos without reprocessing.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - video_uuids: List of video UUIDs to search
+    - start_time: Optional start time filter (ISO 8601)
+    - end_time: Optional end time filter (ISO 8601)
+    - limit: Maximum results to return (default: 100, max: 500)
+    
+    **Returns:**
+    - 200 OK: List of MVR people with aggregated data
+    - 400 Bad Request: Invalid parameters
+    - 500 Internal Server Error: Database error
+    """
+    logger.info(
+        f"Searching existing MVR people for {len(video_uuids)} videos "
+        f"(user: {current_user.get('email')})"
+    )
+    
+    try:
+        if not video_uuids:
+            return MVRPeopleSearchResponse(
+                success=True,
+                total_results=0,
+                mvr_people=[],
+                search_parameters={
+                    "video_uuids": [],
+                    "start_time": (
+                        start_time.isoformat() if start_time else None
+                    ),
+                    "end_time": (
+                        end_time.isoformat() if end_time else None
+                    ),
+                    "limit": limit
+                },
+                message="No videos provided"
+            )
+        
+        # Convert timezone-aware datetimes to naive if provided
+        start_time_naive = (
+            start_time.replace(tzinfo=None) if start_time else None
+        )
+        end_time_naive = end_time.replace(tzinfo=None) if end_time else None
+        
+        # Convert string UUIDs to UUID objects
+        video_uuid_objs = [UUID(vid) for vid in video_uuids]
+        
+        # Get database connection from the repository's pool
+        async with mvr_repository.pool.acquire() as conn:
+            # Find all individuals that appear in these videos
+            individuals_query = """
+                SELECT DISTINCT individual_uuid
+                FROM individual_video_appearances
+                WHERE video_uuid = ANY($1::uuid[])
+            """
+            
+            if start_time_naive and end_time_naive:
+                individuals_query += """
+                    AND start_timestamp >= $2
+                    AND end_timestamp <= $3
+                """
+                individual_rows = await conn.fetch(
+                    individuals_query,
+                    video_uuid_objs,
+                    start_time_naive,
+                    end_time_naive
+                )
+            else:
+                individual_rows = await conn.fetch(
+                    individuals_query,
+                    video_uuid_objs
+                )
+            
+            if not individual_rows:
+                logger.info("No individuals found in provided videos")
+                return MVRPeopleSearchResponse(
+                    success=True,
+                    total_results=0,
+                    mvr_people=[],
+                    search_parameters={
+                        "video_uuids": video_uuids,
+                        "start_time": (
+                            start_time.isoformat() if start_time else None
+                        ),
+                        "end_time": (
+                            end_time.isoformat() if end_time else None
+                        ),
+                        "limit": limit
+                    },
+                    message="No individuals found in videos"
+                )
+            
+            individual_uuids = [
+                str(row['individual_uuid']) for row in individual_rows
+            ]
+            
+            # Find MVR people linked to these individuals
+            mvr_query = """
+                SELECT DISTINCT
+                    mp.mvr_people_uuid,
+                    mp.quality_score,
+                    mp.confidence_score,
+                    mp.age_min,
+                    mp.age_max,
+                    mp.gender,
+                    mp.created_at,
+                    mp.updated_at
+                FROM mvr_people mp
+                INNER JOIN individual_mvr_mapping imm
+                  ON mp.mvr_people_uuid = imm.mvr_people_uuid
+                WHERE imm.individual_uuid = ANY($1::uuid[])
+                    AND mp.is_orphaned = false
+                ORDER BY mp.created_at DESC
+                LIMIT $2
+            """
+            
+            mvr_records = await conn.fetch(
+                mvr_query,
+                individual_uuids,
+                limit
+            )
+            
+            results = []
+            
+            # For each MVR person, get all linked individuals & appearances
+            for mvr_record in mvr_records:
+                mvr_uuid = str(mvr_record['mvr_people_uuid'])
+                
+                # Get all linked individual UUIDs for this MVR person
+                linked_individuals_query = """
+                    SELECT individual_uuid
+                    FROM individual_mvr_mapping
+                    WHERE mvr_people_uuid = $1
+                """
+                linked_rows = await conn.fetch(
+                    linked_individuals_query, mvr_uuid
+                )
+                linked_individual_uuids = [
+                    str(row['individual_uuid']) for row in linked_rows
+                ]
+                
+                # Get appearances for these individuals in our target videos
+                appearances_query = """
+                    SELECT
+                        iva.video_uuid,
+                        iva.person_object_uuid,
+                        iva.start_timestamp,
+                        iva.end_timestamp,
+                        iva.confidence
+                    FROM individual_video_appearances iva
+                    WHERE iva.individual_uuid = ANY($1::uuid[])
+                        AND iva.video_uuid = ANY($2::uuid[])
+                    ORDER BY iva.start_timestamp ASC
+                """
+                
+                query_params = [linked_individual_uuids, video_uuid_objs]
+                
+                if start_time_naive and end_time_naive:
+                    appearances_query = appearances_query.replace(
+                        "ORDER BY",
+                        "AND iva.start_timestamp >= $3 "
+                        "AND iva.end_timestamp <= $4 ORDER BY"
+                    )
+                    query_params.extend([start_time_naive, end_time_naive])
+                
+                appearances_rows = await conn.fetch(
+                    appearances_query,
+                    *query_params
+                )
+                
+                if not appearances_rows:
+                    # Skip MVR people with no appearances in target videos
+                    continue
+                
+                # Build appearance objects
+                appearances = [
+                    IndividualAppearance(
+                        video_uuid=str(row['video_uuid']),
+                        person_object_uuid=str(row['person_object_uuid']),
+                        start_timestamp=row['start_timestamp'],
+                        end_timestamp=row['end_timestamp'],
+                        confidence=float(row['confidence'])
+                    )
+                    for row in appearances_rows
+                ]
+                
+                # Calculate aggregate statistics
+                unique_videos = len(set(app.video_uuid for app in appearances))
+                first_seen = min(app.start_timestamp for app in appearances)
+                last_seen = max(app.end_timestamp for app in appearances)
+                
+                # Format age range if available
+                age_display = None
+                if mvr_record['age_min'] and mvr_record['age_max']:
+                    age_display = (
+                        f"{mvr_record['age_min']}-{mvr_record['age_max']}"
+                    )
+                
+                # Create result object
+                result = MVRPersonResult(
+                    mvr_people_uuid=mvr_uuid,
+                    individual_uuids=linked_individual_uuids,
+                    total_appearances=len(appearances),
+                    unique_videos=unique_videos,
+                    first_seen=first_seen,
+                    last_seen=last_seen,
+                    confidence_score=float(
+                        mvr_record['confidence_score'] or 0.0
+                    ),
+                    quality_score=float(mvr_record['quality_score'] or 0.0),
+                    appearances=appearances,
+                    estimated_age=age_display,
+                    estimated_gender=mvr_record['gender']
+                )
+                
+                results.append(result)
+            
+            logger.info(
+                f"Found {len(results)} existing MVR people in videos"
+            )
+            
+            return MVRPeopleSearchResponse(
+                success=True,
+                total_results=len(results),
+                mvr_people=results,
+                search_parameters={
+                    "video_uuids": video_uuids,
+                    "video_count": len(video_uuids),
+                    "start_time": (
+                        start_time.isoformat() if start_time else None
+                    ),
+                    "end_time": end_time.isoformat() if end_time else None,
+                    "limit": limit
+                },
+                message=f"Found {len(results)} existing MVR people"
+            )
+            
+    except Exception as e:
+        logger.error(
+            f"Error searching MVR people by videos: {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search MVR people: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT: Search Existing MVR People by Collection (DEPRECATED)
+# ============================================================================
+# NOTE: This endpoint cannot filter by collection without cross-database
+# queries. Use /search/by-videos instead.
 
 @router.post(
     "/search/by-collection",
     response_model=MVRPeopleSearchResponse,
-    summary="Search Existing MVR People by Collection",
+    summary="Search Existing MVR People by Collection (DEPRECATED)",
+    deprecated=True,
     description="Search for existing MVR people created within a date range "
                 "for a specific collection. Returns cached/existing data "
                 "without triggering any merge operations.",
@@ -2147,6 +2432,357 @@ async def get_mvr_person_analysis(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch MVR person analysis: {str(e)}"
+        ) from e
+
+
+# ============================================================================
+# ENDPOINT: Count MVR People by Video UUIDs (Today)
+# ============================================================================
+
+@router.post(
+    "/count-by-videos",
+    summary="Get MVR People Count for Video UUIDs",
+    description=(
+        "Returns the count of unique MVR people detected in the specified "
+        "videos. Only queries VMeta's own database. Useful for getting "
+        "per-camera or per-collection counts."
+    ),
+)
+async def get_videos_mvr_people_count(
+    video_uuids: List[str] = Body(
+        ..., embed=True, description="List of video UUIDs"
+    ),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    _current_user: dict = Depends(get_current_user)
+):
+    """
+    Get count of unique MVR people detected in specific videos.
+
+    Request Body:
+        {
+            "video_uuids": ["uuid1", "uuid2", "uuid3"]
+        }
+
+    Returns:
+        {
+            "count": 5,
+            "video_count": 3
+        }
+    """
+    try:
+        if not video_uuids:
+            return {
+                "count": 0,
+                "video_count": 0
+            }
+
+        logger.info(
+            "Fetching MVR people count for %d videos", len(video_uuids)
+        )
+
+        # Get database connection
+        async with mvr_repository.pool.acquire() as conn:
+            # Query unique MVR people count for these videos
+            # Only uses VMeta's own tables:
+            # - individual_video_appearances (has video_uuid, individual_uuid)
+            # - individual_mvr_mapping (maps individuals to MVR people)
+            count_query = """
+                WITH video_individuals AS (
+                    -- Get individuals with appearances in these videos
+                    SELECT DISTINCT iva.individual_uuid
+                    FROM individual_video_appearances iva
+                    WHERE iva.video_uuid = ANY($1::uuid[])
+                )
+                -- Count unique MVR people linked to these individuals
+                SELECT COUNT(DISTINCT imm.mvr_people_uuid) as mvr_count
+                FROM individual_mvr_mapping imm
+                WHERE imm.individual_uuid IN (
+                    SELECT individual_uuid FROM video_individuals
+                )
+            """
+
+            # Convert string UUIDs to UUID array for PostgreSQL
+            uuid_array = [UUID(vid) for vid in video_uuids]
+            
+            count_row = await conn.fetchrow(
+                count_query,
+                uuid_array
+            )
+
+            mvr_count = count_row['mvr_count'] if count_row else 0
+
+            return {
+                "count": mvr_count,
+                "video_count": len(video_uuids)
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error fetching videos MVR people count: %s", e, exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch videos MVR people count: {str(e)}"
+        ) from e
+
+
+# ============================================================================
+# ENDPOINT: Count MVR People by Collection (Today) - DEPRECATED
+# ============================================================================
+# NOTE: This endpoint requires cross-database queries which violates
+# microservice boundaries. Use /count-by-videos instead.
+
+@router.get(
+    "/count-by-collection/{collection_name}",
+    summary="Get Today's MVR People Count for Collection (DEPRECATED)",
+    deprecated=True,
+    description=(
+        "Returns the count of unique MVR people detected today for a "
+        "specific collection. Queries MVR people with appearances in "
+        "that collection today."
+    ),
+)
+async def get_collection_mvr_people_count(
+    collection_name: str,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    _current_user: dict = Depends(get_current_user)
+):
+    """
+    Get count of unique MVR people detected today for a collection.
+
+    Returns:
+        {
+            "collection_name": "camera-device-123",
+            "count": 5,
+            "date": "2025-11-16",
+            "start_time": "2025-11-16T00:00:00",
+            "end_time": "2025-11-16T23:59:59"
+        }
+    """
+    from datetime import time
+
+    try:
+        logger.info(
+            "Fetching MVR people count for collection: %s", collection_name
+        )
+
+        # Get database connection
+        async with mvr_repository.pool.acquire() as conn:
+            # Get today's date range (00:00:00 to 23:59:59)
+            today = datetime.now().date()
+            start_time = datetime.combine(today, time.min)  # 00:00:00
+            end_time = datetime.combine(today, time.max)  # 23:59:59.999999
+
+            # Convert to naive datetime for database
+            # (PostgreSQL timestamps are naive)
+            start_time = start_time.replace(tzinfo=None)
+            end_time = end_time.replace(tzinfo=None)
+
+            # Query unique MVR people count for collection today
+            # We need to:
+            # a) Find all media in the collection
+            # b) Find all individual_video_appearances for those media
+            #    within today's timeframe
+            # c) Count unique MVR people associated with those individuals
+
+            count_query = """
+                WITH collection_videos AS (
+                    -- Get all videos in the collection
+                    SELECT v.video_uuid
+                    FROM videos v
+                    JOIN media_collections mc
+                      ON v.collection_uuid = mc.collection_uuid
+                    WHERE mc.collection_name = $1
+                ),
+                today_individuals AS (
+                    -- Get all individuals with appearances today
+                    SELECT DISTINCT iva.individual_uuid
+                    FROM individual_video_appearances iva
+                    WHERE iva.video_uuid IN (
+                        SELECT video_uuid FROM collection_videos
+                    )
+                      AND iva.start_timestamp >= $2
+                      AND iva.start_timestamp <= $3
+                )
+                -- Count unique MVR people linked to these individuals
+                SELECT COUNT(DISTINCT imm.mvr_people_uuid) as mvr_count
+                FROM individual_mvr_mapping imm
+                WHERE imm.individual_uuid IN (
+                    SELECT individual_uuid FROM today_individuals
+                )
+            """
+
+            count_row = await conn.fetchrow(
+                count_query,
+                collection_name,
+                start_time,
+                end_time
+            )
+
+            mvr_count = count_row['mvr_count'] if count_row else 0
+
+            return {
+                "collection_name": collection_name,
+                "count": mvr_count,
+                "date": today.isoformat(),
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat()
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error fetching collection MVR people count: %s", e, exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch collection MVR people count: {str(e)}"
+        ) from e
+
+
+# ============================================================================
+# ENDPOINT: Count MVR People by Camera (Today) - DEPRECATED
+# ============================================================================
+# NOTE: This endpoint requires cross-database queries which isn't supported
+# Use /count-by-collection/{collection_name} instead
+
+@router.get(
+    "/count-by-camera/{camera_id}",
+    summary="Get Today's MVR People Count for Camera (DEPRECATED)",
+    description=(
+        "DEPRECATED: Use /count-by-collection/{collection_name} instead. "
+        "This endpoint requires cross-service database access."
+    ),
+    deprecated=True,
+)
+async def get_camera_mvr_people_count(
+    camera_id: str,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    _current_user: dict = Depends(get_current_user)
+):
+    """
+    DEPRECATED: Get count of unique MVR people detected today for a camera.
+
+    Please use /count-by-collection/{collection_name} endpoint instead.
+    Frontend should map camera_id to collection_name first.
+    """
+    from datetime import time
+
+    try:
+        logger.info("Fetching MVR people count for camera: %s", camera_id)
+
+        # Get database connection
+        async with mvr_repository.pool.acquire() as conn:
+            # Step 1: Get camera's collection name from media_collections table
+            # The media service stores camera_device_id in media_collections
+            collection_row = await conn.fetchrow(
+                """
+                SELECT collection_name
+                FROM media_collections
+                WHERE camera_device_id = $1
+                LIMIT 1
+                """,
+                camera_id
+            )
+
+            if not collection_row:
+                return {
+                    "camera_id": camera_id,
+                    "collection_name": None,
+                    "count": 0,
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "start_time": None,
+                    "end_time": None,
+                    "message": "No collection found for this camera"
+                }
+
+            collection_name = collection_row['collection_name']
+            if not collection_name:
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                return {
+                    "camera_id": camera_id,
+                    "collection_name": None,
+                    "count": 0,
+                    "date": today_str,
+                    "start_time": None,
+                    "end_time": None,
+                    "message": "Camera has no associated collection"
+                }
+
+            # Step 2: Get today's date range (00:00:00 to 23:59:59)
+            today = datetime.now().date()
+            start_time = datetime.combine(today, time.min)  # 00:00:00
+            end_time = datetime.combine(today, time.max)  # 23:59:59.999999
+
+            # Convert to naive datetime for database
+            # (PostgreSQL timestamps are naive)
+            start_time = start_time.replace(tzinfo=None)
+            end_time = end_time.replace(tzinfo=None)
+
+            # Step 3: Query unique MVR people count for collection today
+            # We need to:
+            # a) Find all media in the collection
+            # b) Find all individual_video_appearances for those media
+            #    within today's timeframe
+            # c) Count unique MVR people associated with those individuals
+
+            count_query = """
+                WITH collection_videos AS (
+                    -- Get all videos in the camera's collection
+                    SELECT v.video_uuid
+                    FROM videos v
+                    JOIN media_collections mc
+                      ON v.collection_uuid = mc.collection_uuid
+                    WHERE mc.collection_name = $1
+                ),
+                today_individuals AS (
+                    -- Get all individuals with appearances today
+                    SELECT DISTINCT iva.individual_uuid
+                    FROM individual_video_appearances iva
+                    WHERE iva.video_uuid IN (
+                        SELECT video_uuid FROM collection_videos
+                    )
+                      AND iva.start_timestamp >= $2
+                      AND iva.start_timestamp <= $3
+                )
+                -- Count unique MVR people linked to these individuals
+                SELECT COUNT(DISTINCT imm.mvr_people_uuid) as mvr_count
+                FROM individual_mvr_mapping imm
+                WHERE imm.individual_uuid IN (
+                    SELECT individual_uuid FROM today_individuals
+                )
+            """
+
+            count_row = await conn.fetchrow(
+                count_query,
+                collection_name,
+                start_time,
+                end_time
+            )
+
+            mvr_count = count_row['mvr_count'] if count_row else 0
+
+            return {
+                "camera_id": camera_id,
+                "collection_name": collection_name,
+                "count": mvr_count,
+                "date": today.isoformat(),
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat()
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error fetching camera MVR people count: %s", e, exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch camera MVR people count: {str(e)}"
         ) from e
 
 

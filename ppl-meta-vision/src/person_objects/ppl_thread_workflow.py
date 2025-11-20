@@ -412,6 +412,166 @@ class PPLThreadWorkflowController:
                 f"PPL Thread workflow {workflow_id} failed: {str(e)}"
             ) from e
 
+    async def start_person_objects_workflow_from_faces(
+        self,
+        face_detections: List[Dict],
+        session_uuid: str,
+        tolerance_percent: float = 20.0,
+        enable_quality_analysis: bool = True,
+        enable_age_detection: bool = True,
+        workflow_metadata: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """
+        Start PPL Thread workflow from in-memory face detections (NO DATABASE LOOKUP).
+
+        This method accepts face detections directly, bypassing the database query.
+        This is faster and avoids timing issues with session commits.
+
+        Args:
+            face_detections: List of face detection dicts (from Enhanced Logic V2)
+            session_uuid: Session UUID to associate workflow with
+            tolerance_percent: Position matching tolerance (default 20%)
+            enable_quality_analysis: Enable best face quality analysis
+            enable_age_detection: Enable age estimation (future enhancement)
+            workflow_metadata: Additional workflow metadata
+
+        Returns:
+            Workflow execution results with person objects data in PPL Mini format
+        """
+        workflow_id = str(uuid.uuid4())
+        start_time = datetime.now()
+
+        logger.info(
+            "Starting PPL Thread workflow %s from in-memory faces (count: %d)",
+            workflow_id,
+            len(face_detections),
+        )
+
+        try:
+            # Step 1: Validate session exists (optional for in-memory mode)
+            # Try to validate but don't fail if session doesn't exist yet
+            try:
+                self._validate_session_exists(session_uuid)
+                logger.info(f"✅ Session {session_uuid} validated successfully")
+            except ValueError as session_error:
+                logger.warning(
+                    f"⚠️ Session {session_uuid} not found in database, continuing with in-memory mode: {session_error}"
+                )
+                # This is OK for in-memory mode - we have face_detections already
+
+            # Step 2: Create workflow record with face count from memory
+            self._create_workflow_record_from_faces(
+                workflow_id, session_uuid, len(face_detections), tolerance_percent, workflow_metadata
+            )
+
+            # Step 3: Validate face detections have required fields
+            if not face_detections:
+                raise ValueError("No face detections provided")
+
+            # Ensure face detections have position_x/position_y calculated
+            for face in face_detections:
+                if "position_x" not in face or "position_y" not in face:
+                    # Calculate from bbox if not present
+                    bbox_center_x = (face["bbox_x1"] + face["bbox_x2"]) / 2
+                    bbox_center_y = (face["bbox_y1"] + face["bbox_y2"]) / 2
+                    face["position_x"] = float(bbox_center_x)
+                    face["position_y"] = float(bbox_center_y)
+
+            logger.info("Validated %d face detections with positions", len(face_detections))
+
+            # Step 4: Apply face grouping algorithm (Phase 2 core engine)
+            logger.info(
+                "Applying face grouping with %.1f%% tolerance", tolerance_percent
+            )
+            grouping_results = (
+                await self.face_grouping_engine.apply_percentage_based_tracking(
+                    face_detections, tolerance_percent
+                )
+            )
+
+            logger.info(
+                "Face grouping complete: %d faces → %d persons",
+                len(face_detections),
+                len(grouping_results["person_objects"]),
+            )
+
+            # Step 5: Store person objects and mappings in database (Phase 1 schema)
+            logger.info(
+                "Storing person objects and mappings for workflow %s",
+                workflow_id,
+            )
+            person_id_mapping = self._store_person_objects_and_mappings(
+                workflow_id, session_uuid, grouping_results
+            )
+
+            logger.info("Person objects stored successfully")
+
+            # Step 6: Perform quality analysis if enabled
+            best_quality_faces = {}
+            if enable_quality_analysis:
+                logger.info(
+                    "Performing quality analysis for %d persons",
+                    len(grouping_results["person_objects"]),
+                )
+
+                quality_analysis_results = (
+                    self.quality_analyzer.select_best_face_per_person(
+                        grouping_results["person_objects"],
+                        face_detections,
+                        grouping_results["face_mappings"],
+                    )
+                )
+
+                best_quality_faces = quality_analysis_results["best_faces"]
+                logger.info(
+                    "Quality analysis complete for %d persons",
+                    len(best_quality_faces),
+                )
+
+                # Store quality analysis results
+                self._store_quality_analysis_results(
+                    workflow_id, best_quality_faces, person_id_mapping
+                )
+
+            # Step 7: Update workflow status to completed
+            processing_time = (datetime.now() - start_time).total_seconds()
+            self._complete_workflow(
+                workflow_id,
+                len(grouping_results["person_objects"]),
+                len(face_detections),
+                processing_time,
+            )
+
+            # Step 8: Format response to match PPL Meta Mini structure exactly
+            response = self._format_ppl_mini_compatible_response(
+                grouping_results, best_quality_faces, workflow_id, session_uuid
+            )
+
+            logger.info(
+                "PPL Thread workflow %s completed successfully in %.2f seconds (in-memory mode)",
+                workflow_id,
+                processing_time,
+            )
+
+            return response
+
+        except Exception as e:
+            # Update workflow status to failed
+            error_message = f"Workflow failed: {str(e)}"
+            logger.error(
+                "PPL Thread workflow %s failed: %s", workflow_id, error_message
+            )
+
+            try:
+                self._fail_workflow(workflow_id, error_message)
+            except Exception as db_error:
+                logger.error("Failed to update workflow failure status: %s", db_error)
+
+            # Re-raise original exception
+            raise RuntimeError(
+                f"PPL Thread workflow {workflow_id} failed: {str(e)}"
+            ) from e
+
     def get_person_objects_for_session(
         self, session_uuid: str, include_quality_analysis: bool = True
     ) -> Dict[str, Any]:
@@ -695,6 +855,61 @@ class PPLThreadWorkflowController:
 
             logger.debug(
                 "Created workflow record %s for session %s", workflow_id, session_uuid
+            )
+
+        except Exception as e:
+            logger.error("Failed to create workflow record: %s", str(e))
+            self.db.connection.rollback()
+            if "cursor" in locals():
+                cursor.close()
+            raise
+
+    def _create_workflow_record_from_faces(
+        self,
+        workflow_id: str,
+        session_uuid: str,
+        face_count: int,
+        tolerance_percent: float,
+        metadata: Optional[Dict],
+    ) -> None:
+        """Create workflow record from in-memory face count (no DB query)."""
+        try:
+            import json
+
+            cursor = self.db.connection.cursor()
+
+            # Serialize metadata to JSON string for PostgreSQL storage
+            metadata_json = json.dumps(metadata) if metadata else None
+
+            # Insert workflow record
+            insert_query = """
+            INSERT INTO person_workflows (
+                workflow_id, session_uuid, status, input_face_count, 
+                tolerance_percent, processing_method, metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+
+            cursor.execute(
+                insert_query,
+                (
+                    workflow_id,
+                    session_uuid,
+                    "processing",
+                    face_count,
+                    tolerance_percent,
+                    "percentage_based_tracking_in_memory",
+                    metadata_json,
+                ),
+            )
+
+            self.db.connection.commit()
+            cursor.close()
+
+            logger.debug(
+                "Created workflow record %s for session %s (in-memory mode, %d faces)",
+                workflow_id,
+                session_uuid,
+                face_count,
             )
 
         except Exception as e:
@@ -1142,9 +1357,9 @@ class PPLThreadWorkflowController:
         for person in person_objects:
             person_id = person["person_id"]
 
-            # Get all face IDs for this person from mappings
+            # Get all face IDs for this person from mappings (convert to strings)
             person_face_ids = [
-                fm["face_detection_id"]
+                str(fm["face_detection_id"])
                 for fm in face_mappings
                 if fm["person_id"] == person_id
             ]
@@ -1175,7 +1390,7 @@ class PPLThreadWorkflowController:
             ]
 
             best_quality_formatted[person_id] = {
-                "face_id": face_record["id"],
+                "face_id": str(face_record["id"]),
                 "frame_number": face_record.get("frame_number", 0),
                 "quality_score": quality_data["quality_score"],
                 "bbox": bbox,
@@ -1203,7 +1418,7 @@ class PPLThreadWorkflowController:
         for mapping in face_mappings:
             classified_faces.append(
                 {
-                    "face_id": mapping["face_detection_id"],
+                    "face_id": str(mapping["face_detection_id"]),
                     "person_id": mapping["person_id"],
                     "match_type": mapping["match_type"],
                     "match_distance": mapping["match_distance"],

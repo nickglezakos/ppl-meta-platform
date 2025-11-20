@@ -30,18 +30,31 @@ class DatabaseConfig:
     
     def _load_database_config(self) -> Dict[str, Any]:
         """Load database configuration from environment and defaults."""
+    # Support both POSTGRES_* and DB_* env var naming conventions.
+    # Many services use DB_HOST/DB_NAME/DB_USER, older code expects
+    # POSTGRES_*. Accept either to avoid misconfiguration.
         return {
             # PostgreSQL connection settings
-            'host': os.getenv('POSTGRES_HOST', 'localhost'),
-            'port': int(os.getenv('POSTGRES_PORT', '5432')),
-            'database': os.getenv('POSTGRES_DATABASE', 'ppl_meta_vmeta'),
-            'user': os.getenv('POSTGRES_USER', 'postgres'),
-            'password': os.getenv('POSTGRES_PASSWORD', 'postgres'),
+            'host': os.getenv('POSTGRES_HOST', os.getenv('DB_HOST', 'localhost')),
+            'port': int(
+                os.getenv('POSTGRES_PORT', os.getenv('DB_PORT', '5432'))
+            ),
+            'database': os.getenv(
+                'POSTGRES_DATABASE', os.getenv('DB_NAME', 'ppl_meta_vmeta')
+            ),
+            'user': os.getenv(
+                'POSTGRES_USER', os.getenv('DB_USER', 'postgres')
+            ),
+            'password': os.getenv(
+                'POSTGRES_PASSWORD', os.getenv('DB_PASSWORD', 'postgres')
+            ),
             
             # Connection pool settings
             'min_pool_size': int(os.getenv('DB_MIN_POOL_SIZE', '5')),
             'max_pool_size': int(os.getenv('DB_MAX_POOL_SIZE', '20')),
-            'max_inactive_connection_lifetime': float(os.getenv('DB_MAX_INACTIVE_TIME', '300')),
+            'max_inactive_connection_lifetime': float(
+                os.getenv('DB_MAX_INACTIVE_TIME', '300')
+            ),
             
             # SSL settings
             'ssl': os.getenv('POSTGRES_SSL', 'prefer'),
@@ -55,12 +68,20 @@ class DatabaseConfig:
             'connect_timeout': float(os.getenv('DB_CONNECT_TIMEOUT', '10')),
             
             # Cross-video tracking specific
-            'enable_vector_extension': bool(os.getenv('ENABLE_PGVECTOR', 'true').lower() == 'true'),
-            'cache_table_name': os.getenv('CACHE_TABLE_NAME', 'cached_person_objects'),
-            'session_table_name': os.getenv('SESSION_TABLE_NAME', 'tracking_sessions'),
+            'enable_vector_extension': bool(
+                os.getenv('ENABLE_PGVECTOR', 'true').lower() == 'true'
+            ),
+            'cache_table_name': os.getenv(
+                'CACHE_TABLE_NAME', 'cached_person_objects'
+            ),
+            'session_table_name': os.getenv(
+                'SESSION_TABLE_NAME', 'tracking_sessions'
+            ),
             
             # Migration settings
-            'auto_migrate': bool(os.getenv('AUTO_MIGRATE', 'false').lower() == 'true'),
+            'auto_migrate': bool(
+                os.getenv('AUTO_MIGRATE', 'false').lower() == 'true'
+            ),
             'migration_path': os.getenv('MIGRATION_PATH', 'migrations/'),
         }
     
@@ -78,15 +99,23 @@ class DatabaseConfig:
         
         # Validate pool sizes
         if self.config['min_pool_size'] > self.config['max_pool_size']:
-            raise ValueError("min_pool_size cannot be greater than max_pool_size")
+            raise ValueError(
+                "min_pool_size cannot be greater than max_pool_size"
+            )
     
     def get_connection_url(self, include_password: bool = True) -> str:
         """Get PostgreSQL connection URL."""
-        password_part = f":{self.config['password']}" if include_password else ""
-        
+        password_part = (
+            f":{self.config['password']}" if include_password else ""
+        )
+
+        # Build URL in parts to avoid overly long lines
+        user_part = f"{self.config['user']}{password_part}"
+        host_part = f"{self.config['host']}:{self.config['port']}"
+        # Compose without exceeding line length
         return (
-            f"postgresql://{self.config['user']}{password_part}"
-            f"@{self.config['host']}:{self.config['port']}/{self.config['database']}"
+            "postgresql://" + user_part + "@" + host_part + "/"
+            + self.config['database']
         )
     
     def get_asyncpg_params(self) -> Dict[str, Any]:
@@ -119,7 +148,8 @@ class DatabaseConfig:
             context = ssl.create_default_context()
             
             if self.config['ssl_ca_path']:
-                context.load_verify_locations(cafile=self.config['ssl_ca_path'])
+                ca_path = self.config['ssl_ca_path']
+                context.load_verify_locations(cafile=ca_path)
             
             if self.config['ssl_cert_path'] and self.config['ssl_key_path']:
                 context.load_cert_chain(
@@ -159,19 +189,21 @@ class DatabaseManager:
         try:
             connection_params = self.config.get_asyncpg_params()
             
+            max_inactive = self.config.config['max_inactive_connection_lifetime']
             self.pool = await asyncpg.create_pool(
                 min_size=self.config.config['min_pool_size'],
                 max_size=self.config.config['max_pool_size'],
-                max_inactive_connection_lifetime=self.config.config['max_inactive_connection_lifetime'],
-                **connection_params
+                max_inactive_connection_lifetime=max_inactive,
+                **connection_params,
             )
             
             # Test connection and verify extensions
             await self._verify_database_setup()
             
             logger.info(
-                f"✅ Database pool initialized: "
-                f"{self.config.config['min_pool_size']}-{self.config.config['max_pool_size']} connections"
+                "✅ Database pool initialized: %s-%s connections",
+                self.config.config['min_pool_size'],
+                self.config.config['max_pool_size'],
             )
             
             return self.pool

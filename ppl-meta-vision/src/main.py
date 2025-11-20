@@ -1046,12 +1046,20 @@ async def get_all_media_faces(
                 if frame_num not in faces_by_frame:
                     faces_by_frame[frame_num] = []
 
+                # Extract bbox coordinates for person-objects workflow
+                bbox = face["bbox"]
                 faces_by_frame[frame_num].append(
                     {
-                        "bbox": face["bbox"],  # bbox is already an array from database
+                        "id": face["id"],  # Required for person-objects workflow
+                        "bbox": bbox,  # bbox is already an array from database
+                        "bbox_x1": bbox[0],  # Required for person-objects workflow
+                        "bbox_y1": bbox[1],
+                        "bbox_x2": bbox[2],
+                        "bbox_y2": bbox[3],
                         "confidence": face["confidence"],
                         "method": face["method"],
                         "timestamp": face.get("timestamp"),
+                        "frame_number": frame_num,  # Required for person-objects workflow
                     }
                 )
 
@@ -1295,20 +1303,8 @@ async def get_video_frame_faces(
             if authorization:
                 headers["Authorization"] = authorization
 
-            # Extract user_id from JWT token
-            user_id = (
-                extract_user_id_from_token(authorization) if authorization else None
-            )
-
-            # Get user UUID from profile (media service needs UUID, not integer ID)
-            user_uuid = (
-                get_user_uuid_from_profile(authorization) if authorization else None
-            )
-
-            # Build media URL with user_id parameter if available (use UUID)
+            # Build media URL without user_id (service-to-service call, no access control needed)
             media_url = f"{media_service_url}/api/v1/media/{media_id}"
-            if user_uuid:
-                media_url += f"?user_id={user_uuid}"
 
             # Get media info from media service
             media_response = requests.get(media_url, headers=headers)
@@ -1692,31 +1688,47 @@ async def bulk_process_video_faces(
         detection_method = "two_stage"  # Always use two_stage method
 
         # Get user authentication
-        user_uuid = get_user_uuid_from_profile(authorization) if authorization else None
-        if not user_uuid:
-            # Complete session with error if applicable
-            if session_mgr and session_uuid:
-                try:
-                    from api_models import SessionCompleteRequest
+        # Support internal service tokens for service-to-service calls
+        import os
+        INTERNAL_SERVICE_TOKEN = os.getenv(
+            "INTERNAL_SERVICE_TOKEN",
+            "ppl-meta-internal-service-secret-key-change-in-production"
+        )
+        
+        # Check if this is an internal service request
+        is_internal_service = False
+        if authorization and authorization.startswith("Bearer "):
+            token = authorization.split(" ", 1)[1]
+            if token == INTERNAL_SERVICE_TOKEN:
+                is_internal_service = True
+                # Use a system user UUID for internal service requests
+                user_uuid = "00000000-0000-0000-0000-000000000000"
+                logger.info("Internal service request - using system user UUID")
+        
+        if not is_internal_service:
+            user_uuid = get_user_uuid_from_profile(authorization) if authorization else None
+            if not user_uuid:
+                # Complete session with error if applicable
+                if session_mgr and session_uuid:
+                    try:
+                        from api_models import SessionCompleteRequest
 
-                    await session_mgr.complete_session(
-                        session_uuid,
-                        SessionCompleteRequest(
-                            metadata={"error": "Authentication required"}
-                        ),
-                    )
-                except Exception:
-                    pass
-            raise HTTPException(status_code=401, detail="Authentication required")
+                        await session_mgr.complete_session(
+                            session_uuid,
+                            SessionCompleteRequest(
+                                metadata={"error": "Authentication required"}
+                            ),
+                        )
+                    except Exception:
+                        pass
+                raise HTTPException(status_code=401, detail="Authentication required")
 
         # Prepare headers for media service requests
         headers = {"Authorization": authorization} if authorization else {}
         media_service_url = PPL_META_CONFIG["media_service"]["url"]
 
-        # Get media info first
-        media_url = (
-            f"{media_service_url}/api/v1/media/{media_id}" f"?user_id={user_uuid}"
-        )
+        # Get media info first (service-to-service call, no user_id needed)
+        media_url = f"{media_service_url}/api/v1/media/{media_id}"
         media_response = requests.get(media_url, headers=headers)
         if media_response.status_code != 200:
             # Complete session with error if applicable

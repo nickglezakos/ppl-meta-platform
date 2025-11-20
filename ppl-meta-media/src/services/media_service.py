@@ -1062,9 +1062,9 @@ class MediaService:
     async def _save_file_to_storage(self, content: bytes, storage_path: str):
         """Save file content to storage."""
 
-        # For now, save to local storage
-        # TODO: Implement cloud storage providers
-        full_path = Path("storage") / storage_path
+        # Save to local storage at the exact path stored in database
+        # This ensures Vision service can find files at the expected location
+        full_path = Path(storage_path)
         full_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(full_path, "wb") as f:
@@ -1108,12 +1108,13 @@ class MediaService:
         try:
             settings = get_config()
             redis_url = getattr(settings, "REDIS_URL", None)
+            # Use current directory as base since files are saved at exact database path
             thumbnail_service = ThumbnailService(
-                settings.STORAGE_PATH, redis_url=redis_url
+                ".", redis_url=redis_url
             )
 
-            # Get full file path
-            full_file_path = Path(settings.STORAGE_PATH) / media.file_path
+            # Get full file path (files are now saved at exact database path)
+            full_file_path = Path(media.file_path)
 
             # Generate all thumbnail sizes
             results = thumbnail_service.generate_thumbnails_on_upload(
@@ -1140,7 +1141,7 @@ class MediaService:
             return
 
         try:
-            # Extract EXIF data
+            # Extract EXIF data (files are now saved at exact database path)
             exif_data = self.exif_extractor.extract_exif_data(str(media.file_path))
 
             if exif_data:
@@ -1215,10 +1216,8 @@ class MediaService:
             return
 
         try:
-            from src.config import get_config
-
-            settings = get_config()
-            full_file_path = Path(settings.STORAGE_PATH) / media.file_path
+            # Files are now saved at exact database path
+            full_file_path = Path(media.file_path)
 
             # Read video file content
             with open(full_file_path, "rb") as f:
@@ -1379,42 +1378,11 @@ class MediaService:
         if not self._user_can_access_media(media, user_id):
             raise ValueError("Access denied to this media")
 
-        # Get video file path (use absolute path construction)
-        import os
-
-        # Try multiple path formats to find the file
-        base_storage = os.path.join(os.getcwd(), "storage")
-
-        # Path options to try
-        path_options = [
-            Path(os.path.join("./storage", str(media.file_path))),  # Original
-            Path(os.path.join(base_storage, str(media.file_path))),  # Absolute
-            Path(str(media.file_path)),  # Direct path
-        ]
-
-        # Find existing file
-        file_path = None
-        for path_option in path_options:
-            if path_option.exists():
-                file_path = path_option
-                break
-
-        if not file_path:
-            # Search for the file in storage directory
-            import glob
-
-            search_pattern = os.path.join(base_storage, "**", "*.mp4")
-            mp4_files = glob.glob(search_pattern, recursive=True)
-
-            # Look for file with matching UUID
-            media_uuid = str(media.uuid)
-            for mp4_file in mp4_files:
-                if media_uuid in mp4_file:
-                    file_path = Path(mp4_file)
-                    break
-
-        if not file_path or not file_path.exists():
-            raise ValueError("Video file not found on disk")
+        # Get video file path (files are now saved at exact database path)
+        file_path = Path(str(media.file_path))
+        
+        if not file_path.exists():
+            raise ValueError(f"Video file not found on disk at: {file_path}")
 
         # Extract frame using OpenCV
         cap = cv2.VideoCapture(str(file_path))
