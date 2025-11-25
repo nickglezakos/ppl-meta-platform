@@ -185,9 +185,15 @@ class MediaProcessingService:
             return [], None
 
     async def _process_video(
-        self, video_data: bytes, request: MediaProcessingRequest
+        self, video_data: bytes, request: MediaProcessingRequest, frame_interval: int = 10
     ) -> Tuple[List[FaceDetectionResult], Optional[Dict[str, Any]]]:
-        """Process video with frame-by-frame analysis."""
+        """Process video with frame-by-frame analysis.
+        
+        Args:
+            video_data: Video file bytes
+            request: Processing request with media_id and session info
+            frame_interval: Process every N frames (default: 10 for 10x speedup)
+        """
         detections = []
         video_info = {}
 
@@ -219,11 +225,11 @@ class MediaProcessingService:
             }
 
             # Process frames (sample every N frames for performance)
-            frame_interval = 1  # Process every frame for efficiency testing
+            # frame_interval is now passed as parameter instead of hardcoded
             frame_number = 0
 
             logger.info(
-                f"🎬 Processing video: {total_frames} frames, {fps:.2f} FPS, {duration:.2f}s"
+                f"🎬 Processing video: {total_frames} frames, {fps:.2f} FPS, {duration:.2f}s, sampling every {frame_interval} frames"
             )
 
             while cap.isOpened():

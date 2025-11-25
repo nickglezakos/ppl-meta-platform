@@ -265,6 +265,7 @@ class PersonObjectsWorkflowResponse(BaseModel):
     statistics: SummaryStatistics  # Duplicate for compatibility
     best_quality_faces: Dict[str, BestQualityFace]
     classified_faces: List[ClassifiedFace]
+    person_objects: List[Dict[str, Any]]  # ← NEW: Full person objects for in-memory processing
     processing_timestamp: str
     workflow_type: str
 

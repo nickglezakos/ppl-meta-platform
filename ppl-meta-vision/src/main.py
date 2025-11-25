@@ -104,7 +104,24 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 # Configure logging and logger
-logging.basicConfig(level=logging.INFO)
+import os
+from logging.handlers import RotatingFileHandler
+
+# Create logs directory if it doesn't exist
+log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "ppl-meta-vision.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        RotatingFileHandler(
+            log_file, maxBytes=10*1024*1024, backupCount=5
+        ),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger("ppl-meta-vision")
 
 
@@ -538,189 +555,203 @@ async def get_models():
     }
 
 
-@app.post("/detect", response_model=FaceDetectionResponse, summary="Detect Faces")
-async def detect_faces(request: FaceDetectionRequest):
-    """
-    Detect faces in an image using specified detection methods.
+# ❌ DISABLED - November 21, 2025
+# Basic face detection endpoint commented out for debugging Enhanced Logic V2
+# This endpoint uses two_stage_haar_dlib which creates face_detections but NOT person_objects
+# Only Enhanced Logic V2 should be used for continuous pipeline
+# TODO: Re-enable after Enhanced Logic V2 is fully working or for specific use cases
 
-    Supports multiple detection methods: haar, dlib, mtcnn
-    Returns bounding boxes, confidence scores, and processing time.
-    """
-    global face_detector_instance
+# @app.post("/detect", response_model=FaceDetectionResponse, summary="Detect Faces")
+# async def detect_faces(request: FaceDetectionRequest):
+#     """
+#     Detect faces in an image using specified detection methods.
+#
+#     Supports multiple detection methods: haar, dlib, mtcnn
+#     Returns bounding boxes, confidence scores, and processing time.
+#     """
+#     global face_detector_instance
+#
+#     if face_detector_instance is None:
+#         raise HTTPException(status_code=503, detail="Face detector not initialized")
+#
+#     start_time = time.time()
+#
+#     try:
+#         # Decode image
+#         image = decode_base64_image(request.image_base64)
+#
+#         # Determine methods to use
+#         methods = (
+#             request.methods
+#             if request.methods
+#             else face_detector_instance.available_methods
+#         )
+#
+#         # Validate methods
+#         for method in methods:
+#             if method not in face_detector_instance.available_methods:
+#                 raise HTTPException(
+#                     status_code=400,
+#                     detail=f"Method '{method}' not available...",
+#                 )
+#
+#         # Update confidence thresholds if provided
+#         if request.confidence_threshold is not None:
+#             for method in methods:
+#                 if method in ["haar", "dlib", "mtcnn", "two_stage"]:
+#                     face_detector_instance.update_confidence_threshold(
+#                         method, request.confidence_threshold
+#                     )
+#
+#         # Run detection
+#         if len(methods) == 1:
+#             # Single method detection
+#             method = methods[0]
+#             if method == "haar":
+#                 result = face_detector_instance.detect_faces_haar(image)
+#             elif method == "dlib":
+#                 result = face_detector_instance.detect_faces_dlib(image)
+#             elif method == "mtcnn":
+#                 result = face_detector_instance.detect_faces_mtcnn(image)
+#             elif method == "two_stage":
+#                 result = face_detector_instance.detect_faces_two_stage(image)
+#             else:
+#                 raise HTTPException(status_code=400, detail="Unknown method")
+#
+#             # Format response with distance calculation
+#             if result["success"]:
+#                 detections = [
+#                     FaceDetection(
+#                         bbox=det["bbox"],
+#                         confidence=det["confidence"],
+#                         method=det["method"],
+#                     )
+#                     for det in result["detections"]
+#                 ]
+#
+#                 # Apply distance calculation to enhance detections
+#                 try:
+#                     enhanced_detections = (
+#                         enhance_face_detections_with_distance(
+#                             detections,
+#                             image.shape[:2],
+#                         )
+#                     )
+#                     detections = enhanced_detections
+#                 except Exception as e:
+#                     logger.warning(
+#                         f"Distance calculation failed: {e}, "
+#                         "continuing without distance data"
+#                     )
+#
+#                 processing_time = time.time() - start_time
+#                 return FaceDetectionResponse(
+#                     success=True,
+#                     detections=detections,
+#                     processing_time=processing_time,
+#                     message=f"Detected {len(detections)} faces using {method}",
+#                 )
+#             else:
+#                 raise HTTPException(
+#                     status_code=500,
+#                     detail=result.get("error", "Detection failed")
+#                 )
+#
+#         else:
+#             # Multi-method detection
+#             results = face_detector_instance.detect_faces_multi_method(
+#                 image, methods
+#             )
+#
+#             # Aggregate all detections
+#             all_detections = []
+#             for method, method_result in results.items():
+#                 if method_result.get("success", False):
+#                     for det in method_result.get("detections", []):
+#                         all_detections.append(
+#                             FaceDetection(
+#                                 bbox=det["bbox"],
+#                                 confidence=det["confidence"],
+#                                 method=det["method"],
+#                             )
+#                         )
+#
+#             # Apply distance calculation to enhanced detections
+#             try:
+#                 enhanced_detections = enhance_face_detections_with_distance(
+#                     all_detections, image.shape[:2]
+#                 )
+#                 all_detections = enhanced_detections
+#             except Exception as e:
+#                 logger.warning(
+#                     f"Distance calculation failed: {e}, "
+#                     "continuing without distance data"
+#                 )
+#
+#             processing_time = time.time() - start_time
+#             return FaceDetectionResponse(
+#                 success=True,
+#                 detections=all_detections,
+#                 processing_time=processing_time,
+#                 method_results=results,
+#                 message=f"Detected {len(all_detections)} faces",
+#             )
+#
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
 
-    if face_detector_instance is None:
-        raise HTTPException(status_code=503, detail="Face detector not initialized")
 
-    start_time = time.time()
-
-    try:
-        # Decode image
-        image = decode_base64_image(request.image_base64)
-
-        # Determine methods to use
-        methods = (
-            request.methods
-            if request.methods
-            else face_detector_instance.available_methods
-        )
-
-        # Validate methods
-        for method in methods:
-            if method not in face_detector_instance.available_methods:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Method '{method}' not available. Available: {face_detector_instance.available_methods}",
-                )
-
-        # Update confidence thresholds if provided
-        if request.confidence_threshold is not None:
-            for method in methods:
-                if method in ["haar", "dlib", "mtcnn", "two_stage"]:
-                    face_detector_instance.update_confidence_threshold(
-                        method, request.confidence_threshold
-                    )
-
-        # Run detection
-        if len(methods) == 1:
-            # Single method detection
-            method = methods[0]
-            if method == "haar":
-                result = face_detector_instance.detect_faces_haar(image)
-            elif method == "dlib":
-                result = face_detector_instance.detect_faces_dlib(image)
-            elif method == "mtcnn":
-                result = face_detector_instance.detect_faces_mtcnn(image)
-            elif method == "two_stage":
-                result = face_detector_instance.detect_faces_two_stage(image)
-            else:
-                raise HTTPException(status_code=400, detail=f"Unknown method: {method}")
-
-            # Format response with distance calculation
-            if result["success"]:
-                detections = [
-                    FaceDetection(
-                        bbox=det["bbox"],
-                        confidence=det["confidence"],
-                        method=det["method"],
-                    )
-                    for det in result["detections"]
-                ]
-
-                # Apply distance calculation to enhance detections
-                try:
-                    enhanced_detections = enhance_face_detections_with_distance(
-                        detections,
-                        image.shape[:2],  # Pass image dimensions (height, width)
-                    )
-                    detections = enhanced_detections
-                except Exception as e:
-                    logger.warning(
-                        f"Distance calculation failed: {e}, continuing without distance data"
-                    )
-
-                processing_time = time.time() - start_time
-                return FaceDetectionResponse(
-                    success=True,
-                    detections=detections,
-                    processing_time=processing_time,
-                    message=f"Detected {len(detections)} faces using {method} with distance calculation",
-                )
-            else:
-                raise HTTPException(
-                    status_code=500, detail=result.get("error", "Detection failed")
-                )
-
-        else:
-            # Multi-method detection
-            results = face_detector_instance.detect_faces_multi_method(image, methods)
-
-            # Aggregate all detections
-            all_detections = []
-            for method, method_result in results.items():
-                if method_result.get("success", False):
-                    for det in method_result.get("detections", []):
-                        all_detections.append(
-                            FaceDetection(
-                                bbox=det["bbox"],
-                                confidence=det["confidence"],
-                                method=det["method"],
-                            )
-                        )
-
-            # Apply distance calculation to enhanced detections
-            try:
-                enhanced_detections = enhance_face_detections_with_distance(
-                    all_detections, image.shape[:2]  # Pass image dimensions
-                )
-                all_detections = enhanced_detections
-            except Exception as e:
-                logger.warning(
-                    f"Distance calculation failed: {e}, continuing without distance data"
-                )
-
-            processing_time = time.time() - start_time
-            return FaceDetectionResponse(
-                success=True,
-                detections=all_detections,
-                processing_time=processing_time,
-                method_results=results,
-                message=f"Detected {len(all_detections)} faces using {len(methods)} methods with distance calculation",
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
-
-
-@app.post(
-    "/detect/file",
-    response_model=FaceDetectionResponse,
-    summary="Detect Faces from File",
-)
-async def detect_faces_file(
-    file: UploadFile = File(..., description="Image file"),
-    methods: Optional[str] = None,
-    confidence_threshold: Optional[float] = 0.5,
-):
-    """
-    Detect faces in an uploaded image file.
-
-    Alternative endpoint for file uploads instead of base64 encoding.
-    """
-    global face_detector_instance
-
-    if face_detector_instance is None:
-        raise HTTPException(status_code=503, detail="Face detector not initialized")
-
-    # Validate file type
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
-
-    try:
-        # Read file content
-        file_content = await file.read()
-
-        # Convert to base64 for reuse of existing logic
-        image_base64 = base64.b64encode(file_content).decode("utf-8")
-
-        # Parse methods parameter
-        methods_list = methods.split(",") if methods else None
-
-        # Create request object
-        request = FaceDetectionRequest(
-            image_base64=image_base64,
-            methods=methods_list,
-            confidence_threshold=confidence_threshold,
-        )
-
-        # Reuse the main detection endpoint
-        return await detect_faces(request)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"File processing error: {str(e)}")
+# ❌ DISABLED - November 21, 2025 (depends on /detect endpoint above)
+# @app.post(
+#     "/detect/file",
+#     response_model=FaceDetectionResponse,
+#     summary="Detect Faces from File",
+# )
+# async def detect_faces_file(
+#     file: UploadFile = File(..., description="Image file"),
+#     methods: Optional[str] = None,
+#     confidence_threshold: Optional[float] = 0.5,
+# ):
+#     """
+#     Detect faces in an uploaded image file.
+#
+#     Alternative endpoint for file uploads instead of base64 encoding.
+#     """
+#     global face_detector_instance
+#
+#     if face_detector_instance is None:
+#         raise HTTPException(status_code=503, detail="Face detector not initialized")
+#
+#     # Validate file type
+#     if not file.content_type.startswith("image/"):
+#         raise HTTPException(status_code=400, detail="File must be an image")
+#
+#     try:
+#         # Read file content
+#         file_content = await file.read()
+#
+#         # Convert to base64 for reuse of existing logic
+#         image_base64 = base64.b64encode(file_content).decode("utf-8")
+#
+#         # Parse methods parameter
+#         methods_list = methods.split(",") if methods else None
+#
+#         # Create request object
+#         request = FaceDetectionRequest(
+#             image_base64=image_base64,
+#             methods=methods_list,
+#             confidence_threshold=confidence_threshold,
+#         )
+#
+#         # Reuse the main detection endpoint
+#         return await detect_faces(request)
+#
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail="File processing error")
 
 
 @app.post("/process/media", summary="Process Media from Media Service")
@@ -1476,7 +1507,7 @@ async def bulk_process_video_faces(
     media_id: str,
     authorization: str = Header(None, alias="Authorization"),
     frame_interval: int = Query(
-        1, description="Process every frame (1 = maximum efficiency)"
+        10, description="Process every N frames (10 = reasonable performance)"
     ),
     max_frames: int = Query(1000, description="Max frames to process"),
     camera_device_uuid: Optional[str] = None,

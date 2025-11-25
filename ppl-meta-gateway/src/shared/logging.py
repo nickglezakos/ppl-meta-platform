@@ -15,10 +15,30 @@ def setup_logging(
     log_file: Optional[str] = None,
 ) -> None:
     """Setup structured logging."""
-    # Configure basic logging
+    import os
+    from logging.handlers import RotatingFileHandler
+    
+    # Setup log file path if not provided
+    if log_file is None:
+        log_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "logs"
+        )
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "ppl-meta-gateway.log")
+    
+    # Configure basic logging with file handler
+    handlers = [
+        RotatingFileHandler(
+            log_file, maxBytes=10*1024*1024, backupCount=5
+        ),
+        logging.StreamHandler()
+    ]
+    
     logging.basicConfig(
         level=getattr(logging, log_level.upper(), logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=handlers
     )
 
     # Configure structlog

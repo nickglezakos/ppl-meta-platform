@@ -154,8 +154,8 @@ logger = logging.getLogger(__name__)
 class CreateTrackingSessionRequest(BaseModel):
     """Request model for creating a new tracking session."""
     collections: List[str] = Field(..., min_items=1, max_items=10)
-    start_time: datetime
-    end_time: datetime
+    start_time: Optional[datetime] = None  # Optional when video_uuids provided
+    end_time: Optional[datetime] = None  # Optional when video_uuids provided
     video_uuids: Optional[List[str]] = None  # Explicit video UUIDs - skip time-based query if provided
     algorithm_config: Optional[Dict[str, Any]] = None
     background_processing: bool = True
@@ -465,9 +465,25 @@ async def create_tracking_session(
         # Get database client
         db_client = get_database_client()
         
-        # Convert to timezone-naive datetime for comparison
-        start_time_naive = request.start_time.replace(tzinfo=None) if request.start_time.tzinfo else request.start_time
-        end_time_naive = request.end_time.replace(tzinfo=None) if request.end_time.tzinfo else request.end_time
+        # Validate: either (start_time + end_time) or video_uuids must be provided
+        if not request.video_uuids and (not request.start_time or not request.end_time):
+            raise HTTPException(
+                status_code=400,
+                detail="Either video_uuids or both start_time and end_time must be provided"
+            )
+        
+        # Convert to timezone-naive datetime for comparison (if provided)
+        start_time_naive = None
+        end_time_naive = None
+        if request.start_time and request.end_time:
+            start_time_naive = request.start_time.replace(tzinfo=None) if request.start_time.tzinfo else request.start_time
+            end_time_naive = request.end_time.replace(tzinfo=None) if request.end_time.tzinfo else request.end_time
+        elif request.video_uuids:
+            # Use dummy timestamps when explicit video_uuids provided
+            # These are only for database storage compliance, not actual filtering
+            now = datetime.utcnow()
+            start_time_naive = now
+            end_time_naive = now + timedelta(microseconds=1)
         
         # Check for existing completed session with same parameters
         # Skip cache if force_reprocess is True
@@ -2266,7 +2282,7 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
         created_individuals = []
         total_cache_hits = 0  # Track cache hits across all video groups
         
-        if len(videos) >= 2:  # Need at least 2 videos for cross-video tracking
+        if len(videos) >= 1:  # Process even single videos to create MVR people
             # Debug: entering video processing
             try:
                 async with db_client.pool.acquire() as conn:
@@ -2765,8 +2781,9 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                 pass
             
             # Phase 2: Merge individuals based on facial similarity
-            # (DeepFace/FaceNet)
-            if len(created_individual_uuids) > 1:
+            # (DeepFace/FaceNet) and create MVR people
+            # CRITICAL: Run for ANY number of individuals (even 1) to create MVR people
+            if len(created_individual_uuids) >= 1:
                 # DEBUG: Entering merge block
                 try:
                     async with db_client.pool.acquire() as conn:

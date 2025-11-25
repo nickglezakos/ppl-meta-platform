@@ -334,3 +334,12 @@ Based on the test script, here are the **steps of the Continuous Individuals and
 
 ---
 
+🔍 Search MVR people by videos result: {success: true, total_results: 0, mvr_people: [],
+search_parameters: {video_uuids: [d4c66daf-10c5-4aed-8cd2-5d8edb475f4a,
+6eb5fa02-46ed-43ea-9cbb-c621bb5986ad, 88e84134-eb67-447a-a9ab-6a242fb674dd,
+114f2048-ad9c-48ab-9b3c-6a2e2c5ccb92, b1795fa2-610e-4a61-a70c-cb86e15c27a2,
+0127eb7c-3f35-467c-8e9b-4264b1adf1d6, 1578a1a6-f6b5-4184-98c3-26e752c2d6f1,
+bf902296-eb60-4ba6-9af9-e63d3eccbdd4, 5f084b88-ae28-408e-a457-fe858b78d139], start_time:
+2025-11-25T09:14:00, end_time: 2025-11-25T09:19:00, limit: 500}, message: No individuals
+found in videos}
+

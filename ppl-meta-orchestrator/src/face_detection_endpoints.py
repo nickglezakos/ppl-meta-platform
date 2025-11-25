@@ -103,6 +103,104 @@ def get_auth_token(
 # Router for face detection endpoints
 face_detection_router = APIRouter(prefix="/api/v1", tags=["face-detection"])
 
+
+# ============================================================================
+# PERSON OBJECTS QUEUE FOR BATCH PROCESSING
+# ============================================================================
+
+
+class PersonObjectsQueue:
+    """
+    Queue for batching person objects from multiple videos.
+    
+    Maintains session-based ordering and groups person objects by batch
+    size for efficient cross-video tracking through vmeta service.
+    """
+    
+    def __init__(self, batch_size: int = 10, max_queue_size: int = 100):
+        self.batch_size = batch_size
+        self.max_queue_size = max_queue_size
+        self.queue = asyncio.Queue(maxsize=max_queue_size)
+        self.session_buffers: Dict[str, List[Dict]] = {}
+        self.stats = {
+            "enqueued_total": 0,
+            "batches_created": 0,
+            "videos_processed": 0
+        }
+        logger.info(
+            f"PersonObjectsQueue initialized: batch_size={batch_size}, "
+            f"max_queue_size={max_queue_size}"
+        )
+    
+    async def enqueue(
+        self, 
+        session_uuid: str, 
+        video_uuid: str,
+        person_objects: List[Dict]
+    ) -> bool:
+        """Enqueue person objects for a video."""
+        try:
+            video_data = {
+                "session_uuid": session_uuid,
+                "video_uuid": video_uuid,
+                "person_objects": person_objects,
+                "enqueued_at": datetime.now().isoformat()
+            }
+            
+            if session_uuid not in self.session_buffers:
+                self.session_buffers[session_uuid] = []
+            
+            self.session_buffers[session_uuid].append(video_data)
+            self.stats["enqueued_total"] += 1
+            self.stats["videos_processed"] += 1
+            
+            logger.info(
+                f"Enqueued person objects: session={session_uuid[:8]}, "
+                f"video={video_uuid[:8]}, count={len(person_objects)}"
+            )
+            
+            if len(self.session_buffers[session_uuid]) >= self.batch_size:
+                await self._create_batch(session_uuid)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to enqueue person objects: {e}")
+            return False
+    
+    async def _create_batch(self, session_uuid: str) -> None:
+        """Create batch from session buffer."""
+        buffer = self.session_buffers[session_uuid]
+        batch_data = buffer[:self.batch_size]
+        self.session_buffers[session_uuid] = buffer[self.batch_size:]
+        
+        if not self.session_buffers[session_uuid]:
+            del self.session_buffers[session_uuid]
+        
+        batch = {
+            "batch_id": str(uuid.uuid4()),
+            "session_uuid": session_uuid,
+            "videos": batch_data,
+            "video_count": len(batch_data),
+            "total_person_objects": sum(
+                len(v["person_objects"]) for v in batch_data
+            ),
+            "created_at": datetime.now().isoformat()
+        }
+        
+        await self.queue.put(batch)
+        self.stats["batches_created"] += 1
+        
+        logger.info(
+            f"Created batch {batch['batch_id'][:8]}: "
+            f"{batch['video_count']} videos, "
+            f"{batch['total_person_objects']} person objects"
+        )
+
+
+# Global queue instance
+person_objects_queue = PersonObjectsQueue(batch_size=10, max_queue_size=100)
+
+
 # ============================================================================
 # MODELS AND ENUMS
 # ============================================================================
@@ -285,7 +383,7 @@ class FaceDetectionSessionManager:
                 'Pragma': 'no-cache',
                 'Expires': '0'
             }
-            response = requests.get(vision_url, headers=headers, timeout=15)
+            response = requests.get(vision_url, headers=headers, timeout=120)
             
             logger.info(f"🔍 Vision response status: {response.status_code}")
             logger.info(f"🔍 RAW Vision response text (first 200 chars): {response.text[:200]}")
@@ -341,6 +439,29 @@ class FaceDetectionSessionManager:
                         session_uuid, auth_token, face_detections=enhanced_faces
                     )
                     logger.info(f"✅ Person objects workflow: {person_objects_result}")
+
+                    # ✨ STEP 1.6: Complete the session in Vision service database
+                    logger.info("📝 Step 1.6: Completing session...")
+                    await self._complete_vision_session(
+                        session_uuid, auth_token, total_faces=stored_face_count
+                    )
+                    logger.info(f"✅ Session {session_uuid} completed")
+
+                    # ✨ STEP 1.7: Enqueue person objects for cross-video tracking
+                    person_objects_data = person_objects_result.get("person_objects", [])
+                    if person_objects_data:
+                        logger.info(
+                            f"📦 Step 1.7: Enqueueing {len(person_objects_data)} "
+                            f"person objects for cross-video tracking..."
+                        )
+                        await person_objects_queue.enqueue(
+                            session_uuid=session_uuid,
+                            video_uuid=media_id,
+                            person_objects=person_objects_data
+                        )
+                        logger.info("✅ Person objects enqueued for batch processing")
+                    else:
+                        logger.warning("⚠️ No person objects returned from workflow")
 
                     processing_time = time.time() - start_time
 
@@ -462,7 +583,7 @@ class FaceDetectionSessionManager:
 
                 # Now retrieve the newly detected faces
                 faces_url = f"http://localhost:8003/faces/media/{media_id}"
-                faces_response = requests.get(faces_url, headers=headers, timeout=15)
+                faces_response = requests.get(faces_url, headers=headers, timeout=120)
 
                 if faces_response.status_code == 200:
                     faces_data = faces_response.json()
@@ -497,6 +618,29 @@ class FaceDetectionSessionManager:
                         session_uuid, auth_token, face_detections=enhanced_faces
                     )
                     logger.info(f"✅ Person objects workflow: {person_objects_result}")
+
+                    # ✨ STEP 2.6: Complete the session in Vision service database
+                    logger.info("📝 Step 2.6: Completing session...")
+                    await self._complete_vision_session(
+                        session_uuid, auth_token, total_faces=detected_face_count
+                    )
+                    logger.info(f"✅ Session {session_uuid} completed")
+
+                    # ✨ STEP 2.7: Enqueue person objects for cross-video tracking
+                    person_objects_data = person_objects_result.get("person_objects", [])
+                    if person_objects_data:
+                        logger.info(
+                            f"📦 Step 2.7: Enqueueing {len(person_objects_data)} "
+                            f"person objects for cross-video tracking..."
+                        )
+                        await person_objects_queue.enqueue(
+                            session_uuid=session_uuid,
+                            video_uuid=media_id,
+                            person_objects=person_objects_data
+                        )
+                        logger.info("✅ Person objects enqueued for batch processing")
+                    else:
+                        logger.warning("⚠️ No person objects returned from workflow")
 
                     processing_time = time.time() - start_time
 
@@ -642,6 +786,64 @@ class FaceDetectionSessionManager:
             logger.error(f"❌ Error creating Vision session: {e}")
             return {"success": False, "error": str(e), "session_uuid": session_uuid}
 
+    async def _complete_vision_session(
+        self, session_uuid: str, auth_token: str, total_faces: int
+    ) -> Dict[str, Any]:
+        """
+        Complete a face detection session in Vision Service database.
+        
+        Updates session status to 'completed' and sets total_faces_detected.
+        
+        Args:
+            session_uuid: The session UUID to complete
+            auth_token: Authentication token for the request
+            total_faces: Total number of faces detected
+            
+        Returns:
+            dict: Completion result
+        """
+        try:
+            complete_url = f"http://localhost:8003/sessions/{session_uuid}/complete"
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {auth_token}",
+            }
+            
+            complete_data = {
+                "processing_status": "completed",
+                "metadata": {
+                    "total_faces_detected": total_faces,
+                    "completed_by": "enhanced_logic_v2",
+                }
+            }
+            
+            response = requests.post(
+                complete_url,
+                json=complete_data,
+                headers=headers,
+                timeout=10,
+            )
+            
+            if response.status_code == 200:
+                logger.info(
+                    f"✅ Session {session_uuid} completed: {total_faces} faces"
+                )
+                return {"success": True, "session_uuid": session_uuid}
+            else:
+                logger.warning(
+                    f"⚠️ Session completion returned {response.status_code}: "
+                    f"{response.text}"
+                )
+                return {
+                    "success": False,
+                    "error": f"Status {response.status_code}",
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Error completing Vision session: {e}")
+            return {"success": False, "error": str(e)}
+
     async def _trigger_person_objects_workflow(
         self, session_uuid: str, auth_token: str, face_detections: List[Dict] = None
     ) -> Dict[str, Any]:
@@ -732,6 +934,8 @@ class FaceDetectionSessionManager:
                 # Person-objects workflow returns merged_groups count
                 person_count = result.get("merged_groups", 0)
                 workflow_id = result.get("workflow_id", "unknown")
+                # CRITICAL: Extract person_objects array for enqueueing
+                person_objects = result.get("person_objects", [])
 
                 logger.info(
                     f"✅ Person objects workflow succeeded: "
@@ -742,6 +946,7 @@ class FaceDetectionSessionManager:
                     "success": True,
                     "person_count": person_count,
                     "workflow_id": workflow_id,
+                    "person_objects": person_objects,  # Return person_objects array
                     "session_uuid": session_uuid,
                 }
             else:

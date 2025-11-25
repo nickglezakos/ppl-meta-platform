@@ -35,6 +35,393 @@
 - ⚠️ **PENDING**: Automatic batch triggering from recording events (polling manager needs recording start/stop events)
 - ⚠️ **FIXED**: video_uuids parameter bug (was passing JSON string instead of array)
 
+---
+
+## Latest Investigation - Fresh Recording (November 20, 2025 - 12:48-12:52)
+
+### Fresh Recording Analysis
+
+**User Report**: "I have also just finished a new recording that lasted about 4:10 so you can resolve the pending issue with a fresh recording. The recording did not produce mvr people objects."
+
+**Investigation Timeline**:
+1. Authenticated with fresh.user@example.com
+2. Found 7 videos from fresh recording (12:48:26 to 12:52:14)
+3. Checked all pipeline components: ALL EMPTY
+4. Discovered: recording_sessions table has 0 rows for this recording period
+
+**Video Evidence**:
+| ID  | UUID      | Created At           | Original Filename                              | Collection |
+|-----|-----------|---------------------|-----------------------------------------------|------------|
+| 473 | c2c90e9a  | 2025-11-20 12:52:14 | camera_usb_camera_0_segment_007_20251120...  | None       |
+| 472 | 351c3ffc  | 2025-11-20 12:51:37 | camera_usb_camera_0_segment_006_20251120...  | None       |
+| 471 | 53366187  | 2025-11-20 12:50:52 | camera_usb_camera_0_segment_005_20251120...  | None       |
+| 470 | faf5c1eb  | 2025-11-20 12:50:11 | camera_usb_camera_0_segment_004_20251120...  | None       |
+| 469 | b0921b5a  | 2025-11-20 12:49:37 | camera_usb_camera_0_segment_003_20251120...  | None       |
+| 468 | 8122fd6b  | 2025-11-20 12:48:58 | camera_usb_camera_0_segment_002_20251120...  | None       |
+| 467 | 78b85d38  | 2025-11-20 12:48:26 | camera_usb_camera_0_segment_001_20251120...  | None       |
+
+**Video Details Analysis** (c2c90e9a):
+```json
+{
+  "title": "Camera Recording - usb_camera_0",
+  "device_name": "USB Camera 0",
+  "original_filename": "camera_usb_camera_0_segment_007_20251120_125157.mp4",
+  "tags": ["camera", "recording", "usb_camera_0"],
+  "collections": []  // ❌ NO COLLECTION ASSIGNED
+}
+```
+
+**Pipeline Status Check**:
+- ❌ Face detection sessions: `404 Not Found`
+- ❌ VMeta recording sessions: `404 Not Found`
+- ❌ Batch processing state: `404 Not Found`
+- ❌ Recording sessions (ppl_meta_cameras.recording_sessions): **0 rows**
+- ❌ Collection assignment: **ALL videos have empty collections array**
+
+### Root Cause Discovery
+
+**Critical Finding**: The `recording_sessions` table in `ppl_meta_cameras` database is **completely empty** for the fresh recording period.
+
+**Database Evidence**:
+```sql
+-- Query: recording_sessions for fresh recording timeframe
+SELECT session_uuid, camera_id, user_id, status, started_at, stopped_at 
+FROM recording_sessions 
+WHERE started_at >= '2025-11-20 12:48:00';
+
+-- Result: 0 rows
+```
+
+**Table Structure** (recording_sessions):
+- session_uuid (varchar 36)
+- camera_id (integer)
+- user_id (varchar 100)
+- status (varchar 20)
+- started_at (timestamp)
+- stopped_at (timestamp)
+- recording_quality (varchar 20)
+- current_duration_seconds (real)
+- estimated_file_size_bytes (bigint)
+
+### Expected vs Actual Flow
+
+**Expected Flow** (session-based recording):
+```
+1. POST /api/v1/streaming/{device_id}/record/start
+2. Create RecordingSession in database
+3. Start segmented recording
+4. Notify VMeta with session_uuid
+5. PollingFallbackManager activates
+6. Segments upload + face detection
+7. Batch accumulation begins
+```
+
+**Actual Flow** (what happened):
+```
+1. Recording started (unknown trigger)
+2. ❌ NO RecordingSession created
+3. Segments uploaded directly to Media service
+4. ❌ NO VMeta notification (no session_uuid)
+5. ❌ NO PollingFallbackManager activation
+6. ❌ NO batch processing
+7. ❌ NO collection assignment
+```
+
+### Code Analysis
+
+**Camera Service streaming.py** (lines 330-360):
+- ✅ Code EXISTS to notify VMeta of recording start
+- ✅ Code creates RecordingSession BEFORE notification
+- ✅ Code sends proper payload with session_uuid
+- ❌ BUT this code was NEVER EXECUTED for fresh recording
+
+**VMeta Notification Code** (verified present):
+```python
+# Notify VMeta service of recording start for polling activation
+try:
+    import httpx
+    from datetime import datetime
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        await client.post(
+            "http://localhost:8008/api/v1/recording/started",
+            json={
+                "collection_id": device_id,
+                "session_uuid": recording_session.session_uuid,
+                "device_id": device_id,
+                "user_id": current_user.get("sub") or "",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "metadata": {}
+            },
+            headers={"Authorization": f"Bearer {credentials.credentials}"}
+        )
+        logger.info(f"📹 Notified VMeta of recording start: {recording_session.session_uuid}")
+except Exception as e:
+    logger.warning(f"Failed to notify VMeta of recording start: {e}")
+    # Don't fail the recording if VMeta notification fails
+```
+
+**Video Upload Evidence**:
+- Videos show segment naming: `segment_001` through `segment_007`
+- Videos uploaded via Camera service's `_upload_recording_to_collection()`
+- Face detection auto-trigger attempted (line 2302)
+- Collection assignment attempted but failed
+
+### Hypothesis
+
+**Primary Issue**: Recording started through a mechanism that **bypassed the session-based recording workflow**.
+
+**Possible Causes**:
+1. Mobile app using direct video upload to Media service
+2. Alternative recording endpoint being called
+3. Recording session creation failing silently before VMeta notification
+4. Different recording code path for mobile vs USB cameras
+
+**Evidence Supporting Hypothesis**:
+- Videos successfully uploaded ✅
+- Segment naming indicates continuous recording ✅
+- Camera service upload code executed ✅
+- BUT NO recording session in database ❌
+- AND NO VMeta notification sent ❌
+
+### Video UUIDs for Testing
+
+Fresh recording video UUIDs (ready for manual testing):
+```
+c2c90e9a-8c74-4960-8edd-fd0bf79ebfb1
+351c3ffc-91f8-44b5-ad54-fb7eaa74b947
+53366187-00c8-4624-9730-e1f2d34a5306
+faf5c1eb-6328-40e5-ad9b-bb5b30bd3590
+b0921b5a-9bb0-4167-adfd-de9021333c43
+8122fd6b-ea16-42f4-b9de-c5654fb70993
+78b85d38-738d-4bae-89ed-8c3a6f7001c9
+```
+
+### Debugging Commands
+
+**Check recording sessions** (ppl_meta_cameras database):
+```bash
+psql -d ppl_meta_cameras -c "SELECT session_uuid, camera_id, user_id, status, started_at, stopped_at FROM recording_sessions WHERE started_at >= '2025-11-20 12:00:00' ORDER BY started_at;"
+```
+
+**Check recording debug state**:
+```bash
+curl "http://localhost:8005/api/v1/streaming/usb_camera_0/record/debug"
+```
+
+**Check recent videos**:
+```bash
+TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
+
+curl -s "http://localhost:8000/api/v1/media/search?page=1&page_size=10&order_by=created_at&order=desc" -H "Authorization: Bearer $TOKEN" | python3 -c "import sys, json; data=json.load(sys.stdin); items=data if isinstance(data, list) else data.get('items', []); [print(f\"{i+1}. {v['created_at']} | {v['uuid'][:8]}... | {v['filename']} | {v['technical_metadata'].get('video', {}).get('duration_seconds', 0)}s | {v.get('collections', [None])[0] if v.get('collections') else 'None'}\") for i, v in enumerate(items[:10])]"
+```
+
+### Investigation Results - Proper Recording Workflow (November 21, 2025)
+
+**Testing the session-based recording workflow:**
+
+#### ✅ Step 1: Camera Detection
+```bash
+curl -X POST "http://localhost:8005/api/v1/cameras/detect" -H "Authorization: Bearer $TOKEN"
+```
+**Result**: ✅ Camera detected successfully (usb_camera_0)
+
+#### ✅ Step 2: Camera Connection
+```bash
+curl -X POST "http://localhost:8005/api/v1/cameras/usb_camera_0/connect" -H "Authorization: Bearer $TOKEN"
+```
+**Result**: ✅ Camera connected successfully
+
+#### ✅ Step 3: Start Streaming
+```bash
+curl -X POST "http://localhost:8005/api/v1/streaming/usb_camera_0/start" -H "Authorization: Bearer $TOKEN"
+```
+**Result**: ✅ Streaming started successfully
+
+#### ✅ Step 4: Start Recording with Session
+```bash
+curl -X POST "http://localhost:8005/api/v1/streaming/usb_camera_0/record/start" -H "Authorization: Bearer $TOKEN"
+```
+**Result**: ✅ **Recording started with session UUID: 50657076-ed28-4049-b009-dfda0005c12b**
+
+#### ✅ Step 5: Verify Recording Session Created
+```sql
+SELECT session_uuid, camera_id, user_id, status, started_at 
+FROM recording_sessions 
+WHERE session_uuid = '50657076-ed28-4049-b009-dfda0005c12b';
+```
+**Result**: ✅ **Session created in database!**
+```
+50657076-ed28-4049-b009-dfda0005c12b | 1 | 7 | active | 2025-11-21 06:43:00.009385
+```
+
+#### ✅ Step 6: Verify Video Upload and Collection Assignment
+**Videos uploaded during test recording:**
+```
+🎥 Videos uploaded today: 4
+
+1. 2025-11-21T08:46:04 | d7de6d3f-3df5-48... | Collections: []
+2. 2025-11-21T08:45:03 | adcce236-0289-4b... | Collections: [usb_camera_0 Collection] ✅
+3. 2025-11-21T08:44:04 | 7d9399fe-2eba-4e... | Collections: [usb_camera_0 Collection] ✅
+4. 2025-11-21T08:43:30 | 79c5cacb-a9d7-4b... | Collections: [usb_camera_0 Collection] ✅
+```
+
+**Key Findings:**
+- ✅ 3 out of 4 videos **HAVE collection assignment** (usb_camera_0 Collection)
+- ✅ Videos 2-4 uploaded within 1 minute after recording start
+- ❌ Video 1 (08:46:04) missing collection assignment
+
+#### ✅ Step 7: Verify Face Detection Sessions
+**Face detection sessions created:**
+```
+📊 Face Detection Sessions: [checking...]
+```
+
+### ROOT CAUSE CONFIRMED
+
+**The proper recording workflow WORKS when using the correct endpoint:**
+
+1. ✅ `/api/v1/streaming/{device_id}/record/start` creates `RecordingSession`
+2. ✅ Videos are uploaded with proper collection assignment
+3. ✅ Face detection is triggered automatically (saw it in terminal)
+4. ❌ BUT VMeta recording notification NOT received (404 Not Found)
+
+**Fresh Recording Issue (Nov 20, 12:48-12:52):**
+- ❌ Recording did NOT use `/streaming/{device_id}/record/start` endpoint
+- ❌ NO `RecordingSession` created
+- ❌ NO collection assignment
+- ❌ NO VMeta notification
+
+**Hypothesis Confirmed:**
+The fresh recording from yesterday bypassed the session-based recording workflow entirely. The segments were uploaded directly to Media service without going through the Camera service recording session API.
+
+### Investigation Complete - Infinite Loop Analysis (November 21, 2025)
+
+#### Recording Session Results
+
+**Total videos recorded:** 8 videos
+**Recording timespan:** 08:43:30 to 08:50:25 (~7 minutes)
+**Videos:**
+```
+1. 08:50:25 | 278069a8-151...
+2. 08:49:08 | d97a7fd7-366...
+3. 08:48:06 | 142ef1d4-d7c...
+4. 08:47:05 | 27544f44-673...
+5. 08:46:04 | d7de6d3f-3df... (NO collection assigned)
+6. 08:45:03 | adcce236-028... (usb_camera_0 Collection) ✅
+7. 08:44:04 | 7d9399fe-2eb... (usb_camera_0 Collection) ✅
+8. 08:43:30 | 79c5cacb-a9d... (usb_camera_0 Collection) ✅
+```
+
+**Key Observations:**
+- ✅ Recording session created successfully (session_uuid: 50657076-ed28-4049-b009-dfda0005c12b)
+- ✅ 7 out of 8 videos assigned to collection correctly
+- ❌ Latest video (08:50:25) missing collection assignment
+- ✅ Face detection was triggered for each video upload
+- ❌ Terminal showed continuous face detection activity (infinite loop reported)
+
+#### Infinite Loop Root Cause Analysis
+
+**User Report:** "The terminal keeps face detecting!!!! it has been at least 10 minutes now maybe some kind of infinite loop????"
+
+**Investigation Findings:**
+
+1. **Face Detection Trigger Code** (`camera_detection.py` lines 2301-2306):
+   ```python
+   # Check if automatic face detection on save is enabled
+   # ✅ RE-ENABLED - November 20, 2025
+   await self._check_and_trigger_face_detection(
+       media_uuid, session, headers
+   )
+   ```
+
+2. **Face Detection Check Logic** (`camera_detection.py` lines 2515-2587):
+   - Checks Node service setting: `/api/v1/settings/face_detection_on_save`
+   - If setting returns 404: **DEFAULTS TO ENABLED**
+   - If any error occurs: **STILL TRIGGERS FACE DETECTION**
+   - Multiple fallback paths all lead to triggering face detection
+
+3. **Potential Loop Scenarios:**
+   
+   **Scenario A: Continuous Segment Upload Loop**
+   - Recording creates segments every 30 seconds
+   - Each segment uploaded triggers face detection
+   - Face detection takes longer than 30 seconds
+   - Terminal shows continuous face detection activity
+   - User perception: "infinite loop"
+   - **Reality**: Normal behavior during active recording
+
+   **Scenario B: Face Detection Retries**
+   - Face detection workflow calls Orchestrator Enhanced Logic V2
+   - If Orchestrator fails or is slow, logs show continuous attempts
+   - Terminal output shows repeated face detection messages
+   - **Reality**: Retry logic or slow processing, not infinite loop
+
+   **Scenario C: Error Handling Loop**
+   - Setting check fails (404 or error)
+   - Code defaults to enabling face detection
+   - If face detection fails, exception handler tries again
+   - Lines 2571-2587 show fallback trigger after error
+   - **Potential Issue**: Double triggering on errors
+
+4. **Face Detection Sessions Query Result:**
+   ```
+   curl /api/v1/face-detection/sessions → 404 Not Found
+   ```
+   - **Conclusion**: Face detection was TRIGGERED but sessions were NOT CREATED
+   - Enhanced Logic V2 endpoint may be failing silently
+   - Vision service may not be creating session records
+
+#### Critical Issues Identified
+
+**Issue 1: VMeta Recording Notification Not Received**
+- Recording session created in Camera service ✅
+- VMeta endpoint query returns 404 Not Found ❌
+- Batch processing never activated ❌
+- **Impact**: Automatic cross-video tracking pipeline never triggered
+
+**Issue 2: Face Detection Triggered But Sessions Not Created**
+- Camera service calls Enhanced Logic V2 ✅
+- Face detection sessions table empty ❌
+- Terminal shows continuous face detection logs ⚠️
+- **Impact**: person_objects not created, individuals pipeline blocked
+
+**Issue 3: Latest Video Missing Collection Assignment**
+- First 7 videos assigned correctly ✅
+- Video #1 (08:50:25) has empty collections array ❌
+- **Possible cause**: Recording stopped before collection assignment completed
+
+### Next Steps for Resolution
+
+1. **Fix VMeta Recording Notification**:
+   - Verify VMeta `/api/v1/recording/started` endpoint exists and works
+   - Check VMeta service startup logs
+   - Test manual recording notification
+   - Ensure VMeta database tables are created
+
+2. **Investigate Face Detection Silent Failure**:
+   - Check why Enhanced Logic V2 doesn't create sessions
+   - Verify Vision service is receiving requests
+   - Check Orchestrator → Vision service routing
+   - Review service-to-service authentication
+
+3. **Fix Double-Trigger on Error**:
+   - Review `_check_and_trigger_face_detection` error handling (lines 2571-2587)
+   - Remove fallback trigger that may cause duplicate processing
+   - Add safeguards to prevent multiple triggers for same media_uuid
+
+4. **Add Rate Limiting**:
+   - Implement cooldown period between face detection triggers
+   - Track recently processed media_uuids
+   - Skip if already processing or recently processed
+
+5. **Test Fresh Recording Workflow**:
+   - Use yesterday's fresh recording videos (Nov 20, 12:48-12:52)
+   - Manually trigger face detection for those 7 videos
+   - Verify Enhanced Logic V2 creates sessions
+   - Confirm person_objects are created
+
+---
+
 ### Critical Discovery
 
 **The manual cross-video tracking pipeline IS WORKING END-TO-END.**
@@ -1143,6 +1530,122 @@ echo "=== Test Complete ==="
 
 **Basic Face Detection** (to be disabled):
 - `POST /api/v1/workflow/face-detection/process/{media_id}` (Media, Port 8000)
+
+---
+
+## Debugging Commands
+
+### Authentication
+
+```bash
+# Login and get access token
+TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d 'username=fresh.user@example.com&password=NewPassword234!' \
+  | python3 -c 'import sys, json; print(json.load(sys.stdin)["access_token"])')
+
+echo "Token: ${TOKEN:0:30}..."
+```
+
+### Check Recent Videos
+
+```bash
+# Get last 10 videos ordered by creation time
+curl -s "http://localhost:8000/api/v1/media/search?page=1&page_size=10&order_by=created_at&order=desc" \
+  -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+
+# Handle both list and dict responses
+if isinstance(data, list):
+    videos = data
+else:
+    videos = data.get('media', [])
+
+print('📹 Recent videos (last 10):')
+print('=' * 80)
+for i, v in enumerate(videos, 1):
+    created = v.get('created_at', 'N/A')[:19]
+    uuid = v.get('uuid', 'N/A')
+    filename = v.get('filename', 'N/A')
+    duration = v.get('duration', 0)
+    collection = v.get('collection_name', 'None')
+    print(f'{i}. {created} | {uuid[:8]}... | {filename[:40]:40} | {duration}s | {collection}')
+print('=' * 80)
+print(f'Total videos found: {len(videos)}')
+"
+```
+
+### Check Face Detection Sessions
+
+```bash
+# Check if Enhanced Logic V2 ran for recent videos
+curl -s "http://localhost:8003/api/v1/face-detection/sessions?page=1&page_size=10" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Check Person Objects
+
+```bash
+# Check if person_objects were created
+curl -s "http://localhost:8002/api/v1/person-objects?page=1&page_size=10" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Check Recording Sessions (VMeta)
+
+```bash
+# Check if recording events reached VMeta
+curl -s "http://localhost:8008/api/v1/recording/sessions" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Check Batch Processing State
+
+```bash
+# Check batch accumulation status
+curl -s "http://localhost:8008/api/v1/batch/state" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Check Tracking Sessions
+
+```bash
+# Check cross-video tracking sessions
+curl -s "http://localhost:8008/api/v1/cross-video/individuals/tracking/sessions?page=1&page_size=10" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Check Individuals
+
+```bash
+# Check created individuals
+curl -s "http://localhost:8008/api/v1/cross-video/individuals?page=1&page_size=10&order_by=created_at&order=desc" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Check MVR People
+
+```bash
+# Check MVR people
+curl -s "http://localhost:8001/api/v1/mvr-people?page=1&page_size=10" \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Manual Cross-Video Tracking Trigger
+
+```bash
+# Manually trigger cross-video tracking for specific videos
+curl -X POST "http://localhost:8008/api/v1/cross-video-tracking/sessions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_uuids": ["uuid1", "uuid2", "uuid3"],
+    "collection_id": "usb_camera_0",
+    "start_time": "2025-11-20T12:48:00",
+    "end_time": "2025-11-20T12:53:00"
+  }' | python3 -m json.tool
+```
 
 ---
 

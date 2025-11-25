@@ -1430,6 +1430,43 @@ class PPLThreadWorkflowController:
                 }
             )
 
+        # Format person_objects for in-memory processing (vmeta integration)
+        person_objects_formatted = []
+        for person in person_objects:
+            person_id = person["person_id"]
+            
+            # Get face IDs for this person
+            person_face_ids = [
+                str(fm["face_detection_id"])
+                for fm in face_mappings
+                if fm["person_id"] == person_id
+            ]
+            
+            # Get best quality face data
+            best_face_data = best_quality_formatted.get(person_id, {})
+            
+            person_objects_formatted.append(
+                {
+                    "person_id": person_id,
+                    "workflow_id": workflow_id,
+                    "session_uuid": session_uuid,
+                    "face_count": person["face_count"],
+                    "face_ids": person_face_ids,
+                    "average_position": person["average_position"],
+                    "quality_score": person.get("quality_score", 0.0),
+                    "best_face_id": best_face_data.get("face_id"),
+                    "best_face_frame": best_face_data.get("frame_number"),
+                    "best_face_bbox": best_face_data.get("bbox", []),
+                    "tracking_metadata": {
+                        "tolerance_percent": person["tolerance_percent"],
+                        "tracking_algorithm": person.get(
+                            "tracking_algorithm", "percentage_based_tracking"
+                        ),
+                        "created_at": datetime.now().isoformat(),
+                    },
+                }
+            )
+
         # Final response in PPL Meta Mini compatible format
         response = {
             "workflow_id": workflow_id,
@@ -1442,11 +1479,15 @@ class PPLThreadWorkflowController:
             "statistics": summary,  # Duplicate for compatibility
             "best_quality_faces": best_quality_formatted,
             "classified_faces": classified_faces,
+            "person_objects": person_objects_formatted,  # ← NEW: Full person objects for in-memory processing
             "processing_timestamp": datetime.now().isoformat(),
             "workflow_type": "ppl_thread_person_objects",
         }
 
-        logger.debug("PPL Mini compatible response formatted successfully")
+        logger.debug(
+            "PPL Mini compatible response formatted successfully with %d person objects",
+            len(person_objects_formatted)
+        )
 
         return response
 

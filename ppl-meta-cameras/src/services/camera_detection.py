@@ -1132,11 +1132,19 @@ class CameraDetectionService:
         except Exception as e:
             logger.error(f"Error finalizing recording session {session_uuid}: {e}")
 
-        # Upload all session segments separately to media service
-        logger.info(f"🎬 [SESSION] Starting media upload for session {session_uuid}")
-        upload_results = await self._upload_session_segments_to_collection(
-            session_uuid, recording_info, user_id
+        # Upload ONLY the final segment (other segments already uploaded during rotation)
+        logger.info(f"🎬 [SESSION] Uploading final segment for session {session_uuid}")
+        
+        # Create modified recording_info for final segment only
+        final_segment_recording_info = recording_info.copy()
+        final_segment_recording_info["current_segment_path"] = current_segment_path
+        
+        upload_result = await self._upload_recording_to_collection(
+            final_segment_recording_info, user_id
         )
+        
+        # Wrap single result in list for compatibility with existing code
+        upload_results = [upload_result] if upload_result else []
 
         # Extract collection info from first successful upload
         collection_id = None
@@ -1961,32 +1969,55 @@ class CameraDetectionService:
                 f"🎬 [SEGMENT] Uploading completed segment {segment_filename} "
                 f"to media service..."
             )
+            logger.info(
+                f"🔥 [SEGMENT] Upload segment: {segment_filename}"
+            )
+            logger.info(
+                f"🔥 [SEGMENT] recording_info keys: "
+                f"{list(recording_info.keys())}"
+            )
+            has_token = 'auth_token' in recording_info
+            logger.info(f"🔥 [SEGMENT] auth_token present: {has_token}")
+            logger.info(
+                f"🔥 [SEGMENT] user_id: {recording_info.get('user_id')}"
+            )
+            
             segment_recording_info = recording_info.copy()
             segment_recording_info["current_segment_path"] = (
                 current_segment_path
             )
             
             user_id = recording_info.get("user_id") or "7"
+            logger.info(f"🔥 [SEGMENT] Final user_id: {user_id}")
+            
             if user_id:
+                logger.info("🔥 [SEGMENT] Calling upload function")
                 upload_result = await self._upload_recording_to_collection(
                     segment_recording_info, user_id
                 )
+                logger.info(f"🔥 [SEGMENT] Upload result: {upload_result}")
+                
                 if upload_result:
                     media_uuid = upload_result.get('media_uuid')
                     logger.info(
                         f"🎬 [SEGMENT] ✅ Segment {segment_filename} uploaded "
                         f"to media service: {media_uuid}"
                     )
+                    logger.info(
+                        f"🔥 [SEGMENT] ✅ Upload OK: {media_uuid}"
+                    )
                 else:
                     logger.error(
                         f"🎬 [SEGMENT] ❌ Failed to upload segment "
                         f"{segment_filename} to media service"
                     )
+                    logger.error("🔥 [SEGMENT] ❌ Upload failed")
             else:
                 logger.warning(
                     f"🎬 [SEGMENT] ⚠️ No user_id found in recording_info, "
                     f"skipping upload for {segment_filename}"
                 )
+                logger.warning("🔥 [SEGMENT] ⚠️ No user_id")
 
             # Create next segment
             next_index = current_segment_index + 1
@@ -2152,16 +2183,17 @@ class CameraDetectionService:
             logger.info(f"🎬 [DEBUG] ✅ File content read: {len(file_content)} bytes")
 
             # Upload to media service
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30, connect=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 # Set JWT token for authentication
                 headers = {}
                 auth_token = recording_info.get("auth_token")
                 if auth_token:
                     headers["Authorization"] = f"Bearer {auth_token}"
-                    logger.info(f"🎬 [DEBUG] ✅ Using auth token for media upload")
+                    logger.info(f"🎬 [DEBUG] ✅ Using auth token")
                 else:
                     logger.warning(
-                        f"🎬 [DEBUG] ⚠️ No auth token available for media upload"
+                        f"🎬 [DEBUG] ⚠️ No auth token available"
                     )
 
                 # Get user GUID from user profile since media service needs UUID format
@@ -2192,33 +2224,73 @@ class CameraDetectionService:
                             profile_error
                         )
 
-                # Use GUID if available, fallback to user_id
+                # ALWAYS fetch GUID from Node service if we don't have it
                 # The Media service requires UUID (GUID), not integer ID
                 if not user_guid and user_id:
-                    # Need to fetch GUID from Node service using integer ID
+                    # Fetch GUID from Node service using integer ID
                     try:
-                        import httpx
-                        async with httpx.AsyncClient() as client:
-                            # Get user details from Node service to get GUID
-                            node_url = f"http://localhost:8001/api/v1/users/{user_id}"
-                            logger.info(f"🎬 [DEBUG] Fetching user GUID from Node service: {node_url}")
-                            response = await client.get(node_url)
-                            if response.status_code == 200:
-                                user_data = response.json()
+                        logger.info(
+                            f"🎬 [DEBUG] Fetching GUID for user_id: {user_id}"
+                        )
+                        logger.info(
+                            f"🎬 [DEBUG] Auth token present: "
+                            f"{bool(auth_token)}"
+                        )
+                        node_url = (
+                            f"http://localhost:8001/api/v1/users/{user_id}"
+                        )
+                        
+                        # Use auth headers if available
+                        fetch_headers = headers.copy() if headers else {}
+                        logger.info(
+                            f"🎬 [DEBUG] Calling Node: {node_url}"
+                        )
+                        
+                        async with session.get(
+                            node_url, headers=fetch_headers
+                        ) as node_response:
+                            response_text = await node_response.text()
+                            logger.info(
+                                f"🎬 [DEBUG] Node response status: "
+                                f"{node_response.status}"
+                            )
+                            
+                            if node_response.status == 200:
+                                user_data = await node_response.json()
                                 user_guid = user_data.get("guid")
-                                logger.info(f"🎬 [DEBUG] Got user GUID: {user_guid}")
+                                logger.info(
+                                    f"🎬 [DEBUG] ✅ Got GUID: {user_guid}"
+                                )
                             else:
-                                logger.error(f"🎬 [DEBUG] Failed to fetch user GUID: {response.status_code}")
+                                logger.error(
+                                    f"🎬 [DEBUG] Node error: "
+                                    f"{node_response.status} - "
+                                    f"{response_text[:200]}"
+                                )
                     except Exception as e:
-                        logger.error(f"🎬 [DEBUG] Error fetching user GUID: {e}")
+                        logger.error(
+                            f"🎬 [DEBUG] Exception fetching GUID: {e}",
+                            exc_info=True
+                        )
                 
-                final_user_id = user_guid
-                if not final_user_id:
+                # Must have a valid GUID to proceed
+                if not user_guid:
                     logger.error(
-                        "🎬 [DEBUG] ❌ No valid user GUID available - cannot upload video. "
-                        f"user_id={user_id}, user_guid={user_guid}"
+                        f"🎬 [DEBUG] ❌ Failed to get user GUID for "
+                        f"user_id={user_id}. Uploads will fail!"
                     )
-                    return None
+                    logger.error(
+                        f"🎬 [DEBUG] auth_token was: "
+                        f"{'present' if auth_token else 'missing'}"
+                    )
+                    # Continue anyway to see full error from Media service
+                    final_user_id = user_id
+                else:
+                    final_user_id = user_guid
+                
+                logger.info(
+                    f"🎬 [DEBUG] Using ID for upload: {final_user_id}"
+                )
                     
                 logger.info(
                     "🎬 [DEBUG] Final user GUID for upload: %s",
@@ -2626,9 +2698,10 @@ class CameraDetectionService:
             ORCHESTRATOR_SERVICE_URL = "http://localhost:8002"
 
             # Trigger Enhanced Logic V2 face detection via orchestrator
+            # Use frame_interval=10 to process every 10th frame (10x speedup)
             orchestrator_url = (
                 f"{ORCHESTRATOR_SERVICE_URL}/api/v1/media/"
-                f"{media_uuid}/faces/enhanced-v2"
+                f"{media_uuid}/faces/enhanced-v2?frame_interval=10"
             )
             
             # Use service-to-service authentication headers
@@ -2639,7 +2712,7 @@ class CameraDetectionService:
                 orchestrator_url
             )
             logger.info("🎯 [FACE-DETECTION] Request method: GET")
-            logger.info("🎯 [FACE-DETECTION] Using service auth token")
+            logger.info("🎯 [FACE-DETECTION] Using service auth token (frame_interval=10)")
 
             async with session.get(
                 orchestrator_url, headers=service_headers

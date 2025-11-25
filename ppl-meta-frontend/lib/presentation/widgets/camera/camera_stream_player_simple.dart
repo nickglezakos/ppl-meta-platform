@@ -196,7 +196,8 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
       );
     }
     
-    print('📺 Building widget for camera: ${widget.cameraId}, _isStreaming: $_isStreaming');
+    // NOTE: Debug print removed to prevent console spam during recording
+    // print('📺 Building widget for camera: ${widget.cameraId}, _isStreaming: $_isStreaming');
     
     return Container(
       width: widget.width ?? 640,

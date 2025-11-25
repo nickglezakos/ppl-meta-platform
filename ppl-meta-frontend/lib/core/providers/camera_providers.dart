@@ -673,8 +673,10 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
           startedAt: result.startedAt,
         );
         
-        // Start periodic status updates
-        _startStatusUpdates();
+        // NOTE: Periodic status updates disabled to prevent UI polling during recording
+        // This was causing constant widget rebuilds every 2 seconds, breaking smoothness
+        // Recording status will be updated only on user actions (stop recording)
+        // _startStatusUpdates();
       } else {
         state = state.copyWith(
           isLoading: false,

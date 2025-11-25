@@ -1731,40 +1731,27 @@ async def search_mvr_people_by_videos(
                 message="No videos provided"
             )
         
-        # Convert timezone-aware datetimes to naive if provided
-        start_time_naive = (
-            start_time.replace(tzinfo=None) if start_time else None
-        )
-        end_time_naive = end_time.replace(tzinfo=None) if end_time else None
-        
         # Convert string UUIDs to UUID objects
         video_uuid_objs = [UUID(vid) for vid in video_uuids]
         
         # Get database connection from the repository's pool
         async with mvr_repository.pool.acquire() as conn:
             # Find all individuals that appear in these videos
+            # NOTE: When video UUIDs are provided, we search by video UUID only.
+            # The start_time/end_time parameters are IGNORED because they represent
+            # video creation times (from media service), but individual_video_appearances
+            # stores appearance timestamps WITHIN the video (e.g., "person at 2.5 seconds").
+            # These are different timestamp domains and should not be mixed.
             individuals_query = """
                 SELECT DISTINCT individual_uuid
                 FROM individual_video_appearances
                 WHERE video_uuid = ANY($1::uuid[])
             """
             
-            if start_time_naive and end_time_naive:
-                individuals_query += """
-                    AND start_timestamp >= $2
-                    AND end_timestamp <= $3
-                """
-                individual_rows = await conn.fetch(
-                    individuals_query,
-                    video_uuid_objs,
-                    start_time_naive,
-                    end_time_naive
-                )
-            else:
-                individual_rows = await conn.fetch(
-                    individuals_query,
-                    video_uuid_objs
-                )
+            individual_rows = await conn.fetch(
+                individuals_query,
+                video_uuid_objs
+            )
             
             if not individual_rows:
                 logger.info("No individuals found in provided videos")
@@ -1835,6 +1822,10 @@ async def search_mvr_people_by_videos(
                 ]
                 
                 # Get appearances for these individuals in our target videos
+                # NOTE: We do NOT filter by start_time/end_time here because:
+                # 1. We already filtered by video_uuid (which is the correct filter)
+                # 2. Appearance timestamps are WITHIN video (relative), not video creation times
+                # 3. Flutter sends Athens local time, DB has UTC - comparison would fail
                 appearances_query = """
                     SELECT
                         iva.video_uuid,
@@ -1848,19 +1839,10 @@ async def search_mvr_people_by_videos(
                     ORDER BY iva.start_timestamp ASC
                 """
                 
-                query_params = [linked_individual_uuids, video_uuid_objs]
-                
-                if start_time_naive and end_time_naive:
-                    appearances_query = appearances_query.replace(
-                        "ORDER BY",
-                        "AND iva.start_timestamp >= $3 "
-                        "AND iva.end_timestamp <= $4 ORDER BY"
-                    )
-                    query_params.extend([start_time_naive, end_time_naive])
-                
                 appearances_rows = await conn.fetch(
                     appearances_query,
-                    *query_params
+                    linked_individual_uuids,
+                    video_uuid_objs
                 )
                 
                 if not appearances_rows:

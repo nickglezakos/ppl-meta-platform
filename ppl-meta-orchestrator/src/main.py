@@ -14,8 +14,23 @@ from workflow_orchestrator import CameraFaceDetectionWorkflowOrchestrator
 from config import settings
 
 # Setup enhanced logging for Phase 1
+import os
+from logging.handlers import RotatingFileHandler
+
+# Create logs directory if it doesn't exist
+log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "ppl-meta-orchestrator.log")
+
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        RotatingFileHandler(
+            log_file, maxBytes=10*1024*1024, backupCount=5
+        ),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 

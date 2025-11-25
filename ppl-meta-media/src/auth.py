@@ -34,8 +34,29 @@ async def get_current_user(
     """
     Dependency to get the current authenticated user.
     Validates JWT token by calling the user profile endpoint.
+    
+    Also supports internal service-to-service authentication using
+    INTERNAL_SERVICE_TOKEN for microservice communication.
     """
     token = credentials.credentials
+    
+    # Check if this is an internal service request
+    import os
+    INTERNAL_SERVICE_TOKEN = os.getenv(
+        "INTERNAL_SERVICE_TOKEN",
+        "ppl-meta-internal-service-secret-key-change-in-production"
+    )
+    
+    if token == INTERNAL_SERVICE_TOKEN:
+        # Internal service request - use system user
+        logger.info("Internal service request detected - using system user UUID")
+        return AuthUser(
+            user_id="00000000-0000-0000-0000-000000000000",  # System user UUID
+            username="internal-service",
+            email="service@ppl-meta.internal",
+            roles=["system"],
+            permissions=["all"],
+        )
 
     try:
         # Call user profile endpoint through gateway to get user data

@@ -1149,8 +1149,12 @@ def get_media_access_check(
         # Check access permissions
         has_access = False
 
+        # Option 0: Internal service (system user) - bypass all checks
+        if user_id == "00000000-0000-0000-0000-000000000000":
+            has_access = True
+
         # Option 1: User owns the media
-        if user_id and str(media.uploaded_by) == user_id:
+        elif user_id and str(media.uploaded_by) == user_id:
             has_access = True
 
         # Option 2: Media is public

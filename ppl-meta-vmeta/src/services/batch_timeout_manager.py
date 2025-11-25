@@ -428,6 +428,28 @@ class PollingFallbackManager:
             f"📹 Recording started: {collection_id}, session: {session_uuid}"
         )
         
+        # CRITICAL: Clear any pending videos from previous recordings
+        if not hasattr(self, '_pending_videos_by_collection'):
+            self._pending_videos_by_collection = {}
+        if collection_id in self._pending_videos_by_collection:
+            old_count = len(self._pending_videos_by_collection[collection_id])
+            if old_count > 0:
+                logger.warning(
+                    f"Clearing {old_count} pending videos from "
+                    f"previous recording for {collection_id}"
+                )
+            self._pending_videos_by_collection[collection_id] = []
+        
+        # CRITICAL: Clear processed videos set for this collection
+        # This ensures we don't skip videos from previous recordings
+        if not hasattr(self, '_processed_videos'):
+            self._processed_videos = set()
+        logger.info(
+            f"Cleared {len(self._processed_videos)} processed videos "
+            f"from tracking (starting fresh for new recording)"
+        )
+        self._processed_videos = set()
+        
         self._active_recordings[collection_id] = {
             'session_uuid': session_uuid,
             'started_at': datetime.utcnow(),
@@ -645,8 +667,9 @@ class PollingFallbackManager:
                         
                         # Filter to videos created AFTER this collection's recording started
                         if recording_start_time:
-                            # Allow 30 seconds buffer before recording start
-                            cutoff_time = recording_start_time - timedelta(seconds=30)
+                            # Use recording start time directly (no buffer)
+                            # This ensures only videos from THIS recording are included
+                            cutoff_time = recording_start_time
                         else:
                             # Fallback: last 2 hours if no active recording
                             cutoff_time = datetime.utcnow() - timedelta(hours=2)
@@ -825,9 +848,13 @@ class PollingFallbackManager:
                 logger.error("No valid video UUIDs found in videos_to_process!")
                 return
             
-            # Get time range from videos
-            start_time = min(v['created_at'] for v in videos_to_process)
-            end_time = max(v['created_at'] for v in videos_to_process)
+            # Since we're providing explicit video_uuids, use dummy timestamps
+            # The endpoint will process these specific videos regardless of time range
+            # Videos are already sorted by created_at in chronological order
+            from datetime import datetime as dt_class
+            now = dt_class.utcnow()
+            start_time = now.isoformat().replace('+00:00', 'Z')
+            end_time = (now + timedelta(microseconds=1)).isoformat().replace('+00:00', 'Z')
             
             # Create tracking session with explicit video_uuids
             session_data = {
@@ -839,7 +866,7 @@ class PollingFallbackManager:
                     "+02:00", "Z"
                 ).replace("+00:00", "Z"),
                 "video_uuids": video_uuids,  # Explicit video UUIDs!
-                "background_processing": False
+                "background_processing": True  # CRITICAL: Enable background processing for automatic execution
             }
             
             async with httpx.AsyncClient(timeout=30.0) as client:
