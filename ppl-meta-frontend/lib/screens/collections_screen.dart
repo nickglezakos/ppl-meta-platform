@@ -994,6 +994,8 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             'total_mvr_people': totalResults,
             'total_appearances': totalAppearances,
             'search_parameters': searchResponse.data!['search_parameters'],
+            'collection_name': _selectedCollection!.name, // Add collection name
+            'collection_id': _selectedCollection!.id,     // Add collection ID
           };
         });
         

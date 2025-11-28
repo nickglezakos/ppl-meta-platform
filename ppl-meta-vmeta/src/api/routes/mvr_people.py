@@ -13,11 +13,12 @@ Version: 1.0.0
 """
 
 import logging
+import os
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from fastapi.responses import JSONResponse
 
 # Database and services
@@ -2186,15 +2187,23 @@ async def get_individual_analysis_no_session(
                 )
                 query_params.append(end_naive)
             
-            # Build the final query
+            # Build the final query with demographics
             query = f"""
                 SELECT
                     iva.video_uuid,
                     iva.person_object_uuid,
                     iva.start_timestamp,
                     iva.end_timestamp,
-                    iva.confidence
+                    iva.confidence,
+                    mvr.gender,
+                    mvr.gender_confidence,
+                    mvr.age_min,
+                    mvr.age_max,
+                    mvr.age_confidence
                 FROM individual_video_appearances iva
+                LEFT JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
+                LEFT JOIN mvr_people mvr ON imm.mvr_people_uuid = mvr.mvr_people_uuid
+                    AND mvr.is_orphaned = FALSE
                 WHERE {' AND '.join(query_conditions)}
                 ORDER BY iva.start_timestamp ASC
             """
@@ -2206,7 +2215,8 @@ async def get_individual_analysis_no_session(
                     "individual_uuid": individual_uuid,
                     "total_appearances": 0,
                     "unique_videos": 0,
-                    "appearances": []
+                    "appearances": [],
+                    "demographics": None
                 }
             
             # Build appearances list
@@ -2230,13 +2240,32 @@ async def get_individual_analysis_no_session(
             )
             last_seen = max(row['end_timestamp'] for row in appearances_rows)
             
+            # Extract demographics from first row (all rows should have same demographics)
+            demographics = None
+            first_row = appearances_rows[0]
+            if first_row['gender'] is not None:
+                # Calculate age mean if age_min and age_max are available
+                age_mean = None
+                if first_row['age_min'] is not None and first_row['age_max'] is not None:
+                    age_mean = (first_row['age_min'] + first_row['age_max']) / 2.0
+                
+                demographics = {
+                    "gender": first_row['gender'],
+                    "gender_confidence": float(first_row['gender_confidence']) if first_row['gender_confidence'] else None,
+                    "age_min": first_row['age_min'],
+                    "age_max": first_row['age_max'],
+                    "age_mean": age_mean,
+                    "age_confidence": float(first_row['age_confidence']) if first_row['age_confidence'] else None
+                }
+            
             return {
                 "individual_uuid": individual_uuid,
                 "total_appearances": len(appearances),
                 "unique_videos": unique_videos,
                 "first_seen": first_seen.isoformat(),
                 "last_seen": last_seen.isoformat(),
-                "appearances": appearances
+                "appearances": appearances,
+                "demographics": demographics
             }
             
     except Exception as e:
@@ -2264,6 +2293,7 @@ async def get_individual_analysis_no_session(
 )
 async def get_mvr_person_analysis(
     mvr_person_uuid: str,
+    request: Request,
     start_time: Optional[datetime] = Query(None),
     end_time: Optional[datetime] = Query(None),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
@@ -2346,6 +2376,37 @@ async def get_mvr_person_analysis(
                 )
                 query_params.append(end_naive)
             
+            # Get demographics from mvr_people table
+            demographics_query = """
+                SELECT
+                    gender,
+                    gender_confidence,
+                    age_min,
+                    age_max,
+                    age_confidence
+                FROM mvr_people
+                WHERE mvr_people_uuid = $1
+                    AND is_orphaned = FALSE
+            """
+            demographics_row = await conn.fetchrow(demographics_query, mvr_person_uuid)
+            
+            # Prepare demographics object
+            demographics = None
+            if demographics_row and demographics_row['gender'] is not None:
+                # Calculate age mean if age_min and age_max are available
+                age_mean = None
+                if demographics_row['age_min'] is not None and demographics_row['age_max'] is not None:
+                    age_mean = (demographics_row['age_min'] + demographics_row['age_max']) / 2.0
+                
+                demographics = {
+                    "gender": demographics_row['gender'],
+                    "gender_confidence": float(demographics_row['gender_confidence']) if demographics_row['gender_confidence'] else None,
+                    "age_min": demographics_row['age_min'],
+                    "age_max": demographics_row['age_max'],
+                    "age_mean": age_mean,
+                    "age_confidence": float(demographics_row['age_confidence']) if demographics_row['age_confidence'] else None
+                }
+            
             # Query all appearances
             appearances_query = f"""
                 SELECT
@@ -2370,7 +2431,8 @@ async def get_mvr_person_analysis(
                     "individual_uuids": individual_uuids,
                     "total_appearances": 0,
                     "unique_videos": 0,
-                    "appearances": []
+                    "appearances": [],
+                    "demographics": demographics
                 }
             
             # Build appearances list
@@ -2397,6 +2459,119 @@ async def get_mvr_person_analysis(
                 row['end_timestamp'] for row in appearances_rows
             )
             
+            # Calculate average route velocity from orchestrator route data
+            avg_route_velocity = None
+            try:
+                import httpx
+                
+                gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
+                all_route_points = []
+                
+                # Get Authorization header from request
+                auth_header = request.headers.get("Authorization")
+                headers = {}
+                if auth_header:
+                    headers["Authorization"] = auth_header
+                
+                # Get unique video UUIDs from appearances
+                unique_video_uuids = set(app['video_uuid'] for app in appearances)
+                logger.info(f"🚀 VELOCITY CALCULATION STARTED - Fetching routes from {len(unique_video_uuids)} video(s)")
+                logger.info(f"🎯 Video UUIDs: {list(unique_video_uuids)}")
+                
+                # Fetch person objects data for each video to get route points (via gateway)
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    for video_uuid in unique_video_uuids:
+                        try:
+                            response = await client.get(
+                                f"{gateway_url}/api/v1/orchestrator/person-objects/{video_uuid}",
+                                headers=headers
+                            )
+                            
+                            if response.status_code == 200:
+                                person_objects_data = response.json()
+                                
+                                # Debug: Log what we received
+                                logger.info(f"Gateway response keys for video {video_uuid}: {list(person_objects_data.keys())}")
+                                logger.info(f"Has person_groups: {('person_groups' in person_objects_data)}")
+                                
+                                # Handle both response formats
+                                person_groups = person_objects_data.get('group_tracking') or person_objects_data.get('person_groups', [])
+                                
+                                logger.info(f"Extracted {len(person_groups) if person_groups else 0} person groups from video {video_uuid}")
+                                
+                                for person_group in person_groups:
+                                    # Extract route points from movement_tracking
+                                    movement_tracking = person_group.get('movement_tracking', {})
+                                    route_points = movement_tracking.get('route_points', [])
+                                    
+                                    for route_point in route_points:
+                                        # Use center_x and center_y from gateway response
+                                        # Note: timestamp is a float (seconds from video start), keep as-is
+                                        all_route_points.append({
+                                            'x': float(route_point.get('center_x', route_point.get('x', 0))),
+                                            'y': float(route_point.get('center_y', route_point.get('y', 0))),
+                                            'timestamp': float(route_point['timestamp']),  # Keep as float
+                                            'video_uuid': video_uuid,
+                                            'confidence': float(route_point.get('confidence', 1.0))
+                                        })
+                                
+                                logger.info(f"Fetched {len(route_points)} route points from video {video_uuid}")
+                            else:
+                                logger.warning(f"Orchestrator returned status {response.status_code} for video {video_uuid}")
+                        except Exception as e:
+                            logger.warning(f"Could not fetch routes from video {video_uuid}: {e}")
+                
+                logger.info(f"📊 Total route points collected: {len(all_route_points)}")
+                if len(all_route_points) >= 2:
+                    # Sort by timestamp
+                    all_route_points.sort(key=lambda r: r['timestamp'])
+                    logger.info(f"✅ Calculating velocities from {len(all_route_points)} points...")
+                    
+                    # Calculate velocities inline (timestamps are floats, not ISO strings)
+                    # Normalize coordinates and calculate velocity between consecutive points
+                    width, height = 1920, 1080  # Standard resolution
+                    velocities = []
+                    
+                    for i in range(1, len(all_route_points)):
+                        try:
+                            prev = all_route_points[i-1]
+                            curr = all_route_points[i]
+                            
+                            # Normalize coordinates
+                            x1_norm = prev['x'] / width
+                            y1_norm = prev['y'] / height
+                            x2_norm = curr['x'] / width
+                            y2_norm = curr['y'] / height
+                            
+                            # Calculate normalized distance
+                            dx = x2_norm - x1_norm
+                            dy = y2_norm - y1_norm
+                            distance_normalized = (dx ** 2 + dy ** 2) ** 0.5
+                            
+                            # Calculate time difference (timestamps are floats in seconds)
+                            time_diff = curr['timestamp'] - prev['timestamp']
+                            
+                            # Calculate velocity
+                            if time_diff > 0:
+                                velocity = distance_normalized / time_diff
+                                velocities.append(velocity)
+                        except (KeyError, ValueError, ZeroDivisionError) as e:
+                            logger.warning(f"Error calculating velocity: {e}")
+                            continue
+                    
+                    logger.info(f"🎯 Valid velocities calculated: {len(velocities)}")
+                    if velocities:
+                        avg_route_velocity = round(sum(velocities) / len(velocities), 6)
+                        logger.info(f"✅ VELOCITY CALCULATED: {avg_route_velocity} normalized px/s from {len(all_route_points)} route points")
+                    else:
+                        logger.warning(f"⚠️ No valid velocities calculated")
+                else:
+                    logger.warning(f"⚠️ Not enough route points ({len(all_route_points)}) for velocity calculation")
+            except Exception as e:
+                logger.warning(f"Failed to calculate route velocity for MVR person: {e}")
+                import traceback
+                logger.warning(f"Traceback: {traceback.format_exc()}")
+            
             return {
                 "mvr_person_uuid": mvr_person_uuid,
                 "individual_uuids": individual_uuids,
@@ -2404,7 +2579,9 @@ async def get_mvr_person_analysis(
                 "unique_videos": unique_videos,
                 "first_seen": first_seen.isoformat(),
                 "last_seen": last_seen.isoformat(),
-                "appearances": appearances
+                "appearances": appearances,
+                "demographics": demographics,
+                "average_route_velocity": avg_route_velocity
             }
             
     except Exception as e:

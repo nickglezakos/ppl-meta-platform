@@ -45,7 +45,7 @@ class MVRPersonResult(BaseModel):
     appearances: List[IndividualAppearance] = Field(description="All video appearances")
     
     # Demographics
-    estimated_age: Optional[int] = None
+    estimated_age: Optional[str] = None  # Changed from int to str to support age ranges like "33-43"
     estimated_gender: Optional[str] = None
 
 

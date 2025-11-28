@@ -214,26 +214,26 @@ class _PersonObjectsDetailScreenState
     // Use EXACT SAME TABS as single-video mode
     return Column(
       children: [
-        // COMMENTED OUT: Cross-Video Analysis header not needed
-        // _buildCrossVideoHeader(),
+        // Cross-Video Analysis information bar
+        _buildCrossVideoInfoBar(),
         TabBar(
           controller: _tabController,
           tabs: const [
             Tab(
-              icon: Icon(Icons.groups),
-              text: 'Individuals',
+              icon: Icon(Icons.analytics),
+              text: 'Statistics',
             ),
             Tab(
               icon: Icon(Icons.route),
               text: 'Routes',
             ),
             Tab(
-              icon: Icon(Icons.analytics),
-              text: 'Statistics',
+              icon: Icon(Icons.groups),
+              text: 'Individuals',
             ),
             Tab(
-              icon: Icon(Icons.face),
-              text: 'Best Faces',
+              icon: Icon(Icons.videocam),
+              text: 'Vision',
             ),
           ],
         ),
@@ -241,9 +241,9 @@ class _PersonObjectsDetailScreenState
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildIndividualsTabCrossVideo(),
-              _buildRoutesTabCrossVideo(),
               _buildStatisticsTabCrossVideo(),
+              _buildRoutesTabCrossVideo(),
+              _buildIndividualsTabCrossVideo(),
               _buildFacesTabCrossVideo(),
             ],
           ),
@@ -252,26 +252,277 @@ class _PersonObjectsDetailScreenState
     );
   }
 
-  /// Build cross-video header with session info
-  Widget _buildCrossVideoHeader() {
+  /// Build responsive information bar for cross-video analysis
+  /// Shows timeframe (from/to dates) and collection name in a single row
+  Widget _buildCrossVideoInfoBar() {
     final context = widget.crossVideoContext!;
+    
+    // Extract dates and collection name from sessionData
+    DateTime? startTime;
+    DateTime? endTime;
+    String collectionName = '';
+    
+    // DEBUG: Print detailed sessionData structure
+    print('');
+    print('═══════════════════════════════════════════════════════');
+    print('🔍 DEBUG INFO BAR: Analyzing sessionData structure');
+    print('═══════════════════════════════════════════════════════');
+    print('📦 FULL sessionData:');
+    print(context.sessionData);
+    print('');
+    print('🔑 sessionData keys: ${context.sessionData.keys.toList()}');
+    print('');
+    
+    // Check each top-level key
+    context.sessionData.forEach((key, value) {
+      print('   $key: ${value.runtimeType} = ${value is Map || value is List ? value : value.toString()}');
+    });
+    print('');
+    
+    // Try to get search parameters (from MVR search)
+    if (context.sessionData['search_parameters'] != null) {
+      final searchParams = context.sessionData['search_parameters'] as Map<String, dynamic>;
+      print('📋 search_parameters found!');
+      print('   Keys: ${searchParams.keys.toList()}');
+      searchParams.forEach((key, value) {
+        print('   $key: ${value.runtimeType} = $value');
+      });
+      print('');
+      
+      // Parse start and end times
+      if (searchParams['start_time'] != null) {
+        startTime = DateTime.tryParse(searchParams['start_time'].toString());
+        print('✅ Parsed start_time: $startTime');
+      }
+      if (searchParams['end_time'] != null) {
+        endTime = DateTime.tryParse(searchParams['end_time'].toString());
+        print('✅ Parsed end_time: $endTime');
+      }
+      
+      // Get collection name from search parameters - try multiple possible keys
+      print('');
+      print('🔍 Searching for collection name in search_parameters...');
+      if (searchParams['collection_id'] != null) {
+        collectionName = searchParams['collection_id'].toString();
+        print('✅ Found collection_id = "$collectionName"');
+      } else if (searchParams['collection'] != null) {
+        collectionName = searchParams['collection'].toString();
+        print('✅ Found collection = "$collectionName"');
+      } else if (searchParams['collections'] is List && (searchParams['collections'] as List).isNotEmpty) {
+        collectionName = searchParams['collections'][0].toString();
+        print('✅ Found collections[0] = "$collectionName"');
+      } else {
+        print('❌ No collection found in search_parameters');
+      }
+    } else {
+      print('❌ No search_parameters found in sessionData');
+    }
+    
+    print('');
+    print('🔍 Checking context.collections (CrossVideoAnalysisContext)...');
+    print('   collections count: ${context.collections.length}');
+    print('   collections: ${context.collections}');
+    
+    // Fallback to context collections if not found in search parameters
+    if (collectionName.isEmpty && context.collections.isNotEmpty) {
+      collectionName = context.collections.first;
+      print('✅ Using context.collections fallback = "$collectionName"');
+    }
+    
+    // Final fallback - check sessionData directly
+    if (collectionName.isEmpty) {
+      print('');
+      print('🔍 Trying direct sessionData keys...');
+      // Check for collection_name first (primary key added in v2.19.40)
+      if (context.sessionData['collection_name'] != null) {
+        collectionName = context.sessionData['collection_name'].toString();
+        print('✅ Found sessionData.collection_name = "$collectionName"');
+      } 
+      // Fallback to collection_id
+      else if (context.sessionData['collection_id'] != null) {
+        collectionName = context.sessionData['collection_id'].toString();
+        print('✅ Found sessionData.collection_id = "$collectionName"');
+      } 
+      // Fallback to generic collection key
+      else if (context.sessionData['collection'] != null) {
+        collectionName = context.sessionData['collection'].toString();
+        print('✅ Found sessionData.collection = "$collectionName"');
+      } else {
+        print('❌ No collection found in direct sessionData keys');
+      }
+    }
+    
+    print('');
+    print('🎯 FINAL RESULT:');
+    print('   collectionName = "$collectionName"');
+    print('   startTime = $startTime');
+    print('   endTime = $endTime');
+    print('═══════════════════════════════════════════════════════');
+    print('');
+    
+    // Format dates in a user-friendly way
+    String formatDate(DateTime? date) {
+      if (date == null) return 'N/A';
+      final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final month = monthNames[date.month - 1];
+      final day = date.day;
+      final year = date.year;
+      final hour = date.hour.toString().padLeft(2, '0');
+      final minute = date.minute.toString().padLeft(2, '0');
+      return '$month $day, $year $hour:$minute';
+    }
+    
+    // Get theme colors for dark mode compatibility
+    final theme = Theme.of(this.context);
+    final backgroundColor = const Color(0xFF0F0F14); // Match app dark surface
+    final borderColor = theme.colorScheme.outline.withOpacity(0.3);
+    final iconColor = theme.colorScheme.primary;
+    final textColor = theme.colorScheme.onSurface;
+    final dividerColor = theme.colorScheme.outline.withOpacity(0.2);
+    
     return Container(
-      padding: const EdgeInsets.all(16),
-      color: Colors.blue.shade50,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Cross-Video Analysis',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: borderColor,
+            width: 1,
           ),
-          const SizedBox(height: 8),
-          Text('Session: ${context.sessionUuid.substring(0, 8)}...'),
-          Text('Individuals: ${_aggregatedAnalyses?.length ?? 0}'),
-          Text('Total Videos: ${context.totalVideos}'),
-          if (context.collections.isNotEmpty)
-            Text('Collections: ${context.collections.join(", ")}'),
-        ],
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Determine if we should wrap to multiple lines on very small screens
+          final isVerySmall = constraints.maxWidth < 500;
+          
+          if (isVerySmall) {
+            // Stack vertically on very small screens
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today, size: 16, color: iconColor),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'From: ${formatDate(startTime)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: textColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.event, size: 16, color: iconColor),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'To: ${formatDate(endTime)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: textColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.video_collection, size: 16, color: iconColor),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Collection: $collectionName',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: textColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          } else {
+            // Single row on larger screens
+            return Wrap(
+              spacing: 20,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.calendar_today, size: 16, color: iconColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'From: ${formatDate(startTime)}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: textColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  width: 1,
+                  height: 16,
+                  color: dividerColor,
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.event, size: 16, color: iconColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'To: ${formatDate(endTime)}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: textColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  width: 1,
+                  height: 16,
+                  color: dividerColor,
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.video_collection, size: 16, color: iconColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Collection: $collectionName',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: textColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          }
+        },
       ),
     );
   }
@@ -1276,6 +1527,27 @@ class _PersonObjectsDetailScreenState
             if (response.success && response.data != null) {
               // Convert the response to AggregatedIndividualAnalysis
               final data = response.data!;
+              
+              // Parse demographics if available
+              Demographics? demographics;
+              if (data['demographics'] != null) {
+                final demoData = data['demographics'] as Map<String, dynamic>;
+                demographics = Demographics(
+                  gender: demoData['gender'] as String?,
+                  genderConfidence: demoData['gender_confidence'] != null 
+                      ? (demoData['gender_confidence'] as num).toDouble() 
+                      : null,
+                  ageMin: demoData['age_min'] as int?,
+                  ageMax: demoData['age_max'] as int?,
+                  ageMean: demoData['age_mean'] != null 
+                      ? (demoData['age_mean'] as num).toDouble() 
+                      : null,
+                  ageConfidence: demoData['age_confidence'] != null 
+                      ? (demoData['age_confidence'] as num).toDouble() 
+                      : null,
+                );
+              }
+              
               final analysis = AggregatedIndividualAnalysis(
                 individualUuid: data['mvr_person_uuid'] as String,
                 individualId: data['mvr_person_uuid'] as String,
@@ -1286,6 +1558,7 @@ class _PersonObjectsDetailScreenState
                 lastSeen: DateTime.parse(data['last_seen'] as String),
                 totalDurationSeconds: 0.0,
                 averageConfidence: 0.0,
+                averageRouteVelocity: (data['average_route_velocity'] as num?)?.toDouble(),
                 appearances: (data['appearances'] as List)
                     .map((app) => IndividualAppearance(
                           individualUuid: app['individual_uuid'] as String,
@@ -1302,6 +1575,7 @@ class _PersonObjectsDetailScreenState
                     .map((app) => app['person_object_uuid'] as String)
                     .toList(),
                 analysisTimestamp: DateTime.now(),
+                demographics: demographics,
               );
 
               aggregatedAnalyses.add(analysis);
@@ -1327,6 +1601,27 @@ class _PersonObjectsDetailScreenState
           if (response.success && response.data != null) {
             // Convert the response to AggregatedIndividualAnalysis
             final data = response.data!;
+            
+            // Parse demographics if available
+            Demographics? demographics;
+            if (data['demographics'] != null) {
+              final demoData = data['demographics'] as Map<String, dynamic>;
+              demographics = Demographics(
+                gender: demoData['gender'] as String?,
+                genderConfidence: demoData['gender_confidence'] != null 
+                    ? (demoData['gender_confidence'] as num).toDouble() 
+                    : null,
+                ageMin: demoData['age_min'] as int?,
+                ageMax: demoData['age_max'] as int?,
+                ageMean: demoData['age_mean'] != null 
+                    ? (demoData['age_mean'] as num).toDouble() 
+                    : null,
+                ageConfidence: demoData['age_confidence'] != null 
+                    ? (demoData['age_confidence'] as num).toDouble() 
+                    : null,
+              );
+            }
+            
             final analysis = AggregatedIndividualAnalysis(
               individualUuid: data['individual_uuid'] as String,
               individualId: data['individual_uuid'] as String,
@@ -1353,6 +1648,7 @@ class _PersonObjectsDetailScreenState
                   .map((app) => app['person_object_uuid'] as String)
                   .toList(),
               analysisTimestamp: DateTime.now(),
+              demographics: demographics,
             );
 
             aggregatedAnalyses.add(analysis);
@@ -3461,6 +3757,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     );
   }
 
+  /// Calculate aggregate statistics across all individuals
   /// Build individual card showing aggregated data
   Widget _buildIndividualCard(AggregatedIndividualAnalysis analysis, int index) {
     final isExpanded = _expandedIndividuals.contains(analysis.individualUuid);
@@ -4140,12 +4437,38 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
 
       print('🚦 Individual $i: ✅ Combined ${allRoutePoints.length} route points from ${analysis.appearances.length} appearances');
 
+      // Sample route points if there are too many (threshold: 100 points)
+      const maxRoutePoints = 100;
+      List<Map<String, dynamic>> sampledRoutePoints = allRoutePoints;
+      
+      if (allRoutePoints.length > maxRoutePoints) {
+        // Calculate sampling interval
+        final interval = (allRoutePoints.length / maxRoutePoints).ceil();
+        sampledRoutePoints = [];
+        
+        // Always include first and last points
+        sampledRoutePoints.add(allRoutePoints.first);
+        
+        // Sample intermediate points
+        for (int j = interval; j < allRoutePoints.length - 1; j += interval) {
+          sampledRoutePoints.add(allRoutePoints[j]);
+        }
+        
+        // Always include last point
+        if (allRoutePoints.length > 1) {
+          sampledRoutePoints.add(allRoutePoints.last);
+        }
+        
+        print('🚦 Individual $i: 📊 Sampled ${allRoutePoints.length} points down to ${sampledRoutePoints.length} points (threshold: $maxRoutePoints)');
+      }
+
       // Create unified person group
       personGroups.add({
         'person_id': individualId,
-        'total_detections': allRoutePoints.length,
+        'total_detections': allRoutePoints.length, // Keep original count
+        'sampled_points': sampledRoutePoints.length, // Add sampled count
         'movement_tracking': {
-          'route_points': allRoutePoints,
+          'route_points': sampledRoutePoints, // Use sampled points for rendering
           'total_distance': 0.0,
           'movement_duration': analysis.totalDurationSeconds,
         },
@@ -4183,14 +4506,177 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     int totalUniqueVideos = 0;
     double sumConfidence = 0;
     double totalDurationSeconds = 0;
+    double totalVelocity = 0;
+    int velocityCount = 0;
     DateTime? earliestSeen;
     DateTime? latestSeen;
+    
+    // Aggregate demographics and video data from search results (MVR people data)
+    int totalMale = 0;
+    int totalFemale = 0;
+    int totalUnknown = 0;
+    List<double> ages = [];
+    List<double> confidenceScores = [];
+    bool hasDemographics = false;
+    
+    // Extract video time span and duration from search results
+    DateTime? searchStartTime;
+    DateTime? searchEndTime;
+    double totalVideoDurationSeconds = 0;
+    
+    // Try to get search parameters from sessionData
+    final searchParams = widget.crossVideoContext!.sessionData['search_parameters'];
+    if (searchParams != null) {
+      if (searchParams['start_time'] != null) {
+        try {
+          searchStartTime = DateTime.parse(searchParams['start_time'] as String);
+        } catch (e) {
+          print('Error parsing start_time: $e');
+        }
+      }
+      if (searchParams['end_time'] != null) {
+        try {
+          searchEndTime = DateTime.parse(searchParams['end_time'] as String);
+        } catch (e) {
+          print('Error parsing end_time: $e');
+        }
+      }
+    }
+    
+    // Calculate total video duration from MVR people appearances
+    // Use a Set to track unique video UUIDs to avoid double-counting
+    final Set<String> processedVideos = {};
+    
+    if (widget.crossVideoContext!.sessionData['search_results'] != null) {
+      final searchResults = widget.crossVideoContext!.sessionData['search_results'] as List<dynamic>;
+      
+      // For each MVR person, check their appearances
+      for (final mvrPerson in searchResults) {
+        final appearances = mvrPerson['appearances'] as List<dynamic>?;
+        if (appearances != null) {
+          for (final appearance in appearances) {
+            // Calculate duration from timestamps
+            final startStr = appearance['start_timestamp'] as String?;
+            final endStr = appearance['end_timestamp'] as String?;
+            final videoUuid = appearance['video_uuid'] as String?;
+            
+            if (startStr != null && endStr != null && videoUuid != null) {
+              try {
+                final start = DateTime.parse(startStr);
+                final end = DateTime.parse(endStr);
+                final durationSecs = end.difference(start).inSeconds.toDouble();
+                
+                // For total video duration, we want the sum of all unique video segments
+                // Track by video_uuid + start_timestamp to get unique segments
+                final segmentKey = '$videoUuid-$startStr';
+                if (!processedVideos.contains(segmentKey)) {
+                  totalVideoDurationSeconds += durationSecs;
+                  processedVideos.add(segmentKey);
+                }
+              } catch (e) {
+                print('Error parsing timestamps: $e');
+              }
+            }
+          }
+        }
+      }
+    }
 
+    // Extract demographics from search results if available
+    if (widget.crossVideoContext!.sessionData['search_results'] != null) {
+      final searchResults = widget.crossVideoContext!.sessionData['search_results'] as List<dynamic>;
+      
+      for (final mvrPerson in searchResults) {
+        // Parse gender
+        final gender = mvrPerson['estimated_gender'] as String?;
+        if (gender != null) {
+          hasDemographics = true;
+          if (gender.toLowerCase() == 'male') {
+            totalMale++;
+          } else if (gender.toLowerCase() == 'female') {
+            totalFemale++;
+          } else {
+            totalUnknown++;
+          }
+        } else {
+          totalUnknown++;
+        }
+        
+        // Parse age (format: "33-43")
+        final ageStr = mvrPerson['estimated_age'] as String?;
+        if (ageStr != null && ageStr.contains('-')) {
+          final parts = ageStr.split('-');
+          if (parts.length == 2) {
+            final minAge = int.tryParse(parts[0]);
+            final maxAge = int.tryParse(parts[1]);
+            if (minAge != null && maxAge != null) {
+              ages.add((minAge + maxAge) / 2.0);
+            }
+          }
+        }
+        
+        // Parse confidence score
+        final confidenceScore = mvrPerson['confidence_score'] as num?;
+        if (confidenceScore != null) {
+          confidenceScores.add(confidenceScore.toDouble());
+        }
+        
+        // Calculate velocity for this MVR person (appearances per minute)
+        final totalAppearancesForPerson = mvrPerson['total_appearances'] as int?;
+        final appearances = mvrPerson['appearances'] as List<dynamic>?;
+        
+        if (totalAppearancesForPerson != null && appearances != null && appearances.isNotEmpty) {
+          // Calculate total time span for this person's appearances
+          DateTime? firstAppearance;
+          DateTime? lastAppearance;
+          
+          for (final appearance in appearances) {
+            final startStr = appearance['start_timestamp'] as String?;
+            final endStr = appearance['end_timestamp'] as String?;
+            
+            if (startStr != null && endStr != null) {
+              try {
+                final start = DateTime.parse(startStr);
+                final end = DateTime.parse(endStr);
+                
+                if (firstAppearance == null || start.isBefore(firstAppearance)) {
+                  firstAppearance = start;
+                }
+                if (lastAppearance == null || end.isAfter(lastAppearance)) {
+                  lastAppearance = end;
+                }
+              } catch (e) {
+                // Skip invalid timestamps
+              }
+            }
+          }
+          
+          // Calculate velocity: appearances per minute over the time span
+          if (firstAppearance != null && lastAppearance != null) {
+            final timeSpanMinutes = lastAppearance.difference(firstAppearance).inMinutes.toDouble();
+            if (timeSpanMinutes > 0 && totalAppearancesForPerson > 0) {
+              final velocity = totalAppearancesForPerson / timeSpanMinutes;
+              totalVelocity += velocity;
+              velocityCount++;
+            }
+          }
+        }
+      }
+    }
+
+    // Track route velocities for average calculation
+    List<double> routeVelocities = [];
+    
     for (final analysis in _aggregatedAnalyses!) {
       totalAppearances += analysis.totalAppearances;
       totalUniqueVideos = math.max(totalUniqueVideos, analysis.uniqueVideos);
       sumConfidence += analysis.averageConfidence;
       totalDurationSeconds += analysis.totalDurationSeconds;
+      
+      // Collect route velocity if available
+      if (analysis.averageRouteVelocity != null) {
+        routeVelocities.add(analysis.averageRouteVelocity!);
+      }
       
       if (earliestSeen == null || analysis.firstSeen.isBefore(earliestSeen)) {
         earliestSeen = analysis.firstSeen;
@@ -4200,12 +4686,72 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       }
     }
 
-    final avgConfidence = _aggregatedAnalyses!.isNotEmpty 
-        ? sumConfidence / _aggregatedAnalyses!.length 
+    // Use confidence scores from search results if available, otherwise fall back to aggregated analyses
+    final avgConfidence = confidenceScores.isNotEmpty
+        ? confidenceScores.reduce((a, b) => a + b) / confidenceScores.length
+        : (_aggregatedAnalyses!.isNotEmpty 
+            ? sumConfidence / _aggregatedAnalyses!.length 
+            : 0.0);
+    
+    final avgVelocity = velocityCount > 0 ? totalVelocity / velocityCount : 0.0;
+    
+    // Calculate average route velocity (movement speed)
+    final avgRouteVelocity = routeVelocities.isNotEmpty
+        ? routeVelocities.reduce((a, b) => a + b) / routeVelocities.length
         : 0.0;
     
-    final totalDurationDays = (totalDurationSeconds / 86400).floor();
-    final totalDurationHours = ((totalDurationSeconds % 86400) / 3600).floor();
+    // Use video duration if available, otherwise fall back to aggregated analyses duration
+    final actualDurationSeconds = totalVideoDurationSeconds > 0 
+        ? totalVideoDurationSeconds 
+        : totalDurationSeconds;
+    
+    final totalDurationDays = (actualDurationSeconds / 86400).floor();
+    final totalDurationHours = ((actualDurationSeconds % 86400) / 3600).floor();
+    final totalDurationMinutes = ((actualDurationSeconds % 3600) / 60).floor();
+    final totalDurationSecs = (actualDurationSeconds % 60).floor();
+    
+    // Calculate time span from search parameters
+    String timeSpanText = 'N/A';
+    int timeSpanDays = 0;
+    
+    if (searchStartTime != null && searchEndTime != null) {
+      final duration = searchEndTime.difference(searchStartTime);
+      timeSpanDays = duration.inDays;
+      final hours = duration.inHours % 24;
+      final minutes = duration.inMinutes % 60;
+      
+      if (timeSpanDays > 0) {
+        timeSpanText = '$timeSpanDays days, $hours hours';
+      } else if (hours > 0) {
+        timeSpanText = '$hours hours, $minutes minutes';
+      } else {
+        timeSpanText = '$minutes minutes';
+      }
+    } else if (earliestSeen != null && latestSeen != null) {
+      // Fallback to earliest/latest seen from aggregated analyses
+      timeSpanDays = latestSeen.difference(earliestSeen).inDays;
+      final hours = latestSeen.difference(earliestSeen).inHours % 24;
+      
+      if (timeSpanDays > 0) {
+        timeSpanText = '$timeSpanDays days, $hours hours';
+      } else if (hours > 0) {
+        timeSpanText = '$hours hours';
+      } else {
+        timeSpanText = '< 1 hour';
+      }
+    }
+    
+    // Format duration string
+    String durationText;
+    if (totalDurationDays > 0) {
+      durationText = '$totalDurationDays days, $totalDurationHours hours';
+    } else if (totalDurationHours > 0) {
+      durationText = '$totalDurationHours hours, $totalDurationMinutes min';
+    } else if (totalDurationMinutes > 0) {
+      durationText = '$totalDurationMinutes minutes, $totalDurationSecs sec';
+    } else {
+      durationText = '$totalDurationSecs seconds';
+    }
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -4235,10 +4781,30 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           Colors.amber,
         ),
         _buildStatCard(
+          'Average Appearance Frequency',
+          '${avgVelocity.toStringAsFixed(2)} app/min',
+          Icons.speed,
+          Colors.lightGreen,
+        ),
+        if (avgRouteVelocity > 0)
+          _buildStatCard(
+            'Average Movement Velocity',
+            '${avgRouteVelocity.toStringAsFixed(6)} px/s',
+            Icons.trending_up,
+            Colors.deepPurple,
+            subtitle: 'Normalized movement speed',
+          ),
+        _buildStatCard(
           'Total Duration',
-          '$totalDurationDays days, $totalDurationHours hours',
+          durationText,
           Icons.timer,
           Colors.orange,
+        ),
+        _buildStatCard(
+          'Search Time Span',
+          timeSpanText,
+          Icons.date_range,
+          Colors.cyan,
         ),
         if (earliestSeen != null && latestSeen != null) ...[
           _buildStatCard(
@@ -4254,19 +4820,61 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             Colors.indigo,
           ),
         ],
-        _buildStatCard(
-          'Time Span',
-          earliestSeen != null && latestSeen != null 
-              ? '${latestSeen.difference(earliestSeen).inDays} days'
-              : 'N/A',
-          Icons.date_range,
-          Colors.cyan,
-        ),
+        // Demographics section
+        if (hasDemographics) ...[
+          const SizedBox(height: 16),
+          const Divider(),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8.0),
+            child: Text(
+              'Demographics',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // Gender breakdown
+          _buildStatCard(
+            'Men',
+            '$totalMale',
+            Icons.male,
+            Colors.blue,
+            subtitle: totalMale + totalFemale > 0
+                ? '${((totalMale / (totalMale + totalFemale)) * 100).toStringAsFixed(1)}%'
+                : null,
+          ),
+          _buildStatCard(
+            'Women',
+            '$totalFemale',
+            Icons.female,
+            Colors.pink,
+            subtitle: totalMale + totalFemale > 0
+                ? '${((totalFemale / (totalMale + totalFemale)) * 100).toStringAsFixed(1)}%'
+                : null,
+          ),
+          if (totalUnknown > 0)
+            _buildStatCard(
+              'Unknown Gender',
+              '$totalUnknown',
+              Icons.help_outline,
+              Colors.grey,
+            ),
+          // Average age
+          if (ages.isNotEmpty)
+            _buildStatCard(
+              'Average Age',
+              '${(ages.reduce((a, b) => a + b) / ages.length).toStringAsFixed(1)} years',
+              Icons.cake,
+              Colors.orange,
+            ),
+        ],
       ],
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(String label, String value, IconData icon, Color color, {String? subtitle}) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -4302,6 +4910,16 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[500],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

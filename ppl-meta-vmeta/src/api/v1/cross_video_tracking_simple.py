@@ -137,8 +137,11 @@ import json
 import hashlib
 import asyncio
 import httpx
+import os
 
 from pydantic import BaseModel, Field
+from ml.age_estimator import AgeEstimator
+from ml.gender_classifier import GenderClassifier
 
 # Get the database client from the main app
 try:
@@ -1582,12 +1585,46 @@ async def merge_individuals_by_similarity(
                     )
                 )
                 
+                # Extract demographics using ML models
+                demographics = {
+                    'gender': None,
+                    'gender_confidence': None,
+                    'age_min': None,
+                    'age_max': None,
+                    'age_confidence': None
+                }
+                
+                try:
+                    # Age estimation
+                    age_estimator = AgeEstimator(age_tolerance=5)
+                    age_result = age_estimator.estimate_age(
+                        cropped_face_resized,
+                        enforce_detection=False
+                    )
+                    if age_result:
+                        demographics['age_min'] = age_result.get('min_age')
+                        demographics['age_max'] = age_result.get('max_age')
+                        demographics['age_confidence'] = age_result.get('confidence')
+                    
+                    # Gender classification
+                    gender_classifier = GenderClassifier(confidence_threshold=0.6)
+                    gender_result = gender_classifier.classify_gender(
+                        cropped_face_resized,
+                        enforce_detection=False
+                    )
+                    if gender_result:
+                        demographics['gender'] = gender_result.get('gender')
+                        demographics['gender_confidence'] = gender_result.get('confidence')
+                except Exception as e:
+                    logger.warning(f"[MERGE] Demographics extraction failed for {individual_uuid[:8]}: {e}")
+                
                 if embedding is not None:
                     faces_with_embeddings.append({
                         'individual_uuid': individual_uuid,
                         'embedding': np.array(embedding),
                         'confidence': confidence,
-                        'video_uuid': video_uuid
+                        'video_uuid': video_uuid,
+                        'demographics': demographics
                     })
                     logger.info(
                         f"[MERGE] ✅ Generated embedding for "
@@ -1884,6 +1921,15 @@ async def merge_individuals_by_similarity(
             if isinstance(keep_embedding, np.ndarray):
                 keep_embedding = keep_embedding.tolist()
             
+            # Extract demographics from faces_with_embeddings (ML-generated)
+            demographics = faces_with_embeddings[keep_idx].get('demographics', {
+                'gender': None,
+                'gender_confidence': None,
+                'age_min': None,
+                'age_max': None,
+                'age_confidence': None
+            })
+            
             # Create ONE MVR person for this entire group
             mvr_people_uuid = str(uuid4())
             db_operations.append(('create_mvr_person', {
@@ -1891,7 +1937,12 @@ async def merge_individuals_by_similarity(
                 'featured_individual_uuid': keep_uuid,
                 'face_embedding': keep_embedding,
                 'confidence_score': keep_confidence,
-                'quality_score': keep_confidence
+                'quality_score': keep_confidence,
+                'gender': demographics['gender'],
+                'gender_confidence': demographics['gender_confidence'],
+                'age_min': demographics['age_min'],
+                'age_max': demographics['age_max'],
+                'age_confidence': demographics['age_confidence']
             }))
             
             # Map ALL individuals in this group to the same MVR person
@@ -2001,14 +2052,24 @@ async def merge_individuals_by_similarity(
                                     face_embedding,
                                     confidence_score,
                                     quality_score,
-                                    face_quality
-                                ) VALUES ($1, $2, $3::vector, $4, $5, $6)
+                                    face_quality,
+                                    gender,
+                                    gender_confidence,
+                                    age_min,
+                                    age_max,
+                                    age_confidence
+                                ) VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10, $11)
                             """, params['mvr_people_uuid'],
                                 params['featured_individual_uuid'],
                                 embedding_str,
                                 params['confidence_score'],
                                 params['quality_score'],
-                                params['quality_score'])
+                                params['quality_score'],
+                                params.get('gender'),
+                                params.get('gender_confidence'),
+                                params.get('age_min'),
+                                params.get('age_max'),
+                                params.get('age_confidence'))
                             
                             logger.info(
                                 f"[MERGE] Created MVR person "
@@ -3450,12 +3511,20 @@ async def get_individual_aggregated_analysis(
                         iva.end_timestamp,
                         iva.entry_bbox,
                         iva.exit_bbox,
-                        iva.confidence
+                        iva.confidence,
+                        mvr.gender,
+                        mvr.gender_confidence,
+                        mvr.age_min,
+                        mvr.age_max,
+                        mvr.age_confidence
                     FROM individual_mvr_mapping imm
                     JOIN individual_video_appearances iva
                         ON imm.individual_uuid = iva.individual_uuid
                     JOIN individuals i
                         ON iva.individual_uuid = i.individual_uuid
+                    LEFT JOIN mvr_people mvr
+                        ON imm.mvr_people_uuid = mvr.mvr_people_uuid
+                        AND mvr.is_orphaned = FALSE
                     WHERE imm.mvr_people_uuid = $1
                     ORDER BY iva.start_timestamp ASC
                     """,
@@ -3478,10 +3547,20 @@ async def get_individual_aggregated_analysis(
                         iva.end_timestamp,
                         iva.entry_bbox,
                         iva.exit_bbox,
-                        iva.confidence
+                        iva.confidence,
+                        mvr.gender,
+                        mvr.gender_confidence,
+                        mvr.age_min,
+                        mvr.age_max,
+                        mvr.age_confidence
                     FROM individual_video_appearances iva
                     JOIN individuals i
                         ON iva.individual_uuid = i.individual_uuid
+                    LEFT JOIN individual_mvr_mapping imm
+                        ON iva.individual_uuid = imm.individual_uuid
+                    LEFT JOIN mvr_people mvr
+                        ON imm.mvr_people_uuid = mvr.mvr_people_uuid
+                        AND mvr.is_orphaned = FALSE
                     WHERE iva.individual_uuid = $1
                     ORDER BY iva.start_timestamp ASC
                     """,
@@ -3510,9 +3589,10 @@ async def get_individual_aggregated_analysis(
                     "analysis_timestamp": datetime.now(timezone.utc).isoformat()
                 }
             
-            # Format appearances
+            # Format appearances and collect demographics
             appearances_list = []
             person_object_uuids = []
+            demographics_data = []
             
             for app in appearances:
                 appearances_list.append({
@@ -3526,6 +3606,17 @@ async def get_individual_aggregated_analysis(
                     "confidence_score": round(float(app['confidence']), 3) if app['confidence'] else 0.0
                 })
                 person_object_uuids.append(str(app['person_object_uuid']))
+                
+                # Collect demographics data if available
+                if app.get('gender') is not None:
+                    demographics_data.append({
+                        'gender': app['gender'],
+                        'gender_confidence': float(app['gender_confidence']) if app['gender_confidence'] else 0.0,
+                        'age_min': int(app['age_min']) if app['age_min'] is not None else None,
+                        'age_max': int(app['age_max']) if app['age_max'] is not None else None,
+                        'age_mean': (int(app['age_min']) + int(app['age_max'])) / 2 if (app['age_min'] is not None and app['age_max'] is not None) else None,
+                        'age_confidence': float(app['age_confidence']) if app['age_confidence'] else 0.0
+                    })
             
             # Calculate aggregated metrics
             first_appearance = appearances[0]
@@ -3541,6 +3632,124 @@ async def get_individual_aggregated_analysis(
                 float(app['confidence']) for app in appearances if app['confidence']
             ) / len(appearances)
             
+            # Calculate aggregate demographics
+            demographics = None
+            aggregate_demographics = None
+            
+            if demographics_data:
+                # Aggregate gender counts
+                gender_counts = {'male': 0, 'female': 0, 'unknown': 0}
+                gender_confidences = []
+                ages = []
+                age_confidences = []
+                
+                for demo in demographics_data:
+                    gender = demo.get('gender', 'unknown')
+                    if gender in gender_counts:
+                        gender_counts[gender] += 1
+                    else:
+                        gender_counts['unknown'] += 1
+                    
+                    if demo.get('gender_confidence'):
+                        gender_confidences.append(demo['gender_confidence'])
+                    
+                    if demo.get('age_mean') is not None:
+                        ages.append(demo['age_mean'])
+                    
+                    if demo.get('age_confidence'):
+                        age_confidences.append(demo['age_confidence'])
+                
+                # Determine most common gender (for primary demographics)
+                most_common_gender = max(gender_counts, key=gender_counts.get)
+                avg_gender_confidence = sum(gender_confidences) / len(gender_confidences) if gender_confidences else None
+                
+                # Calculate age statistics
+                avg_age = sum(ages) / len(ages) if ages else None
+                min_age = min(ages) if ages else None
+                max_age = max(ages) if ages else None
+                age_range = max_age - min_age if (max_age is not None and min_age is not None) else None
+                avg_age_confidence = sum(age_confidences) / len(age_confidences) if age_confidences else None
+                
+                # Primary demographics (most common values)
+                demographics = {
+                    "gender": most_common_gender if most_common_gender != 'unknown' else None,
+                    "gender_confidence": round(avg_gender_confidence, 3) if avg_gender_confidence else None,
+                    "age_min": int(min_age) if min_age is not None else None,
+                    "age_max": int(max_age) if max_age is not None else None,
+                    "age_mean": round(avg_age, 1) if avg_age is not None else None,
+                    "age_confidence": round(avg_age_confidence, 3) if avg_age_confidence else None
+                }
+                
+                # Aggregate statistics
+                aggregate_demographics = {
+                    "total_individuals": len(set(str(app['individual_uuid']) for app in appearances)),
+                    "gender_breakdown": {
+                        "male": gender_counts['male'],
+                        "female": gender_counts['female'],
+                        "unknown": gender_counts['unknown']
+                    },
+                    "age_statistics": {
+                        "average_age": round(avg_age, 1) if avg_age is not None else None,
+                        "min_age": int(min_age) if min_age is not None else None,
+                        "max_age": int(max_age) if max_age is not None else None,
+                        "age_range": round(age_range, 1) if age_range is not None else None
+                    }
+                }
+            
+            # Calculate average route velocity from orchestrator route data
+            avg_route_velocity = None
+            try:
+                from ...services.orchestrator_client import OrchestratorClient
+                from ...services.route_aggregator import calculate_route_velocities
+                
+                orchestrator = OrchestratorClient(
+                    orchestrator_base_url=os.getenv("ORCHESTRATOR_BASE_URL", "http://localhost:8002")
+                )
+                
+                all_route_points = []
+                
+                # Get unique video UUIDs from appearances
+                unique_videos = set(str(app['video_uuid']) for app in appearances)
+                logger.info(f"Fetching routes from {len(unique_videos)} video(s) for velocity calculation")
+                
+                # Fetch person objects data for each video to get route points
+                for video_uuid in unique_videos:
+                    try:
+                        person_objects_data = await orchestrator.get_person_objects(video_uuid)
+                        if person_objects_data and 'person_objects' in person_objects_data:
+                            for person_obj in person_objects_data['person_objects']:
+                                # Extract route points from movement_tracking
+                                routes = person_obj.get('routes', [])
+                                for route_point in routes:
+                                    all_route_points.append({
+                                        'x': float(route_point['x']),
+                                        'y': float(route_point['y']),
+                                        'timestamp': route_point['timestamp'],
+                                        'video_uuid': video_uuid,
+                                        'confidence': float(route_point.get('confidence', 1.0))
+                                    })
+                    except Exception as e:
+                        logger.warning(f"Could not fetch routes from video {video_uuid}: {e}")
+                
+                if len(all_route_points) >= 2:
+                    # Sort by timestamp
+                    all_route_points.sort(key=lambda r: r['timestamp'])
+                    
+                    # Calculate velocities
+                    routes_with_velocity = calculate_route_velocities(all_route_points)
+                    
+                    # Calculate average velocity (excluding None values)
+                    velocities = [r['velocity'] for r in routes_with_velocity if r.get('velocity') is not None]
+                    if velocities:
+                        avg_route_velocity = round(sum(velocities) / len(velocities), 6)
+                        logger.info(f"Calculated average route velocity from {len(all_route_points)} route points: {avg_route_velocity} normalized px/s")
+                else:
+                    logger.info(f"Not enough route points ({len(all_route_points)}) for velocity calculation")
+            except Exception as e:
+                logger.warning(f"Failed to calculate route velocity: {e}")
+                import traceback
+                logger.warning(f"Traceback: {traceback.format_exc()}")
+            
             # Build response
             response = {
                 "individual_uuid": individual_uuid,
@@ -3552,6 +3761,9 @@ async def get_individual_aggregated_analysis(
                 "last_seen": last_appearance['end_timestamp'].isoformat() if last_appearance['end_timestamp'] else "",
                 "total_duration_seconds": round(total_duration, 2),
                 "average_confidence": round(avg_confidence, 3),
+                "average_route_velocity": avg_route_velocity,
+                "demographics": demographics,
+                "aggregate_demographics": aggregate_demographics,
                 "appearances": appearances_list,
                 "person_object_uuids": person_object_uuids,
                 "analysis_timestamp": datetime.now(timezone.utc).isoformat()

@@ -111,7 +111,10 @@ def aggregate_routes_chronologically(
         len(person_objects)
     )
     
-    return all_routes
+    # Calculate velocities for route points
+    all_routes_with_velocity = calculate_route_velocities(all_routes)
+    
+    return all_routes_with_velocity
 
 
 def calculate_statistics(
@@ -301,6 +304,98 @@ def group_routes_by_video(
     )
     
     return grouped
+
+
+def calculate_route_velocities(
+    chronological_routes: List[Dict[str, Any]],
+    max_points_threshold: int = 100,
+    normalize_by_resolution: tuple = (1920, 1080)
+) -> List[Dict[str, Any]]:
+    """
+    Calculate normalized pixel velocity for each route point.
+    
+    Computes velocity between consecutive route points using normalized
+    pixel coordinates. If route has more points than threshold, samples
+    evenly to avoid over-calculation.
+    
+    Args:
+        chronological_routes: List of route points sorted by time
+        max_points_threshold: Maximum points to process (default: 100)
+        normalize_by_resolution: Video resolution for normalization (width, height)
+        
+    Returns:
+        List of route points with added 'velocity' field (normalized pixels/second)
+        
+    Example:
+        >>> routes_with_velocity = calculate_route_velocities(routes)
+        >>> avg_velocity = sum(r['velocity'] for r in routes_with_velocity if r.get('velocity')) / len(routes_with_velocity)
+    """
+    if len(chronological_routes) < 2:
+        return chronological_routes
+    
+    # Sample routes if above threshold
+    routes_to_process = chronological_routes
+    if len(chronological_routes) > max_points_threshold:
+        # Calculate sampling step
+        step = len(chronological_routes) // max_points_threshold
+        routes_to_process = chronological_routes[::step]
+        logger.info(
+            f"Sampling {len(routes_to_process)} points from {len(chronological_routes)} "
+            f"(threshold: {max_points_threshold})"
+        )
+    
+    width, height = normalize_by_resolution
+    routes_with_velocity = []
+    
+    for i, route in enumerate(routes_to_process):
+        route_copy = route.copy()
+        
+        if i == 0:
+            # First point has no velocity
+            route_copy['velocity'] = None
+        else:
+            prev = routes_to_process[i - 1]
+            
+            try:
+                # Normalize coordinates (0-1 range)
+                x1_norm = prev['x'] / width
+                y1_norm = prev['y'] / height
+                x2_norm = route['x'] / width
+                y2_norm = route['y'] / height
+                
+                # Calculate normalized distance
+                dx = x2_norm - x1_norm
+                dy = y2_norm - y1_norm
+                distance_normalized = (dx ** 2 + dy ** 2) ** 0.5
+                
+                # Calculate time difference
+                t1 = datetime.fromisoformat(prev['timestamp'].replace('Z', '+00:00'))
+                t2 = datetime.fromisoformat(route['timestamp'].replace('Z', '+00:00'))
+                time_diff_seconds = (t2 - t1).total_seconds()
+                
+                # Calculate velocity (normalized pixels per second)
+                if time_diff_seconds > 0:
+                    velocity = distance_normalized / time_diff_seconds
+                    route_copy['velocity'] = round(velocity, 6)
+                else:
+                    route_copy['velocity'] = 0.0
+                    
+            except (ValueError, TypeError, KeyError) as e:
+                logger.warning(f"Error calculating velocity for route point: {e}")
+                route_copy['velocity'] = None
+        
+        routes_with_velocity.append(route_copy)
+    
+    # Calculate average velocity for logging
+    velocities = [r['velocity'] for r in routes_with_velocity if r.get('velocity') is not None]
+    if velocities:
+        avg_velocity = sum(velocities) / len(velocities)
+        logger.info(
+            f"Calculated velocities for {len(routes_with_velocity)} points. "
+            f"Average velocity: {avg_velocity:.6f} normalized px/s"
+        )
+    
+    return routes_with_velocity
 
 
 def calculate_movement_statistics(
