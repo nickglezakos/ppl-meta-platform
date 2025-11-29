@@ -456,7 +456,170 @@ curl http://localhost:8008/api/v1/cross-video/individuals/tracking/sessions/{ses
 
 MVR (Multi-Video Recognition) People represent canonical, unique individuals detected across the platform. Each MVR person has a quality-weighted face embedding derived from all associated individual detections.
 
-### 10. Create MVR for Individual
+### 10. Process Single Media for MVR Creation
+
+**Endpoint**: `POST /api/v1/mvr-people/process-media`
+
+**Authentication**: Required
+
+**Description**: Processes one or more media files (videos) to create isolated MVR-People records with full ML processing. This endpoint performs Face Detection V2 orchestration, person object extraction, face embedding generation, age/gender estimation, and MVR creation **without cross-media merging**. Each media file is processed independently, creating isolated individuals that are linked to MVR people within that specific media only.
+
+**Key Features**:
+- Face Detection V2 workflow orchestration with Vision service
+- Complete ML pipeline: FaceNet512 embeddings, age estimation, gender classification
+- Intra-media face clustering (groups similar faces within the same video)
+- Creates isolated individual records in vmeta database
+- Links person objects to individuals via `individual_video_appearances` table
+- Creates MVR people with `is_isolated=true` flag
+- Maintains relational structure for appearance tracking and routes data
+- No cross-video merging (each media processed independently)
+
+**Use Cases**:
+- Process individual videos without cross-video tracking overhead
+- Generate MVR people for specific media files
+- Quick face detection and recognition for single videos
+- Batch processing of media files independently
+
+**Request Body**:
+```json
+{
+  "media_uuids": [
+    "5c00d13d-1a64-4be7-885b-477f441e2ab9",
+    "b663af24-512f-46e3-8281-3e7d591da13a"
+  ],
+  "processing_options": {
+    "similarity_threshold": 0.8,
+    "min_face_quality": 0.70,
+    "include_demographics": true,
+    "include_route_data": true
+  }
+}
+```
+
+**Parameters**:
+- `media_uuids` (required): Array of media UUIDs to process
+- `processing_options` (optional):
+  - `similarity_threshold` (optional): Threshold for intra-media clustering (default: 0.8)
+  - `min_face_quality` (optional): Minimum face quality threshold (default: 0.70)
+  - `include_demographics` (optional): Include age/gender estimation (default: true)
+  - `include_route_data` (optional): Include route/trajectory data (default: true)
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "processed_media": 2,
+  "failed_media": 0,
+  "mvr_people_count": 8,
+  "results": [
+    {
+      "media_uuid": "5c00d13d-1a64-4be7-885b-477f441e2ab9",
+      "status": "completed",
+      "mvr_people": [
+        {
+          "mvr_people_uuid": "4979b5b9-3d76-462f-9aa4-fa89b94fe835",
+          "individual_uuids": ["11017f6e-8589-41d1-b8be-82fef0ab0ce8"],
+          "total_appearances": 1,
+          "unique_videos": 1,
+          "confidence_score": 0.9,
+          "quality_score": 0.85,
+          "demographics": {
+            "gender": "male",
+            "gender_confidence": 0.9992887377738953,
+            "age_min": 30,
+            "age_max": 40,
+            "age_confidence": 0.85
+          },
+          "appearances": [
+            {
+              "individual_uuid": "11017f6e-8589-41d1-b8be-82fef0ab0ce8",
+              "video_uuid": "5c00d13d-1a64-4be7-885b-477f441e2ab9",
+              "person_object_uuid": "11017f6e-8589-41d1-b8be-82fef0ab0ce8",
+              "start_timestamp": "2025-11-28T13:14:09.397059+02:00",
+              "end_timestamp": "2025-11-28T13:14:09.397059+02:00",
+              "confidence": 0.9
+            }
+          ],
+          "route_data": {
+            "route_points": [],
+            "total_detections": 0
+          },
+          "face_embedding_available": true,
+          "is_isolated": true,
+          "source_media_uuid": "5c00d13d-1a64-4be7-885b-477f441e2ab9"
+        }
+      ],
+      "total_faces_detected": 1,
+      "mvr_people_count": 1,
+      "processing_time_ms": 4085
+    }
+  ],
+  "aggregate_statistics": {
+    "total_mvr_people_created": 8,
+    "total_individuals_detected": 15,
+    "avg_processing_ms": 3542.5,
+    "total_processing_ms": 7085
+  }
+}
+```
+
+**Error Response** (400 Bad Request):
+```json
+{
+  "success": false,
+  "error": "No media UUIDs provided",
+  "processed_media": 0,
+  "failed_media": 0
+}
+```
+
+**Processing Flow**:
+1. **Face Detection V2**: Orchestrates Vision service workflow to detect faces
+2. **Person Objects**: Extracts person objects with metadata and face crops
+3. **Quality Filtering**: Filters faces based on quality threshold (default 0.70)
+4. **ML Processing**: Generates FaceNet512 embeddings, estimates age and gender
+5. **Intra-Media Clustering**: Groups similar faces within same video using cosine similarity
+6. **Individual Creation**: Creates isolated individual records with unique IDs
+7. **Person Object Linking**: Links person objects to individuals via `individual_video_appearances`
+8. **MVR Creation**: Creates MVR people linked to isolated individuals
+
+**Performance**:
+- Average processing time: ~4-5 seconds per video
+- Depends on: Number of faces, video resolution, ML model performance
+- Parallel processing: Multiple media files processed sequentially (not parallel)
+
+**Database Impact**:
+- Creates records in: `individuals`, `individual_video_appearances`, `mvr_people`, `individual_mvr_mapping`
+- Sets `is_isolated=true` for all MVR people created
+- Maintains foreign key relationships for data integrity
+
+**Important Notes**:
+- ⚠️ Face Detection V2 returns `quality_score=0.0` by design (in-memory workflow)
+- Default quality score of 0.85 is used for V2 person objects to pass filtering
+- No cross-media merging: Each video creates independent MVR people
+- Isolated individuals maintain relational structure for appearance counting and routes
+- Demographics included if ML models are loaded and enabled
+
+**Example**:
+```bash
+export TOKEN="your_jwt_token"
+curl -X POST 'http://localhost:8008/api/v1/mvr-people/process-media' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "media_uuids": ["5c00d13d-1a64-4be7-885b-477f441e2ab9"],
+    "processing_options": {
+      "similarity_threshold": 0.8,
+      "include_demographics": true
+    }
+  }'
+```
+
+**Scope**: Single-media MVR processing for independent video analysis, isolated face recognition, and quick demographic profiling without cross-video tracking overhead.
+
+---
+
+### 11. Create MVR for Individual
 
 **Endpoint**: `POST /api/v1/mvr-people/individuals/{individual_uuid}/create`
 

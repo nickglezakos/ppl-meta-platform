@@ -57,7 +57,9 @@ class MVRRepository:
         featured_person_object_uuid: Optional[UUID] = None,
         featured_video_uuid: Optional[UUID] = None,
         created_by_session: Optional[UUID] = None,
-        auto_created: bool = True
+        auto_created: bool = True,
+        is_isolated: bool = False,
+        source_media_uuid: Optional[UUID] = None
     ) -> Dict[str, Any]:
         """
         Create new MVR-People record.
@@ -77,6 +79,8 @@ class MVRRepository:
             featured_video_uuid: Video containing best appearance
             created_by_session: Tracking session UUID
             auto_created: True if auto-created on Individual insert
+            is_isolated: True if this MVR is isolated (no cross-media merging)
+            source_media_uuid: UUID of the single media this MVR was created from
             
         Returns:
             Dict with mvr_people_uuid and created_at
@@ -104,11 +108,13 @@ class MVRRepository:
                         featured_video_uuid,
                         created_by_session,
                         auto_created,
+                        is_isolated,
+                        source_media_uuid,
                         created_at,
                         updated_at
                     ) VALUES (
                         $1::vector, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                        $11, $12, $13, $14, NOW(), NOW()
+                        $11, $12, $13, $14, $15, $16, NOW(), NOW()
                     )
                     RETURNING mvr_people_uuid, created_at
                 """,
@@ -125,7 +131,9 @@ class MVRRepository:
                     featured_person_object_uuid,
                     featured_video_uuid,
                     created_by_session,
-                    auto_created
+                    auto_created,
+                    is_isolated,
+                    source_media_uuid
                 )
                 
                 logger.info(

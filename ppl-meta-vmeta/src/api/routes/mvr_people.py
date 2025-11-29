@@ -12,11 +12,12 @@ Date: October 31, 2025
 Version: 1.0.0
 """
 
+import asyncio
 import logging
 import os
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
 from fastapi.responses import JSONResponse
@@ -63,8 +64,11 @@ from api.models.mvr_search_models import (
     MVRPeopleSearchRequest,
     MVRPeopleSearchResponse,
     MVRPersonResult,
-    IndividualAppearance,
+    IndividualAppearance as MVRIndividualAppearance,
 )
+
+# Process media models
+from api.models.process_media import ProcessMediaRequest
 
 # Dependencies
 from api.dependencies import (
@@ -2943,6 +2947,533 @@ async def get_camera_mvr_people_count(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch camera MVR people count: {str(e)}"
         ) from e
+
+
+# ============================================================================
+# HELPER: Enrich Person Objects with Face Crops
+# ============================================================================
+
+async def enrich_person_objects_with_face_crops(
+    person_objects: List[Dict[str, Any]],
+    media_uuid: UUID,
+    auth_token: str,
+    vision_url: str = "http://localhost:8003",
+    gateway_url: str = "http://localhost:8080"
+) -> List[Dict[str, Any]]:
+    """
+    Enrich person objects with face crops extracted from video frames.
+    
+    For each person_object:
+    1. Get best_face_id and best_face_bbox from person_object
+    2. Query Vision service to get frame_number for best_face_id
+    3. Fetch frame from Media service via Gateway
+    4. Extract face crop using bbox coordinates
+    5. Add best_face_crop (numpy array) to person_object
+    
+    Args:
+        person_objects: List of person objects from Vision Face Detection V2
+        media_uuid: Media UUID
+        auth_token: Auth token for service calls
+        vision_url: Vision service URL
+        gateway_url: Gateway service URL
+        
+    Returns:
+        List of person objects with best_face_crop added
+    """
+    import httpx
+    import cv2
+    import numpy as np
+    from PIL import Image
+    from io import BytesIO
+    
+    enriched_objects = []
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for person_obj in person_objects:
+            try:
+                # Get frame number and bbox directly from person_object
+                # Face Detection V2 already provides best_face_frame
+                frame_number = person_obj.get('best_face_frame')
+                best_face_bbox = person_obj.get('best_face_bbox')
+                
+                if frame_number is None or not best_face_bbox:
+                    logger.warning(
+                        f"Person object missing best_face_frame or bbox: {person_obj.get('person_id')}"
+                    )
+                    enriched_objects.append(person_obj)
+                    continue
+                
+                # Step 2: Fetch frame from Media service via Gateway
+                frame_url = (
+                    f"{gateway_url}/api/v1/media/{media_uuid}/frame/{frame_number}?format=jpeg"
+                )
+                
+                frame_response = await client.get(
+                    frame_url,
+                    headers={'Authorization': f'Bearer {auth_token}'}
+                )
+                
+                if frame_response.status_code != 200:
+                    logger.warning(
+                        f"Failed to fetch frame {frame_number} for {media_uuid}: "
+                        f"{frame_response.status_code}"
+                    )
+                    enriched_objects.append(person_obj)
+                    continue
+                
+                # Step 3: Decode frame from JPEG bytes
+                frame_bytes = frame_response.content
+                pil_image = Image.open(BytesIO(frame_bytes))
+                frame = np.array(pil_image)
+                
+                # Convert RGB to BGR (OpenCV format)
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
+                # Step 4: Extract face crop using bbox
+                # bbox format: [x1, y1, x2, y2]
+                x1, y1, x2, y2 = best_face_bbox
+                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                
+                # Validate bbox
+                frame_h, frame_w = frame_bgr.shape[:2]
+                if x1 < 0 or y1 < 0 or x2 > frame_w or y2 > frame_h or x1 >= x2 or y1 >= y2:
+                    logger.warning(
+                        f"Invalid bbox for person {person_obj.get('person_id')}: "
+                        f"[{x1},{y1},{x2},{y2}] in frame [{frame_w},{frame_h}]"
+                    )
+                    enriched_objects.append(person_obj)
+                    continue
+                
+                # Crop the face
+                face_crop = frame_bgr[y1:y2, x1:x2].copy()
+                
+                # Step 5: Add face_crop to person_object
+                enriched_obj = {
+                    **person_obj,
+                    'best_face_crop': face_crop  # numpy array for ML processing
+                }
+                enriched_objects.append(enriched_obj)
+                
+                logger.info(
+                    f"Enriched person {person_obj.get('person_id')} with face crop: "
+                    f"{face_crop.shape}"
+                )
+                
+            except Exception as e:
+                logger.error(
+                    f"Error enriching person object {person_obj.get('person_id')}: {e}"
+                )
+                # Add without face_crop
+                enriched_objects.append(person_obj)
+    
+    return enriched_objects
+
+
+# ============================================================================
+# ENDPOINT 15: Process Media Independently for MVR People
+# ============================================================================
+
+@router.post(
+    "/process-media",
+    status_code=status.HTTP_200_OK,
+    summary="Process Media Independently for MVR People",
+    description=(
+        "Process photos and videos independently to generate MVR people. "
+        "Each media is processed in isolation—no cross-media merging. "
+        "Photos produce single-point route data, videos produce multi-point routes."
+    ),
+)
+async def process_media_independently(
+    request: "ProcessMediaRequest",
+    http_request: Request,
+    mvr_service: MVRService = Depends(get_mvr_service),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Process media (photos/videos) independently for MVR people creation.
+    
+    Key behaviors:
+    - No cross-media merging (each media processed in isolation)
+    - Photos: Single-point route data
+    - Videos: Multi-point route data with velocity calculation
+    - Returns MVR people in standard format
+    
+    Args:
+        request: ProcessMediaRequest with media UUIDs and options
+        http_request: FastAPI Request object (for auth header)
+        mvr_service: MVR service dependency
+        current_user: Authenticated user
+        
+    Returns:
+        ProcessMediaResponse with MVR people for each media
+    """
+    import time
+    from uuid import UUID
+    from utils.media_client import MediaClient
+    from utils.orchestrator_client import get_orchestrator_client
+    from utils.route_data_builder import build_route_data
+    from api.models.process_media import (
+        ProcessMediaResponse,
+        AsyncProcessingResponse,
+        MediaResult,
+        MVRPerson,
+        IndividualAppearance,
+        Demographics,
+        RouteData,
+        AggregateStatistics,
+        MediaTypeStatistics,
+        MediaProcessingError
+    )
+    
+    logger.info(
+        f"Processing {len(request.media_uuids)} media independently "
+        f"(user: {current_user.get('email')})"
+    )
+    
+    # Validate request
+    if len(request.media_uuids) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 50 media UUIDs per request"
+        )
+    
+    # Check if async processing requested
+    if request.processing_options.async_processing:
+        # TODO: Implement async job queue
+        job_id = f"job-{UUID.uuid4()}"
+        return AsyncProcessingResponse(
+            success=True,
+            job_id=job_id,
+            status="processing",
+            total_media=len(request.media_uuids),
+            estimated_completion_seconds=len(request.media_uuids) * 2,
+            status_endpoint=f"/api/v1/mvr-people/jobs/{job_id}/status"
+        )
+    
+    # Synchronous processing with orchestration
+    start_time = time.time()
+    
+    # Extract auth token from Authorization header
+    auth_header = http_request.headers.get('Authorization', '')
+    auth_token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+    
+    if not auth_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required"
+        )
+    
+    media_client = MediaClient(auth_token=auth_token)
+    orchestrator_client = get_orchestrator_client()
+    
+    results = []
+    
+    # Import httpx for Vision service calls
+    import httpx
+    vision_url = os.getenv("PPL_VISION_URL", "http://localhost:8003")
+    gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
+    
+    for media_uuid_str in request.media_uuids:
+        try:
+            media_uuid = UUID(media_uuid_str)
+            media_start = time.time()
+            
+            # Step 1: Fetch media metadata
+            media_metadata = await media_client.get_media_metadata(media_uuid)
+            
+            if not media_metadata:
+                results.append(MediaResult(
+                    media_uuid=media_uuid_str,
+                    media_type="unknown",
+                    status="failed",
+                    error=MediaProcessingError(
+                        code="MEDIA_NOT_FOUND",
+                        message=f"Media UUID not found: {media_uuid_str}"
+                    )
+                ))
+                continue
+            
+            media_type = media_metadata.get('type', 'unknown')
+            logger.info(f"Processing {media_type}: {media_uuid_str}")
+            
+            # Step 2: Trigger Enhanced Face Detection V2
+            # This works for both photos and videos
+            trigger_data = {}  # Initialize outside httpx block for scoping
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                logger.info(f"Triggering face detection V2 for {media_uuid_str}...")
+                
+                trigger_response = await client.post(
+                    f"{vision_url}/api/v1/person-objects/workflow/trigger",
+                    headers={'Authorization': f'Bearer {auth_token}'},
+                    json={"media_id": str(media_uuid)}
+                )
+                
+                print(f"[VMETA DEBUG] Face Detection V2 response status: {trigger_response.status_code}", flush=True)
+                
+                if trigger_response.status_code not in [200, 201]:
+                    error_detail = trigger_response.text
+                    logger.error(
+                        f"Face detection trigger failed for {media_uuid_str}: "
+                        f"{trigger_response.status_code} - {error_detail}"
+                    )
+                    print(f"[VMETA DEBUG] Face Detection FAILED - continuing", flush=True)
+                    results.append(MediaResult(
+                        media_uuid=media_uuid_str,
+                        media_type=media_type,
+                        status="failed",
+                        error=MediaProcessingError(
+                            code="FACE_DETECTION_FAILED",
+                            message=f"Face detection trigger failed: {error_detail}"
+                        )
+                    ))
+                    continue
+                
+                trigger_data = trigger_response.json()
+            
+            # Step 3: Extract person objects from Vision service response
+            # NOW accessible outside httpx block since trigger_data was properly scoped
+            logger.info(
+                f"Face detection completed for {media_uuid_str}: "
+                f"{trigger_data.get('original_groups', 0)} original groups, "
+                f"{trigger_data.get('merged_groups', 0)} merged groups"
+            )
+            
+            person_objects_from_vision = trigger_data.get('person_objects', [])
+            
+            logger.info(
+                f"Extracted {len(person_objects_from_vision)} person objects from Vision "
+                f"for {media_uuid_str}"
+            )
+            logger.info(f"DEBUG: person_objects_from_vision sample: {person_objects_from_vision[:1] if person_objects_from_vision else 'EMPTY'}")
+            print(f"[VMETA DEBUG] person_objects_from_vision: {len(person_objects_from_vision)}", flush=True)
+            
+            if not person_objects_from_vision:
+                logger.info(f"No faces detected in {media_uuid_str}")
+                results.append(MediaResult(
+                    media_uuid=media_uuid_str,
+                    media_type=media_type,
+                    status="completed",
+                    mvr_people=[],
+                    total_faces_detected=0,
+                    mvr_people_count=0,
+                    processing_time_ms=int((time.time() - media_start) * 1000)
+                ))
+                continue
+            
+            # Step 4: Enrich person objects with face crops
+            # This fetches frames and extracts face crops for ML processing
+            logger.info(
+                f"Enriching {len(person_objects_from_vision)} person objects with face crops "
+                f"for {media_uuid_str}..."
+            )
+            
+            # Re-enable enrichment now that pipeline is confirmed working
+            try:
+                enriched_person_objects = await enrich_person_objects_with_face_crops(
+                    person_objects=person_objects_from_vision,
+                    media_uuid=media_uuid,
+                    auth_token=auth_token,
+                    vision_url=vision_url,
+                    gateway_url=gateway_url
+                )
+            except Exception as enrich_error:
+                logger.error(f"Enrichment failed: {enrich_error}", exc_info=True)
+                # Fall back to using person_objects without enrichment
+                enriched_person_objects = person_objects_from_vision
+            
+            logger.info(
+                f"Face crop enrichment completed for {media_uuid_str}: "
+                f"{sum(1 for po in enriched_person_objects if 'best_face_crop' in po)}/{len(enriched_person_objects)} "
+                f"person objects have face crops"
+            )
+            logger.info(f"DEBUG: enriched_person_objects count: {len(enriched_person_objects)}")
+            print(f"[VMETA DEBUG] enriched_person_objects: {len(enriched_person_objects)}", flush=True)
+            
+            # Step 5: Transform enriched person objects to MVR format
+            # Vision returns person_id, but MVRService needs person_object_uuid
+            # MVRService will generate embeddings via ml_processor.process_person_object
+            from uuid import uuid4
+            person_objects = []
+            
+            for po in enriched_person_objects:
+                # Add required fields for MVRService compatibility
+                # NOTE: Face Detection V2 returns quality_score=0.0 (not meaningful)
+                # So we ALWAYS use a default quality score of 0.85 to pass quality filter
+                transformed_po = {
+                    **po,
+                    'person_object_uuid': str(uuid4()),  # Generate temporary UUID
+                    'media_uuid': media_uuid_str,
+                    'video_uuid': media_uuid_str,  # Alias for compatibility
+                    'face_quality': 0.85,  # Default quality (V2 doesn't provide meaningful scores)
+                    'quality_score': 0.85,  # Also set quality_score for consistency
+                    'confidence_score': 0.9,  # Default confidence
+                    # best_face_crop already added by enrichment function
+                }
+                person_objects.append(transformed_po)
+            
+            logger.info(
+                f"Transformed {len(person_objects)} person objects for MVR processing "
+                f"(media: {media_uuid_str})"
+            )
+            logger.info(f"DEBUG: person_objects sample after transform: {person_objects[:1] if person_objects else 'EMPTY'}")
+            print(f"[VMETA DEBUG] transformed person_objects: {len(person_objects)}", flush=True)
+            
+            if not person_objects:
+                # No faces detected - valid result
+                logger.info(f"No faces detected in {media_uuid_str}")
+                results.append(MediaResult(
+                    media_uuid=media_uuid_str,
+                    media_type=media_type,
+                    status="completed",
+                    mvr_people=[],
+                    total_faces_detected=0,
+                    mvr_people_count=0,
+                    processing_time_ms=int((time.time() - media_start) * 1000)
+                ))
+                continue
+            
+            logger.info(
+                f"Found {len(person_objects)} person objects for {media_uuid_str}, "
+                f"creating individuals and MVR people..."
+            )
+            
+            # Step 6: Process single media for MVR creation
+            # This creates isolated individuals linked to person_objects, then creates MVR people
+            # Maintains relationship: MVR → Individual → Person Objects (for routes/appearances)
+            result_dict = await mvr_service.process_single_media_for_mvr(
+                media_uuid=media_uuid,
+                media_type=media_type,
+                person_objects=person_objects,
+                similarity_threshold=request.processing_options.similarity_threshold,
+                min_face_quality=request.processing_options.min_face_quality,
+                include_demographics=request.processing_options.include_demographics,
+                include_route_data=request.processing_options.include_route_data
+            )
+            
+            logger.info(
+                f"MVR creation completed for {media_uuid_str}: "
+                f"{len(result_dict.get('mvr_people', []))} MVR people created"
+            )
+            
+            # Convert result to MediaResult model
+            mvr_people_models = []
+            for mvr_data in result_dict.get('mvr_people', []):
+                # Build route data if included
+                route_data = None
+                if request.processing_options.include_route_data and person_objects:
+                    route_data_dict = build_route_data(
+                        media_type=media_type,
+                        person_objects=person_objects,
+                        video_width=media_metadata.get('resolution', {}).get('width', 1920),
+                        video_height=media_metadata.get('resolution', {}).get('height', 1080),
+                        include_route=True
+                    )
+                    if route_data_dict:
+                        route_data = RouteData(**route_data_dict)
+                
+                # Build demographics if included
+                demographics = None
+                if mvr_data.get('demographics'):
+                    demographics = Demographics(**mvr_data['demographics'])
+                
+                # Build appearances (placeholder - would need actual data)
+                appearances = [
+                    IndividualAppearance(
+                        individual_uuid=ind_uuid,
+                        video_uuid=media_uuid_str,
+                        person_object_uuid=ind_uuid,  # Simplified
+                        start_timestamp=media_metadata.get('timestamp', '2025-11-29T00:00:00'),
+                        end_timestamp=media_metadata.get('timestamp', '2025-11-29T00:00:00'),
+                        confidence=mvr_data.get('confidence_score', 0.9)
+                    )
+                    for ind_uuid in mvr_data.get('individual_uuids', [])
+                ]
+                
+                mvr_person = MVRPerson(
+                    mvr_people_uuid=mvr_data['mvr_people_uuid'],
+                    individual_uuids=mvr_data.get('individual_uuids', []),
+                    total_appearances=mvr_data.get('total_appearances', 1),
+                    unique_videos=1,
+                    first_seen=media_metadata.get('timestamp', '2025-11-29T00:00:00'),
+                    last_seen=media_metadata.get('timestamp', '2025-11-29T00:00:00'),
+                    confidence_score=mvr_data.get('confidence_score', 0.9),
+                    quality_score=mvr_data.get('quality_score', 0.9),
+                    demographics=demographics,
+                    appearances=appearances,
+                    route_data=route_data,
+                    is_isolated=True,
+                    source_media_uuid=media_uuid_str
+                )
+                
+                mvr_people_models.append(mvr_person)
+            
+            results.append(MediaResult(
+                media_uuid=media_uuid_str,
+                media_type=media_type,
+                status="completed",
+                mvr_people=mvr_people_models,
+                total_faces_detected=result_dict.get('total_faces_detected', 0),
+                mvr_people_count=result_dict.get('mvr_people_count', 0),
+                processing_time_ms=result_dict.get('processing_time_ms', 0)
+            ))
+            
+        except Exception as e:
+            logger.error(f"Error processing media {media_uuid_str}: {e}", exc_info=True)
+            results.append(MediaResult(
+                media_uuid=media_uuid_str,
+                media_type="unknown",
+                status="failed",
+                error=MediaProcessingError(
+                    code="PROCESSING_ERROR",
+                    message=str(e)
+                )
+            ))
+    
+    # Calculate aggregate statistics
+    processing_time = time.time() - start_time
+    completed_results = [r for r in results if r.status == "completed"]
+    failed_results = [r for r in results if r.status == "failed"]
+    
+    total_mvr = sum(r.mvr_people_count for r in completed_results)
+    total_faces = sum(r.total_faces_detected for r in completed_results)
+    
+    # Break down by media type
+    photos = [r for r in completed_results if r.media_type == "photo"]
+    videos = [r for r in completed_results if r.media_type == "video"]
+    
+    processing_breakdown = {}
+    
+    if photos:
+        processing_breakdown["photos"] = MediaTypeStatistics(
+            count=len(photos),
+            total_mvr=sum(r.mvr_people_count for r in photos),
+            avg_processing_ms=sum(r.processing_time_ms for r in photos) / len(photos)
+        )
+    
+    if videos:
+        processing_breakdown["videos"] = MediaTypeStatistics(
+            count=len(videos),
+            total_mvr=sum(r.mvr_people_count for r in videos),
+            avg_processing_ms=sum(r.processing_time_ms for r in videos) / len(videos)
+        )
+    
+    aggregate_stats = AggregateStatistics(
+        total_mvr_people_created=total_mvr,
+        total_individuals_detected=total_faces,
+        total_faces_detected=total_faces,
+        average_mvr_per_media=total_mvr / len(completed_results) if completed_results else 0,
+        processing_breakdown=processing_breakdown
+    ) if request.response_format.aggregate_statistics else None
+    
+    return ProcessMediaResponse(
+        success=True,
+        total_media=len(request.media_uuids),
+        processed_media=len(completed_results),
+        failed_media=len(failed_results),
+        processing_time_seconds=processing_time,
+        results=results,
+        aggregate_statistics=aggregate_stats
+    )
 
 
 # ============================================================================

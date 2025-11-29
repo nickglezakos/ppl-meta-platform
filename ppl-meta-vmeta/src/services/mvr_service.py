@@ -9,9 +9,10 @@ Author: PPL Meta Platform Team
 """
 
 import asyncio
+import json
 import logging
 from typing import Optional, Dict, Any, List
-from uuid import UUID
+from uuid import UUID, uuid4
 import numpy as np
 
 from database.mvr_repository import MVRRepository, MVRRepositoryError
@@ -380,3 +381,343 @@ class MVRService:
         except MVRRepositoryError as e:
             logger.error(f"Failed to update config: {e}")
             raise MVRServiceError(f"Failed to update config: {e}")
+    
+    # ===================================================================
+    # Single-Media MVR Processing
+    # ===================================================================
+    
+    async def process_single_media_for_mvr(
+        self,
+        media_uuid: UUID,
+        media_type: str,
+        person_objects: List[Dict[str, Any]],
+        similarity_threshold: float = 0.85,
+        min_face_quality: float = 0.70,
+        include_demographics: bool = True,
+        include_route_data: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Process a single media (photo or video) to generate MVR people independently.
+        
+        This method processes each media in isolation - no cross-media merging.
+        
+        Args:
+            media_uuid: Media UUID
+            media_type: "photo" or "video"
+            person_objects: Person objects from Orchestrator
+            similarity_threshold: Similarity threshold for within-media matching
+            min_face_quality: Minimum face quality threshold
+            include_demographics: Whether to estimate demographics
+            include_route_data: Whether to include route data
+            
+        Returns:
+            Dict with MVR people created for this media
+        """
+        import time
+        from sklearn.metrics.pairwise import cosine_similarity as compute_cosine_similarity
+        
+        start_time = time.time()
+        
+        logger.info(
+            f"Processing {media_type} {media_uuid} independently: "
+            f"{len(person_objects)} person objects"
+        )
+        print(f"[MVRService DEBUG] RECEIVED {len(person_objects)} person_objects", flush=True)
+        print(f"[MVRService DEBUG] person_objects type: {type(person_objects)}", flush=True)
+        print(f"[MVRService DEBUG] person_objects sample: {person_objects[:1] if person_objects else 'EMPTY'}", flush=True)
+        
+        if not person_objects:
+            return {
+                "media_uuid": str(media_uuid),
+                "media_type": media_type,
+                "status": "completed",
+                "mvr_people": [],
+                "total_faces_detected": 0,
+                "mvr_people_count": 0,
+                "processing_time_ms": 0
+            }
+        
+        # Step 1: Process person objects through ML pipeline (FULL ML PROCESSING - IDENTICAL TO OTHER ENDPOINTS)
+        # This generates embeddings, age estimates, and gender predictions
+        individuals_data = []
+        total_faces = sum(po.get('face_count', 1) for po in person_objects)
+        
+        for person_obj in person_objects:
+            try:
+                # Check face quality
+                face_quality = person_obj.get('face_quality', person_obj.get('quality_score', 0.8))
+                if face_quality < min_face_quality:
+                    logger.debug(
+                        f"Skipping low-quality person object: {face_quality:.2f} < {min_face_quality}"
+                    )
+                    continue
+                
+                # Process through ML models (facenet + age/gender)
+                ml_result = await asyncio.to_thread(
+                    self.ml_processor.process_person_object,
+                    person_obj
+                )
+                
+                # DEBUG: Log ML result details
+                logger.warning(
+                    f"[ML DEBUG] Person {person_obj.get('person_object_uuid')}: "
+                    f"ml_result={'None' if not ml_result else ml_result.get('success', 'no success key')}, "
+                    f"has_face_crop={'best_face_crop' in person_obj}"
+                )
+                
+                if not ml_result or not ml_result.get('success'):
+                    errors = ml_result.get('errors', ['Unknown error']) if ml_result else ['ML processing failed']
+                    logger.warning(
+                        f"ML processing failed for person object {person_obj.get('person_object_uuid')}: "
+                        f"{', '.join(errors)}"
+                    )
+                    continue
+                
+                # Extract ML results
+                face_embedding = np.array(ml_result['face_embedding'])
+                age_est = ml_result.get('age_estimate')
+                gender_est = ml_result.get('gender_estimate')
+                
+                # Build individual data
+                individual_data = {
+                    'person_object_uuid': person_obj['person_object_uuid'],
+                    'media_uuid': str(media_uuid),
+                    'face_embedding': face_embedding,
+                    'quality_score': face_quality,
+                    'confidence_score': person_obj.get('confidence_score', 0.9),
+                    'face_count': person_obj.get('face_count', 1),
+                    'person_id': person_obj.get('person_id'),
+                }
+                
+                # Add demographics if included
+                if include_demographics:
+                    if age_est:
+                        individual_data.update({
+                            'age_min': age_est['min_age'],
+                            'age_max': age_est['max_age'],
+                            'age_confidence': age_est['confidence']
+                        })
+                    if gender_est:
+                        individual_data.update({
+                            'gender': gender_est['gender'],
+                            'gender_confidence': gender_est['confidence']
+                        })
+                
+                individuals_data.append(individual_data)
+                
+                logger.debug(
+                    f"Processed person object {person_obj.get('person_object_uuid')}: "
+                    f"embedding shape={face_embedding.shape}, "
+                    f"age={age_est.get('min_age')}-{age_est.get('max_age') if age_est else 'N/A'}, "
+                    f"gender={gender_est.get('gender') if gender_est else 'N/A'}"
+                )
+                
+            except Exception as e:
+                logger.error(
+                    f"Failed to process person object {person_obj.get('person_object_uuid')}: {e}"
+                )
+                continue
+        
+        logger.info(
+            f"ML processing completed: {len(individuals_data)}/{len(person_objects)} person objects "
+            f"successfully processed"
+        )
+        
+        if not individuals_data:
+            logger.warning(f"No valid individuals after quality filtering")
+            return {
+                "media_uuid": str(media_uuid),
+                "media_type": media_type,
+                "status": "completed",
+                "mvr_people": [],
+                "total_faces_detected": 0,
+                "mvr_people_count": 0,
+                "processing_time_ms": int((time.time() - start_time) * 1000)
+            }
+        
+        # Step 2: Match faces WITHIN this media only
+        uuids = [ind['person_object_uuid'] for ind in individuals_data]
+        embeddings_matrix = np.array([ind['face_embedding'] for ind in individuals_data])
+        
+        # Compute pairwise similarities
+        similarities = compute_cosine_similarity(embeddings_matrix)
+        
+        logger.info(
+            f"Computed similarity matrix: {similarities.shape}, "
+            f"threshold={similarity_threshold}"
+        )
+        
+        # Step 3: Find connected components (merge groups)
+        similar_to = {str(uuid_val): [] for uuid_val in uuids}
+        
+        for i in range(len(uuids)):
+            for j in range(i + 1, len(uuids)):
+                if similarities[i][j] >= similarity_threshold:
+                    similar_to[str(uuids[i])].append(str(uuids[j]))
+                    similar_to[str(uuids[j])].append(str(uuids[i]))
+        
+        # Find connected components using DFS
+        visited = set()
+        clusters = []
+        
+        def dfs(uuid_val, component):
+            if uuid_val in visited:
+                return
+            visited.add(uuid_val)
+            component.append(uuid_val)
+            for neighbor in similar_to[uuid_val]:
+                if neighbor not in visited:
+                    dfs(neighbor, component)
+        
+        for uuid_val in similar_to.keys():
+            if uuid_val not in visited:
+                component = []
+                dfs(uuid_val, component)
+                if component:
+                    clusters.append(component)
+        
+        logger.info(
+            f"Found {len(clusters)} clusters from {len(individuals_data)} individuals"
+        )
+        
+        # Step 4: Create MVR people (one per cluster)
+        mvr_people_created = []
+        
+        for cluster_uuids in clusters:
+            try:
+                # Get individuals in this cluster
+                cluster_individuals = [
+                    ind for ind in individuals_data
+                    if str(ind['person_object_uuid']) in cluster_uuids
+                ]
+                
+                # Compute canonical embedding (quality-weighted average)
+                embeddings = [ind['face_embedding'] for ind in cluster_individuals]
+                quality_scores = [ind['quality_score'] for ind in cluster_individuals]
+                
+                canonical_embedding = np.average(
+                    embeddings,
+                    axis=0,
+                    weights=quality_scores
+                )
+                canonical_embedding = canonical_embedding / np.linalg.norm(canonical_embedding)
+                
+                # Select best quality individual as featured
+                best_ind = max(cluster_individuals, key=lambda x: x['quality_score'])
+                
+                # Demographics already processed per individual - aggregate from individuals
+                # Calculate average scores and demographics
+                avg_confidence = np.mean([ind['confidence_score'] for ind in cluster_individuals])
+                avg_quality = np.mean([ind['quality_score'] for ind in cluster_individuals])
+                
+                # Aggregate demographics from individuals if included
+                demographics = None
+                if include_demographics and any('age_min' in ind for ind in cluster_individuals):
+                    # Use demographics from best quality individual
+                    demographics = {
+                        'age_min': best_ind.get('age_min'),
+                        'age_max': best_ind.get('age_max'),
+                        'age_confidence': best_ind.get('age_confidence'),
+                        'gender': best_ind.get('gender'),
+                        'gender_confidence': best_ind.get('gender_confidence')
+                    }
+                
+                # Create individual record for single-media processing
+                # This maintains the relationship chain: MVR → Individual → Person Objects → Routes
+                individual_uuid = uuid4()
+                individual_id = f"isolated_{individual_uuid.hex[:8]}"
+                
+                try:
+                    # Use repository's pool connection
+                    pool = self.repository.pool
+                    
+                    await pool.execute("""
+                        INSERT INTO individuals 
+                        (individual_uuid, individual_id, confidence_score, 
+                         spatial_signature, temporal_signature)
+                        VALUES ($1, $2, $3, $4, $5)
+                    """,
+                        individual_uuid,
+                        individual_id,
+                        float(avg_confidence),
+                        json.dumps({}),  # Empty for single-media
+                        json.dumps({})   # Empty for single-media
+                    )
+                    
+                    # Link person objects to this individual via video appearances
+                    for ind in cluster_individuals:
+                        po_uuid = UUID(ind['person_object_uuid'])
+                        await pool.execute("""
+                            INSERT INTO individual_video_appearances 
+                            (individual_uuid, video_uuid, person_object_uuid, 
+                             start_timestamp, end_timestamp, confidence)
+                            VALUES ($1, $2, $3, NOW(), NOW(), $4)
+                            ON CONFLICT (individual_uuid, video_uuid, person_object_uuid) DO NOTHING
+                        """,
+                            individual_uuid,
+                            media_uuid,
+                            po_uuid,
+                            float(ind['confidence_score'])
+                        )
+                    
+                    logger.info(f"Created individual {individual_uuid} for single-media MVR with {len(cluster_individuals)} person objects")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to create individual for single-media processing: {e}")
+                    # Use placeholder if individual creation fails
+                    individual_uuid = UUID('00000000-0000-0000-0000-000000000000')
+                
+                # Create MVR person record in database
+                mvr_result = await self.repository.create_mvr_people(
+                    face_embedding=canonical_embedding,
+                    featured_individual_uuid=individual_uuid,
+                    age_min=demographics.get('age_min') if demographics else None,
+                    age_max=demographics.get('age_max') if demographics else None,
+                    age_confidence=demographics.get('age_confidence') if demographics else None,
+                    gender=demographics.get('gender') if demographics else None,
+                    gender_confidence=demographics.get('gender_confidence') if demographics else None,
+                    quality_score=float(avg_quality),
+                    confidence_score=float(avg_confidence),
+                    face_quality=float(best_ind['quality_score']),
+                    featured_person_object_uuid=UUID(best_ind['person_object_uuid']),
+                    featured_video_uuid=media_uuid,
+                    auto_created=False,
+                    is_isolated=True,  # Mark as isolated for single-media processing
+                    source_media_uuid=media_uuid
+                )
+                
+                mvr_people_uuid = mvr_result['mvr_people_uuid']
+                
+                # Build MVR person response object
+                mvr_person = {
+                    "mvr_people_uuid": str(mvr_people_uuid),
+                    "individual_uuids": cluster_uuids,
+                    "total_appearances": len(cluster_individuals),
+                    "unique_videos": 1,  # Always 1 for single-media processing
+                    "confidence_score": float(avg_confidence),
+                    "quality_score": float(avg_quality),
+                    "is_isolated": True,
+                    "source_media_uuid": str(media_uuid)
+                }
+                
+                # Add demographics if available
+                if demographics:
+                    mvr_person["demographics"] = demographics
+                
+                mvr_people_created.append(mvr_person)
+                
+            except Exception as e:
+                logger.error(f"Failed to create MVR for cluster: {e}")
+                continue
+        
+        processing_time = int((time.time() - start_time) * 1000)
+        
+        return {
+            "media_uuid": str(media_uuid),
+            "media_type": media_type,
+            "status": "completed",
+            "mvr_people": mvr_people_created,
+            "total_faces_detected": len(individuals_data),
+            "mvr_people_count": len(mvr_people_created),
+            "processing_time_ms": processing_time
+        }
