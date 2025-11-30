@@ -688,10 +688,34 @@ class MVRService:
                 
                 mvr_people_uuid = mvr_result['mvr_people_uuid']
                 
-                # Build MVR person response object
+                # CRITICAL FIX: Link the individual to the MVR person via individual_mvr_mapping
+                try:
+                    await pool.execute("""
+                        INSERT INTO individual_mvr_mapping 
+                        (individual_uuid, mvr_people_uuid, confidence_score, quality_score, 
+                         is_representative, link_method, linked_at)
+                        VALUES ($1, $2, $3, $4, TRUE, 'auto_create', NOW())
+                        ON CONFLICT (individual_uuid, mvr_people_uuid) DO NOTHING
+                    """,
+                        individual_uuid,
+                        mvr_people_uuid,
+                        float(avg_confidence),
+                        float(avg_quality)
+                    )
+                    
+                    logger.info(
+                        f"Linked individual {individual_uuid} to MVR person {mvr_people_uuid} "
+                        f"(confidence: {avg_confidence:.2f}, quality: {avg_quality:.2f})"
+                    )
+                    
+                except Exception as link_error:
+                    logger.error(f"Failed to link individual to MVR person: {link_error}")
+                    # Continue - MVR person still created, just not linked properly
+                
+                # Build MVR person response object with correct individual_uuid
                 mvr_person = {
                     "mvr_people_uuid": str(mvr_people_uuid),
-                    "individual_uuids": cluster_uuids,
+                    "individual_uuids": [str(individual_uuid)],  # Fixed: use actual individual_uuid, not person_object_uuids
                     "total_appearances": len(cluster_individuals),
                     "unique_videos": 1,  # Always 1 for single-media processing
                     "confidence_score": float(avg_confidence),

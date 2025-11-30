@@ -3196,11 +3196,48 @@ async def process_media_independently(
             media_type = media_metadata.get('type', 'unknown')
             logger.info(f"Processing {media_type}: {media_uuid_str}")
             
-            # Step 2: Trigger Enhanced Face Detection V2
+            # Step 2: Trigger Enhanced Face Detection V2 via Orchestrator (synchronous)
             # This works for both photos and videos
             trigger_data = {}  # Initialize outside httpx block for scoping
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                logger.info(f"Triggering face detection V2 for {media_uuid_str}...")
+            orchestrator_url = os.getenv("PPL_ORCHESTRATOR_URL", "http://localhost:8002")
+            
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                # Step 2a: Use Enhanced Logic V2 endpoint (synchronous, no polling needed)
+                logger.info(f"Triggering Enhanced Logic V2 face detection for {media_uuid_str}...")
+                
+                fd_response = await client.get(
+                    f"{orchestrator_url}/api/v1/media/{media_uuid_str}/faces/enhanced-v2",
+                    headers={'Authorization': f'Bearer {auth_token}'},
+                    params={"frame_interval": 10}  # Process every 10th frame for speed
+                )
+                
+                print(f"[VMETA DEBUG] Enhanced Logic V2 response: {fd_response.status_code}", flush=True)
+                
+                if fd_response.status_code not in [200, 201]:
+                    error_detail = fd_response.text
+                    logger.error(
+                        f"Enhanced Logic V2 failed for {media_uuid_str}: "
+                        f"{fd_response.status_code} - {error_detail}"
+                    )
+                    print(f"[VMETA DEBUG] Enhanced Logic V2 FAILED", flush=True)
+                    results.append(MediaResult(
+                        media_uuid=media_uuid_str,
+                        media_type=media_type,
+                        status="failed",
+                        error=MediaProcessingError(
+                            code="FACE_DETECTION_FAILED",
+                            message=f"Enhanced Logic V2 face detection failed: {error_detail}"
+                        )
+                    ))
+                    continue
+                
+                fd_data = fd_response.json()
+                faces_count = fd_data.get('total_faces', 0)
+                logger.info(f"Enhanced Logic V2 completed: {faces_count} faces detected")
+                print(f"[VMETA DEBUG] Faces detected: {faces_count}", flush=True)
+                
+                # Step 2b: Now trigger Vision's person objects workflow
+                logger.info(f"Triggering Vision person objects workflow for {media_uuid_str}...")
                 
                 trigger_response = await client.post(
                     f"{vision_url}/api/v1/person-objects/workflow/trigger",
@@ -3208,22 +3245,22 @@ async def process_media_independently(
                     json={"media_id": str(media_uuid)}
                 )
                 
-                print(f"[VMETA DEBUG] Face Detection V2 response status: {trigger_response.status_code}", flush=True)
+                print(f"[VMETA DEBUG] Vision workflow response: {trigger_response.status_code}", flush=True)
                 
                 if trigger_response.status_code not in [200, 201]:
                     error_detail = trigger_response.text
                     logger.error(
-                        f"Face detection trigger failed for {media_uuid_str}: "
+                        f"Vision workflow failed for {media_uuid_str}: "
                         f"{trigger_response.status_code} - {error_detail}"
                     )
-                    print(f"[VMETA DEBUG] Face Detection FAILED - continuing", flush=True)
+                    print(f"[VMETA DEBUG] Vision workflow FAILED", flush=True)
                     results.append(MediaResult(
                         media_uuid=media_uuid_str,
                         media_type=media_type,
                         status="failed",
                         error=MediaProcessingError(
-                            code="FACE_DETECTION_FAILED",
-                            message=f"Face detection trigger failed: {error_detail}"
+                            code="VISION_WORKFLOW_FAILED",
+                            message=f"Vision workflow failed: {error_detail}"
                         )
                     ))
                     continue

@@ -13,8 +13,11 @@ import '../widgets/collection_organization_widget.dart';
 import '../widgets/collection_picker_dialog.dart';
 import '../widgets/media_details_dialog.dart';
 import '../widgets/collections_search_dialog.dart';
+import '../widgets/vision_processing_dialog.dart';
+import '../widgets/vision_results_dialog.dart';
 import '../services/media_organization_service.dart';
 import '../services/media_api_client.dart';
+import '../services/vision_processing_service.dart';
 import '../providers/media_organization_providers.dart';
 import 'person_objects_detail_screen.dart';
 
@@ -138,6 +141,16 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                    ),
+                    
+                    // Vision button (NEW)
+                    IconButton(
+                      onPressed: _processWithVision,
+                      icon: Icon(
+                        Icons.visibility,
+                        color: AppColors.primary,
+                      ),
+                      tooltip: 'Process with Vision AI',
                     ),
                     
                     // Share button
@@ -1686,6 +1699,173 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     } else {
       return '${date.month}/${date.day}/${date.year}';
     }
+  }
+
+  /// Process selected items with Vision AI
+  void _processWithVision() async {
+    if (_selectedItems.isEmpty) return;
+    
+    try {
+      // Show confirmation dialog
+      final confirmed = await _showVisionConfirmationDialog();
+      if (!confirmed) return;
+      
+      // Get auth token from ApiClient
+      final apiClient = ref.read(apiClientProvider);
+      final authToken = apiClient.authToken;
+      
+      if (authToken == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Authentication required. Please log in again.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Create vision processing service with auth token
+      final visionService = VisionProcessingService(authToken: authToken);
+      
+      // Show progress dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => VisionProcessingDialog(
+          mediaIds: _selectedItems.map((item) => item.uuid).toList(),
+          visionService: visionService,
+        ),
+      );
+      
+      // Execute vision processing
+      final mediaIds = _selectedItems.map((item) => item.uuid).toList();
+      final result = await visionService.processSelectedMedia(
+        mediaIds: mediaIds,
+      );
+      
+      // Close progress dialog
+      if (mounted) {
+        Navigator.pop(context);
+        
+        // Show results dialog
+        await showDialog(
+          context: context,
+          builder: (context) => VisionResultsDialog(result: result),
+        );
+        
+        // Exit selection mode
+        _exitSelectionMode();
+        
+        // Optionally refresh the view to show updated data
+        setState(() {
+          // Trigger rebuild
+        });
+      }
+    } catch (e) {
+      // Close progress dialog if open
+      if (mounted) {
+        Navigator.pop(context);
+        _showErrorMessage('Vision processing error: $e');
+      }
+    }
+  }
+  
+  /// Show Vision confirmation dialog
+  Future<bool> _showVisionConfirmationDialog() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.visibility, color: AppColors.primary),
+            const SizedBox(width: AppSpacing.sm),
+            const Text('Vision Processing'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Process ${_selectedItems.length} media item${_selectedItems.length == 1 ? '' : 's'} with AI face recognition?',
+              style: AppTextStyles.bodyLarge,
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            Text(
+              'This will:',
+              style: AppTextStyles.labelLarge.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _buildInfoItem('Detect faces in selected media'),
+            _buildInfoItem('Create MVR people records'),
+            _buildInfoItem('Extract demographics (age, gender)'),
+            _buildInfoItem('Generate face embeddings'),
+            const SizedBox(height: AppSpacing.lg),
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.info.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.info.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.info, size: 20),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'Processing may take a few seconds per media item',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.info,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Start Processing'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+  
+  Widget _buildInfoItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 16,
+            color: AppColors.success,
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTextStyles.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Share selected items

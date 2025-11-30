@@ -1548,14 +1548,25 @@ class _PersonObjectsDetailScreenState
                 );
               }
               
+              // Skip MVR people with no appearances
+              final totalAppearances = data['total_appearances'] as int;
+              if (totalAppearances == 0) {
+                print('⚠️ Skipping MVR person $mvrPersonUuid: 0 appearances (no data)');
+                continue;
+              }
+              
               final analysis = AggregatedIndividualAnalysis(
                 individualUuid: data['mvr_person_uuid'] as String,
                 individualId: data['mvr_person_uuid'] as String,
                 sessionUuid: context.sessionUuid,
-                totalAppearances: data['total_appearances'] as int,
+                totalAppearances: totalAppearances,
                 uniqueVideos: data['unique_videos'] as int,
-                firstSeen: DateTime.parse(data['first_seen'] as String),
-                lastSeen: DateTime.parse(data['last_seen'] as String),
+                firstSeen: data['first_seen'] != null 
+                    ? DateTime.parse(data['first_seen'] as String)
+                    : DateTime.now(),
+                lastSeen: data['last_seen'] != null 
+                    ? DateTime.parse(data['last_seen'] as String)
+                    : DateTime.now(),
                 totalDurationSeconds: 0.0,
                 averageConfidence: 0.0,
                 averageRouteVelocity: (data['average_route_velocity'] as num?)?.toDouble(),
@@ -1622,14 +1633,25 @@ class _PersonObjectsDetailScreenState
               );
             }
             
+            // Skip individuals with no appearances
+            final totalAppearances = data['total_appearances'] as int;
+            if (totalAppearances == 0) {
+              print('⚠️ Skipping individual $individualUuid: 0 appearances (no data)');
+              continue;
+            }
+            
             final analysis = AggregatedIndividualAnalysis(
               individualUuid: data['individual_uuid'] as String,
               individualId: data['individual_uuid'] as String,
               sessionUuid: context.sessionUuid, // Use context session for display
-              totalAppearances: data['total_appearances'] as int,
+              totalAppearances: totalAppearances,
               uniqueVideos: data['unique_videos'] as int,
-              firstSeen: DateTime.parse(data['first_seen'] as String),
-              lastSeen: DateTime.parse(data['last_seen'] as String),
+              firstSeen: data['first_seen'] != null 
+                  ? DateTime.parse(data['first_seen'] as String)
+                  : DateTime.now(),
+              lastSeen: data['last_seen'] != null 
+                  ? DateTime.parse(data['last_seen'] as String)
+                  : DateTime.now(),
               totalDurationSeconds: 0.0, // Not provided by session-less endpoint
               averageConfidence: 0.0, // Calculate from appearances if needed
               appearances: (data['appearances'] as List)
@@ -1663,8 +1685,16 @@ class _PersonObjectsDetailScreenState
       }
       
       if (aggregatedAnalyses.isEmpty) {
+        final errorMessage = loadingMVRPeople
+            ? 'No MVR people with valid appearance data could be loaded.\n\n'
+              'This may occur when:\n'
+              '• MVR people were just created and appearance data is still processing\n'
+              '• Media processing completed but no faces were detected\n'
+              '• Face detection completed but no person objects were created'
+            : 'No individual data could be loaded';
+        
         setState(() {
-          _crossVideoError = 'No individual data could be loaded';
+          _crossVideoError = errorMessage;
           _isLoadingCrossVideoData = false;
         });
         return;
