@@ -249,11 +249,62 @@ class VisionFaceGroupingEngine:
 
         return {"x": avg_x, "y": avg_y}
 
+    def _calculate_aggregate_quality(
+        self, face_records: List[Dict]
+    ) -> float:
+        """
+        Calculate aggregate quality score for person object from constituent faces.
+        
+        Uses weighted average of individual face qualities, weighted by detection confidence.
+        This provides meaningful quality metrics instead of hardcoded defaults.
+        
+        Args:
+            face_records: List of face detection records with quality metrics
+            
+        Returns:
+            Aggregate quality score (0.0 to 1.0)
+        """
+        if not face_records:
+            return 0.0
+        
+        total_weighted_quality = 0.0
+        total_weight = 0.0
+        
+        for face in face_records:
+            # Extract quality components from face record
+            confidence = float(face.get('detection_confidence', face.get('confidence', 0.8)))
+            sharpness = float(face.get('sharpness', 0.7))
+            brightness = float(face.get('brightness', 0.7))
+            
+            # Calculate individual face quality (weighted combination)
+            face_quality = (
+                sharpness * 0.4 +      # 40% weight on sharpness
+                brightness * 0.3 +     # 30% weight on brightness
+                confidence * 0.3       # 30% weight on confidence
+            )
+            
+            # Weight by confidence (more confident detections count more)
+            weight = confidence
+            total_weighted_quality += face_quality * weight
+            total_weight += weight
+        
+        if total_weight == 0:
+            return 0.0
+            
+        aggregate_quality = total_weighted_quality / total_weight
+        return round(min(1.0, max(0.0, aggregate_quality)), 3)
+    
     def _create_person_object(
-        self, track_id: str, track_info: Dict, face_mappings: List[Dict]
+        self, track_id: str, track_info: Dict, face_mappings: List[Dict], face_detections: List[Dict] = None
     ) -> Dict[str, Any]:
         """
-        Create person object from track data and face mappings.
+        Create person object from track data and face mappings with aggregate quality score.
+        
+        Args:
+            track_id: Person track identifier
+            track_info: Track information dictionary
+            face_mappings: List of face-to-person mappings
+            face_detections: Optional list of original face detection records for quality calculation
         """
         # Calculate average position
         avg_position = self._calculate_person_average_position(face_mappings, track_id)
@@ -261,11 +312,22 @@ class VisionFaceGroupingEngine:
         # Get all face IDs for this person
         person_faces = [fm for fm in face_mappings if fm["person_id"] == track_id]
         face_ids = [fm["face_detection_id"] for fm in person_faces]
+        
+        # Calculate aggregate quality score from face records
+        quality_score = 0.0
+        if face_detections:
+            # Get face records for this person
+            person_face_records = [
+                face for face in face_detections 
+                if face["id"] in face_ids
+            ]
+            quality_score = self._calculate_aggregate_quality(person_face_records)
 
         return {
             "person_id": track_id,
             "face_count": track_info["face_count"],
             "average_position": avg_position,
+            "quality_score": quality_score,  # Real calculated quality instead of 0.0
             "tracking_algorithm": "percentage_based_tracking",
             "tolerance_percent": self.tolerance_percent,
             "original_face_ids": face_ids,
@@ -363,10 +425,10 @@ class VisionFaceGroupingEngine:
             # Update frames processed
             self.processing_stats["frames_processed"] += 1
 
-        # Create person objects from final tracks
+        # Create person objects from final tracks with quality calculation
         person_objects = []
         for track_id, track_info in self.active_tracks.items():
-            person_obj = self._create_person_object(track_id, track_info, face_mappings)
+            person_obj = self._create_person_object(track_id, track_info, face_mappings, face_detections)
             person_objects.append(person_obj)
 
         # Create final statistics

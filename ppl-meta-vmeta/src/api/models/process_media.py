@@ -31,7 +31,7 @@ class ProcessingOptions(BaseModel):
     )
     
     min_face_quality: float = Field(
-        default=0.70,
+        default=0.60,
         ge=0.50,
         le=0.95,
         description="Minimum quality score for face detection to be included"

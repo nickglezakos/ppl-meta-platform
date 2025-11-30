@@ -446,17 +446,27 @@ class MVRService:
             try:
                 # Check face quality
                 face_quality = person_obj.get('face_quality', person_obj.get('quality_score', 0.8))
+                logger.warning(f"[QUALITY CHECK] Person {person_obj.get('person_object_uuid')}: quality={face_quality:.2f}, threshold={min_face_quality}")
+                print(f"[MVR DEBUG] Quality check: {face_quality:.2f} >= {min_face_quality}?", flush=True)
+                
                 if face_quality < min_face_quality:
-                    logger.debug(
-                        f"Skipping low-quality person object: {face_quality:.2f} < {min_face_quality}"
+                    logger.warning(
+                        f"[SKIPPED] Low-quality person object: {face_quality:.2f} < {min_face_quality}"
                     )
+                    print(f"[MVR DEBUG] SKIPPED: quality too low", flush=True)
                     continue
+                
+                logger.warning(f"[ML START] Processing person object {person_obj.get('person_object_uuid')} through ML models...")
+                print(f"[MVR DEBUG] Starting ML processing...", flush=True)
                 
                 # Process through ML models (facenet + age/gender)
                 ml_result = await asyncio.to_thread(
                     self.ml_processor.process_person_object,
                     person_obj
                 )
+                
+                logger.warning(f"[ML COMPLETE] ML result received: {ml_result is not None}, success={ml_result.get('success') if ml_result else 'N/A'}")
+                print(f"[MVR DEBUG] ML result: {ml_result}", flush=True)
                 
                 # DEBUG: Log ML result details
                 logger.warning(

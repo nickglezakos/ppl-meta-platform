@@ -3275,6 +3275,9 @@ async def process_media_independently(
                 f"{trigger_data.get('merged_groups', 0)} merged groups"
             )
             
+            print(f"[VMETA DEBUG] Vision response keys: {trigger_data.keys()}", flush=True)
+            print(f"[VMETA DEBUG] Vision response sample: {str(trigger_data)[:500]}", flush=True)
+            
             person_objects_from_vision = trigger_data.get('person_objects', [])
             
             logger.info(
@@ -3282,7 +3285,8 @@ async def process_media_independently(
                 f"for {media_uuid_str}"
             )
             logger.info(f"DEBUG: person_objects_from_vision sample: {person_objects_from_vision[:1] if person_objects_from_vision else 'EMPTY'}")
-            print(f"[VMETA DEBUG] person_objects_from_vision: {len(person_objects_from_vision)}", flush=True)
+            print(f"[VMETA DEBUG] person_objects_from_vision count: {len(person_objects_from_vision)}", flush=True)
+            print(f"[VMETA DEBUG] person_objects_from_vision sample: {person_objects_from_vision[:1] if person_objects_from_vision else 'EMPTY'}", flush=True)
             
             if not person_objects_from_vision:
                 logger.info(f"No faces detected in {media_uuid_str}")
@@ -3334,15 +3338,18 @@ async def process_media_independently(
             
             for po in enriched_person_objects:
                 # Add required fields for MVRService compatibility
-                # NOTE: Face Detection V2 returns quality_score=0.0 (not meaningful)
-                # So we ALWAYS use a default quality score of 0.85 to pass quality filter
+                # Use Vision service's calculated quality score (weighted average of face qualities)
+                # Fall back to 0.85 only if quality_score is missing or 0.0
+                vision_quality = po.get('quality_score', 0.0)
+                effective_quality = vision_quality if vision_quality > 0.0 else 0.85
+                
                 transformed_po = {
                     **po,
                     'person_object_uuid': str(uuid4()),  # Generate temporary UUID
                     'media_uuid': media_uuid_str,
                     'video_uuid': media_uuid_str,  # Alias for compatibility
-                    'face_quality': 0.85,  # Default quality (V2 doesn't provide meaningful scores)
-                    'quality_score': 0.85,  # Also set quality_score for consistency
+                    'face_quality': effective_quality,  # Use Vision's quality or fallback
+                    'quality_score': effective_quality,  # Consistent with face_quality
                     'confidence_score': 0.9,  # Default confidence
                     # best_face_crop already added by enrichment function
                 }

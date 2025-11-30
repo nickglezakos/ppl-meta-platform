@@ -116,11 +116,11 @@ class _PersonObjectsDetailScreenState
       body: _isCrossVideoMode 
           ? _buildCrossVideoView() 
           : _buildSingleVideoView(),
-      floatingActionButton: _isCrossVideoMode && _selectedIndividuals.length >= 2
+      floatingActionButton: _isCrossVideoMode && _selectedIndividuals.isNotEmpty
           ? FloatingActionButton.extended(
-              onPressed: _showMergeConfirmationDialog,
-              icon: const Icon(Icons.merge),
-              label: Text('Merge ${_selectedIndividuals.length} Individuals'),
+              onPressed: _showActionsDialog,
+              icon: const Icon(Icons.admin_panel_settings),
+              label: Text('Actions (${_selectedIndividuals.length})'),
               backgroundColor: Colors.blue,
             )
           : null,
@@ -1714,6 +1714,127 @@ class _PersonObjectsDetailScreenState
       });
       print('❌ Error loading cross-video data: $e');
     }
+  }
+
+  /// Show actions dialog with available operations for selected individuals
+  Future<void> _showActionsDialog() async {
+    final bool canMerge = _selectedIndividuals.length >= 2;
+    
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Actions (${_selectedIndividuals.length} selected)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Add to Group button
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _showAddToGroupDialog();
+              },
+              icon: const Icon(Icons.group_add),
+              label: const Text('Add to Group'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+            
+            const SizedBox(height: 12),
+            
+            // Merge Individuals button (only if 2+ selected)
+            if (canMerge)
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  _showMergeConfirmationDialog();
+                },
+                icon: const Icon(Icons.merge),
+                label: Text('Merge ${_selectedIndividuals.length} Individuals'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            
+            if (!canMerge)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Select 2 or more individuals to merge',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Show dialog for adding selected individuals to a group
+  Future<void> _showAddToGroupDialog() async {
+    // TODO: Implement group management functionality
+    // For now, show a placeholder dialog
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add to Group'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Add ${_selectedIndividuals.length} individual(s) to a group',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Group management feature coming soon!',
+              style: TextStyle(
+                color: Colors.orange,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'This will allow you to:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text('• Create named groups of individuals'),
+            const Text('• Add/remove individuals from groups'),
+            const Text('• Search and filter by group'),
+            const Text('• Generate group-level analytics'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    
+    // Clear selection after action
+    setState(() {
+      _selectedIndividuals.clear();
+    });
   }
 
   /// Show confirmation dialog for merging individuals

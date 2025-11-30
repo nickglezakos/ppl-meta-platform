@@ -525,6 +525,8 @@ async def trigger_person_objects_workflow_for_media(
         raise HTTPException(status_code=400, detail="media_id is required")
 
     logger.info(f"🎯 AUTO-TRIGGER: Starting PPL Thread workflow for media {media_id}")
+    print(f"[VISION DEBUG] AUTO-TRIGGER called with media_id: {media_id}", flush=True)
+    print(f"[VISION DEBUG] Full request: {request}", flush=True)
 
     try:
         # Initialize workflow controller
@@ -578,6 +580,10 @@ async def trigger_person_objects_workflow_for_media(
         logger.info(
             f"🎯 AUTO-TRIGGER: ✅ PPL Thread workflow completed for media {media_id}: {result.get('merged_groups', 0)} persons found"
         )
+        
+        print(f"[VISION DEBUG] Workflow result keys: {result.keys()}", flush=True)
+        print(f"[VISION DEBUG] person_objects count: {len(result.get('person_objects', []))}", flush=True)
+        print(f"[VISION DEBUG] person_objects sample: {result.get('person_objects', [])[:1]}", flush=True)
 
         return PersonObjectsWorkflowResponse(**result)
 

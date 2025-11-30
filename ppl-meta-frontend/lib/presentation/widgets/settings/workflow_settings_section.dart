@@ -7,6 +7,7 @@ import '../../../providers/workflow_providers.dart';
 /// Settings model for workflow configuration
 class WorkflowSettings {
   final double confidenceThreshold;
+  final double mvrQualityThreshold;
   final List<String> detectionMethods;
   final bool enableAutoProcessing;
   final bool enablePerformanceOptimization;
@@ -15,6 +16,7 @@ class WorkflowSettings {
   
   const WorkflowSettings({
     this.confidenceThreshold = 0.7,
+    this.mvrQualityThreshold = 0.60,
     this.detectionMethods = const ['opencv', 'dlib'],
     this.enableAutoProcessing = false,
     this.enablePerformanceOptimization = true,
@@ -24,6 +26,7 @@ class WorkflowSettings {
   
   WorkflowSettings copyWith({
     double? confidenceThreshold,
+    double? mvrQualityThreshold,
     List<String>? detectionMethods,
     bool? enableAutoProcessing,
     bool? enablePerformanceOptimization,
@@ -32,6 +35,7 @@ class WorkflowSettings {
   }) {
     return WorkflowSettings(
       confidenceThreshold: confidenceThreshold ?? this.confidenceThreshold,
+      mvrQualityThreshold: mvrQualityThreshold ?? this.mvrQualityThreshold,
       detectionMethods: detectionMethods ?? this.detectionMethods,
       enableAutoProcessing: enableAutoProcessing ?? this.enableAutoProcessing,
       enablePerformanceOptimization: enablePerformanceOptimization ?? this.enablePerformanceOptimization,
@@ -51,6 +55,10 @@ class WorkflowSettingsNotifier extends StateNotifier<WorkflowSettings> {
   
   void updateConfidenceThreshold(double threshold) {
     state = state.copyWith(confidenceThreshold: threshold);
+  }
+  
+  void updateMvrQualityThreshold(double threshold) {
+    state = state.copyWith(mvrQualityThreshold: threshold);
   }
   
   void updateDetectionMethods(List<String> methods) {
@@ -146,6 +154,13 @@ class _WorkflowSettingsSectionState extends ConsumerState<WorkflowSettingsSectio
                   
                   const SizedBox(height: 24),
                   
+                  // MVR People Settings
+                  _buildSectionHeader('MVR People Creation'),
+                  const SizedBox(height: 12),
+                  _buildMvrQualitySlider(settings),
+                  
+                  const SizedBox(height: 24),
+                  
                   // Performance Settings
                   _buildSectionHeader('Performance'),
                   const SizedBox(height: 12),
@@ -238,6 +253,72 @@ class _WorkflowSettingsSectionState extends ConsumerState<WorkflowSettingsSectio
           ),
           Text(
             'Higher values = more accurate but fewer detections',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildMvrQualitySlider(WorkflowSettings settings) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Minimum Face Quality',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${(settings.mvrQualityThreshold * 100).round()}%',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: AppColors.primary,
+              inactiveTrackColor: AppColors.divider,
+              thumbColor: AppColors.primary,
+              overlayColor: AppColors.primary.withOpacity(0.2),
+            ),
+            child: Slider(
+              value: settings.mvrQualityThreshold,
+              min: 0.5,
+              max: 0.95,
+              divisions: 9,
+              onChanged: (value) {
+                ref.read(workflowSettingsProvider.notifier)
+                    .updateMvrQualityThreshold(value);
+              },
+            ),
+          ),
+          Text(
+            'Minimum quality threshold for creating MVR people from detected faces',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textSecondary,
             ),
