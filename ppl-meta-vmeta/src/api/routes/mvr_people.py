@@ -1856,7 +1856,7 @@ async def search_mvr_people_by_videos(
                 
                 # Build appearance objects
                 appearances = [
-                    IndividualAppearance(
+                    MVRIndividualAppearance(
                         video_uuid=str(row['video_uuid']),
                         person_object_uuid=str(row['person_object_uuid']),
                         start_timestamp=row['start_timestamp'],
@@ -2056,7 +2056,7 @@ async def search_mvr_people_by_collection(
                 
                 # Build appearance objects
                 appearances = [
-                    IndividualAppearance(
+                    MVRIndividualAppearance(
                         video_uuid=str(row['video_uuid']),
                         person_object_uuid=str(row['person_object_uuid']),
                         start_timestamp=row['start_timestamp'],
@@ -3421,15 +3421,16 @@ async def process_media_independently(
                     demographics = Demographics(**mvr_data['demographics'])
                 
                 # Build appearances (placeholder - would need actual data)
+                # Convert to dict format for Pydantic model validation
                 appearances = [
-                    IndividualAppearance(
-                        individual_uuid=ind_uuid,
-                        video_uuid=media_uuid_str,
-                        person_object_uuid=ind_uuid,  # Simplified
-                        start_timestamp=media_metadata.get('timestamp', '2025-11-29T00:00:00'),
-                        end_timestamp=media_metadata.get('timestamp', '2025-11-29T00:00:00'),
-                        confidence=mvr_data.get('confidence_score', 0.9)
-                    )
+                    {
+                        'individual_uuid': ind_uuid,
+                        'video_uuid': media_uuid_str,
+                        'person_object_uuid': ind_uuid,  # Simplified
+                        'start_timestamp': media_metadata.get('timestamp', '2025-11-29T00:00:00'),
+                        'end_timestamp': media_metadata.get('timestamp', '2025-11-29T00:00:00'),
+                        'confidence': mvr_data.get('confidence_score', 0.9)
+                    }
                     for ind_uuid in mvr_data.get('individual_uuids', [])
                 ]
                 

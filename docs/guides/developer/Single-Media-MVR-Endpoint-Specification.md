@@ -1655,7 +1655,7 @@ curl -X POST http://localhost:8080/api/v1/mvr-people/process-media \
 ## Related Documentation
 
 - **Existing VMeta Endpoints**: [vmeta-api-endpoints.md](../../../ppl-meta-vmeta/docs/vmeta-api-endpoints.md)
-- **Cross-Video Tracking**: [Cross-Video Individual Analysis](./Cross-Video-Individual-Analysis.md)
+- **Cross-Video Tracking**: [Cross-Video Individual Analysis](Cross-Video-Individual-Analysis-Screen.md)
 - **Route Sampling**: [Route Sample Rendering](./route-sample-rendering.md)
 - **MVR People Architecture**: [MVR People Search Implementation](../../vision-vmeta/MVR_PEOPLE_SEARCH_IMPLEMENTATION.md)
 
