@@ -44,9 +44,10 @@ class PersonObjectsDetailScreen extends ConsumerStatefulWidget {
 
 class _PersonObjectsDetailScreenState 
     extends ConsumerState<PersonObjectsDetailScreen> 
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   
   late TabController _tabController;
+  late TabController _visionTabController; // Nested tab controller for Vision tab
   final Set<String> _debuggedFaces = {}; // Cache for debug output
   String _routesDisplayMode = 'scatter'; // 'path' or 'scatter' - default to scatter
   
@@ -77,6 +78,7 @@ class _PersonObjectsDetailScreenState
     _isCrossVideoMode = widget.crossVideoContext != null;
     
     _tabController = TabController(length: 4, vsync: this);
+    _visionTabController = TabController(length: 3, vsync: this); // Vision tab has 3 sub-tabs
     
     // Load cross-video data if in that mode
     if (_isCrossVideoMode) {
@@ -87,6 +89,7 @@ class _PersonObjectsDetailScreenState
   @override
   void dispose() {
     _tabController.dispose();
+    _visionTabController.dispose();
     super.dispose();
   }
 
@@ -5086,47 +5089,334 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return const Center(child: Text('No data available'));
     }
 
-    // Phase 6 doesn't include face images - would need to fetch from Orchestrator
-    // using person_object_uuids from each appearance
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.face,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Face images not yet available',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[700],
+    // Vision tab now contains three sub-tabs: Insights, Attendance, Triggers
+    return Column(
+      children: [
+        // Sub-tab bar for Vision tab
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.grey.shade300,
+                width: 1,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Face data can be retrieved from Orchestrator\nusing person object UUIDs from appearances',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
+          ),
+          child: TabBar(
+            controller: _visionTabController,
+            tabs: const [
+              Tab(
+                icon: Icon(Icons.lightbulb_outline),
+                text: 'Insights',
               ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Available person object UUIDs: ${_aggregatedAnalyses!.fold<int>(0, (sum, a) => sum + a.personObjectUuids.length)}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[500],
+              Tab(
+                icon: Icon(Icons.event_available),
+                text: 'Attendance',
               ),
-            ),
-          ],
+              Tab(
+                icon: Icon(Icons.notifications_active),
+                text: 'Triggers',
+              ),
+            ],
+          ),
         ),
+        Expanded(
+          child: TabBarView(
+            controller: _visionTabController,
+            children: [
+              _buildInsightsTab(),
+              _buildAttendanceTab(),
+              _buildTriggersTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build Insights tab - AI-powered behavioral insights
+  Widget _buildInsightsTab() {
+    // Use the same statistics calculations as Statistics tab
+    return _buildStatisticsTabCrossVideo();
+  }
+
+  /// Build Attendance tab - Time-based presence tracking
+  Widget _buildAttendanceTab() {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return const Center(child: Text('No attendance data available'));
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(Icons.event_available, color: Colors.blue),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Attendance Timeline',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        'Individual appearances over time',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Attendance graph
+          Center(
+            child: Container(
+              height: math.max(400, _aggregatedAnalyses!.length * 60.0),
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black12,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CustomPaint(
+                  painter: AttendanceGraphPainter(_aggregatedAnalyses!),
+                  size: Size.infinite,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build Triggers tab - Event-based notifications and alerts
+  Widget _buildTriggersTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              const Icon(Icons.notifications_active, color: Colors.orange),
+              const SizedBox(width: 8),
+              Text(
+                'Triggers',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Triggers table - responsive
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWideScreen = constraints.maxWidth > 900;
+              
+              // Sample trigger data
+              final triggers = [
+                {'persons': '5+', 'age': '25-45', 'gender': '3M / 2W', 'timeSpan': 'Mon-Fri 09:00-17:00', 'source': 'Camera 01, 03', 'active': true},
+                {'persons': '10+', 'age': '18-35', 'gender': 'Any', 'timeSpan': 'Sat-Sun 10:00-22:00', 'source': 'All Cameras', 'active': true},
+                {'persons': '3+', 'age': '45-65', 'gender': '2M / 1W', 'timeSpan': 'Daily 06:00-12:00', 'source': 'Camera 02, 05', 'active': false},
+                {'persons': '2+', 'age': '35-55', 'gender': '1M / 1W', 'timeSpan': 'Mon-Fri 18:00-23:00', 'source': 'Camera 04', 'active': true},
+                {'persons': '8+', 'age': '20-40', 'gender': '5M / 3W', 'timeSpan': 'Daily 12:00-20:00', 'source': 'Camera 01, 02, 03', 'active': false},
+              ];
+              
+              if (isWideScreen) {
+                // Desktop view - DataTable
+                return Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade900,
+                    border: Border.all(color: Colors.grey.shade700),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minWidth: constraints.maxWidth - 32),
+                      child: DataTable(
+                        columnSpacing: 16,
+                        horizontalMargin: 16,
+                        headingRowColor: MaterialStateProperty.all(Colors.grey.shade800),
+                        dataRowColor: MaterialStateProperty.all(Colors.grey.shade900),
+                        columns: const [
+                        DataColumn(label: Text('Number of Persons', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                        DataColumn(label: Text('Age Range', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                        DataColumn(label: Text('Men / Women', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                        DataColumn(label: Text('Time Span', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                        DataColumn(label: Text('Media Source', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                        DataColumn(label: Text('Active / Inactive', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                        DataColumn(label: Text('Edit', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                        DataColumn(label: Text('Delete', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+                      ],
+                      rows: triggers.map((trigger) {
+                        return DataRow(cells: [
+                          DataCell(Text(trigger['persons'] as String, style: const TextStyle(color: Colors.white70))),
+                          DataCell(Text(trigger['age'] as String, style: const TextStyle(color: Colors.white70))),
+                          DataCell(Text(trigger['gender'] as String, style: const TextStyle(color: Colors.white70))),
+                          DataCell(Text(trigger['timeSpan'] as String, style: const TextStyle(color: Colors.white70))),
+                          DataCell(Text(trigger['source'] as String, style: const TextStyle(color: Colors.white70))),
+                          DataCell(
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: trigger['active'] as bool
+                                    ? Colors.green.shade900
+                                    : Colors.red.shade900,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                trigger['active'] as bool ? 'Active' : 'Inactive',
+                                style: TextStyle(
+                                  color: trigger['active'] as bool
+                                      ? Colors.green.shade300
+                                      : Colors.red.shade300,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                          DataCell(
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+                              onPressed: () {},
+                            ),
+                          ),
+                          DataCell(
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                              onPressed: () {},
+                            ),
+                          ),
+                        ]);
+                      }).toList(),
+                      ),
+                    ),
+                  ),
+                );
+              } else {
+                // Mobile/Tablet view - Cards
+                return Column(
+                  children: triggers.map((trigger) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade900,
+                        border: Border.all(color: Colors.grey.shade700),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Status badge
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: trigger['active'] as bool
+                                        ? Colors.green.shade900
+                                        : Colors.red.shade900,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    trigger['active'] as bool ? 'Active' : 'Inactive',
+                                    style: TextStyle(
+                                      color: trigger['active'] as bool
+                                          ? Colors.green.shade300
+                                          : Colors.red.shade300,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, color: Colors.blue, size: 22),
+                                      onPressed: () {},
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red, size: 22),
+                                      onPressed: () {},
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            const Divider(color: Colors.white24, height: 1),
+                            const SizedBox(height: 12),
+                            // Trigger details
+                            _buildTriggerDetailRow('Number of Persons', trigger['persons'] as String),
+                            _buildTriggerDetailRow('Age Range', trigger['age'] as String),
+                            _buildTriggerDetailRow('Men / Women', trigger['gender'] as String),
+                            _buildTriggerDetailRow('Time Span', trigger['timeSpan'] as String),
+                            _buildTriggerDetailRow('Media Source', trigger['source'] as String, isLast: true),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTriggerDetailRow(String label, String value, {bool isLast = false}) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -5194,4 +5484,357 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       ),
     );
   }
+}
+/// Custom painter for attendance timeline graph
+/// Shows individuals on Y-axis and time on X-axis with appearance points
+class AttendanceGraphPainter extends CustomPainter {
+  final List<AggregatedIndividualAnalysis> analyses;
+
+  AttendanceGraphPainter(this.analyses);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (analyses.isEmpty) return;
+
+    // Sort analyses by number of appearances (descending)
+    final sortedAnalyses = List<AggregatedIndividualAnalysis>.from(analyses)
+      ..sort((a, b) => b.appearances.length.compareTo(a.appearances.length));
+
+    const leftMargin = 150.0; // Space for individual UUIDs
+    const rightMargin = 50.0; // More space for last time label
+    const topMargin = 40.0;
+    const bottomMargin = 80.0; // More space for rotated time labels
+    
+    final graphWidth = size.width - leftMargin - rightMargin;
+    final graphHeight = size.height - topMargin - bottomMargin;
+    final rowHeight = graphHeight / sortedAnalyses.length;
+
+    // Find min/max time across all appearances
+    DateTime? minTime;
+    DateTime? maxTime;
+    
+    for (final analysis in sortedAnalyses) {
+      for (final appearance in analysis.appearances) {
+        final startTime = appearance.startTimestamp is String 
+            ? DateTime.parse(appearance.startTimestamp as String)
+            : appearance.startTimestamp as DateTime;
+        final endTime = appearance.endTimestamp is String
+            ? DateTime.parse(appearance.endTimestamp as String)
+            : appearance.endTimestamp as DateTime;
+        
+        if (minTime == null || startTime.isBefore(minTime)) minTime = startTime;
+        if (maxTime == null || endTime.isAfter(maxTime)) maxTime = endTime;
+      }
+    }
+
+    if (minTime == null || maxTime == null) return;
+
+    final timeDuration = maxTime.difference(minTime);
+    
+    // Helper to convert timestamp to X coordinate
+    double timeToX(DateTime time) {
+      final elapsed = time.difference(minTime!);
+      final ratio = elapsed.inMilliseconds / timeDuration.inMilliseconds;
+      return leftMargin + (ratio * graphWidth);
+    }
+
+    // No background paint - use container's background
+    // Draw grid lines (horizontal) - lighter for dark theme
+    final gridPaint = Paint()
+      ..color = Colors.grey.shade700
+      ..strokeWidth = 1.0;
+    
+    for (int i = 0; i <= sortedAnalyses.length; i++) {
+      final y = topMargin + (i * rowHeight);
+      canvas.drawLine(
+        Offset(leftMargin, y),
+        Offset(leftMargin + graphWidth, y),
+        gridPaint,
+      );
+    }
+
+    // Draw vertical time grid lines
+    final timeInterval = _calculateTimeInterval(timeDuration);
+    DateTime currentTime = minTime;
+    
+    while (currentTime.isBefore(maxTime) || currentTime.isAtSameMomentAs(maxTime)) {
+      final x = timeToX(currentTime);
+      canvas.drawLine(
+        Offset(x, topMargin),
+        Offset(x, topMargin + graphHeight),
+        gridPaint,
+      );
+      
+      // Draw time label with better size and alignment
+      final timeLabel = _formatTimeLabel(currentTime);
+      final timePainter = TextPainter(
+        text: TextSpan(
+          text: timeLabel,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      timePainter.layout();
+      
+      // Rotate and draw time label with better positioning
+      canvas.save();
+      canvas.translate(x - 5, topMargin + graphHeight + 15);
+      canvas.rotate(-3.14159 / 4);
+      timePainter.paint(canvas, Offset.zero);
+      canvas.restore();
+      
+      currentTime = currentTime.add(timeInterval);
+    }
+    
+    // Always draw the last time label
+    if (!currentTime.subtract(timeInterval).isAtSameMomentAs(maxTime)) {
+      final x = timeToX(maxTime);
+      canvas.drawLine(
+        Offset(x, topMargin),
+        Offset(x, topMargin + graphHeight),
+        gridPaint,
+      );
+      
+      final timeLabel = _formatTimeLabel(maxTime);
+      final timePainter = TextPainter(
+        text: TextSpan(
+          text: timeLabel,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      timePainter.layout();
+      
+      canvas.save();
+      canvas.translate(x - 5, topMargin + graphHeight + 15);
+      canvas.rotate(-3.14159 / 4);
+      timePainter.paint(canvas, Offset.zero);
+      canvas.restore();
+    }
+
+    // Draw axis labels
+    final titlePainter = TextPainter(
+      text: const TextSpan(
+        text: 'Time',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    titlePainter.layout();
+    titlePainter.paint(
+      canvas,
+      Offset(
+        leftMargin + (graphWidth - titlePainter.width) / 2,
+        size.height - 20,
+      ),
+    );
+
+    final yLabelPainter = TextPainter(
+      text: const TextSpan(
+        text: 'Individuals',
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    yLabelPainter.layout();
+    
+    canvas.save();
+    canvas.translate(10, topMargin + graphHeight / 2 + yLabelPainter.width / 2);
+    canvas.rotate(-3.14159 / 2);
+    yLabelPainter.paint(canvas, Offset.zero);
+    canvas.restore();
+
+    // Draw individual rows with appearances
+    for (int i = 0; i < sortedAnalyses.length; i++) {
+      final analysis = sortedAnalyses[i];
+      final y = topMargin + (i * rowHeight) + (rowHeight / 2);
+      
+      // Get consistent color for this individual
+      final individualColor = _getIndividualColor(i);
+      
+      // Find first and last appearance times for this individual
+      DateTime? firstTime;
+      DateTime? lastTime;
+      for (final appearance in analysis.appearances) {
+        final startTime = appearance.startTimestamp is String
+            ? DateTime.parse(appearance.startTimestamp as String)
+            : appearance.startTimestamp as DateTime;
+        final endTime = appearance.endTimestamp is String
+            ? DateTime.parse(appearance.endTimestamp as String)
+            : appearance.endTimestamp as DateTime;
+        
+        if (firstTime == null || startTime.isBefore(firstTime)) firstTime = startTime;
+        if (lastTime == null || endTime.isAfter(lastTime)) lastTime = endTime;
+      }
+      
+      // Draw individual UUID label
+      final uuid = analysis.individualUuid.substring(0, 8) + '...';
+      final labelPainter = TextPainter(
+        text: TextSpan(
+          text: uuid,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+            fontFamily: 'monospace',
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      labelPainter.layout();
+      labelPainter.paint(
+        canvas,
+        Offset(leftMargin - labelPainter.width - 10, y - labelPainter.height - 2),
+      );
+      
+      // Draw first and last time underneath the UUID
+      if (firstTime != null && lastTime != null) {
+        final timeRange = '${_formatCompactTime(firstTime)} → ${_formatCompactTime(lastTime)}';
+        final timePainter = TextPainter(
+          text: TextSpan(
+            text: timeRange,
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 9,
+              fontFamily: 'monospace',
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        );
+        timePainter.layout();
+        timePainter.paint(
+          canvas,
+          Offset(leftMargin - timePainter.width - 10, y + 2),
+        );
+      }
+
+      // Draw appearance points - all with same color per individual
+      for (int j = 0; j < analysis.appearances.length; j++) {
+        final appearance = analysis.appearances[j];
+        final startTime = appearance.startTimestamp is String
+            ? DateTime.parse(appearance.startTimestamp as String)
+            : appearance.startTimestamp as DateTime;
+        final endTime = appearance.endTimestamp is String
+            ? DateTime.parse(appearance.endTimestamp as String)
+            : appearance.endTimestamp as DateTime;
+        
+        final startX = timeToX(startTime);
+        final endX = timeToX(endTime);
+        
+        // Use individual's color for all appearances
+        // Draw appearance as a line segment
+        final linePaint = Paint()
+          ..color = individualColor.withOpacity(0.7)
+          ..strokeWidth = 4.0
+          ..strokeCap = StrokeCap.round;
+        
+        canvas.drawLine(
+          Offset(startX, y),
+          Offset(endX, y),
+          linePaint,
+        );
+        
+        // Draw start point with brighter version
+        final pointPaint = Paint()..color = individualColor;
+        canvas.drawCircle(Offset(startX, y), 5.0, pointPaint);
+        
+        // Draw end point with brighter version
+        canvas.drawCircle(Offset(endX, y), 5.0, pointPaint);
+        
+        // Add white border for visibility
+        final borderPaint = Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        canvas.drawCircle(Offset(startX, y), 5.0, borderPaint);
+        canvas.drawCircle(Offset(endX, y), 5.0, borderPaint);
+      }
+    }
+
+    // Draw axes
+    final axisPaint = Paint()
+      ..color = Colors.white70
+      ..strokeWidth = 2.0;
+    
+    // Y-axis
+    canvas.drawLine(
+      Offset(leftMargin, topMargin),
+      Offset(leftMargin, topMargin + graphHeight),
+      axisPaint,
+    );
+    
+    // X-axis
+    canvas.drawLine(
+      Offset(leftMargin, topMargin + graphHeight),
+      Offset(leftMargin + graphWidth, topMargin + graphHeight),
+      axisPaint,
+    );
+  }
+
+  Duration _calculateTimeInterval(Duration totalDuration) {
+    final hours = totalDuration.inHours;
+    
+    if (hours <= 24) {
+      return const Duration(hours: 2);
+    } else if (hours <= 72) {
+      return const Duration(hours: 6);
+    } else if (hours <= 168) {
+      return const Duration(hours: 12);
+    } else {
+      return const Duration(days: 1);
+    }
+  }
+
+  String _formatTimeLabel(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    final day = time.day.toString().padLeft(2, '0');
+    final month = time.month.toString().padLeft(2, '0');
+    
+    return '$day/$month $hour:$minute';
+  }
+
+  String _formatCompactTime(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    final day = time.day.toString().padLeft(2, '0');
+    final month = time.month.toString().padLeft(2, '0');
+    
+    return '$day/$month $hour:$minute';
+  }
+
+  Color _getIndividualColor(int index) {
+    // Use same color palette as routes for consistency
+    final colors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.indigo,
+      Colors.brown,
+      Colors.cyan,
+    ];
+    return colors[index % colors.length];
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
