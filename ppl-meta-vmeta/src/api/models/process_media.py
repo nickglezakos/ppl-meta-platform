@@ -24,15 +24,15 @@ class ProcessingOptions(BaseModel):
     """Processing configuration options."""
     
     similarity_threshold: float = Field(
-        default=0.85,
-        ge=0.70,
+        default=0.7,
+        ge=0.50,
         le=0.95,
         description="Minimum cosine similarity for matching faces within the same media"
     )
     
     min_face_quality: float = Field(
-        default=0.60,
-        ge=0.50,
+        default=0.20,
+        ge=0.10,
         le=0.95,
         description="Minimum quality score for face detection to be included"
     )
@@ -115,7 +115,7 @@ class RoutePoint(BaseModel):
     frame_number: int = Field(..., description="Frame index (0 for photos)")
     velocity_x: float = Field(default=0.0, description="Horizontal velocity (px/s)")
     velocity_y: float = Field(default=0.0, description="Vertical velocity (px/s)")
-    confidence: float = Field(..., ge=0, le=1, description="Detection confidence")
+    confidence: Optional[float] = Field(default=None, ge=0, le=1, description="Detection confidence (optional)")
 
 
 class RouteData(BaseModel):

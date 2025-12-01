@@ -681,7 +681,7 @@ async def match_individual(
     
     **Parameters:**
     - individual_uuid: UUID of the Individual to match
-    - threshold: Similarity threshold (default: 0.85)
+    - threshold: Similarity threshold (default: 0.7)
     - auto_merge: Automatically merge matches above threshold (default: false)
     - max_results: Maximum results to return (default: 10)
     
@@ -692,7 +692,7 @@ async def match_individual(
     logger.info(f"Matching Individual {individual_uuid} (user: {current_user.get('email')})")
     
     # Parse request
-    threshold = 0.85
+    threshold = 0.7
     auto_merge = False
     max_results = 10
     
@@ -1010,7 +1010,7 @@ async def get_matching_config(
         config = await mvr_repository.get_matching_config()
         
         return MatchingConfigResponse(
-            default_matching_threshold=config.get('similarity_threshold', 0.85),
+            default_matching_threshold=config.get('similarity_threshold', 0.7),
             auto_merge_enabled=config.get('auto_merge_enabled', True),
             min_quality_threshold=config.get('min_quality_threshold', 0.6),
             age_range_tolerance=config.get('age_range_tolerance', 10),
@@ -1372,7 +1372,7 @@ async def batch_match_and_merge(
     
     **Parameters:**
     - individual_uuids: List of individual UUIDs to process
-    - threshold: Similarity threshold (default: 0.85)
+    - threshold: Similarity threshold (default: 0.7)
     - triggered_by: Source identifier (default: "batch_auto_match")
     - session_uuid: Optional tracking session UUID for audit
     
@@ -1386,7 +1386,7 @@ async def batch_match_and_merge(
     POST /api/v1/mvr-people/batch-match-and-merge
     {
       "individual_uuids": ["uuid-1", "uuid-2", ..., "uuid-15"],
-      "threshold": 0.85,
+      "threshold": 0.7,
       "triggered_by": "cross_video_tracking_session",
       "session_uuid": "session-abc-123"
     }
@@ -3166,6 +3166,9 @@ async def process_media_independently(
     media_client = MediaClient(auth_token=auth_token)
     orchestrator_client = get_orchestrator_client()
     
+    # Log the processing options being used
+    logger.info(f"[REQUEST DEBUG] Processing options: similarity_threshold={request.processing_options.similarity_threshold}, min_face_quality={request.processing_options.min_face_quality}")
+    
     results = []
     
     # Import httpx for Vision service calls
@@ -3211,7 +3214,7 @@ async def process_media_independently(
                     params={"frame_interval": 10}  # Process every 10th frame for speed
                 )
                 
-                print(f"[VMETA DEBUG] Enhanced Logic V2 response: {fd_response.status_code}", flush=True)
+                logger.info(f"[VMETA DEBUG] Enhanced Logic V2 response: {fd_response.status_code}")
                 
                 if fd_response.status_code not in [200, 201]:
                     error_detail = fd_response.text
@@ -3219,7 +3222,7 @@ async def process_media_independently(
                         f"Enhanced Logic V2 failed for {media_uuid_str}: "
                         f"{fd_response.status_code} - {error_detail}"
                     )
-                    print(f"[VMETA DEBUG] Enhanced Logic V2 FAILED", flush=True)
+                    logger.info(f"[VMETA DEBUG] Enhanced Logic V2 FAILED")
                     results.append(MediaResult(
                         media_uuid=media_uuid_str,
                         media_type=media_type,
@@ -3233,60 +3236,92 @@ async def process_media_independently(
                 
                 fd_data = fd_response.json()
                 faces_count = fd_data.get('total_faces', 0)
-                logger.info(f"Enhanced Logic V2 completed: {faces_count} faces detected")
-                print(f"[VMETA DEBUG] Faces detected: {faces_count}", flush=True)
+                logger.info(f"[VMETA DEBUG] Enhanced Logic V2 completed: {faces_count} faces detected")
                 
-                # Step 2b: Now trigger Vision's person objects workflow
-                logger.info(f"Triggering Vision person objects workflow for {media_uuid_str}...")
+                # Step 2b: Get person groups directly from Orchestrator's PPL Thread endpoint
+                # This preserves Orchestrator's IoU-based grouping instead of Vision re-clustering
+                logger.info(f"Fetching person groups from Orchestrator PPL Thread for {media_uuid_str}...")
                 
-                trigger_response = await client.post(
-                    f"{vision_url}/api/v1/person-objects/workflow/trigger",
-                    headers={'Authorization': f'Bearer {auth_token}'},
-                    json={"media_id": str(media_uuid)}
+                ppl_thread_response = await client.get(
+                    f"{orchestrator_url}/person-objects/{media_uuid_str}",
+                    headers={'Authorization': f'Bearer {auth_token}'}
                 )
                 
-                print(f"[VMETA DEBUG] Vision workflow response: {trigger_response.status_code}", flush=True)
+                logger.info(f"[VMETA DEBUG] PPL Thread response: {ppl_thread_response.status_code}")
                 
-                if trigger_response.status_code not in [200, 201]:
-                    error_detail = trigger_response.text
+                if ppl_thread_response.status_code not in [200, 201]:
+                    error_detail = ppl_thread_response.text
                     logger.error(
-                        f"Vision workflow failed for {media_uuid_str}: "
-                        f"{trigger_response.status_code} - {error_detail}"
+                        f"PPL Thread failed for {media_uuid_str}: "
+                        f"{ppl_thread_response.status_code} - {error_detail}"
                     )
-                    print(f"[VMETA DEBUG] Vision workflow FAILED", flush=True)
+                    logger.info(f"[VMETA DEBUG] PPL Thread FAILED")
                     results.append(MediaResult(
                         media_uuid=media_uuid_str,
                         media_type=media_type,
                         status="failed",
                         error=MediaProcessingError(
-                            code="VISION_WORKFLOW_FAILED",
-                            message=f"Vision workflow failed: {error_detail}"
+                            code="PPL_THREAD_FAILED",
+                            message=f"PPL Thread failed: {error_detail}"
                         )
                     ))
                     continue
                 
-                trigger_data = trigger_response.json()
+                ppl_data = ppl_thread_response.json()
             
-            # Step 3: Extract person objects from Vision service response
-            # NOW accessible outside httpx block since trigger_data was properly scoped
+            # Step 3: Extract person groups from Orchestrator's PPL Thread response
+            # These groups already use IoU-based face grouping (no re-clustering needed)
             logger.info(
-                f"Face detection completed for {media_uuid_str}: "
-                f"{trigger_data.get('original_groups', 0)} original groups, "
-                f"{trigger_data.get('merged_groups', 0)} merged groups"
+                f"PPL Thread completed for {media_uuid_str}: "
+                f"{ppl_data.get('total_persons', 0)} person groups created"
             )
             
-            print(f"[VMETA DEBUG] Vision response keys: {trigger_data.keys()}", flush=True)
-            print(f"[VMETA DEBUG] Vision response sample: {str(trigger_data)[:500]}", flush=True)
+            logger.info(f"[VMETA DEBUG] PPL Thread response keys: {ppl_data.keys()}")
+            logger.info(f"[VMETA DEBUG] PPL Thread total_persons: {ppl_data.get('total_persons', 0)}")
+            logger.info(f"[VMETA DEBUG] PPL Thread full response: {ppl_data}")
             
-            person_objects_from_vision = trigger_data.get('person_objects', [])
+            person_groups_from_orchestrator = ppl_data.get('person_groups', [])
+            logger.info(f"[VMETA DEBUG] person_groups_from_orchestrator count: {len(person_groups_from_orchestrator)}")
+            logger.info(f"[VMETA DEBUG] person_groups_from_orchestrator sample: {person_groups_from_orchestrator[:1] if person_groups_from_orchestrator else 'EMPTY'}")
+            
+            # Transform Orchestrator's person_groups to person_objects format
+            # Orchestrator groups faces using IoU, we preserve this grouping
+            person_objects_from_vision = []
+            for pg in person_groups_from_orchestrator:
+                # Extract best face from representative_faces (already sorted by quality)
+                representative_faces = pg.get('representative_faces', [])
+                best_face = representative_faces[0] if representative_faces else {}
+                best_face_data = best_face.get('face_data', {})
+                
+                # Extract bbox and frame from best face
+                bbox = best_face_data.get('bbox', [])
+                frame_number = best_face_data.get('frame_number', 0)
+                
+                person_obj = {
+                    'person_id': pg.get('person_id'),
+                    'person_uuid': pg.get('person_uuid'),
+                    'face_count': pg.get('face_count', 0),
+                    'representative_faces': representative_faces,
+                    # Use quality_score directly from person_group (Orchestrator provides it at top level)
+                    # Fallback to quality_metrics.average_quality if not present, then to 0.85
+                    'quality_score': pg.get('quality_score', pg.get('quality_metrics', {}).get('average_quality', 0.85)),
+                    'confidence_score': pg.get('average_confidence', 0.9),
+                    'spatial_bounds': pg.get('spatial_bounds', {}),
+                    'temporal_span': pg.get('temporal_span', {}),
+                    'movement_tracking': pg.get('movement_tracking', {}),
+                    # Add fields needed for enrichment
+                    'best_face_frame': frame_number,
+                    'best_face_bbox': bbox if len(bbox) == 4 else None,
+                }
+                person_objects_from_vision.append(person_obj)
             
             logger.info(
-                f"Extracted {len(person_objects_from_vision)} person objects from Vision "
-                f"for {media_uuid_str}"
+                f"Extracted {len(person_objects_from_vision)} person objects from Orchestrator "
+                f"for {media_uuid_str} (preserved IoU-based grouping)"
             )
-            logger.info(f"DEBUG: person_objects_from_vision sample: {person_objects_from_vision[:1] if person_objects_from_vision else 'EMPTY'}")
-            print(f"[VMETA DEBUG] person_objects_from_vision count: {len(person_objects_from_vision)}", flush=True)
-            print(f"[VMETA DEBUG] person_objects_from_vision sample: {person_objects_from_vision[:1] if person_objects_from_vision else 'EMPTY'}", flush=True)
+            logger.info(f"DEBUG: person_objects sample: {person_objects_from_vision[:1] if person_objects_from_vision else 'EMPTY'}")
+            logger.info(f"[VMETA DEBUG] person_objects count: {len(person_objects_from_vision)}")
+            logger.info(f"[VMETA DEBUG] person_objects sample: {person_objects_from_vision[:1] if person_objects_from_vision else 'EMPTY'}")
             
             if not person_objects_from_vision:
                 logger.info(f"No faces detected in {media_uuid_str}")
@@ -3328,7 +3363,8 @@ async def process_media_independently(
                 f"person objects have face crops"
             )
             logger.info(f"DEBUG: enriched_person_objects count: {len(enriched_person_objects)}")
-            print(f"[VMETA DEBUG] enriched_person_objects: {len(enriched_person_objects)}", flush=True)
+            logger.info(f"[VMETA DEBUG] enriched_person_objects: {len(enriched_person_objects)}")
+            logger.info(f"[VMETA DEBUG] enriched_person_objects sample: {enriched_person_objects[:1] if enriched_person_objects else 'EMPTY'}")
             
             # Step 5: Transform enriched person objects to MVR format
             # Vision returns person_id, but MVRService needs person_object_uuid
@@ -3341,14 +3377,24 @@ async def process_media_independently(
                 # Use Vision service's calculated quality score (weighted average of face qualities)
                 # Fall back to 0.85 only if quality_score is missing or 0.0
                 vision_quality = po.get('quality_score', 0.0)
-                effective_quality = vision_quality if vision_quality > 0.0 else 0.85
+                
+                # Orchestrator returns quality_score in 0-100 range (e.g., 21.09)
+                # Individual face quality_scores in representative_faces are also 0-100 (e.g., 23.063)
+                # Database constraint requires: CHECK (face_quality >= 0.0 AND face_quality <= 1.0)
+                # MUST normalize by dividing by 100
+                if vision_quality > 0.0:
+                    # Normalize from 0-100 to 0-1 range
+                    effective_quality = vision_quality / 100.0
+                else:
+                    # Fallback quality (already in 0-1 range)
+                    effective_quality = 0.85
                 
                 transformed_po = {
                     **po,
                     'person_object_uuid': str(uuid4()),  # Generate temporary UUID
                     'media_uuid': media_uuid_str,
                     'video_uuid': media_uuid_str,  # Alias for compatibility
-                    'face_quality': effective_quality,  # Use Vision's quality or fallback
+                    'face_quality': effective_quality,  # Normalized quality (0.0-1.0)
                     'quality_score': effective_quality,  # Consistent with face_quality
                     'confidence_score': 0.9,  # Default confidence
                     # best_face_crop already added by enrichment function
@@ -3360,7 +3406,7 @@ async def process_media_independently(
                 f"(media: {media_uuid_str})"
             )
             logger.info(f"DEBUG: person_objects sample after transform: {person_objects[:1] if person_objects else 'EMPTY'}")
-            print(f"[VMETA DEBUG] transformed person_objects: {len(person_objects)}", flush=True)
+            logger.info(f"[VMETA DEBUG] transformed person_objects: {len(person_objects)}")
             
             if not person_objects:
                 # No faces detected - valid result
@@ -3380,6 +3426,8 @@ async def process_media_independently(
                 f"Found {len(person_objects)} person objects for {media_uuid_str}, "
                 f"creating individuals and MVR people..."
             )
+            logger.info(f"[VMETA DEBUG] About to call MVR service with {len(person_objects)} person objects")
+            logger.info(f"[VMETA DEBUG] person_objects sample: {person_objects[:1] if person_objects else 'EMPTY'}")
             
             # Step 6: Process single media for MVR creation
             # This creates isolated individuals linked to person_objects, then creates MVR people

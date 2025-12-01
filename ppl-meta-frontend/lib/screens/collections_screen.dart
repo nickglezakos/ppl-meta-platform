@@ -19,6 +19,7 @@ import '../services/media_organization_service.dart';
 import '../services/media_api_client.dart';
 import '../services/vision_processing_service.dart';
 import '../providers/media_organization_providers.dart';
+import '../presentation/widgets/settings/workflow_settings_section.dart';
 import 'person_objects_detail_screen.dart';
 
 /// Collections screen with management and media display
@@ -1741,8 +1742,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       
       // Execute vision processing
       final mediaIds = _selectedItems.map((item) => item.uuid).toList();
+      final workflowSettings = ref.read(workflowSettingsProvider);
       final result = await visionService.processSelectedMedia(
         mediaIds: mediaIds,
+        minFaceQuality: workflowSettings.mvrQualityThreshold,
       );
       
       // Close progress dialog

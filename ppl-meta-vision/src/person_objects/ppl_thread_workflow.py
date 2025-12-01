@@ -270,15 +270,28 @@ class PPLThreadWorkflowController:
 
             logger.info("Found %d face detections to process", len(face_detections))
 
-            # Step 3: Apply face grouping algorithm (Phase 2 core engine)
-            logger.info(
-                "Applying face grouping with %.1f%% tolerance", tolerance_percent
-            )
-            grouping_results = (
-                await self.face_grouping_engine.apply_percentage_based_tracking(
-                    face_detections, tolerance_percent
+            # Step 3: Apply face grouping algorithm
+            # Check if faces already have person_id from Orchestrator
+            has_person_id = any("person_id" in face and face["person_id"] for face in face_detections)
+            
+            if has_person_id:
+                logger.info(
+                    "Using Orchestrator's person_id grouping (preserves IoU-based grouping)"
                 )
-            )
+                grouping_results = (
+                    await self.face_grouping_engine.group_by_orchestrator_person_id(
+                        face_detections
+                    )
+                )
+            else:
+                logger.info(
+                    "Applying percentage-based tracking with %.1f%% tolerance", tolerance_percent
+                )
+                grouping_results = (
+                    await self.face_grouping_engine.apply_percentage_based_tracking(
+                        face_detections, tolerance_percent
+                    )
+                )
 
             logger.info(
                 "Face grouping results received, type: %s", type(grouping_results)

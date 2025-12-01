@@ -16,7 +16,7 @@ class WorkflowSettings {
   
   const WorkflowSettings({
     this.confidenceThreshold = 0.7,
-    this.mvrQualityThreshold = 0.60,
+    this.mvrQualityThreshold = 0.20,
     this.detectionMethods = const ['opencv', 'dlib'],
     this.enableAutoProcessing = false,
     this.enablePerformanceOptimization = true,
@@ -308,9 +308,9 @@ class _WorkflowSettingsSectionState extends ConsumerState<WorkflowSettingsSectio
             ),
             child: Slider(
               value: settings.mvrQualityThreshold,
-              min: 0.5,
+              min: 0.1,
               max: 0.95,
-              divisions: 9,
+              divisions: 17,
               onChanged: (value) {
                 ref.read(workflowSettingsProvider.notifier)
                     .updateMvrQualityThreshold(value);

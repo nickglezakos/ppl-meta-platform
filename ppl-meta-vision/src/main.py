@@ -108,7 +108,9 @@ import os
 from logging.handlers import RotatingFileHandler
 
 # Create logs directory if it doesn't exist
-log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+# Use absolute path to workspace root
+workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+log_dir = os.path.join(workspace_root, "logs")
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, "ppl-meta-vision.log")
 

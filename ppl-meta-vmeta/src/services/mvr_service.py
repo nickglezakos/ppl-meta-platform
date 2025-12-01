@@ -391,8 +391,8 @@ class MVRService:
         media_uuid: UUID,
         media_type: str,
         person_objects: List[Dict[str, Any]],
-        similarity_threshold: float = 0.85,
-        min_face_quality: float = 0.70,
+        similarity_threshold: float = 0.7,
+        min_face_quality: float = 0.20,
         include_demographics: bool = True,
         include_route_data: bool = True
     ) -> Dict[str, Any]:
@@ -422,9 +422,9 @@ class MVRService:
             f"Processing {media_type} {media_uuid} independently: "
             f"{len(person_objects)} person objects"
         )
-        print(f"[MVRService DEBUG] RECEIVED {len(person_objects)} person_objects", flush=True)
-        print(f"[MVRService DEBUG] person_objects type: {type(person_objects)}", flush=True)
-        print(f"[MVRService DEBUG] person_objects sample: {person_objects[:1] if person_objects else 'EMPTY'}", flush=True)
+        logger.info(f"[MVRService DEBUG] RECEIVED {len(person_objects)} person_objects")
+        logger.info(f"[MVRService DEBUG] person_objects type: {type(person_objects)}")
+        logger.info(f"[MVRService DEBUG] person_objects sample: {person_objects[:1] if person_objects else 'EMPTY'}")
         
         if not person_objects:
             return {

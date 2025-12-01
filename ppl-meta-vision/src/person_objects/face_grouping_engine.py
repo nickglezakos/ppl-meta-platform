@@ -335,6 +335,88 @@ class VisionFaceGroupingEngine:
             "last_seen_frame": track_info["last_seen_frame"],
         }
 
+    async def group_by_orchestrator_person_id(
+        self, face_detections: List[Dict]
+    ) -> Dict[str, Any]:
+        """
+        Group faces using Orchestrator's existing person_id assignments.
+        
+        This preserves Orchestrator's IoU-based grouping instead of re-clustering.
+        Used when face detections already have person_id from Orchestrator.
+        
+        Args:
+            face_detections: List of face detection records with person_id field
+            
+        Returns:
+            Dictionary containing:
+            - person_objects: List of grouped person objects
+            - face_mappings: List of face-to-person mappings  
+            - statistics: Processing statistics
+        """
+        logger.info(
+            f"Grouping {len(face_detections)} faces by Orchestrator person_id"
+        )
+        
+        if not face_detections:
+            return self._create_empty_result()
+        
+        # Group faces by person_id
+        person_groups = {}
+        face_mappings = []
+        
+        for face in face_detections:
+            person_id = face.get("person_id", "unknown")
+            
+            if person_id not in person_groups:
+                person_groups[person_id] = []
+            
+            person_groups[person_id].append(face)
+            
+            # Create face mapping
+            face_mapping = {
+                "person_id": person_id,
+                "face_id": face.get("id"),
+                "frame_number": face.get("frame_number", 0),
+                "assignment_type": "orchestrator_grouped",
+                "distance": 0.0,  # No distance calculation needed
+                "position": self._extract_face_position(face),
+            }
+            face_mappings.append(face_mapping)
+        
+        # Create person objects from groups
+        person_objects = []
+        for person_id, group_faces in person_groups.items():
+            person_obj = self._create_person_object(person_id, {
+                "person_id": person_id,
+                "positions": [self._extract_face_position(f) for f in group_faces],
+                "frames": [f.get("frame_number", 0) for f in group_faces],
+                "faces": group_faces,
+            }, face_mappings, face_detections)
+            person_objects.append(person_obj)
+        
+        statistics = {
+            "total_faces": len(face_detections),
+            "total_persons": len(person_objects),
+            "tracked_faces": len(face_detections),
+            "new_faces": 0,
+            "frames_processed": len(set(f.get("frame_number", 0) for f in face_detections)),
+            "tolerance_percent": 0.0,  # Not used
+            "algorithm": "orchestrator_person_id_grouping",
+            "grouping_efficiency": self._calculate_grouping_efficiency(
+                face_detections, person_objects
+            ),
+        }
+        
+        logger.info(
+            f"Orchestrator grouping complete: {statistics['total_faces']} faces → {statistics['total_persons']} persons"
+        )
+        
+        return {
+            "person_objects": person_objects,
+            "face_mappings": face_mappings,
+            "statistics": statistics,
+        }
+
     async def apply_percentage_based_tracking(
         self, face_detections: List[Dict], tolerance_percent: float = 20.0
     ) -> Dict[str, Any]:
