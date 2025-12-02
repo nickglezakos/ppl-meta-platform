@@ -37,6 +37,12 @@ from src.models.media import (
     MediaShare,
     MediaVariant,
 )
+from src.models.signage import (
+    SignageDevice,
+    VideoList,
+    VideoListItem,
+    VideoListSyncHistory,
+)
 
 from shared.logging import setup_logging
 from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics

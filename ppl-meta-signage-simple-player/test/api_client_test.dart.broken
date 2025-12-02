@@ -1,0 +1,414 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
+import 'package:mockito/mockito.dart';
+import 'package:mockito/annotations.dart';
+import 'package:signage_simple_player/api/signage_api_client.dart';
+import 'package:signage_simple_player/models/video_list.dart';
+import 'package:signage_simple_player/models/playback_models.dart';
+import 'package:signage_simple_player/models/playback_history.dart';
+
+@GenerateMocks([Dio])
+import 'api_client_test.mocks.dart';
+
+void main() {
+  late SignageApiClient apiClient;
+  late MockDio mockDio;
+
+  setUp(() {
+    mockDio = MockDio();
+    apiClient = SignageApiClient(
+      baseUrl: 'http://localhost:8080',
+      deviceId: 'test-device-123',
+      dio: mockDio,
+    );
+  });
+
+  group('syncPlaylist', () {
+    test('successfully syncs playlist', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/etl/sync'),
+        statusCode: 200,
+        data: {
+          'playlist': {
+            'id': 'playlist-123',
+            'name': 'Test Playlist',
+            'source_list_id': 'source-123',
+            'sync_version': 1,
+            'is_active': true,
+            'videos': [
+              {
+                'id': 'video-1',
+                'video_id': 'vid-1',
+                'title': 'Video 1',
+                'url': 'https://example.com/video1.mp4',
+                'sequence_order': 0,
+                'duration_ms': 120000,
+              }
+            ],
+          }
+        },
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final result = await apiClient.syncPlaylist();
+
+      expect(result, isNotNull);
+      expect(result!.id, equals('playlist-123'));
+      expect(result.name, equals('Test Playlist'));
+      expect(result.videos.length, equals(1));
+    });
+
+    test('returns null when no playlist assigned', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/etl/sync'),
+        statusCode: 200,
+        data: {
+          'message': 'No playlist assigned',
+        },
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final result = await apiClient.syncPlaylist();
+
+      expect(result, isNull);
+    });
+
+    test('returns null on 304 Not Modified', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/etl/sync'),
+        statusCode: 304,
+        data: {},
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final result = await apiClient.syncPlaylist(lastSyncVersion: 1);
+
+      expect(result, isNull);
+    });
+
+    test('throws DioException on network error', () async {
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenThrow(DioException(
+        requestOptions: RequestOptions(path: '/api/v1/signage/etl/sync'),
+        type: DioExceptionType.connectionError,
+        message: 'Connection failed',
+      ));
+
+      expect(
+        () => apiClient.syncPlaylist(),
+        throwsA(isA<DioException>()),
+      );
+    });
+  });
+
+  group('sendControlCommand', () {
+    test('successfully sends control command', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/playback/control'),
+        statusCode: 200,
+        data: {
+          'status': 'playing',
+          'current_video': {
+            'video_id': 'video-1',
+            'title': 'Test Video',
+            'position_ms': 0,
+            'duration_ms': 120000,
+          },
+          'playlist_info': {
+            'playlist_id': 'playlist-123',
+            'name': 'Test Playlist',
+            'current_index': 0,
+            'total_videos': 5,
+          },
+        },
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final result = await apiClient.sendControlCommand(
+        command: 'play',
+        parameters: {'playlist_id': 'playlist-123'},
+      );
+
+      expect(result.status, equals(PlaybackStatus.playing));
+      expect(result.currentVideo, isNotNull);
+      expect(result.currentVideo!.videoId, equals('video-1'));
+    });
+
+    test('throws DioException on command failure', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/playback/control'),
+        statusCode: 400,
+        data: {'error': 'Invalid command'},
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      expect(
+        () => apiClient.sendControlCommand(command: 'invalid'),
+        throwsA(isA<DioException>()),
+      );
+    });
+  });
+
+  group('reportStatus', () {
+    test('successfully reports status', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/status/report'),
+        statusCode: 200,
+        data: {'message': 'Status received'},
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final state = PlaybackState(
+        status: PlaybackStatus.playing,
+        currentVideo: CurrentVideoInfo(
+          videoId: 'video-1',
+          title: 'Test Video',
+          positionMs: 1000,
+          durationMs: 120000,
+        ),
+        playlistInfo: PlaylistInfo(
+          playlistId: 'playlist-123',
+          name: 'Test Playlist',
+          currentIndex: 0,
+          totalVideos: 5,
+        ),
+      );
+
+      await apiClient.reportStatus(currentState: state);
+
+      verify(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).called(1);
+    });
+
+    test('does not throw on status report failure', () async {
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenThrow(DioException(
+        requestOptions: RequestOptions(path: '/api/v1/signage/status/report'),
+        type: DioExceptionType.connectionError,
+      ));
+
+      final state = PlaybackState(
+        status: PlaybackStatus.idle,
+      );
+
+      // Should not throw
+      await apiClient.reportStatus(currentState: state);
+    });
+  });
+
+  group('uploadHistory', () {
+    test('successfully uploads history', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/history/upload'),
+        statusCode: 200,
+        data: {'message': 'History uploaded'},
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final entries = [
+        PlaybackHistoryEntry(
+          id: 'hist-1',
+          videoId: 'video-1',
+          videoTitle: 'Test Video',
+          playlistId: 'playlist-123',
+          startedAt: DateTime.now(),
+          deviceId: 'test-device-123',
+          createdAt: DateTime.now(),
+        ),
+      ];
+
+      await apiClient.uploadHistory(entries: entries);
+
+      verify(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).called(1);
+    });
+
+    test('throws on upload failure', () async {
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenThrow(DioException(
+        requestOptions: RequestOptions(path: '/api/v1/signage/history/upload'),
+        type: DioExceptionType.badResponse,
+        response: Response(
+          requestOptions: RequestOptions(path: '/api/v1/signage/history/upload'),
+          statusCode: 500,
+        ),
+      ));
+
+      final entries = [
+        PlaybackHistoryEntry(
+          id: 'hist-1',
+          videoId: 'video-1',
+          videoTitle: 'Test Video',
+          playlistId: 'playlist-123',
+          startedAt: DateTime.now(),
+          deviceId: 'test-device-123',
+          createdAt: DateTime.now(),
+        ),
+      ];
+
+      expect(
+        () => apiClient.uploadHistory(entries: entries),
+        throwsA(isA<DioException>()),
+      );
+    });
+  });
+
+  group('checkConnectivity', () {
+    test('returns true when backend is reachable', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/health'),
+        statusCode: 200,
+        data: {'status': 'healthy'},
+      );
+
+      when(mockDio.get(
+        any,
+        options: anyNamed('options'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final result = await apiClient.checkConnectivity();
+
+      expect(result, isTrue);
+    });
+
+    test('returns false when backend is unreachable', () async {
+      when(mockDio.get(
+        any,
+        options: anyNamed('options'),
+      )).thenThrow(DioException(
+        requestOptions: RequestOptions(path: '/health'),
+        type: DioExceptionType.connectionError,
+      ));
+
+      final result = await apiClient.checkConnectivity();
+
+      expect(result, isFalse);
+    });
+  });
+
+  group('getServerInfo', () {
+    test('successfully retrieves server info', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/info'),
+        statusCode: 200,
+        data: {
+          'version': '1.0.0',
+          'capabilities': ['video_playback', 'remote_control'],
+        },
+      );
+
+      when(mockDio.get(any)).thenAnswer((_) async => mockResponse);
+
+      final result = await apiClient.getServerInfo();
+
+      expect(result['version'], equals('1.0.0'));
+      expect(result['capabilities'], isA<List>());
+    });
+  });
+
+  group('getVideoMetadata', () {
+    test('successfully retrieves video metadata', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/video/video-1/metadata'),
+        statusCode: 200,
+        data: {
+          'video_id': 'video-1',
+          'url': 'https://example.com/video1.mp4',
+          'size_bytes': 10485760,
+          'checksum': 'abc123',
+        },
+      );
+
+      when(mockDio.get(
+        any,
+        queryParameters: anyNamed('queryParameters'),
+      )).thenAnswer((_) async => mockResponse);
+
+      final result = await apiClient.getVideoMetadata(videoId: 'video-1');
+
+      expect(result['video_id'], equals('video-1'));
+      expect(result['url'], isNotNull);
+      expect(result['size_bytes'], equals(10485760));
+    });
+  });
+
+  group('reportError', () {
+    test('successfully reports error', () async {
+      final mockResponse = Response(
+        requestOptions: RequestOptions(path: '/api/v1/signage/error/report'),
+        statusCode: 200,
+        data: {'message': 'Error reported'},
+      );
+
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenAnswer((_) async => mockResponse);
+
+      await apiClient.reportError(
+        errorType: 'playback_error',
+        errorMessage: 'Video failed to load',
+        videoId: 'video-1',
+      );
+
+      verify(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).called(1);
+    });
+
+    test('does not throw on error reporting failure', () async {
+      when(mockDio.post(
+        any,
+        data: anyNamed('data'),
+      )).thenThrow(DioException(
+        requestOptions: RequestOptions(path: '/api/v1/signage/error/report'),
+        type: DioExceptionType.connectionError,
+      ));
+
+      // Should not throw
+      await apiClient.reportError(
+        errorType: 'test_error',
+        errorMessage: 'Test error message',
+      );
+    });
+  });
+}

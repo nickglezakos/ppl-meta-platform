@@ -27,6 +27,13 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 
+192.168.1.75
+8006
+
+adb logcat | grep -i "flutter\|signage\|ppl"
+
+flutter logs
+
 
 summary token budget is running low
 

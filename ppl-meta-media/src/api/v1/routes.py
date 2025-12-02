@@ -9,6 +9,7 @@ from .face_detection_workflows import workflow_router
 from .health import router as health_router
 from .media import router as media_router
 from .security import router as security_router
+from .signage import router as signage_router
 from .storage import router as storage_router
 from .streaming import router as streaming_router
 from .user import router as user_router
@@ -27,5 +28,6 @@ v1_router.include_router(streaming_router)
 v1_router.include_router(storage_router)
 v1_router.include_router(workflow_router)  # Phase 2: Enhanced workflows
 v1_router.include_router(vmeta_proxy_router)  # vmeta MVR-People proxy
+v1_router.include_router(signage_router)  # Signage Simple Player endpoints
 
 __all__ = ["v1_router"]
