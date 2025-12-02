@@ -235,29 +235,62 @@ class MediaApiClient {
     }
   }
 
-  /// Get collections (always include authenticated user's UUID as user_id)
-  Future<ApiResponse<List<MediaCollection>>> getCollections() async {
+  /// Get user's media collections
+  /// 
+  /// Returns list of collections owned by the authenticated user.
+  /// Collections are user-created groups of uploaded videos/images.
+  Future<ApiResponse<List<MediaCollection>>> getCollections({
+    int skip = 0,
+    int limit = 100,
+    bool includePublic = false,
+    bool excludeCameraCollections = false,
+  }) async {
     try {
-      final userId = await _getCurrentUserId();
-      if (userId == null) {
-        throw Exception('User not authenticated - please login first');
-      }
+      debugPrint('📡 Fetching collections from media service...');
+      debugPrint('   Parameters: skip=$skip, limit=$limit, includePublic=$includePublic, excludeCameraCollections=$excludeCameraCollections');
+      debugPrint('   🔑 ApiClient has token: ${_apiClient.authToken != null ? "YES (${_apiClient.authToken!.length} chars)" : "NO - NOT AUTHENTICATED!"}');
+      
       final response = await _apiClient.get(
         '/api/v1/media/collections',
-        queryParameters: {'user_id': userId},
+        queryParameters: {
+          'skip': skip,
+          'limit': limit,
+          'include_public': includePublic,
+          'exclude_camera_collections': excludeCameraCollections,
+        },
       );
-      final collections = (response.data as List)
-          .map((json) => MediaCollection.fromJson(json))
+
+      debugPrint('✅ Got ${(response.data as List).length} collections');
+      
+      final collections = (response.data as List<dynamic>)
+          .map((c) => MediaCollection.fromJson(c as Map<String, dynamic>))
           .toList();
+      
       return ApiResponse.success(collections);
     } on DioException catch (e) {
+      final statusCode = e.response?.statusCode;
+      final errorData = e.response?.data;
+      
+      debugPrint('❌ Get collections failed with status $statusCode');
+      debugPrint('   Error: ${e.message}');
+      debugPrint('   Response: $errorData');
+      
       // Handle specific status codes gracefully
-      if (e.response?.statusCode == 422 || e.response?.statusCode == 404) {
+      if (statusCode == 422 || statusCode == 404) {
         // Return empty list instead of error for "no collections found" scenarios
+        debugPrint('   Treating as empty collections list');
         return ApiResponse.success(<MediaCollection>[]);
       }
+      
+      // For auth errors, provide clear message
+      if (statusCode == 401 || statusCode == 403) {
+        return ApiResponse.error('Authentication failed. Please login again.');
+      }
+      
       return ApiResponse.error(_handleDioError(e));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('❌ Get collections unexpected error: $e');
+      debugPrint('   Stack trace: $stackTrace');
       return ApiResponse.error('Unexpected error: $e');
     }
   }
@@ -1313,6 +1346,43 @@ class MediaApiClient {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       print('❌ Camera MVR people count unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get items (videos/images) in a specific collection
+  /// 
+  /// Returns media items that belong to the specified collection.
+  Future<ApiResponse<List<Map<String, dynamic>>>> getCollectionItems({
+    required String collectionId,
+    int skip = 0,
+    int limit = 100,
+  }) async {
+    try {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        throw Exception('User not authenticated');
+      }
+
+      final response = await _apiClient.get(
+        '/api/v1/media/collections/$collectionId/items',
+        queryParameters: {
+          'user_id': userId,
+          'skip': skip,
+          'limit': limit,
+        },
+      );
+
+      final items = (response.data as List<dynamic>)
+          .map((i) => i as Map<String, dynamic>)
+          .toList();
+      
+      return ApiResponse.success(items);
+    } on DioException catch (e) {
+      debugPrint('❌ Get collection items failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get collection items unexpected error: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }

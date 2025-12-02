@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/service_discovery_providers.dart';
-import '../services/dynamic_service_provider.dart';
-import '../services/discovery_service_client.dart';
+import '../../services/discovery_service_client.dart';
 
 class ServiceDiscoveryStatusWidget extends ConsumerWidget {
   const ServiceDiscoveryStatusWidget({super.key});

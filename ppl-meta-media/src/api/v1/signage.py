@@ -37,6 +37,10 @@ from ...services.signage_service import (
     SignageService,
     SignageSyncService,
 )
+from ...services.signage_etl_worker import (
+    get_batch_sync_manager,
+    get_etl_worker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -659,6 +663,147 @@ async def device_heartbeat(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to record heartbeat",
+        )
+
+
+# ============================================================================
+# Batch Sync Endpoints
+# ============================================================================
+
+
+@router.post(
+    "/etl/batch-sync",
+    response_model=dict,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Batch sync video lists to devices",
+    description="Sync one or more video lists to one or more devices",
+)
+async def batch_sync(
+    video_list_ids: List[int],
+    device_ids: List[UUID],
+    sync_mode: SyncMode = SyncMode.FULL,
+    force_update: bool = False,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Batch synchronization of video lists to devices.
+
+    This endpoint queues multiple sync jobs to efficiently sync
+    multiple video lists to multiple devices.
+
+    - **video_list_ids**: List of video list database IDs to sync
+    - **device_ids**: List of device UUIDs to sync to
+    - **sync_mode**: "full" or "incremental"
+    - **force_update**: Force re-sync even if up-to-date
+    """
+    try:
+        user_id = get_user_id_from_token()
+        batch_manager = get_batch_sync_manager()
+
+        job_ids = await batch_manager.sync_lists_to_devices(
+            video_list_ids, device_ids, sync_mode.value, user_id, force_update
+        )
+
+        return {
+            "status": "accepted",
+            "job_count": len(job_ids),
+            "job_ids": [str(jid) for jid in job_ids],
+            "video_list_count": len(video_list_ids),
+            "device_count": len(device_ids),
+            "message": f"Queued {len(job_ids)} sync job(s)",
+        }
+
+    except Exception as e:
+        logger.error(f"Error creating batch sync: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create batch sync",
+        )
+
+
+@router.post(
+    "/etl/sync-to-all",
+    response_model=dict,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Sync video list to all online devices",
+    description="Sync a video list to all currently online devices",
+)
+async def sync_to_all_devices(
+    video_list_id: int,
+    sync_mode: SyncMode = SyncMode.FULL,
+    force_update: bool = False,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Sync a video list to all online devices.
+
+    Convenient endpoint for broadcasting a video list to all connected devices.
+
+    - **video_list_id**: Video list database ID to sync
+    - **sync_mode**: "full" or "incremental"
+    - **force_update**: Force re-sync even if up-to-date
+    """
+    try:
+        user_id = get_user_id_from_token()
+        batch_manager = get_batch_sync_manager()
+
+        job_id = await batch_manager.sync_to_all_online_devices(
+            video_list_id, sync_mode.value, user_id, force_update
+        )
+
+        if job_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No online devices found",
+            )
+
+        return {
+            "status": "accepted",
+            "job_id": str(job_id),
+            "message": "Sync job queued for all online devices",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating sync-to-all job: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create sync job",
+        )
+
+
+@router.get(
+    "/etl/job-status/{job_id}",
+    response_model=dict,
+    summary="Get sync job status",
+    description="Get the status of a queued sync job",
+)
+async def get_sync_job_status(job_id: UUID) -> dict:
+    """
+    Get the status of a sync job.
+
+    - **job_id**: Sync job UUID
+    """
+    try:
+        worker = get_etl_worker()
+        status_data = await worker.get_job_status(job_id)
+
+        if status_data is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Sync job not found",
+            )
+
+        return status_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting job status: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get job status",
         )
 
 

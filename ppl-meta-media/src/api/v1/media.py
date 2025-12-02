@@ -475,10 +475,18 @@ async def list_collections(
     skip: int = 0,
     limit: int = 100,
     include_public: bool = False,
+    exclude_camera_collections: bool = False,
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List authenticated user's collections with pagination."""
+    """List authenticated user's collections with pagination.
+    
+    Args:
+        skip: Number of collections to skip for pagination
+        limit: Maximum number of collections to return
+        include_public: Include public collections from other users
+        exclude_camera_collections: Exclude auto-created camera collections (only return user-created collections)
+    """
     try:
         media_service = MediaService(db)
         collections = await media_service.get_collections(
@@ -486,6 +494,7 @@ async def list_collections(
             skip=skip,
             limit=limit,
             include_public=include_public,
+            exclude_camera_collections=exclude_camera_collections,
         )
 
         return [MediaCollectionResponse.model_validate(col) for col in collections]

@@ -21,6 +21,7 @@ import '../../screens/media_preview_screen.dart';
 import '../../screens/camera_media_sync_screen.dart';
 import '../../screens/workflow_dashboard_screen.dart';
 import '../../screens/automation_screen.dart';
+import '../../screens/signage_management_screen.dart';
 import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
 import '../../pages/workflow_widget_test_page.dart';
@@ -219,6 +220,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'camera-media-sync',
         builder: (context, state) => ProviderScreenWrapper(
           child: CameraMediaSyncScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/signage',
+        name: 'signage',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: SignageManagementScreen(),
         ),
       ),
       GoRoute(

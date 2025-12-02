@@ -28,7 +28,7 @@ class AppConfig {
       final config = json.decode(configString);
       
       _instance = AppConfig._(
-        apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost',
+        apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost:8080',
         cameraServiceUrl: config['CAMERA_SERVICE_URL'] ?? 'http://localhost:8005',
         environment: config['ENVIRONMENT'] ?? 'development',
         logLevel: config['LOG_LEVEL'] ?? 'debug',
@@ -37,9 +37,9 @@ class AppConfig {
       );
     } catch (e) {
       // Fallback configuration if asset loading fails
-      print('Warning: Could not load config file, using defaults: $e');
+      print('⚠️ Warning: Could not load config file, using defaults: $e');
       _instance = AppConfig._(
-        apiBaseUrl: 'http://localhost',
+        apiBaseUrl: 'http://localhost:8080',  // Gateway service - routes to all backend services
         cameraServiceUrl: 'http://localhost:8005',
         environment: 'development',
         logLevel: 'debug',

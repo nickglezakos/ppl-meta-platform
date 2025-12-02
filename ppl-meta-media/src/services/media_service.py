@@ -704,8 +704,17 @@ class MediaService:
         skip: int = 0,
         limit: int = 100,
         include_public: bool = False,
+        exclude_camera_collections: bool = False,
     ) -> List[MediaCollection]:
-        """Get collections for a user with pagination."""
+        """Get collections for a user with pagination.
+        
+        Args:
+            user_id: User ID to filter collections
+            skip: Number of collections to skip for pagination
+            limit: Maximum number of collections to return
+            include_public: Include public collections from other users
+            exclude_camera_collections: Exclude auto-created camera collections (only return user-created collections)
+        """
         query = self.db.query(MediaCollection)
 
         if include_public:
@@ -717,6 +726,10 @@ class MediaService:
             )
         else:
             query = query.filter(MediaCollection.created_by == user_id)
+        
+        # Filter out camera collections if requested (user-created collections only)
+        if exclude_camera_collections:
+            query = query.filter(MediaCollection.camera_device_id == None)
 
         return query.offset(skip).limit(limit).all()
 

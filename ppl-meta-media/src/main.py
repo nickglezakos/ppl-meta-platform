@@ -44,6 +44,8 @@ from src.models.signage import (
     VideoListSyncHistory,
 )
 
+from src.services.signage_etl_worker import start_etl_worker, stop_etl_worker
+
 from shared.logging import setup_logging
 from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
 
@@ -156,11 +158,26 @@ async def lifespan(_app: FastAPI):
         logger.error("Failed to create database tables: %s", e)
         logger.info("Service will start but database operations will fail")
 
+    # Start ETL worker for signage sync operations
+    try:
+        await start_etl_worker()
+        logger.info("Signage ETL worker started")
+    except Exception as e:
+        logger.error(f"Failed to start ETL worker: {e}")
+        logger.info("Signage sync operations will be unavailable")
+
     logger.info("Service startup completed successfully")
 
     yield
 
     logger.info("Shutting down PPL Meta Media Service...")
+
+    # Stop ETL worker
+    try:
+        await stop_etl_worker()
+        logger.info("ETL worker stopped")
+    except Exception as e:
+        logger.error(f"Error stopping ETL worker: {e}")
 
     # Deregister from service discovery
     if service_discovery_available:

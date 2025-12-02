@@ -314,6 +314,15 @@ class HomeScreen extends ConsumerWidget {
                           context.go('/camera-media-sync');
                         },
                       ),
+                      _ActionCard(
+                        icon: Icons.display_settings,
+                        iconColor: Colors.orange, // Distinct color for signage
+                        title: 'Signage Management',
+                        subtitle: 'Manage digital signage playlists',
+                        onTap: () {
+                          context.go('/signage');
+                        },
+                      ),
                     ],
                   );
                 },
