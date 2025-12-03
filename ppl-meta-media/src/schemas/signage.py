@@ -141,12 +141,12 @@ class VideoListBase(BaseModel):
 class VideoListCreate(VideoListBase):
     """Schema for creating a video list."""
 
-    collection_ids: List[int] = Field(
-        ..., description="List of collection IDs to include videos from", min_items=1
+    collection_ids: List[str] = Field(
+        ..., description="List of collection UUIDs to include videos from", min_items=1
     )
     video_order: Optional[List[dict]] = Field(
         None,
-        description='Manual video order: [{"collection_id": 1, "video_id": 123, "sequence": 1}]',
+        description='Manual video order: [{"collection_id": "uuid", "video_id": "uuid", "sequence": 1}]',
     )
 
 

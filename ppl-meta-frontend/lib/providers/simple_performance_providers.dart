@@ -18,9 +18,13 @@ class PerformanceHistoryParams {
 }
 
 /// Provider for performance history
-@riverpod
+// @riverpod
+// Future<List<WorkflowPerformanceMetrics>> performanceHistory(
+//   PerformanceHistoryRef ref,
+//   PerformanceHistoryParams params,
+// ) async {
 Future<List<WorkflowPerformanceMetrics>> performanceHistory(
-  PerformanceHistoryRef ref,
+  dynamic ref,
   PerformanceHistoryParams params,
 ) async {
   final response = await ref

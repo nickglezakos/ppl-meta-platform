@@ -58,20 +58,45 @@ class SignageService:
         Raises:
             ValueError: If collections don't exist or user doesn't have access
         """
-        # Validate collections exist and belong to user
+        # Validate collections exist and belong to user (using UUIDs)
+        # Convert string UUIDs to UUID objects for query
+        from uuid import UUID as UUIDType
+        collection_uuids = [UUIDType(uuid_str) for uuid_str in data.collection_ids]
+        
+        logger.info(f"Creating video list for user {user_id}")
+        logger.info(f"Looking for collections with UUIDs: {collection_uuids}")
+        
         collections = (
             self.db.query(MediaCollection)
             .filter(
                 and_(
-                    MediaCollection.id.in_(data.collection_ids),
+                    MediaCollection.uuid.in_(collection_uuids),
                     MediaCollection.created_by == user_id,
                 )
             )
             .all()
         )
+        
+        logger.info(f"Found {len(collections)} collections (expected {len(data.collection_ids)})")
+        if collections:
+            for c in collections:
+                logger.info(f"  - Collection: {c.name} (UUID: {c.uuid}, Owner: {c.created_by})")
 
         if len(collections) != len(data.collection_ids):
+            # Debug: Check if collections exist but belong to different user
+            all_collections = (
+                self.db.query(MediaCollection)
+                .filter(MediaCollection.uuid.in_(collection_uuids))
+                .all()
+            )
+            if all_collections:
+                logger.warning(f"Collections found but ownership mismatch:")
+                for c in all_collections:
+                    logger.warning(f"  - {c.name} (UUID: {c.uuid}, Owner: {c.created_by} vs requested: {user_id})")
             raise ValueError("One or more collections not found or unauthorized")
+        
+        # Convert UUIDs to IDs for internal use
+        collection_id_map = {str(c.uuid): c.id for c in collections}
 
         # Create video list
         video_list = VideoList(
@@ -86,9 +111,38 @@ class SignageService:
         self.db.add(video_list)
         self.db.flush()  # Get the ID
 
+        # Convert UUID collection_ids to integer IDs for internal processing
+        internal_collection_ids = [collection_id_map[uuid_str] for uuid_str in data.collection_ids]
+        
+        # Convert video_order UUIDs to IDs if provided
+        internal_video_order = None
+        if data.video_order:
+            # Get all video UUIDs from video_order
+            video_uuids = [UUIDType(item["video_id"]) for item in data.video_order]
+            
+            # Query videos and create UUID to ID mapping
+            videos = (
+                self.db.query(Media)
+                .filter(Media.uuid.in_(video_uuids))
+                .all()
+            )
+            video_id_map = {str(v.uuid): v.id for v in videos}
+            
+            logger.info(f"Video UUID to ID mapping: {video_id_map}")
+            
+            internal_video_order = [
+                {
+                    "collection_id": collection_id_map[item["collection_id"]],
+                    "video_id": video_id_map.get(item["video_id"]),
+                    "sequence": item["sequence"]
+                }
+                for item in data.video_order
+                if item["video_id"] in video_id_map  # Skip videos not found
+            ]
+
         # Add videos from collections
         self._add_videos_from_collections(
-            video_list, data.collection_ids, data.video_order
+            video_list, internal_collection_ids, internal_video_order
         )
 
         # Update cached statistics

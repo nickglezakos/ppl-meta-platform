@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from ...auth import AuthUser, get_current_user
 from ...database import get_db
 from ...schemas.signage import (
     ErrorResponse,
@@ -48,22 +49,6 @@ router = APIRouter(prefix="/signage", tags=["signage"])
 
 
 # ============================================================================
-# Helper Functions
-# ============================================================================
-
-
-def get_user_id_from_token() -> UUID:
-    """
-    Extract user ID from JWT token.
-    TODO: Implement actual JWT token validation.
-    For now, this is a placeholder that should be replaced with proper auth.
-    """
-    # This would normally come from JWT token validation
-    # For demo purposes, using a placeholder
-    return UUID("00000000-0000-0000-0000-000000000000")
-
-
-# ============================================================================
 # Video List Endpoints
 # ============================================================================
 
@@ -77,6 +62,7 @@ def get_user_id_from_token() -> UUID:
 )
 async def create_video_list(
     data: VideoListCreate,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> VideoListResponse:
     """
@@ -88,7 +74,8 @@ async def create_video_list(
     - **loop_mode**: Playback loop mode (continuous, once, shuffle, repeat_one)
     """
     try:
-        user_id = get_user_id_from_token()
+        from uuid import UUID
+        user_id = UUID(current_user.user_id)
         service = SignageService(db)
 
         video_list = service.create_video_list(user_id, data)
@@ -116,6 +103,7 @@ async def list_video_lists(
     page_size: int = Query(20, ge=1, le=100, description="Results per page"),
     search: Optional[str] = Query(None, description="Search by name"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> VideoListListResponse:
     """
@@ -127,7 +115,7 @@ async def list_video_lists(
     - **is_active**: Filter by active status
     """
     try:
-        user_id = get_user_id_from_token()
+        user_id = UUID(current_user.user_id)
         service = SignageService(db)
 
         video_lists, total_count = service.list_video_lists(
@@ -173,6 +161,7 @@ async def list_video_lists(
 )
 async def get_video_list(
     list_uuid: UUID,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> VideoListDetailResponse:
     """
@@ -181,7 +170,7 @@ async def get_video_list(
     - **list_uuid**: UUID of the video list
     """
     try:
-        user_id = get_user_id_from_token()
+        user_id = current_user.user_id
         service = SignageService(db)
 
         video_list = service.get_video_list_by_uuid(
@@ -215,6 +204,7 @@ async def get_video_list(
 async def update_video_list(
     list_uuid: UUID,
     data: VideoListUpdate,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> VideoListResponse:
     """
@@ -224,7 +214,8 @@ async def update_video_list(
     - **data**: Fields to update
     """
     try:
-        user_id = get_user_id_from_token()
+        from uuid import UUID as UUIDType
+        user_id = UUIDType(current_user.user_id)
         service = SignageService(db)
 
         # Get video list to find ID
@@ -260,6 +251,7 @@ async def update_video_list(
 )
 async def delete_video_list(
     list_uuid: UUID,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -268,7 +260,8 @@ async def delete_video_list(
     - **list_uuid**: UUID of the video list to delete
     """
     try:
-        user_id = get_user_id_from_token()
+        from uuid import UUID as UUIDType
+        user_id = UUIDType(current_user.user_id)
         service = SignageService(db)
 
         # Get video list to find ID
@@ -308,6 +301,7 @@ async def delete_video_list(
 )
 async def sync_video_list(
     data: SyncRequest,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SyncResponse:
     """
@@ -323,7 +317,7 @@ async def sync_video_list(
     - **force_update**: Force re-sync even if up-to-date
     """
     try:
-        user_id = get_user_id_from_token()
+        user_id = current_user.user_id
         service = SignageSyncService(db)
 
         # For now, sync to first device (can be extended to batch sync)
@@ -411,6 +405,7 @@ async def get_sync_history(
 )
 async def control_playback(
     data: PlaybackControlRequest,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PlaybackControlResponse:
     """
@@ -466,6 +461,7 @@ async def control_playback(
 )
 async def register_device(
     data: SignageDeviceRegister,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SignageDeviceResponse:
     """
@@ -480,7 +476,7 @@ async def register_device(
     - **port**: HTTP server port on device
     """
     try:
-        user_id = get_user_id_from_token()
+        user_id = current_user.user_id
         service = SignageService(db)
 
         device_data = data.dict(exclude={"device_id"})
@@ -545,6 +541,7 @@ async def list_devices(
 )
 async def get_device(
     device_id: UUID,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SignageDeviceResponse:
     """
@@ -584,6 +581,7 @@ async def get_device(
 async def update_device(
     device_id: UUID,
     data: SignageDeviceUpdate,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SignageDeviceResponse:
     """
@@ -631,6 +629,7 @@ async def update_device(
 )
 async def device_heartbeat(
     device_id: UUID,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SuccessResponse:
     """
@@ -683,6 +682,7 @@ async def batch_sync(
     device_ids: List[UUID],
     sync_mode: SyncMode = SyncMode.FULL,
     force_update: bool = False,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -697,7 +697,7 @@ async def batch_sync(
     - **force_update**: Force re-sync even if up-to-date
     """
     try:
-        user_id = get_user_id_from_token()
+        user_id = current_user.user_id
         batch_manager = get_batch_sync_manager()
 
         job_ids = await batch_manager.sync_lists_to_devices(
@@ -732,6 +732,7 @@ async def sync_to_all_devices(
     video_list_id: int,
     sync_mode: SyncMode = SyncMode.FULL,
     force_update: bool = False,
+    current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -744,7 +745,7 @@ async def sync_to_all_devices(
     - **force_update**: Force re-sync even if up-to-date
     """
     try:
-        user_id = get_user_id_from_token()
+        user_id = current_user.user_id
         batch_manager = get_batch_sync_manager()
 
         job_id = await batch_manager.sync_to_all_online_devices(

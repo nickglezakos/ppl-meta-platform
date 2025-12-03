@@ -625,6 +625,100 @@ async def remove_media_from_collection(request: Request):
     return await _proxy_to_media_service(request)
 
 
+# ============================================================================
+# Signage Service Routes - Video List Management & Device Control
+# ============================================================================
+
+@api_router.post("/signage/video-lists")
+async def create_video_list(request: Request):
+    """Proxy create video list to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/video-lists")
+async def list_video_lists(request: Request):
+    """Proxy list video lists to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/video-lists/{list_uuid}")
+async def get_video_list(request: Request):
+    """Proxy get video list details to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.put("/signage/video-lists/{list_uuid}")
+async def update_video_list(request: Request):
+    """Proxy update video list to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.delete("/signage/video-lists/{list_uuid}")
+async def delete_video_list(request: Request):
+    """Proxy delete video list to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/signage/video-lists/{list_uuid}/sync")
+async def sync_video_list(request: Request):
+    """Proxy sync video list to devices to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/devices")
+async def list_signage_devices(request: Request):
+    """Proxy list signage devices to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/signage/devices/register")
+async def register_signage_device(request: Request):
+    """Proxy register signage device to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/devices/{device_uuid}")
+async def get_signage_device(request: Request):
+    """Proxy get signage device details to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.put("/signage/devices/{device_uuid}")
+async def update_signage_device(request: Request):
+    """Proxy update signage device to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.delete("/signage/devices/{device_uuid}")
+async def delete_signage_device(request: Request):
+    """Proxy delete signage device to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/signage/devices/{device_uuid}/playback")
+async def control_device_playback(request: Request):
+    """Proxy playback control commands to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/sync-history")
+async def get_sync_history(request: Request):
+    """Proxy get sync history to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/etl/jobs")
+async def get_etl_jobs(request: Request):
+    """Proxy get ETL jobs status to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/signage/etl/jobs/{job_id}")
+async def get_etl_job_status(request: Request):
+    """Proxy get ETL job status to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/debug-user-profile")
 async def debug_user_profile():
     """Debug route for user profile testing."""
