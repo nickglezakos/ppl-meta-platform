@@ -128,6 +128,7 @@ class ServiceRegistry:
             )
 
         # Update service information
+        old_last_seen = service.last_seen
         service.last_seen = datetime.utcnow()
         service.heartbeat_count += 1
         service.status = request.status
@@ -136,8 +137,10 @@ class ServiceRegistry:
         if request.metadata:
             service.metadata.update(request.metadata)
 
-        logger.debug(
-            f"Updated heartbeat for service {service.name} " f"({request.service_id})"
+        logger.info(
+            f"💓 Updated heartbeat for service {service.name} ({request.service_id}): "
+            f"old_last_seen={old_last_seen}, new_last_seen={service.last_seen}, "
+            f"heartbeat_count={service.heartbeat_count}, status={service.status}"
         )
 
         return {"status": "heartbeat updated"}

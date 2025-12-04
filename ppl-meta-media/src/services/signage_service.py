@@ -5,6 +5,7 @@ Business logic for video list management, synchronization, and playback control.
 """
 
 import logging
+import uuid
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -690,8 +691,50 @@ class SignageSyncService:
 
         # Get device
         device = self.signage_service.get_device_by_id(device_id)
-        if not device or not device.is_online:
-            raise ValueError("Device not found or offline")
+        
+        # If device not found in database, try to auto-register from discovery service
+        if not device:
+            logger.info(f"Device {device_id} not found in database, attempting auto-registration from discovery")
+            try:
+                # Query discovery service for device info
+                discovery_url = "http://localhost:8006"  # Discovery service
+                logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{device_id}")
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(f"{discovery_url}/api/v1/services/{device_id}", timeout=5.0)
+                    response.raise_for_status()
+                    discovery_device = response.json()
+                logger.info(f"Found device in discovery: {discovery_device.get('name')}")
+                
+                # Extract device info
+                device_data = {
+                    "device_name": discovery_device.get("name", f"Device-{str(device_id)[:8]}"),
+                    "device_hostname": discovery_device.get("host"),
+                    "ip_address": discovery_device.get("host"),
+                    "port": discovery_device.get("port"),
+                    "is_online": discovery_device.get("status") == "healthy",
+                }
+                
+                logger.info(f"Registering device with data: {device_data}")
+                # Auto-register with system user (UUID all zeros)
+                system_user_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+                device = self.signage_service.register_device(
+                    device_id=device_id,
+                    device_data=device_data,
+                    registered_by=system_user_id
+                )
+                logger.info(f"✅ Auto-registered device {device_id} from discovery service")
+                
+            except httpx.HTTPError as e:
+                logger.error(f"HTTP error querying discovery service for device {device_id}: {e}")
+                logger.exception("Full traceback:")
+                raise ValueError(f"Device not found in database or discovery service")
+            except Exception as e:
+                logger.error(f"Failed to auto-register device {device_id}: {e}")
+                logger.exception("Full traceback:")
+                raise ValueError("Device not found or offline")
+        
+        if not device.is_online:
+            raise ValueError("Device offline")
 
         # Create sync history record
         history = self.signage_service.create_sync_history(

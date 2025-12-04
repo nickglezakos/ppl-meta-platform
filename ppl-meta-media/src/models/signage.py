@@ -6,7 +6,7 @@ and playback control for the Signage Simple Player microservice in the PPL Meta 
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import (
@@ -254,7 +254,7 @@ class VideoListSyncHistory(BaseModel):
     def mark_started(self):
         """Mark sync as started."""
         self.sync_status = SyncStatus.IN_PROGRESS.value
-        self.sync_started_at = datetime.utcnow()
+        self.sync_started_at = datetime.now(timezone.utc)
 
     def mark_completed(self, videos_synced: int, videos_failed: int = 0):
         """Mark sync as completed with statistics."""
@@ -265,7 +265,7 @@ class VideoListSyncHistory(BaseModel):
         )
         self.videos_synced = videos_synced
         self.videos_failed = videos_failed
-        self.sync_completed_at = datetime.utcnow()
+        self.sync_completed_at = datetime.now(timezone.utc)
 
         if self.sync_started_at:
             duration = (self.sync_completed_at - self.sync_started_at).total_seconds()
@@ -276,7 +276,7 @@ class VideoListSyncHistory(BaseModel):
         self.sync_status = SyncStatus.FAILED.value
         self.error_message = error_message
         self.error_details = error_details
-        self.sync_completed_at = datetime.utcnow()
+        self.sync_completed_at = datetime.now(timezone.utc)
 
         if self.sync_started_at:
             duration = (self.sync_completed_at - self.sync_started_at).total_seconds()
@@ -354,8 +354,9 @@ class SignageDevice(BaseModel):
 
     def update_heartbeat(self):
         """Update the device heartbeat timestamp."""
-        self.last_heartbeat = datetime.utcnow()
-        self.last_seen = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        self.last_heartbeat = now
+        self.last_seen = now
         self.is_online = True
 
     def mark_offline(self):
@@ -369,5 +370,5 @@ class SignageDevice(BaseModel):
             return False
 
         # Consider unhealthy if no heartbeat in last 2 minutes
-        time_since_heartbeat = datetime.utcnow() - self.last_heartbeat
+        time_since_heartbeat = datetime.now(timezone.utc) - self.last_heartbeat
         return time_since_heartbeat.total_seconds() < 120

@@ -61,12 +61,33 @@ except ImportError:
 config = get_config()
 
 # Setup standardized logging
+# Determine log file path
+if os.path.exists("/app"):
+    log_file_path = "/app/logs/media-service.log"
+else:
+    # Local development - use workspace logs directory
+    workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    logs_dir = os.path.join(workspace_root, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    log_file_path = os.path.join(logs_dir, "ppl-meta-media.log")
+
 logger = setup_logging(
     service_name="ppl-meta-media",
     log_level=config.LOG_LEVEL.upper(),
     log_format=config.LOG_FORMAT.lower(),
-    log_file="/app/logs/media-service.log" if os.path.exists("/app") else None,
+    log_file=log_file_path,
 )
+
+# Add file handler manually to ensure logging to file works
+import logging
+file_handler = logging.FileHandler(log_file_path, mode='a')
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logging.getLogger().addHandler(file_handler)
+
+logger.info(f"📝 Logging to: {log_file_path}")
+print(f"📝 Media service logging to: {log_file_path}", flush=True)
 
 # Global service discovery client
 service_discovery_client = None

@@ -342,10 +342,13 @@ async def sync_video_list(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"\n{'='*80}\n❌ SYNC ERROR:\n{error_details}\n{'='*80}\n", flush=True)
         logger.error(f"Error syncing video list: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to sync video list",
+            detail=f"Failed to sync video list: {str(e)}",
         )
 
 
@@ -841,3 +844,91 @@ async def health_check(db: Session = Depends(get_db)) -> dict:
             "error": str(e),
             "timestamp": __import__("datetime").datetime.utcnow().isoformat(),
         }
+
+
+@router.get(
+    "/stream/{media_id}",
+    summary="Stream media for signage devices",
+    description="Unauthenticated video streaming endpoint for signage devices",
+)
+async def stream_signage_media(
+    media_id: str,
+    request: __import__("fastapi").Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Stream media file for signage devices without authentication.
+    Supports range requests for video playback.
+    
+    This is a special endpoint for signage devices that doesn't require
+    user authentication since devices operate autonomously.
+    """
+    from pathlib import Path
+    from fastapi import HTTPException
+    from fastapi.responses import StreamingResponse
+    from ...models.media import Media
+    
+    # Get media record
+    try:
+        media = db.query(Media).filter(Media.id == int(media_id)).first()
+        if not media:
+            raise HTTPException(status_code=404, detail="Media not found")
+        
+        file_path = Path(media.file_path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Media file not found on disk")
+        
+        file_size = file_path.stat().st_size
+        range_header = request.headers.get("Range")
+        
+        def generate_chunks(start: int, end: int):
+            """Generate file chunks for streaming"""
+            chunk_size = 1024 * 1024  # 1MB chunks
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+        
+        # Handle range requests
+        if range_header:
+            range_str = range_header.replace("bytes=", "")
+            range_parts = range_str.split("-")
+            start = int(range_parts[0]) if range_parts[0] else 0
+            end = int(range_parts[1]) if len(range_parts) > 1 and range_parts[1] else file_size - 1
+            
+            content_length = end - start + 1
+            headers = {
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(content_length),
+                "Content-Type": media.mime_type or "video/mp4",
+            }
+            
+            return StreamingResponse(
+                generate_chunks(start, end),
+                status_code=206,
+                headers=headers,
+            )
+        
+        # Full file streaming
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Content-Type": media.mime_type or "video/mp4",
+        }
+        
+        return StreamingResponse(
+            generate_chunks(0, file_size - 1),
+            headers=headers,
+        )
+        
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid media ID")
+    except Exception as e:
+        logger.error(f"Error streaming signage media {media_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Streaming error: {str(e)}")

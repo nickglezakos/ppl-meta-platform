@@ -1,5 +1,6 @@
 """Services API routes for PPL Meta Discovery Service."""
 
+import logging
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,7 @@ from models import (
 )
 from services.service_registry import ServiceRegistry
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/services", tags=["services"])
 
 
@@ -39,7 +41,14 @@ async def service_heartbeat(
     service_registry: ServiceRegistry = Depends(get_service_registry),
 ) -> Dict[str, str]:
     """Update service heartbeat."""
-    return await service_registry.update_heartbeat(request)
+    try:
+        logger.info(f"📨 Received heartbeat request: service_id={request.service_id}, status={request.status}")
+        result = await service_registry.update_heartbeat(request)
+        logger.debug(f"✅ Heartbeat processed successfully for {request.service_id}")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Heartbeat failed for {request.service_id}: {e}", exc_info=True)
+        raise
 
 
 @router.delete("/deregister/{service_id}")
