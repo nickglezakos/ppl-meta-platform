@@ -323,6 +323,15 @@ class HomeScreen extends ConsumerWidget {
                           context.go('/signage');
                         },
                       ),
+                      _ActionCard(
+                        icon: Icons.notifications_active,
+                        iconColor: Colors.orange, // Orange color for triggers/alerts
+                        title: 'Triggers',
+                        subtitle: 'Manage automated alerts',
+                        onTap: () {
+                          context.go('/triggers');
+                        },
+                      ),
                     ],
                   );
                 },

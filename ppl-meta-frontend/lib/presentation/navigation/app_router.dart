@@ -22,6 +22,7 @@ import '../../screens/camera_media_sync_screen.dart';
 import '../../screens/workflow_dashboard_screen.dart';
 import '../../screens/automation_screen.dart';
 import '../../screens/signage_management_screen.dart';
+import '../../screens/triggers_screen.dart';
 import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
 import '../../pages/workflow_widget_test_page.dart';
@@ -227,6 +228,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'signage',
         builder: (context, state) => const ProviderScreenWrapper(
           child: SignageManagementScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/triggers',
+        name: 'triggers',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: TriggersScreen(),
         ),
       ),
       GoRoute(

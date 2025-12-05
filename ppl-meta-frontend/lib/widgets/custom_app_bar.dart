@@ -13,6 +13,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final double? elevation;
   final VoidCallback? onBackPressed;
   final VoidCallback? onHomePressed;
+  final PreferredSizeWidget? bottom;
 
   const CustomAppBar({
     super.key,
@@ -25,6 +26,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.elevation,
     this.onBackPressed,
     this.onHomePressed,
+    this.bottom,
   });
 
   @override
@@ -45,6 +47,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
         if (showHomeButton) _buildHomeButton(context),
         if (actions != null) ...actions!,
       ],
+      bottom: bottom,
     );
   }
 
@@ -84,7 +87,9 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   }
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => Size.fromHeight(
+        kToolbarHeight + (bottom?.preferredSize.height ?? 0.0),
+      );
 }
 
 /// Specialized AppBar for full-screen media preview with dark theme

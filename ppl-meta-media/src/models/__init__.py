@@ -29,6 +29,12 @@ from .signage import (
     VideoListItem,
     VideoListSyncHistory,
 )
+from .trigger import (
+    AgeRange,
+    PersonCountOperator,
+    Trigger,
+    TriggerAction,
+)
 from .workflow import MediaWorkflow
 
 __all__ = [
@@ -55,4 +61,8 @@ __all__ = [
     "VideoList",
     "VideoListItem",
     "VideoListSyncHistory",
+    "Trigger",
+    "TriggerAction",
+    "PersonCountOperator",
+    "AgeRange",
 ]

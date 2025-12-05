@@ -21,6 +21,7 @@ from src.api.v1.routes import v1_router
 from src.config import get_config
 from src.database import Base, engine, test_connection
 from src.microservice_config import CONSUL_CONFIG
+from src.routes.triggers import router as triggers_router
 from src.models.collection_storage import (
     CollectionStorageConfig,
     CollectionStorageUsage,
@@ -43,6 +44,7 @@ from src.models.signage import (
     VideoListItem,
     VideoListSyncHistory,
 )
+from src.models.trigger import Trigger
 
 from src.services.signage_etl_worker import start_etl_worker, stop_etl_worker
 
@@ -296,6 +298,7 @@ async def value_error_handler(request: Request, exc: ValueError):
 # Include routers
 app.include_router(v1_router)  # Versioned API
 app.include_router(legacy_health_router)  # Legacy health endpoints
+app.include_router(triggers_router)  # Triggers management
 
 # Add metrics endpoint
 metrics_router = create_metrics_endpoint()
