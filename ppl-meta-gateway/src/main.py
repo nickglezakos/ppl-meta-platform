@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from api.v1.router import api_router
+from api.v1.camera_counters import router as camera_counters_router
 from core.advanced_middleware import (
     AdvancedRateLimitMiddleware,
     CircuitBreakerMiddleware,
@@ -34,6 +35,10 @@ from shared.service_discovery import (
     register_service,
     start_health_monitoring,
 )
+
+# Import Redis cache client and worker
+from core.redis_client import cache_client
+from workers.mvr_counter_worker import mvr_counter_worker
 
 # Setup logging
 setup_logging(
@@ -111,6 +116,19 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting PPL Meta Gateway", version=settings.service_version)
 
+    # Connect to Redis cache
+    try:
+        await cache_client.connect()
+        logger.info("✅ Redis cache connected for camera counters")
+        
+        # Start MVR counter background worker
+        import asyncio
+        asyncio.create_task(mvr_counter_worker.start())
+        logger.info("✅ MVR counter worker started")
+    except Exception as e:
+        logger.warning(f"⚠️  Redis cache connection failed: {e}")
+        logger.info("Continuing without cache (will use live queries)")
+
     # Initialize tracing
     if hasattr(settings, "jaeger_enabled") and settings.jaeger_enabled:
         try:
@@ -151,6 +169,20 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("Shutting down PPL Meta Gateway")
+
+    # Stop MVR counter worker
+    try:
+        await mvr_counter_worker.stop()
+        logger.info("MVR counter worker stopped")
+    except Exception as e:
+        logger.error(f"Error stopping MVR counter worker: {e}")
+    
+    # Disconnect Redis cache
+    try:
+        await cache_client.disconnect()
+        logger.info("Redis cache disconnected")
+    except Exception as e:
+        logger.error(f"Error disconnecting Redis cache: {e}")
 
     # Shutdown tracing
     shutdown_tracing()
@@ -223,6 +255,7 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health_router, tags=["Health"])
     app.include_router(api_router, prefix=settings.api_v1_prefix, tags=["API Gateway"])
+    app.include_router(camera_counters_router, prefix=settings.api_v1_prefix, tags=["Camera Counters"])
 
     # Add metrics endpoint
     metrics_router = create_metrics_endpoint()

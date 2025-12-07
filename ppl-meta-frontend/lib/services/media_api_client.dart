@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dio/dio.dart' as dio;
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http_parser/http_parser.dart' as http_parser;
 import 'package:path_provider/path_provider.dart';
 import '../models/api_response.dart';
@@ -575,6 +576,49 @@ class MediaApiClient {
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get camera MVR people count with demographics (cached)
+  /// 
+  /// Fetches the count of unique MVR people detected by a camera with demographic breakdowns.
+  /// Results are cached for 10 minutes for optimal performance.
+  /// 
+  /// Parameters:
+  /// - cameraId: Camera device ID
+  /// - timeFilter: Time period filter ('today', 'last_hour', 'last_3_hours', 'last_week', 'last_month')
+  /// - forceRefresh: Bypass cache and get live data
+  /// 
+  /// Returns:
+  /// - count: Total unique people
+  /// - video_count: Number of videos analyzed
+  /// - demographics: Gender and age breakdowns
+  /// - cached: Whether result came from cache
+  Future<ApiResponse<Map<String, dynamic>>> getCameraMVRCountCached({
+    required String cameraId,
+    String timeFilter = 'today',
+    bool forceRefresh = false,
+  }) async {
+    try {
+      debugPrint('📡 Fetching MVR count for camera: $cameraId (timeFilter: $timeFilter, forceRefresh: $forceRefresh)');
+      
+      final response = await _apiClient.get(
+        '/api/v1/cameras/$cameraId/mvr-count',
+        queryParameters: {
+          'time_filter': timeFilter,
+          'force_refresh': forceRefresh,
+        },
+      );
+
+      debugPrint('✅ Got MVR count: ${response.data['count']} people (cached: ${response.data['cached']})');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Get MVR count failed: ${e.message}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get MVR count unexpected error: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }
@@ -1383,6 +1427,69 @@ class MediaApiClient {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       debugPrint('❌ Get collection items unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+
+
+  /// Invalidate cached MVR count for a camera.
+  ///
+  /// Use this when you know new detections have been processed
+  /// and want to force cache refresh on next request.
+  Future<ApiResponse<Map<String, dynamic>>> invalidateCameraMVRCountCache({
+    required String cameraId,
+    String? date,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (date != null) {
+        queryParams['date'] = date;
+      }
+
+      final response = await _apiClient.delete(
+        '/api/v1/cameras/$cameraId/mvr-count/cache',
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      );
+
+      debugPrint('🗑️  Camera MVR count cache invalidated: ${response.data}');
+
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Invalidate cache failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Invalidate cache unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get all cached camera MVR counts for a date.
+  ///
+  /// Useful for displaying dashboard summaries without
+  /// querying each camera individually.
+  Future<ApiResponse<Map<String, dynamic>>> getAllCameraMVRCounts({
+    String? date,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+      if (date != null) {
+        queryParams['date'] = date;
+      }
+
+      final response = await _apiClient.get(
+        '/api/v1/cameras/mvr-counts/all',
+        queryParameters: queryParams.isNotEmpty ? queryParams : null,
+      );
+
+      debugPrint('📊 All camera MVR counts result: ${response.data}');
+
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Get all camera counts failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get all camera counts unexpected error: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }

@@ -17,6 +17,7 @@ import '../../providers/workflow_providers.dart';
 import '../../models/workflow_widget_models.dart';
 import '../../services/orchestrator_api_client.dart';
 import '../../services/media_api_client.dart';
+import 'camera_counter_widget.dart';
 
 /// Enhanced camera card with integrated status monitoring
 class CameraCard extends ConsumerStatefulWidget {
@@ -34,89 +35,8 @@ class CameraCard extends ConsumerStatefulWidget {
 }
 
 class _CameraCardState extends ConsumerState<CameraCard> {
-  int? _mvrPeopleCount;
-  bool _isLoadingCount = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchMVRPeopleCount();
-  }
-
-  Future<void> _fetchMVRPeopleCount({
-    DateTime? startDate,
-    DateTime? endDate,
-  }) async {
-    if (!mounted) return; // Check before starting
-    
-    setState(() {
-      _isLoadingCount = true;
-    });
-
-    try {
-      final mediaApiClient = ref.read(mediaApiClientProvider);
-      
-      debugPrint('🔍 Fetching MVR count for camera: ${widget.camera.name}');
-      
-      // Default to today's date range if not specified
-      final now = DateTime.now();
-      final effectiveStartDate = startDate ?? DateTime(now.year, now.month, now.day, 0, 0, 0);
-      final effectiveEndDate = endDate ?? DateTime(now.year, now.month, now.day, 23, 59, 59);
-      
-      // Step 1: Get videos from this camera's collection in date range
-      final searchResponse = await mediaApiClient.searchMedia(
-        collectionId: widget.camera.deviceId, // Collection identifier
-        mediaType: MediaType.video,
-        startDate: effectiveStartDate,
-        endDate: effectiveEndDate,
-        limit: 100, // Get up to 100 videos
-      );
-
-      if (!mounted) return;
-
-      if (!searchResponse.success || searchResponse.data == null || searchResponse.data!.items.isEmpty) {
-        debugPrint('   No videos found for camera today');
-        setState(() {
-          _mvrPeopleCount = 0;
-          _isLoadingCount = false;
-        });
-        return;
-      }
-
-      // Step 2: Extract video UUIDs
-      final videoUuids = searchResponse.data!.items.map((media) => media.uuid).toList();
-      debugPrint('   Found ${videoUuids.length} videos today');
-
-      // Step 3: Get MVR people count for these videos
-      final countResponse = await mediaApiClient.getMVRPeopleCountByVideos(
-        videoUuids: videoUuids,
-      );
-
-      if (!mounted) return;
-
-      if (countResponse.success && countResponse.data != null) {
-        final count = countResponse.data!['count'] as int? ?? 0;
-        debugPrint('   MVR people count: $count');
-        setState(() {
-          _mvrPeopleCount = count;
-          _isLoadingCount = false;
-        });
-      } else {
-        debugPrint('   Count request failed: ${countResponse.error}');
-        setState(() {
-          _mvrPeopleCount = 0;
-          _isLoadingCount = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error fetching MVR people count: $e');
-      if (!mounted) return;
-      setState(() {
-        _mvrPeopleCount = 0;
-        _isLoadingCount = false;
-      });
-    }
-  }
+  // REMOVED: Old counter logic (_mvrPeopleCount, _isLoadingCount, _fetchMVRPeopleCount)
+  // Counter is now handled by separate CameraCounterWidget
 
   @override
   Widget build(BuildContext context) {
@@ -125,23 +45,34 @@ class _CameraCardState extends ConsumerState<CameraCard> {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Camera header
-            _buildCameraHeader(context, ref),
+      child: Column(  // Changed from Padding to Column for separate widget
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Camera header
+                _buildCameraHeader(context, ref),
             
-            if (widget.showStream && (widget.camera.isConnected || widget.camera.isActive)) ...[
-              const SizedBox(height: 16),
-              _buildStreamSection(),
-            ],
+                if (widget.showStream && (widget.camera.isConnected || widget.camera.isActive)) ...[
+                  const SizedBox(height: 16),
+                  _buildStreamSection(),
+                ],
             
-            const SizedBox(height: 16),
-            _buildActionButtons(context, ref),
-          ],
-        ),
+                const SizedBox(height: 16),
+                _buildActionButtons(context, ref),
+              ],
+            ),
+          ),
+          
+          // NEW: Separate counter widget (outside camera card padding)
+          CameraCounterWidget(
+            cameraId: widget.camera.deviceId,
+            refreshInterval: const Duration(minutes: 5),
+          ),
+        ],
       ),
     );
   }
@@ -203,8 +134,7 @@ class _CameraCardState extends ConsumerState<CameraCard> {
                     ),
                     const SizedBox(width: 6),
                   ],
-                  // NEW: Detected persons counter badge
-                  _buildDetectedPersonsCounter(),
+                  // REMOVED: Counter badge moved to separate CameraCounterWidget below
                 ],
               ),
               const SizedBox(height: 4),
@@ -261,78 +191,7 @@ class _CameraCardState extends ConsumerState<CameraCard> {
     );
   }
 
-  // NEW: Build detected persons counter badge
-  Widget _buildDetectedPersonsCounter() {
-    if (_isLoadingCount) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: Colors.grey.withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 10,
-              height: 10,
-              child: CircularProgressIndicator(
-                strokeWidth: 1.5,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'Loading...',
-              style: OfflineFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final count = _mvrPeopleCount ?? 0;
-    final hasDetections = count > 0;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: hasDetections 
-            ? Colors.green.withOpacity(0.1) 
-            : Colors.grey.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: hasDetections 
-              ? Colors.green.withOpacity(0.3) 
-              : Colors.grey.withOpacity(0.3),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.person,
-            size: 12,
-            color: hasDetections ? Colors.green.shade700 : Colors.grey.shade600,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '$count',
-            style: OfflineFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: hasDetections ? Colors.green.shade700 : Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // REMOVED: _buildDetectedPersonsCounter() - Now using separate CameraCounterWidget
 
   Widget _buildStreamSection() {
     final isMobile = widget.camera.type == CameraType.mobile || widget.camera.isMobileCamera;

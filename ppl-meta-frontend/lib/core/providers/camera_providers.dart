@@ -18,6 +18,12 @@ final cameraServiceProvider = Provider<CameraService>((ref) {
   return CameraService(apiClient);
 });
 
+/// Provider for MediaAPIClient with authenticated ApiClient
+final mediaApiClientProvider = Provider<MediaApiClient>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return MediaApiClient(apiClient);
+});
+
 /// State for camera list
 class CameraListState {
   final List<Camera> cameras;
@@ -368,12 +374,6 @@ final cameraCollectionServiceProvider = Provider<CameraCollectionService>((ref) 
   });
   
   return collectionService;
-});
-
-/// Provider for media API client (for snapshot uploads)
-final mediaApiClientProvider = Provider<MediaApiClient>((ref) {
-  final apiClient = ref.watch(apiClientProvider);
-  return MediaApiClient(apiClient);
 });
 
 /// Provider for background sync service

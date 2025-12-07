@@ -328,6 +328,17 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to initialize Face Detection endpoints: {e}")
         logger.warning("Continuing without Face Detection features")
 
+    # Workflows Registry Endpoints
+    try:
+        from workflows_registry_endpoints import router as workflows_registry_router
+
+        app.include_router(workflows_registry_router)
+        logger.info("✅ Workflows Registry endpoints initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize Workflows Registry endpoints: {e}")
+        logger.warning("Continuing without Workflows Registry features")
+
     # Initialize service discovery if available
     try:
         import socket

@@ -2692,6 +2692,154 @@ async def get_videos_mvr_people_count(
 
 
 # ============================================================================
+# ENDPOINT: Count MVR People by Video UUIDs with Demographics
+# ============================================================================
+
+@router.post(
+    "/count-by-videos-demographics",
+    summary="Get MVR People Count with Demographics for Video UUIDs",
+    description=(
+        "Returns the count of unique MVR people with demographic breakdowns "
+        "(gender, age) detected in the specified videos."
+    ),
+)
+async def get_videos_mvr_people_count_with_demographics(
+    video_uuids: List[str] = Body(
+        ..., embed=True, description="List of video UUIDs"
+    ),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    _current_user: dict = Depends(get_current_user)
+):
+    """
+    Get count of unique MVR people with demographic breakdowns.
+
+    Request Body:
+        {
+            "video_uuids": ["uuid1", "uuid2", "uuid3"]
+        }
+
+    Returns:
+        {
+            "count": 15,
+            "video_count": 3,
+            "demographics": {
+                "total_male": 9,
+                "total_female": 6,
+                "percent_male": 60.0,
+                "percent_female": 40.0,
+                "total_young": 4,
+                "total_adult": 11,
+                "percent_young": 26.7,
+                "percent_adult": 73.3
+            }
+        }
+    """
+    try:
+        if not video_uuids:
+            return {
+                "count": 0,
+                "video_count": 0,
+                "demographics": {
+                    "total_male": 0,
+                    "total_female": 0,
+                    "percent_male": 0.0,
+                    "percent_female": 0.0,
+                    "total_young": 0,
+                    "total_adult": 0,
+                    "percent_young": 0.0,
+                    "percent_adult": 0.0
+                }
+            }
+
+        logger.info(
+            "Fetching MVR people count with demographics for %d videos", len(video_uuids)
+        )
+
+        # Get database connection
+        async with mvr_repository.pool.acquire() as conn:
+            # Query MVR people with demographics
+            # Uses aggregated demographics from individuals linked to each MVR person
+            demographics_query = """
+                WITH video_individuals AS (
+                    -- Get individuals with appearances in these videos
+                    SELECT DISTINCT iva.individual_uuid
+                    FROM individual_video_appearances iva
+                    WHERE iva.video_uuid = ANY($1::uuid[])
+                ),
+                mvr_with_demographics AS (
+                    -- Get MVR people with their averaged demographics
+                    SELECT DISTINCT
+                        imm.mvr_people_uuid,
+                        -- Get the most common gender for this MVR person
+                        MODE() WITHIN GROUP (ORDER BY i.gender_estimate) as gender,
+                        -- Get the average age for this MVR person
+                        AVG(i.age_estimate) as avg_age
+                    FROM individual_mvr_mapping imm
+                    JOIN individuals i ON i.individual_uuid = imm.individual_uuid
+                    WHERE imm.individual_uuid IN (
+                        SELECT individual_uuid FROM video_individuals
+                    )
+                    AND i.gender_estimate IS NOT NULL
+                    AND i.age_estimate IS NOT NULL
+                    GROUP BY imm.mvr_people_uuid
+                )
+                SELECT 
+                    COUNT(*) as total_count,
+                    COUNT(*) FILTER (WHERE LOWER(gender) = 'male') as male_count,
+                    COUNT(*) FILTER (WHERE LOWER(gender) = 'female') as female_count,
+                    COUNT(*) FILTER (WHERE avg_age < 21) as young_count,
+                    COUNT(*) FILTER (WHERE avg_age >= 21) as adult_count
+                FROM mvr_with_demographics
+            """
+
+            # Convert string UUIDs to UUID array for PostgreSQL
+            uuid_array = [UUID(vid) for vid in video_uuids]
+            
+            demo_row = await conn.fetchrow(
+                demographics_query,
+                uuid_array
+            )
+
+            total_count = demo_row['total_count'] if demo_row else 0
+            male_count = demo_row['male_count'] if demo_row else 0
+            female_count = demo_row['female_count'] if demo_row else 0
+            young_count = demo_row['young_count'] if demo_row else 0
+            adult_count = demo_row['adult_count'] if demo_row else 0
+
+            # Calculate percentages
+            percent_male = (male_count / total_count * 100) if total_count > 0 else 0.0
+            percent_female = (female_count / total_count * 100) if total_count > 0 else 0.0
+            percent_young = (young_count / total_count * 100) if total_count > 0 else 0.0
+            percent_adult = (adult_count / total_count * 100) if total_count > 0 else 0.0
+
+            return {
+                "count": total_count,
+                "video_count": len(video_uuids),
+                "demographics": {
+                    "total_male": male_count,
+                    "total_female": female_count,
+                    "percent_male": round(percent_male, 1),
+                    "percent_female": round(percent_female, 1),
+                    "total_young": young_count,
+                    "total_adult": adult_count,
+                    "percent_young": round(percent_young, 1),
+                    "percent_adult": round(percent_adult, 1)
+                }
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error fetching videos MVR people count with demographics: %s", e, exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch videos MVR people count with demographics: {str(e)}"
+        ) from e
+
+
+# ============================================================================
 # ENDPOINT: Count MVR People by Collection (Today) - DEPRECATED
 # ============================================================================
 # NOTE: This endpoint requires cross-database queries which violates
