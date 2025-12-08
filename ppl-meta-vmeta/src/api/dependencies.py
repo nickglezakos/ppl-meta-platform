@@ -21,6 +21,9 @@ from services.mvr_service import MVRService
 from services.mvr_matcher import MVRMatcher
 from background.mvr_background_processor import MVRBackgroundProcessor
 
+# Cache
+from utils.redis_client import VMetaCacheClient
+
 # Authentication
 from utils.auth import verify_jwt_token, get_user_from_token
 
@@ -230,6 +233,24 @@ async def get_mvr_background_processor() -> MVRBackgroundProcessor:
             detail="MVR background processor not initialized"
         )
     return main.mvr_background_processor
+
+
+async def get_cache_client() -> VMetaCacheClient:
+    """
+    Get Redis cache client instance from global state.
+    
+    **Graceful Degradation:** Returns client even if Redis is not connected.
+    Endpoints should check client.is_connected() before use.
+    
+    **Returns:**
+        VMetaCacheClient: Cache client instance
+    """
+    import main
+    if not main.vmeta_cache_client:
+        logger.warning("Redis cache client not initialized, caching disabled")
+        # Return a new instance that will gracefully handle no connection
+        return VMetaCacheClient()
+    return main.vmeta_cache_client
 
 
 # ============================================================================

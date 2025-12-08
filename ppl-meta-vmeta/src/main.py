@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 db_client: VmetaDatabaseClient = None
 embedding_service: EmbeddingService = None
 workflow_service: WorkflowService = None
+vmeta_cache_client = None  # Redis cache client
 
 # MVR-People services (lazy loaded)
 mvr_repository = None
@@ -64,7 +65,7 @@ mvr_integration_hook = None
 async def lifespan(app: FastAPI):
     """Application lifecycle manager for vmeta service."""
 
-    global db_client, embedding_service, workflow_service
+    global db_client, embedding_service, workflow_service, vmeta_cache_client
     global mvr_repository, mvr_service, mvr_matcher
     global mvr_background_processor, mvr_integration_hook
 
@@ -72,6 +73,12 @@ async def lifespan(app: FastAPI):
         logger.info("🚀 Starting PPL Meta vmeta Service")
         logger.info(f"📊 Database: {settings.DB_HOST}:{settings.DB_PORT}")
         logger.info(f"🌐 API Server: http://{settings.HOST}:{settings.PORT}")
+        
+        # Initialize Redis cache client
+        logger.info("💾 Initializing Redis cache client...")
+        from utils.redis_client import vmeta_cache_client as cache
+        vmeta_cache_client = cache
+        await vmeta_cache_client.connect()
 
         # Initialize database client
         logger.info("📊 Initializing database client with pgvector support...")
@@ -288,6 +295,8 @@ async def lifespan(app: FastAPI):
     finally:
         # Cleanup
         logger.info("🧹 Shutting down vmeta service...")
+        if vmeta_cache_client:
+            await vmeta_cache_client.disconnect()
         if hasattr(app.state, 'mvr_pool') and app.state.mvr_pool:
             await app.state.mvr_pool.close()
         if hasattr(app.state, 'batch_pool') and app.state.batch_pool:
