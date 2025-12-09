@@ -428,6 +428,12 @@ async def control_playback(
     - **parameters**: Optional parameters (volume, speed, start_index)
     """
     try:
+        logger.info(f"🎮 Playback control request received:")
+        logger.info(f"   device_ids: {data.device_ids}")
+        logger.info(f"   command: {data.command}")
+        logger.info(f"   video_list_id: {data.video_list_id}")
+        logger.info(f"   parameters: {data.parameters}")
+        
         service = SignagePlaybackService(db)
 
         result = await service.control_playback(data)

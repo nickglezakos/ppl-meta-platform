@@ -695,6 +695,12 @@ async def delete_signage_device(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.post("/signage/playback/control")
+async def playback_control(request: Request):
+    """Proxy playback control commands to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.post("/signage/devices/{device_uuid}/playback")
 async def control_device_playback(request: Request):
     """Proxy playback control commands to Media service."""

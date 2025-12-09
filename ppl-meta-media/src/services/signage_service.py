@@ -876,9 +876,11 @@ class SignagePlaybackService:
         success_count = 0
 
         for device_id in request.device_ids:
+            logger.info(f"Processing control command '{request.command.value}' for device: {device_id}")
             device = self.signage_service.get_device_by_id(device_id)
 
             if not device or not device.is_online:
+                logger.warning(f"Device {device_id} not found or offline (device={device}, online={device.is_online if device else 'N/A'})")
                 results.append(
                     {
                         "device_id": str(device_id),
@@ -889,6 +891,7 @@ class SignagePlaybackService:
                 continue
 
             try:
+                logger.info(f"Sending {request.command.value} command to device {device.device_name} ({device.ip_address}:{device.port or 8009})")
                 success = await self._send_control_command(device, request)
 
                 if success:
@@ -902,6 +905,7 @@ class SignagePlaybackService:
                         device.playback_state = "stopped"
 
                     self.db.commit()
+                    logger.info(f"✅ Command {request.command.value} executed successfully on {device.device_name}")
 
                 results.append(
                     {
