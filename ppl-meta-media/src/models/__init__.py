@@ -30,7 +30,8 @@ from .signage import (
     VideoListSyncHistory,
 )
 from .trigger import (
-    AgeRange,
+    AgeRangeOperator,
+    GenderFilter,
     PersonCountOperator,
     Trigger,
     TriggerAction,
@@ -64,5 +65,6 @@ __all__ = [
     "Trigger",
     "TriggerAction",
     "PersonCountOperator",
-    "AgeRange",
+    "AgeRangeOperator",
+    "GenderFilter",
 ]

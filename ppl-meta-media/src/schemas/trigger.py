@@ -3,7 +3,7 @@ Pydantic schemas for Trigger API.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -17,12 +17,19 @@ class PersonCountOperatorEnum(str):
     BETWEEN = "between"
 
 
-class AgeRangeEnum(str):
-    """Age range categories."""
-    UNDERAGE = "underage"
-    ADULTS = "adults"
-    SENIORS = "seniors"
-    ALL = "all"
+class AgeRangeOperatorEnum(str):
+    """Age range operators."""
+    LESS_THAN = "less_than"
+    MORE_THAN = "more_than"
+    BETWEEN = "between"
+    ANY = "any"
+
+
+class GenderFilterEnum(str):
+    """Gender filter options."""
+    MALE = "male"
+    FEMALE = "female"
+    ANY = "any"
 
 
 class TriggerActionEnum(str):
@@ -46,13 +53,18 @@ class TriggerBase(BaseModel):
         min_length=1,
         max_length=50
     )
-    age_range: str = Field(
-        default="all",
-        description="Age range filter: underage, adults, seniors, all"
+    age_range_operator: Optional[str] = Field(
+        None,
+        description="Age comparison operator: less_than, more_than, between, any"
+    )
+    age_range_value: Optional[str] = Field(
+        None,
+        description="Age threshold (e.g., '18', '65', '18-30' for between)",
+        max_length=50
     )
     gender_filter: Optional[str] = Field(
-        None,
-        description="Gender filter (e.g., 'Any', '3M/2W', 'Male', 'Female')",
+        "any",
+        description="Gender filter: male, female, any",
         max_length=50
     )
     time_span: str = Field(
@@ -61,13 +73,15 @@ class TriggerBase(BaseModel):
         min_length=1,
         max_length=100
     )
-    media_source_uuid: UUID = Field(
+    camera_device_id: str = Field(
         ...,
-        description="UUID of the camera or media collection"
+        description="Device ID of the camera from Camera service (e.g., 'usb_camera_0')",
+        min_length=1,
+        max_length=255
     )
-    media_source_name: Optional[str] = Field(
+    camera_name: Optional[str] = Field(
         None,
-        description="Friendly name of media source",
+        description="Friendly name of the camera",
         max_length=255
     )
     action: str = Field(
@@ -102,12 +116,24 @@ class TriggerBase(BaseModel):
             raise ValueError(f'person_count_operator must be one of {valid}')
         return v
 
-    @field_validator('age_range')
+    @field_validator('age_range_operator')
     @classmethod
-    def validate_age_range(cls, v: str) -> str:
-        valid = ['underage', 'adults', 'seniors', 'all']
+    def validate_age_range_operator(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['less_than', 'more_than', 'between', 'any']
         if v not in valid:
-            raise ValueError(f'age_range must be one of {valid}')
+            raise ValueError(f'age_range_operator must be one of {valid}')
+        return v
+
+    @field_validator('gender_filter')
+    @classmethod
+    def validate_gender_filter(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return 'any'
+        valid = ['male', 'female', 'any']
+        if v not in valid:
+            raise ValueError(f'gender_filter must be one of {valid}')
         return v
 
     @field_validator('action')
@@ -129,11 +155,12 @@ class TriggerUpdate(BaseModel):
     
     person_count_operator: Optional[str] = None
     person_count_value: Optional[str] = None
-    age_range: Optional[str] = None
+    age_range_operator: Optional[str] = None
+    age_range_value: Optional[str] = None
     gender_filter: Optional[str] = None
     time_span: Optional[str] = None
-    media_source_uuid: Optional[UUID] = None
-    media_source_name: Optional[str] = None
+    camera_device_id: Optional[str] = None
+    camera_name: Optional[str] = None
     action: Optional[str] = None
     action_config: Optional[str] = None
     is_active: Optional[bool] = None
@@ -149,13 +176,22 @@ class TriggerUpdate(BaseModel):
                 raise ValueError(f'person_count_operator must be one of {valid}')
         return v
 
-    @field_validator('age_range')
+    @field_validator('age_range_operator')
     @classmethod
-    def validate_age_range(cls, v: Optional[str]) -> Optional[str]:
+    def validate_age_range_operator(cls, v: Optional[str]) -> Optional[str]:
         if v is not None:
-            valid = ['underage', 'adults', 'seniors', 'all']
+            valid = ['less_than', 'more_than', 'between', 'any']
             if v not in valid:
-                raise ValueError(f'age_range must be one of {valid}')
+                raise ValueError(f'age_range_operator must be one of {valid}')
+        return v
+
+    @field_validator('gender_filter')
+    @classmethod
+    def validate_gender_filter(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            valid = ['male', 'female', 'any']
+            if v not in valid:
+                raise ValueError(f'gender_filter must be one of {valid}')
         return v
 
     @field_validator('action')
@@ -188,3 +224,47 @@ class TriggerListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+class CounterDataRequest(BaseModel):
+    """Schema for camera counter data input."""
+    
+    camera_device_id: str = Field(..., description="Device ID of the camera (e.g., 'usb_camera_0')")
+    total_count: int = Field(..., ge=0, description="Total person count")
+    age_distribution: Optional[Dict[str, int]] = Field(
+        None,
+        description="Age distribution (e.g., {'0-18': 5, '19-30': 10, ...})"
+    )
+    gender_distribution: Optional[Dict[str, int]] = Field(
+        None,
+        description="Gender distribution (e.g., {'male': 8, 'female': 7})"
+    )
+    timestamp: Optional[datetime] = Field(
+        None,
+        description="Timestamp of the count (defaults to now)"
+    )
+
+
+class TriggerEvaluationResult(BaseModel):
+    """Schema for single trigger evaluation result."""
+    
+    trigger_uuid: UUID
+    trigger_name: Optional[str]
+    passed: bool = Field(..., description="Whether trigger conditions were met")
+    reason: str = Field(..., description="Explanation of the result")
+    person_count: int = Field(..., description="Actual person count evaluated")
+    timestamp: datetime = Field(..., description="When the evaluation occurred")
+
+
+class TriggerEvaluationResponse(BaseModel):
+    """Schema for trigger evaluation response."""
+    
+    camera_device_id: str
+    total_count: int
+    evaluated_at: datetime
+    triggers_evaluated: int = Field(..., description="Number of triggers checked")
+    triggers_passed: int = Field(..., description="Number of triggers that passed")
+    results: List[TriggerEvaluationResult] = Field(
+        ...,
+        description="Detailed results for each trigger"
+    )

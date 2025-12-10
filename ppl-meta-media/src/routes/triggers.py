@@ -13,11 +13,15 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models.trigger import Trigger
 from ..schemas.trigger import (
+    CounterDataRequest,
     TriggerCreate,
+    TriggerEvaluationResponse,
+    TriggerEvaluationResult,
     TriggerListResponse,
     TriggerResponse,
     TriggerUpdate,
 )
+from ..services.trigger_evaluation import CounterData, TriggerEvaluationService
 
 router = APIRouter(prefix="/api/v1/triggers", tags=["triggers"])
 
@@ -34,15 +38,21 @@ async def create_trigger(
     - **person_count_value**: Threshold value (e.g., '5', '10-20' for between)
     - **age_range**: Age range filter (underage, adults, seniors, all)
     - **time_span**: Time when active (e.g., 'Mon-Fri 09:00-17:00')
-    - **media_source_uuid**: UUID of camera/media collection
+    - **camera_device_id**: Device ID of camera (e.g., 'usb_camera_0')
     - **action**: Action to execute (alert, email, webhook, log)
     - **is_active**: Whether trigger is active
     """
-    db_trigger = Trigger(**trigger.model_dump())
-    db.add(db_trigger)
-    db.commit()
-    db.refresh(db_trigger)
-    return db_trigger
+    try:
+        db_trigger = Trigger(**trigger.model_dump())
+        db.add(db_trigger)
+        db.commit()
+        db.refresh(db_trigger)
+        return db_trigger
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.error(f"Error creating trigger: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("", response_model=TriggerListResponse)
@@ -186,3 +196,81 @@ async def get_trigger_stats(
         "inactive": inactive,
         "by_action": {action: count for action, count in action_counts}
     }
+
+
+@router.post("/evaluate", response_model=TriggerEvaluationResponse)
+async def evaluate_triggers(
+    counter_data: CounterDataRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluate all active triggers for a camera based on counter data.
+    
+    This endpoint receives camera counter data (total count, age/gender distribution)
+    and evaluates all active triggers associated with that camera. Returns detailed
+    results showing which triggers passed/failed and why.
+    
+    **Input**: Counter data from camera (total_count, age_distribution, gender_distribution)
+    **Output**: Evaluation results with pass/fail status for each trigger
+    
+    Example request:
+    ```json
+    {
+        "camera_device_id": "usb_camera_0",
+        "total_count": 25,
+        "age_distribution": {
+            "0-18": 5,
+            "19-30": 10,
+            "31-50": 8,
+            "51+": 2
+        },
+        "gender_distribution": {
+            "male": 12,
+            "female": 13
+        }
+    }
+    ```
+    """
+    try:
+        # Convert Pydantic model to service CounterData
+        counter = CounterData(
+            camera_device_id=counter_data.camera_device_id,
+            total_count=counter_data.total_count,
+            age_distribution=counter_data.age_distribution,
+            gender_distribution=counter_data.gender_distribution,
+            timestamp=counter_data.timestamp
+        )
+        
+        # Evaluate triggers
+        evaluation_service = TriggerEvaluationService(db)
+        results = evaluation_service.evaluate_all_active_triggers(counter)
+    except Exception as e:
+        import logging
+        logging.error(f"Error evaluating triggers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    # Convert results to response format
+    evaluation_results = []
+    for trigger, passed, reason in results:
+        evaluation_results.append(
+            TriggerEvaluationResult(
+                trigger_uuid=trigger.uuid,
+                trigger_name=trigger.name,
+                passed=passed,
+                reason=reason,
+                person_count=counter_data.total_count,
+                timestamp=counter.timestamp
+            )
+        )
+    
+    # Count passed triggers
+    triggers_passed = sum(1 for _, passed, _ in results if passed)
+    
+    return TriggerEvaluationResponse(
+        camera_device_id=counter_data.camera_device_id,
+        total_count=counter_data.total_count,
+        evaluated_at=counter.timestamp,
+        triggers_evaluated=len(results),
+        triggers_passed=triggers_passed,
+        results=evaluation_results
+    )

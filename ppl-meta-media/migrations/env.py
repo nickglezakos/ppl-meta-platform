@@ -20,7 +20,7 @@ try:
     use_existing_engine = True
 except ImportError:
     # Fallback for when running from different contexts
-    database_url = "postgresql://nickadmin:password@localhost:5433/ppl_media_db"
+    database_url = "postgresql://nickgklezakos:@localhost:5432/ppl_media_db"
 
     # Create a minimal Base for metadata
     from sqlalchemy.ext.declarative import declarative_base

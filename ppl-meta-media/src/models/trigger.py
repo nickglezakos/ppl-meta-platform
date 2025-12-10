@@ -20,13 +20,21 @@ class PersonCountOperator(str, enum.Enum):
     BETWEEN = "between"
 
 
-class AgeRange(str, enum.Enum):
-    """Age range categories."""
+class AgeRangeOperator(str, enum.Enum):
+    """Operators for age range comparison."""
 
-    UNDERAGE = "underage"  # < 18
-    ADULTS = "adults"  # 18-64
-    SENIORS = "seniors"  # 65+
-    ALL = "all"  # Any age
+    LESS_THAN = "less_than"  # Age < threshold
+    MORE_THAN = "more_than"  # Age > threshold
+    BETWEEN = "between"  # threshold_min <= Age <= threshold_max
+    ANY = "any"  # No age filtering
+
+
+class GenderFilter(str, enum.Enum):
+    """Gender filter options."""
+
+    MALE = "male"
+    FEMALE = "female"
+    ANY = "any"  # No gender filtering
 
 
 class TriggerAction(str, enum.Enum):
@@ -52,9 +60,9 @@ class Trigger(BaseModel):
     
     # Person count conditions
     person_count_operator = Column(
-        Enum(PersonCountOperator),
+        String(50),
         nullable=False,
-        default=PersonCountOperator.MORE_THAN,
+        default="more_than",
         comment="Comparison operator for person count"
     )
     person_count_value = Column(
@@ -63,19 +71,25 @@ class Trigger(BaseModel):
         comment="Person count threshold value (e.g., '5', '10-20' for BETWEEN)"
     )
     
-    # Age range filter
-    age_range = Column(
-        Enum(AgeRange),
-        nullable=False,
-        default=AgeRange.ALL,
-        comment="Target age range to monitor"
+    # Age range filter (optional)
+    age_range_operator = Column(
+        String(50),
+        nullable=True,
+        default=None,
+        comment="Age comparison operator (optional filter)"
+    )
+    age_range_value = Column(
+        String(50),
+        nullable=True,
+        comment="Age threshold value (e.g., '18', '65', '18-30' for BETWEEN)"
     )
     
     # Gender filter (optional)
     gender_filter = Column(
         String(50),
         nullable=True,
-        comment="Gender filter (e.g., 'Any', '3M/2W', 'Male', 'Female')"
+        default=GenderFilter.ANY,
+        comment="Gender filter (male, female, any)"
     )
     
     # Time conditions
@@ -85,24 +99,24 @@ class Trigger(BaseModel):
         comment="Time span when trigger is active (e.g., 'Mon-Fri 09:00-17:00', 'Daily 00:00-23:59')"
     )
     
-    # Media source (camera/collection reference)
-    media_source_uuid = Column(
-        UUID(as_uuid=True),
+    # Camera reference
+    camera_device_id = Column(
+        String(255),
         nullable=False,
         index=True,
-        comment="UUID of the camera or media collection to monitor"
+        comment="Device ID of the camera from Camera service (e.g., 'usb_camera_0', 'rtsp_192.168.1.76_554')"
     )
-    media_source_name = Column(
+    camera_name = Column(
         String(255),
         nullable=True,
-        comment="Friendly name of the media source (e.g., 'Camera 01, 03')"
+        comment="Friendly name of the camera (e.g., 'Front Door', 'Main Entrance')"
     )
     
     # Action configuration
     action = Column(
-        Enum(TriggerAction),
+        String(50),
         nullable=False,
-        default=TriggerAction.ALERT,
+        default="alert",
         comment="Action to execute when conditions are met"
     )
     action_config = Column(
@@ -133,4 +147,10 @@ class Trigger(BaseModel):
     )
     
     def __repr__(self):
-        return f"<Trigger {self.uuid} - {self.person_count_operator.value} {self.person_count_value} persons, active={self.is_active}>"
+        filters = []
+        if self.age_range_operator and self.age_range_operator != AgeRangeOperator.ANY:
+            filters.append(f"age:{self.age_range_operator.value}:{self.age_range_value}")
+        if self.gender_filter and self.gender_filter != GenderFilter.ANY:
+            filters.append(f"gender:{self.gender_filter.value}")
+        filter_str = f" [{', '.join(filters)}]" if filters else ""
+        return f"<Trigger {self.uuid} - {self.person_count_operator.value} {self.person_count_value} persons{filter_str}, active={self.is_active}>"
