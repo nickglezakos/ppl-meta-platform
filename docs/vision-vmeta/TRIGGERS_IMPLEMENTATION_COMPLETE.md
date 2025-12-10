@@ -206,6 +206,11 @@ Future<Map<String, dynamic>> fetchStats()
 
 **Features**:
 - ✅ Responsive design (DataTable for desktop, Cards for mobile)
+- ✅ **Camera Dropdown** (NEW - Dec 10, 2025): Fetches available cameras from Camera service API
+- ✅ **Authentication Integration**: Uses `authServiceProvider` for camera API access (matches MultiCameraPage pattern)
+- ✅ **Time Span Help Dialog**: Comprehensive format guide with examples (any, Mon-Fri 09:00-17:00, etc.)
+- ✅ **Create/Edit Dialog**: Full form implementation with camera selection, operators, time span
+- ✅ **SimpleCameraInfo Model**: Dropdown data structure (device_id, name)
 ## API Testing Results ✅
 
 ### Test 1: Authentication
@@ -468,22 +473,28 @@ Fires when: More than 30 women detected in women's section (any time)
 ### Frontend (Dart/Flutter)
 1. ✅ **Created**: `ppl-meta-frontend/lib/models/trigger_model.dart` (201 lines)
 2. ✅ **Created**: `ppl-meta-frontend/lib/services/trigger_service.dart` (168 lines)
-3. ✅ **Created**: `ppl-meta-frontend/lib/widgets/triggers_tab.dart` (447 lines)
+3. ✅ **Created**: `ppl-meta-frontend/lib/widgets/triggers_tab.dart` (908 lines) - **UPDATED Dec 10, 2025**
+   - Added SimpleCameraInfo model for dropdown
+   - Implemented camera fetching with authentication
+   - Added create/edit dialog with camera dropdown
+   - Added time span help dialog
+   - Integrated authServiceProvider pattern
 4. ✅ **Created**: `ppl-meta-frontend/lib/core/config.dart` (service URLs)
 5. ✅ **Modified**: `ppl-meta-frontend/lib/screens/person_objects_detail_screen.dart` (replaced hardcoded data)
 
-**Total**: 13 files created/modified, ~1,700 lines of code
+**Total**: 13 files created/modified, ~2,150 lines of code
 
 ---
 
-## Next Steps (Future Enhancements)
+### Next Steps (Future Enhancements)
 
-### 1. Create/Edit Dialog
-- Form with all trigger fields
-- Dropdown for operators, age ranges, actions
-- Time span picker (days, hours)
-- Camera/collection selector
-- Form validation
+### 1. ~~Create/Edit Dialog~~ ✅ COMPLETE (Dec 10, 2025)
+- ✅ Form with all trigger fields
+- ✅ Camera dropdown from Camera service API
+- ✅ Text fields for operators, age ranges, actions
+- ✅ Time span field with help dialog
+- ✅ Form validation
+- 🔄 **Future Enhancement**: Structured time range picker widget (currently uses text field with help documentation)
 
 ### 2. Advanced Filtering
 - Filter by age range
@@ -537,7 +548,7 @@ Fires when: More than 30 women detected in women's section (any time)
 - [x] **Person count operators** (NEW)
 - [x] **Real camera detection** (NEW)
 
-### Frontend 🔄
+### Frontend ✅ COMPLETE
 - [x] Model classes created
 - [x] Service class created
 - [x] UI component created
@@ -547,19 +558,20 @@ Fires when: More than 30 women detected in women's section (any time)
 - [x] Empty states
 - [x] Delete confirmation
 - [x] Toggle functionality
-- [ ] Create dialog (placeholder)
-- [ ] Edit dialog (placeholder)
-- [ ] Live API integration test
+- [x] **Create/Edit dialog with camera dropdown** (NEW - Dec 10, 2025)
+- [x] **Camera API integration using authServiceProvider** (NEW - Dec 10, 2025)
+- [x] **Time span help dialog with format documentation** (NEW - Dec 10, 2025)
+- [x] Live API integration test
 
 ---
 
 ## Known Limitations (Updated Dec 10, 2025)
 
-1. **Create/Edit Dialogs**: Placeholders shown, full forms not implemented yet
-2. **Authentication**: Service uses token from Config, needs proper auth flow integration
+1. ~~**Create/Edit Dialogs**: Placeholders shown, full forms not implemented yet~~ ✅ RESOLVED - Full create/edit dialog with camera dropdown implemented
+2. ~~**Authentication**: Service uses token from Config, needs proper auth flow integration~~ ✅ RESOLVED - Now uses authServiceProvider pattern from MultiCameraPage
 3. **Real-time Updates**: Manual refresh required after create/edit/delete
-4. ~~**Camera Selection**: Uses UUID strings, needs integration with ppl-meta-insights cameras service~~ ✅ RESOLVED - Now uses real camera device_ids from ppl-meta-cameras
-5. **Time Span Parsing**: Free-form text, needs structured time range picker
+4. ~~**Camera Selection**: Uses UUID strings, needs integration with ppl-meta-insights cameras service~~ ✅ RESOLVED - Now uses real camera device_ids from ppl-meta-cameras with dropdown selection
+5. ~~**Time Span Parsing**: Free-form text, needs structured time range picker~~ ✅ PARTIALLY RESOLVED - Help dialog with format documentation added, structured picker could be future enhancement
 6. **Action Execution**: Action types are stored and validated but not executed - action handlers need implementation
 7. **Event-Driven Evaluation**: Evaluation endpoint works but needs webhook/event system to auto-trigger on counter updates
 8. ~~**Age/Gender Filtering**: Schema supports filters but evaluation logic not implemented~~ ✅ RESOLVED - Fully implemented and tested
@@ -632,6 +644,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/triggers
 
 ### Recent Achievements (Dec 10, 2025)
 
+**Backend**:
 1. ✅ Migrated from UUID to device_id for camera references
 2. ✅ Integrated with Camera service API for real device detection
 3. ✅ Fixed enum handling (database VARCHAR + Pydantic validation)
@@ -642,4 +655,12 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/triggers
 8. ✅ Age range filtering tested and working
 9. ✅ Gender filtering implementation verified
 
-**System is production-ready for manual evaluation. Automated event-driven execution is the next milestone.**
+**Frontend**:
+10. ✅ Implemented camera dropdown in Create/Edit dialog
+11. ✅ Integrated Camera service API with authentication (authServiceProvider pattern)
+12. ✅ Added time span help dialog with comprehensive format documentation
+13. ✅ Fixed authentication flow to match working MultiCameraPage pattern
+14. ✅ SimpleCameraInfo model for dropdown data structure
+15. ✅ Full create/edit dialog implementation with all trigger fields
+
+**System is production-ready for manual trigger management and evaluation. Automated event-driven execution is the next milestone.**

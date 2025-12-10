@@ -36,6 +36,7 @@ from .trigger import (
     Trigger,
     TriggerAction,
 )
+from .user_trigger_action import UserTriggerAction
 from .workflow import MediaWorkflow
 
 __all__ = [
@@ -67,4 +68,5 @@ __all__ = [
     "PersonCountOperator",
     "AgeRangeOperator",
     "GenderFilter",
+    "UserTriggerAction",
 ]
