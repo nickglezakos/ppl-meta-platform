@@ -334,6 +334,9 @@ async def get_user_profile_singular(request: Request):
 
 async def _proxy_to_media_service(request: Request) -> Response:
     """Helper function to proxy requests to the Media service."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         # Get the original path and method
         path = str(request.url.path)
@@ -350,6 +353,10 @@ async def _proxy_to_media_service(request: Request) -> Response:
         # Get headers (exclude host to avoid conflicts)
         headers = dict(request.headers)
         headers.pop("host", None)
+        
+        # 🔍 DEBUG: Log authorization header status
+        auth_header = headers.get("authorization", "MISSING")
+        logger.info(f"🔐 [MEDIA-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Check if this is a streaming endpoint
         is_streaming = "/stream/video/" in path
@@ -883,6 +890,9 @@ async def query_sessions(request: Request):
 
 async def _proxy_to_cameras_service(request: Request) -> Response:
     """Helper function to proxy requests to the Cameras service."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         # Get the original path and method
         path = str(request.url.path)
@@ -899,6 +909,10 @@ async def _proxy_to_cameras_service(request: Request) -> Response:
         # Get headers (exclude host to avoid conflicts)
         headers = dict(request.headers)
         headers.pop("host", None)
+        
+        # 🔍 DEBUG: Log authorization header status
+        auth_header = headers.get("authorization", "MISSING")
+        logger.info(f"🔐 [CAMERAS-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Make the proxy request
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -940,9 +954,21 @@ async def get_cameras(request: Request):
 @api_router.get("/cameras/")
 async def get_cameras_with_slash(request: Request):
     """Proxy get cameras to Cameras service (with trailing slash)."""
-    # Validate authentication first
-    extract_user_from_token(request)
-    return await _proxy_to_cameras_service(request)
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Validate authentication first
+        logger.info(f"🔐 [CAMERAS-ROUTE] Validating auth for {request.url.path}")
+        extract_user_from_token(request)
+        logger.info(f"🔐 [CAMERAS-ROUTE] Auth validation passed, proxying request")
+        return await _proxy_to_cameras_service(request)
+    except HTTPException as e:
+        logger.error(f"🔐 [CAMERAS-ROUTE] Auth failed: {e.status_code} - {e.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"🔐 [CAMERAS-ROUTE] Unexpected error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
 @api_router.post("/cameras/detect")
@@ -1103,6 +1129,37 @@ async def get_recording_debug(request: Request):
 @api_router.post("/streaming/{device_id}/record/clear-state")
 async def clear_recording_state(request: Request):
     """Proxy clear recording state to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+# Instant Detection Service Routes
+@api_router.get("/instant-detection/status")
+async def get_instant_detection_status(request: Request):
+    """Proxy get instant detection status to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/instant-detection/results/{camera_id}")
+async def get_instant_detection_results(request: Request):
+    """Proxy get instant detection results to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/instant-detection/results")
+async def get_all_instant_detection_results(request: Request):
+    """Proxy get all instant detection results to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/instant-detection/{camera_id}/start")
+async def start_instant_detection(request: Request):
+    """Proxy start instant detection to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/instant-detection/{camera_id}/stop")
+async def stop_instant_detection(request: Request):
+    """Proxy stop instant detection to Cameras service."""
     return await _proxy_to_cameras_service(request)
 
 
@@ -1512,6 +1569,9 @@ async def get_person_objects_for_media(request: Request):
 # vmeta Service Helper Function
 async def _proxy_to_vmeta_service(request: Request) -> Response:
     """Helper function to proxy requests to the vmeta service."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         # Get the original path and method
         path = str(request.url.path)
@@ -1528,6 +1588,10 @@ async def _proxy_to_vmeta_service(request: Request) -> Response:
         # Get headers (exclude host to avoid conflicts)
         headers = dict(request.headers)
         headers.pop("host", None)
+        
+        # 🔍 DEBUG: Log authorization header status
+        auth_header = headers.get("authorization", "MISSING")
+        logger.info(f"🔐 [VMETA-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Make the proxy request
         async with httpx.AsyncClient(timeout=60.0) as client:

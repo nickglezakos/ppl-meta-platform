@@ -10,10 +10,18 @@ JWT_ALGORITHM = "HS256"
 
 def extract_user_from_token(request: Request) -> Dict[str, Any]:
     """Extract user information from JWT token in Authorization header."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         # Get Authorization header
         auth_header = request.headers.get("authorization")
+        
+        # 🔍 DEBUG: Log what we're receiving
+        logger.info(f"🔐 [AUTH-CHECK] Path: {request.url.path}, Auth header: {'Present ('+str(len(auth_header))+' chars)' if auth_header else 'MISSING'}")
+        
         if not auth_header or not auth_header.startswith("Bearer "):
+            logger.warning(f"🔐 [AUTH-FAIL] Path: {request.url.path}, Reason: {'Missing header' if not auth_header else 'Invalid format (not Bearer)'}")
             raise HTTPException(
                 status_code=401, detail="Missing or invalid authorization header"
             )

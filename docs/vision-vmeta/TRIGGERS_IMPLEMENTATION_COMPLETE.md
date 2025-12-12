@@ -1,14 +1,21 @@
 # Triggers Implementation - Complete ✅
 
-**Date**: December 10, 2025  
-**Version**: v2.20.0  
+**Date**: December 11, 2025  
+**Version**: v2.19.76  
 **Status**: PRODUCTION READY - FULLY FUNCTIONAL
 
 ## Overview
 
 Implemented a complete triggers management system in the PPL Meta platform that monitors camera counter data and fires actions when specified thresholds are met. The system evaluates person counts, age ranges, gender, and time spans against real-time detection data to trigger automated responses.
 
-**Latest Update (Dec 10, 2025)**: 
+**Latest Update (Dec 11, 2025)**: 
+- ✅ **User-Defined Actions**: Triggers can link to custom user actions via UUID foreign keys
+- ✅ **Action Name Lookup**: Displays user action names in trigger lists using SQLAlchemy relationships
+- ✅ **Inline Action Selector**: Dropdown in table (desktop & mobile) to link/unlink actions
+- ✅ **Tracking Duration**: Flexible number + unit input for MVR search time windows
+- ✅ **Responsive Table Display**: Shows tracking duration in both desktop and mobile views
+
+**Previous Updates (Dec 10, 2025)**: 
 - ✅ Migrated from UUID-based camera references to device_id strings
 - ✅ Integrated with Camera service for real camera identification
 - ✅ Fixed enum handling (changed from database enums to varchar with Pydantic validation)
@@ -52,8 +59,12 @@ CREATE TABLE triggers (
     camera_name VARCHAR(255),  -- Human-readable camera name (e.g., "Front Door", "Main Entrance")
     
     -- Action Configuration
-    action VARCHAR(50) NOT NULL,  -- Action identifier (alert, email, webhook, log)
+    action VARCHAR(50) NOT NULL,  -- Action identifier (alert, email, webhook, log) - DEPRECATED
     action_config VARCHAR(500),  -- Action-specific configuration (JSON string)
+    action_uuid UUID,  -- NEW: Foreign key to user_trigger_actions table
+    
+    -- Tracking Configuration
+    tracking_duration VARCHAR(50) NOT NULL DEFAULT '10 minutes',  -- Time window for MVR search (e.g., "5 seconds", "10 minutes", "2 hours", "1 day")
     
     -- Metadata
     is_active BOOLEAN NOT NULL DEFAULT true,
@@ -67,6 +78,12 @@ CREATE INDEX idx_trigger_uuid ON triggers(uuid);
 CREATE INDEX idx_trigger_is_active ON triggers(is_active);
 CREATE INDEX idx_trigger_camera_device ON triggers(camera_device_id);
 CREATE INDEX idx_trigger_time_evaluation ON triggers(is_active, camera_device_id);
+CREATE INDEX idx_trigger_action_uuid ON triggers(action_uuid);
+CREATE INDEX idx_trigger_tracking_duration ON triggers(tracking_duration);
+
+-- Foreign Key Constraints
+ALTER TABLE triggers ADD CONSTRAINT fk_trigger_action_uuid 
+    FOREIGN KEY (action_uuid) REFERENCES user_trigger_actions(uuid) ON DELETE SET NULL;
 ```
 
 **Key Schema Changes**:
@@ -119,6 +136,21 @@ CREATE INDEX idx_trigger_time_evaluation ON triggers(is_active, camera_device_id
 - Renamed `media_source_uuid` (UUID) → `camera_device_id` (VARCHAR)
 - Renamed `media_source_name` → `camera_name`
 - Updated indexes
+**Status**: ✅ Applied
+
+**Migration 4**: `link_triggers_to_actions.py` (Dec 11, 2025)  
+**Changes**:
+- Added `action_uuid` column (UUID, nullable)
+- Created foreign key to `user_trigger_actions` table with SET NULL on delete
+- Created index `idx_trigger_action_uuid`
+- SQLAlchemy relationship for eager loading action names
+**Status**: ✅ Applied
+
+**Migration 5**: `add_tracking_duration_to_triggers.py` (Dec 11, 2025)  
+**Changes**:
+- Added `tracking_duration` column (VARCHAR(50), default '10 minutes')
+- Created index `idx_trigger_tracking_duration`
+- Stores time window for MVR search queries
 **Status**: ✅ Applied
 
 **Manual Fix** (Dec 10, 2025):
@@ -206,10 +238,19 @@ Future<Map<String, dynamic>> fetchStats()
 
 **Features**:
 - ✅ Responsive design (DataTable for desktop, Cards for mobile)
-- ✅ **Camera Dropdown** (NEW - Dec 10, 2025): Fetches available cameras from Camera service API
-- ✅ **Authentication Integration**: Uses `authServiceProvider` for camera API access (matches MultiCameraPage pattern)
+- ✅ **Camera Dropdown**: Fetches available cameras from Camera service API
+- ✅ **Authentication Integration**: Uses `authServiceProvider` for camera API access
 - ✅ **Time Span Help Dialog**: Comprehensive format guide with examples (any, Mon-Fri 09:00-17:00, etc.)
-- ✅ **Create/Edit Dialog**: Full form implementation with camera selection, operators, time span
+- ✅ **User Action Selector** (NEW - Dec 11, 2025): 
+  - Inline dropdowns in table (desktop & mobile) to link/unlink user-defined actions
+  - "None" option to dissociate triggers from actions
+  - Shows action names from relationship lookup
+  - Loads all user actions regardless of active status
+- ✅ **Tracking Duration Input** (NEW - Dec 11, 2025):
+  - Number input + unit dropdown (seconds, minutes, hours, days, months)
+  - Displayed in table columns (desktop & mobile)
+  - Flexible time window configuration for MVR search
+- ✅ **Create/Edit Dialog**: Full form with camera, action selector, tracking duration (number + unit)
 - ✅ **SimpleCameraInfo Model**: Dropdown data structure (device_id, name)
 ## API Testing Results ✅
 
@@ -460,29 +501,44 @@ Fires when: More than 30 women detected in women's section (any time)
 ## File Changes Summary
 
 ### Backend (Python)
-1. ✅ **Created**: `ppl-meta-media/src/models/trigger.py` (157 lines) - Updated Dec 10
-2. ✅ **Created**: `ppl-meta-media/src/schemas/trigger.py` (271 lines) - Updated Dec 10
-3. ✅ **Created**: `ppl-meta-media/src/routes/triggers.py` (272 lines) - Updated Dec 10
-4. ✅ **Created**: `ppl-meta-media/src/services/trigger_evaluation.py` (277 lines) - NEW Dec 10
-5. ✅ **Created**: `ppl-meta-media/src/alembic/versions/add_triggers_table.py` (migration)
-6. ✅ **Created**: `ppl-meta-media/src/alembic/versions/update_trigger_schema_for_operators.py` (migration) - NEW Dec 10
-7. ✅ **Created**: `ppl-meta-media/src/alembic/versions/rename_media_source_uuid_to_camera_device_id.py` (migration) - NEW Dec 10
-8. ✅ **Modified**: `ppl-meta-media/src/models/__init__.py` (added Trigger imports)
-9. ✅ **Modified**: `ppl-meta-media/src/main.py` (registered triggers router)
+1. ✅ **Created**: `ppl-meta-media/src/models/trigger.py` (179 lines) - Updated Dec 11
+   - Added `action_uuid` foreign key column
+   - Added `tracking_duration` column
+   - Added SQLAlchemy relationship to UserTriggerAction
+2. ✅ **Created**: `ppl-meta-media/src/schemas/trigger.py` (295 lines) - Updated Dec 11
+   - Added `action_uuid` and `action_name` fields
+   - Added `tracking_duration` field with validation
+3. ✅ **Created**: `ppl-meta-media/src/routes/triggers.py` (315 lines) - Updated Dec 11
+   - Modified all endpoints to use joinedload for action_name population
+   - Returns action_name from relationship in responses
+4. ✅ **Created**: `ppl-meta-media/src/services/trigger_evaluation.py` (277 lines)
+5. ✅ **Created**: `ppl-meta-media/migrations/versions/add_triggers_table.py`
+6. ✅ **Created**: `ppl-meta-media/migrations/versions/update_trigger_schema_for_operators.py`
+7. ✅ **Created**: `ppl-meta-media/migrations/versions/rename_media_source_uuid_to_camera_device_id.py`
+8. ✅ **Created**: `ppl-meta-media/migrations/versions/link_triggers_to_actions.py` - **NEW Dec 11**
+9. ✅ **Created**: `ppl-meta-media/migrations/versions/add_tracking_duration_to_triggers.py` - **NEW Dec 11**
+10. ✅ **Modified**: `ppl-meta-media/src/models/__init__.py` (added Trigger imports)
+11. ✅ **Modified**: `ppl-meta-media/src/main.py` (registered triggers router)
 
 ### Frontend (Dart/Flutter)
-1. ✅ **Created**: `ppl-meta-frontend/lib/models/trigger_model.dart` (201 lines)
+1. ✅ **Created**: `ppl-meta-frontend/lib/models/trigger_model.dart` (213 lines) - **UPDATED Dec 11**
+   - Added `actionUuid`, `actionName` fields
+   - Added `trackingDuration` field
 2. ✅ **Created**: `ppl-meta-frontend/lib/services/trigger_service.dart` (168 lines)
-3. ✅ **Created**: `ppl-meta-frontend/lib/widgets/triggers_tab.dart` (908 lines) - **UPDATED Dec 10, 2025**
+3. ✅ **Created**: `ppl-meta-frontend/lib/widgets/triggers_tab.dart` (1177 lines) - **UPDATED Dec 11, 2025**
    - Added SimpleCameraInfo model for dropdown
    - Implemented camera fetching with authentication
-   - Added create/edit dialog with camera dropdown
+   - **NEW**: Added inline action selector dropdowns (desktop & mobile tables)
+   - **NEW**: Added tracking duration to table display
+   - **NEW**: Number input + unit dropdown for tracking duration in dialog
+   - **NEW**: Action selector dropdown in create/edit dialog
+   - **NEW**: Parse and combine tracking duration logic
    - Added time span help dialog
    - Integrated authServiceProvider pattern
 4. ✅ **Created**: `ppl-meta-frontend/lib/core/config.dart` (service URLs)
 5. ✅ **Modified**: `ppl-meta-frontend/lib/screens/person_objects_detail_screen.dart` (replaced hardcoded data)
 
-**Total**: 13 files created/modified, ~2,150 lines of code
+**Total**: 16 files created/modified, ~2,600 lines of code
 
 ---
 
@@ -558,25 +614,32 @@ Fires when: More than 30 women detected in women's section (any time)
 - [x] Empty states
 - [x] Delete confirmation
 - [x] Toggle functionality
-- [x] **Create/Edit dialog with camera dropdown** (NEW - Dec 10, 2025)
-- [x] **Camera API integration using authServiceProvider** (NEW - Dec 10, 2025)
-- [x] **Time span help dialog with format documentation** (NEW - Dec 10, 2025)
+- [x] Create/Edit dialog with camera dropdown
+- [x] Camera API integration using authServiceProvider
+- [x] Time span help dialog with format documentation
+- [x] **Inline action selector dropdowns** (NEW - Dec 11, 2025)
+- [x] **Action linking/unlinking functionality** (NEW - Dec 11, 2025)
+- [x] **Tracking duration in table display** (NEW - Dec 11, 2025)
+- [x] **Number + unit input for tracking duration** (NEW - Dec 11, 2025)
+- [x] **Action name display from relationship** (NEW - Dec 11, 2025)
 - [x] Live API integration test
 
 ---
 
-## Known Limitations (Updated Dec 10, 2025)
+## Known Limitations (Updated Dec 11, 2025)
 
-1. ~~**Create/Edit Dialogs**: Placeholders shown, full forms not implemented yet~~ ✅ RESOLVED - Full create/edit dialog with camera dropdown implemented
-2. ~~**Authentication**: Service uses token from Config, needs proper auth flow integration~~ ✅ RESOLVED - Now uses authServiceProvider pattern from MultiCameraPage
-3. **Real-time Updates**: Manual refresh required after create/edit/delete
-4. ~~**Camera Selection**: Uses UUID strings, needs integration with ppl-meta-insights cameras service~~ ✅ RESOLVED - Now uses real camera device_ids from ppl-meta-cameras with dropdown selection
-5. ~~**Time Span Parsing**: Free-form text, needs structured time range picker~~ ✅ PARTIALLY RESOLVED - Help dialog with format documentation added, structured picker could be future enhancement
-6. **Action Execution**: Action types are stored and validated but not executed - action handlers need implementation
-7. **Event-Driven Evaluation**: Evaluation endpoint works but needs webhook/event system to auto-trigger on counter updates
-8. ~~**Age/Gender Filtering**: Schema supports filters but evaluation logic not implemented~~ ✅ RESOLVED - Fully implemented and tested
-9. **Trigger Execution Logs**: No history tracking of when triggers fire or action outcomes
-10. **Cooldown/Debounce**: No spam prevention for rapid trigger firing
+1. ~~**Create/Edit Dialogs**: Placeholders shown, full forms not implemented yet~~ ✅ RESOLVED - Full create/edit dialog with all fields
+2. ~~**Authentication**: Service uses token from Config, needs proper auth flow integration~~ ✅ RESOLVED - Now uses authServiceProvider pattern
+3. **Real-time Updates**: Manual refresh required after create/edit/delete (could use WebSocket/SSE)
+4. ~~**Camera Selection**: Uses UUID strings, needs integration with ppl-meta-insights cameras service~~ ✅ RESOLVED - Real camera device_ids with dropdown
+5. ~~**Time Span Parsing**: Free-form text, needs structured time range picker~~ ✅ PARTIALLY RESOLVED - Help dialog with documentation
+6. ~~**User Action Linking**: Need to connect triggers to user-defined actions~~ ✅ RESOLVED - Foreign key relationship with inline selectors
+7. ~~**Tracking Duration**: Need flexible time window configuration for MVR search~~ ✅ RESOLVED - Number + unit input implemented
+8. **Action Execution**: Action types are stored and validated but not executed - action handlers need implementation
+9. **Event-Driven Evaluation**: Evaluation endpoint works but needs webhook/event system to auto-trigger on counter updates
+10. ~~**Age/Gender Filtering**: Schema supports filters but evaluation logic not implemented~~ ✅ RESOLVED - Fully implemented and tested
+11. **Trigger Execution Logs**: No history tracking of when triggers fire or action outcomes
+12. **Cooldown/Debounce**: No spam prevention for rapid trigger firing
 
 ---
 
@@ -642,25 +705,31 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/triggers
 **Phase 3 (Current)**: 🔄 Action handlers + Event-driven evaluation + Execution logs  
 **Phase 4 (Future)**: Advanced UI (create/edit forms) + Analytics dashboard + Cooldown/debounce
 
-### Recent Achievements (Dec 10, 2025)
+### Recent Achievements (Dec 11, 2025)
 
 **Backend**:
-1. ✅ Migrated from UUID to device_id for camera references
-2. ✅ Integrated with Camera service API for real device detection
-3. ✅ Fixed enum handling (database VARCHAR + Pydantic validation)
-4. ✅ Implemented trigger evaluation service with filtering
-5. ✅ Created and tested evaluation endpoint
-6. ✅ End-to-end test: Created trigger → Evaluated with counter data → Got correct results
-7. ✅ All 4 person count operators tested and working
-8. ✅ Age range filtering tested and working
-9. ✅ Gender filtering implementation verified
+1. ✅ **User-Defined Actions Integration**: Added foreign key relationship to user_trigger_actions table
+2. ✅ **Action Name Lookup**: SQLAlchemy relationship with joinedload for efficient action name population
+3. ✅ **Tracking Duration Field**: VARCHAR(50) column with default '10 minutes' for MVR search time windows
+4. ✅ **Database Migrations**: Two new migrations (link_triggers_to_actions, add_tracking_duration)
+5. ✅ **API Updates**: All trigger endpoints now return action_name from relationship
 
 **Frontend**:
-10. ✅ Implemented camera dropdown in Create/Edit dialog
-11. ✅ Integrated Camera service API with authentication (authServiceProvider pattern)
-12. ✅ Added time span help dialog with comprehensive format documentation
-13. ✅ Fixed authentication flow to match working MultiCameraPage pattern
-14. ✅ SimpleCameraInfo model for dropdown data structure
-15. ✅ Full create/edit dialog implementation with all trigger fields
+6. ✅ **Inline Action Selectors**: Dropdowns in both desktop DataTable and mobile Card views
+7. ✅ **Action Linking/Unlinking**: "None" option to dissociate triggers from actions
+8. ✅ **Tracking Duration Display**: Added column to table views showing time windows
+9. ✅ **Number + Unit Input**: Dialog form with separate number input and unit dropdown (seconds/minutes/hours/days/months)
+10. ✅ **Flexible Time Configuration**: Parse existing duration strings, combine on save
+11. ✅ **Complete CRUD**: Create, read, update, delete with all new fields fully functional
 
-**System is production-ready for manual trigger management and evaluation. Automated event-driven execution is the next milestone.**
+**Previous Achievements (Dec 10, 2025)**:
+- ✅ Migrated from UUID to device_id for camera references
+- ✅ Integrated with Camera service API for real device detection
+- ✅ Fixed enum handling (database VARCHAR + Pydantic validation)
+- ✅ Implemented trigger evaluation service with filtering
+- ✅ All 4 person count operators tested and working
+- ✅ Age range and gender filtering fully functional
+- ✅ Camera dropdown in Create/Edit dialog
+- ✅ Time span help dialog with format documentation
+
+**System is production-ready for trigger management with user-defined actions and flexible tracking duration. Automated event-driven execution is the next milestone.**

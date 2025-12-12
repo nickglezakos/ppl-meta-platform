@@ -1,0 +1,45 @@
+# Instant Detection Configuration
+
+instant_detection:
+  enabled: true
+  
+  # Sampling settings
+  sampling:
+    interval_seconds: 5           # Sample every 5 seconds
+    frames_per_sample: 3          # Always 3 frames
+    temporal_window_seconds: 1.0  # 1 second between first and last frame
+  
+  # Detection settings
+  detection:
+    method: "two_stage"            # Haar + Dlib (same as main pipeline)
+    confidence_threshold: 0.5      # Same as main pipeline
+    similarity_threshold: 0.6      # Person grouping threshold
+  
+  # Age/Gender detection
+  age_gender:
+    enabled: true                  # Run age/gender on best face
+    note: "Uses Vision Service API - no local models needed"
+  
+  # Output settings
+  output:
+    storage: "memory_only"         # Don't store in database
+    cache_ttl_seconds: 5           # Keep results for 5 seconds
+    broadcast_method: "cache"      # cache, websocket, or redis
+  
+  # Thread settings
+  thread:
+    priority: "low"                # Don't interfere with main pipeline
+    daemon: true                   # Dies with main thread
+    name_prefix: "instant-detect"  # Thread naming
+
+# Service URLs - Instant detection uses multiple service APIs
+services:
+  vision: "http://localhost:8003"      # Face detection (Haar + Dlib)
+  vmeta: "http://localhost:8008"       # Age/gender detection (DeepFace)
+  orchestrator: "http://localhost:8002"
+  cameras: "http://localhost:8005"
+
+# Note: No model paths needed
+# - Vision Service provides face detection via API
+# - VMeta Service provides age/gender detection via API
+# This eliminates duplicate model files and ensures consistent detection quality

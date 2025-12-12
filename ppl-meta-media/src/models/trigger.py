@@ -5,8 +5,9 @@ Trigger model for event-based notifications and alerts.
 import enum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, Enum, String
+from sqlalchemy import Boolean, Column, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 
 from .base import BaseModel
 
@@ -117,12 +118,33 @@ class Trigger(BaseModel):
         String(50),
         nullable=False,
         default="alert",
-        comment="Action to execute when conditions are met"
+        comment="Action to execute when conditions are met (deprecated - use action_uuid)"
     )
     action_config = Column(
         String(500),
         nullable=True,
         comment="Additional action configuration (JSON string for complex configs)"
+    )
+    
+    # Link to user-defined action
+    action_uuid = Column(
+        UUID(as_uuid=True),
+        ForeignKey('user_trigger_actions.uuid', ondelete='SET NULL'),
+        nullable=True,
+        index=True,
+        comment="UUID of the linked user action"
+    )
+    
+    # Relationship to user action
+    user_action = relationship("UserTriggerAction", foreign_keys=[action_uuid])
+    
+    # Tracking configuration
+    tracking_duration = Column(
+        String(50),
+        nullable=False,
+        default="10 minutes",
+        index=True,
+        comment='Time window for MVR search (e.g., "5 seconds", "10 minutes", "2 hours", "1 day")'
     )
     
     # Trigger state

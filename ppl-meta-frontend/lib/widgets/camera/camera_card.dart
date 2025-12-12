@@ -18,6 +18,7 @@ import '../../models/workflow_widget_models.dart';
 import '../../services/orchestrator_api_client.dart';
 import '../../services/media_api_client.dart';
 import 'camera_counter_widget.dart';
+import 'instant_detection_widget.dart';
 
 /// Enhanced camera card with integrated status monitoring
 class CameraCard extends ConsumerStatefulWidget {
@@ -71,6 +72,12 @@ class _CameraCardState extends ConsumerState<CameraCard> {
           CameraCounterWidget(
             cameraId: widget.camera.deviceId,
             refreshInterval: const Duration(minutes: 5),
+          ),
+          
+          // NEW: Instant detection widget (real-time face detection)
+          InstantDetectionWidget(
+            cameraId: widget.camera.deviceId,
+            refreshInterval: const Duration(seconds: 3),
           ),
         ],
       ),

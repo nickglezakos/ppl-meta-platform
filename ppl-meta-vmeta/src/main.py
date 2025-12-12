@@ -385,6 +385,20 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"❌ Error adding Batch Processing API router: {e}")
 
+# Add ML Inference API router (age/gender detection)
+try:
+    from api.v1.ml_inference import router as ml_inference_router
+    app.include_router(
+        ml_inference_router,
+        prefix="/api/v1/ml",
+        tags=["ml-inference"]
+    )
+    logger.info("✅ ML Inference API router added successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ ML Inference API router not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Error adding Batch Processing API router: {e}")
+
 
 @app.get("/")
 async def root():

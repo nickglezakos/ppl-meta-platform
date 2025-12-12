@@ -2797,6 +2797,32 @@ async def get_videos_mvr_people_count_with_demographics(
         async with mvr_repository.pool.acquire() as conn:
             # Query MVR people with demographics
             # Uses aggregated demographics from individuals linked to each MVR person
+            
+            # First, let's count individuals with video appearances (for debugging)
+            debug_query = """
+                SELECT 
+                    COUNT(DISTINCT iva.individual_uuid) as total_individuals,
+                    COUNT(DISTINCT imm.mvr_people_uuid) as mvr_people_linked,
+                    COUNT(DISTINCT i.individual_uuid) FILTER (WHERE i.gender_estimate IS NOT NULL) as with_gender,
+                    COUNT(DISTINCT i.individual_uuid) FILTER (WHERE i.age_estimate IS NOT NULL) as with_age
+                FROM individual_video_appearances iva
+                LEFT JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
+                LEFT JOIN individuals i ON iva.individual_uuid = i.individual_uuid
+                WHERE iva.video_uuid = ANY($1::uuid[])
+            """
+            
+            # Convert string UUIDs to UUID array for PostgreSQL
+            uuid_array = [UUID(vid) for vid in video_uuids]
+            
+            debug_row = await conn.fetchrow(debug_query, uuid_array)
+            logger.info(
+                f"📊 DEBUG - Video MVR Count: "
+                f"total_individuals={debug_row['total_individuals']}, "
+                f"mvr_linked={debug_row['mvr_people_linked']}, "
+                f"with_gender={debug_row['with_gender']}, "
+                f"with_age={debug_row['with_age']}"
+            )
+            
             demographics_query = """
                 WITH video_individuals AS (
                     -- Get individuals with appearances in these videos
@@ -2804,30 +2830,22 @@ async def get_videos_mvr_people_count_with_demographics(
                     FROM individual_video_appearances iva
                     WHERE iva.video_uuid = ANY($1::uuid[])
                 ),
-                mvr_with_demographics AS (
-                    -- Get MVR people with their averaged demographics
-                    SELECT DISTINCT
-                        imm.mvr_people_uuid,
-                        -- Get the most common gender for this MVR person
-                        MODE() WITHIN GROUP (ORDER BY i.gender_estimate) as gender,
-                        -- Get the average age for this MVR person
-                        AVG(i.age_estimate) as avg_age
+                linked_mvr_people AS (
+                    -- Get MVR people linked to these video individuals
+                    SELECT DISTINCT imm.mvr_people_uuid
                     FROM individual_mvr_mapping imm
-                    JOIN individuals i ON i.individual_uuid = imm.individual_uuid
-                    WHERE imm.individual_uuid IN (
-                        SELECT individual_uuid FROM video_individuals
-                    )
-                    AND i.gender_estimate IS NOT NULL
-                    AND i.age_estimate IS NOT NULL
-                    GROUP BY imm.mvr_people_uuid
+                    WHERE imm.individual_uuid IN (SELECT individual_uuid FROM video_individuals)
                 )
+                -- Get demographics directly from mvr_people table (not individuals)
                 SELECT 
                     COUNT(*) as total_count,
-                    COUNT(*) FILTER (WHERE LOWER(gender) = 'male') as male_count,
-                    COUNT(*) FILTER (WHERE LOWER(gender) = 'female') as female_count,
-                    COUNT(*) FILTER (WHERE avg_age < 21) as young_count,
-                    COUNT(*) FILTER (WHERE avg_age >= 21) as adult_count
-                FROM mvr_with_demographics
+                    COUNT(*) FILTER (WHERE LOWER(mp.gender) = 'male') as male_count,
+                    COUNT(*) FILTER (WHERE LOWER(mp.gender) = 'female') as female_count,
+                    COUNT(*) FILTER (WHERE mp.age_max IS NOT NULL AND mp.age_max < 21) as young_count,
+                    COUNT(*) FILTER (WHERE mp.age_min IS NOT NULL AND mp.age_min >= 21) as adult_count
+                FROM mvr_people mp
+                WHERE mp.mvr_people_uuid IN (SELECT mvr_people_uuid FROM linked_mvr_people)
+                    AND mp.is_orphaned = false
             """
 
             # Convert string UUIDs to UUID array for PostgreSQL

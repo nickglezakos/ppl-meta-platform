@@ -29,14 +29,14 @@
 
 ### Purpose
 
-This document proposes a **continuous, non-blocking pipeline** for automatically creating individuals and MVR people data objects from batches of recorded videos. The pipeline triggers automatically after a configurable number of videos (batch size X) have completed both recording and face detection processing.
+This document proposes a **continuous, non-blocking pipeline** for automatically creating individuals and MVR people data objects from batches of recorded videos. The pipeline triggers automatically after a configurable number of videos (default batch size: **5 videos**) have completed both recording and face detection processing.
 
 ### Key Features
 
-✅ **Automatic Batch Triggering**: Processes batches of videos after recording completes  
+✅ **Automatic Batch Triggering**: Processes batches of 5 videos (configurable 2-50) after recording completes  
 ✅ **Single-Video Processing**: Creates individuals/MVR people from each video immediately  
 ✅ **Single-Individual MVR Creation**: Every individual becomes its own MVR person initially  
-✅ **Intelligent Batch Grouping**: Groups videos by 30-second batches for processing  
+✅ **Intelligent Batch Grouping**: Groups videos by 30-second segments for processing  
 ✅ **Continuous Queue Processing**: Automatically clears processed videos and triggers next batch  
 ✅ **Search API Fixed**: Timestamp filtering removed - searches work correctly  
 ✅ **Two-Level Caching**: Leverages existing individual and MVR cache architecture  
@@ -722,7 +722,8 @@ _pending_videos_by_collection = {
 
 **Configuration**:
 ```python
-BATCH_SIZE = 5  # Number of videos per batch (per collection)
+BATCH_SIZE = 5  # Number of videos per batch (per collection) [DEFAULT, configurable 2-50]
+SEGMENT_DURATION = 30  # Video segment duration in seconds [DEFAULT, configurable 5-300]
 POLL_INTERVAL = 30  # Polling interval in seconds
 BATCH_TIMEOUT_MINUTES = 10  # Max time to wait for partial batch
 MAX_CONCURRENT_BATCHES = 10  # Max batches processing simultaneously
@@ -1291,18 +1292,19 @@ class BatchMonitor:
 - ❌ Adds latency (wait for timeout before processing)
 - ❌ May trigger false positives during slow recording periods
 
-**Timing Example**:
+**Timing Example** (30-second segments, 5-video batches):
 ```
 10:00:00  Recording starts
-10:00:30  Video 1 → Batch count = 1
-10:01:00  Video 2 → Batch count = 2
-...
-10:02:30  Video 5 → Batch count = 5 → TRIGGER (normal batch)
-10:03:00  Video 6 → New batch, count = 1
-10:03:30  Video 7 → Batch count = 2
-10:04:00  Video 8 → Batch count = 3
+10:00:30  Video 1 (segment 1, 30s) → Batch count = 1
+10:01:00  Video 2 (segment 2, 30s) → Batch count = 2
+10:01:30  Video 3 (segment 3, 30s) → Batch count = 3
+10:02:00  Video 4 (segment 4, 30s) → Batch count = 4
+10:02:30  Video 5 (segment 5, 30s) → Batch count = 5 → TRIGGER (normal batch)
+10:03:00  Video 6 (segment 6, 30s) → New batch, count = 1
+10:03:30  Video 7 (segment 7, 30s) → Batch count = 2
+10:04:00  Video 8 (segment 8, 30s) → Batch count = 3
 10:04:15  Recording STOPS (user action)
-10:09:00  No new videos for 5 minutes → TIMEOUT TRIGGER (partial batch)
+10:09:15  No new videos for 5 minutes → TIMEOUT TRIGGER (partial batch)
           Process videos 6, 7, 8
 ```
 
@@ -1493,18 +1495,18 @@ class HybridBatchTrigger:
 - ❌ More complex implementation
 - ❌ Requires event infrastructure
 
-**Timing Example**:
+**Timing Example** (30-second segments):
 ```
 Normal case (recording stop event works):
-10:04:00  Video 8 → Batch count = 3
+10:04:00  Video 8 (segment 8, 30s) → Batch count = 3
 10:04:15  Recording STOPS → Event received → IMMEDIATE TRIGGER
-          Process videos 6, 7, 8
+          Process videos 6, 7, 8 (partial batch of 3 videos = 90 seconds total)
 
 Fallback case (event missed or recording crashes):
-10:04:00  Video 8 → Batch count = 3
+10:04:00  Video 8 (segment 8, 30s) → Batch count = 3
 10:04:15  Recording STOPS → Event NOT received
-10:14:00  Timeout (10 minutes) → TIMEOUT TRIGGER
-          Process videos 6, 7, 8
+10:14:15  Timeout (10 minutes) → TIMEOUT TRIGGER
+          Process videos 6, 7, 8 (partial batch = 90 seconds total)
 ```
 
 #### Strategy 4: Manual Trigger API
@@ -1651,14 +1653,14 @@ incomplete_batches_waiting = Gauge(
 - Timeout: 10 minutes
 - Max wait: 24 hours
 
-**Example Flow**:
+**Example Flow** (30-second segments, 5-video batches):
 ```
-Recording: 8 videos total
-Batch 1: Videos 1-5 → Triggered at video 5 (threshold)
-Batch 2: Videos 6-8 → Partial batch (3 videos)
+Recording: 8 videos total (8 × 30s = 4 minutes of video)
+Batch 1: Videos 1-5 → Triggered at video 5 (threshold) = 2.5 minutes processed
+Batch 2: Videos 6-8 → Partial batch (3 videos) = 1.5 minutes processed
 Trigger: Recording stops → Immediate processing (recording_stopped event)
 Fallback: If event missed → Timeout after 10 minutes
-Result: All 8 videos processed with minimal delay
+Result: All 8 videos (4 minutes total) processed with minimal delay
 ```
 
 ---
@@ -2459,10 +2461,19 @@ async def execute_batch_pipeline_idempotent(batch_uuid: str):
 
 **Objective**: Find optimal batch size for best throughput vs. latency
 
+**Current Default**: 5 videos (configurable 2-50 via API)
+
 **Considerations**:
-- Smaller batches (2-3 videos): Lower latency, higher cache hit rate
-- Larger batches (10-15 videos): Better throughput, more merge opportunities
-- Recommended: 5 videos (balance)
+- Smaller batches (2-3 videos): Lower latency (1-1.5 min), higher cache hit rate, faster results
+- Medium batches (5 videos, default): Balanced latency (2.5 min), good cache reuse, optimal for most use cases
+- Larger batches (10-15 videos): Better throughput (5-7.5 min), more merge opportunities, higher resource usage
+- **Recommended**: 5 videos (default) for balance between latency and accuracy
+
+**Time Calculations** (with 30-second segments):
+- 2 videos = 1 minute of content
+- 5 videos = 2.5 minutes of content (default)
+- 10 videos = 5 minutes of content
+- 15 videos = 7.5 minutes of content
 
 **Adaptive Sizing**:
 ```python

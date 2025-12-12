@@ -569,14 +569,18 @@ class CameraService {
   }
 
   /// Start recording for a camera
-  Future<RecordingResult> startRecording(String deviceId) async {
+  Future<RecordingResult> startRecording(String deviceId, {bool enableInstantDetection = true}) async {
     print('🔥 DEBUG CORE: startRecording called for deviceId: $deviceId');
     print('🔥 DEBUG CORE: Using Gateway client for recording operations');
+    print('🔥 DEBUG CORE: enableInstantDetection: $enableInstantDetection');
     
     try {
       // Use Gateway for recording operations (has CORS support for browser requests)
       final response = await _cameraApiClient.post(
         '/api/v1/streaming/$deviceId/record/start',
+        queryParameters: {
+          'enable_instant_detection': enableInstantDetection,
+        },
       );
 
       // Transform response to match RecordingResult format
@@ -719,6 +723,38 @@ class CameraService {
         'duration_seconds': 0,
         'file_size_bytes': 0,
       });
+    }
+  }
+
+  /// Get instant detection results from camera's memory cache
+  Future<Map<String, dynamic>?> getInstantDetectionResults(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.get(
+        '/api/v1/instant-detection/results/$deviceId',
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data as Map<String, dynamic>;
+      } else if (response.statusCode == 404) {
+        // No results cached yet - instant detection not started, this is normal
+        return {'success': false, 'person_objects': []};
+      }
+      return null;
+    } on DioException catch (e) {
+      // Silently handle 404 - instant detection may not be running
+      if (e.response?.statusCode == 404) {
+        return {'success': false, 'person_objects': []};
+      }
+      // Only log non-404 errors and not timeouts (called every 10 seconds)
+      if (e.type != DioExceptionType.connectionTimeout &&
+          e.type != DioExceptionType.receiveTimeout &&
+          e.response?.statusCode != 404) {
+        print('Instant detection fetch: ${e.message}');
+      }
+      return null;
+    } catch (e) {
+      // Silent fail for other errors
+      return null;
     }
   }
 

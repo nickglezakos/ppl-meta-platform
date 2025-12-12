@@ -33,6 +33,7 @@ class CameraDetectionService:
     def __init__(self):
         self.detected_cameras: Dict[str, Dict] = {}
         self.active_connections: Dict[str, cv2.VideoCapture] = {}
+        self.camera_sources: Dict[str, str | int] = {}  # Track original camera sources (device index or RTSP URL)
         self.active_recordings: Dict[str, Dict] = {}  # Track active recordings
         self.orchestrator_client = OrchestratorClient()  # Phase 5: Event publishing
         # Store latest frames for each camera (device_id -> (ret, frame))
@@ -164,6 +165,7 @@ class CameraDetectionService:
                                 break
 
                         self.active_connections[device_id] = cap
+                        self.camera_sources[device_id] = index  # Store the device index
                         logger.info(
                             "Connected to USB camera %s with fresh init", device_id
                         )
@@ -204,6 +206,7 @@ class CameraDetectionService:
 
                         if cap.isOpened():
                             self.active_connections[device_id] = cap
+                            self.camera_sources[device_id] = decoded_rtsp_url  # Store the RTSP URL
                             logger.info(f"Connected to RTSP camera {device_id}")
                             return cap
                         else:
@@ -619,8 +622,13 @@ class CameraDetectionService:
         auth_token: Optional[str] = None,
         session_uuid: str = "",
         segment_duration: int = 5,
+        enable_instant_detection: bool = True,
     ) -> Optional[Dict]:
-        """Start recording with session tracking and segment support."""
+        """Start recording with session tracking and segment support.
+        
+        Args:
+            enable_instant_detection: If True, automatically start instant detection
+        """
 
         try:
             # Check if already recording
@@ -647,7 +655,7 @@ class CameraDetectionService:
                     )
                     return None
 
-                return await self._start_mobile_recording_with_session(
+                result = await self._start_mobile_recording_with_session(
                     device_id,
                     user_id,
                     quality,
@@ -661,7 +669,7 @@ class CameraDetectionService:
                     logger.error(f"Camera {device_id} not connected for recording")
                     return None
 
-                return await self._start_regular_recording_with_session(
+                result = await self._start_regular_recording_with_session(
                     device_id,
                     user_id,
                     quality,
@@ -669,6 +677,31 @@ class CameraDetectionService:
                     session_uuid,
                     segment_duration,
                 )
+            
+            # Auto-start instant detection if enabled and recording started successfully
+            logger.info(f"🔍 [INSTANT-DETECT] Checking auto-start: result={result is not None}, enable_instant_detection={enable_instant_detection}")
+            if result and enable_instant_detection:
+                try:
+                    logger.info(f"🔍 [INSTANT-DETECT] Attempting to auto-start instant detection for {device_id}")
+                    from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
+                    manager = get_instant_detection_manager()
+                    
+                    # Use the SHARED VideoCapture object to avoid resource contention
+                    cap = self.active_connections.get(device_id)
+                    if cap is None:
+                        logger.error(f"🔍 [INSTANT-DETECT] No active connection found for {device_id}")
+                        return result
+                    
+                    logger.info(f"🔍 [INSTANT-DETECT] Using shared VideoCapture for {device_id}")
+                    manager.start_sampling(device_id, cap)
+                    logger.info(f"✅ Auto-started instant detection for camera {device_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to auto-start instant detection for {device_id}: {e}")
+                    logger.exception("Full exception:")
+            else:
+                logger.info(f"🔍 [INSTANT-DETECT] NOT starting instant detection: result={result is not None}, enable_instant_detection={enable_instant_detection}")
+            
+            return result
 
         except Exception as e:
             logger.error("Error starting recording for camera %s: %s", device_id, e)
@@ -1053,8 +1086,12 @@ class CameraDetectionService:
             "file_path": file_path,
         }
 
-    async def stop_recording(self, device_id: str, user_id: str) -> Optional[Dict]:
-        """Stop recording video from camera and finalize files."""
+    async def stop_recording(self, device_id: str, user_id: str, auto_stop_instant_detection: bool = True) -> Optional[Dict]:
+        """Stop recording video from camera and finalize files.
+        
+        Args:
+            auto_stop_instant_detection: If True, automatically stop instant detection
+        """
         import traceback
 
         logger.info(
@@ -1076,13 +1113,25 @@ class CameraDetectionService:
             is_session_recording = "session_uuid" in recording_info
 
             if is_session_recording:
-                return await self._stop_session_recording(
+                result = await self._stop_session_recording(
                     device_id, user_id, recording_info
                 )
             else:
-                return await self._stop_regular_recording(
+                result = await self._stop_regular_recording(
                     device_id, user_id, recording_info
                 )
+            
+            # Auto-stop instant detection if enabled and recording stopped successfully
+            if result and auto_stop_instant_detection:
+                try:
+                    from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
+                    manager = get_instant_detection_manager()
+                    manager.stop_sampling()
+                    logger.info(f"✅ Auto-stopped instant detection for camera {device_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to auto-stop instant detection for {device_id}: {e}")
+            
+            return result
 
         except Exception as e:
             logger.error(f"🎬 [DEBUG] ❌ Error stopping recording for {device_id}: {e}")

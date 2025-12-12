@@ -86,12 +86,21 @@ class TriggerBase(BaseModel):
     )
     action: str = Field(
         default="alert",
-        description="Action to execute: alert, email, webhook, log"
+        description="Action to execute: alert, email, webhook, log (deprecated - use action_uuid)"
     )
     action_config: Optional[str] = Field(
         None,
         description="Additional action configuration (JSON string)",
         max_length=500
+    )
+    action_uuid: Optional[UUID] = Field(
+        None,
+        description="UUID of the linked user action"
+    )
+    tracking_duration: str = Field(
+        default="10 minutes",
+        description='Time window for MVR search (e.g., "5 seconds", "10 minutes", "2 hours", "1 day")',
+        max_length=50
     )
     is_active: bool = Field(
         default=True,
@@ -163,6 +172,8 @@ class TriggerUpdate(BaseModel):
     camera_name: Optional[str] = None
     action: Optional[str] = None
     action_config: Optional[str] = None
+    action_uuid: Optional[UUID] = None
+    tracking_duration: Optional[str] = None
     is_active: Optional[bool] = None
     name: Optional[str] = None
     description: Optional[str] = None
@@ -211,6 +222,7 @@ class TriggerResponse(TriggerBase):
     uuid: UUID
     created_at: datetime
     updated_at: Optional[datetime]
+    action_name: Optional[str] = Field(None, description="Name of the linked user action")
 
     class Config:
         from_attributes = True

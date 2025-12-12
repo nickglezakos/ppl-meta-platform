@@ -696,6 +696,46 @@ class CameraService extends ChangeNotifier {
     }
   }
 
+  /// Get instant detection results from camera's memory cache
+  Future<Map<String, dynamic>?> getInstantDetectionResults(String deviceId) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return null;
+    }
+
+    try {
+      _logger.d('🔍 Fetching instant detection results for camera $deviceId...');
+
+      final response = await http.get(
+        Uri.parse('$_gatewayUrl/cameras/$deviceId/instant-detection/results'),
+        headers: _authService.getAuthHeaders(),
+      ).timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => throw TimeoutException('Get instant detection timed out', const Duration(seconds: 3)),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _logger.d('✅ Got instant detection results: ${data['person_objects']?.length ?? 0} people');
+        return data;
+      } else if (response.statusCode == 404) {
+        // No results cached yet - this is normal
+        _logger.d('ℹ️ No instant detection results cached for $deviceId yet');
+        return {'success': false, 'person_objects': []};
+      } else {
+        _lastError = 'Failed to get instant detection: ${response.statusCode}';
+        _logger.w('⚠️ $_lastError');
+        return null;
+      }
+    } catch (e) {
+      // Don't log errors aggressively - this is called every 5 seconds
+      if (e is! TimeoutException) {
+        _logger.d('Instant detection fetch: $e');
+      }
+      return null;
+    }
+  }
+
   /// Debug recording state for a camera (to identify state inconsistencies)
   Future<Map<String, dynamic>?> debugRecordingState(String deviceId) async {
     if (!_authService.isAuthenticated) {

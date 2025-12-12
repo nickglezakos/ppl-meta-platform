@@ -8,10 +8,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..models.trigger import Trigger
+from ..models.user_trigger_action import UserTriggerAction
 from ..schemas.trigger import (
     CounterDataRequest,
     TriggerCreate,
@@ -66,9 +67,9 @@ async def list_triggers(
     """
     List all triggers with pagination and optional filtering.
     
-    Returns paginated list of triggers with metadata.
+    Returns paginated list of triggers with metadata and linked action names.
     """
-    query = db.query(Trigger)
+    query = db.query(Trigger).options(joinedload(Trigger.user_action))
     
     # Apply filters
     if is_active is not None:
@@ -86,8 +87,17 @@ async def list_triggers(
     # Get page results
     triggers = query.order_by(Trigger.created_at.desc()).offset(offset).limit(page_size).all()
     
+    # Populate action_name from user_action relationship
+    trigger_responses = []
+    for trigger in triggers:
+        trigger_dict = {
+            **{c.name: getattr(trigger, c.name) for c in trigger.__table__.columns},
+            'action_name': trigger.user_action.name if trigger.user_action else None
+        }
+        trigger_responses.append(TriggerResponse(**trigger_dict))
+    
     return TriggerListResponse(
-        triggers=triggers,
+        triggers=trigger_responses,
         total=total,
         page=page,
         page_size=page_size,
@@ -101,12 +111,18 @@ async def get_trigger(
     db: Session = Depends(get_db)
 ):
     """
-    Get a specific trigger by UUID.
+    Get a specific trigger by UUID with linked action name.
     """
-    trigger = db.query(Trigger).filter(Trigger.uuid == trigger_uuid).first()
+    trigger = db.query(Trigger).options(joinedload(Trigger.user_action)).filter(Trigger.uuid == trigger_uuid).first()
     if not trigger:
         raise HTTPException(status_code=404, detail="Trigger not found")
-    return trigger
+    
+    # Populate action_name from user_action relationship
+    trigger_dict = {
+        **{c.name: getattr(trigger, c.name) for c in trigger.__table__.columns},
+        'action_name': trigger.user_action.name if trigger.user_action else None
+    }
+    return TriggerResponse(**trigger_dict)
 
 
 @router.put("/{trigger_uuid}", response_model=TriggerResponse)
@@ -116,11 +132,11 @@ async def update_trigger(
     db: Session = Depends(get_db)
 ):
     """
-    Update a trigger.
+    Update a trigger with linked action name.
     
     Only provided fields will be updated.
     """
-    db_trigger = db.query(Trigger).filter(Trigger.uuid == trigger_uuid).first()
+    db_trigger = db.query(Trigger).options(joinedload(Trigger.user_action)).filter(Trigger.uuid == trigger_uuid).first()
     if not db_trigger:
         raise HTTPException(status_code=404, detail="Trigger not found")
     
@@ -131,7 +147,16 @@ async def update_trigger(
     
     db.commit()
     db.refresh(db_trigger)
-    return db_trigger
+    
+    # Reload to ensure relationship is fresh
+    db_trigger = db.query(Trigger).options(joinedload(Trigger.user_action)).filter(Trigger.uuid == trigger_uuid).first()
+    
+    # Populate action_name from user_action relationship
+    trigger_dict = {
+        **{c.name: getattr(db_trigger, c.name) for c in db_trigger.__table__.columns},
+        'action_name': db_trigger.user_action.name if db_trigger.user_action else None
+    }
+    return TriggerResponse(**trigger_dict)
 
 
 @router.patch("/{trigger_uuid}/toggle", response_model=TriggerResponse)

@@ -557,6 +557,81 @@ async def get_models():
     }
 
 
+@app.post("/faces/detect-single-frame", summary="Detect Faces in Single Frame")
+async def detect_faces_single_frame(
+    file: UploadFile = File(..., description="Single frame image (JPEG/PNG)")
+):
+    """
+    Detect faces in a single frame using two-stage detection (Haar + Dlib).
+    
+    This endpoint is optimized for instant/real-time detection from camera streams.
+    Returns face bounding boxes, confidence scores, and 128-D embeddings.
+    
+    Used by Camera Service instant detection feature.
+    """
+    global face_detector_instance
+    
+    if face_detector_instance is None:
+        raise HTTPException(status_code=503, detail="Face detector not initialized")
+    
+    try:
+        # Read and decode image
+        file_content = await file.read()
+        nparr = np.frombuffer(file_content, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Invalid image format")
+        
+        # Two-stage detection (Haar + Dlib)
+        result = face_detector_instance.detect_faces_two_stage(
+            frame,
+            confidence_threshold=0.5
+        )
+        
+        # Debug logging
+        logger.info(f"detect_faces_two_stage returned: success={result.get('success')}, "
+                   f"detections count={len(result.get('detections', []))}")
+        
+        # Format response - FIXED: Use "detections" key, not "faces"
+        faces = []
+        for detection in result.get("detections", []):
+            # Convert numpy types to native Python types for JSON serialization
+            bbox = detection.get("bbox", [0, 0, 0, 0])
+            if hasattr(bbox, 'tolist'):
+                bbox = bbox.tolist()
+            elif isinstance(bbox, (list, tuple)):
+                bbox = [int(x) if hasattr(x, 'item') else int(x) for x in bbox]
+            
+            confidence = detection.get("confidence", 0.0)
+            if hasattr(confidence, 'item'):
+                confidence = float(confidence.item())
+            else:
+                confidence = float(confidence)
+            
+            # Don't include embedding in response (not used by instant detection and may cause serialization issues)
+            faces.append({
+                "face_id": str(uuid.uuid4()),
+                "bbox": bbox,
+                "confidence": confidence,
+                "method": "two_stage_haar_dlib"
+            })
+        
+        return {
+            "success": True,
+            "faces": faces,
+            "total_faces": len(faces),
+            "detection_method": "two_stage_haar_dlib",
+            "processing_time": result.get("processing_time", 0.0)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in single-frame detection: {e}")
+        raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
+
+
 # ❌ DISABLED - November 21, 2025
 # Basic face detection endpoint commented out for debugging Enhanced Logic V2
 # This endpoint uses two_stage_haar_dlib which creates face_detections but NOT person_objects

@@ -240,17 +240,23 @@ async def stop_stream(
 @router.post("/{device_id}/record/start")
 async def start_recording(
     device_id: str,
+    enable_instant_detection: bool = True,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Dict:
-    """Start recording from a specific camera with session tracking."""
+    """Start recording from a specific camera with session tracking.
+    
+    Args:
+        enable_instant_detection: Whether to automatically start instant detection
+    """
 
     try:
         # 🔍 DEBUG: Log current_user to investigate user_id issue
         logger.info(f"🔍 [RECORD-START] current_user: {current_user}")
         logger.info(f"🔍 [RECORD-START] current_user.get('sub'): {current_user.get('sub')}")
         logger.info(f"🔍 [RECORD-START] device_id: {device_id}")
+        logger.info(f"🔍 [RECORD-START] enable_instant_detection parameter: {enable_instant_detection}")
         
         # Verify camera exists and supports recording
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -309,6 +315,7 @@ async def start_recording(
         )
 
         # Start recording with session tracking
+        logger.info(f"🔍 [RECORD-START] Calling start_recording_with_session with enable_instant_detection={enable_instant_detection}")
         recording_info = await camera_service.start_recording_with_session(
             device_id=device_id,
             user_id=user_id_from_token,
@@ -316,6 +323,7 @@ async def start_recording(
             auth_token=credentials.credentials,
             session_uuid=recording_session.session_uuid,
             segment_duration=recording_config["segment_duration_seconds"],
+            enable_instant_detection=enable_instant_detection,
         )
 
         if not recording_info:
@@ -380,10 +388,15 @@ async def start_recording(
 @router.post("/{device_id}/record/stop")
 async def stop_recording(
     device_id: str,
+    auto_stop_instant_detection: bool = True,
     current_user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Dict:
-    """Stop recording from a specific camera and save to collection."""
+    """Stop recording from a specific camera and save to collection.
+    
+    Args:
+        auto_stop_instant_detection: Whether to automatically stop instant detection
+    """
 
     try:
         # Verify camera exists
@@ -405,7 +418,9 @@ async def stop_recording(
             )
         
         recording_result = await camera_service.stop_recording(
-            device_id=device_id, user_id=user_id_from_token
+            device_id=device_id, 
+            user_id=user_id_from_token,
+            auto_stop_instant_detection=auto_stop_instant_detection
         )
 
         if not recording_result:
