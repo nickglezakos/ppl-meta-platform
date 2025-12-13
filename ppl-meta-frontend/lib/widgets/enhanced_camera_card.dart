@@ -56,12 +56,18 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
         if (sessions != null && sessions.isNotEmpty) {
           _activeSession = sessions.firstWhere(
             (session) => session.isActive,
-            orElse: () => sessions.isNotEmpty ? sessions.first : throw StateError('No active session'),
+            orElse: () => throw StateError('No active session'),
           );
-          _isRecording = _activeSession != null;
+          _isRecording = true;  // Only set to true if we found an active session
+        } else {
+          _activeSession = null;
+          _isRecording = false;
         }
       } catch (e) {
-        debugPrint('Failed to check recording status: $e');
+        // No active session found or error occurred
+        debugPrint('No active recording session: $e');
+        _activeSession = null;
+        _isRecording = false;
       }
     }
     
@@ -153,13 +159,28 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
   Future<void> _stopRecording() async {
     if (_recordingService == null || _activeSession == null) return;
     
+    debugPrint('🛑 [STOP] Starting stop recording for ${widget.camera.deviceId}');
+    
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      // Update session status to completed
+      // Call the actual cameras service endpoint to stop recording
+      // This endpoint handles stopping the recording process, not just updating status
+      debugPrint('🛑 [STOP] Calling stopCameraRecording...');
+      final success = await _recordingService!.stopCameraRecording(
+        cameraDeviceId: widget.camera.deviceId,
+      );
+      
+      if (!success) {
+        throw Exception('Failed to stop camera recording');
+      }
+      
+      debugPrint('🛑 [STOP] Camera recording stopped successfully');
+      
+      // Update session status to completed in orchestrator
       await _recordingService!.updateSessionStatus(
         sessionUuid: _activeSession!.sessionUuid,
         status: SessionStatus.completed,
@@ -171,27 +192,39 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
         },
       );
 
-      // Auto-trigger face detection for completed session
-      await _recordingService!.triggerFaceDetection(
-        sessionUuid: _activeSession!.sessionUuid,
-        mediaUuid: 'media-${_activeSession!.sessionUuid}',
+      // Save session UUID before clearing state
+      final sessionUuid = _activeSession!.sessionUuid;
+      final cameraName = widget.camera.name;
+
+      debugPrint('🛑 [STOP] Updating UI state - setting _isRecording = false');
+      
+      // Update UI state immediately to reset button
+      setState(() {
+        _activeSession = null;
+        _isRecording = false;
+        _isLoading = false;
+      });
+      
+      debugPrint('🛑 [STOP] UI state updated: _isRecording=$_isRecording, _isLoading=$_isLoading, _activeSession=$_activeSession');
+
+      // Auto-trigger face detection for completed session (in background)
+      _recordingService!.triggerFaceDetection(
+        sessionUuid: sessionUuid,
+        mediaUuid: 'media-$sessionUuid',
         options: {
           'method': 'enhanced-v2',
           'auto_trigger': true,
           'source': 'camera_recording',
         },
-      );
-
-      setState(() {
-        _activeSession = null;
-        _isRecording = false;
+      ).catchError((e) {
+        debugPrint('Face detection trigger error: $e');
       });
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Recording completed for ${widget.camera.name}'),
-            backgroundColor: Colors.blue,
+            content: Text('Recording stopped for $cameraName'),
+            backgroundColor: Colors.green,
             action: SnackBarAction(
               label: 'View Results',
               onPressed: () => _showSessionHistory(),
@@ -202,6 +235,9 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
 
     } catch (e) {
       _errorMessage = 'Failed to stop recording: $e';
+      setState(() {
+        _isLoading = false;
+      });
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -210,10 +246,6 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
           ),
         );
       }
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
@@ -366,6 +398,8 @@ class _EnhancedCameraCardState extends ConsumerState<EnhancedCameraCard> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('🎨 [BUILD] Building camera card for ${widget.camera.deviceId}: _isRecording=$_isRecording, _isLoading=$_isLoading');
+    
     return Card(
       elevation: _isRecording ? 8 : 2,
       margin: const EdgeInsets.all(8),

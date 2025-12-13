@@ -11,8 +11,8 @@ class ApiClient {
   ApiClient(this._config) {
     _dio = Dio(BaseOptions(
       baseUrl: _config.apiBaseUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 60),  // Increased for recording operations
+      receiveTimeout: const Duration(seconds: 120),  // Increased for stop recording (video processing)
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

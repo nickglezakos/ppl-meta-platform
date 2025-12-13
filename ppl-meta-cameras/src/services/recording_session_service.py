@@ -138,6 +138,8 @@ class RecordingSessionService:
             )
 
         # Update session status
+        # Note: Instant detection is independent and should NOT be stopped here
+        # The camera connection must remain active for streaming
         session.status = "completed"
         session.stopped_at = datetime.utcnow()
 

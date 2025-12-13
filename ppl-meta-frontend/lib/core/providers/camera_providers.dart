@@ -631,7 +631,12 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
 
   /// Start recording for this camera
   Future<void> startRecording() async {
-    if (state.isRecording || state.isLoading) return;
+    print('📹 [CAMERA_RECORDING_NOTIFIER] startRecording called for camera: ${state.cameraId}');
+    print('📹 [CAMERA_RECORDING_NOTIFIER] Current state - isRecording: ${state.isRecording}, isLoading: ${state.isLoading}');
+    if (state.isRecording || state.isLoading) {
+      print('📹 [CAMERA_RECORDING_NOTIFIER] Skipping - already recording or loading');
+      return;
+    }
 
     // Check if another instance is already trying to start recording for this camera
     if (_recordingLocks.contains(state.cameraId)) {
@@ -696,14 +701,23 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
 
   /// Stop recording for this camera
   Future<void> stopRecording() async {
-    if (!state.isRecording || state.isLoading) return;
+    print('📹 [CAMERA_RECORDING_NOTIFIER] stopRecording called for camera: ${state.cameraId}');
+    print('📹 [CAMERA_RECORDING_NOTIFIER] Current state - isRecording: ${state.isRecording}, isLoading: ${state.isLoading}');
+    if (!state.isRecording || state.isLoading) {
+      print('📹 [CAMERA_RECORDING_NOTIFIER] Skipping - not recording or already loading');
+      return;
+    }
 
     state = state.copyWith(isLoading: true, error: null);
+    print('📹 [CAMERA_RECORDING_NOTIFIER] Set isLoading=true, calling camera service...');
 
     try {
+      print('📹 [CAMERA_RECORDING_NOTIFIER] Calling _cameraService.stopRecording(${state.cameraId})...');
       final result = await _cameraService.stopRecording(state.cameraId);
+      print('📹 [CAMERA_RECORDING_NOTIFIER] Service returned - isSuccess: ${result?.isSuccess}, message: ${result?.message}');
       
       if (result != null && result.isSuccess) {
+        print('📹 [CAMERA_RECORDING_NOTIFIER] ✅ Success! Updating state to isRecording=false');
         state = state.copyWith(
           isLoading: false,
           isRecording: false,
@@ -712,20 +726,25 @@ class CameraRecordingNotifier extends StateNotifier<CameraRecordingState> {
           durationSeconds: 0,
           fileSizeBytes: 0,
         );
+        print('📹 [CAMERA_RECORDING_NOTIFIER] New state - isRecording: ${state.isRecording}, isLoading: ${state.isLoading}');
         
         // Stop status updates
         _stopStatusUpdates();
       } else {
+        print('📹 [CAMERA_RECORDING_NOTIFIER] ❌ Service returned failure');
         state = state.copyWith(
           isLoading: false,
           error: result?.message ?? 'Failed to stop recording',
         );
+        print('📹 [CAMERA_RECORDING_NOTIFIER] Error state - error: ${state.error}');
       }
     } catch (e) {
+      print('📹 [CAMERA_RECORDING_NOTIFIER] ❌ Exception caught: $e');
       state = state.copyWith(
         isLoading: false,
         error: 'Stop recording error: $e',
       );
+      print('📹 [CAMERA_RECORDING_NOTIFIER] Error state - error: ${state.error}');
     }
   }
 

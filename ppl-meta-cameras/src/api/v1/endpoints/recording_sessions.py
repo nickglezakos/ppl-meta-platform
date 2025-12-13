@@ -18,7 +18,7 @@ from src.security.auth import get_current_user
 from src.services.recording_session_service import RecordingSessionService
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/recording-sessions", tags=["recording-sessions"])
+router = APIRouter(prefix="/recording-sessions", tags=["recording-sessions"])
 
 
 # Pydantic models for request/response

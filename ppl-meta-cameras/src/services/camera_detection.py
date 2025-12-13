@@ -38,6 +38,8 @@ class CameraDetectionService:
         self.orchestrator_client = OrchestratorClient()  # Phase 5: Event publishing
         # Store latest frames for each camera (device_id -> (ret, frame))
         self.latest_frames: Dict[str, Tuple] = {}
+        # Cache collection UUIDs per camera to prevent creating duplicates
+        self.camera_collection_cache: Dict[str, str] = {}  # device_id -> collection_uuid
 
     async def detect_available_cameras(self) -> List[Dict]:
         """Detect all available cameras on the system."""
@@ -1182,83 +1184,44 @@ class CameraDetectionService:
             logger.error(f"Error finalizing recording session {session_uuid}: {e}")
 
         # Upload ONLY the final segment (other segments already uploaded during rotation)
-        logger.info(f"🎬 [SESSION] Uploading final segment for session {session_uuid}")
+        # Do this in background so stop recording returns immediately
+        logger.info(f"🎬 [SESSION] Scheduling background upload for final segment of session {session_uuid}")
         
         # Create modified recording_info for final segment only
         final_segment_recording_info = recording_info.copy()
         final_segment_recording_info["current_segment_path"] = current_segment_path
         
-        upload_result = await self._upload_recording_to_collection(
-            final_segment_recording_info, user_id
+        # Schedule upload in background (non-blocking)
+        import asyncio
+        asyncio.create_task(
+            self._upload_final_segment_background(
+                final_segment_recording_info, 
+                user_id, 
+                session_uuid
+            )
         )
         
-        # Wrap single result in list for compatibility with existing code
-        upload_results = [upload_result] if upload_result else []
+        logger.info(f"🎬 [SESSION] Background upload scheduled, continuing with stop recording response")
+        
+        # Return immediately without waiting for upload
+        # Note: Media upload happens in background, collection_id will be updated later
+        collection_id = device_id  # Use device_id as collection_id
+        media_uuid = None  # Will be set by background task
 
-        # Extract collection info from first successful upload
-        collection_id = None
-        media_ids = []
-        media_uuids = []
-
-        if upload_results:
-            for result in upload_results:
-                if result:
-                    if not collection_id:
-                        collection_id = result.get("collection_id")
-                    media_ids.append(result.get("media_id"))
-                    media_uuids.append(result.get("media_uuid"))
-
-            logger.info(
-                f"🎬 [SESSION] Media upload completed: {len(media_uuids)} segments uploaded, "
-                f"collection_id: {collection_id}"
-            )
-        else:
-            logger.error(f"🎬 [SESSION] Media upload failed for session {session_uuid}")
-
-        # Use first media UUID for session tracking (or could be a list)
-        media_uuid = media_uuids[0] if media_uuids else None
-
-        if upload_results and any(upload_results):
-
-            # Update session with media upload status
-            try:
-                db_gen = get_db()
-                db = next(db_gen)
-                try:
-                    session_service = RecordingSessionService(db)
-                    session_service.update_media_upload_status(
-                        session_uuid=session_uuid,
-                        started=True,
-                        completed=True,
-                        media_collection_id=collection_id,
-                        media_uuid=media_uuid,
-                    )
-                    logger.info(
-                        f"🎬 [SESSION] Updated session {session_uuid} with media info"
-                    )
-                finally:
-                    db.close()
-            except Exception as e:
-                logger.error(f"Error updating session {session_uuid} media status: {e}")
-        else:
-            logger.error(f"🎬 [SESSION] Media upload failed for session {session_uuid}")
-            # Update session to indicate upload failure
-            try:
-                db_gen = get_db()
-                db = next(db_gen)
-                try:
-                    session_service = RecordingSessionService(db)
-                    session_service.update_media_upload_status(
-                        session_uuid=session_uuid,
-                        started=True,
-                        completed=False,
-                    )
-                finally:
-                    db.close()
-            except Exception as e:
-                logger.error(
-                    f"Error updating session {session_uuid} upload failure: {e}"
-                )
+        # Close camera capture BEFORE cleaning up
+        try:
+            if "capture" in recording_info:
+                cap = recording_info["capture"]
+                if cap is not None and cap.isOpened():
+                    cap.release()
+                    logger.info(f"🎬 [CLEANUP] Released recording capture for {device_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Error releasing recording capture for {device_id}: {e}")
+        
+        # DO NOT disconnect camera from active_connections
+        # The camera should remain connected for streaming and instant detection
+        # It will only disconnect when the user explicitly stops the stream or disconnects
+        logger.info(f"🎬 [INFO] Camera {device_id} remains connected for streaming and instant detection")
 
         # Clean up recording info
         elapsed_time = (
@@ -2115,6 +2078,56 @@ class CameraDetectionService:
         except Exception as e:
             logger.error(f"Error rotating to next segment for {device_id}: {e}")
 
+    async def _upload_final_segment_background(
+        self, recording_info: Dict, user_id: str, session_uuid: str
+    ):
+        """
+        Background task to upload final segment without blocking stop recording response.
+        This allows the stop recording endpoint to return immediately.
+        """
+        try:
+            logger.info(f"🎬 [BACKGROUND] Starting background upload for session {session_uuid}")
+            
+            upload_result = await self._upload_recording_to_collection(
+                recording_info, user_id
+            )
+            
+            if upload_result:
+                collection_id = upload_result.get("collection_id")
+                media_uuid = upload_result.get("media_uuid")
+                
+                logger.info(
+                    f"🎬 [BACKGROUND] ✅ Upload completed for session {session_uuid}: "
+                    f"collection={collection_id}, media={media_uuid}"
+                )
+                
+                # Update session with media info
+                try:
+                    db_gen = get_db()
+                    db = next(db_gen)
+                    try:
+                        from src.services.recording_session_service import RecordingSessionService
+                        session_service = RecordingSessionService(db)
+                        session_service.update_media_upload_status(
+                            session_uuid=session_uuid,
+                            started=True,
+                            completed=True,
+                            media_collection_id=collection_id,
+                            media_uuid=media_uuid,
+                        )
+                        logger.info(f"🎬 [BACKGROUND] Updated session {session_uuid} with media info")
+                    finally:
+                        db.close()
+                except Exception as e:
+                    logger.error(f"🎬 [BACKGROUND] Error updating session {session_uuid}: {e}")
+            else:
+                logger.error(f"🎬 [BACKGROUND] ❌ Upload failed for session {session_uuid}")
+                
+        except Exception as e:
+            logger.error(f"🎬 [BACKGROUND] Exception in background upload for {session_uuid}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
     async def _upload_recording_to_collection(
         self, recording_info: Dict, user_id: str
     ) -> Optional[Dict[str, Any]]:
@@ -2524,15 +2537,34 @@ class CameraDetectionService:
         import aiohttp
 
         try:
+            # Check in-memory cache first to avoid duplicate lookups
+            if device_id in self.camera_collection_cache:
+                cached_uuid = self.camera_collection_cache[device_id]
+                logger.info(
+                    f"🔍 [COLLECTION] ✅ Using cached collection UUID: {cached_uuid} "
+                    f"for camera {device_id}"
+                )
+                return cached_uuid
+            
             logger.info(
                 f"🔍 [COLLECTION] Looking for existing collection for camera {device_id}"
             )
 
             # First, try to find existing collection by camera device ID
+            lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}"
+            logger.info(f"🔍 [COLLECTION] Calling: {lookup_url}")
+            logger.info(f"🔍 [COLLECTION] Auth headers: {bool(headers.get('Authorization'))}")
+            
             async with session.get(
-                f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
+                lookup_url,
                 headers=headers,
             ) as response:
+                response_text = await response.text()
+                logger.info(
+                    f"🔍 [COLLECTION] Lookup response: status={response.status}, "
+                    f"body={response_text[:200]}"
+                )
+                
                 if response.status == 200:
                     collection_data = await response.json()
                     if collection_data:  # Collection found
@@ -2543,7 +2575,17 @@ class CameraDetectionService:
                             f"'{collection_name}' (UUID: {collection_uuid}) "
                             f"for camera {device_id}"
                         )
+                        # Cache the UUID to prevent future lookups
+                        self.camera_collection_cache[device_id] = collection_uuid
                         return collection_uuid
+                    else:
+                        logger.info(
+                            f"🔍 [COLLECTION] ⚠️ Response was 200 but collection_data is null/empty"
+                        )
+                else:
+                    logger.warning(
+                        f"🔍 [COLLECTION] ⚠️ Lookup failed with status {response.status}"
+                    )
 
             # No existing collection found, create new one
             collection_name = f"{device_id} Collection"
@@ -2578,6 +2620,8 @@ class CameraDetectionService:
                         collection_uuid,
                         device_id,
                     )
+                    # Cache the UUID to prevent creating duplicates
+                    self.camera_collection_cache[device_id] = collection_uuid
                     return collection_uuid
                 else:
                     error_text = await response.text()

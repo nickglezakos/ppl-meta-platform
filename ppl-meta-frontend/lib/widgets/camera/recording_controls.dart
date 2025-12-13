@@ -32,6 +32,7 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
   @override
   void initState() {
     super.initState();
+    print('🎬 [RECORDING_CONTROLS] initState called for device: ${widget.selectedDeviceId}');
     _pulseController = AnimationController(
       duration: const Duration(seconds: 1),
       vsync: this,
@@ -78,6 +79,7 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
     }
 
     final recordingState = ref.watch(recordingStateProvider(widget.selectedDeviceId!));
+    print('🎬 [RECORDING_CONTROLS] build() - Device: ${widget.selectedDeviceId}, isRecording: ${recordingState.isRecording}, isLoading: ${recordingState.isLoading}');
     final automationSettings = ref.watch(automationSettingsProvider);
 
     // Start/stop pulse animation based on recording state
@@ -333,17 +335,28 @@ class _RecordingControlsState extends ConsumerState<RecordingControls>
   }
 
   void _toggleRecording() async {
+    print('🎬 [RECORDING_CONTROLS] _toggleRecording called');
     if (widget.selectedDeviceId == null) return;
     
     final recordingNotifier = ref.read(recordingStateProvider(widget.selectedDeviceId!).notifier);
     final currentState = ref.read(recordingStateProvider(widget.selectedDeviceId!));
+    print('🎬 [RECORDING_CONTROLS] Current state - isRecording: ${currentState.isRecording}, isLoading: ${currentState.isLoading}');
+    print('🎬 [RECORDING_CONTROLS] Using recordingStateProvider for device: ${widget.selectedDeviceId}');
 
     try {
       if (currentState.isRecording) {
+        print('🎬 [RECORDING_CONTROLS] Calling stopRecording()...');
         await recordingNotifier.stopRecording();
+        print('🎬 [RECORDING_CONTROLS] stopRecording() completed');
+        final newState = ref.read(recordingStateProvider(widget.selectedDeviceId!));
+        print('🎬 [RECORDING_CONTROLS] New state after stop - isRecording: ${newState.isRecording}, isLoading: ${newState.isLoading}');
         widget.onRecordingStopped?.call();
       } else {
+        print('🎬 [RECORDING_CONTROLS] Calling startRecording()...');
         await recordingNotifier.startRecording();
+        print('🎬 [RECORDING_CONTROLS] startRecording() completed');
+        final newState = ref.read(recordingStateProvider(widget.selectedDeviceId!));
+        print('🎬 [RECORDING_CONTROLS] New state after start - isRecording: ${newState.isRecording}, isLoading: ${newState.isLoading}');
         widget.onRecordingStarted?.call();
       }
     } catch (e) {

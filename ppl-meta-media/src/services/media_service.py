@@ -886,6 +886,8 @@ class MediaService:
 
     async def delete_collection(self, collection_id: str, user_id: UUID) -> bool:
         """Delete a collection (and optionally its items)."""
+        from ..models.collection_storage import CollectionStorageConfig, CollectionStorageUsage
+        
         collection = (
             self.db.query(MediaCollection)
             .filter(
@@ -903,6 +905,16 @@ class MediaService:
         # Delete collection items first
         self.db.query(MediaCollectionItem).filter(
             MediaCollectionItem.collection_id == collection.id
+        ).delete()
+
+        # Delete storage config if exists
+        self.db.query(CollectionStorageConfig).filter(
+            CollectionStorageConfig.collection_id == collection.id
+        ).delete()
+
+        # Delete storage usage if exists
+        self.db.query(CollectionStorageUsage).filter(
+            CollectionStorageUsage.collection_id == collection.id
         ).delete()
 
         # Delete collection

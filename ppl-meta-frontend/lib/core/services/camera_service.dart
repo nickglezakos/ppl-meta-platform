@@ -47,7 +47,7 @@ class CameraService {
     // Create a direct client to cameras service for streaming/recording operations
     _directCameraClient = Dio(BaseOptions(
       baseUrl: AppConfig.instance.cameraServiceUrl,
-      connectTimeout: const Duration(seconds: 30),
+      connectTimeout: const Duration(seconds: 60),  // Increased for stop recording which processes video
       receiveTimeout: const Duration(seconds: 120),
       sendTimeout: const Duration(seconds: 30),
     ));
@@ -675,21 +675,33 @@ class CameraService {
   }
 
   /// Stop recording for a camera
-  Future<RecordingResult> stopRecording(String deviceId) async {
+  /// 
+  /// [autoStopInstantDetection] - If false, keeps camera connected and instant detection running.
+  /// Default is false to maintain streaming and instant detection after recording stops.
+  Future<RecordingResult> stopRecording(String deviceId, {bool autoStopInstantDetection = false}) async {
     try {
+      print('🛑 DEBUG CORE: stopRecording called for deviceId: $deviceId');
+      print('🛑 DEBUG CORE: autoStopInstantDetection: $autoStopInstantDetection');
+      
       // Use Gateway for recording operations (has CORS support for browser requests)
       final response = await _cameraApiClient.post(
         '/api/v1/streaming/$deviceId/record/stop',
+        queryParameters: {
+          'auto_stop_instant_detection': autoStopInstantDetection,
+        },
       );
+      
+      print('✅ DEBUG CORE: stopRecording response: ${response.statusCode}');
       
       // Transform response to match old RecordingResult format
       return RecordingResult.fromJson({
         'session_id': response.data['recording_id'] ?? response.data['session_uuid'],
         'device_id': deviceId,
-        'status': 'stopped',
+        'status': 'success',  // Changed from 'stopped' to 'success' so isSuccess returns true
         'message': response.data['message'] ?? 'Recording stopped successfully',
       });
     } on DioException catch (e) {
+      print('❌ DEBUG CORE: stopRecording error: ${e.message}');
       throw _handleDioError(e);
     }
   }

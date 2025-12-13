@@ -77,7 +77,7 @@ class _CameraCardState extends ConsumerState<CameraCard> {
           // NEW: Instant detection widget (real-time face detection)
           InstantDetectionWidget(
             cameraId: widget.camera.deviceId,
-            refreshInterval: const Duration(seconds: 3),
+            refreshInterval: const Duration(seconds: 5),
           ),
         ],
       ),

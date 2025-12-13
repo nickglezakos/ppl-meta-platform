@@ -11,6 +11,7 @@ import 'camera_auth_service.dart';
 /// Integrates with PPL Meta Orchestrator for session tracking and workflow management
 class RecordingSessionService extends ChangeNotifier {
   static const String _baseUrl = 'http://localhost:8002/api/v1';
+  static const String _camerasBaseUrl = 'http://localhost:8005/api/v1';
   
   final CameraAuthService _authService;
   final Logger _logger = Logger(
@@ -281,6 +282,49 @@ class RecordingSessionService extends ChangeNotifier {
       }
     } catch (e, stackTrace) {
       _lastError = 'Delete recording session error: $e';
+      _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
+      return false;
+    }
+  }
+
+  /// Stop camera recording by calling the cameras service endpoint
+  /// This actually stops the recording process, not just updates the database status
+  /// 
+  /// Note: autoStopInstantDetection should be false to keep streaming and instant detection active
+  Future<bool> stopCameraRecording({
+    required String cameraDeviceId,
+    bool autoStopInstantDetection = false,
+  }) async {
+    if (!_authService.isAuthenticated) {
+      _lastError = 'Authentication required';
+      return false;
+    }
+
+    try {
+      _logger.i('🛑 Stopping camera recording for device: $cameraDeviceId');
+
+      final response = await http.post(
+        Uri.parse('$_camerasBaseUrl/streaming/$cameraDeviceId/record/stop?auto_stop_instant_detection=$autoStopInstantDetection'),
+        headers: _authService.getAuthHeaders(),
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException(
+          'Stop camera recording timed out', 
+          const Duration(seconds: 15)
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        _logger.i('✅ Camera recording stopped successfully: ${data['session_uuid']}');
+        return true;
+      } else {
+        _lastError = 'Failed to stop camera recording: ${response.statusCode} - ${response.body}';
+        _logger.e('❌ $_lastError');
+        return false;
+      }
+    } catch (e, stackTrace) {
+      _lastError = 'Stop camera recording error: $e';
       _logger.e('❌ $_lastError', error: e, stackTrace: stackTrace);
       return false;
     }

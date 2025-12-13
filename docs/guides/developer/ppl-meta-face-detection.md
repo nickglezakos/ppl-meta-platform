@@ -1633,6 +1633,44 @@ async def _detect_demographics(self, person_objects: List[Dict]) -> List[Dict]:
     # Adds: age_range, gender, confidence to person object
 ```
 
+**Step 6**: Calculate demographics aggregation
+```python
+def _calculate_demographics(self, person_objects: List[Dict]) -> Dict:
+    """
+    Calculate demographics aggregation (same format as MVR counter).
+    
+    Returns:
+    - Gender breakdown: male/female counts and percentages
+    - Age breakdown: young (<21) / adult (>=21) counts and percentages
+    
+    Uses VMeta's DeepFace results (same as continuous pipeline).
+    """
+    total_people = len(person_objects)
+    
+    # Count by gender
+    male_count = sum(1 for p in person_objects 
+                     if p.get("age_gender", {}).get("gender") == "male")
+    female_count = sum(1 for p in person_objects 
+                       if p.get("age_gender", {}).get("gender") == "female")
+    
+    # Count by age (young = <21, adult = >=21)
+    young_count = sum(1 for p in person_objects 
+                      if self._extract_min_age(p.get("age_gender", {}).get("age_range")) < 21)
+    adult_count = sum(1 for p in person_objects 
+                      if self._extract_min_age(p.get("age_gender", {}).get("age_range")) >= 21)
+    
+    return {
+        "total_male": male_count,
+        "total_female": female_count,
+        "percent_male": round((male_count / total_people) * 100, 1),
+        "percent_female": round((female_count / total_people) * 100, 1),
+        "total_young": young_count,
+        "total_adult": adult_count,
+        "percent_young": round((young_count / total_people) * 100, 1),
+        "percent_adult": round((adult_count / total_people) * 100, 1)
+    }
+```
+
 #### Integration with Recording Session
 
 ```python
@@ -1673,6 +1711,8 @@ class RecordingSession:
 
 **Key Difference**: Shows **person count** (after grouping), not face count
 
+**Demographics**: Same format as MVR people counter (men/women counts, young/adult breakdown)
+
 #### Iteration 1: One Person Detected
 
 ```json
@@ -1683,16 +1723,31 @@ class RecordingSession:
   "frames_captured": 3,
   "faces_detected": 3,  // Total faces across 3 frames
   "people_detected": 1,  // ✅ Grouped into 1 unique person
+  "demographics": {
+    "total_male": 1,
+    "total_female": 0,
+    "total_unknown_gender": 0,
+    "percent_male": 100.0,
+    "percent_female": 0.0,
+    "percent_unknown_gender": 0.0,
+    "total_young": 0,
+    "total_adult": 1,
+    "total_unknown_age": 0,
+    "percent_young": 0.0,
+    "percent_adult": 100.0,
+    "percent_unknown_age": 0.0
+  },
   "person_objects": [
     {
       "person_id": "person_abc123",
       "face_count": 3,  // Same person in all 3 frames
       "best_bbox": [217, 160, 400, 343],  // Highest confidence frame
       "avg_confidence": 0.87,
-      "demographics": {
-        "age_range": "25-35",
+      "age_gender": {
+        "age_range": "(25-35)",
+        "age_confidence": 0.92,
         "gender": "male",
-        "confidence": 0.92
+        "gender_confidence": 0.95
       },
       "frames": [0, 1, 2]  // Person visible in all frames
     }
@@ -1947,16 +2002,18 @@ class RecordingSession:
 | Feature | Existing Pipeline | Instant Detection |
 |---------|------------------|-------------------|
 | **Frames processed** | 90 per 30s video | 3 frames per iteration |
-| **Processing time** | 2-3 seconds | 0.4-0.6 seconds |
+| **Processing time** | 2-3 seconds | 0.5-0.7 seconds |
 | **Detection method** | Two-stage (Haar + Dlib) | **SAME** Two-stage (Haar + Dlib) |
 | **Person grouping** | Orchestrator (spatial/IoU) | **SAME** Orchestrator (spatial/IoU) |
 | **Grouping fallback** | N/A (always uses Orchestrator) | Local IoU-based (if Orchestrator down) |
 | **Quality selection** | Best face per person | **SAME** Best face per person |
-| **Age/gender** | VMeta batch processing | VMeta real-time (optional) |
+| **Age/gender** | VMeta batch processing (DeepFace) | **SAME** VMeta real-time (DeepFace) |
+| **Demographics aggregation** | Yes (men/women, young/adult) | **SAME** (men/women, young/adult) |
 | **Storage** | Database (permanent) | Memory only (temporary) |
 | **Latency** | After video completes | Every 5 seconds during recording |
 | **Accuracy** | ~95% detection rate | ~95% detection rate (identical) |
 | **Person count accuracy** | ✅ Correct (after grouping) | ✅ Correct (after grouping) |
+| **Demographics format** | MVR counter format | **SAME** MVR counter format |
 
 ### Key Technical Decisions
 
@@ -1984,6 +2041,52 @@ class RecordingSession:
 - User trust: "What I see now is what I'll get later"
 - Accuracy: Two-stage (Haar + Dlib) is optimal
 - No need for separate tuning/calibration
+
+**5. Why Same Demographics Format?**
+- Consistency with MVR counter display
+- Users expect same data format across features
+- Gender: male/female counts and percentages
+- Age: young (<21) / adult (>=21) counts and percentages
+- Uses same VMeta DeepFace models as continuous pipeline
+- Processing: One face per person (best quality)
+
+### Demographics Display Format
+
+Instant detection returns demographics in the **same format** as camera MVR counter:
+
+```
+👤 Total: 3 people
+
+👨 2 (67%)  👩 1 (33%)
+🧒 Young (<21): 1 (33%)  👤 Adult (≥21): 2 (67%)
+```
+
+**JSON Response**:
+```json
+{
+  "people_detected": 3,
+  "demographics": {
+    "total_male": 2,
+    "total_female": 1,
+    "percent_male": 66.7,
+    "percent_female": 33.3,
+    "total_young": 1,
+    "total_adult": 2,
+    "percent_young": 33.3,
+    "percent_adult": 66.7
+  }
+}
+```
+
+**Age Classification**:
+- **Young**: Age < 21 years old
+- **Adult**: Age ≥ 21 years old
+- Based on `age_min` from age range (e.g., "(18-28)" → 18 → young)
+
+**Gender Classification**:
+- **Male**: DeepFace predicts "male"
+- **Female**: DeepFace predicts "female"
+- **Unknown**: No prediction or low confidence
 
 ### Bug Fixes (December 2025)
 

@@ -312,6 +312,11 @@ class InstantDetectionSampler:
         
         processing_time = time.time() - start_time
         
+        # Step 4: Calculate demographics aggregation (same format as MVR counter)
+        demographics = self._calculate_demographics(person_objects)
+        
+        logger.info(f"✅ Instant detection complete: {len(person_objects)} people, {total_faces} faces, demographics: {demographics}")
+        
         return {
             "success": True,
             "camera_id": camera_id,
@@ -319,6 +324,8 @@ class InstantDetectionSampler:
             "temporal_window_seconds": self.temporal_window,
             "frames_processed": len(frames),
             "total_faces_detected": total_faces,
+            "people_detected": len(person_objects),  # NEW: Total unique people count
+            "demographics": demographics,  # NEW: Gender/age breakdown
             "person_objects": person_objects,
             "processing_time_seconds": processing_time,
             "detection_method": "vision_service_spatial_grouping",
@@ -450,6 +457,94 @@ class InstantDetectionSampler:
         except Exception as e:
             logger.error(f"Error getting age/gender from VMeta: {e}")
             return self._default_age_gender()
+    
+    def _calculate_demographics(self, person_objects: List[Dict]) -> Dict:
+        """
+        Calculate demographics aggregation from person objects.
+        
+        Returns same format as MVR people counter:
+        - total_male, total_female, percent_male, percent_female
+        - total_young (<21), total_adult (>=21), percent_young, percent_adult
+        
+        Uses the exact same method as continuous pipeline (VMeta's DeepFace results).
+        """
+        total_people = len(person_objects)
+        
+        if total_people == 0:
+            return {
+                "total_male": 0,
+                "total_female": 0,
+                "total_unknown_gender": 0,
+                "percent_male": 0.0,
+                "percent_female": 0.0,
+                "percent_unknown_gender": 0.0,
+                "total_young": 0,
+                "total_adult": 0,
+                "total_unknown_age": 0,
+                "percent_young": 0.0,
+                "percent_adult": 0.0,
+                "percent_unknown_age": 0.0
+            }
+        
+        # Count by gender
+        male_count = 0
+        female_count = 0
+        unknown_gender_count = 0
+        
+        # Count by age (young = <21, adult = >=21)
+        young_count = 0
+        adult_count = 0
+        unknown_age_count = 0
+        
+        for person in person_objects:
+            age_gender = person.get("age_gender", {})
+            
+            # Count gender
+            gender = age_gender.get("gender", "unknown").lower()
+            if gender == "male":
+                male_count += 1
+            elif gender == "female":
+                female_count += 1
+            else:
+                unknown_gender_count += 1
+            
+            # Count age (parse age_range like "(25-35)")
+            age_range = age_gender.get("age_range", "(0-100)")
+            try:
+                # Extract min age from range "(25-35)" -> 25
+                age_min_str = age_range.strip("()").split("-")[0]
+                age_min = int(age_min_str)
+                
+                if age_min < 21:
+                    young_count += 1
+                else:
+                    adult_count += 1
+            except (ValueError, IndexError):
+                unknown_age_count += 1
+        
+        # Calculate percentages
+        percent_male = round((male_count / total_people) * 100, 1)
+        percent_female = round((female_count / total_people) * 100, 1)
+        percent_unknown_gender = round((unknown_gender_count / total_people) * 100, 1)
+        
+        percent_young = round((young_count / total_people) * 100, 1)
+        percent_adult = round((adult_count / total_people) * 100, 1)
+        percent_unknown_age = round((unknown_age_count / total_people) * 100, 1)
+        
+        return {
+            "total_male": male_count,
+            "total_female": female_count,
+            "total_unknown_gender": unknown_gender_count,
+            "percent_male": percent_male,
+            "percent_female": percent_female,
+            "percent_unknown_gender": percent_unknown_gender,
+            "total_young": young_count,
+            "total_adult": adult_count,
+            "total_unknown_age": unknown_age_count,
+            "percent_young": percent_young,
+            "percent_adult": percent_adult,
+            "percent_unknown_age": percent_unknown_age
+        }
     
     async def _create_person_objects_via_vision_service(
         self,

@@ -397,7 +397,7 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ ML Inference API router not available: {e}")
 except Exception as e:
-    logger.error(f"❌ Error adding Batch Processing API router: {e}")
+    logger.error(f"❌ Error adding ML Inference API router: {e}")
 
 
 @app.get("/")

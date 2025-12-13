@@ -399,6 +399,9 @@ async def stop_recording(
     """
 
     try:
+        # Log the auto_stop parameter for debugging
+        logger.info(f"🛑 Stop recording endpoint called for {device_id}, auto_stop_instant_detection={auto_stop_instant_detection}")
+        
         # Verify camera exists
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
         if not camera:
@@ -417,6 +420,7 @@ async def stop_recording(
                 detail="Invalid authentication token: missing user ID"
             )
         
+        # Start the stop recording process (returns immediately, upload happens in background)
         recording_result = await camera_service.stop_recording(
             device_id=device_id, 
             user_id=user_id_from_token,
@@ -425,6 +429,7 @@ async def stop_recording(
 
         if not recording_result:
             # Camera might not be recording
+            logger.warning(f"⚠️ Stop recording called but camera {device_id} was not recording")
             return {
                 "status": "success",
                 "message": f"Camera {device_id} was not recording",
