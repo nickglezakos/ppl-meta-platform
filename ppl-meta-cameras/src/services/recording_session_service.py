@@ -138,14 +138,102 @@ class RecordingSessionService:
             )
 
         # Update session status
-        # Note: Instant detection is independent and should NOT be stopped here
-        # The camera connection must remain active for streaming
+        # IMPORTANT: We do NOT stop instant detection or disconnect the camera here
+        # - Instant detection should be independent of recording
+        # - Camera connection must remain active for streaming
+        # - Only the recording loop should be stopped
         session.status = "completed"
         session.stopped_at = datetime.utcnow()
 
         self.db.commit()
         logger.info(f"Stopped recording session {session_uuid}")
         return session
+
+    def update_session_status(
+        self, session_uuid: str, status: str, error_message: Optional[str] = None
+    ) -> RecordingSession:
+        """
+        Update the status of a recording session.
+
+        Args:
+            session_uuid: UUID of the session to update
+            status: New status (active, paused, completed, failed, error)
+            error_message: Optional error message if status is failed/error
+
+        Returns:
+            Updated RecordingSession object
+
+        Raises:
+            ValueError: If session not found
+        """
+        session = (
+            self.db.query(RecordingSession)
+            .filter(RecordingSession.session_uuid == session_uuid)
+            .first()
+        )
+
+        if not session:
+            raise ValueError(f"Recording session '{session_uuid}' not found")
+
+        session.status = status
+        if error_message:
+            session.error_message = error_message
+
+        if status in ["completed", "failed", "error"] and not session.stopped_at:
+            session.stopped_at = datetime.utcnow()
+
+        self.db.commit()
+        logger.info(f"Updated recording session {session_uuid} status to '{status}'")
+        return session
+
+    def cleanup_stale_sessions(self, max_age_hours: int = 24) -> int:
+        """
+        Clean up stale recording sessions (active sessions older than max_age_hours).
+        
+        This should be called:
+        - On service startup
+        - When a camera connects
+        - Periodically (optional)
+        
+        Args:
+            max_age_hours: Maximum age in hours for an active session before it's considered stale
+        
+        Returns:
+            Number of sessions cleaned up
+        """
+        from datetime import datetime, timedelta
+        
+        cutoff_time = datetime.utcnow() - timedelta(hours=max_age_hours)
+        
+        # Find all active sessions older than cutoff time
+        stale_sessions = (
+            self.db.query(RecordingSession)
+            .filter(
+                RecordingSession.status == "active",
+                RecordingSession.created_at < cutoff_time
+            )
+            .all()
+        )
+        
+        cleaned_count = 0
+        for session in stale_sessions:
+            try:
+                session.status = "failed"
+                session.error_message = f"Session timed out (stale after {max_age_hours} hours)"
+                if not session.stopped_at:
+                    session.stopped_at = datetime.utcnow()
+                cleaned_count += 1
+                logger.info(
+                    f"Cleaned up stale session {session.session_uuid} "
+                    f"for camera {session.camera.device_id if session.camera else 'unknown'}"
+                )
+            except Exception as e:
+                logger.error(f"Error cleaning up session {session.session_uuid}: {e}")
+        
+        if cleaned_count > 0:
+            self.db.commit()
+        
+        return cleaned_count
 
     def get_session(self, session_uuid: str) -> Optional[RecordingSession]:
         """Get recording session by UUID."""

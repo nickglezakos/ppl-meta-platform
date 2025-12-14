@@ -5,9 +5,11 @@ Provides REST API endpoints for instant temporal face detection.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, HttpUrl
 from typing import Dict, Optional
 import logging
 import time
+import os
 
 from src.services.instant_detection import InstantDetectionSampler
 from src.database import get_db
@@ -23,7 +25,7 @@ _instant_detection_manager: Optional[InstantDetectionSampler] = None
 
 
 def get_instant_detection_manager() -> InstantDetectionSampler:
-    """Get or create instant detection manager singleton"""
+    """Get or create instant detection manager singleton with auto-configured webhook"""
     global _instant_detection_manager
     
     if _instant_detection_manager is None:
@@ -33,6 +35,19 @@ def get_instant_detection_manager() -> InstantDetectionSampler:
             temporal_window=1.0
         )
         logger.info("✅ Instant detection manager initialized")
+        
+        # Auto-configure webhook from environment variables
+        webhook_url = os.getenv("INSTANT_DETECTION_WEBHOOK_URL")
+        webhook_enabled = os.getenv("INSTANT_DETECTION_WEBHOOK_ENABLED", "false").lower() == "true"
+        
+        if webhook_url and webhook_enabled:
+            try:
+                _instant_detection_manager.configure_webhook(webhook_url, webhook_enabled)
+                logger.info(f"✅ Webhook auto-configured from .env: {webhook_url}")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to auto-configure webhook: {e}")
+        else:
+            logger.info("ℹ️ No webhook configured (set INSTANT_DETECTION_WEBHOOK_URL and INSTANT_DETECTION_WEBHOOK_ENABLED in .env)")
     
     return _instant_detection_manager
 
@@ -189,3 +204,138 @@ async def stop_instant_detection(
             status_code=500,
             detail=f"Failed to stop instant detection: {str(e)}"
         )
+
+
+# Webhook Configuration Models and Endpoints
+
+class WebhookConfig(BaseModel):
+    """Webhook configuration for pushing instant detection results"""
+    url: HttpUrl
+    enabled: bool = True
+
+
+@router.post("/webhook/configure")
+async def configure_webhook(
+    config: WebhookConfig,
+    manager: InstantDetectionSampler = Depends(get_instant_detection_manager)
+) -> Dict:
+    """
+    Configure webhook for pushing instant detection results to media service.
+    
+    When enabled, detection results are automatically POSTed to the webhook URL
+    every time instant detection completes (default: every 5 seconds).
+    
+    The webhook receives demographic data in this format:
+    ```json
+    {
+        "camera_id": "usb_camera_0",
+        "timestamp": "2025-12-13T10:30:00",
+        "people_count": 3,
+        "demographics": {
+            "percent_male": 67,
+            "percent_female": 33,
+            "percent_young": 0,
+            "percent_adult": 100,
+            ...
+        },
+        "metadata": {
+            "processing_time": 2.5,
+            "total_faces": 3
+        }
+    }
+    ```
+    
+    Args:
+        config: Webhook configuration (URL and enabled flag)
+        
+    Returns:
+        Success status and configuration
+        
+    Example:
+        ```bash
+        curl -X POST 'http://localhost:8005/api/v1/instant-detection/webhook/configure' \\
+          -H 'Content-Type: application/json' \\
+          -d '{
+            "url": "http://localhost:8000/api/v1/triggers/instant-detection",
+            "enabled": true
+          }'
+        ```
+    """
+    try:
+        manager.configure_webhook(str(config.url), config.enabled)
+        
+        return {
+            "success": True,
+            "message": "Webhook configured successfully",
+            "webhook_url": str(config.url),
+            "enabled": config.enabled
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to configure webhook: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to configure webhook: {str(e)}"
+        )
+
+
+@router.get("/webhook/status")
+async def get_webhook_status(
+    manager: InstantDetectionSampler = Depends(get_instant_detection_manager)
+) -> Dict:
+    """
+    Get current webhook configuration status.
+    
+    Returns:
+        Webhook URL, enabled status, and push statistics
+    """
+    return {
+        "success": True,
+        "webhook_url": manager.webhook_url,
+        "enabled": manager.webhook_enabled,
+        "message": "Webhook is active and pushing results" if manager.webhook_enabled else "Webhook is disabled"
+    }
+
+
+@router.post("/webhook/disable")
+async def disable_webhook(
+    manager: InstantDetectionSampler = Depends(get_instant_detection_manager)
+) -> Dict:
+    """
+    Disable webhook push without removing URL configuration.
+    
+    Results will still be cached locally but not pushed to webhook.
+    """
+    manager.webhook_enabled = False
+    
+    return {
+        "success": True,
+        "message": "Webhook disabled",
+        "webhook_url": manager.webhook_url,
+        "enabled": False
+    }
+
+
+@router.post("/webhook/enable")
+async def enable_webhook(
+    manager: InstantDetectionSampler = Depends(get_instant_detection_manager)
+) -> Dict:
+    """
+    Enable webhook push using existing URL configuration.
+    
+    Returns error if webhook URL not configured.
+    """
+    if not manager.webhook_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook URL not configured. Use /webhook/configure first."
+        )
+    
+    manager.webhook_enabled = True
+    
+    return {
+        "success": True,
+        "message": "Webhook enabled",
+        "webhook_url": manager.webhook_url,
+        "enabled": True
+    }

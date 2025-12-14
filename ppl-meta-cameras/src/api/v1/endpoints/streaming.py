@@ -276,7 +276,11 @@ async def start_recording(
         existing_recording = camera_service.get_active_recording(device_id)
         active_session = camera.get_active_recording_session()
 
+        logger.info(f"🔍 [RECORD-CHECK] existing_recording: {existing_recording}")
+        logger.info(f"🔍 [RECORD-CHECK] active_session: {active_session}")
+
         if existing_recording or active_session:
+            logger.warning(f"❌ [RECORD-BLOCKED] Camera {device_id} already recording - existing_recording={existing_recording is not None}, active_session={active_session is not None}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Camera {device_id} is already recording",
@@ -316,24 +320,36 @@ async def start_recording(
 
         # Start recording with session tracking
         logger.info(f"🔍 [RECORD-START] Calling start_recording_with_session with enable_instant_detection={enable_instant_detection}")
-        recording_info = await camera_service.start_recording_with_session(
-            device_id=device_id,
-            user_id=user_id_from_token,
-            quality="high",
-            auth_token=credentials.credentials,
-            session_uuid=recording_session.session_uuid,
-            segment_duration=recording_config["segment_duration_seconds"],
-            enable_instant_detection=enable_instant_detection,
-        )
+        try:
+            recording_info = await camera_service.start_recording_with_session(
+                device_id=device_id,
+                user_id=user_id_from_token,
+                quality="high",
+                auth_token=credentials.credentials,
+                session_uuid=recording_session.session_uuid,
+                segment_duration=recording_config["segment_duration_seconds"],
+                enable_instant_detection=enable_instant_detection,
+            )
 
-        if not recording_info:
-            # If recording fails, mark session as failed
+            if not recording_info:
+                # If recording fails, mark session as failed and clean up
+                logger.error(f"❌ [RECORD-START] start_recording_with_session returned None for {device_id}")
+                session_service.update_session_status(
+                    recording_session.session_uuid, "failed", "Recording service returned no info"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to start recording for camera {device_id}",
+                )
+        except Exception as e:
+            # If any exception occurs, mark session as failed
+            logger.error(f"❌ [RECORD-START] Exception during recording start: {e}", exc_info=True)
             session_service.update_session_status(
-                recording_session.session_uuid, "failed"
+                recording_session.session_uuid, "failed", str(e)
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to start recording for camera {device_id}",
+                detail=f"Failed to start recording: {str(e)}",
             )
 
         logger.info(
@@ -401,6 +417,13 @@ async def stop_recording(
     try:
         # Log the auto_stop parameter for debugging
         logger.info(f"🛑 Stop recording endpoint called for {device_id}, auto_stop_instant_detection={auto_stop_instant_detection}")
+        
+        # Clean up any stale recording sessions for this camera
+        from src.services.recording_session_service import RecordingSessionService
+        session_service = RecordingSessionService(db)
+        cleaned = session_service.cleanup_stale_sessions(max_age_hours=1)
+        if cleaned > 0:
+            logger.info(f"Cleaned up {cleaned} stale recording sessions before stopping {device_id}")
         
         # Verify camera exists
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()

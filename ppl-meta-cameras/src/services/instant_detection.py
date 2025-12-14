@@ -66,6 +66,10 @@ class InstantDetectionSampler:
         # Results cache (in-memory only)
         self.results_cache: Dict[str, Dict] = {}
         
+        # Webhook configuration for pushing results to media service triggers
+        self.webhook_enabled = False
+        self.webhook_url: Optional[str] = None
+        
         logger.info("✅ Instant detection sampler initialized (Vision + VMeta APIs)")
     
     def start_sampling(self, camera_id: str, camera_capture):
@@ -99,11 +103,9 @@ class InstantDetectionSampler:
     
     def _sample_loop(self, camera_id: str, camera_capture):
         """
-        Main sampling loop - runs every N seconds using shared VideoCapture
+        Main sampling loop - runs every N seconds using shared VideoCapture.
+        Now submits frames to Celery for non-blocking processing.
         """
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
         while self._running:
             try:
                 start_time = time.time()
@@ -112,20 +114,12 @@ class InstantDetectionSampler:
                 frames = self._capture_3_frames_shared(camera_capture)
                 
                 if len(frames) == 3:
-                    # Process with SAME quality as main pipeline
-                    result = loop.run_until_complete(
-                        self._process_3_frames(camera_id, frames)
-                    )
+                    # Submit to Celery for background processing (non-blocking)
+                    self._submit_to_celery(camera_id, frames)
                     
-                    # Store in memory cache
-                    self._cache_result(camera_id, result)
-                    
-                    # Log success
                     logger.info(
-                        f"✅ Instant detection complete: "
-                        f"{len(result['person_objects'])} people, "
-                        f"{result['total_faces_detected']} faces, "
-                        f"{result['processing_time_seconds']:.2f}s"
+                        f"📤 [INSTANT] Submitted {camera_id} to Celery for processing "
+                        f"({len(frames)} frames)"
                     )
                 else:
                     logger.warning(f"⚠️ Only captured {len(frames)}/3 frames")
@@ -226,9 +220,8 @@ class InstantDetectionSampler:
                     
         except Exception as e:
             logger.error(f"Error capturing frames: {e}")
-        finally:
-            if cap:
-                cap.release()
+        # NOTE: Do NOT release cap here - it's a SHARED capture from recording loop
+        # The recording loop owns and will release the capture when recording ends
         
         return frames
     
@@ -324,7 +317,8 @@ class InstantDetectionSampler:
             "temporal_window_seconds": self.temporal_window,
             "frames_processed": len(frames),
             "total_faces_detected": total_faces,
-            "people_detected": len(person_objects),  # NEW: Total unique people count
+            "people_count": len(person_objects),  # FIXED: Use people_count for trigger evaluation
+            "people_detected": len(person_objects),  # Keep for backward compatibility
             "demographics": demographics,  # NEW: Gender/age breakdown
             "person_objects": person_objects,
             "processing_time_seconds": processing_time,
@@ -742,6 +736,298 @@ class InstantDetectionSampler:
             "cached_at": time.time(),
             "iteration": self.results_cache.get(camera_id, {}).get("iteration", 0) + 1
         }
+    
+    def _submit_to_celery(self, camera_id: str, frames: List[Dict]):
+        """
+        Submit frames to Celery for background processing (non-blocking).
+        
+        This prevents instant detection from blocking the main FastAPI service.
+        Celery workers process frames independently and publish results to Redis.
+        
+        Args:
+            camera_id: Camera identifier
+            frames: List of 3 frame dictionaries
+        """
+        try:
+            from src.tasks.instant_detection_tasks import process_instant_detection
+            import base64
+            
+            # Convert frames to base64 for JSON serialization
+            frames_data = []
+            for frame_dict in frames:
+                frame = frame_dict["frame"]
+                # Encode frame as JPEG then base64
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                frame_b64 = base64.b64encode(buffer).decode('utf-8')
+                frames_data.append(frame_b64)
+            
+            # Submit task (returns immediately, doesn't block)
+            task = process_instant_detection.delay(
+                camera_id=camera_id,
+                frames_data=frames_data,
+                timestamp=datetime.utcnow().isoformat()
+            )
+            
+            logger.debug(f"✅ [CELERY] Task submitted: {task.id} for {camera_id}")
+            
+        except ImportError:
+            logger.error("❌ [CELERY] Task module not found - falling back to synchronous")
+            # Fallback to synchronous processing if Celery not available
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self._process_3_frames(camera_id, frames))
+            self._cache_result(camera_id, result)
+            loop.close()
+        except Exception as e:
+            logger.error(f"❌ [CELERY] Failed to submit task: {e}", exc_info=True)
+        
+        # Push to webhook if enabled (non-blocking)
+        if self.webhook_enabled and self.webhook_url:
+            logger.info(f"📤 Pushing to webhook: {self.webhook_url}")
+            try:
+                # Use threading instead of asyncio since we're in a sync context
+                import threading
+                thread = threading.Thread(
+                    target=self._push_to_webhook_sync,
+                    args=(camera_id, result),
+                    daemon=True
+                )
+                thread.start()
+            except Exception as e:
+                logger.error(f"❌ Failed to start webhook thread: {e}")
+        
+        # Publish to Redis Pub/Sub for real-time subscribers (non-blocking)
+        try:
+            import threading
+            thread = threading.Thread(
+                target=self._publish_to_redis_sync,
+                args=(camera_id, result),
+                daemon=True
+            )
+            thread.start()
+        except Exception as e:
+            logger.error(f"❌ Failed to start Redis publish thread: {e}")
+    
+    def _push_to_webhook_sync(self, camera_id: str, result: Dict):
+        """
+        Push instant detection results to webhook endpoint (synchronous version for threading).
+        
+        This runs in a separate thread to avoid blocking the detection loop.
+        Short timeout (2s) ensures detection continues even if webhook is slow/down.
+        
+        Args:
+            camera_id: Camera identifier
+            result: Detection result dictionary
+        """
+        import requests
+        
+        if not self.webhook_url:
+            return
+        
+        try:
+            # Extract demographic summary
+            demographics = result.get("demographics", {})
+            people_count = result.get("people_count", 0)
+            
+            payload = {
+                "camera_id": camera_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "people_count": people_count,
+                "demographics": demographics,
+                "metadata": {
+                    "processing_time": result.get("processing_time_seconds", 0),
+                    "total_faces": result.get("total_faces_detected", 0)
+                }
+            }
+            
+            logger.info(f"📤 Sending webhook POST to {self.webhook_url}")
+            logger.info(f"   Payload: people_count={people_count}, demographics={demographics}")
+            
+            response = requests.post(
+                self.webhook_url,
+                json=payload,
+                timeout=2
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ Webhook SUCCESS: {camera_id} - {response.json()}")
+            else:
+                logger.warning(
+                    f"⚠️ Webhook returned {response.status_code}: {camera_id} - {response.text}"
+                )
+        
+        except requests.Timeout:
+            logger.warning(f"⚠️ Webhook timeout (2s): {camera_id}")
+        except Exception as e:
+            logger.error(f"❌ Webhook push error: {e}", exc_info=True)
+    
+    def _publish_to_redis_sync(self, camera_id: str, result: Dict):
+        """
+        Publish instant detection results to Redis Pub/Sub (synchronous version for threading).
+        
+        This runs in a separate thread to avoid blocking the detection loop.
+        Publishes to 'instant-detection' channel for all subscribers (triggers, UI, analytics).
+        
+        Args:
+            camera_id: Camera identifier
+            result: Detection result dictionary
+        """
+        try:
+            import redis
+            import os
+            
+            # Get Redis connection from environment or use default
+            redis_host = os.getenv("REDIS_HOST", "localhost")
+            redis_port = int(os.getenv("REDIS_PORT", 6379))
+            redis_db = int(os.getenv("REDIS_DB", 0))
+            
+            # Create Redis client
+            redis_client = redis.Redis(
+                host=redis_host,
+                port=redis_port,
+                db=redis_db,
+                decode_responses=True,
+                socket_connect_timeout=1,
+                socket_timeout=1
+            )
+            
+            # Extract demographic summary
+            demographics = result.get("demographics", {})
+            people_count = result.get("people_count", 0)
+            
+            # Prepare payload
+            import json
+            payload = json.dumps({
+                "camera_id": camera_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "people_count": people_count,
+                "demographics": demographics,
+                "metadata": {
+                    "processing_time": result.get("processing_time_seconds", 0),
+                    "total_faces": result.get("total_faces_detected", 0)
+                }
+            })
+            
+            # Publish to Redis channel
+            subscriber_count = redis_client.publish("instant-detection", payload)
+            
+            logger.info(
+                f"✅ Redis Pub/Sub: {camera_id} → {subscriber_count} subscribers "
+                f"(people={people_count})"
+            )
+            
+            redis_client.close()
+            
+        except redis.ConnectionError:
+            logger.warning(f"⚠️ Redis connection failed (instant detection pub/sub)")
+        except Exception as e:
+            logger.error(f"❌ Redis publish error: {e}")
+    
+    def _process_frames_sync(self, camera_id: str, frames_data: List[str]) -> Optional[Dict]:
+        """
+        Synchronous version of frame processing for Celery workers.
+        
+        This method is called by Celery workers (not the main FastAPI service).
+        It performs the same processing as _process_3_frames but synchronously.
+        
+        Args:
+            camera_id: Camera identifier
+            frames_data: List of 3 base64-encoded JPEG frames
+        
+        Returns:
+            Detection result dictionary or None if processing fails
+        """
+        try:
+            import base64
+            import numpy as np
+            
+            # Decode base64 frames back to numpy arrays
+            frames = []
+            for frame_b64 in frames_data:
+                # Decode base64 to bytes
+                frame_bytes = base64.b64decode(frame_b64)
+                # Convert to numpy array
+                nparr = np.frombuffer(frame_bytes, np.uint8)
+                # Decode JPEG to image
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                frames.append({"frame": frame})
+            
+            if len(frames) != 3:
+                logger.error(f"❌ [CELERY] Expected 3 frames, got {len(frames)}")
+                return None
+            
+            # Use existing async processing but wrap in event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(self._process_3_frames(camera_id, frames))
+                return result
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            logger.error(f"❌ [CELERY] Sync processing failed: {e}", exc_info=True)
+            return None
+    
+    async def _push_to_webhook(self, camera_id: str, result: Dict):
+        """
+        Push instant detection results to webhook endpoint (media service triggers).
+        
+        This is a fire-and-forget async operation that doesn't block detection.
+        Short timeout (2s) ensures detection continues even if webhook is slow/down.
+        
+        Args:
+            camera_id: Camera identifier
+            result: Detection result dictionary
+        """
+        if not self.webhook_url:
+            return
+        
+        try:
+            # Extract demographic summary
+            demographics = result.get("demographics", {})
+            people_count = result.get("people_count", 0)
+            
+            payload = {
+                "camera_id": camera_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "people_count": people_count,
+                "demographics": demographics,
+                "metadata": {
+                    "processing_time": result.get("processing_time_seconds", 0),
+                    "total_faces": result.get("total_faces_detected", 0)
+                }
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.webhook_url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=2)
+                ) as response:
+                    if response.status == 200:
+                        logger.debug(f"✅ Pushed instant detection to webhook: {camera_id}")
+                    else:
+                        logger.warning(
+                            f"⚠️ Webhook returned {response.status}: {camera_id}"
+                        )
+        
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ Webhook timeout (2s): {camera_id}")
+        except Exception as e:
+            logger.error(f"❌ Webhook push error: {e}")
+    
+    def configure_webhook(self, url: str, enabled: bool = True):
+        """
+        Configure webhook for pushing instant detection results.
+        
+        Args:
+            url: Webhook endpoint URL (typically media service trigger endpoint)
+            enabled: Whether webhook push is enabled
+        """
+        self.webhook_url = url
+        self.webhook_enabled = enabled
+        logger.info(f"✅ Webhook configured: {url} (enabled={enabled})")
     
     def get_cached_result(self, camera_id: str) -> Optional[Dict]:
         """

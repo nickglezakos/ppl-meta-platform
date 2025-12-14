@@ -282,12 +282,31 @@ class CameraDetectionService:
             logger.error(f"Error connecting to camera {device_id}: {e}")
             return None
 
-    async def disconnect_camera(self, device_id: str) -> bool:
-        """Disconnect from a specific camera."""
+    async def disconnect_camera(self, device_id: str, force: bool = False) -> bool:
+        """Disconnect from a specific camera.
+        
+        Args:
+            device_id: Camera device ID
+            force: If True, disconnect even if instant detection is active
+        """
 
         if device_id not in self.active_connections:
             logger.warning(f"Camera {device_id} not connected")
             return False
+
+        # Check if instant detection is active for this camera (unless force=True)
+        if not force:
+            try:
+                from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
+                manager = get_instant_detection_manager()
+                if manager and manager.is_sampling:
+                    logger.warning(
+                        f"⚠️ Cannot disconnect camera {device_id}: instant detection is active. "
+                        f"Stop instant detection first or use force=True"
+                    )
+                    return False
+            except Exception as e:
+                logger.debug(f"Could not check instant detection status: {e}")
 
         try:
             cap = self.active_connections[device_id]
@@ -1208,20 +1227,11 @@ class CameraDetectionService:
         collection_id = device_id  # Use device_id as collection_id
         media_uuid = None  # Will be set by background task
 
-        # Close camera capture BEFORE cleaning up
-        try:
-            if "capture" in recording_info:
-                cap = recording_info["capture"]
-                if cap is not None and cap.isOpened():
-                    cap.release()
-                    logger.info(f"🎬 [CLEANUP] Released recording capture for {device_id}")
-        except Exception as e:
-            logger.warning(f"⚠️ Error releasing recording capture for {device_id}: {e}")
-        
-        # DO NOT disconnect camera from active_connections
-        # The camera should remain connected for streaming and instant detection
-        # It will only disconnect when the user explicitly stops the stream or disconnects
-        logger.info(f"🎬 [INFO] Camera {device_id} remains connected for streaming and instant detection")
+        # IMPORTANT: DO NOT release the camera capture here!
+        # The VideoCapture is shared between recording, streaming, and instant detection
+        # It's owned by active_connections and will be released when the camera disconnects
+        # Only the video_writer was released above (line 1172)
+        logger.info(f"🎬 [INFO] Camera {device_id} capture remains active for streaming and instant detection")
 
         # Clean up recording info
         elapsed_time = (

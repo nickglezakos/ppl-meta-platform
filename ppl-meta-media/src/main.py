@@ -23,6 +23,7 @@ from src.database import Base, engine, test_connection
 from src.microservice_config import CONSUL_CONFIG
 from src.routes.triggers import router as triggers_router
 from src.routes.user_trigger_actions import router as user_actions_router
+from src.routes.demographic_triggers import router as demographic_triggers_router
 from src.models.collection_storage import (
     CollectionStorageConfig,
     CollectionStorageUsage,
@@ -190,12 +191,29 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start ETL worker: {e}")
         logger.info("Signage sync operations will be unavailable")
+    
+    # Start Redis subscriber for instant detection triggers
+    try:
+        from src.services.redis_subscriber import start_subscriber
+        await start_subscriber()
+        logger.info("Redis instant detection subscriber started")
+    except Exception as e:
+        logger.error(f"Failed to start Redis subscriber: {e}")
+        logger.info("Redis-based trigger evaluation will be unavailable")
 
     logger.info("Service startup completed successfully")
 
     yield
 
     logger.info("Shutting down PPL Meta Media Service...")
+    
+    # Stop Redis subscriber
+    try:
+        from src.services.redis_subscriber import stop_subscriber
+        await stop_subscriber()
+        logger.info("Redis subscriber stopped")
+    except Exception as e:
+        logger.error(f"Error stopping Redis subscriber: {e}")
 
     # Stop ETL worker
     try:
@@ -302,6 +320,7 @@ app.include_router(v1_router)  # Versioned API
 app.include_router(legacy_health_router)  # Legacy health endpoints
 app.include_router(triggers_router)  # Triggers management
 app.include_router(user_actions_router)  # User-defined actions
+app.include_router(demographic_triggers_router)  # Demographic triggers (webhook-based)
 
 # Add metrics endpoint
 metrics_router = create_metrics_endpoint()

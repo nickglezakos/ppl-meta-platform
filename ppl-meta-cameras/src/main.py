@@ -107,6 +107,65 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start mobile camera cleanup service: {e}")
 
+    # Clean up stale recording sessions on startup
+    try:
+        from src.services.recording_session_service import RecordingSessionService
+        from src.database import SessionLocal
+        
+        db = SessionLocal()
+        try:
+            session_service = RecordingSessionService(db)
+            cleaned_count = session_service.cleanup_stale_sessions()
+            logger.info(f"✅ Cleaned up {cleaned_count} stale recording sessions on startup")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to cleanup stale recording sessions: {e}")
+
+    # Start Celery worker for instant detection (background process)
+    celery_process = None
+    try:
+        import subprocess
+        import os
+        
+        # Get venv python path
+        venv_path = os.path.join(os.path.dirname(__file__), "..", "venv", "bin", "python")
+        if not os.path.exists(venv_path):
+            # Fallback to system python
+            venv_path = sys.executable
+        
+        # Start Celery worker as background process
+        log_file = os.path.join(log_dir, "celery-instant-detection.log")
+        celery_cmd = [
+            venv_path, "-m", "celery",
+            "-A", "src.tasks.instant_detection_tasks",
+            "worker",
+            "--loglevel=INFO",
+            "--concurrency=2",
+            "--queues=instant_detection_queue",
+            f"--logfile={log_file}",
+            "--detach"
+        ]
+        
+        celery_process = subprocess.Popen(
+            celery_cmd,
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        # Wait a moment to check if it started
+        import asyncio
+        await asyncio.sleep(2)
+        
+        if celery_process.poll() is None or celery_process.returncode == 0:
+            logger.info("✅ Celery worker for instant detection started successfully")
+        else:
+            logger.warning("⚠️ Celery worker may have failed to start, check logs")
+    except Exception as e:
+        logger.error(f"Failed to start Celery worker: {e}")
+        logger.info("Instant detection will fall back to synchronous processing")
+
     # Skip metrics initialization for now
     logger.info("Metrics initialization skipped")
 

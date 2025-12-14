@@ -441,28 +441,74 @@ class SignageService:
         Returns:
             SignageDevice object
         """
-        # Check if device already exists
-        device = (
-            self.db.query(SignageDevice)
-            .filter(SignageDevice.device_id == device_id)
-            .first()
-        )
-
-        if device:
-            # Update existing device
-            for key, value in device_data.items():
-                if hasattr(device, key):
-                    setattr(device, key, value)
-            device.update_heartbeat()
-            logger.info(f"Updated signage device '{device.device_name}' (ID: {device_id})")
-        else:
-            # Create new device
-            device = SignageDevice(
-                device_id=device_id, registered_by=registered_by, **device_data
+        # Check if device already exists by device_name (stable identifier)
+        device_name = device_data.get('device_name')
+        
+        if device_name:
+            # First, try to find by device_name (the stable identifier)
+            device = (
+                self.db.query(SignageDevice)
+                .filter(SignageDevice.device_name == device_name)
+                .first()
             )
-            device.update_heartbeat()
-            self.db.add(device)
-            logger.info(f"Registered new signage device '{device.device_name}' (ID: {device_id})")
+            
+            if device:
+                # Update existing device
+                for key, value in device_data.items():
+                    if hasattr(device, key):
+                        setattr(device, key, value)
+                # Only update device_id if it has changed
+                if device.device_id != device_id:
+                    device.device_id = device_id
+                device.update_heartbeat()
+                logger.info(f"Updated signage device '{device.device_name}' (ID: {device_id})")
+            else:
+                # Device name not found, check if device_id exists (might be a rename)
+                existing_device_by_id = (
+                    self.db.query(SignageDevice)
+                    .filter(SignageDevice.device_id == device_id)
+                    .first()
+                )
+                
+                if existing_device_by_id:
+                    # Update the existing device found by device_id
+                    for key, value in device_data.items():
+                        if hasattr(existing_device_by_id, key):
+                            setattr(existing_device_by_id, key, value)
+                    existing_device_by_id.update_heartbeat()
+                    device = existing_device_by_id
+                    logger.info(f"Updated signage device '{device.device_name}' (ID: {device_id})")
+                else:
+                    # Create new device
+                    device = SignageDevice(
+                        device_id=device_id, registered_by=registered_by, **device_data
+                    )
+                    device.update_heartbeat()
+                    self.db.add(device)
+                    logger.info(f"Registered new signage device '{device.device_name}' (ID: {device_id})")
+        else:
+            # Fallback to device_id lookup if no device_name
+            device = (
+                self.db.query(SignageDevice)
+                .filter(SignageDevice.device_id == device_id)
+                .first()
+            )
+            
+            if device:
+                # Update existing device
+                for key, value in device_data.items():
+                    if hasattr(device, key):
+                        setattr(device, key, value)
+                device.update_heartbeat()
+                logger.info(f"Updated signage device (ID: {device_id})")
+            else:
+                # Create new device
+                device = SignageDevice(
+                    device_id=device_id, registered_by=registered_by, **device_data
+                )
+                device.update_heartbeat()
+                self.db.add(device)
+                logger.info(f"Registered new signage device (ID: {device_id})")
 
         self.db.commit()
         self.db.refresh(device)
@@ -864,7 +910,7 @@ class SignagePlaybackService:
         self, request: PlaybackControlRequest
     ) -> dict:
         """
-        Send playback control command to device(s).
+        Send playback control command to device(s) via discovery service.
 
         Args:
             request: Playback control request
@@ -877,10 +923,12 @@ class SignagePlaybackService:
 
         for device_id in request.device_ids:
             logger.info(f"Processing control command '{request.command.value}' for device: {device_id}")
-            device = self.signage_service.get_device_by_id(device_id)
-
-            if not device or not device.is_online:
-                logger.warning(f"Device {device_id} not found or offline (device={device}, online={device.is_online if device else 'N/A'})")
+            
+            # Query discovery service to get device endpoint
+            device_info = await self._get_device_from_discovery(device_id)
+            
+            if not device_info:
+                logger.warning(f"Device {device_id} not found in discovery service")
                 results.append(
                     {
                         "device_id": str(device_id),
@@ -891,21 +939,17 @@ class SignagePlaybackService:
                 continue
 
             try:
-                logger.info(f"Sending {request.command.value} command to device {device.device_name} ({device.ip_address}:{device.port or 8009})")
-                success = await self._send_control_command(device, request)
+                logger.info(f"Sending {request.command.value} command to device {device_info['name']} ({device_info['host']}:{device_info['port']})")
+                success = await self._send_control_command_to_endpoint(
+                    host=device_info['host'],
+                    port=device_info['port'],
+                    device_name=device_info['name'],
+                    request=request
+                )
 
                 if success:
                     success_count += 1
-                    # Update device playback state
-                    if request.command == PlaybackCommand.START:
-                        device.playback_state = "playing"
-                    elif request.command == PlaybackCommand.PAUSE:
-                        device.playback_state = "paused"
-                    elif request.command == PlaybackCommand.STOP:
-                        device.playback_state = "stopped"
-
-                    self.db.commit()
-                    logger.info(f"✅ Command {request.command.value} executed successfully on {device.device_name}")
+                    logger.info(f"✅ Command {request.command.value} executed successfully on {device_info['name']}")
 
                 results.append(
                     {
@@ -916,7 +960,7 @@ class SignagePlaybackService:
 
             except Exception as e:
                 logger.error(
-                    f"Failed to control playback on device {device.device_name}: {str(e)}"
+                    f"Failed to control playback on device {device_info.get('name', device_id)}: {str(e)}"
                 )
                 results.append(
                     {"device_id": str(device_id), "status": "failed", "error": str(e)}
@@ -928,21 +972,67 @@ class SignagePlaybackService:
             "results": results,
         }
 
-    async def _send_control_command(
-        self, device: SignageDevice, request: PlaybackControlRequest
-    ) -> bool:
+    async def _get_device_from_discovery(self, service_id: UUID) -> dict | None:
         """
-        Send control command to device via HTTP.
+        Query discovery service to get device information.
 
         Args:
-            device: SignageDevice object
+            service_id: Service ID from discovery service
+
+        Returns:
+            Device info dict with host, port, name, status, or None if not found
+        """
+        try:
+            discovery_url = "http://localhost:8006"
+            logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{service_id}")
+            
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{discovery_url}/api/v1/services/{service_id}")
+                
+                if response.status_code == 200:
+                    service_data = response.json()
+                    logger.info(f"Found device in discovery: {service_data['name']} - {service_data['host']}:{service_data['port']}")
+                    
+                    # Check if device is healthy
+                    if service_data.get('status') != 'healthy':
+                        logger.warning(f"Device {service_id} is not healthy: {service_data.get('status')}")
+                        return None
+                    
+                    return {
+                        'name': service_data['name'],
+                        'host': service_data['host'],
+                        'port': service_data['port'],
+                        'status': service_data['status'],
+                        'service_id': service_data['service_id']
+                    }
+                elif response.status_code == 404:
+                    logger.warning(f"Device {service_id} not found in discovery service")
+                    return None
+                else:
+                    logger.error(f"Discovery service returned status {response.status_code}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Failed to query discovery service for device {service_id}: {e}")
+            return None
+
+    async def _send_control_command_to_endpoint(
+        self, host: str, port: int, device_name: str, request: PlaybackControlRequest
+    ) -> bool:
+        """
+        Send control command to device via HTTP endpoint.
+
+        Args:
+            host: Device IP address
+            port: Device port
+            device_name: Device name for logging
             request: Playback control request
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            url = f"http://{device.ip_address}:{device.port or 8009}/api/v1/control"
+            url = f"http://{host}:{port}/api/v1/control"
 
             payload = {
                 "command": request.command.value,
@@ -954,13 +1044,23 @@ class SignagePlaybackService:
                 ),
             }
 
+            logger.info(f"Sending control request to {url}")
+            logger.info(f"Payload: {payload}")
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
 
                 result = response.json()
+                logger.info(f"Device response: {result}")
                 return result.get("status") == "success"
 
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error from device {device_name}: {e.response.status_code} - {e.response.text}")
+            return False
+        except httpx.ConnectError as e:
+            logger.error(f"Cannot connect to device {device_name} at {host}:{port}: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Failed to send control command: {str(e)}")
+            logger.error(f"Failed to send control command to {device_name}: {str(e)}")
             return False

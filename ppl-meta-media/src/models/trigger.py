@@ -5,7 +5,7 @@ Trigger model for event-based notifications and alerts.
 import enum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -166,6 +166,54 @@ class Trigger(BaseModel):
         String(500),
         nullable=True,
         comment="Optional description of what this trigger monitors"
+    )
+    
+    # Demographic trigger fields
+    enable_demographic_conditions = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        index=True,
+        comment="Enable demographic-based trigger evaluation (percent_male, percent_female, etc.)"
+    )
+    demographic_conditions = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of demographic conditions: [{"field": "percent_male", "operator": "gte", "value": 60}]'
+    )
+    signage_device_ids = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of signage device UUIDs: ["device-uuid-1", "device-uuid-2"]'
+    )
+    signage_playlist_id = Column(
+        String(255),
+        nullable=True,
+        comment="Playlist UUID to play when trigger fires"
+    )
+    signage_transition_mode = Column(
+        String(50),
+        nullable=False,
+        default="immediate",
+        comment="Playlist transition mode: immediate | after_current | fade"
+    )
+    signage_fade_duration_ms = Column(
+        Integer,
+        nullable=False,
+        default=2000,
+        comment="Fade duration in milliseconds for fade transition mode"
+    )
+    cooldown_seconds = Column(
+        Integer,
+        nullable=False,
+        default=60,
+        comment="Minimum seconds between trigger firings to prevent spam"
+    )
+    last_fired_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp of last trigger firing"
     )
     
     def __repr__(self):

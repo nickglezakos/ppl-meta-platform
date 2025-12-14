@@ -3,7 +3,7 @@ Pydantic schemas for Trigger API.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -116,6 +116,37 @@ class TriggerBase(BaseModel):
         description="Optional description",
         max_length=500
     )
+    enable_demographic_conditions: bool = Field(
+        default=False,
+        description="Enable demographic-based trigger evaluation"
+    )
+    demographic_conditions: Optional[str] = Field(
+        None,
+        description='JSON array of demographic conditions: [{"field": "percent_male", "operator": "gte", "value": 60}]'
+    )
+    signage_device_ids: Optional[str] = Field(
+        None,
+        description='JSON array of signage device UUIDs: ["device-uuid-1", "device-uuid-2"]'
+    )
+    signage_playlist_id: Optional[str] = Field(
+        None,
+        description="Playlist UUID to play when trigger fires",
+        max_length=255
+    )
+    signage_transition_mode: str = Field(
+        default="immediate",
+        description="Playlist transition mode: immediate | after_current | fade"
+    )
+    signage_fade_duration_ms: int = Field(
+        default=2000,
+        ge=0,
+        description="Fade duration in milliseconds"
+    )
+    cooldown_seconds: int = Field(
+        default=60,
+        ge=0,
+        description="Minimum seconds between trigger firings"
+    )
 
     @field_validator('person_count_operator')
     @classmethod
@@ -177,6 +208,13 @@ class TriggerUpdate(BaseModel):
     is_active: Optional[bool] = None
     name: Optional[str] = None
     description: Optional[str] = None
+    enable_demographic_conditions: Optional[bool] = None
+    demographic_conditions: Optional[str] = None
+    signage_device_ids: Optional[str] = None
+    signage_playlist_id: Optional[str] = None
+    signage_transition_mode: Optional[str] = None
+    signage_fade_duration_ms: Optional[int] = None
+    cooldown_seconds: Optional[int] = None
 
     @field_validator('person_count_operator')
     @classmethod
@@ -280,3 +318,35 @@ class TriggerEvaluationResponse(BaseModel):
         ...,
         description="Detailed results for each trigger"
     )
+
+
+class InstantDetectionPayload(BaseModel):
+    """Payload received from camera service instant detection webhook."""
+    
+    camera_id: str = Field(..., description="Camera device ID")
+    timestamp: str = Field(..., description="ISO format timestamp of detection")
+    people_count: int = Field(..., ge=0, description="Total number of people detected")
+    demographics: Dict[str, Any] = Field(
+        ...,
+        description="Demographic data including age/gender distributions and percentages"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Additional metadata from camera"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "camera_id": "usb_camera_0",
+                "timestamp": "2025-12-13T10:30:00Z",
+                "people_count": 8,
+                "demographics": {
+                    "age_distribution": {"18-25": 3, "26-40": 4, "41-60": 1},
+                    "gender_distribution": {"male": 5, "female": 3},
+                    "percent_male": 62.5,
+                    "percent_female": 37.5
+                },
+                "metadata": {}
+            }
+        }

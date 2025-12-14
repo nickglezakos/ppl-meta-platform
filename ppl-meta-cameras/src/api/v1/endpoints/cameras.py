@@ -160,6 +160,13 @@ async def connect_camera(
     """Connect to a specific camera."""
 
     try:
+        # Clean up stale recording sessions for this camera before connecting
+        from src.services.recording_session_service import RecordingSessionService
+        session_service = RecordingSessionService(db)
+        cleaned = session_service.cleanup_stale_sessions(max_age_hours=1)
+        if cleaned > 0:
+            logger.info(f"Cleaned up {cleaned} stale recording sessions before connecting {device_id}")
+
         # Check if camera exists in database
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
         if not camera:
