@@ -340,7 +340,20 @@ async def sync_video_list(
         )
 
     except ValueError as e:
+        logger.warning(f"Validation error during sync: {str(e)}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error during sync: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Device communication error: {e.response.status_code}"
+        )
+    except httpx.RequestError as e:
+        logger.error(f"Network error during sync: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Cannot reach device: {str(e)}"
+        )
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()

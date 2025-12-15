@@ -2,16 +2,38 @@
 FastAPI microservice main application.
 """
 
+import logging
 import os
 import sys
 import time
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+
+# Configure logging FIRST - Simple approach like vmeta service
+workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+log_dir = os.path.join(workspace_root, "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, "ppl-meta-media.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        RotatingFileHandler(
+            log_file, maxBytes=10*1024*1024, backupCount=5
+        ),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+logger.info(f"📝 Media service logging to: {log_file}")
+print(f"📝 Media service logging to: {log_file}", flush=True)
 
 # Add the parent directory to Python path to import shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -51,7 +73,7 @@ from src.models.user_trigger_action import UserTriggerAction
 
 from src.services.signage_etl_worker import start_etl_worker, stop_etl_worker
 
-from shared.logging import setup_logging
+# Import metrics but not complex shared logging
 from shared.metrics import PrometheusMiddleware, create_metrics_endpoint, init_metrics
 
 # Try to import the shared service discovery module
@@ -64,35 +86,6 @@ except ImportError:
 
 # Initialize configuration
 config = get_config()
-
-# Setup standardized logging
-# Determine log file path
-if os.path.exists("/app"):
-    log_file_path = "/app/logs/media-service.log"
-else:
-    # Local development - use workspace logs directory
-    workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    logs_dir = os.path.join(workspace_root, "logs")
-    os.makedirs(logs_dir, exist_ok=True)
-    log_file_path = os.path.join(logs_dir, "ppl-meta-media.log")
-
-logger = setup_logging(
-    service_name="ppl-meta-media",
-    log_level=config.LOG_LEVEL.upper(),
-    log_format=config.LOG_FORMAT.lower(),
-    log_file=log_file_path,
-)
-
-# Add file handler manually to ensure logging to file works
-import logging
-file_handler = logging.FileHandler(log_file_path, mode='a')
-file_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-logging.getLogger().addHandler(file_handler)
-
-logger.info(f"📝 Logging to: {log_file_path}")
-print(f"📝 Media service logging to: {log_file_path}", flush=True)
 
 # Global service discovery client
 service_discovery_client = None
@@ -251,6 +244,10 @@ metrics_collector = init_metrics(service_name="ppl-meta-media", service_version=
 app.add_middleware(
     TrustedHostMiddleware, allowed_hosts=["*"]  # Configure for production
 )
+
+# NOTE: Structured logging middleware disabled - using simple standard logging like vmeta service
+# The complex middleware had import issues and wasn't necessary for basic logging to work
+# If needed in future, the middleware files are still in src/middleware/logging.py
 
 # Add metrics middleware
 app.add_middleware(PrometheusMiddleware, metrics_collector=metrics_collector)

@@ -30,6 +30,7 @@ from ..schemas.signage import (
     VideoListUpdate,
 )
 
+# Use simple logging like other working services
 logger = logging.getLogger(__name__)
 
 
@@ -838,6 +839,22 @@ class SignageSyncService:
         Returns:
             Dictionary with video list data
         """
+        # Get media service endpoint from discovery
+        media_service_url = "http://localhost:8000"  # Default fallback
+        try:
+            import httpx
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get("http://localhost:8006/api/v1/services")
+                if response.status_code == 200:
+                    services = response.json().get("services", [])
+                    for service in services:
+                        if service.get("service_type") == "backend" and "media" in service.get("name", "").lower():
+                            media_service_url = f"http://{service['host']}:{service['port']}"
+                            logger.info(f"🔍 Using media service URL from discovery: {media_service_url}")
+                            break
+        except Exception as e:
+            logger.warning(f"Could not query discovery for media service, using default: {e}")
+        
         return {
             "id": str(video_list.uuid),
             "name": video_list.name,
@@ -850,10 +867,10 @@ class SignageSyncService:
                     "video_id": item.video_id,
                     "sequence_order": item.sequence_order,
                     "filename": item.video_filename,
-                    "file_path": item.video_file_path,
+                    "file_path": f"{media_service_url}/api/v1/media/stream/{item.video_id}",  # Full HTTP URL
                     "duration_ms": item.effective_duration_ms,
                     "title": item.effective_title,
-                    "thumbnail_url": item.thumbnail_url,
+                    "thumbnail_url": f"{media_service_url}/api/v1/media/thumbnail/{item.video_id}?size=medium" if item.thumbnail_url else None,
                 }
                 for item in sorted(video_list.video_items, key=lambda x: x.sequence_order)
             ],
@@ -872,14 +889,28 @@ class SignageSyncService:
         Args:
             device: SignageDevice object
             video_list_data: Prepared video list data
-            sync_mode: Sync mode
-            force_update: Force update flag
+            sync_mode: Sync mode (full/incremental)
+            force_update: Force update even if device has current list
 
         Returns:
-            True if successful, False otherwise
+            Success status
         """
         try:
-            url = f"http://{device.ip_address}:{device.port or 8009}/api/v1/sync"
+            # Query discovery service for current device endpoint (handles network changes)
+            logger.info(f"Querying discovery service for device {device.device_id} ({device.device_name}) current endpoint")
+            discovery_device = await self._get_device_from_discovery(device.device_id)
+            
+            if not discovery_device:
+                logger.error(f"Device {device.device_id} not found in discovery service or unhealthy")
+                # Fall back to database IP (may be stale)
+                logger.warning(f"Falling back to database IP: {device.ip_address}:{device.port or 8009}")
+                url = f"http://{device.ip_address}:{device.port or 8009}/api/v1/sync"
+            else:
+                # Use fresh endpoint from discovery service
+                host = discovery_device['host']
+                port = discovery_device['port']
+                logger.info(f"Using discovery endpoint for {device.device_name}: http://{host}:{port}")
+                url = f"http://{host}:{port}/api/v1/sync"
 
             payload = {
                 "video_list": video_list_data,
@@ -888,15 +919,79 @@ class SignageSyncService:
             }
 
             async with httpx.AsyncClient(timeout=30.0) as client:
+                logger.info(f"Sending sync request to device: {url}")
+                logger.info(f"Sync payload: video_list_id={video_list_data['id']}, "
+                           f"videos={len(video_list_data['videos'])}, "
+                           f"sync_mode={sync_mode.value}, force_update={force_update}")
+                
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
 
                 result = response.json()
-                return result.get("status") == "success"
+                success = result.get("status") == "success"
+                
+                if success:
+                    logger.info(f"✅ Successfully synced video list to {device.device_name} "
+                               f"({len(video_list_data['videos'])} videos)")
+                else:
+                    logger.warning(f"⚠️ Sync returned non-success status: {result}")
+                
+                return success
 
-        except Exception as e:
-            logger.error(f"Failed to send to device {device.device_name}: {str(e)}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ HTTP error syncing to {device.device_name}: {e.response.status_code} - {e.response.text}")
             return False
+        except httpx.RequestError as e:
+            logger.error(f"❌ Request error syncing to {device.device_name}: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Failed to send to device {device.device_name}: {str(e)}")
+            logger.exception("Full traceback:")
+            return False
+
+    async def _get_device_from_discovery(self, service_id: UUID) -> dict | None:
+        """
+        Query discovery service to get device information.
+
+        Args:
+            service_id: Service ID from discovery service
+
+        Returns:
+            Device info dict with host, port, name, status, or None if not found
+        """
+        try:
+            discovery_url = "http://localhost:8006"
+            logger.info(f"Querying discovery service at {discovery_url}/api/v1/services/{service_id}")
+            
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{discovery_url}/api/v1/services/{service_id}")
+                
+                if response.status_code == 200:
+                    service_data = response.json()
+                    logger.info(f"Found device in discovery: {service_data['name']} - {service_data['host']}:{service_data['port']}")
+                    
+                    # Check if device is healthy
+                    if service_data.get('status') != 'healthy':
+                        logger.warning(f"Device {service_id} is not healthy: {service_data.get('status')}")
+                        return None
+                    
+                    return {
+                        'name': service_data['name'],
+                        'host': service_data['host'],
+                        'port': service_data['port'],
+                        'status': service_data['status'],
+                        'service_id': service_data['service_id']
+                    }
+                elif response.status_code == 404:
+                    logger.warning(f"Device {service_id} not found in discovery service")
+                    return None
+                else:
+                    logger.error(f"Discovery service returned status {response.status_code}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Failed to query discovery service for device {service_id}: {e}")
+            return None
 
 
 class SignagePlaybackService:

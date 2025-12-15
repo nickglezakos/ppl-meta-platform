@@ -61,6 +61,7 @@ class PlaybackState(str, Enum):
     PLAYING = "playing"
     PAUSED = "paused"
     STOPPED = "stopped"
+    LOADING = "loading"
     BUFFERING = "buffering"
     ERROR = "error"
 

@@ -13,10 +13,11 @@
 3. [Streaming Architecture](#streaming-architecture)
 4. [Recording Architecture](#recording-architecture)
 5. [Instant Detection Architecture](#instant-detection-architecture)
-6. [State Management](#state-management)
-7. [Resource Sharing and Coordination](#resource-sharing-and-coordination)
-8. [Critical Issues and Fixes](#critical-issues-and-fixes)
-9. [Code References](#code-references)
+6. [WebSocket Real-Time Updates](#websocket-real-time-updates)
+7. [State Management](#state-management)
+8. [Resource Sharing and Coordination](#resource-sharing-and-coordination)
+9. [Critical Issues and Fixes](#critical-issues-and-fixes)
+10. [Code References](#code-references)
 
 ---
 
@@ -718,6 +719,230 @@ async def _send_webhook(self, camera_id: str, result: Dict):
     except Exception as e:
         logger.error(f"Webhook failed: {e}")
 ```
+
+---
+
+## WebSocket Real-Time Updates
+
+### Architecture Overview
+
+**Problem**: Frontend polling for instant detection results caused system overload:
+- Multiple cameras polled every 5 seconds
+- Requests timing out (30+ seconds, 503 errors)
+- System cascade failures (recording hangs, discovery timeouts)
+
+**Solution**: WebSocket push notifications using Redis Pub/Sub
+
+```
+┌──────────────┐
+│ Camera       │
+│ (Instant     │
+│  Detection)  │
+└──────┬───────┘
+       │ publish
+       ▼
+┌──────────────┐
+│ Redis        │
+│ instant-     │
+│ detection    │
+│ channel      │
+└──────┬───────┘
+       │ subscribe
+       ▼
+┌──────────────┐
+│ Gateway      │
+│ WebSocket    │
+│ Manager      │
+└──────┬───────┘
+       │ broadcast
+       ▼
+┌──────────────┐
+│ Frontend     │
+│ (WebSocket   │
+│  clients)    │
+└──────────────┘
+```
+
+### WebSocket Endpoint
+
+**Location**: `ppl-meta-gateway/src/api/v1/websockets.py`
+
+**Endpoint**: `ws://localhost:8080/api/v1/ws/instant-detection`
+
+### Connection Manager
+
+```python
+class ConnectionManager:
+    """Manages WebSocket connections for instant detection broadcasts"""
+    
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+        self.redis_client: aioredis.Redis = None
+        self.pubsub = None
+        self.listener_task = None
+    
+    async def connect(self, websocket: WebSocket):
+        """Accept new WebSocket connection"""
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        
+        # Start Redis listener if this is the first connection
+        if len(self.active_connections) == 1:
+            await self.start_redis_listener()
+    
+    async def disconnect(self, websocket: WebSocket):
+        """Remove WebSocket connection"""
+        self.active_connections.discard(websocket)
+        
+        # Stop Redis listener if no more connections
+        if len(self.active_connections) == 0:
+            await self.stop_redis_listener()
+    
+    async def broadcast(self, message: dict):
+        """Broadcast message to all connected clients"""
+        message_json = json.dumps(message)
+        for connection in self.active_connections:
+            await connection.send_text(message_json)
+```
+
+### Redis Listener
+
+```python
+async def start_redis_listener(self):
+    """Start listening to Redis pub/sub for instant detection events"""
+    self.redis_client = aioredis.from_url("redis://localhost:6379")
+    self.pubsub = self.redis_client.pubsub()
+    await self.pubsub.subscribe("instant-detection")
+    
+    # Start background task
+    self.listener_task = asyncio.create_task(self._redis_listener())
+
+async def _redis_listener(self):
+    """Background task that listens to Redis and broadcasts to WebSockets"""
+    async for message in self.pubsub.listen():
+        if message["type"] == "message":
+            data = json.loads(message["data"])
+            
+            # Broadcast to all WebSocket clients
+            await self.broadcast({
+                "type": "instant-detection",
+                "data": data
+            })
+```
+
+### Message Format
+
+**From Camera (Redis Pub/Sub)**:
+```json
+{
+    "camera_id": "usb_camera_0",
+    "timestamp": "2025-12-15T08:00:00+02:00",
+    "people_count": 2,
+    "demographics": {
+        "total_male": 1,
+        "total_female": 1,
+        "percent_male": 50.0,
+        "percent_female": 50.0
+    },
+    "metadata": {
+        "processing_time": 0.5,
+        "total_faces": 2
+    }
+}
+```
+
+**To Frontend (WebSocket)**:
+```json
+{
+    "type": "instant-detection",
+    "data": {
+        "camera_id": "usb_camera_0",
+        "timestamp": "2025-12-15T08:00:00+02:00",
+        "people_count": 2,
+        "demographics": {...},
+        "metadata": {...}
+    }
+}
+```
+
+### Frontend Integration Example
+
+```typescript
+// Connect to WebSocket
+const ws = new WebSocket('ws://localhost:8080/api/v1/ws/instant-detection');
+
+ws.onopen = () => {
+    console.log('✅ Connected to instant detection stream');
+};
+
+ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    
+    if (message.type === 'instant-detection') {
+        const { camera_id, people_count, demographics } = message.data;
+        
+        // Update UI with real-time detection results
+        updateCameraStats(camera_id, people_count, demographics);
+    }
+};
+
+ws.onerror = (error) => {
+    console.error('❌ WebSocket error:', error);
+};
+
+ws.onclose = () => {
+    console.log('Connection closed - attempting reconnect...');
+    setTimeout(connectWebSocket, 5000);
+};
+
+// Ping/pong for keepalive
+setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send('ping');
+    }
+}, 30000);
+```
+
+### Benefits Over Polling
+
+| Aspect | Polling (OLD) | WebSocket (NEW) |
+|--------|--------------|-----------------|
+| **Latency** | 5 seconds | Instant (<100ms) |
+| **Server Load** | High (N cameras × polls/sec) | Low (1 Redis listener) |
+| **Network** | Constant traffic | Event-driven only |
+| **Scalability** | Poor (O(n²)) | Excellent (O(n)) |
+| **Reliability** | Timeouts, 503 errors | Stable connections |
+| **System Impact** | Recording hangs, discovery timeouts | None |
+
+### Resource Efficiency
+
+**Polling** (3 cameras, 5 second interval):
+```
+Requests/minute: 3 cameras × 12 polls = 36 requests/min
+Failed requests: ~30% timeout (30+ seconds)
+System load: 🔴 CRITICAL
+```
+
+**WebSocket** (3 cameras, push on detection):
+```
+Connections: 1 WebSocket + 1 Redis subscriber
+Messages: Only when detection occurs (~1-5/min)
+System load: 🟢 MINIMAL
+```
+
+### Auto-Scaling
+
+```python
+# Listener auto-starts with first client
+if len(self.active_connections) == 1:
+    await self.start_redis_listener()  # ✅ Start
+
+# Listener auto-stops when all clients disconnect  
+if len(self.active_connections) == 0:
+    await self.stop_redis_listener()  # ✅ Stop
+```
+
+**No overhead when idle** - Redis listener only runs when clients are connected.
 
 ---
 

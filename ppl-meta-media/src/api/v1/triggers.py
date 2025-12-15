@@ -150,7 +150,7 @@ async def handle_instant_detection(
                     for device_uuid_str in device_ids:
                         try:
                             device_uuid = UUID(device_uuid_str)
-                            device = db.query(SignageDevice).filter(SignageDevice.uuid == device_uuid).first()
+                            device = db.query(SignageDevice).filter(SignageDevice.device_id == device_uuid).first()
                             
                             if device:
                                 logger.info(f"\n     📱 Sending switch command to device:")
