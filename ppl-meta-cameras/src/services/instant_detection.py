@@ -57,6 +57,8 @@ class InstantDetectionSampler:
     ):
         self._detection_thread = None
         self._running = False
+        self._current_camera_id: Optional[str] = None  # Track which camera is being sampled
+        self._current_capture = None  # Track current VideoCapture object
         self.vision_service_url = vision_service_url
         self.vmeta_service_url = vmeta_service_url
         self.orchestrator_service_url = orchestrator_service_url
@@ -80,9 +82,33 @@ class InstantDetectionSampler:
             camera_id: Unique camera identifier
             camera_capture: Shared cv2.VideoCapture object from recording session
         """
-        if self._running:
+        # Check if we need to restart due to camera reconnection (new capture object)
+        camera_changed = (
+            self._current_camera_id != camera_id or 
+            self._current_capture is not camera_capture
+        )
+        
+        if camera_changed and self._running:
+            logger.info(
+                f"🔄 Camera changed (was: {self._current_camera_id}, now: {camera_id}) or "
+                f"capture object changed - restarting instant detection"
+            )
+            self.stop_sampling()
+        
+        # Check if thread is still running (even if _running flag says otherwise)
+        if self._running and self._detection_thread and self._detection_thread.is_alive():
             logger.warning(f"Instant detection already running for camera {camera_id}")
             return
+        
+        # If thread exists but is not alive, ensure clean state
+        if self._detection_thread and not self._detection_thread.is_alive():
+            logger.info(f"🔄 Cleaning up previous thread state for camera {camera_id}")
+            self._running = False
+            self._detection_thread = None
+        
+        # Store current camera and capture for future comparison
+        self._current_camera_id = camera_id
+        self._current_capture = camera_capture
         
         self._running = True
         self._detection_thread = threading.Thread(
@@ -99,6 +125,11 @@ class InstantDetectionSampler:
         self._running = False
         if self._detection_thread:
             self._detection_thread.join(timeout=2)
+        
+        # Clear camera tracking on stop
+        self._current_camera_id = None
+        self._current_capture = None
+        
         logger.info("🛑 Instant detection sampler stopped")
     
     def _sample_loop(self, camera_id: str, camera_capture):
@@ -106,9 +137,18 @@ class InstantDetectionSampler:
         Main sampling loop - runs every N seconds using shared VideoCapture.
         Now submits frames to Celery for non-blocking processing.
         """
+        consecutive_failures = 0
+        max_failures = 3  # Stop after 3 consecutive failures
+        
         while self._running:
             try:
                 start_time = time.time()
+                
+                # Check if capture is still valid before attempting to read
+                if not camera_capture or not camera_capture.isOpened():
+                    logger.warning(f"⚠️ Camera capture closed or invalid for {camera_id}, stopping instant detection")
+                    self._running = False
+                    break
                 
                 # Capture 3 frames with temporal spacing (using shared capture)
                 frames = self._capture_3_frames_shared(camera_capture)
@@ -121,8 +161,38 @@ class InstantDetectionSampler:
                         f"📤 [INSTANT] Submitted {camera_id} to Celery for processing "
                         f"({len(frames)} frames)"
                     )
+                    consecutive_failures = 0  # Reset failure counter on success
+                    
+                elif len(frames) == 0:
+                    # No frames captured at all - likely camera disconnected or stopped
+                    consecutive_failures += 1
+                    logger.warning(
+                        f"⚠️ Failed to capture any frames for {camera_id} "
+                        f"(failure {consecutive_failures}/{max_failures})"
+                    )
+                    
+                    if consecutive_failures >= max_failures:
+                        logger.error(
+                            f"❌ Too many consecutive failures ({consecutive_failures}), "
+                            f"stopping instant detection for {camera_id}"
+                        )
+                        self._running = False
+                        break
                 else:
-                    logger.warning(f"⚠️ Only captured {len(frames)}/3 frames")
+                    # Partial frames captured
+                    consecutive_failures += 1
+                    logger.warning(
+                        f"⚠️ Only captured {len(frames)}/3 frames for {camera_id} "
+                        f"(failure {consecutive_failures}/{max_failures})"
+                    )
+                    
+                    if consecutive_failures >= max_failures:
+                        logger.error(
+                            f"❌ Too many consecutive failures ({consecutive_failures}), "
+                            f"stopping instant detection for {camera_id}"
+                        )
+                        self._running = False
+                        break
                 
                 # Wait for next iteration (accounting for processing time)
                 elapsed = time.time() - start_time
@@ -130,8 +200,24 @@ class InstantDetectionSampler:
                 time.sleep(sleep_time)
                 
             except Exception as e:
-                logger.error(f"❌ Instant detection error: {e}", exc_info=True)
+                consecutive_failures += 1
+                logger.error(
+                    f"❌ Instant detection error for {camera_id}: {e} "
+                    f"(failure {consecutive_failures}/{max_failures})", 
+                    exc_info=True
+                )
+                
+                if consecutive_failures >= max_failures:
+                    logger.error(
+                        f"❌ Too many consecutive errors ({consecutive_failures}), "
+                        f"stopping instant detection for {camera_id}"
+                    )
+                    self._running = False
+                    break
+                
                 time.sleep(self.sampling_interval)
+        
+        logger.info(f"🛑 Instant detection sample loop exited for {camera_id}")
     
     def _capture_3_frames_shared(self, cap) -> List[Dict]:
         """

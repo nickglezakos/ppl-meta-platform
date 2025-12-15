@@ -79,11 +79,6 @@ async def video_stream(
         """Generate video frames for streaming."""
 
         try:
-            cap = await camera_service.get_camera_stream(device_id)
-            if not cap:
-                logger.error(f"Camera {device_id} not connected for streaming")
-                return
-
             # Set quality parameters
             quality_settings = {
                 "low": (320, 240, 15),
@@ -96,16 +91,19 @@ async def video_stream(
                 quality, quality_settings["medium"]
             )
 
-            # Set camera properties
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-            cap.set(cv2.CAP_PROP_FPS, fps)
-
             while True:
+                # Get camera stream on EACH iteration to handle reconnections
+                cap = await camera_service.get_camera_stream(device_id)
+                if not cap or not cap.isOpened():
+                    logger.warning(f"Camera {device_id} not available for streaming")
+                    break
+
                 ret, frame = cap.read()
                 if not ret:
                     logger.warning(f"Failed to read frame from camera {device_id}")
-                    break
+                    # Don't break immediately - camera might be temporarily busy
+                    await asyncio.sleep(0.1)
+                    continue
 
                 # Resize frame if needed
                 if frame.shape[1] != width or frame.shape[0] != height:

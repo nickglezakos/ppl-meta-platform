@@ -88,6 +88,12 @@ llama3.1:latest            46e0c10c039e    4.9 GB    3 days ago
 
 ************************************************************************************************************
 
+I/flutter (29695): ┌───────────────────────────────────────────────────────────────────────────────
+I/flutter (29695): │ ⚠️ Heartbeat timeout - discovery service may be unavailable
+I/flutter (29695): └───────────────────────────────────────────────────────────────────────────────
+I/flutter (29695): ┌───────────────────────────────────────────────────────────────────────────────
+I/flutter (29695): │ ⚠️ Timeout details: The request took longer than 0:00:05.000000 to receive data. It was aborted. To get rid of this exception, try raising the RequestOptions.receiveTimeout above the duration of 0:00:05.000000 or improve the response time of the server.
+I/flutter (29695): └───────────────────────────────────────────────────────────────────────────────
 
 
 
