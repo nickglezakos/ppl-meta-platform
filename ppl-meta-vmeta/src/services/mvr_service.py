@@ -391,7 +391,7 @@ class MVRService:
         media_uuid: UUID,
         media_type: str,
         person_objects: List[Dict[str, Any]],
-        similarity_threshold: float = 0.7,
+        similarity_threshold: float = 0.60,
         min_face_quality: float = 0.20,
         include_demographics: bool = True,
         include_route_data: bool = True

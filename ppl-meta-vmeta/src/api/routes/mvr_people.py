@@ -2021,10 +2021,27 @@ async def search_mvr_people_by_collection(
         
         # Get database connection from the repository's pool
         async with mvr_repository.pool.acquire() as conn:
-            # Query MVR people created within the time range
-            # Note: Collection filtering happens at the video level (Media service)
-            # Here we filter by creation timestamp of MVR people
+            # Query MVR people created within the time range OR super-individuals
+            # that have merged MVR with appearances in the time range
             query = """
+                WITH relevant_mvr AS (
+                    -- Direct MVR created in range
+                    SELECT DISTINCT mp.mvr_people_uuid
+                    FROM mvr_people mp
+                    WHERE mp.created_at >= $1
+                        AND mp.created_at <= $2
+                        AND mp.is_orphaned = false
+                    
+                    UNION
+                    
+                    -- Super-individuals that have merged MVR with appearances in range
+                    SELECT DISTINCT mh.super_individual_uuid AS mvr_people_uuid
+                    FROM mvr_merge_hierarchy mh
+                    INNER JOIN individual_mvr_mapping imm ON mh.merged_mvr_uuid = imm.mvr_people_uuid
+                    INNER JOIN individual_video_appearances iva ON imm.individual_uuid = iva.individual_uuid
+                    WHERE iva.start_timestamp >= $1
+                        AND iva.end_timestamp <= $2
+                )
                 SELECT DISTINCT
                     mp.mvr_people_uuid,
                     mp.quality_score,
@@ -2035,9 +2052,7 @@ async def search_mvr_people_by_collection(
                     mp.created_at,
                     mp.updated_at
                 FROM mvr_people mp
-                WHERE mp.created_at >= $1
-                    AND mp.created_at <= $2
-                    AND mp.is_orphaned = false
+                INNER JOIN relevant_mvr rm ON mp.mvr_people_uuid = rm.mvr_people_uuid
                 ORDER BY mp.created_at DESC
                 LIMIT $3
             """
@@ -2055,14 +2070,43 @@ async def search_mvr_people_by_collection(
             for mvr_record in mvr_records:
                 mvr_uuid = str(mvr_record['mvr_people_uuid'])
                 
-                # Get all linked individual UUIDs
+                logger.info(f"🔍 Processing MVR: {mvr_uuid[:8]}...")
+                
+                # Check if this is a super-individual (has merged MVR people)
+                merged_mvr_query = """
+                    SELECT merged_mvr_uuid
+                    FROM mvr_merge_hierarchy
+                    WHERE super_individual_uuid = $1
+                """
+                merged_mvr_rows = await conn.fetch(merged_mvr_query, mvr_uuid)
+                
+                logger.info(f"🔍 Hierarchy query returned {len(merged_mvr_rows)} merged MVR rows")
+                
+                # Build list of all MVR UUIDs (super-individual + merged MVR)
+                all_mvr_uuids = [mvr_uuid]
+                if merged_mvr_rows:
+                    merged_uuids = [str(row['merged_mvr_uuid']) for row in merged_mvr_rows]
+                    all_mvr_uuids.extend(merged_uuids)
+                    logger.info(
+                        f"✅ Super-individual {mvr_uuid[:8]}... has {len(merged_mvr_rows)} merged MVR people"
+                    )
+                    logger.info(f"   Merged MVR UUIDs: {[u[:8] + '...' for u in merged_uuids[:5]]}")
+                else:
+                    logger.info(f"   No merged MVR found in hierarchy - standalone MVR")
+                
+                # Get all linked individual UUIDs from ALL MVR in hierarchy
                 individuals_query = """
                     SELECT individual_uuid
                     FROM individual_mvr_mapping
-                    WHERE mvr_people_uuid = $1
+                    WHERE mvr_people_uuid = ANY($1::uuid[])
                 """
-                individual_rows = await conn.fetch(individuals_query, mvr_uuid)
+                individual_rows = await conn.fetch(individuals_query, all_mvr_uuids)
                 individual_uuids = [str(row['individual_uuid']) for row in individual_rows]
+                
+                logger.info(
+                    f"📊 MVR {mvr_uuid[:8]}... has {len(individual_uuids)} total individuals "
+                    f"from {len(all_mvr_uuids)} MVR people"
+                )
                 
                 # Get all appearances for these individuals
                 # Note: Cannot filter by collection_name here as videos table
@@ -2114,6 +2158,10 @@ async def search_mvr_people_by_collection(
                 if mvr_record['age_min'] and mvr_record['age_max']:
                     age_display = f"{mvr_record['age_min']}-{mvr_record['age_max']}"
                 
+                # Add hierarchical merge information
+                merged_uuids = [str(row['merged_mvr_uuid']) for row in merged_mvr_rows] if merged_mvr_rows else []
+                is_super = len(merged_mvr_rows) > 0
+                
                 # Create result object
                 result = MVRPersonResult(
                     mvr_people_uuid=mvr_uuid,
@@ -2125,6 +2173,8 @@ async def search_mvr_people_by_collection(
                     confidence_score=float(mvr_record['confidence_score'] or 0.0),
                     quality_score=float(mvr_record['quality_score'] or 0.0),
                     appearances=appearances,
+                    merged_mvr_uuids=merged_uuids,
+                    is_super_individual=is_super,
                     estimated_age=age_display,
                     estimated_gender=mvr_record['gender']
                 )
@@ -3774,8 +3824,193 @@ async def process_media_independently(
 
 
 # ============================================================================
+# ENDPOINT 15: Hierarchical MVR Merge
+# ============================================================================
+
+@router.post(
+    "/merge/hierarchical",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Hierarchical MVR People Merge",
+    description="""
+    Performs hierarchical merging of MVR People based on face embedding similarity.
+    
+    **Process**:
+    1. Calculates pairwise similarity matrix for all provided MVR UUIDs
+    2. Finds merge groups using Union-Find algorithm (connected components)
+    3. Executes merges within each group (highest quality wins)
+    4. Returns super-individual UUIDs and merge metadata
+    
+    **Use Case**: Automatic post-search consolidation to eliminate duplicates
+    across batch processing results.
+    
+    **Parameters**:
+    - `mvr_uuids`: List of MVR UUIDs to merge
+    - `similarity_threshold`: Minimum similarity for merging (0.60-0.90, default 0.70)
+    - `min_similarity_check`: Skip comparisons below this (optimization, default 0.50)
+    
+    **Returns**:
+    - `super_individuals`: List of winning MVR UUIDs (super-individual UUIDs)
+    - `merge_groups`: Detailed merge metadata for each group
+    - `statistics`: Merge statistics (totals, counts)
+    """,
+)
+async def hierarchical_merge_mvr_people(
+    mvr_uuids: List[UUID] = Body(..., description="List of MVR UUIDs to merge"),
+    similarity_threshold: float = Body(
+        0.70,
+        ge=0.60,
+        le=0.90,
+        description="Minimum similarity threshold for merging"
+    ),
+    min_similarity_check: float = Body(
+        0.50,
+        ge=0.30,
+        le=0.80,
+        description="Skip comparisons below this (optimization)"
+    ),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Perform hierarchical merging of MVR People.
+    
+    This endpoint implements the automatic post-search merging described in
+    the Hierarchical MVR People Merging proposal (v2.19.84).
+    """
+    try:
+        from services.hierarchical_mvr_merger import HierarchicalMVRMerger
+        
+        logger.info(
+            f"User {current_user.get('sub')} requesting hierarchical merge "
+            f"of {len(mvr_uuids)} MVR people (threshold: {similarity_threshold})"
+        )
+        
+        # Validate input
+        if not mvr_uuids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="mvr_uuids list cannot be empty"
+            )
+        
+        if len(mvr_uuids) > 1000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum 1000 MVR UUIDs per merge request"
+            )
+        
+        # Initialize merger
+        merger = HierarchicalMVRMerger(
+            repository=mvr_repository,
+            mvr_matcher=mvr_matcher
+        )
+        
+        # Perform merge
+        result = await merger.merge_hierarchical(
+            mvr_uuids=mvr_uuids,
+            similarity_threshold=similarity_threshold,
+            min_similarity_check=min_similarity_check
+        )
+        
+        logger.info(
+            f"Hierarchical merge complete: {result['statistics']['total_mvr']} → "
+            f"{result['statistics']['super_individuals']} super-individuals"
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Hierarchical merge failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Hierarchical merge failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 16: Get Super-Individual Hierarchy
+# ============================================================================
+
+@router.get(
+    "/super-individual/{super_individual_uuid}/hierarchy",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Get Super-Individual Hierarchy",
+    description="""
+    Retrieves the full 3-tier hierarchy for a super-individual (merged MVR person).
+    
+    **Hierarchy Levels**:
+    - **Level 1**: Super-individual (featured MVR person)
+    - **Level 2**: Merged MVR people (those orphaned into super-individual)
+    - **Level 3**: All individuals and person objects across all MVR
+    
+    **Returns**:
+    - `super_individual`: Featured MVR person data
+    - `merged_mvr_people`: List of merged MVR people with similarities
+    - `all_individuals`: All individuals from all MVR in the hierarchy
+    - `total_person_objects`: Total detection count across all levels
+    - `mvr_count`: Total number of MVR people in hierarchy
+    - `unique_videos`: Number of unique videos represented
+    
+    **Use Case**: Display hierarchical view in PersonObjectsDetailScreen.
+    """,
+)
+async def get_super_individual_hierarchy(
+    super_individual_uuid: UUID,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get full hierarchy for a super-individual.
+    
+    Returns all merged MVR people and their constituent individuals/objects.
+    """
+    try:
+        from services.hierarchical_mvr_merger import HierarchicalMVRMerger
+        
+        logger.info(
+            f"User {current_user.get('sub')} requesting hierarchy for "
+            f"super-individual {super_individual_uuid}"
+        )
+        
+        # Initialize merger
+        merger = HierarchicalMVRMerger(
+            repository=mvr_repository,
+            mvr_matcher=mvr_matcher
+        )
+        
+        # Get hierarchy
+        hierarchy = await merger.get_super_individual_hierarchy(
+            super_individual_uuid
+        )
+        
+        logger.info(
+            f"Retrieved hierarchy: {hierarchy['mvr_count']} MVR people, "
+            f"{len(hierarchy['all_individuals'])} individuals, "
+            f"{hierarchy['total_person_objects']} person objects"
+        )
+        
+        return hierarchy
+        
+    except Exception as e:
+        logger.error(
+            f"Failed to get hierarchy for {super_individual_uuid}: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve hierarchy: {str(e)}"
+        )
+
+
+# ============================================================================
 # Router Export
 # ============================================================================
 
 __all__ = ["router"]
+
 

@@ -75,14 +75,12 @@ class AuthService {
   // Login method
   Future<AuthResponse> login(String email, String password) async {
     try {
+      // Use URL-encoded format (not FormData which is for multipart/form-data)
       final response = await _apiClient.post(
         '/api/v1/users/login',
-        data: FormData.fromMap({
-          'username': email,  // Backend expects 'username' field
-          'password': password,
-        }),
+        data: 'username=${Uri.encodeComponent(email)}&password=${Uri.encodeComponent(password)}',
         options: Options(
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          contentType: 'application/x-www-form-urlencoded',
         ),
       );
 

@@ -993,4 +993,127 @@ class MVRRepository:
             except Exception as e:
                 logger.error(f"Demographic search failed: {e}")
                 raise MVRRepositoryError(f"Demographic search failed: {e}")
-
+    
+    # ========================================================================
+    # Hierarchical Merge Support Methods
+    # ========================================================================
+    
+    async def bulk_orphan_mvr_people(
+        self,
+        mvr_uuids: List[UUID],
+        merged_into_uuid: UUID
+    ) -> int:
+        """
+        Mark multiple MVR people as orphaned (merged into another).
+        
+        Args:
+            mvr_uuids: List of MVR UUIDs to orphan
+            merged_into_uuid: UUID they were merged into
+            
+        Returns:
+            Number of MVR people orphaned
+        """
+        async with self.pool.acquire() as conn:
+            try:
+                result = await conn.execute("""
+                    UPDATE mvr_people
+                    SET 
+                        is_orphaned = TRUE,
+                        orphaned_at = NOW(),
+                        merged_into_mvr_uuid = $1,
+                        updated_at = NOW()
+                    WHERE mvr_people_uuid = ANY($2::uuid[])
+                        AND NOT is_orphaned
+                """, merged_into_uuid, mvr_uuids)
+                
+                count = int(result.split()[-1])
+                logger.info(
+                    f"Bulk orphaned {count} MVR people into {merged_into_uuid}"
+                )
+                return count
+                
+            except Exception as e:
+                logger.error(f"Bulk orphan failed: {e}")
+                raise MVRRepositoryError(f"Bulk orphan failed: {e}")
+    
+    async def get_merged_mvr_people(
+        self,
+        super_individual_uuid: UUID
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all MVR people merged into a super-individual.
+        
+        Args:
+            super_individual_uuid: The super-individual (winner) UUID
+            
+        Returns:
+            List of merged MVR people dicts
+        """
+        async with self.pool.acquire() as conn:
+            try:
+                results = await conn.fetch("""
+                    SELECT 
+                        mvr_people_uuid,
+                        featured_individual_uuid,
+                        quality_score,
+                        confidence_score,
+                        gender,
+                        age_min,
+                        age_max,
+                        orphaned_at,
+                        merged_into_mvr_uuid,
+                        created_at
+                    FROM mvr_people
+                    WHERE merged_into_mvr_uuid = $1
+                        AND is_orphaned = TRUE
+                    ORDER BY quality_score DESC
+                """, super_individual_uuid)
+                
+                return [dict(r) for r in results]
+                
+            except Exception as e:
+                logger.error(f"Get merged MVR failed: {e}")
+                raise MVRRepositoryError(f"Get merged MVR failed: {e}")
+    
+    async def get_individuals_for_mvr(
+        self,
+        mvr_uuid: UUID
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all individuals linked to an MVR person.
+        
+        Args:
+            mvr_uuid: MVR UUID
+            
+        Returns:
+            List of individual dicts with person object counts
+        """
+        async with self.pool.acquire() as conn:
+            try:
+                results = await conn.fetch("""
+                    SELECT 
+                        i.individual_uuid,
+                        imm.mvr_people_uuid,
+                        MIN(iva.start_timestamp) as first_seen_timestamp,
+                        MAX(iva.end_timestamp) as last_seen_timestamp,
+                        COUNT(DISTINCT iva.video_uuid) as video_count,
+                        COUNT(iva.person_object_uuid) as person_object_count,
+                        i.created_at,
+                        i.confidence_score
+                    FROM individuals i
+                    INNER JOIN individual_mvr_mapping imm ON i.individual_uuid = imm.individual_uuid
+                    LEFT JOIN individual_video_appearances iva ON iva.individual_uuid = i.individual_uuid
+                    WHERE imm.mvr_people_uuid = $1
+                    GROUP BY 
+                        i.individual_uuid,
+                        imm.mvr_people_uuid,
+                        i.created_at,
+                        i.confidence_score
+                    ORDER BY MIN(iva.start_timestamp)
+                """, mvr_uuid)
+                
+                return [dict(r) for r in results]
+                
+            except Exception as e:
+                logger.error(f"Get individuals for MVR failed: {e}")
+                raise MVRRepositoryError(f"Get individuals for MVR failed: {e}")

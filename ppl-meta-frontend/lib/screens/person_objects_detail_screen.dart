@@ -1513,94 +1513,113 @@ class _PersonObjectsDetailScreenState
         }
       }
 
+      // Check if hierarchical merge was applied
+      final bool hierarchicalMergeApplied = 
+          context.sessionData['hierarchical_merge_applied'] == true;
+
       // Check if we're loading MVR people or individuals
       // If search_results exists, we're loading MVR people (consolidated)
       final bool loadingMVRPeople = context.sessionData['search_results'] != null;
 
-      if (loadingMVRPeople) {
-        print('📊 Loading MVR person data (consolidated individuals)');
-        // For each MVR person UUID, call the MVR person endpoint
-        for (final mvrPersonUuid in context.individualUuids) {
+      if (loadingMVRPeople && hierarchicalMergeApplied) {
+        print('📊 Loading super-individuals with hierarchical data');
+        print('📊 Context has ${context.individualUuids.length} MVR UUIDs to load');
+        
+        // For each super-individual UUID, fetch full hierarchy
+        for (final superIndividualUuid in context.individualUuids) {
           try {
-            final response = await mediaApiClient.getMVRPersonAnalysis(
-              mvrPersonUuid: mvrPersonUuid,
-              startTime: startTime,
-              endTime: endTime,
+            // First, get the hierarchy to determine if this is a merged super-individual
+            print('🔍 Fetching hierarchy for: $superIndividualUuid');
+            final hierarchyResponse = await apiClient.get(
+              '/api/v1/mvr-people/super-individual/$superIndividualUuid/hierarchy',
             );
             
-            if (response.success && response.data != null) {
-              // Convert the response to AggregatedIndividualAnalysis
-              final data = response.data!;
+            print('📡 Hierarchy response status: ${hierarchyResponse.statusCode}');
+            
+            if (hierarchyResponse.statusCode == 200) {
+              final hierarchyData = hierarchyResponse.data as Map<String, dynamic>;
+              final mergedMVRList = hierarchyData['merged_mvr_people'] as List;
+              final allIndividualsList = hierarchyData['all_individuals'] as List;
+              final isSuperIndividual = mergedMVRList.isNotEmpty;
               
-              // Parse demographics if available
-              Demographics? demographics;
-              if (data['demographics'] != null) {
-                final demoData = data['demographics'] as Map<String, dynamic>;
-                demographics = Demographics(
-                  gender: demoData['gender'] as String?,
-                  genderConfidence: demoData['gender_confidence'] != null 
-                      ? (demoData['gender_confidence'] as num).toDouble() 
-                      : null,
-                  ageMin: demoData['age_min'] as int?,
-                  ageMax: demoData['age_max'] as int?,
-                  ageMean: demoData['age_mean'] != null 
-                      ? (demoData['age_mean'] as num).toDouble() 
-                      : null,
-                  ageConfidence: demoData['age_confidence'] != null 
-                      ? (demoData['age_confidence'] as num).toDouble() 
-                      : null,
+              print('🔍 Super-individual $superIndividualUuid: '
+                  '${isSuperIndividual ? "MERGED" : "STANDALONE"}');
+              print('   MVR count: ${hierarchyData['mvr_count']}');
+              print('   Total person objects: ${hierarchyData['total_person_objects']}');
+              print('   All individuals count: ${allIndividualsList.length}');
+              print('   Merged MVR people: ${mergedMVRList.length}');
+              print('   Unique videos: ${hierarchyData['unique_videos']}');
+              
+              if (isSuperIndividual && mergedMVRList.isNotEmpty) {
+                // For merged super-individuals, use the hierarchy data directly
+                // DO NOT fetch each MVR separately - that would create 60 separate cards!
+                print('✅ Creating aggregated analysis from hierarchy data...');
+                
+                final analysis = AggregatedIndividualAnalysis.fromSuperIndividual(
+                  superIndividualUuid: superIndividualUuid,
+                  hierarchyData: hierarchyData,
+                  sessionUuid: context.sessionUuid,
+                  startTime: startTime,
+                  endTime: endTime,
                 );
+                
+                aggregatedAnalyses.add(analysis);
+                
+                print('✅ Loaded super-individual with hierarchy:');
+                print('   - ${analysis.totalAppearances} total appearances');
+                print('   - ${analysis.uniqueVideos} unique videos');
+                print('   - ${mergedMVRList.length} merged MVR people');
+              } else {
+                // For standalone (not merged), use simple factory
+                final analysis = AggregatedIndividualAnalysis.fromSuperIndividual(
+                  superIndividualUuid: superIndividualUuid,
+                  hierarchyData: hierarchyData,
+                  sessionUuid: context.sessionUuid,
+                  startTime: startTime,
+                  endTime: endTime,
+                );
+                
+                aggregatedAnalyses.add(analysis);
+                print('✅ Loaded standalone super-individual: '
+                    '${analysis.totalAppearances} appearances');
               }
-              
-              // Skip MVR people with no appearances
-              final totalAppearances = data['total_appearances'] as int;
-              if (totalAppearances == 0) {
-                print('⚠️ Skipping MVR person $mvrPersonUuid: 0 appearances (no data)');
-                continue;
-              }
-              
-              final analysis = AggregatedIndividualAnalysis(
-                individualUuid: data['mvr_person_uuid'] as String,
-                individualId: data['mvr_person_uuid'] as String,
-                sessionUuid: context.sessionUuid,
-                totalAppearances: totalAppearances,
-                uniqueVideos: data['unique_videos'] as int,
-                firstSeen: data['first_seen'] != null 
-                    ? DateTime.parse(data['first_seen'] as String)
-                    : DateTime.now(),
-                lastSeen: data['last_seen'] != null 
-                    ? DateTime.parse(data['last_seen'] as String)
-                    : DateTime.now(),
-                totalDurationSeconds: 0.0,
-                averageConfidence: 0.0,
-                averageRouteVelocity: (data['average_route_velocity'] as num?)?.toDouble(),
-                appearances: (data['appearances'] as List)
-                    .map((app) => IndividualAppearance(
-                          individualUuid: app['individual_uuid'] as String,
-                          videoUuid: app['video_uuid'] as String,
-                          personObjectUuid: app['person_object_uuid'] as String,
-                          startTimestamp: DateTime.parse(app['start_timestamp'] as String),
-                          endTimestamp: DateTime.parse(app['end_timestamp'] as String),
-                          confidenceScore: (app['confidence'] as num).toDouble(),
-                          entryBbox: null,
-                          exitBbox: null,
-                        ))
-                    .toList(),
-                personObjectUuids: (data['appearances'] as List)
-                    .map((app) => app['person_object_uuid'] as String)
-                    .toList(),
-                analysisTimestamp: DateTime.now(),
-                demographics: demographics,
-              );
-
-              aggregatedAnalyses.add(analysis);
-              print('✅ Loaded MVR person $mvrPersonUuid: ${analysis.totalAppearances} appearances');
             } else {
-              print('⚠️ Failed to load MVR person $mvrPersonUuid: ${response.error}');
+              print('⚠️ Hierarchy not found, falling back to direct MVR load');
+              // Fallback to direct MVR loading
+              await _loadSingleMVRPerson(
+                superIndividualUuid,
+                mediaApiClient,
+                startTime,
+                endTime,
+                context.sessionUuid,
+                aggregatedAnalyses,
+              );
             }
           } catch (e) {
-            print('❌ Error loading MVR person $mvrPersonUuid: $e');
+            print('❌ Error loading super-individual $superIndividualUuid: $e');
+            // Fallback to direct MVR loading
+            await _loadSingleMVRPerson(
+              superIndividualUuid,
+              mediaApiClient,
+              startTime,
+              endTime,
+              context.sessionUuid,
+              aggregatedAnalyses,
+            );
           }
+        }
+      } else if (loadingMVRPeople) {
+        print('📊 Loading MVR person data (consolidated individuals)');
+        // For each MVR person UUID, call the MVR person endpoint (existing logic)
+        for (final mvrPersonUuid in context.individualUuids) {
+          await _loadSingleMVRPerson(
+            mvrPersonUuid,
+            mediaApiClient,
+            startTime,
+            endTime,
+            context.sessionUuid,
+            aggregatedAnalyses,
+          );
         }
       } else {
         print('📊 Loading individual data');
@@ -1717,6 +1736,100 @@ class _PersonObjectsDetailScreenState
         _isLoadingCrossVideoData = false;
       });
       print('❌ Error loading cross-video data: $e');
+    }
+  }
+
+  /// Helper method to load a single MVR person's data (v2.19.85)
+  /// 
+  /// This is used as a fallback when hierarchy loading fails or for
+  /// non-merged MVR people.
+  Future<void> _loadSingleMVRPerson(
+    String mvrPersonUuid,
+    MediaApiClient mediaApiClient,
+    DateTime? startTime,
+    DateTime? endTime,
+    String sessionUuid,
+    List<AggregatedIndividualAnalysis> aggregatedAnalyses,
+  ) async {
+    try {
+      final response = await mediaApiClient.getMVRPersonAnalysis(
+        mvrPersonUuid: mvrPersonUuid,
+        startTime: startTime,
+        endTime: endTime,
+      );
+      
+      if (response.success && response.data != null) {
+        // Convert the response to AggregatedIndividualAnalysis
+        final data = response.data!;
+        
+        // Parse demographics if available
+        Demographics? demographics;
+        if (data['demographics'] != null) {
+          final demoData = data['demographics'] as Map<String, dynamic>;
+          demographics = Demographics(
+            gender: demoData['gender'] as String?,
+            genderConfidence: demoData['gender_confidence'] != null 
+                ? (demoData['gender_confidence'] as num).toDouble() 
+                : null,
+            ageMin: demoData['age_min'] as int?,
+            ageMax: demoData['age_max'] as int?,
+            ageMean: demoData['age_mean'] != null 
+                ? (demoData['age_mean'] as num).toDouble() 
+                : null,
+            ageConfidence: demoData['age_confidence'] != null 
+                ? (demoData['age_confidence'] as num).toDouble() 
+                : null,
+          );
+        }
+        
+        // Skip MVR people with no appearances
+        final totalAppearances = data['total_appearances'] as int;
+        if (totalAppearances == 0) {
+          print('⚠️ Skipping MVR person $mvrPersonUuid: 0 appearances (no data)');
+          return;
+        }
+        
+        final analysis = AggregatedIndividualAnalysis(
+          individualUuid: data['mvr_person_uuid'] as String,
+          individualId: data['mvr_person_uuid'] as String,
+          sessionUuid: sessionUuid,
+          totalAppearances: totalAppearances,
+          uniqueVideos: data['unique_videos'] as int,
+          firstSeen: data['first_seen'] != null 
+              ? DateTime.parse(data['first_seen'] as String)
+              : DateTime.now(),
+          lastSeen: data['last_seen'] != null 
+              ? DateTime.parse(data['last_seen'] as String)
+              : DateTime.now(),
+          totalDurationSeconds: 0.0,
+          averageConfidence: 0.0,
+          averageRouteVelocity: (data['average_route_velocity'] as num?)?.toDouble(),
+          appearances: (data['appearances'] as List)
+              .map((app) => IndividualAppearance(
+                    individualUuid: app['individual_uuid'] as String,
+                    videoUuid: app['video_uuid'] as String,
+                    personObjectUuid: app['person_object_uuid'] as String,
+                    startTimestamp: DateTime.parse(app['start_timestamp'] as String),
+                    endTimestamp: DateTime.parse(app['end_timestamp'] as String),
+                    confidenceScore: (app['confidence'] as num).toDouble(),
+                    entryBbox: null,
+                    exitBbox: null,
+                  ))
+              .toList(),
+          personObjectUuids: (data['appearances'] as List)
+              .map((app) => app['person_object_uuid'] as String)
+              .toList(),
+          analysisTimestamp: DateTime.now(),
+          demographics: demographics,
+        );
+
+        aggregatedAnalyses.add(analysis);
+        print('✅ Loaded MVR person $mvrPersonUuid: ${analysis.totalAppearances} appearances');
+      } else {
+        print('⚠️ Failed to load MVR person $mvrPersonUuid: ${response.error}');
+      }
+    } catch (e) {
+      print('❌ Error loading MVR person $mvrPersonUuid: $e');
     }
   }
 
@@ -3913,16 +4026,19 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   }
 
   /// Calculate aggregate statistics across all individuals
-  /// Build individual card showing aggregated data
+  /// Build individual card showing aggregated data with hierarchical merge support (v2.19.84)
   Widget _buildIndividualCard(AggregatedIndividualAnalysis analysis, int index) {
     final isExpanded = _expandedIndividuals.contains(analysis.individualUuid);
     final isSelected = _selectedIndividuals.contains(analysis.individualUuid);
+    final isSuperIndividual = analysis.isSuperIndividual;
+    final isStandalone = analysis.isStandalone;
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
+      elevation: 4, // Same elevation for all Level 1 individuals
       child: Column(
         children: [
-          // Main card content - clickable with checkbox
+          // Level 1: Super-Individual / Standalone Header
           InkWell(
             onTap: () {
               setState(() {
@@ -3954,19 +4070,60 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                         },
                       ),
                       const SizedBox(width: 8),
-                      // Individual icon (placeholder for face)
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade100,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.person,
-                          size: 40,
-                          color: Colors.blue,
-                        ),
+                      // Individual icon with badge
+                      Stack(
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: isSuperIndividual 
+                                  ? Colors.blue.shade100 
+                                  : Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: analysis.bestFaceThumbnail != null
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(
+                                      analysis.bestFaceThumbnail!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) =>
+                                          Icon(
+                                            Icons.person,
+                                            size: 40,
+                                            color: isSuperIndividual 
+                                                ? Colors.blue 
+                                                : Colors.grey[600],
+                                          ),
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.person,
+                                    size: 40,
+                                    color: isSuperIndividual 
+                                        ? Colors.blue 
+                                        : Colors.grey[600],
+                                  ),
+                          ),
+                          // Badge: Blue for merged, Grey for standalone
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: isSuperIndividual ? Colors.blue : Colors.grey[600],
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                isSuperIndividual ? Icons.merge_type : Icons.person,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 16),
                       // Individual info
@@ -3974,26 +4131,57 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Individual ${analysis.individualId}',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
+                            Row(
+                              children: [
+                                Text(
+                                  analysis.demographics?.gender ?? 'Unknown',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Chip: Blue for merged, Grey for standalone
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isSuperIndividual
+                                        ? Colors.blue.withOpacity(0.2)
+                                        : Colors.grey.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    isSuperIndividual
+                                        ? '${analysis.mergedMVRCount} batches merged'
+                                        : 'Standalone individual',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isSuperIndividual
+                                          ? Colors.blue[900]
+                                          : Colors.grey[800],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            if (analysis.demographics != null &&
+                                (analysis.demographics!.ageMin != null ||
+                                    analysis.demographics!.ageMax != null))
+                              Text(
+                                'Age: ${analysis.demographics!.ageMin ?? "?"}-${analysis.demographics!.ageMax ?? "?"}',
+                                style: TextStyle(color: Colors.grey[700]),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'UUID: ${analysis.individualUuid.substring(0, 8)}...',
-                              style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                            ),
                             const SizedBox(height: 8),
-                            _buildStatChip('Appearances', '${analysis.totalAppearances}'),
-                            const SizedBox(height: 4),
-                            _buildStatChip('Videos', '${analysis.uniqueVideos}'),
+                            Text(
+                              '${analysis.totalAppearances} appearances across ${analysis.uniqueVideos} videos',
+                              style: const TextStyle(fontSize: 12),
+                            ),
                             const SizedBox(height: 4),
                             _buildStatChip('Confidence', '${(analysis.averageConfidence * 100).toStringAsFixed(0)}%'),
-                            const SizedBox(height: 4),
-                            _buildStatChip('Duration', analysis.formattedDuration),
                           ],
                         ),
                       ),
@@ -4009,11 +4197,136 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             ),
           ),
           
-          // Expanded content - person object appearances
+          // Level 2: Merged MVR People (only if super-individual and expanded)
+          if (isExpanded && isSuperIndividual && analysis.mergedMVRPeople.isNotEmpty) ...[
+            const Divider(height: 1),
+            Container(
+              color: Colors.blue.withOpacity(0.05),
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      'Merged MVR People (${analysis.mergedMVRPeople.length})',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[900],
+                      ),
+                    ),
+                  ),
+                  ...analysis.mergedMVRPeople.map((mvr) => _buildMergedMVRCard(mvr)),
+                ],
+              ),
+            ),
+          ],
+          
+          // Level 2/3: Person Objects / Appearances
           if (isExpanded) ...[
             const Divider(height: 1),
             _buildExpandedAppearances(analysis),
           ],
+        ],
+      ),
+    );
+  }
+  
+  /// Build merged MVR person card (Level 2 in hierarchy)
+  Widget _buildMergedMVRCard(MergedMVRPerson mvr) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            // MVR icon
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                Icons.badge,
+                size: 24,
+                color: Colors.blue[700],
+              ),
+            ),
+            const SizedBox(width: 12),
+            // MVR info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'MVR ${mvr.mvrPeopleUuid.length >= 8 ? mvr.mvrPeopleUuid.substring(0, 8) : mvr.mvrPeopleUuid}...',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (mvr.gender != null)
+                        _buildSmallChip(mvr.gender!, Icons.person),
+                      if (mvr.ageMin != null && mvr.ageMax != null) ...[
+                        const SizedBox(width: 4),
+                        _buildSmallChip(mvr.ageRange, Icons.cake),
+                      ],
+                      const SizedBox(width: 4),
+                      _buildSmallChip('Quality: ${(mvr.qualityScore * 100).toStringAsFixed(0)}%', Icons.star),
+                    ],
+                  ),
+                  if (mvr.similarityToFeatured > 0) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.compare_arrows, size: 12, color: Colors.blue[700]),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Similarity: ${mvr.formattedSimilarity}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  /// Build small chip widget for compact info display
+  Widget _buildSmallChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: Colors.grey[700]),
+          const SizedBox(width: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey[700],
+            ),
+          ),
         ],
       ),
     );
@@ -4103,12 +4416,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Video: ${appearance.videoUuid.substring(0, 8)}...',
+                      'Video: ${appearance.videoUuid.length >= 8 ? appearance.videoUuid.substring(0, 8) : appearance.videoUuid}...',
                       style: TextStyle(color: Colors.grey[600], fontSize: 11),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Object: ${appearance.personObjectUuid.substring(0, 8)}...',
+                      'Object: ${appearance.personObjectUuid.length >= 8 ? appearance.personObjectUuid.substring(0, 8) : appearance.personObjectUuid}...',
                       style: TextStyle(color: Colors.grey[600], fontSize: 11),
                     ),
                     const SizedBox(height: 6),
@@ -4454,7 +4767,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     final allVideoUuids = <String>{};
     for (final analysis in _aggregatedAnalyses!) {
       for (final appearance in analysis.appearances) {
-        allVideoUuids.add(appearance.videoUuid);
+        // Skip empty or invalid video UUIDs
+        if (appearance.videoUuid.isNotEmpty && appearance.videoUuid.length >= 8) {
+          allVideoUuids.add(appearance.videoUuid);
+        } else {
+          print('⚠️ Skipping invalid video UUID: "${appearance.videoUuid}"');
+        }
       }
     }
 
@@ -4505,6 +4823,16 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         final appearance = analysis.appearances[ai];
         final videoUuid = appearance.videoUuid;
         final personObjectUuid = appearance.personObjectUuid;
+        
+        // Skip invalid UUIDs
+        if (videoUuid.isEmpty || videoUuid.length < 8) {
+          print('🚦   ⚠️ Appearance $ai: skipping invalid video UUID: "$videoUuid"');
+          continue;
+        }
+        if (personObjectUuid.isEmpty || personObjectUuid.length < 8) {
+          print('🚦   ⚠️ Appearance $ai: skipping invalid person object UUID: "$personObjectUuid"');
+          continue;
+        }
         
         print('🚦   Appearance $ai: video=${videoUuid.substring(0, 8)}, person_object=${personObjectUuid.substring(0, 8)}');
 

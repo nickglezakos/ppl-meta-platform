@@ -44,6 +44,10 @@ class MVRPersonResult(BaseModel):
     quality_score: float
     appearances: List[IndividualAppearance] = Field(description="All video appearances")
     
+    # Hierarchical merge support
+    merged_mvr_uuids: List[str] = Field(default_factory=list, description="Merged MVR UUIDs if this is a super-individual")
+    is_super_individual: bool = Field(default=False, description="True if this MVR has merged others")
+    
     # Demographics
     estimated_age: Optional[str] = None  # Changed from int to str to support age ranges like "33-43"
     estimated_gender: Optional[str] = None

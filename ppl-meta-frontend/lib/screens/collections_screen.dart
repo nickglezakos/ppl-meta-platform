@@ -770,6 +770,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   }
 
   /// Show individuals filter details dialog
+  /// 
+  /// MODIFIED v2.19.84: Now displays hierarchical merge statistics when available.
+  /// Shows original MVR count, post-merge super-individuals, and merge efficiency.
   Future<void> _showIndividualsDetails() async {
     await showDialog(
       context: context,
@@ -787,8 +790,38 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             if (_trackingSessionUuid != null)
               Text('Session: ${_trackingSessionUuid!.substring(0, 8)}...'),
             
-            // Display both counters (always show if we have data)
-            if (_individualsCount != null || _uniqueMvrCount != null) ...[
+            // NEW: Display hierarchical merge statistics if available
+            if (_trackingSessionData != null && 
+                _trackingSessionData!['hierarchical_merge_applied'] == true) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Hierarchical Merge Applied:',
+                style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green),
+              ),
+              const SizedBox(height: 4),
+              Text('• Original MVR people: ${_trackingSessionData!['pre_merge_count'] ?? 'N/A'}'),
+              Text('• Unique individuals: ${_trackingSessionData!['post_merge_count'] ?? 'N/A'}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+              if (_trackingSessionData!['merge_statistics'] != null) ...[
+                () {
+                  final stats = _trackingSessionData!['merge_statistics'] as Map<String, dynamic>;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('  • Merges performed: ${stats['merges_performed']}'),
+                      Text('  • Standalone individuals: ${stats['standalone_individuals']}'),
+                      if (stats['merges_performed'] > 0)
+                        Text(
+                          '  • ${((stats['merges_performed'] / stats['total_mvr']) * 100).toStringAsFixed(1)}% reduction',
+                          style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.green),
+                        ),
+                    ],
+                  );
+                }(),
+              ],
+            ]
+            // LEGACY: Display traditional MVR count (fallback)
+            else if (_individualsCount != null || _uniqueMvrCount != null) ...[
               Text('• Original detections: ${_individualsCount ?? 0} individual${(_individualsCount ?? 0) == 1 ? '' : 's'}'),
               Text('• Unique individuals (after MVR merging): ${_uniqueMvrCount ?? _individualsCount ?? 0}', 
                 style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -834,8 +867,9 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
   /// Navigate to individual analysis screen
   /// 
-  /// MODIFIED: Now works with MVR search results instead of tracking session.
-  /// Extracts MVR people UUIDs from search results for analysis navigation.
+  /// MODIFIED v2.19.84: Now performs hierarchical MVR merging before navigation.
+  /// Automatically consolidates duplicate MVR people across batches using
+  /// similarity-based merging for a cleaner, deduplicated view.
   Future<void> _navigateToIndividualAnalysis() async {
     if (_trackingSessionData == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -845,22 +879,30 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     }
 
     try {
-      // Show loading indicator
+      // Show loading indicator with merge status
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (context) => const Center(
-          child: CircularProgressIndicator(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text(
+                'Merging similar individuals...',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
         ),
       );
 
       // Extract MVR people from search results
       final mvrPeople = _trackingSessionData!['search_results'] as List<dynamic>;
 
-      // Dismiss loading
-      if (mounted) Navigator.pop(context);
-
       if (mvrPeople.isEmpty) {
+        if (mounted) Navigator.pop(context);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('No MVR people found in search results')),
@@ -869,22 +911,75 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         return;
       }
 
-      // Extract MVR person UUIDs (not individual UUIDs)
-      // We want to display the 11 MVR people, not the 72 constituent individuals
+      // Extract MVR person UUIDs
       final List<String> mvrPersonUuids = mvrPeople
           .map((mvr) => mvr['mvr_people_uuid'].toString())
           .toList();
 
-      print('📊 Navigating to analysis with ${mvrPersonUuids.length} MVR people');
+      print('📊 Starting hierarchical merge for ${mvrPersonUuids.length} MVR people...');
 
-      // Navigate to person details screen with cross-video context
-      // Pass MVR person UUIDs instead of individual UUIDs
+      // NEW: Perform hierarchical merge to consolidate duplicates
+      final apiClient = ref.read(apiClientProvider);
+      
+      final mergeResponse = await apiClient.post(
+        '/api/v1/mvr-people/merge/hierarchical',
+        data: {
+          'mvr_uuids': mvrPersonUuids,
+          'similarity_threshold': 0.60, // Lowered threshold for better matching
+          'min_similarity_check': 0.50,
+        },
+      );
+
+      if (mergeResponse.statusCode != 200) {
+        throw Exception('Hierarchical merge failed: ${mergeResponse.statusMessage}');
+      }
+
+      final mergeData = mergeResponse.data as Map<String, dynamic>;
+      final superIndividuals = (mergeData['super_individuals'] as List)
+          .map((uuid) => uuid.toString())
+          .toList();
+      final mergeStatistics = mergeData['statistics'] as Map<String, dynamic>;
+
+      print('✅ Hierarchical merge complete:');
+      print('   ${mergeStatistics['total_mvr']} MVR people → ${mergeStatistics['super_individuals']} unique individuals');
+      print('   ${mergeStatistics['merges_performed']} merges performed');
+      print('   ${mergeStatistics['standalone_individuals']} standalone individuals');
+
+      // Dismiss loading
+      if (mounted) Navigator.pop(context);
+
+      // Update session data with merge statistics
+      final updatedSessionData = Map<String, dynamic>.from(_trackingSessionData!);
+      updatedSessionData['merge_statistics'] = mergeStatistics;
+      updatedSessionData['pre_merge_count'] = mvrPersonUuids.length;
+      updatedSessionData['post_merge_count'] = superIndividuals.length;
+      updatedSessionData['hierarchical_merge_applied'] = true;
+
+      print('📊 Navigating to analysis with ${superIndividuals.length} super-individuals');
+
+      // Show merge success message
+      if (mounted && mergeStatistics['merges_performed'] > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Merged ${mergeStatistics['merges_performed']} duplicates → '
+              '${superIndividuals.length} unique individuals',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // Navigate to person details screen with super-individual UUIDs
       _navigateToCrossVideoAnalysis(
-        individualUuids: mvrPersonUuids, // Actually MVR person UUIDs
+        individualUuids: superIndividuals,
         sessionUuid: 'mvr_search_${DateTime.now().millisecondsSinceEpoch}',
-        sessionData: _trackingSessionData!,
+        sessionData: updatedSessionData,
       );
     } catch (e) {
+      print('❌ Error during hierarchical merge: $e');
+      
       // Dismiss loading if still showing
       if (mounted && Navigator.canPop(context)) {
         Navigator.pop(context);
@@ -892,7 +987,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+            content: Text('Error performing merge: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
