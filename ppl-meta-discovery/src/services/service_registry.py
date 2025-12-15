@@ -60,8 +60,9 @@ class ServiceRegistry:
         Returns:
             Registration response with service ID
         """
-        # Generate unique service ID
-        service_id = str(uuid.uuid4())
+        # Generate deterministic UUID based on service name
+        # This ensures the same service always gets the same UUID across restarts
+        service_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, request.name))
 
         # Check if service with same name already exists
         existing_service = self._find_service_by_name(request.name)

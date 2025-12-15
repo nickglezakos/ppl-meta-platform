@@ -263,33 +263,28 @@ class InstantDetectionSubscriber:
             for device_uuid_str in device_ids:
                 try:
                     device_uuid = UUID(device_uuid_str)
-                    device = db.query(SignageDevice).filter(SignageDevice.uuid == device_uuid).first()
                     
-                    if device:
-                        logger.info(f"\n     📱 Sending switch command to device:")
-                        logger.info(f"        Device Name: {device.device_name}")
-                        logger.info(f"        Device UUID: {device_uuid}")
-                        logger.info(f"        Current IP: {device.ip_address}")
-                        
-                        # Create PlaybackControlRequest
-                        from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
-                        
-                        # Create playback parameters
-                        playback_params = PlaybackParameters()
-                        
-                        # Create control request to start new playlist
-                        control_request = PlaybackControlRequest(
-                            device_ids=[device_uuid],
-                            command=PlaybackCommand.START,
-                            video_list_id=UUID(trigger.signage_playlist_id),
-                            parameters=playback_params
-                        )
-                        
-                        # Send the command
-                        result = await playback_service.control_playback(control_request)
-                        logger.info(f"        ✅ Command sent! Result: {json.dumps(result, indent=10)}")
-                    else:
-                        logger.warning(f"        ❌ Device {device_uuid_str} not found in database")
+                    logger.info(f"\n     📱 Sending switch command to device:")
+                    logger.info(f"        Device UUID: {device_uuid}")
+                    logger.info(f"        Target Playlist: {trigger.signage_playlist_id}")
+                    
+                    # Create PlaybackControlRequest
+                    from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
+                    
+                    # Create playback parameters
+                    playback_params = PlaybackParameters()
+                    
+                    # Create control request to start new playlist
+                    control_request = PlaybackControlRequest(
+                        device_ids=[device_uuid],
+                        command=PlaybackCommand.START,
+                        video_list_id=UUID(trigger.signage_playlist_id),
+                        parameters=playback_params
+                    )
+                    
+                    # Send the command (SignagePlaybackService will query discovery service)
+                    result = await playback_service.control_playback(control_request)
+                    logger.info(f"        ✅ Command result: {json.dumps(result, indent=10)}")
                 
                 except ValueError as e:
                     logger.error(f"Invalid device UUID {device_uuid_str}: {e}")

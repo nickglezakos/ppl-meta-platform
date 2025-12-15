@@ -41,7 +41,7 @@ This document describes the complete pipeline for intelligent signage control ba
 | **Cameras Service** | 8005 | `/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/logs/ppl-meta-cameras.log` | Instant detection, Celery task submission |
 | **Celery Worker** | N/A | `/Users/nickgklezakos/Documents/ppl-meta-code/logs/celery-instant-detection.log` | Background task processing |
 | **Vision Service** | 8003 | `/Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-vision.log` | Face detection, person analysis |
-| **Media Service** | 8000 | `/Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media-stdout.log` | Trigger evaluation, playlist control |
+| **Media Service** | 8000 | `/Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log` | Trigger evaluation, playlist control |
 | **Node Service** | 8001 | `/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node/logs/ppl-meta-node.log` | Authentication, user management |
 | **Gateway Service** | 8080 | `/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-gateway/logs/ppl-meta-gateway.log` | API gateway, request routing |
 | **Discovery Service** | 8006 | `/Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-discovery.log` | Service registry, health checks |
@@ -172,7 +172,7 @@ redis-cli PUBLISH instant-detection '{
 
 **Service**: `InstantDetectionSubscriber` in `ppl-meta-media/src/services/redis_subscriber.py`
 
-**Log Location**: stdout (part of media service startup task)
+**Log Location**: `/Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log`
 
 **Expected Logs**:
 ```
@@ -187,11 +187,11 @@ redis-cli PUBLISH instant-detection '{
 
 **Log Monitoring**:
 ```bash
-# Get media service PID
-ps aux | grep "ppl-meta-media.*python" | grep -v grep | awk '{print $2}'
+# Tail the media service log file
+tail -f /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log
 
-# Monitor task output
-# Use VS Code task: "🚀 Start All Local Python Services"
+# Or filter for trigger events
+tail -f /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log | grep -E 'INSTANT|TRIGGER|Playlist'
 ```
 
 ---
@@ -538,8 +538,8 @@ tail -f /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/logs/ppl-m
 # Celery worker - Task processing
 tail -f /Users/nickgklezakos/Documents/ppl-meta-code/logs/celery-instant-detection.log
 
-# Media service - Trigger evaluation (from task output)
-# Check VS Code task: "🚀 Start All Local Python Services"
+# Media service - Trigger evaluation
+tail -f /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log | grep -E "INSTANT|TRIGGER|Playlist"
 ```
 
 4. **Verify Results**:
@@ -693,12 +693,12 @@ tail -50 /Users/nickgklezakos/Documents/ppl-meta-code/logs/celery-instant-detect
 - Can't see trigger evaluation logs
 - No "TRIGGER FIRED" messages
 
-**Cause**: Media service logs to stdout, not file
+**Cause**: Log file not being monitored
 
 **Solution**:
-- Check VS Code task output: "🚀 Start All Local Python Services"
-- Or start service manually in terminal to see stdout
-- Or modify logging configuration to write to file
+- Check the log file: `/Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log`
+- Tail the log file: `tail -f /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log`
+- Filter for triggers: `tail -f /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-media.log | grep TRIGGER`
 
 ---
 
