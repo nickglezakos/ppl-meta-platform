@@ -332,6 +332,15 @@ class HomeScreen extends ConsumerWidget {
                           context.go('/triggers');
                         },
                       ),
+                      _ActionCard(
+                        icon: Icons.group_work,
+                        iconColor: Colors.deepPurple, // Distinct color for individual groups
+                        title: 'Individual Groups',
+                        subtitle: 'Organize people by groups',
+                        onTap: () {
+                          context.go('/individual-groups');
+                        },
+                      ),
                     ],
                   );
                 },

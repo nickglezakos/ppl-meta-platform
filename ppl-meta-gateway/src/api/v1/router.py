@@ -1582,7 +1582,7 @@ async def _proxy_to_vmeta_service(request: Request) -> Response:
 
         # Get request body if present
         body = None
-        if request.method in ["POST", "PUT", "PATCH"]:
+        if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
             body = await request.body()
 
         # Get headers (exclude host to avoid conflicts)
@@ -1645,6 +1645,98 @@ async def get_cross_video_tracking_session_results(request: Request):
 @api_router.delete("/cross-video/individuals/tracking/sessions/{session_uuid}")
 async def cancel_cross_video_tracking_session(request: Request):
     """Proxy cross-video tracking session cancellation to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+# Individual Groups API Routes - Proxy to vmeta service
+@api_router.get("/individual-groups")
+async def list_individual_groups(request: Request):
+    """Proxy list individual groups to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/individual-groups")
+async def create_individual_group(request: Request):
+    """Proxy create individual group to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individual-groups/{group_id}")
+async def get_individual_group(request: Request):
+    """Proxy get individual group to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.patch("/individual-groups/{group_id}")
+async def update_individual_group(request: Request):
+    """Proxy update individual group to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.delete("/individual-groups/{group_id}")
+async def delete_individual_group(request: Request):
+    """Proxy delete individual group to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individual-groups/{group_id}/members")
+async def get_group_members(request: Request):
+    """Proxy get group members to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/individual-groups/{group_id}/members")
+async def add_group_members(request: Request):
+    """Proxy add group members to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.delete("/individual-groups/{group_id}/members")
+async def remove_group_members(request: Request):
+    """Proxy remove group members to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individuals/{individual_id}/groups")
+async def get_individual_groups(request: Request):
+    """Proxy get individual's groups to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/individual-groups/bulk/add-members")
+async def bulk_add_members(request: Request):
+    """Proxy bulk add members to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/individual-groups/bulk/assign-groups")
+async def bulk_assign_groups(request: Request):
+    """Proxy bulk assign groups to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+# Individual Thumbnails API Routes - Proxy to vmeta service
+@api_router.get("/individuals/{individual_id}/thumbnail")
+async def get_individual_thumbnail(request: Request):
+    """Proxy get individual thumbnail to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/individuals/{individual_id}/thumbnail/generate")
+async def generate_individual_thumbnail(request: Request):
+    """Proxy generate individual thumbnail to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/individuals/{individual_id}/thumbnail/upload")
+async def upload_individual_thumbnail(request: Request):
+    """Proxy upload individual thumbnail to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individuals/{individual_id}/thumbnail/url")
+async def get_individual_thumbnail_url(request: Request):
+    """Proxy get individual thumbnail URL to vmeta service."""
     return await _proxy_to_vmeta_service(request)
 
 

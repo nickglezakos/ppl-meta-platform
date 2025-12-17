@@ -23,6 +23,8 @@ import '../../screens/workflow_dashboard_screen.dart';
 import '../../screens/automation_screen.dart';
 import '../../screens/signage_management_screen.dart';
 import '../../screens/triggers_screen.dart';
+import '../../screens/individual_groups_screen.dart';
+import '../../screens/individual_group_detail_screen.dart';
 import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
 import '../../pages/workflow_widget_test_page.dart';
@@ -236,6 +238,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ProviderScreenWrapper(
           child: TriggersScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/individual-groups',
+        name: 'individual-groups',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: IndividualGroupsScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/individual-groups/:groupId',
+        name: 'individual-group-detail',
+        builder: (context, state) {
+          final groupId = state.pathParameters['groupId']!;
+          return ProviderScreenWrapper(
+            child: IndividualGroupDetailScreen(groupId: groupId),
+          );
+        },
       ),
       GoRoute(
         path: '/settings',

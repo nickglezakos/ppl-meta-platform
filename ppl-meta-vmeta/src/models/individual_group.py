@@ -1,0 +1,257 @@
+"""
+Individual Groups Data Models
+Data models for organizing individuals into user-created groups.
+"""
+
+from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional
+from uuid import uuid4
+
+from pydantic import BaseModel, Field
+
+
+class GroupVisibility(str, Enum):
+    """Visibility level for individual groups"""
+    PRIVATE = "private"
+    SHARED = "shared"
+    PUBLIC = "public"
+
+
+class IndividualGroup(BaseModel):
+    """
+    Represents a collection of individuals organized by the user.
+    
+    Individual groups allow users to organize detected persons into meaningful
+    categories like "VIP Customers", "Staff", "Regulars", etc.
+    """
+    
+    id: str = Field(
+        default_factory=lambda: f"grp_{uuid4().hex[:12]}",
+        description="Unique group identifier"
+    )
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Group name"
+    )
+    description: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Optional group description"
+    )
+    
+    # Ownership & Permissions
+    created_by: str = Field(
+        ...,
+        description="User ID who created the group"
+    )
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="Group creation timestamp"
+    )
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="Last update timestamp"
+    )
+    
+    # Members
+    member_count: int = Field(
+        default=0,
+        ge=0,
+        description="Number of individuals in this group"
+    )
+    member_ids: List[str] = Field(
+        default_factory=list,
+        description="Individual IDs in this group"
+    )
+    
+    # Settings
+    visibility: GroupVisibility = Field(
+        default=GroupVisibility.PRIVATE,
+        description="Group visibility level"
+    )
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Tags for categorization"
+    )
+    
+    # Display
+    cover_individual_id: Optional[str] = Field(
+        None,
+        description="Individual ID to use for group thumbnail"
+    )
+    
+    # Metadata
+    metadata: Dict = Field(
+        default_factory=dict,
+        description="Additional metadata"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "grp_abc123xyz",
+                "name": "VIP Customers",
+                "description": "High-value customers identified across stores",
+                "created_by": "user_456",
+                "member_count": 15,
+                "visibility": "private",
+                "tags": ["vip", "loyalty", "store-a"]
+            }
+        }
+
+
+class GroupMembership(BaseModel):
+    """
+    Junction model for many-to-many relationship between groups and individuals.
+    """
+    
+    id: str = Field(
+        default_factory=lambda: f"mem_{uuid4().hex[:12]}",
+        description="Membership record ID"
+    )
+    group_id: str = Field(..., description="Group identifier")
+    individual_id: str = Field(..., description="Individual identifier")
+    
+    added_by: str = Field(
+        ...,
+        description="User ID who added this member"
+    )
+    added_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        description="Membership creation timestamp"
+    )
+    
+    # Optional notes
+    notes: Optional[str] = Field(
+        None,
+        max_length=500,
+        description="Optional notes about this membership"
+    )
+
+
+class CreateIndividualGroupRequest(BaseModel):
+    """Request model for creating a new individual group"""
+    
+    name: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=1000)
+    visibility: GroupVisibility = Field(default=GroupVisibility.PRIVATE)
+    tags: List[str] = Field(default_factory=list)
+    initial_member_ids: List[str] = Field(
+        default_factory=list,
+        description="Initial members to add to the group"
+    )
+
+
+class UpdateIndividualGroupRequest(BaseModel):
+    """Request model for updating an individual group"""
+    
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    visibility: Optional[GroupVisibility] = None
+    tags: Optional[List[str]] = None
+    cover_individual_id: Optional[str] = None
+
+
+class AddGroupMembersRequest(BaseModel):
+    """Request model for adding members to a group"""
+    
+    individual_ids: List[str] = Field(..., min_items=1)
+    notes: Optional[str] = Field(None, max_length=500)
+
+
+class RemoveGroupMembersRequest(BaseModel):
+    """Request model for removing members from a group"""
+    
+    individual_ids: List[str] = Field(..., min_items=1)
+
+
+class IndividualSummary(BaseModel):
+    """Lightweight individual data for list views"""
+    
+    id: str
+    thumbnail_url: Optional[str] = None
+    total_appearances: int = 0
+    last_seen: Optional[datetime] = None
+    group_count: int = 0
+    confidence_score: float = 0.0
+
+
+class IndividualGroupResponse(BaseModel):
+    """Response model for individual group with member preview"""
+    
+    group: IndividualGroup
+    members_preview: List[IndividualSummary] = Field(
+        default_factory=list,
+        description="First 5 members for preview"
+    )
+
+
+class ListGroupsResponse(BaseModel):
+    """Response model for listing groups"""
+    
+    groups: List[IndividualGroup]
+    total: int
+    skip: int
+    limit: int
+
+
+class ListMembersResponse(BaseModel):
+    """Response model for listing group members"""
+    
+    members: List[IndividualSummary]
+    total: int
+    skip: int
+    limit: int
+
+
+class AddMembersResponse(BaseModel):
+    """Response model for adding members"""
+    
+    group: IndividualGroup
+    added_count: int
+    skipped_count: int = Field(
+        default=0,
+        description="Number of individuals already in group"
+    )
+
+
+class RemoveMembersResponse(BaseModel):
+    """Response model for removing members"""
+    
+    group: IndividualGroup
+    removed_count: int
+
+
+class BulkAddMembersRequest(BaseModel):
+    """Request model for bulk adding members to a group"""
+    
+    group_id: str
+    individual_ids: List[str] = Field(..., min_items=1)
+
+
+class BulkAddMembersResponse(BaseModel):
+    """Response model for bulk operations"""
+    
+    success_count: int
+    error_count: int
+    errors: List[Dict[str, str]] = Field(
+        default_factory=list,
+        description="List of errors with individual_id and reason"
+    )
+
+
+class BulkAssignGroupsRequest(BaseModel):
+    """Request model for assigning individuals to multiple groups"""
+    
+    individual_ids: List[str] = Field(..., min_items=1)
+    group_ids: List[str] = Field(..., min_items=1)
+
+
+class BulkAssignGroupsResponse(BaseModel):
+    """Response model for bulk group assignment"""
+    
+    assignments_created: int
+    individuals_updated: int

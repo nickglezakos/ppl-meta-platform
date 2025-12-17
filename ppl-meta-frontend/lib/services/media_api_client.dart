@@ -153,6 +153,67 @@ class MediaApiClient {
     }
   }
 
+  /// Get media item by UUID (used when navigating from appearance cards)
+  Future<MediaItem> getMediaByUuid(String uuid) async {
+    try {
+      debugPrint('🎬 MediaApiClient: Fetching media details for UUID: $uuid');
+      
+      // Get current user ID for authentication
+      final userId = await _getCurrentUserId();
+      
+      final response = await _apiClient.get(
+        '/api/v1/media/$uuid',
+        queryParameters: userId != null ? {'user_id': userId} : null,
+      );
+      
+      debugPrint('🎬 MediaApiClient: Got media response: ${response.statusCode}');
+      
+      // Parse the response data into a MediaItem
+      final data = response.data as Map<String, dynamic>;
+      final mediaItem = MediaItem(
+        mediaId: data['id']?.toString() ?? data['uuid']?.toString() ?? '',
+        uuid: data['uuid']?.toString() ?? uuid,
+        originalFilename: data['original_filename'] ?? data['filename'] ?? 'Unknown',
+        mediaType: _parseMediaType(data['media_type'] ?? 'video'),
+        fileSize: data['file_size'] ?? 0,
+        filePath: data['file_path'] ?? '',
+        uploadedAt: data['created_at'] != null 
+            ? DateTime.parse(data['created_at']) 
+            : DateTime.now(),
+        uploadedBy: data['uploaded_by'],
+        isPublic: data['is_public'] ?? false,
+        thumbnailUrl: data['thumbnail_url'],
+        url: data['url'],
+        tags: (data['tags'] as List?)?.cast<String>() ?? [],
+        description: data['description'],
+        technicalMetadata: data['technical_metadata'],
+      );
+      
+      debugPrint('🎬 MediaApiClient: Successfully parsed MediaItem: ${mediaItem.originalFilename}');
+      return mediaItem;
+    } on DioException catch (e) {
+      debugPrint('❌ MediaApiClient: Failed to fetch media by UUID: ${_handleDioError(e)}');
+      throw Exception('Failed to load media details: ${_handleDioError(e)}');
+    } catch (e) {
+      debugPrint('❌ MediaApiClient: Unexpected error: $e');
+      throw Exception('Unexpected error loading media: $e');
+    }
+  }
+
+  MediaType _parseMediaType(String type) {
+    switch (type.toLowerCase()) {
+      case 'video':
+        return MediaType.video;
+      case 'image':
+      case 'picture':
+        return MediaType.image;
+      case 'audio':
+        return MediaType.audio;
+      default:
+        return MediaType.document;
+    }
+  }
+
   /// Get video properties including metadata (fps, frame count, etc.)
   Future<Map<String, dynamic>?> getVideoProperties(String mediaId) async {
     try {
@@ -808,30 +869,6 @@ class MediaApiClient {
       // Default to document for unknown extensions
       default:
         return 'document';
-    }
-  }
-  
-  /// Parse MediaType from backend string to frontend enum
-  MediaType _parseMediaType(String mediaTypeString) {
-    switch (mediaTypeString.toLowerCase()) {
-      case 'picture':
-      case 'image':
-        return MediaType.image;
-      case 'video':
-        return MediaType.video;
-      case 'sound':
-      case 'audio':
-        return MediaType.audio;
-      case 'document':
-        return MediaType.document;
-      case 'pdf':
-        return MediaType.pdf;
-      case 'text':
-        return MediaType.text;
-      case 'archive':
-        return MediaType.archive;
-      default:
-        return MediaType.other;
     }
   }
 

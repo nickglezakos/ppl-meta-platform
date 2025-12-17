@@ -101,19 +101,26 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         videoUrl = 'http://localhost:8080${correctedPath}';
         debugPrint('🎥 Detected GATEWAY embedded streaming URL: $videoUrl');
       } else {
-        // Legacy media streaming - check if we have an authorization header and construct token-based URL for web compatibility
+        // All other media streaming - use token-based URL for web compatibility
         final authHeader = widget.headers?['Authorization'];
         if (authHeader != null && authHeader.startsWith('Bearer ')) {
           final token = authHeader.substring(7); // Remove 'Bearer ' prefix
           
           // Extract media ID from the URL path - handle both UUID and numeric formats
-          final mediaIdMatch = RegExp(r'/stream/([^/?]+)').firstMatch(widget.videoUrl);
+          // Match pattern: /stream/{uuid} or /stream/{uuid}?params
+          final mediaIdMatch = RegExp(r'/stream/([a-f0-9\-]+)(?:\?|$)').firstMatch(widget.videoUrl);
           if (mediaIdMatch != null) {
             final mediaId = mediaIdMatch.group(1);
-            videoUrl = widget.videoUrl.startsWith('/') 
-                ? 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token'
-                : 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token';
-            debugPrint('🎥 Detected MEDIA SERVICE token-based streaming URL: $videoUrl');
+            // Preserve query parameters if present
+            final queryStart = widget.videoUrl.indexOf('?');
+            final existingParams = queryStart != -1 ? widget.videoUrl.substring(queryStart + 1) : '';
+            
+            if (existingParams.isNotEmpty) {
+              videoUrl = 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token&$existingParams';
+            } else {
+              videoUrl = 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token';
+            }
+            debugPrint('🎥 Constructed token-based streaming URL: $videoUrl');
           } else {
             throw Exception('Could not extract media ID from URL: ${widget.videoUrl}');
           }
@@ -127,7 +134,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       }
       
       // Use appropriate headers based on streaming type
-      final httpHeaders = widget.videoUrl.contains('/stream/video/') 
+      final httpHeaders = widget.videoUrl.contains('/stream/video/')
           ? widget.headers ?? {} // Embedded streaming uses Authorization header
           : <String, String>{}; // Token-based streaming doesn't need headers
       

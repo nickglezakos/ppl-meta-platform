@@ -12,6 +12,7 @@ import '../models/cross_video_analysis_models.dart';
 import '../providers/person_objects_provider.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/triggers_tab.dart';
+import '../widgets/individual_groups/add_to_group_dialog.dart';
 import '../models/media_models.dart';
 import '../core/api/api_client.dart';
 import '../services/media_api_client.dart';
@@ -1636,6 +1637,21 @@ class _PersonObjectsDetailScreenState
             // Convert the response to AggregatedIndividualAnalysis
             final data = response.data!;
             
+            print('📊 Individual analysis data for $individualUuid:');
+            print('   Total appearances: ${data['total_appearances']}');
+            print('   Unique videos: ${data['unique_videos']}');
+            print('   Appearances count: ${(data['appearances'] as List).length}');
+            
+            // Log first appearance to check data structure
+            if ((data['appearances'] as List).isNotEmpty) {
+              final firstApp = (data['appearances'] as List).first;
+              print('   First appearance structure: ${firstApp.keys.toList()}');
+              print('   Has video_uuid: ${firstApp.containsKey('video_uuid')}');
+              print('   Has media_uuid: ${firstApp.containsKey('media_uuid')}');
+              print('   video_uuid value: ${firstApp['video_uuid']}');
+              print('   media_uuid value: ${firstApp['media_uuid']}');
+            }
+            
             // Parse demographics if available
             Demographics? demographics;
             if (data['demographics'] != null) {
@@ -1678,9 +1694,18 @@ class _PersonObjectsDetailScreenState
               totalDurationSeconds: 0.0, // Not provided by session-less endpoint
               averageConfidence: 0.0, // Calculate from appearances if needed
               appearances: (data['appearances'] as List)
+                  .where((app) {
+                    // Filter out appearances with missing or invalid video UUIDs
+                    final videoUuid = app['video_uuid'] ?? app['media_uuid'];
+                    if (videoUuid == null || videoUuid.toString().isEmpty) {
+                      print('⚠️ Skipping appearance with missing video_uuid for ${data['individual_uuid']}');
+                      return false;
+                    }
+                    return true;
+                  })
                   .map((app) => IndividualAppearance(
                         individualUuid: data['individual_uuid'] as String,
-                        videoUuid: app['video_uuid'] as String,
+                        videoUuid: (app['video_uuid'] ?? app['media_uuid']) as String,
                         personObjectUuid: app['person_object_uuid'] as String,
                         startTimestamp: DateTime.parse(app['start_timestamp'] as String),
                         endTimestamp: DateTime.parse(app['end_timestamp'] as String),
@@ -1714,7 +1739,12 @@ class _PersonObjectsDetailScreenState
               '• MVR people were just created and appearance data is still processing\n'
               '• Media processing completed but no faces were detected\n'
               '• Face detection completed but no person objects were created'
-            : 'No individual data could be loaded';
+            : 'No appearance data found for the selected individual(s).\n\n'
+              'This occurs when:\n'
+              '• The individual has not appeared in any processed videos yet\n'
+              '• The individual was manually created without video associations\n'
+              '• Face detection hasn\'t been run on videos containing this person\n\n'
+              'To analyze an individual, they must first appear in processed video content.';
         
         setState(() {
           _crossVideoError = errorMessage;
@@ -1905,48 +1935,59 @@ class _PersonObjectsDetailScreenState
 
   /// Show dialog for adding selected individuals to a group
   Future<void> _showAddToGroupDialog() async {
-    // TODO: Implement group management functionality
-    // For now, show a placeholder dialog
-    await showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add to Group'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Add ${_selectedIndividuals.length} individual(s) to a group',
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Group management feature coming soon!',
-              style: TextStyle(
-                color: Colors.orange,
-                fontStyle: FontStyle.italic,
+    // If only one individual selected, show the AddToGroupDialog directly
+    if (_selectedIndividuals.length == 1) {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AddToGroupDialog(
+          individualId: _selectedIndividuals.first,
+          individualName: 'Individual',
+        ),
+      );
+      
+      if (result == true && mounted) {
+        // Clear selection after successful add
+        setState(() {
+          _selectedIndividuals.clear();
+        });
+      }
+    } else {
+      // Multiple individuals selected - show dialog to handle bulk add
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Add ${_selectedIndividuals.length} Individuals to Group'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Note: Bulk adding multiple individuals to groups is not yet supported.',
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
+              const SizedBox(height: 16),
+              const Text(
+                'Please select one individual at a time to add to a group.',
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Currently selected: ${_selectedIndividuals.length} individuals',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'This will allow you to:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text('• Create named groups of individuals'),
-            const Text('• Add/remove individuals from groups'),
-            const Text('• Search and filter by group'),
-            const Text('• Generate group-level analytics'),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+      );
+    }
     
     // Clear selection after action
     setState(() {

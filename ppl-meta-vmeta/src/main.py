@@ -333,6 +333,30 @@ app.include_router(workflows.router, prefix="/api/v1/workflows", tags=["workflow
 app.include_router(embeddings.router, prefix="/api/v1/embeddings", tags=["embeddings"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
 
+# Add Individual Groups router
+try:
+    from api.routes.individual_groups import router as individual_groups_router
+    app.include_router(
+        individual_groups_router,
+        prefix="/api/v1",
+        tags=["individual-groups"]
+    )
+    logger.info("✅ Individual Groups API registered")
+except Exception as e:
+    logger.warning(f"⚠️ Individual Groups API not available: {e}")
+
+# Add Individual Thumbnails router
+try:
+    from api.routes.individual_thumbnails import router as individual_thumbnails_router
+    app.include_router(
+        individual_thumbnails_router,
+        prefix="/api/v1",
+        tags=["individual-thumbnails"]
+    )
+    logger.info("✅ Individual Thumbnails API registered")
+except Exception as e:
+    logger.warning(f"⚠️ Individual Thumbnails API not available: {e}")
+
 # Add recording events router
 try:
     from api.v1 import recording_events

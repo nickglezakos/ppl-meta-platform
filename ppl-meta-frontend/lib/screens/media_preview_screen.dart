@@ -8,6 +8,7 @@ import '../models/face_detection_models.dart';
 import '../widgets/smart_video_player_widget.dart';
 import '../widgets/performance/performance_metrics_dialog.dart';
 import '../core/api/api_client.dart';
+import '../core/providers/camera_providers.dart'; // Add this for mediaApiClientProvider
 import '../widgets/custom_app_bar.dart';
 import '../providers/workflow_providers.dart';
 import '../providers/face_memory_manager.dart';
@@ -35,10 +36,18 @@ class EnhancedMediaPreviewScreen extends ConsumerStatefulWidget {
 class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPreviewScreen> {
   VideoPlayerController? _videoController;
   bool _showWorkflowControls = false;
+  MediaItem? _fullMediaItem; // Store the full media item details
+  bool _isLoadingMedia = false;
+  String? _mediaLoadError;
 
   @override
   void initState() {
     super.initState();
+    
+    // Check if we received a minimal MediaItem (from UUID-based navigation)
+    if (widget.mediaItem.mediaId == '0') {
+      _loadFullMediaDetails();
+    }
     
     // [FIX] DISABLED automatic face loading via provider - overlay handles this directly now
     // The overlay calls Enhanced Logic V2 API directly in _checkForStoredFaces()
@@ -46,6 +55,34 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     // WidgetsBinding.instance.addPostFrameCallback((_) {
     //   EnhancedAutoFaceLoader.loadFacesForMedia(ref, widget.mediaItem.uuid);
     // });
+  }
+
+  /// Load full media details when navigating with only UUID
+  Future<void> _loadFullMediaDetails() async {
+    setState(() {
+      _isLoadingMedia = true;
+      _mediaLoadError = null;
+    });
+
+    try {
+      final mediaApiClient = ref.read(mediaApiClientProvider);
+      final mediaDetails = await mediaApiClient.getMediaByUuid(widget.mediaItem.uuid);
+      
+      if (mounted) {
+        setState(() {
+          _fullMediaItem = mediaDetails;
+          _isLoadingMedia = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to load media details for UUID ${widget.mediaItem.uuid}: $e');
+      if (mounted) {
+        setState(() {
+          _mediaLoadError = 'Failed to load media details: $e';
+          _isLoadingMedia = false;
+        });
+      }
+    }
   }
 
   @override
@@ -57,6 +94,68 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
   @override
   Widget build(BuildContext context) {
+    // Show loading indicator while fetching full media details
+    if (_isLoadingMedia) {
+      return Scaffold(
+        appBar: CustomAppBar(
+          title: 'Loading Media...',
+          showBackButton: true,
+        ),
+        backgroundColor: Colors.black,
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text(
+                'Loading media details...',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Show error if media loading failed
+    if (_mediaLoadError != null) {
+      return Scaffold(
+        appBar: CustomAppBar(
+          title: 'Media Error',
+          showBackButton: true,
+        ),
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                color: Colors.red,
+                size: 64,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _mediaLoadError!,
+                style: const TextStyle(color: Colors.white70),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: _loadFullMediaDetails,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Use full media item if loaded, otherwise use widget's mediaItem
+    final mediaItem = _fullMediaItem ?? widget.mediaItem;
+
     return Scaffold(
       appBar: _buildEnhancedAppBar(context, ref),
       backgroundColor: Colors.black,
@@ -67,7 +166,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           
           // Main media content
           Expanded(
-            child: _buildMediaContent(context, ref),
+            child: _buildMediaContent(context, ref, mediaItem),
           ),
           
           // Bottom control bar with workflow controls
@@ -128,19 +227,19 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     );
   }
 
-  Widget _buildMediaContent(BuildContext context, WidgetRef ref) {
-    switch (widget.mediaItem.mediaType) {
+  Widget _buildMediaContent(BuildContext context, WidgetRef ref, MediaItem mediaItem) {
+    switch (mediaItem.mediaType) {
       case MediaType.image:
-        return _buildImagePreview(context, ref);
+        return _buildImagePreview(context, ref, mediaItem);
       case MediaType.video:
-        return _buildVideoPreview(context, ref);
+        return _buildVideoPreview(context, ref, mediaItem);
       default:
-        return _buildUnsupportedMediaPreview(context);
+        return _buildUnsupportedMediaPreview(context, mediaItem);
     }
   }
 
-  Widget _buildImagePreview(BuildContext context, WidgetRef ref) {
-    final imageUrl = widget.mediaItem.url ?? widget.mediaItem.thumbnailUrl;
+  Widget _buildImagePreview(BuildContext context, WidgetRef ref, MediaItem mediaItem) {
+    final imageUrl = mediaItem.url ?? mediaItem.thumbnailUrl;
     if (imageUrl == null) {
       return _buildErrorPreview(context, 'No image URL available');
     }
@@ -179,7 +278,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     );
   }
 
-  Widget _buildVideoPreview(BuildContext context, WidgetRef ref) {
+  Widget _buildVideoPreview(BuildContext context, WidgetRef ref, MediaItem mediaItem) {
     final apiClient = ref.read(apiClientProvider);
     
     return Center(
@@ -189,7 +288,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           maxHeight: MediaQuery.of(context).size.height - kToolbarHeight,
         ),
         child: SmartVideoPlayerWidget(
-          mediaItem: widget.mediaItem,
+          mediaItem: mediaItem,
           headers: {
             if (apiClient.authToken != null)
               'Authorization': 'Bearer ${apiClient.authToken}',
@@ -207,13 +306,13 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     );
   }
 
-  Widget _buildUnsupportedMediaPreview(BuildContext context) {
+  Widget _buildUnsupportedMediaPreview(BuildContext context, MediaItem mediaItem) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            _getMediaTypeIcon(widget.mediaItem.mediaType),
+            _getMediaTypeIcon(mediaItem.mediaType),
             size: 64,
             color: Colors.white70,
           ),

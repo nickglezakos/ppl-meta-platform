@@ -21,6 +21,9 @@ from services.mvr_service import MVRService
 from services.mvr_matcher import MVRMatcher
 from background.mvr_background_processor import MVRBackgroundProcessor
 
+# Individual Groups
+from services.individual_groups_manager import IndividualGroupsManager
+
 # Cache
 from utils.redis_client import VMetaCacheClient
 
@@ -338,6 +341,28 @@ rate_limit_1000_per_hour = RateLimiter(
 
 
 # ============================================================================
+# Individual Groups Manager
+# ============================================================================
+
+async def get_groups_manager() -> IndividualGroupsManager:
+    """
+    Get IndividualGroupsManager instance.
+    
+    Returns:
+        IndividualGroupsManager: Initialized groups manager
+    """
+    from main import db_client
+    
+    if not db_client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not available"
+        )
+    
+    return IndividualGroupsManager(db_client)
+
+
+# ============================================================================
 # Export Dependencies
 # ============================================================================
 
@@ -356,6 +381,9 @@ __all__ = [
     "get_mvr_service",
     "get_mvr_matcher",
     "get_mvr_background_processor",
+    
+    # Individual Groups
+    "get_groups_manager",
     
     # Rate Limiting
     "RateLimiter",
