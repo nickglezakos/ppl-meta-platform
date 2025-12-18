@@ -4008,6 +4008,126 @@ async def get_super_individual_hierarchy(
 
 
 # ============================================================================
+# ENDPOINT: Get Best Images for MVRpeople
+# ============================================================================
+
+@router.get(
+    "/{mvr_uuid}/best-image",
+    response_model=Dict[str, Any],
+    status_code=status.HTTP_200_OK,
+    summary="Get Best Face and Frame Images",
+    description="Retrieve the highest quality cropped face and corresponding frame image for an MVRpeople UUID. "
+                "Supports super-individuals with merged children aggregation.",
+)
+async def get_best_images_for_mvr(
+    mvr_uuid: UUID,
+    request: Request,
+    include_merged: bool = Query(
+        default=False,
+        description="Include merged children if super-individual"
+    ),
+    use_cache: bool = Query(
+        default=True,
+        description="Use cached result if available (future enhancement)"
+    ),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get best quality face and frame images for MVRpeople.
+    
+    **Features:**
+    - Returns highest quality cropped face from all appearances
+    - Includes corresponding frame image for context
+    - Supports super-individual aggregation (includes merged children)
+    - Uses Vision service REST API (no cross-service database queries)
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - mvr_uuid: MVRpeople UUID or Super-individual UUID
+    - include_merged: Include merged MVR children for super-individuals
+    - use_cache: Use cached result if available (default: true)
+    
+    **Returns:**
+    - 200 OK: Best face and frame images with metadata
+    - 404 Not Found: MVRpeople not found or no appearances
+    - 503 Service Unavailable: Vision service unavailable
+    
+    **Response includes:**
+    - best_face: Highest quality cropped face (URL, quality score, metadata)
+    - frame_image: Corresponding frame image (URL, metadata)
+    - metadata: Processing statistics and cache info
+    """
+    logger.info(
+        f"User {current_user.get('sub')} requesting best images for MVR {mvr_uuid} "
+        f"(include_merged={include_merged})"
+    )
+    
+    try:
+        from services.mvr_image_manager import MVRImageManager
+        import os
+        
+        # Extract auth token from request headers
+        auth_header = request.headers.get("Authorization", "")
+        auth_token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
+        
+        # Check if MVR exists
+        mvr_exists = await mvr_repository.get_mvr_people_by_uuid(mvr_uuid)
+        if not mvr_exists:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"MVRpeople {mvr_uuid} not found"
+            )
+        
+        # Initialize image manager with auth token
+        orchestrator_url = os.getenv("ORCHESTRATOR_SERVICE_URL", "http://localhost:8002")
+        
+        image_manager = MVRImageManager(
+            mvr_repo=mvr_repository,
+            orchestrator_url=orchestrator_url,
+            service_token=auth_token  # Pass user's auth token for Orchestrator calls
+        )
+        
+        # Get best images
+        result = await image_manager.get_best_images_for_mvr(
+            mvr_uuid=str(mvr_uuid),
+            include_merged=include_merged,
+            use_cache=use_cache
+        )
+        
+        # Convert to dict for response
+        response_dict = result.to_dict()
+        
+        if not result.best_face:
+            logger.warning(f"No images found for MVR {mvr_uuid}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No appearances or images found for MVRpeople {mvr_uuid}"
+            )
+        
+        logger.info(
+            f"✅ Returned best images for MVR {mvr_uuid} "
+            f"(quality={result.best_face.quality_score:.3f}, "
+            f"time={result.metadata['processing_time_ms']}ms)"
+        )
+        
+        return response_dict
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to get best images for {mvr_uuid}: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve images: {str(e)}"
+        )
+
+
+# ============================================================================
 # Router Export
 # ============================================================================
 
