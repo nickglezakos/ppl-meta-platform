@@ -285,6 +285,7 @@ class MatchedIndividual(BaseModel):
     last_seen: datetime
     confidence_score: float
     demographics: Optional[Dict] = None
+    appearances: Optional[List[Dict]] = None  # Individual appearance records with video_uuid
 
 
 class GroupCameraSearchResponse(BaseModel):

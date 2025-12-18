@@ -1852,11 +1852,18 @@ class _PersonObjectsDetailScreenState
   ) async {
     try {
       final apiClient = ref.read(apiClientProvider);
-      final individualGroupsApiClient = IndividualGroupsApiClient();
+      final individualGroupsApiClient = IndividualGroupsApiClient(apiClient);
       
-      final cameraId = searchParameters['camera_id'] as String;
-      final startTime = searchParameters['start_time'] as DateTime;
-      final endTime = searchParameters['end_time'] as DateTime;
+      final cameraId = searchParameters['camera_id'] as String?;
+      if (cameraId == null) {
+        print('❌ No camera_id in search parameters');
+        return;
+      }
+      
+      final startTimeStr = searchParameters['start_time'] as String;
+      final endTimeStr = searchParameters['end_time'] as String;
+      final startTime = DateTime.parse(startTimeStr);
+      final endTime = DateTime.parse(endTimeStr);
       final confidenceThreshold = searchParameters['confidence_threshold'] as double? ?? 0.75;
 
       print('📹 Loading camera search results: camera=$cameraId, time=$startTime to $endTime');
@@ -1877,25 +1884,40 @@ class _PersonObjectsDetailScreenState
         
         // Convert matched individuals to AggregatedIndividualAnalysis
         for (var matched in matchedIndividuals) {
-          final appearances = (matched['appearances'] as List<dynamic>)
-              .map((app) => IndividualAppearance(
-                    individualUuid: matched['individual_uuid'] as String,
-                    videoUuid: app['video_uuid'] as String,
-                    personObjectUuid: app['person_object_uuid'] as String? ?? matched['individual_uuid'] as String,
-                    startTimestamp: DateTime.parse(app['timestamp'] as String),
-                    endTimestamp: DateTime.parse(app['timestamp'] as String),
-                    confidenceScore: (app['confidence'] as num).toDouble(),
-                  ))
-              .toList();
+          // Get appearances array from backend (includes video_uuid for navigation)
+          final appearancesData = matched['appearances'] as List<dynamic>?;
           
-          if (appearances.isEmpty) continue;
+          List<IndividualAppearance> appearances;
+          if (appearancesData != null && appearancesData.isNotEmpty) {
+            // Use detailed appearances from backend
+            appearances = appearancesData.map((app) => IndividualAppearance(
+              individualUuid: matched['individual_uuid'] as String,
+              videoUuid: app['video_uuid'] as String,
+              personObjectUuid: app['person_object_uuid'] as String,
+              startTimestamp: DateTime.parse(app['timestamp'] as String),
+              endTimestamp: DateTime.parse(app['timestamp'] as String),
+              confidenceScore: (app['confidence'] as num).toDouble(),
+            )).toList();
+          } else {
+            // Fallback: create single synthetic appearance from summary
+            appearances = [
+              IndividualAppearance(
+                individualUuid: matched['individual_uuid'] as String,
+                videoUuid: '', // Not available
+                personObjectUuid: matched['mvr_person_uuid'] as String,
+                startTimestamp: DateTime.parse(matched['first_seen'] as String),
+                endTimestamp: DateTime.parse(matched['last_seen'] as String),
+                confidenceScore: (matched['confidence_score'] as num).toDouble(),
+              )
+            ];
+          }
           
           final analysis = AggregatedIndividualAnalysis(
             individualUuid: matched['individual_uuid'] as String,
-            individualId: matched['individual_id'] as String,
+            individualId: matched['mvr_person_uuid'] as String, // Use MVR UUID as ID
             sessionUuid: groupId, // Use group ID as session
-            totalAppearances: appearances.length,
-            uniqueVideos: (matched['unique_videos'] as int?) ?? 1,
+            totalAppearances: matched['total_appearances'] as int,
+            uniqueVideos: appearancesData?.length ?? 1, // Count unique videos from appearances
             firstSeen: appearances.first.startTimestamp,
             lastSeen: appearances.last.endTimestamp,
             totalDurationSeconds: 0.0,

@@ -6,7 +6,7 @@ RESTful endpoints for managing individual groups.
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from api.dependencies import get_groups_manager
 from models.individual_group import (
@@ -470,7 +470,8 @@ async def bulk_assign_groups(
 @router.post("/{group_id}/camera-search", response_model=GroupCameraSearchResponse)
 async def search_group_in_camera(
     group_id: str,
-    request: GroupCameraSearchRequest,
+    request_body: GroupCameraSearchRequest,
+    request: Request,
     manager: IndividualGroupsManager = Depends(get_groups_manager),
 ) -> GroupCameraSearchResponse:
     """
@@ -484,19 +485,25 @@ async def search_group_in_camera(
     
     Args:
         group_id: Group identifier
-        request: Camera search parameters
+        request_body: Camera search parameters
+        request: FastAPI Request object to extract auth token
         manager: IndividualGroupsManager dependency
         
     Returns:
         Matched group members found in camera footage
     """
     try:
+        # Extract auth token from request headers
+        auth_token = request.headers.get("Authorization")
+        logger.info(f"Camera search request - auth_token present: {bool(auth_token)}, length: {len(auth_token) if auth_token else 0}")
+        
         response = await manager.search_members_in_camera(
             group_id=group_id,
-            camera_id=request.camera_id,
-            start_time=request.start_time,
-            end_time=request.end_time,
-            confidence_threshold=request.confidence_threshold,
+            camera_id=request_body.camera_id,
+            start_time=request_body.start_time,
+            end_time=request_body.end_time,
+            confidence_threshold=request_body.confidence_threshold,
+            auth_token=auth_token,
         )
         
         return response

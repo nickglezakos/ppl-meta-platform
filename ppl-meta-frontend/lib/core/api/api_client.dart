@@ -25,6 +25,9 @@ class ApiClient {
         onRequest: (options, handler) {
           if (_authToken != null) {
             options.headers['Authorization'] = 'Bearer $_authToken';
+            print('🔑 ApiClient: Adding auth header to ${options.method} ${options.path}');
+          } else {
+            print('⚠️ ApiClient: NO AUTH TOKEN for ${options.method} ${options.path}');
           }
           handler.next(options);
         },
