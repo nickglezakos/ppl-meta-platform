@@ -2287,6 +2287,7 @@ async def get_individual_analysis_no_session(
                     iva.start_timestamp,
                     iva.end_timestamp,
                     iva.confidence,
+                    mvr.mvr_people_uuid,
                     mvr.gender,
                     mvr.gender_confidence,
                     mvr.age_min,
@@ -2334,7 +2335,13 @@ async def get_individual_analysis_no_session(
             
             # Extract demographics from first row (all rows should have same demographics)
             demographics = None
+            mvr_people_uuid = None
             first_row = appearances_rows[0]
+            
+            # Get MVR UUID if available (should be same for all rows)
+            if first_row['mvr_people_uuid'] is not None:
+                mvr_people_uuid = str(first_row['mvr_people_uuid'])
+            
             if first_row['gender'] is not None:
                 # Calculate age mean if age_min and age_max are available
                 age_mean = None
@@ -2352,6 +2359,7 @@ async def get_individual_analysis_no_session(
             
             return {
                 "individual_uuid": individual_uuid,
+                "mvr_people_uuid": mvr_people_uuid,  # Include MVR UUID if individual is merged
                 "total_appearances": len(appearances),
                 "unique_videos": unique_videos,
                 "first_seen": first_seen.isoformat(),

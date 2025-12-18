@@ -1566,14 +1566,30 @@ class _PersonObjectsDetailScreenState
       // Check if this is a camera search from individual groups
       if (context.sessionData['source'] == 'individual_group_camera_search') {
         print('📹 Loading camera search results...');
+        print('📹 DEBUG: Inside camera search branch, about to call _loadGroupCameraSearchData');
         final groupId = context.sessionData['group_id'] as String;
         final searchParams = context.sessionData['search_parameters'] as Map<String, dynamic>;
         await _loadGroupCameraSearchData(groupId, searchParams, aggregatedAnalyses);
+        
+        print('📹 DEBUG: _loadGroupCameraSearchData completed, aggregatedAnalyses.length = ${aggregatedAnalyses.length}');
         
         setState(() {
           _aggregatedAnalyses = aggregatedAnalyses;
           _isLoadingCrossVideoData = false;
         });
+        
+        print('📹 DEBUG: setState completed');
+        
+        // Load best images for camera search results
+        print('🖼️ Camera search: aggregatedAnalyses.length = ${aggregatedAnalyses.length}');
+        if (aggregatedAnalyses.isNotEmpty) {
+          print('🖼️ Camera search: Calling _loadBestImagesForIndividuals()...');
+          _loadBestImagesForIndividuals();
+        } else {
+          print('⚠️ Camera search: aggregatedAnalyses is EMPTY, not loading images');
+        }
+        
+        print('📹 DEBUG: About to return from camera search branch');
         return;
       }
 
@@ -1759,7 +1775,7 @@ class _PersonObjectsDetailScreenState
             
             final analysis = AggregatedIndividualAnalysis(
               individualUuid: data['individual_uuid'] as String,
-              individualId: data['individual_uuid'] as String,
+              individualId: data['mvr_people_uuid'] as String? ?? data['individual_uuid'] as String,  // Use MVR UUID if merged, fallback to individual UUID
               sessionUuid: context.sessionUuid, // Use context session for display
               totalAppearances: totalAppearances,
               uniqueVideos: data['unique_videos'] as int,
@@ -1857,21 +1873,34 @@ class _PersonObjectsDetailScreenState
     if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) return;
     
     try {
+      print('🖼️ Loading best images for ${_aggregatedAnalyses!.length} individuals in cross-video mode');
       final imageService = ref.read(mvrImageServiceProvider);
-      final individualUuids = _aggregatedAnalyses!.map((a) => a.individualUuid).toList();
+      final individualIds = _aggregatedAnalyses!.map((a) => a.individualId).toList();  // Use individualId (MVR UUID)
+      print('🖼️ Individual IDs (MVR UUIDs): $individualIds');
       
       final images = await imageService.getBestImagesForMultiple(
-        individualUuids,
+        individualIds,
         includeMerged: false,
       );
+      
+      print('🖼️ Received ${images.length} image responses');
+      for (var entry in images.entries) {
+        print('🖼️   ${entry.key}: ${entry.value != null ? "✅ Has image" : "❌ No image"}');
+        if (entry.value?.bestFace != null) {
+          print('🖼️     imageUrl: ${entry.value!.bestFace!.imageUrl}');
+          print('🖼️     has faceData: ${entry.value!.bestFace!.faceData != null}');
+        }
+      }
       
       if (mounted) {
         setState(() {
           _bestImages = images;
+          print('🖼️ State updated with ${_bestImages.length} images');
         });
       }
-    } catch (e) {
-      print('Error loading best images for cross-video analysis: $e');
+    } catch (e, stack) {
+      print('❌ Error loading best images for cross-video analysis: $e');
+      print('Stack: $stack');
     }
   }
 
@@ -4494,7 +4523,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
-                              child: _buildIndividualThumbnail(analysis.individualUuid, isSuperIndividual),
+                              child: _buildIndividualThumbnail(analysis.individualId, isSuperIndividual),  // Use individualId (MVR UUID) not individualUuid
                             ),
                           ),
                           // Badge: Blue for merged, Grey for standalone
