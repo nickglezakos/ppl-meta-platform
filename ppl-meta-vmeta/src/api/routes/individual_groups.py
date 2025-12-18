@@ -17,6 +17,8 @@ from models.individual_group import (
     BulkAssignGroupsRequest,
     BulkAssignGroupsResponse,
     CreateIndividualGroupRequest,
+    GroupCameraSearchRequest,
+    GroupCameraSearchResponse,
     IndividualGroup,
     IndividualGroupResponse,
     ListGroupsResponse,
@@ -458,4 +460,54 @@ async def bulk_assign_groups(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to bulk assign groups: {str(e)}"
+        )
+
+
+# ================================================================
+# Camera Search Endpoint
+# ================================================================
+
+@router.post("/{group_id}/camera-search", response_model=GroupCameraSearchResponse)
+async def search_group_in_camera(
+    group_id: str,
+    request: GroupCameraSearchRequest,
+    manager: IndividualGroupsManager = Depends(get_groups_manager),
+) -> GroupCameraSearchResponse:
+    """
+    Search for group members within specific camera footage during a time range.
+    
+    This endpoint:
+    1. Fetches all member individual_uuids for the group
+    2. Executes MVR search on specified camera/time range
+    3. Compares MVR results with group members
+    4. Returns matched individuals with appearance data
+    
+    Args:
+        group_id: Group identifier
+        request: Camera search parameters
+        manager: IndividualGroupsManager dependency
+        
+    Returns:
+        Matched group members found in camera footage
+    """
+    try:
+        response = await manager.search_members_in_camera(
+            group_id=group_id,
+            camera_id=request.camera_id,
+            start_time=request.start_time,
+            end_time=request.end_time,
+            confidence_threshold=request.confidence_threshold,
+        )
+        
+        return response
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error in camera search for group {group_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to execute camera search: {str(e)}"
         )

@@ -1715,6 +1715,12 @@ async def bulk_assign_groups(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/individual-groups/{group_id}/camera-search")
+async def group_camera_search(request: Request):
+    """Proxy individual groups camera search to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 # Individual Thumbnails API Routes - Proxy to vmeta service
 @api_router.get("/individuals/{individual_id}/thumbnail")
 async def get_individual_thumbnail(request: Request):

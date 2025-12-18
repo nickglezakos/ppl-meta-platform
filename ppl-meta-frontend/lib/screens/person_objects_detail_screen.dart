@@ -16,6 +16,7 @@ import '../widgets/individual_groups/add_to_group_dialog.dart';
 import '../models/media_models.dart';
 import '../core/api/api_client.dart';
 import '../services/media_api_client.dart';
+import '../services/individual_groups_api_client.dart';
 
 /// Detailed screen for viewing person objects results and analysis
 /// 
@@ -262,6 +263,9 @@ class _PersonObjectsDetailScreenState
   Widget _buildCrossVideoInfoBar() {
     final context = widget.crossVideoContext!;
     
+    // Check if this is a camera search
+    final isCameraSearch = context.sessionData['source'] == 'individual_group_camera_search';
+    
     // Extract dates and collection name from sessionData
     DateTime? startTime;
     DateTime? endTime;
@@ -386,149 +390,202 @@ class _PersonObjectsDetailScreenState
     final textColor = theme.colorScheme.onSurface;
     final dividerColor = theme.colorScheme.outline.withOpacity(0.2);
     
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border(
-          bottom: BorderSide(
-            color: borderColor,
-            width: 1,
+    return Column(
+      children: [
+        // Camera search results banner (if applicable)
+        if (isCameraSearch && _aggregatedAnalyses != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+              border: Border(
+                bottom: BorderSide(
+                  color: borderColor,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.video_camera_front,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Camera Search Results',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_aggregatedAnalyses!.length} of ${context.sessionData['total_group_members'] ?? '?'} members found in $collectionName',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: textColor.withOpacity(0.8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        
+        // Standard info bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            border: Border(
+              bottom: BorderSide(
+                color: borderColor,
+                width: 1,
+              ),
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Determine if we should wrap to multiple lines on very small screens
+              final isVerySmall = constraints.maxWidth < 500;
+              
+              if (isVerySmall) {
+                // Stack vertically on very small screens
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 16, color: iconColor),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'From: ${formatDate(startTime)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: textColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.event, size: 16, color: iconColor),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'To: ${formatDate(endTime)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: textColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.video_collection, size: 16, color: iconColor),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Collection: $collectionName',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: textColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              } else {
+                // Single row on larger screens
+                return Wrap(
+                  spacing: 20,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.calendar_today, size: 16, color: iconColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          'From: ${formatDate(startTime)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: textColor,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      width: 1,
+                      height: 16,
+                      color: dividerColor,
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.event, size: 16, color: iconColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          'To: ${formatDate(endTime)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: textColor,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      width: 1,
+                      height: 16,
+                      color: dividerColor,
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.video_collection, size: 16, color: iconColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Collection: $collectionName',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: textColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+            },
           ),
         ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // Determine if we should wrap to multiple lines on very small screens
-          final isVerySmall = constraints.maxWidth < 500;
-          
-          if (isVerySmall) {
-            // Stack vertically on very small screens
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.calendar_today, size: 16, color: iconColor),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'From: ${formatDate(startTime)}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: textColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.event, size: 16, color: iconColor),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'To: ${formatDate(endTime)}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: textColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.video_collection, size: 16, color: iconColor),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Collection: $collectionName',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: textColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            );
-          } else {
-            // Single row on larger screens
-            return Wrap(
-              spacing: 20,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.calendar_today, size: 16, color: iconColor),
-                    const SizedBox(width: 6),
-                    Text(
-                      'From: ${formatDate(startTime)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: textColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  width: 1,
-                  height: 16,
-                  color: dividerColor,
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.event, size: 16, color: iconColor),
-                    const SizedBox(width: 6),
-                    Text(
-                      'To: ${formatDate(endTime)}',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: textColor,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-                Container(
-                  width: 1,
-                  height: 16,
-                  color: dividerColor,
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.video_collection, size: 16, color: iconColor),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Collection: $collectionName',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: textColor,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            );
-          }
-        },
-      ),
+      ],
     );
   }
 
@@ -1498,6 +1555,21 @@ class _PersonObjectsDetailScreenState
       final aggregatedAnalyses = <AggregatedIndividualAnalysis>[];
       
       print('📊 Loading analysis for ${context.individualUuids.length} individuals');
+      print('📊 Source: ${context.sessionData['source']}');
+
+      // Check if this is a camera search from individual groups
+      if (context.sessionData['source'] == 'individual_group_camera_search') {
+        print('📹 Loading camera search results...');
+        final groupId = context.sessionData['group_id'] as String;
+        final searchParams = context.sessionData['search_parameters'] as Map<String, dynamic>;
+        await _loadGroupCameraSearchData(groupId, searchParams, aggregatedAnalyses);
+        
+        setState(() {
+          _aggregatedAnalyses = aggregatedAnalyses;
+          _isLoadingCrossVideoData = false;
+        });
+        return;
+      }
 
       // Extract date range from search parameters if available
       DateTime? startTime;
@@ -1773,6 +1845,79 @@ class _PersonObjectsDetailScreenState
   /// 
   /// This is used as a fallback when hierarchy loading fails or for
   /// non-merged MVR people.
+  Future<void> _loadGroupCameraSearchData(
+    String groupId,
+    Map<String, dynamic> searchParameters,
+    List<AggregatedIndividualAnalysis> aggregatedAnalyses,
+  ) async {
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final individualGroupsApiClient = IndividualGroupsApiClient();
+      
+      final cameraId = searchParameters['camera_id'] as String;
+      final startTime = searchParameters['start_time'] as DateTime;
+      final endTime = searchParameters['end_time'] as DateTime;
+      final confidenceThreshold = searchParameters['confidence_threshold'] as double? ?? 0.75;
+
+      print('📹 Loading camera search results: camera=$cameraId, time=$startTime to $endTime');
+      
+      final response = await individualGroupsApiClient.searchGroupInCamera(
+        groupId: groupId,
+        cameraId: cameraId,
+        startTime: startTime.toIso8601String(),
+        endTime: endTime.toIso8601String(),
+        confidenceThreshold: confidenceThreshold,
+      );
+      
+      if (response.success && response.data != null) {
+        final data = response.data!;
+        final matchedIndividuals = data['matched_individuals'] as List<dynamic>;
+        
+        print('✅ Found ${matchedIndividuals.length} of ${data['total_group_members']} members');
+        
+        // Convert matched individuals to AggregatedIndividualAnalysis
+        for (var matched in matchedIndividuals) {
+          final appearances = (matched['appearances'] as List<dynamic>)
+              .map((app) => IndividualAppearance(
+                    individualUuid: matched['individual_uuid'] as String,
+                    videoUuid: app['video_uuid'] as String,
+                    personObjectUuid: app['person_object_uuid'] as String? ?? matched['individual_uuid'] as String,
+                    startTimestamp: DateTime.parse(app['timestamp'] as String),
+                    endTimestamp: DateTime.parse(app['timestamp'] as String),
+                    confidenceScore: (app['confidence'] as num).toDouble(),
+                  ))
+              .toList();
+          
+          if (appearances.isEmpty) continue;
+          
+          final analysis = AggregatedIndividualAnalysis(
+            individualUuid: matched['individual_uuid'] as String,
+            individualId: matched['individual_id'] as String,
+            sessionUuid: groupId, // Use group ID as session
+            totalAppearances: appearances.length,
+            uniqueVideos: (matched['unique_videos'] as int?) ?? 1,
+            firstSeen: appearances.first.startTimestamp,
+            lastSeen: appearances.last.endTimestamp,
+            totalDurationSeconds: 0.0,
+            averageConfidence: appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
+            appearances: appearances,
+            personObjectUuids: [matched['individual_uuid'] as String],
+            analysisTimestamp: DateTime.now(),
+          );
+          
+          aggregatedAnalyses.add(analysis);
+        }
+        
+        print('📊 Added ${aggregatedAnalyses.length} individuals to cross-video analysis');
+      } else {
+        print('❌ Camera search failed: ${response.error}');
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error loading camera search data: $e');
+      print('Stack trace: $stackTrace');
+    }
+  }
+
   Future<void> _loadSingleMVRPerson(
     String mvrPersonUuid,
     MediaApiClient mediaApiClient,

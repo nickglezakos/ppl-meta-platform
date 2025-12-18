@@ -255,3 +255,52 @@ class BulkAssignGroupsResponse(BaseModel):
     
     assignments_created: int
     individuals_updated: int
+
+
+# ============================================================================
+# Camera Search Models
+# ============================================================================
+
+class GroupCameraSearchRequest(BaseModel):
+    """Request model for searching group members in camera footage"""
+    
+    camera_id: str = Field(..., description="Camera/collection ID to search")
+    start_time: datetime = Field(..., description="Search start time")
+    end_time: datetime = Field(..., description="Search end time")
+    confidence_threshold: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence threshold for matches"
+    )
+
+
+class MatchedIndividual(BaseModel):
+    """Matched individual from camera search"""
+    
+    individual_uuid: str
+    mvr_person_uuid: Optional[str] = None
+    total_appearances: int
+    first_seen: datetime
+    last_seen: datetime
+    confidence_score: float
+    demographics: Optional[Dict] = None
+
+
+class GroupCameraSearchResponse(BaseModel):
+    """Response model for group camera search"""
+    
+    group_id: str
+    group_name: str
+    camera_id: str
+    camera_name: str
+    search_window: Dict = Field(
+        description="Search time range with start_time and end_time"
+    )
+    total_group_members: int
+    members_found: int
+    matched_individuals: List[MatchedIndividual]
+    search_session_uuid: str = Field(
+        description="Session UUID for further analysis"
+    )
+

@@ -12,6 +12,9 @@ from models.individual_group import (
     AddGroupMembersRequest,
     AddMembersResponse,
     GroupMembership,
+    GroupCameraSearchRequest,
+    GroupCameraSearchResponse,
+    MatchedIndividual,
     IndividualGroup,
     IndividualSummary,
     RemoveMembersResponse,
@@ -89,8 +92,6 @@ class IndividualGroupsManager:
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
         RETURNING id
         """
-        
-        import json
         
         async with self.db.pool.acquire() as conn:
             group_id = await conn.fetchval(
@@ -407,12 +408,81 @@ class IndividualGroupsManager:
                     )
                     
                     if not individual_exists:
-                        # Individual doesn't exist - this should not happen, but log and skip
-                        logger.error(
-                            f"Individual {individual_id} does not exist in database. Skipping."
+                        # Individual doesn't exist - the UUID is actually an MVR People UUID
+                        # (MVR People = "Individuals" in business logic)
+                        logger.info(
+                            f"Individual {individual_id} does not exist in database. "
+                            f"Checking if this is an MVR People UUID..."
                         )
-                        skipped_count += 1
-                        continue
+                        
+                        try:
+                            # Check if this UUID exists in mvr_people table
+                            mvr_exists = await conn.fetchval(
+                                """
+                                SELECT EXISTS(
+                                    SELECT 1 FROM mvr_people
+                                    WHERE mvr_people_uuid = $1
+                                )
+                                """,
+                                individual_id
+                            )
+                            
+                            if mvr_exists:
+                                # This is an MVR People UUID - create individuals record
+                                # Generate individual_id for this UUID
+                                # Use format: ind_<first8chars>
+                                individual_id_str = f"ind_{str(individual_id).replace('-', '')[:8]}"
+                                
+                                # Get MVR People data for confidence score
+                                mvr_data = await conn.fetchrow(
+                                    """
+                                    SELECT confidence_score, quality_score
+                                    FROM mvr_people
+                                    WHERE mvr_people_uuid = $1
+                                    """,
+                                    individual_id
+                                )
+                                
+                                confidence = mvr_data['confidence_score'] if mvr_data else 0.85
+                                
+                                # Create the individual record with required fields
+                                await conn.execute(
+                                    """
+                                    INSERT INTO individuals (
+                                        individual_uuid,
+                                        individual_id,
+                                        confidence_score,
+                                        spatial_signature,
+                                        temporal_signature,
+                                        created_at
+                                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                                    ON CONFLICT (individual_uuid) DO NOTHING
+                                    """,
+                                    individual_id,
+                                    individual_id_str,
+                                    confidence,
+                                    json.dumps({}),  # Empty spatial signature
+                                    json.dumps({}),  # Empty temporal signature
+                                    datetime.utcnow()
+                                )
+                                logger.info(
+                                    f"Successfully created individual record for MVR People {individual_id} "
+                                    f"with confidence {confidence}"
+                                )
+                            else:
+                                logger.error(
+                                    f"UUID {individual_id} not found in mvr_people or individuals tables. "
+                                    f"Cannot create individual record. Skipping."
+                                )
+                                skipped_count += 1
+                                continue
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to create individual record for {individual_id}: {e}",
+                                exc_info=True
+                            )
+                            skipped_count += 1
+                            continue
                     
                     # Check if individual has appearances persisted
                     has_appearances = await conn.fetchval(
@@ -421,26 +491,13 @@ class IndividualGroupsManager:
                     )
                     
                     if not has_appearances:
-                        # Try to persist appearance data from person objects
-                        # This handles individuals from collections that are in-memory only
-                        logger.info(
-                            f"Individual {individual_id} has no persisted appearances. "
-                            f"Attempting to persist from person objects..."
+                        # For MVR People (Individuals in business logic), appearances should already exist
+                        # If they don't, we can still add to group - appearances may be linked via different UUIDs
+                        logger.warning(
+                            f"Individual {individual_id} has no persisted appearances in individual_video_appearances. "
+                            f"This is normal for MVR People - appearances are linked via individual_mvr_mapping. "
+                            f"Proceeding with group membership."
                         )
-                        
-                        try:
-                            await self._persist_individual_appearances(conn, individual_id)
-                            logger.info(f"Successfully persisted appearances for {individual_id}")
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to persist appearances for {individual_id}: {e}",
-                                exc_info=True
-                            )
-                            # Don't skip - still add to group, but log the issue
-                            logger.warning(
-                                f"Adding {individual_id} to group without persisted appearances. "
-                                f"Cross-video analysis may not work for this individual."
-                            )
                     
                     membership = GroupMembership(
                         group_id=group_id,
@@ -695,3 +752,126 @@ class IndividualGroupsManager:
             )
             for row in rows
         ]
+
+    async def search_members_in_camera(
+        self,
+        group_id: str,
+        camera_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        confidence_threshold: float = 0.7
+    ) -> GroupCameraSearchResponse:
+        """
+        Search for group members in camera footage during a time range.
+        
+        This method:
+        1. Fetches all member individual_uuids for the group
+        2. Queries individual_video_appearances for matching appearances
+        3. Filters by camera_id (via video metadata) and time range
+        4. Returns matched individuals with appearance details
+        
+        Args:
+            group_id: Group identifier
+            camera_id: Camera/collection ID to search
+            start_time: Search start time
+            end_time: Search end time
+            confidence_threshold: Minimum confidence for matches
+            
+        Returns:
+            GroupCameraSearchResponse with matched members
+        """
+        logger.info(
+            f"Searching for group {group_id} members in camera {camera_id} "
+            f"from {start_time} to {end_time}"
+        )
+        
+        # Get group details and members
+        group = await self.get_group(group_id)
+        if not group:
+            raise ValueError(f"Group not found: {group_id}")
+        
+        if not group.member_ids:
+            logger.info(f"Group {group_id} has no members, returning empty result")
+            return GroupCameraSearchResponse(
+                group_id=group_id,
+                group_name=group.name,
+                camera_id=camera_id,
+                camera_name=camera_id,  # Will be enriched if camera metadata available
+                search_window={
+                    'start_time': start_time.isoformat(),
+                    'end_time': end_time.isoformat(),
+                },
+                total_group_members=0,
+                members_found=0,
+                matched_individuals=[],
+                search_session_uuid=f"camera_search_{group_id}_{int(datetime.utcnow().timestamp())}",
+            )
+        
+        member_uuids = set(group.member_ids)
+        logger.info(f"Searching for {len(member_uuids)} group members")
+        
+        # Query appearances for group members in the specified time range
+        # Note: We filter by camera through the video's collection_name
+        async with self.db.pool.acquire() as conn:
+            query = """
+                SELECT DISTINCT
+                    iva.individual_uuid,
+                    COUNT(DISTINCT iva.person_object_uuid) as total_appearances,
+                    MIN(iva.start_timestamp) as first_seen,
+                    MAX(iva.end_timestamp) as last_seen,
+                    AVG(iva.confidence) as avg_confidence,
+                    i.demographics
+                FROM individual_video_appearances iva
+                JOIN videos v ON iva.video_uuid = v.video_uuid
+                LEFT JOIN individuals i ON iva.individual_uuid = i.individual_uuid
+                WHERE iva.individual_uuid = ANY($1)
+                  AND v.collection_name = $2
+                  AND iva.start_timestamp >= $3
+                  AND iva.end_timestamp <= $4
+                  AND iva.confidence >= $5
+                GROUP BY iva.individual_uuid, i.demographics
+                ORDER BY first_seen ASC
+            """
+            
+            rows = await conn.fetch(
+                query,
+                list(member_uuids),
+                camera_id,
+                start_time,
+                end_time,
+                confidence_threshold
+            )
+        
+        # Build matched individuals list
+        matched_individuals = []
+        for row in rows:
+            matched_individuals.append(
+                MatchedIndividual(
+                    individual_uuid=str(row['individual_uuid']),
+                    mvr_person_uuid=None,  # Could be enriched if needed
+                    total_appearances=row['total_appearances'],
+                    first_seen=row['first_seen'],
+                    last_seen=row['last_seen'],
+                    confidence_score=float(row['avg_confidence']),
+                    demographics=row['demographics'] if row['demographics'] else None,
+                )
+            )
+        
+        logger.info(
+            f"Found {len(matched_individuals)} of {len(member_uuids)} members in camera {camera_id}"
+        )
+        
+        return GroupCameraSearchResponse(
+            group_id=group_id,
+            group_name=group.name,
+            camera_id=camera_id,
+            camera_name=camera_id,  # TODO: Fetch actual camera name from cameras service
+            search_window={
+                'start_time': start_time.isoformat(),
+                'end_time': end_time.isoformat(),
+            },
+            total_group_members=len(member_uuids),
+            members_found=len(matched_individuals),
+            matched_individuals=matched_individuals,
+            search_session_uuid=f"camera_search_{group_id}_{int(datetime.utcnow().timestamp())}",
+        )
