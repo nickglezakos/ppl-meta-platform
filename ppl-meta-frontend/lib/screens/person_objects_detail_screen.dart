@@ -17,6 +17,9 @@ import '../models/media_models.dart';
 import '../core/api/api_client.dart';
 import '../services/media_api_client.dart';
 import '../services/individual_groups_api_client.dart';
+import '../services/mvr_image_service.dart';
+import '../providers/mvr_image_service_provider.dart';
+import '../models/mvr_best_image.dart';
 
 /// Detailed screen for viewing person objects results and analysis
 /// 
@@ -72,6 +75,9 @@ class _PersonObjectsDetailScreenState
   
   // Similarity threshold for merging (adjustable by user)
   double _similarityThreshold = 0.6;
+  
+  // Best images for individuals in cross-video mode
+  Map<String, BestImageResponse?> _bestImages = {};
 
   @override
   void initState() {
@@ -1832,12 +1838,40 @@ class _PersonObjectsDetailScreenState
       
       print('✅ Loaded cross-video data for ${aggregatedAnalyses.length} individuals');
       
+      // Load best images for all individuals
+      if (aggregatedAnalyses.isNotEmpty) {
+        _loadBestImagesForIndividuals();
+      }
+      
     } catch (e) {
       setState(() {
         _crossVideoError = 'Failed to load cross-video data: $e';
         _isLoadingCrossVideoData = false;
       });
       print('❌ Error loading cross-video data: $e');
+    }
+  }
+
+  /// Load best images for all individuals in cross-video analysis
+  Future<void> _loadBestImagesForIndividuals() async {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) return;
+    
+    try {
+      final imageService = ref.read(mvrImageServiceProvider);
+      final individualUuids = _aggregatedAnalyses!.map((a) => a.individualUuid).toList();
+      
+      final images = await imageService.getBestImagesForMultiple(
+        individualUuids,
+        includeMerged: false,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _bestImages = images;
+        });
+      }
+    } catch (e) {
+      print('Error loading best images for cross-video analysis: $e');
     }
   }
 
@@ -3326,6 +3360,174 @@ class _PersonObjectsDetailScreenState
     ];
     return colors[index % colors.length];
   }
+
+  /// Build thumbnail for individual in cross-video analysis with cropped face
+  Widget _buildIndividualThumbnail(String individualUuid, bool isSuperIndividual) {
+    final bestImage = _bestImages[individualUuid];
+    
+    if (bestImage == null || bestImage.bestFace == null) {
+      return Icon(
+        Icons.person,
+        size: 40,
+        color: isSuperIndividual ? Colors.blue : Colors.grey[600],
+      );
+    }
+    
+    final faceData = bestImage.bestFace!.faceData;
+    if (faceData == null) {
+      return Icon(
+        Icons.person,
+        size: 40,
+        color: isSuperIndividual ? Colors.blue : Colors.grey[600],
+      );
+    }
+    
+    // Use the same cropping method as individual group detail screen
+    return FutureBuilder<Widget>(
+      future: _buildCroppedFaceForIndividual(faceData, bestImage.bestFace!.videoUuid),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[300],
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        } else if (snapshot.hasError) {
+          return Icon(
+            Icons.error,
+            size: 24,
+            color: Colors.red,
+          );
+        } else {
+          return snapshot.data ?? Icon(
+            Icons.person,
+            size: 40,
+            color: isSuperIndividual ? Colors.blue : Colors.grey[600],
+          );
+        }
+      },
+    );
+  }
+
+  /// Build cropped face for individual - simplified version for smaller thumbnails
+  Future<Widget> _buildCroppedFaceForIndividual(
+    Map<String, dynamic> faceData,
+    String videoUuid,
+  ) async {
+    try {
+      final frameNumber = faceData['frame_number'] ?? 0;
+      final bbox = faceData['bbox'] as List<dynamic>?;
+      
+      if (bbox == null || bbox.length < 4) {
+        final frameUrl = 'http://localhost:8080/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
+        final apiClient = ref.read(apiClientProvider);
+        return Image.network(
+          frameUrl,
+          fit: BoxFit.cover,
+          headers: apiClient.authToken != null ? {
+            'Authorization': 'Bearer ${apiClient.authToken}',
+          } : {},
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[300],
+              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+            );
+          },
+        );
+      }
+      
+      // Extract bounding box coordinates
+      final x = bbox[0].toDouble();
+      final y = bbox[1].toDouble();
+      final x2 = bbox[2].toDouble();
+      final y2 = bbox[3].toDouble();
+      final width = x2 - x;
+      final height = y2 - y;
+      
+      // Expand the crop area
+      final areaMultiplier = 6.25;
+      final scaleFactor = math.sqrt(areaMultiplier);
+      final expandedWidth = width * scaleFactor;
+      final expandedHeight = height * scaleFactor;
+      
+      final widthExpansion = expandedWidth - width;
+      final heightExpansion = expandedHeight - height;
+      
+      final expandedX = x - (widthExpansion / 2);
+      final expandedY = y - (heightExpansion / 2);
+      
+      if (expandedWidth <= 0 || expandedHeight <= 0) {
+        final frameUrl = 'http://localhost:8080/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
+        final apiClient = ref.read(apiClientProvider);
+        return Image.network(
+          frameUrl,
+          fit: BoxFit.cover,
+          headers: apiClient.authToken != null ? {
+            'Authorization': 'Bearer ${apiClient.authToken}',
+          } : {},
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              color: Colors.grey[300],
+              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+            );
+          },
+        );
+      }
+      
+      final frameUrl = 'http://localhost:8080/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
+      
+      return FutureBuilder<ui.Image>(
+        future: _loadNetworkImage(frameUrl),
+        builder: (context, snapshot) {
+          if (snapshot.hasData && snapshot.data != null) {
+            return SizedBox(
+              width: 60,
+              height: 60,
+              child: CustomPaint(
+                painter: CroppedImagePainter(
+                  image: snapshot.data!,
+                  cropRect: Rect.fromLTWH(expandedX, expandedY, expandedWidth, expandedHeight),
+                ),
+                size: Size(60, 60),
+              ),
+            );
+          } else if (snapshot.hasError) {
+            final apiClient = ref.read(apiClientProvider);
+            return Image.network(
+              frameUrl,
+              fit: BoxFit.cover,
+              headers: apiClient.authToken != null ? {
+                'Authorization': 'Bearer ${apiClient.authToken}',
+              } : {},
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  color: Colors.grey[300],
+                  child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+                );
+              },
+            );
+          } else {
+            return Container(
+              color: Colors.grey[300],
+              child: Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      return Container(
+        color: Colors.grey[300],
+        child: Icon(Icons.error, size: 24, color: Colors.red),
+      );
+    }
+  }
 }
 
 /// Custom painter to draw cropped image
@@ -4278,7 +4480,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                         },
                       ),
                       const SizedBox(width: 8),
-                      // Individual icon with badge
+                      // Individual icon with badge - now with cropped face
                       Stack(
                         children: [
                           Container(
@@ -4290,29 +4492,10 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                                   : Colors.grey.shade200,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: analysis.bestFaceThumbnail != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.network(
-                                      analysis.bestFaceThumbnail!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) =>
-                                          Icon(
-                                            Icons.person,
-                                            size: 40,
-                                            color: isSuperIndividual 
-                                                ? Colors.blue 
-                                                : Colors.grey[600],
-                                          ),
-                                    ),
-                                  )
-                                : Icon(
-                                    Icons.person,
-                                    size: 40,
-                                    color: isSuperIndividual 
-                                        ? Colors.blue 
-                                        : Colors.grey[600],
-                                  ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: _buildIndividualThumbnail(analysis.individualUuid, isSuperIndividual),
+                            ),
                           ),
                           // Badge: Blue for merged, Grey for standalone
                           Positioned(
