@@ -5,8 +5,13 @@ import 'dart:ui' as ui;
 import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import 'package:excel/excel.dart' as excel;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'dart:js' as js if (dart.library.html) 'dart:js';
 import '../models/person_objects_models.dart';
 import '../models/cross_video_analysis_models.dart';
 import '../providers/person_objects_provider.dart';
@@ -350,8 +355,17 @@ class _PersonObjectsDetailScreenState
     if (collectionName.isEmpty) {
       print('');
       print('🔍 Trying direct sessionData keys...');
-      // Check for collection_name first (primary key added in v2.19.40)
-      if (context.sessionData['collection_name'] != null) {
+      print('   isCameraSearch = $isCameraSearch');
+      print('   camera_name exists = ${context.sessionData.containsKey("camera_name")}');
+      print('   camera_name value = ${context.sessionData["camera_name"]}');
+      
+      // For camera searches, camera_name is the collection
+      if (isCameraSearch && context.sessionData['camera_name'] != null) {
+        collectionName = context.sessionData['camera_name'].toString();
+        print('✅ Found sessionData.camera_name = "$collectionName"');
+      }
+      // Check for collection_name (primary key added in v2.19.40)
+      else if (context.sessionData['collection_name'] != null) {
         collectionName = context.sessionData['collection_name'].toString();
         print('✅ Found sessionData.collection_name = "$collectionName"');
       } 
@@ -2021,51 +2035,149 @@ class _PersonObjectsDetailScreenState
         print('✅ Found ${matchedIndividuals.length} of ${data['total_group_members']} members');
         
         // Convert matched individuals to AggregatedIndividualAnalysis
+        // For each matched individual, fetch hierarchy to get super-individual data if it exists
         for (var matched in matchedIndividuals) {
-          // Get appearances array from backend (includes video_uuid for navigation)
-          final appearancesData = matched['appearances'] as List<dynamic>?;
+          final mvrPersonUuid = matched['mvr_person_uuid'] as String;
           
-          List<IndividualAppearance> appearances;
-          if (appearancesData != null && appearancesData.isNotEmpty) {
-            // Use detailed appearances from backend
-            appearances = appearancesData.map((app) => IndividualAppearance(
-              individualUuid: matched['individual_uuid'] as String,
-              videoUuid: app['video_uuid'] as String,
-              personObjectUuid: app['person_object_uuid'] as String,
-              startTimestamp: DateTime.parse(app['timestamp'] as String),
-              endTimestamp: DateTime.parse(app['timestamp'] as String),
-              confidenceScore: (app['confidence'] as num).toDouble(),
-            )).toList();
-          } else {
-            // Fallback: create single synthetic appearance from summary
-            appearances = [
-              IndividualAppearance(
+          try {
+            // Fetch hierarchy to get super-individual data (name, gender, age)
+            final apiClient = ref.read(apiClientProvider);
+            final hierarchyResponse = await apiClient.get(
+              '/api/v1/mvr-people/super-individual/$mvrPersonUuid/hierarchy',
+            );
+            
+            if (hierarchyResponse.statusCode == 200 && hierarchyResponse.data != null) {
+              final hierarchyData = hierarchyResponse.data as Map<String, dynamic>;
+              final superIndividual = hierarchyData['super_individual'] as Map<String, dynamic>;
+              
+              // Extract demographics from super-individual
+              Demographics? demographics;
+              final hasAnyDemographics = superIndividual['gender'] != null || 
+                                         superIndividual['age_min'] != null ||
+                                         superIndividual['age_max'] != null;
+              
+              if (hasAnyDemographics) {
+                demographics = Demographics(
+                  gender: superIndividual['gender'] as String?,
+                  genderConfidence: (superIndividual['gender_confidence'] as num?)?.toDouble(),
+                  ageMin: superIndividual['age_min'] as int?,
+                  ageMax: superIndividual['age_max'] as int?,
+                  ageMean: superIndividual['age_mean'] != null 
+                      ? (superIndividual['age_mean'] as num?)?.toDouble()
+                      : (superIndividual['age_min'] != null && superIndividual['age_max'] != null)
+                          ? ((superIndividual['age_min']! + superIndividual['age_max']!) / 2.0)
+                          : null,
+                  ageConfidence: (superIndividual['age_confidence'] as num?)?.toDouble(),
+                );
+              }
+              
+              // Get appearances array from backend (includes video_uuid for navigation)
+              final appearancesData = matched['appearances'] as List<dynamic>?;
+              
+              List<IndividualAppearance> appearances;
+              if (appearancesData != null && appearancesData.isNotEmpty) {
+                // Use detailed appearances from backend
+                appearances = appearancesData.map((app) => IndividualAppearance(
+                  individualUuid: matched['individual_uuid'] as String,
+                  videoUuid: app['video_uuid'] as String,
+                  personObjectUuid: app['person_object_uuid'] as String,
+                  startTimestamp: DateTime.parse(app['timestamp'] as String),
+                  endTimestamp: DateTime.parse(app['timestamp'] as String),
+                  confidenceScore: (app['confidence'] as num).toDouble(),
+                )).toList();
+              } else {
+                // Fallback: create single synthetic appearance from summary
+                appearances = [
+                  IndividualAppearance(
+                    individualUuid: matched['individual_uuid'] as String,
+                    videoUuid: '', // Not available
+                    personObjectUuid: mvrPersonUuid,
+                    startTimestamp: DateTime.parse(matched['first_seen'] as String),
+                    endTimestamp: DateTime.parse(matched['last_seen'] as String),
+                    confidenceScore: (matched['confidence_score'] as num).toDouble(),
+                  )
+                ];
+              }
+              
+              // Check if merged to determine super-individual status
+              final mergedMVRList = hierarchyData['merged_mvr_people'] as List?;
+              final isSuperIndividual = mergedMVRList != null && mergedMVRList.isNotEmpty;
+              
+              final analysis = AggregatedIndividualAnalysis(
                 individualUuid: matched['individual_uuid'] as String,
-                videoUuid: '', // Not available
-                personObjectUuid: matched['mvr_person_uuid'] as String,
-                startTimestamp: DateTime.parse(matched['first_seen'] as String),
-                endTimestamp: DateTime.parse(matched['last_seen'] as String),
-                confidenceScore: (matched['confidence_score'] as num).toDouble(),
-              )
-            ];
+                individualId: mvrPersonUuid, // Use MVR UUID as ID
+                sessionUuid: groupId, // Use group ID as session
+                totalAppearances: matched['total_appearances'] as int,
+                uniqueVideos: appearancesData?.length ?? 1, // Count unique videos from appearances
+                firstSeen: appearances.first.startTimestamp,
+                lastSeen: appearances.last.endTimestamp,
+                totalDurationSeconds: 0.0,
+                averageConfidence: appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
+                demographics: demographics, // Use super-individual demographics
+                appearances: appearances,
+                personObjectUuids: [matched['individual_uuid'] as String],
+                analysisTimestamp: DateTime.now(),
+                name: superIndividual['name'] as String?, // Use super-individual name
+                nameUpdatedAt: superIndividual['name_updated_at'] != null
+                    ? DateTime.parse(superIndividual['name_updated_at'] as String)
+                    : null,
+                nameUpdatedBy: superIndividual['name_updated_by'] as String?,
+                isSuperIndividual: isSuperIndividual,
+                mergedMVRCount: (hierarchyData['mvr_count'] as int?) ?? 1,
+              );
+              
+              aggregatedAnalyses.add(analysis);
+              print('✅ Added individual with hierarchy data: name=${analysis.name}, gender=${demographics?.gender}');
+            } else {
+              print('⚠️ No hierarchy data for $mvrPersonUuid, using basic data');
+              // Fallback to basic data without demographics
+              final appearancesData = matched['appearances'] as List<dynamic>?;
+              
+              List<IndividualAppearance> appearances;
+              if (appearancesData != null && appearancesData.isNotEmpty) {
+                appearances = appearancesData.map((app) => IndividualAppearance(
+                  individualUuid: matched['individual_uuid'] as String,
+                  videoUuid: app['video_uuid'] as String,
+                  personObjectUuid: app['person_object_uuid'] as String,
+                  startTimestamp: DateTime.parse(app['timestamp'] as String),
+                  endTimestamp: DateTime.parse(app['timestamp'] as String),
+                  confidenceScore: (app['confidence'] as num).toDouble(),
+                )).toList();
+              } else {
+                appearances = [
+                  IndividualAppearance(
+                    individualUuid: matched['individual_uuid'] as String,
+                    videoUuid: '',
+                    personObjectUuid: mvrPersonUuid,
+                    startTimestamp: DateTime.parse(matched['first_seen'] as String),
+                    endTimestamp: DateTime.parse(matched['last_seen'] as String),
+                    confidenceScore: (matched['confidence_score'] as num).toDouble(),
+                  )
+                ];
+              }
+              
+              final analysis = AggregatedIndividualAnalysis(
+                individualUuid: matched['individual_uuid'] as String,
+                individualId: mvrPersonUuid,
+                sessionUuid: groupId,
+                totalAppearances: matched['total_appearances'] as int,
+                uniqueVideos: appearancesData?.length ?? 1,
+                firstSeen: appearances.first.startTimestamp,
+                lastSeen: appearances.last.endTimestamp,
+                totalDurationSeconds: 0.0,
+                averageConfidence: appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
+                appearances: appearances,
+                personObjectUuids: [matched['individual_uuid'] as String],
+                analysisTimestamp: DateTime.now(),
+              );
+              
+              aggregatedAnalyses.add(analysis);
+            }
+          } catch (e, stackTrace) {
+            print('❌ Error fetching hierarchy for $mvrPersonUuid: $e');
+            print('Stack trace: $stackTrace');
+            // Continue with next individual
           }
-          
-          final analysis = AggregatedIndividualAnalysis(
-            individualUuid: matched['individual_uuid'] as String,
-            individualId: matched['mvr_person_uuid'] as String, // Use MVR UUID as ID
-            sessionUuid: groupId, // Use group ID as session
-            totalAppearances: matched['total_appearances'] as int,
-            uniqueVideos: appearancesData?.length ?? 1, // Count unique videos from appearances
-            firstSeen: appearances.first.startTimestamp,
-            lastSeen: appearances.last.endTimestamp,
-            totalDurationSeconds: 0.0,
-            averageConfidence: appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
-            appearances: appearances,
-            personObjectUuids: [matched['individual_uuid'] as String],
-            analysisTimestamp: DateTime.now(),
-          );
-          
-          aggregatedAnalyses.add(analysis);
         }
         
         print('📊 Added ${aggregatedAnalyses.length} individuals to cross-video analysis');
@@ -5508,9 +5620,64 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       } else {
         return timestamp.toString();
       }
-      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+      
+      // Day of week (e.g., "Tue")
+      final dayOfWeek = _getDayOfWeek(dt.weekday);
+      
+      // Day of month (e.g., "21")
+      final day = dt.day;
+      
+      // Month (e.g., "Dec.")
+      final month = _getMonthAbbreviation(dt.month);
+      
+      // Year (e.g., "2025")
+      final year = dt.year;
+      
+      // Hour in 12-hour format
+      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+      
+      // Minute with leading zero
+      final minute = dt.minute.toString().padLeft(2, '0');
+      
+      // AM/PM
+      final period = dt.hour >= 12 ? 'pm' : 'am';
+      
+      return '$dayOfWeek $day $month $year, $hour:$minute $period';
     } catch (e) {
       return timestamp.toString();
+    }
+  }
+
+  /// Get day of week abbreviation
+  String _getDayOfWeek(int weekday) {
+    switch (weekday) {
+      case 1: return 'Mon';
+      case 2: return 'Tue';
+      case 3: return 'Wed';
+      case 4: return 'Thu';
+      case 5: return 'Fri';
+      case 6: return 'Sat';
+      case 7: return 'Sun';
+      default: return '';
+    }
+  }
+
+  /// Get month abbreviation
+  String _getMonthAbbreviation(int month) {
+    switch (month) {
+      case 1: return 'Jan.';
+      case 2: return 'Feb.';
+      case 3: return 'Mar.';
+      case 4: return 'Apr.';
+      case 5: return 'May';
+      case 6: return 'Jun.';
+      case 7: return 'Jul.';
+      case 8: return 'Aug.';
+      case 9: return 'Sep.';
+      case 10: return 'Oct.';
+      case 11: return 'Nov.';
+      case 12: return 'Dec.';
+      default: return '';
     }
   }
 
@@ -6006,6 +6173,504 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     return _buildStatisticsTabCrossVideo();
   }
 
+  /// Build individuals summary list for Attendance tab
+  Widget _buildIndividualsSummaryList() {
+    final theme = Theme.of(context);
+    final borderColor = theme.colorScheme.outline.withOpacity(0.3);
+    final iconColor = theme.colorScheme.primary;
+    final textColor = theme.colorScheme.onSurface;
+    
+    return Column(
+      children: [
+        // Header bar matching Camera Search Results style
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer.withOpacity(0.3),
+            border: Border(
+              bottom: BorderSide(
+                color: borderColor,
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.people,
+                size: 20,
+                color: iconColor,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Individuals Summary',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: iconColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_aggregatedAnalyses!.length} ${_aggregatedAnalyses!.length == 1 ? 'person' : 'people'} tracked in this analysis',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: textColor.withOpacity(0.8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Download button
+              IconButton(
+                icon: Icon(
+                  Icons.download,
+                  color: iconColor,
+                  size: 20,
+                ),
+                onPressed: _downloadAttendanceExcel,
+                tooltip: 'Download Excel',
+              ),
+            ],
+          ),
+        ),
+        
+        // Table header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface.withOpacity(0.5),
+            border: Border(
+              bottom: BorderSide(color: borderColor, width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(
+                  'Individual',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: textColor,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'First Seen',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: textColor,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  'Last Seen',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: textColor,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 1,
+                child: Text(
+                  'Total',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: textColor,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        // Individual rows
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _aggregatedAnalyses!.length,
+          separatorBuilder: (context, index) => Divider(
+            height: 1,
+            thickness: 1,
+            color: borderColor,
+          ),
+          itemBuilder: (context, index) {
+            final analysis = _aggregatedAnalyses![index];
+            return _buildIndividualSummaryRow(analysis);
+          },
+        ),
+      ],
+    );
+  }
+
+  /// Build a single row in the individuals summary table
+  Widget _buildIndividualSummaryRow(AggregatedIndividualAnalysis analysis) {
+    final theme = Theme.of(context);
+    final textColor = theme.colorScheme.onSurface;
+    final iconColor = theme.colorScheme.primary;
+    
+    // Determine display name - prioritize hierarchy (super-individual first)
+    String displayName;
+    Demographics? displayDemographics = analysis.demographics;
+    
+    // For super-individuals, the name and demographics are already at the top level
+    // For merged members, check if super-individual data exists
+    if (analysis.name != null && analysis.name!.isNotEmpty) {
+      displayName = analysis.name!;
+    } else {
+      // Build placeholder name with gender and age approximation from demographics
+      final gender = displayDemographics?.gender ?? 'Unknown';
+      final ageApproximation = _getAgeApproximation(displayDemographics);
+      displayName = '$ageApproximation $gender';
+    }
+
+    // Format timestamps
+    final firstSeen = analysis.firstSeen != null
+        ? _formatTimestamp(analysis.firstSeen!)
+        : 'N/A';
+    final lastSeen = analysis.lastSeen != null
+        ? _formatTimestamp(analysis.lastSeen!)
+        : 'N/A';
+
+    return InkWell(
+      onTap: () {
+        // Could navigate to individual detail or expand inline
+      },
+      hoverColor: theme.colorScheme.primary.withOpacity(0.05),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // Individual name/info
+            Expanded(
+              flex: 3,
+              child: Row(
+                children: [
+                  // Gender icon
+                  Icon(
+                    displayDemographics?.gender?.toLowerCase() == 'male'
+                        ? Icons.male
+                        : displayDemographics?.gender?.toLowerCase() == 'female'
+                            ? Icons.female
+                            : Icons.person,
+                    size: 18,
+                    color: displayDemographics?.gender?.toLowerCase() == 'male'
+                        ? Colors.blue[400]
+                        : displayDemographics?.gender?.toLowerCase() == 'female'
+                            ? Colors.pink[400]
+                            : Colors.grey[400],
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      displayName,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: analysis.name != null ? FontWeight.w600 : FontWeight.w500,
+                        color: analysis.name != null 
+                            ? iconColor 
+                            : textColor,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // First seen
+            Expanded(
+              flex: 2,
+              child: Text(
+                firstSeen,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textColor.withOpacity(0.8),
+                ),
+              ),
+            ),
+            
+            // Last seen
+            Expanded(
+              flex: 2,
+              child: Text(
+                lastSeen,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: textColor.withOpacity(0.8),
+                ),
+              ),
+            ),
+            
+            // Appearances count
+            Expanded(
+              flex: 1,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${analysis.totalAppearances}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: iconColor,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Get age approximation label based on demographics
+  String _getAgeApproximation(Demographics? demographics) {
+    if (demographics == null || demographics.ageMin == null) {
+      return 'Unknown';
+    }
+
+    final avgAge = ((demographics.ageMin ?? 0) + (demographics.ageMax ?? demographics.ageMin ?? 0)) / 2;
+
+    if (avgAge < 21) {
+      return 'Young';
+    } else if (avgAge > 70) {
+      return 'Senior';
+    } else {
+      return 'Adult';
+    }
+  }
+
+  /// Download attendance summary as Excel file
+  Future<void> _downloadAttendanceExcel() async {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No data to export')),
+      );
+      return;
+    }
+
+    try {
+      // Create Excel workbook
+      final excelFile = excel.Excel.createExcel();
+      
+      // Delete default sheet and create our custom sheet as the first sheet
+      excelFile.delete('Sheet1');
+      excelFile.rename('Sheet1', 'Attendance Summary');
+      final sheet = excelFile['Attendance Summary'];
+      
+      // Get collection name and dates from crossVideoContext
+      final crossVideoCtx = widget.crossVideoContext!;
+      final isCameraSearch = crossVideoCtx.sessionData['source'] == 'individual_group_camera_search';
+      String collectionName = '';
+      DateTime? startTime;
+      DateTime? endTime;
+      
+      // Extract dates from search_parameters
+      if (crossVideoCtx.sessionData['search_parameters'] != null) {
+        final searchParams = crossVideoCtx.sessionData['search_parameters'] as Map<String, dynamic>;
+        
+        if (searchParams['start_time'] != null) {
+          startTime = DateTime.tryParse(searchParams['start_time'].toString());
+        }
+        if (searchParams['end_time'] != null) {
+          endTime = DateTime.tryParse(searchParams['end_time'].toString());
+        }
+        
+        // Try to get collection from search_parameters
+        collectionName = searchParams['collection_id']?.toString() ?? 
+                        searchParams['collection']?.toString() ?? '';
+      }
+      
+      // For camera searches, camera_name is the collection
+      if (collectionName.isEmpty && isCameraSearch && crossVideoCtx.sessionData.containsKey('camera_name')) {
+        collectionName = crossVideoCtx.sessionData['camera_name'].toString();
+      }
+      
+      // Fallback to context collections
+      if (collectionName.isEmpty && crossVideoCtx.collections.isNotEmpty) {
+        collectionName = crossVideoCtx.collections.first;
+      }
+      
+      // Final fallback to sessionData
+      if (collectionName.isEmpty) {
+        collectionName = crossVideoCtx.sessionData['collection_name']?.toString() ??
+                        crossVideoCtx.sessionData['collection_id']?.toString() ??
+                        'Unknown Collection';
+      }
+      
+      // Format dates
+      final startTimeStr = startTime != null ? _formatTimestamp(startTime) : 'N/A';
+      final endTimeStr = endTime != null ? _formatTimestamp(endTime) : 'N/A';
+      
+      // Title row (Row 0)
+      sheet.appendRow([
+        excel.TextCellValue('Attendance Summary Report'),
+      ]);
+      
+      // Collection and date info (Rows 1-3)
+      sheet.appendRow([
+        excel.TextCellValue('Collection: $collectionName'),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('From: $startTimeStr'),
+      ]);
+      sheet.appendRow([
+        excel.TextCellValue('To: $endTimeStr'),
+      ]);
+      
+      // Empty row
+      sheet.appendRow([]);
+      
+      // Table header (Row 5)
+      sheet.appendRow([
+        excel.TextCellValue('Individual'),
+        excel.TextCellValue('First Seen'),
+        excel.TextCellValue('Last Seen'),
+        excel.TextCellValue('Total Appearances'),
+      ]);
+      
+      // Data rows
+      for (final analysis in _aggregatedAnalyses!) {
+        // Determine display name
+        String displayName;
+        Demographics? displayDemographics = analysis.demographics;
+        
+        if (analysis.name != null && analysis.name!.isNotEmpty) {
+          displayName = analysis.name!;
+        } else {
+          final gender = displayDemographics?.gender ?? 'Unknown';
+          final ageApproximation = _getAgeApproximation(displayDemographics);
+          displayName = '$ageApproximation $gender';
+        }
+        
+        final firstSeen = analysis.firstSeen != null
+            ? _formatTimestamp(analysis.firstSeen!)
+            : 'N/A';
+        final lastSeen = analysis.lastSeen != null
+            ? _formatTimestamp(analysis.lastSeen!)
+            : 'N/A';
+        
+        sheet.appendRow([
+          excel.TextCellValue(displayName),
+          excel.TextCellValue(firstSeen),
+          excel.TextCellValue(lastSeen),
+          excel.IntCellValue(analysis.totalAppearances),
+        ]);
+      }
+      
+      // Style the header row (row index 5)
+      for (int col = 0; col < 4; col++) {
+        final cell = sheet.cell(excel.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 5));
+        cell.cellStyle = excel.CellStyle(
+          bold: true,
+          backgroundColorHex: excel.ExcelColor.blue,
+          fontColorHex: excel.ExcelColor.white,
+        );
+      }
+      
+      // Auto-fit column widths
+      sheet.setColumnWidth(0, 30); // Individual
+      sheet.setColumnWidth(1, 25); // First Seen
+      sheet.setColumnWidth(2, 25); // Last Seen
+      sheet.setColumnWidth(3, 20); // Total Appearances
+      
+      // Generate file bytes
+      final fileBytes = excelFile.encode();
+      if (fileBytes == null) {
+        throw Exception('Failed to encode Excel file');
+      }
+      
+      // Save and share file
+      final fileName = 'attendance_summary_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      
+      if (kIsWeb) {
+        // For web, trigger browser download using JavaScript
+        final base64 = base64Encode(fileBytes);
+        js.context.callMethod('eval', ['''
+          (function() {
+            var byteCharacters = atob('$base64');
+            var byteNumbers = new Array(byteCharacters.length);
+            for (var i = 0; i < byteCharacters.length; i++) {
+              byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            var byteArray = new Uint8Array(byteNumbers);
+            var blob = new Blob([byteArray], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = '$fileName';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          })();
+        ''']);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Excel file downloaded successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // For mobile/desktop, save to temp and share
+        final directory = await getTemporaryDirectory();
+        final filePath = '${directory.path}/$fileName';
+        final file = File(filePath);
+        await file.writeAsBytes(fileBytes);
+        
+        // Share the file
+        await Share.shareXFiles(
+          [XFile(filePath)],
+          subject: 'Attendance Summary - $collectionName',
+        );
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Excel file ready to share'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error generating Excel file: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to generate Excel: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   /// Build Attendance tab - Time-based presence tracking
   Widget _buildAttendanceTab() {
     if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
@@ -6015,6 +6680,11 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     return SingleChildScrollView(
       child: Column(
         children: [
+          // Individuals Summary List
+          _buildIndividualsSummaryList(),
+          
+          const Divider(height: 32, thickness: 2),
+          
           // Header
           Container(
             padding: const EdgeInsets.all(16),
