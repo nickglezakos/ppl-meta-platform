@@ -193,7 +193,10 @@ class MVRRepository:
                         orphaned_at,
                         merged_into_mvr_uuid,
                         previous_individual_uuids,
-                        auto_created
+                        auto_created,
+                        name,
+                        name_updated_at,
+                        name_updated_by
                     FROM mvr_people
                     WHERE mvr_people_uuid = $1
                 """, mvr_people_uuid)

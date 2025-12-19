@@ -177,6 +177,11 @@ class IndividualSummary(BaseModel):
     last_seen: Optional[datetime] = None
     group_count: int = 0
     confidence_score: float = 0.0
+    
+    # Individual naming (v2.21.0)
+    name: Optional[str] = None
+    name_updated_at: Optional[datetime] = None
+    name_updated_by: Optional[str] = None
 
 
 class IndividualGroupResponse(BaseModel):
@@ -305,3 +310,56 @@ class GroupCameraSearchResponse(BaseModel):
         description="Session UUID for further analysis"
     )
 
+
+# ============================================================================
+# Duplicate Detection & Merge Models
+# ============================================================================
+
+class DuplicateMatch(BaseModel):
+    """A potential duplicate match within a group"""
+    
+    existing_member_id: str = Field(description="UUID of existing group member")
+    existing_member_name: Optional[str] = Field(description="Name of existing member if set")
+    similarity_score: float = Field(description="Face similarity score (0-1)")
+    confidence: str = Field(description="Match confidence level: high, medium, low")
+
+
+class CheckDuplicatesRequest(BaseModel):
+    """Request to check if candidate matches existing group members"""
+    
+    candidate_mvr_uuid: str = Field(description="MVR person UUID to check")
+    similarity_threshold: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="Minimum similarity to consider a match"
+    )
+
+
+class CheckDuplicatesResponse(BaseModel):
+    """Response with potential duplicate matches"""
+    
+    has_duplicates: bool
+    matches: List[DuplicateMatch] = Field(default_factory=list)
+    candidate_mvr_uuid: str
+    group_id: str
+    group_name: str
+
+
+class MergeMembersRequest(BaseModel):
+    """Request to merge two group members"""
+    
+    source_mvr_uuid: str = Field(description="UUID of member to merge (will be merged into target)")
+    target_mvr_uuid: str = Field(description="UUID of member to keep")
+    user_confirmed: bool = Field(default=True, description="User confirmed the merge")
+
+
+class MergeMembersResponse(BaseModel):
+    """Response after merging members"""
+    
+    success: bool
+    super_individual_uuid: str = Field(description="UUID of resulting super-individual")
+    merged_count: int = Field(description="Total MVR people in the merge")
+    group_membership_updated: bool = Field(
+        description="Whether group membership was updated to use super-individual"
+    )

@@ -12,6 +12,8 @@ import '../models/cross_video_analysis_models.dart';
 import '../providers/person_objects_provider.dart';
 import '../widgets/custom_app_bar.dart';
 import '../widgets/triggers_tab.dart';
+import '../widgets/editable_mvr_name.dart';
+import '../widgets/editable_mvr_gender.dart';
 import '../widgets/individual_groups/add_to_group_dialog.dart';
 import '../models/media_models.dart';
 import '../core/api/api_client.dart';
@@ -1513,6 +1515,79 @@ class _PersonObjectsDetailScreenState
     );
   }
 
+  void _showEditNameDialog(AggregatedIndividualAnalysis analysis) {
+    debugPrint('═══ EDIT DIALOG DEBUG ═══');
+    debugPrint('Opening for ID: ${analysis.individualId}');
+    debugPrint('Initial name: ${analysis.name}');
+    debugPrint('Name is null: ${analysis.name == null}');
+    debugPrint('═══════════════════════════');
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Individual'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Assign a name to this individual:',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            EditableMVRName(
+              initialName: analysis.name,
+              mvrPersonUuid: analysis.individualId,
+              propagate: true,
+              onNameUpdated: (newName) {
+                debugPrint('═══ NAME UPDATE CALLBACK ═══');
+                debugPrint('New name saved: $newName');
+                debugPrint('Reloading cross-video data...');
+                debugPrint('═══════════════════════════');
+                // Reload cross-video data to refresh with new name
+                _loadCrossVideoData();
+              },
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Set gender:',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            EditableMVRGender(
+              initialGender: analysis.demographics?.gender,
+              mvrPersonUuid: analysis.individualId,
+              propagate: true,
+              showIcon: true,
+              onGenderUpdated: (newGender) {
+                debugPrint('═══ GENDER UPDATE CALLBACK ═══');
+                debugPrint('New gender saved: $newGender');
+                debugPrint('Reloading cross-video data...');
+                debugPrint('═══════════════════════════');
+                // Reload cross-video data to refresh with new gender
+                _loadCrossVideoData();
+              },
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'MVR ID: ${analysis.individualId}',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _refreshAnalysis() {
     ref.invalidate(personObjectsDataProvider(widget.mediaItem!.uuid));
     ref.invalidate(personObjectsWorkflowControllerProvider);
@@ -2341,6 +2416,10 @@ class _PersonObjectsDetailScreenState
   Future<void> _executeMerge() async {
     if (_selectedIndividuals.isEmpty || widget.crossVideoContext == null) return;
     
+    // Check if this is a hierarchical merge (from Individual Groups)
+    final bool isHierarchicalMerge =
+        widget.crossVideoContext!.sessionData['hierarchical_merge_applied'] == true;
+    
     // Show loading indicator
     showDialog(
       context: context,
@@ -2364,11 +2443,17 @@ class _PersonObjectsDetailScreenState
       final apiClient = ref.read(apiClientProvider);
       final mediaApiClient = MediaApiClient(apiClient);
       
-      final response = await mediaApiClient.mergeIndividuals(
-        individualUuids: _selectedIndividuals.toList(),
-        sessionUuid: widget.crossVideoContext!.sessionUuid,
-        similarityThreshold: _similarityThreshold,
-      );
+      // Use appropriate merge endpoint based on context
+      final response = isHierarchicalMerge
+          ? await mediaApiClient.mergeMVRPeople(
+              mvrUuids: _selectedIndividuals.toList(),
+              similarityThreshold: _similarityThreshold,
+            )
+          : await mediaApiClient.mergeIndividuals(
+              individualUuids: _selectedIndividuals.toList(),
+              sessionUuid: widget.crossVideoContext!.sessionUuid,
+              similarityThreshold: _similarityThreshold,
+            );
       
       // Dismiss loading indicator
       if (mounted) Navigator.of(context).pop();
@@ -4551,13 +4636,37 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Name (if available)
+                            Builder(
+                              builder: (context) {
+                                debugPrint('═══ UI CARD RENDER DEBUG ═══');
+                                debugPrint('Individual ID: ${analysis.individualId}');
+                                debugPrint('Name value: ${analysis.name}');
+                                debugPrint('Name is null: ${analysis.name == null}');
+                                debugPrint('═══════════════════════════');
+                                return const SizedBox.shrink();
+                              },
+                            ),
+                            if (analysis.name != null) ...[
+                              Text(
+                                analysis.name!,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                            ],
                             Row(
                               children: [
                                 Text(
                                   analysis.demographics?.gender ?? 'Unknown',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                                    fontWeight: analysis.name != null 
+                                        ? FontWeight.normal 
+                                        : FontWeight.bold,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -4604,6 +4713,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                             _buildStatChip('Confidence', '${(analysis.averageConfidence * 100).toStringAsFixed(0)}%'),
                           ],
                         ),
+                      ),
+                      // Edit name button
+                      IconButton(
+                        icon: const Icon(Icons.edit, size: 20),
+                        onPressed: () => _showEditNameDialog(analysis),
+                        tooltip: 'Edit name',
+                        color: Colors.blue[700],
                       ),
                       // Expand/collapse icon
                       Icon(

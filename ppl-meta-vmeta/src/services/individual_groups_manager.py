@@ -14,12 +14,15 @@ from typing import List, Optional
 from models.individual_group import (
     AddGroupMembersRequest,
     AddMembersResponse,
+    CheckDuplicatesResponse,
+    DuplicateMatch,
     GroupMembership,
     GroupCameraSearchRequest,
     GroupCameraSearchResponse,
     MatchedIndividual,
     IndividualGroup,
     IndividualSummary,
+    MergeMembersResponse,
     RemoveMembersResponse,
     UpdateIndividualGroupRequest,
 )
@@ -628,6 +631,9 @@ class IndividualGroupsManager:
         """
         Get members of a group.
         
+        This method automatically cleans up orphaned members (those that were merged
+        into super-individuals) and replaces them with their active super-individual.
+        
         Args:
             group_id: Group identifier
             skip: Number of records to skip
@@ -637,13 +643,21 @@ class IndividualGroupsManager:
         Returns:
             Tuple of (members list, total count)
         """
-        # This is a placeholder - actual implementation would join with
-        # persons/individuals table to get full data
+        # First, clean up any orphaned members in this group
+        await self._cleanup_orphaned_members(group_id)
+        
+        # Now fetch the cleaned members list
         query = """
-        SELECT individual_id, added_at
-        FROM group_memberships
-        WHERE group_id = $1
-        ORDER BY added_at DESC
+        SELECT 
+            gm.individual_id, 
+            gm.added_at,
+            m.name,
+            m.name_updated_at,
+            m.name_updated_by
+        FROM group_memberships gm
+        LEFT JOIN mvr_people m ON gm.individual_id::uuid = m.mvr_people_uuid
+        WHERE gm.group_id = $1
+        ORDER BY gm.added_at DESC
         LIMIT $2 OFFSET $3
         """
         
@@ -663,11 +677,78 @@ class IndividualGroupsManager:
                 total_appearances=0,
                 last_seen=None,
                 group_count=1,
+                name=row.get("name"),
+                name_updated_at=row.get("name_updated_at"),
+                name_updated_by=row.get("name_updated_by"),
             )
             for row in rows
         ]
         
-        return members, total    
+        return members, total
+
+    async def _cleanup_orphaned_members(self, group_id: str) -> None:
+        """
+        Clean up orphaned members in a group.
+        
+        This method finds members that have been merged into super-individuals
+        (marked as orphaned) and replaces them with their active super-individual.
+        It ensures each super-individual appears only once in the group.
+        
+        Args:
+            group_id: Group identifier
+        """
+        async with self.db.pool.acquire() as conn:
+            # Find all orphaned members in this group
+            orphaned_members = await conn.fetch("""
+                SELECT 
+                    gm.individual_id,
+                    m.merged_into_mvr_uuid as super_individual_uuid
+                FROM group_memberships gm
+                JOIN mvr_people m ON gm.individual_id::uuid = m.mvr_people_uuid
+                WHERE gm.group_id = $1 
+                AND m.is_orphaned = true
+                AND m.merged_into_mvr_uuid IS NOT NULL
+            """, group_id)
+            
+            if not orphaned_members:
+                return
+            
+            logger.info(
+                f"Found {len(orphaned_members)} orphaned members in group {group_id}. "
+                f"Cleaning up..."
+            )
+            
+            for member in orphaned_members:
+                orphaned_id = str(member['individual_id'])
+                super_id = str(member['super_individual_uuid'])
+                
+                # Check if super-individual is already in the group
+                existing = await conn.fetchval("""
+                    SELECT 1 FROM group_memberships 
+                    WHERE group_id = $1 AND individual_id = $2
+                """, group_id, super_id)
+                
+                if existing:
+                    # Super-individual already exists, just remove the orphaned one
+                    await conn.execute("""
+                        DELETE FROM group_memberships 
+                        WHERE group_id = $1 AND individual_id = $2
+                    """, group_id, orphaned_id)
+                    logger.info(
+                        f"Removed orphaned member {orphaned_id[:8]} from group {group_id} "
+                        f"(super-individual {super_id[:8]} already exists)"
+                    )
+                else:
+                    # Replace orphaned member with super-individual
+                    await conn.execute("""
+                        UPDATE group_memberships 
+                        SET individual_id = $1
+                        WHERE group_id = $2 AND individual_id = $3
+                    """, super_id, group_id, orphaned_id)
+                    logger.info(
+                        f"Replaced orphaned member {orphaned_id[:8]} with "
+                        f"super-individual {super_id[:8]} in group {group_id}"
+                    )    
     async def _persist_individual_appearances(self, conn, individual_uuid: str):
         """
         Persist individual appearance data from person objects to the database.
@@ -1323,4 +1404,193 @@ class IndividualGroupsManager:
                 members_found=len(matched_individuals),
                 matched_individuals=matched_individuals,
                 search_session_uuid=f"camera_search_{group_id}_{int(datetime.utcnow().timestamp())}",
+            )    
+    # ================================================================
+    # Duplicate Detection & Merge
+    # ================================================================
+    
+    async def check_for_duplicates(
+        self,
+        group_id: str,
+        candidate_mvr_uuid: str,
+        similarity_threshold: float = 0.75,
+    ) -> CheckDuplicatesResponse:
+        """
+        Check if candidate MVR person matches existing group members.
+        
+        Args:
+            group_id: Group identifier
+            candidate_mvr_uuid: MVR person UUID to check
+            similarity_threshold: Minimum similarity score (0-1)
+            
+        Returns:
+            CheckDuplicatesResponse with potential matches
+        """
+        # Get group
+        group = await self.get_group(group_id)
+        if not group:
+            raise ValueError(f"Group {group_id} not found")
+        
+        # Get candidate's face embedding
+        async with self.db.pool.acquire() as conn:
+            candidate_row = await conn.fetchrow(
+                """
+                SELECT mvr_people_uuid, face_embedding, name
+                FROM mvr_people
+                WHERE mvr_people_uuid = $1 AND is_orphaned = FALSE
+                """,
+                candidate_mvr_uuid
             )
+            
+            if not candidate_row:
+                raise ValueError(f"Candidate MVR person {candidate_mvr_uuid} not found")
+            
+            candidate_embedding = self._parse_pgvector(candidate_row['face_embedding'])
+            
+            # Get all group members' embeddings
+            member_rows = await conn.fetch(
+                """
+                SELECT m.mvr_people_uuid, m.face_embedding, m.name, gm.individual_id
+                FROM group_memberships gm
+                JOIN mvr_people m ON gm.individual_id::uuid = m.mvr_people_uuid
+                WHERE gm.group_id = $1 AND m.is_orphaned = FALSE
+                """,
+                group_id
+            )
+            
+            matches = []
+            for member in member_rows:
+                # Skip self-comparison
+                if str(member['mvr_people_uuid']) == candidate_mvr_uuid:
+                    continue
+                
+                member_embedding = self._parse_pgvector(member['face_embedding'])
+                similarity = self._cosine_similarity(candidate_embedding, member_embedding)
+                
+                if similarity >= similarity_threshold:
+                    # Determine confidence level
+                    if similarity >= 0.90:
+                        confidence = "high"
+                    elif similarity >= 0.80:
+                        confidence = "medium"
+                    else:
+                        confidence = "low"
+                    
+                    matches.append(DuplicateMatch(
+                        existing_member_id=str(member['mvr_people_uuid']),
+                        existing_member_name=member['name'],
+                        similarity_score=round(similarity, 4),
+                        confidence=confidence,
+                    ))
+            
+            # Sort by similarity (highest first)
+            matches.sort(key=lambda x: x.similarity_score, reverse=True)
+            
+            return CheckDuplicatesResponse(
+                has_duplicates=len(matches) > 0,
+                matches=matches,
+                candidate_mvr_uuid=candidate_mvr_uuid,
+                group_id=group_id,
+                group_name=group.name,
+            )
+    
+    async def merge_group_members(
+        self,
+        group_id: str,
+        source_mvr_uuid: str,
+        target_mvr_uuid: str,
+    ) -> MergeMembersResponse:
+        """
+        Merge two group members into a super-individual.
+        
+        Args:
+            group_id: Group identifier
+            source_mvr_uuid: MVR to merge (will be removed from group)
+            target_mvr_uuid: MVR to keep (will remain in group)
+            
+        Returns:
+            MergeMembersResponse with merge result
+        """
+        async with self.db.pool.acquire() as conn:
+            # Verify both are members of the group
+            memberships = await conn.fetch(
+                """
+                SELECT individual_id FROM group_memberships
+                WHERE group_id = $1 AND individual_id = ANY($2::text[])
+                """,
+                group_id,
+                [source_mvr_uuid, target_mvr_uuid]
+            )
+            
+            if len(memberships) != 2:
+                raise ValueError("Both MVR people must be members of the group")
+            
+            # Import MVR matcher for merge
+            from services.mvr_matcher import MVRMatcher
+            from database.mvr_repository import MVRRepository
+            
+            mvr_repo = MVRRepository(self.db.pool)
+            mvr_matcher = MVRMatcher(mvr_repo)
+            
+            # Execute merge (target keeps, source merges into target)
+            merge_result = await mvr_matcher.merge_mvr_people(
+                source_mvr_uuid=source_mvr_uuid,
+                target_mvr_uuid=target_mvr_uuid,
+                similarity_score=0.95,  # High confidence merge
+                user_initiated=True,
+            )
+            
+            super_individual_uuid = merge_result['winner_mvr_uuid']
+            
+            # Update group membership: remove source, keep target
+            # If target was replaced by super-individual, update to super-individual
+            await conn.execute(
+                """
+                DELETE FROM group_memberships
+                WHERE group_id = $1 AND individual_id = $2
+                """,
+                group_id,
+                source_mvr_uuid
+            )
+            
+            # Update target membership to super-individual if different
+            if str(super_individual_uuid) != target_mvr_uuid:
+                await conn.execute(
+                    """
+                    UPDATE group_memberships
+                    SET individual_id = $1
+                    WHERE group_id = $2 AND individual_id = $3
+                    """,
+                    str(super_individual_uuid),
+                    group_id,
+                    target_mvr_uuid
+                )
+            
+            # Get final merge count
+            super_mvr = await conn.fetchrow(
+                """
+                SELECT merged_count FROM mvr_people
+                WHERE mvr_people_uuid = $1
+                """,
+                super_individual_uuid
+            )
+            
+            merged_count = super_mvr['merged_count'] if super_mvr else 2
+            
+            return MergeMembersResponse(
+                success=True,
+                super_individual_uuid=str(super_individual_uuid),
+                merged_count=merged_count,
+                group_membership_updated=True,
+            )
+    
+    def _cosine_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:
+        """Calculate cosine similarity between two embeddings."""
+        dot_product = np.dot(embedding1, embedding2)
+        norm1 = np.linalg.norm(embedding1)
+        norm2 = np.linalg.norm(embedding2)
+        
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        
+        return float(dot_product / (norm1 * norm2))

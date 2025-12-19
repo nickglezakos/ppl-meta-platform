@@ -67,6 +67,16 @@ from api.models.mvr_search_models import (
     IndividualAppearance as MVRIndividualAppearance,
 )
 
+# MVR name management models
+from api.models.mvr_names import (
+    UpdateNameRequest,
+    UpdateNameResponse,
+    UpdateGenderRequest,
+    UpdateGenderResponse,
+    BulkNameUpdateRequest,
+    BulkNameUpdateResponse,
+)
+
 # Process media models
 from api.models.process_media import ProcessMediaRequest
 
@@ -782,7 +792,7 @@ async def merge_individuals(
             )
         
         # Execute merge
-        merge_result = await mvr_matcher.merge_individuals(
+        merge_result = await mvr_matcher.merge_mvr_people(
             individual_a_uuid=request.individual_a_uuid,
             individual_b_uuid=request.individual_b_uuid,
             similarity_score=request.similarity_score,
@@ -4136,9 +4146,400 @@ async def get_best_images_for_mvr(
 
 
 # ============================================================================
+# ENDPOINT 19: Update MVR Person Name
+# ============================================================================
+
+@router.patch(
+    "/{mvr_person_uuid}/name",
+    summary="Update MVR Person Name",
+    description=(
+        "Update the user-assigned name for an MVR person and optionally "
+        "propagate it through the merge hierarchy to all related MVR people."
+    ),
+)
+async def update_mvr_person_name(
+    mvr_person_uuid: str,
+    request: UpdateNameRequest,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update MVR person name with optional propagation to merged hierarchy.
+    
+    The name will be applied to:
+    1. The specified MVR person
+    2. If propagate=true: All super-individuals containing this MVR person
+    3. If propagate=true: All constituent MVR people in those super-individuals
+    
+    Args:
+        mvr_person_uuid: UUID of MVR person to update
+        request: Name update request with name and propagation flag
+        mvr_repository: MVR repository dependency
+        current_user: Current authenticated user
+        
+    Returns:
+        UpdateNameResponse with affected UUIDs
+    """
+    try:
+        logger.info(
+            f"Updating name for MVR {mvr_person_uuid} to '{request.name}' "
+            f"(propagate={request.propagate}, user={current_user.get('email')})"
+        )
+        
+        # Validate UUID format
+        try:
+            mvr_uuid = UUID(mvr_person_uuid)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid MVR person UUID format: {mvr_person_uuid}"
+            )
+        
+        # Get database connection
+        async with mvr_repository.pool.acquire() as conn:
+            # Check if MVR person exists
+            mvr_check = await conn.fetchrow(
+                """
+                SELECT mvr_people_uuid, is_orphaned 
+                FROM mvr_people 
+                WHERE mvr_people_uuid = $1
+                """,
+                mvr_uuid
+            )
+            
+            if not mvr_check:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"MVR person {mvr_person_uuid} not found"
+                )
+            
+            if mvr_check['is_orphaned']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot update name for orphaned MVR person"
+                )
+            
+            # Sanitize name (empty string clears the name)
+            name = request.name.strip() if request.name else None
+            user_email = current_user.get('email', 'unknown')
+            now = datetime.now()
+            
+            # Get the old name before updating (for history)
+            old_name_result = await conn.fetchrow(
+                "SELECT name FROM mvr_people WHERE mvr_people_uuid = $1",
+                mvr_uuid
+            )
+            old_name = old_name_result['name'] if old_name_result else None
+            
+            # Update the target MVR person's name
+            await conn.execute(
+                """
+                UPDATE mvr_people
+                SET name = $1,
+                    name_updated_at = $2,
+                    name_updated_by = $3
+                WHERE mvr_people_uuid = $4
+                """,
+                name, now, user_email, mvr_uuid
+            )
+            
+            # Record in history
+            await conn.execute(
+                """
+                INSERT INTO mvr_people_name_history 
+                (mvr_people_uuid, old_name, new_name, changed_by, reason)
+                VALUES ($1, $2, $3, $4, 'user_edit')
+                """,
+                mvr_uuid, old_name, name, user_email
+            )
+            
+            propagated_to = []
+            affected_super_individuals = []
+            
+            # Propagate name if requested
+            if request.propagate and name:
+                logger.info(f"Propagating name '{name}' through merge hierarchy...")
+                
+                # Find all super-individuals that this MVR person is merged into
+                super_individuals = await conn.fetch(
+                    """
+                    SELECT DISTINCT super_individual_uuid
+                    FROM mvr_merge_hierarchy
+                    WHERE merged_mvr_uuid = $1
+                    """,
+                    mvr_uuid
+                )
+                
+                for super_row in super_individuals:
+                    super_uuid = super_row['super_individual_uuid']
+                    affected_super_individuals.append(str(super_uuid))
+                    
+                    # Update super-individual name
+                    await conn.execute(
+                        """
+                        UPDATE mvr_people
+                        SET name = $1,
+                            name_updated_at = $2,
+                            name_updated_by = $3
+                        WHERE mvr_people_uuid = $4
+                        """,
+                        name, now, user_email, super_uuid
+                    )
+                    
+                    # Record in history
+                    await conn.execute(
+                        """
+                        INSERT INTO mvr_people_name_history 
+                        (mvr_people_uuid, new_name, changed_by, reason)
+                        VALUES ($1, $2, $3, 'merge_inherit')
+                        """,
+                        super_uuid, name, user_email
+                    )
+                    
+                    # Find all other constituent MVR people merged into this super-individual
+                    constituents = await conn.fetch(
+                        """
+                        SELECT merged_mvr_uuid
+                        FROM mvr_merge_hierarchy
+                        WHERE super_individual_uuid = $1
+                        AND merged_mvr_uuid != $2
+                        """,
+                        super_uuid, mvr_uuid  # Exclude the one we just updated
+                    )
+                    
+                    # Propagate name to all constituents
+                    for constituent_row in constituents:
+                        constituent_uuid = constituent_row['merged_mvr_uuid']
+                        propagated_to.append(str(constituent_uuid))
+                        
+                        await conn.execute(
+                            """
+                            UPDATE mvr_people
+                            SET name = $1,
+                                name_updated_at = $2,
+                                name_updated_by = $3
+                            WHERE mvr_people_uuid = $4
+                            """,
+                            name, now, user_email, constituent_uuid
+                        )
+                        
+                        # Record in history
+                        await conn.execute(
+                            """
+                            INSERT INTO mvr_people_name_history 
+                            (mvr_people_uuid, new_name, changed_by, reason)
+                            VALUES ($1, $2, $3, 'merge_inherit')
+                            """,
+                            constituent_uuid, name, user_email
+                        )
+            
+            logger.info(
+                f"✅ Updated name for MVR {mvr_person_uuid}: "
+                f"propagated to {len(propagated_to)} constituents, "
+                f"{len(affected_super_individuals)} super-individuals"
+            )
+            
+            return UpdateNameResponse(
+                success=True,
+                mvr_person_uuid=str(mvr_uuid),
+                name=name,
+                updated_at=now,
+                propagated_to=propagated_to,
+                affected_super_individuals=affected_super_individuals
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to update name for {mvr_person_uuid}: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update name: {str(e)}"
+        )
+
+
+@router.patch(
+    "/{mvr_person_uuid}/gender",
+    summary="Update MVR Person Gender",
+    description=(
+        "Update the gender for an MVR person and optionally "
+        "propagate it through the merge hierarchy to all related MVR people."
+    ),
+)
+async def update_mvr_person_gender(
+    mvr_person_uuid: str,
+    request: UpdateGenderRequest,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update MVR person gender with optional propagation to merged hierarchy.
+    
+    The gender will be applied to:
+    1. The specified MVR person
+    2. If propagate=true: All super-individuals containing this MVR person
+    3. If propagate=true: All constituent MVR people in those super-individuals
+    
+    Args:
+        mvr_person_uuid: UUID of MVR person to update
+        request: Gender update request with gender and propagation flag
+        mvr_repository: MVR repository dependency
+        current_user: Current authenticated user
+        
+    Returns:
+        UpdateGenderResponse with affected UUIDs
+    """
+    try:
+        logger.info(
+            f"Updating gender for MVR {mvr_person_uuid} to '{request.gender}' "
+            f"(propagate={request.propagate}, user={current_user.get('email')})"
+        )
+        
+        # Validate UUID format
+        try:
+            mvr_uuid = UUID(mvr_person_uuid)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid MVR person UUID format: {mvr_person_uuid}"
+            )
+        
+        # Get database connection
+        async with mvr_repository.pool.acquire() as conn:
+            # Check if MVR person exists
+            mvr_check = await conn.fetchrow(
+                """
+                SELECT mvr_people_uuid, is_orphaned 
+                FROM mvr_people 
+                WHERE mvr_people_uuid = $1
+                """,
+                mvr_uuid
+            )
+            
+            if not mvr_check:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"MVR person {mvr_person_uuid} not found"
+                )
+            
+            if mvr_check['is_orphaned']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot update gender for orphaned MVR person"
+                )
+            
+            # Sanitize gender (empty string clears the gender)
+            gender = request.gender.strip().lower() if request.gender else None
+            if gender and gender not in ['male', 'female']:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid gender value. Must be 'male' or 'female'"
+                )
+            
+            now = datetime.now()
+            
+            # Update the target MVR person's gender
+            await conn.execute(
+                """
+                UPDATE mvr_people
+                SET gender = $1
+                WHERE mvr_people_uuid = $2
+                """,
+                gender, mvr_uuid
+            )
+            
+            propagated_to = []
+            affected_super_individuals = []
+            
+            # Propagate gender if requested
+            if request.propagate and gender:
+                logger.info(f"Propagating gender '{gender}' through merge hierarchy...")
+                
+                # Find all super-individuals that this MVR person is merged into
+                super_individuals = await conn.fetch(
+                    """
+                    SELECT DISTINCT super_individual_uuid
+                    FROM mvr_merge_hierarchy
+                    WHERE merged_mvr_uuid = $1
+                    """,
+                    mvr_uuid
+                )
+                
+                for super_row in super_individuals:
+                    super_uuid = super_row['super_individual_uuid']
+                    affected_super_individuals.append(str(super_uuid))
+                    
+                    # Update the super-individual's gender
+                    await conn.execute(
+                        """
+                        UPDATE mvr_people
+                        SET gender = $1
+                        WHERE mvr_people_uuid = $2
+                        """,
+                        gender, super_uuid
+                    )
+                    
+                    # Find all other constituent MVR people merged into this super-individual
+                    constituents = await conn.fetch(
+                        """
+                        SELECT merged_mvr_uuid
+                        FROM mvr_merge_hierarchy
+                        WHERE super_individual_uuid = $1
+                        AND merged_mvr_uuid != $2
+                        """,
+                        super_uuid, mvr_uuid  # Exclude the one we just updated
+                    )
+                    
+                    # Propagate gender to all constituents
+                    for constituent_row in constituents:
+                        constituent_uuid = constituent_row['merged_mvr_uuid']
+                        propagated_to.append(str(constituent_uuid))
+                        
+                        await conn.execute(
+                            """
+                            UPDATE mvr_people
+                            SET gender = $1
+                            WHERE mvr_people_uuid = $2
+                            """,
+                            gender, constituent_uuid
+                        )
+            
+            logger.info(
+                f"✅ Updated gender for MVR {mvr_person_uuid}: "
+                f"propagated to {len(propagated_to)} constituents, "
+                f"{len(affected_super_individuals)} super-individuals"
+            )
+            
+            return UpdateGenderResponse(
+                success=True,
+                mvr_person_uuid=str(mvr_uuid),
+                gender=gender,
+                updated_at=now,
+                propagated_to=propagated_to,
+                affected_super_individuals=affected_super_individuals
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to update gender for {mvr_person_uuid}: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update gender: {str(e)}"
+        )
+
+
+# ============================================================================
 # Router Export
 # ============================================================================
 
 __all__ = ["router"]
+
 
 

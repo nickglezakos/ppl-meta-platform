@@ -1585,9 +1585,12 @@ async def _proxy_to_vmeta_service(request: Request) -> Response:
         if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
             body = await request.body()
 
-        # Get headers (exclude host to avoid conflicts)
-        headers = dict(request.headers)
-        headers.pop("host", None)
+        # Prepare headers (forward authorization and other important headers)
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() not in ["host", "content-length"]
+        }
         
         # 🔍 DEBUG: Log authorization header status
         auth_header = headers.get("authorization", "MISSING")
@@ -1715,6 +1718,18 @@ async def bulk_assign_groups(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/individual-groups/{group_id}/check-duplicates")
+async def check_group_duplicates(request: Request):
+    """Proxy check for duplicate members to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.post("/individual-groups/{group_id}/merge-members")
+async def merge_group_members(request: Request):
+    """Proxy merge group members to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.post("/individual-groups/{group_id}/camera-search")
 async def group_camera_search(request: Request):
     """Proxy individual groups camera search to vmeta service."""
@@ -1816,6 +1831,12 @@ async def get_collection_mvr_people_count(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/merge")
+async def merge_mvr_people(request: Request):
+    """Proxy MVR people merge request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.post("/mvr-people/merge/hierarchical")
 async def hierarchical_merge_mvr_people(request: Request):
     """Proxy hierarchical MVR people merge request to vmeta service."""
@@ -1831,4 +1852,17 @@ async def get_super_individual_hierarchy(request: Request):
 @api_router.get("/mvr-people/{mvr_uuid}/best-image")
 async def get_mvr_best_image(request: Request):
     """Proxy MVR best image request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.patch("/mvr-people/{mvr_person_uuid}/name")
+async def update_mvr_person_name(request: Request):
+    """Proxy MVR person name update request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.patch("/mvr-people/{mvr_person_uuid}/gender")
+async def update_mvr_person_gender(request: Request):
+    """Proxy MVR person gender update request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
     return await _proxy_to_vmeta_service(request)

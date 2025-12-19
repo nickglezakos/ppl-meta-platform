@@ -572,6 +572,17 @@ class HierarchicalMVRMerger:
                 all_appearances = [dict(r) for r in results]
                 total_person_objects = len(all_appearances)
             
+            # DEBUG: Log super_individual name fields
+            logger.info("=" * 60)
+            logger.info("HIERARCHY RESPONSE DEBUG")
+            logger.info("=" * 60)
+            logger.info(f"Super-individual UUID: {super_individual_uuid}")
+            logger.info(f"Super-individual keys: {list(super_individual.keys()) if super_individual else 'None'}")
+            logger.info(f"Super-individual name: {super_individual.get('name') if super_individual else 'N/A'}")
+            logger.info(f"Name updated at: {super_individual.get('name_updated_at') if super_individual else 'N/A'}")
+            logger.info(f"Name updated by: {super_individual.get('name_updated_by') if super_individual else 'N/A'}")
+            logger.info("=" * 60)
+            
             return {
                 "super_individual": super_individual,
                 "merged_mvr_people": merged_mvr,

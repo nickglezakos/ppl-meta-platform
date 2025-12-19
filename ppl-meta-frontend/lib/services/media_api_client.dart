@@ -1087,7 +1087,13 @@ class MediaApiClient {
         '/api/v1/cross-video/individuals/tracking/individuals/$individualUuid/aggregated-analysis?session_uuid=$sessionUuid',
       );
 
-      print('DEBUG: Aggregated individual analysis: ${response.data}');
+      // Debug logging for name propagation tracking
+      debugPrint('═══ VMETA API RESPONSE DEBUG ═══');
+      debugPrint('Individual UUID: $individualUuid');
+      debugPrint('Name field: ${response.data['name']}');
+      debugPrint('Name updated at: ${response.data['name_updated_at']}');
+      debugPrint('Name updated by: ${response.data['name_updated_by']}');
+      debugPrint('═══════════════════════════════');
       
       return ApiResponse.success(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
@@ -1277,6 +1283,67 @@ class MediaApiClient {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       print('❌ Batch merge unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Merge multiple MVR people into one (for hierarchical merges from Individual Groups)
+  ///
+  /// This method merges multiple MVR people (from Individual Groups) into a single
+  /// super-individual by using the hierarchical merge endpoint which calculates
+  /// similarity and merges duplicates automatically.
+  ///
+  /// **Use Case:** When users select multiple members from an Individual Group
+  /// and want to merge them into one person in the Cross-Video Analysis screen.
+  ///
+  /// Returns:
+  /// - predominant_individual_uuid: The UUID of the final merged individual
+  /// - merged_individual_uuids: List of UUIDs that were merged
+  /// - similarity_score: Average similarity score (if available)
+  Future<ApiResponse<Map<String, dynamic>>> mergeMVRPeople({
+    required List<String> mvrUuids,
+    double similarityThreshold = 0.75,
+  }) async {
+    try {
+      if (mvrUuids.length < 2) {
+        return ApiResponse.error('At least 2 individuals required for merging');
+      }
+
+      print('🔄 Merging ${mvrUuids.length} MVR people hierarchically...');
+
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/merge/hierarchical',
+        data: {
+          'mvr_uuids': mvrUuids,
+          'similarity_threshold': similarityThreshold,
+          'min_similarity_check': 0.50,
+        },
+      );
+
+      print('✅ Hierarchical merge response: ${response.data}');
+
+      // Extract results from hierarchical merge response
+      final data = response.data as Map<String, dynamic>;
+      final superIndividuals = data['super_individuals'] as List?;
+      final statistics = data['statistics'] as Map<String, dynamic>?;
+
+      // Return response in format matching tracking merge
+      return ApiResponse.success({
+        'predominant_individual_uuid': superIndividuals?.isNotEmpty == true 
+            ? superIndividuals![0] 
+            : mvrUuids[0],
+        'merged_individual_uuids': mvrUuids.sublist(1),
+        'similarity_score': similarityThreshold,
+        'message': statistics != null
+            ? 'Merged ${statistics['merged_mvr']} individuals into ${statistics['super_individuals']} super-individual(s)'
+            : 'Successfully merged ${mvrUuids.length} individuals',
+        'statistics': statistics,
+      });
+    } on DioException catch (e) {
+      print('❌ MVR merge failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('❌ MVR merge unexpected error: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }

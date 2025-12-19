@@ -3516,7 +3516,10 @@ async def get_individual_aggregated_analysis(
                         mvr.gender_confidence,
                         mvr.age_min,
                         mvr.age_max,
-                        mvr.age_confidence
+                        mvr.age_confidence,
+                        mvr.name,
+                        mvr.name_updated_at,
+                        mvr.name_updated_by
                     FROM individual_mvr_mapping imm
                     JOIN individual_video_appearances iva
                         ON imm.individual_uuid = iva.individual_uuid
@@ -3530,6 +3533,18 @@ async def get_individual_aggregated_analysis(
                     """,
                     individual_uuid
                 )
+                
+                # DEBUG: Log first appearance from SQL query
+                if appearances:
+                    logger.info("=" * 60)
+                    logger.info("SQL QUERY RESULT DEBUG (MVR person path)")
+                    logger.info("=" * 60)
+                    logger.info(f"Total appearances fetched: {len(appearances)}")
+                    logger.info(f"First appearance columns: {list(appearances[0].keys())}")
+                    logger.info(f"First appearance name: {appearances[0].get('name')}")
+                    logger.info(f"First appearance name_updated_at: {appearances[0].get('name_updated_at')}")
+                    logger.info(f"First appearance name_updated_by: {appearances[0].get('name_updated_by')}")
+                    logger.info("=" * 60)
             else:
                 # It's a regular individual UUID
                 logger.info(
@@ -3552,7 +3567,10 @@ async def get_individual_aggregated_analysis(
                         mvr.gender_confidence,
                         mvr.age_min,
                         mvr.age_max,
-                        mvr.age_confidence
+                        mvr.age_confidence,
+                        mvr.name,
+                        mvr.name_updated_at,
+                        mvr.name_updated_by
                     FROM individual_video_appearances iva
                     JOIN individuals i
                         ON iva.individual_uuid = i.individual_uuid
@@ -3566,6 +3584,18 @@ async def get_individual_aggregated_analysis(
                     """,
                     individual_uuid
                 )
+                
+                # DEBUG: Log first appearance from SQL query
+                if appearances:
+                    logger.info("=" * 60)
+                    logger.info("SQL QUERY RESULT DEBUG (Individual path)")
+                    logger.info("=" * 60)
+                    logger.info(f"Total appearances fetched: {len(appearances)}")
+                    logger.info(f"First appearance columns: {list(appearances[0].keys())}")
+                    logger.info(f"First appearance name: {appearances[0].get('name')}")
+                    logger.info(f"First appearance name_updated_at: {appearances[0].get('name_updated_at')}")
+                    logger.info(f"First appearance name_updated_by: {appearances[0].get('name_updated_by')}")
+                    logger.info("=" * 60)
             
             # If no appearances found, return basic individual info
             # (appearances table might be empty if not populated during processing)
@@ -3621,6 +3651,23 @@ async def get_individual_aggregated_analysis(
             # Calculate aggregated metrics
             first_appearance = appearances[0]
             last_appearance = appearances[-1]
+            
+            # Extract name fields from first appearance (all appearances share the same MVR person)
+            name = first_appearance.get('name')
+            name_updated_at = first_appearance.get('name_updated_at')
+            name_updated_by = first_appearance.get('name_updated_by')
+            
+            # DEBUG: Log name extraction
+            logger.info("=" * 60)
+            logger.info("NAME FIELD EXTRACTION DEBUG")
+            logger.info("=" * 60)
+            logger.info(f"Individual UUID: {individual_uuid}")
+            logger.info(f"First appearance keys: {list(first_appearance.keys())}")
+            logger.info(f"Extracted name: {name}")
+            logger.info(f"Extracted name_updated_at: {name_updated_at}")
+            logger.info(f"Extracted name_updated_by: {name_updated_by}")
+            logger.info(f"Name is None: {name is None}")
+            logger.info("=" * 60)
             
             total_duration = 0
             if first_appearance['start_timestamp'] and last_appearance['end_timestamp']:
@@ -3755,6 +3802,9 @@ async def get_individual_aggregated_analysis(
                 "individual_uuid": individual_uuid,
                 "individual_id": first_appearance['individual_id'],
                 "session_uuid": session_uuid,
+                "name": name,
+                "name_updated_at": name_updated_at.isoformat() if name_updated_at else None,
+                "name_updated_by": name_updated_by,
                 "total_appearances": len(appearances),
                 "unique_videos": len(set(str(app['video_uuid']) for app in appearances)),
                 "first_seen": first_appearance['start_timestamp'].isoformat() if first_appearance['start_timestamp'] else "",
@@ -3768,6 +3818,15 @@ async def get_individual_aggregated_analysis(
                 "person_object_uuids": person_object_uuids,
                 "analysis_timestamp": datetime.now(timezone.utc).isoformat()
             }
+            
+            # DEBUG: Log final response name fields
+            logger.info("=" * 60)
+            logger.info("RESPONSE BUILD DEBUG")
+            logger.info("=" * 60)
+            logger.info(f"Response name field: {response.get('name')}")
+            logger.info(f"Response name_updated_at: {response.get('name_updated_at')}")
+            logger.info(f"Response name_updated_by: {response.get('name_updated_by')}")
+            logger.info("=" * 60)
             
             logger.info(f"Phase 6: Returning aggregated analysis for individual {individual_uuid}")
             logger.info(f"  Appearances: {len(appearances)}, Videos: {response['unique_videos']}, Duration: {total_duration}s")

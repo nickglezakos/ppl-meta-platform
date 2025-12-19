@@ -16,6 +16,8 @@ from models.individual_group import (
     BulkAddMembersResponse,
     BulkAssignGroupsRequest,
     BulkAssignGroupsResponse,
+    CheckDuplicatesRequest,
+    CheckDuplicatesResponse,
     CreateIndividualGroupRequest,
     GroupCameraSearchRequest,
     GroupCameraSearchResponse,
@@ -23,6 +25,8 @@ from models.individual_group import (
     IndividualGroupResponse,
     ListGroupsResponse,
     ListMembersResponse,
+    MergeMembersRequest,
+    MergeMembersResponse,
     RemoveGroupMembersRequest,
     RemoveMembersResponse,
     UpdateIndividualGroupRequest,
@@ -517,4 +521,95 @@ async def search_group_in_camera(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to execute camera search: {str(e)}"
+        )
+
+# ================================================================
+# Duplicate Detection & Merge Endpoints
+# ================================================================
+
+@router.post("/{group_id}/check-duplicates", response_model=CheckDuplicatesResponse)
+async def check_duplicates(
+    group_id: str,
+    request: CheckDuplicatesRequest,
+    manager: IndividualGroupsManager = Depends(get_groups_manager),
+) -> CheckDuplicatesResponse:
+    """
+    Check if a candidate MVR person matches any existing group members.
+    
+    This endpoint:
+    1. Gets the candidate's face embedding
+    2. Fetches all existing group members' embeddings
+    3. Calculates similarity scores
+    4. Returns potential duplicates above threshold
+    
+    Args:
+        group_id: Group identifier
+        request: Candidate to check
+        manager: IndividualGroupsManager dependency
+        
+    Returns:
+        List of potential duplicate matches
+    """
+    try:
+        response = await manager.check_for_duplicates(
+            group_id=group_id,
+            candidate_mvr_uuid=request.candidate_mvr_uuid,
+            similarity_threshold=request.similarity_threshold,
+        )
+        
+        return response
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error checking duplicates in group {group_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check duplicates: {str(e)}"
+        )
+
+
+@router.post("/{group_id}/merge-members", response_model=MergeMembersResponse)
+async def merge_members(
+    group_id: str,
+    request: MergeMembersRequest,
+    manager: IndividualGroupsManager = Depends(get_groups_manager),
+) -> MergeMembersResponse:
+    """
+    Merge two group members into a super-individual.
+    
+    This endpoint:
+    1. Verifies both members exist in the group
+    2. Creates MVR merge (super-individual)
+    3. Updates group membership to use super-individual
+    4. Removes duplicate membership
+    
+    Args:
+        group_id: Group identifier
+        request: Source and target MVR UUIDs
+        manager: IndividualGroupsManager dependency
+        
+    Returns:
+        Merge result with super-individual UUID
+    """
+    try:
+        response = await manager.merge_group_members(
+            group_id=group_id,
+            source_mvr_uuid=request.source_mvr_uuid,
+            target_mvr_uuid=request.target_mvr_uuid,
+        )
+        
+        return response
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Error merging members in group {group_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to merge members: {str(e)}"
         )
