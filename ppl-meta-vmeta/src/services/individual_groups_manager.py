@@ -854,6 +854,124 @@ class IndividualGroupsManager:
             for row in rows
         ]
 
+    async def search_members_in_cameras(
+        self,
+        group_id: str,
+        camera_ids: List[str],
+        start_time: datetime,
+        end_time: datetime,
+        confidence_threshold: float = 0.6,
+        auth_token: str = None,
+    ) -> GroupCameraSearchResponse:
+        """
+        Search for group members across multiple camera collections during a time range.
+        
+        This method aggregates results from multiple cameras by calling search_members_in_camera
+        for each camera and merging the results.
+        
+        Args:
+            group_id: Group identifier
+            camera_ids: List of camera/collection IDs to search
+            start_time: Search start time
+            end_time: Search end time
+            confidence_threshold: Minimum similarity threshold (0.6 default)
+            auth_token: Optional authentication token for media service calls
+            
+        Returns:
+            GroupCameraSearchResponse with aggregated matched members
+        """
+        logger.info(
+            f"Searching for group {group_id} members across {len(camera_ids)} cameras: {camera_ids}"
+        )
+        
+        if not camera_ids:
+            raise ValueError("At least one camera_id must be provided")
+        
+        # Get group details for response
+        group = await self.get_group(group_id)
+        if not group:
+            raise ValueError(f"Group not found: {group_id}")
+        
+        # Aggregate results from all cameras
+        all_matched_individuals = {}  # individual_uuid -> MatchedIndividual
+        
+        for camera_id in camera_ids:
+            try:
+                logger.info(f"Searching camera: {camera_id}")
+                
+                # Search in single camera
+                camera_result = await self.search_members_in_camera(
+                    group_id=group_id,
+                    camera_id=camera_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    confidence_threshold=confidence_threshold,
+                    auth_token=auth_token,
+                )
+                
+                # Merge matched individuals
+                for matched in camera_result.matched_individuals:
+                    ind_uuid = matched.individual_uuid
+                    
+                    if ind_uuid in all_matched_individuals:
+                        # Already have this individual, merge appearance data
+                        existing = all_matched_individuals[ind_uuid]
+                        existing.total_appearances += matched.total_appearances
+                        
+                        # Update time range
+                        if matched.first_seen < existing.first_seen:
+                            existing.first_seen = matched.first_seen
+                        if matched.last_seen > existing.last_seen:
+                            existing.last_seen = matched.last_seen
+                        
+                        # Merge appearances list if present
+                        if matched.appearances and existing.appearances:
+                            existing.appearances.extend(matched.appearances)
+                        elif matched.appearances:
+                            existing.appearances = matched.appearances
+                        
+                        # Take max confidence score
+                        existing.confidence_score = max(
+                            existing.confidence_score,
+                            matched.confidence_score
+                        )
+                    else:
+                        # New individual, add to results
+                        all_matched_individuals[ind_uuid] = matched
+                
+                logger.info(
+                    f"Camera {camera_id}: found {len(camera_result.matched_individuals)} individuals"
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to search camera {camera_id}: {e}", exc_info=True)
+                # Continue with other cameras
+                continue
+        
+        # Build final response
+        matched_list = list(all_matched_individuals.values())
+        search_session_uuid = f"camera_search_{group_id}_{int(datetime.utcnow().timestamp())}"
+        
+        logger.info(
+            f"Multi-camera search complete: {len(matched_list)} unique individuals found "
+            f"across {len(camera_ids)} cameras"
+        )
+        
+        return GroupCameraSearchResponse(
+            group_id=group_id,
+            group_name=group.name,
+            camera_ids=camera_ids,
+            camera_names=camera_ids,  # Use IDs as names unless enriched
+            search_window={
+                'start_time': start_time.isoformat(),
+                'end_time': end_time.isoformat(),
+            },
+            total_group_members=len(group.member_ids) if group.member_ids else 0,
+            members_found=len(matched_list),
+            matched_individuals=matched_list,
+            search_session_uuid=search_session_uuid,
+        )
+
     async def search_members_in_camera(
         self,
         group_id: str,
@@ -1231,6 +1349,8 @@ class IndividualGroupsManager:
                     'person_object_uuid': str(row['person_object_uuid']),
                     'timestamp': row['start_timestamp'].isoformat(),
                     'confidence': float(row['confidence']),
+                    'camera_id': camera_id,  # Add camera/collection ID
+                    'camera_name': camera_id,  # Use ID as name (can be enriched later)
                 })
             
             # Step 6: Post-process to merge individuals that belong to the same super-individual

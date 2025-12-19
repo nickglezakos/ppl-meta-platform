@@ -60,7 +60,7 @@ class _PersonObjectsDetailScreenState
     with TickerProviderStateMixin {
   
   late TabController _tabController;
-  late TabController _visionTabController; // Nested tab controller for Vision tab
+  // late TabController _visionTabController; // Nested tab controller for Vision tab - COMMENTED OUT
   final Set<String> _debuggedFaces = {}; // Cache for debug output
   String _routesDisplayMode = 'scatter'; // 'path' or 'scatter' - default to scatter
   
@@ -94,7 +94,7 @@ class _PersonObjectsDetailScreenState
     _isCrossVideoMode = widget.crossVideoContext != null;
     
     _tabController = TabController(length: 4, vsync: this);
-    _visionTabController = TabController(length: 3, vsync: this); // Vision tab has 3 sub-tabs
+    // _visionTabController = TabController(length: 3, vsync: this); // Vision tab has 3 sub-tabs - COMMENTED OUT
     
     // Load cross-video data if in that mode
     if (_isCrossVideoMode) {
@@ -105,7 +105,7 @@ class _PersonObjectsDetailScreenState
   @override
   void dispose() {
     _tabController.dispose();
-    _visionTabController.dispose();
+    // _visionTabController.dispose(); // COMMENTED OUT
     super.dispose();
   }
 
@@ -251,8 +251,8 @@ class _PersonObjectsDetailScreenState
               text: 'Individuals',
             ),
             Tab(
-              icon: Icon(Icons.videocam),
-              text: 'Vision',
+              icon: Icon(Icons.event_available),
+              text: 'Attendance',
             ),
           ],
         ),
@@ -263,7 +263,7 @@ class _PersonObjectsDetailScreenState
               _buildStatisticsTabCrossVideo(),
               _buildRoutesTabCrossVideo(),
               _buildIndividualsTabCrossVideo(),
-              _buildFacesTabCrossVideo(),
+              _buildAttendanceTab(), // Direct attendance tab instead of nested Vision tab
             ],
           ),
         ),
@@ -2006,9 +2006,15 @@ class _PersonObjectsDetailScreenState
       final apiClient = ref.read(apiClientProvider);
       final individualGroupsApiClient = IndividualGroupsApiClient(apiClient);
       
+      // Support both single camera (camera_id) and multiple cameras (camera_ids)
       final cameraId = searchParameters['camera_id'] as String?;
-      if (cameraId == null) {
-        print('❌ No camera_id in search parameters');
+      final cameraIds = searchParameters['camera_ids'] as List<dynamic>?;
+      
+      final cameras = cameraIds?.cast<String>() ?? 
+                     (cameraId != null ? [cameraId] : null);
+      
+      if (cameras == null || cameras.isEmpty) {
+        print('❌ No camera_id or camera_ids in search parameters');
         return;
       }
       
@@ -2018,11 +2024,11 @@ class _PersonObjectsDetailScreenState
       final endTime = DateTime.parse(endTimeStr);
       final confidenceThreshold = searchParameters['confidence_threshold'] as double? ?? 0.75;
 
-      print('📹 Loading camera search results: camera=$cameraId, time=$startTime to $endTime');
+      print('📹 Loading camera search results: cameras=${cameras.join(", ")}, time=$startTime to $endTime');
       
       final response = await individualGroupsApiClient.searchGroupInCamera(
         groupId: groupId,
-        cameraId: cameraId,
+        cameraIds: cameras,
         startTime: startTime.toIso8601String(),
         endTime: endTime.toIso8601String(),
         confidenceThreshold: confidenceThreshold,
@@ -2032,7 +2038,7 @@ class _PersonObjectsDetailScreenState
         final data = response.data!;
         final matchedIndividuals = data['matched_individuals'] as List<dynamic>;
         
-        print('✅ Found ${matchedIndividuals.length} of ${data['total_group_members']} members');
+        print('✅ Found ${matchedIndividuals.length} of ${data['total_group_members']} members across ${cameras.length} camera(s)');
         
         // Convert matched individuals to AggregatedIndividualAnalysis
         // For each matched individual, fetch hierarchy to get super-individual data if it exists
@@ -4981,18 +4987,67 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   }
 
   /// Build expanded section showing all person object appearances
+  /// Appearances are grouped by camera/collection for better organization
   Widget _buildExpandedAppearances(AggregatedIndividualAnalysis analysis) {
+    // Group appearances by camera/collection
+    final Map<String, List<IndividualAppearance>> appearancesByCamera = {};
+    for (final appearance in analysis.appearances) {
+      final cameraKey = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
+      appearancesByCamera.putIfAbsent(cameraKey, () => []).add(appearance);
+    }
+
+    // Build sections for each camera/collection
     return Container(
       color: Theme.of(context).colorScheme.surface.withOpacity(0.3),
-      child: ListView.separated(
+      child: ListView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        itemCount: analysis.appearances.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 8),
-        itemBuilder: (context, index) {
-          final appearance = analysis.appearances[index];
-          return _buildAppearanceCard(appearance, index);
+        itemCount: appearancesByCamera.length,
+        itemBuilder: (context, camIndex) {
+          final cameraName = appearancesByCamera.keys.elementAt(camIndex);
+          final appearances = appearancesByCamera[cameraName]!;
+          
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Camera/Collection header
+              if (appearancesByCamera.length > 1) // Only show header if multiple cameras
+                Padding(
+                  padding: EdgeInsets.only(left: 4, bottom: 8, top: camIndex > 0 ? 12 : 0),
+                  child: Row(
+                    children: [
+                      Icon(Icons.videocam, size: 16, color: Colors.blue[700]),
+                      const SizedBox(width: 6),
+                      Text(
+                        cameraName,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[700],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${appearances.length} appearance${appearances.length != 1 ? 's' : ''}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              // Appearance cards for this camera
+              ...List.generate(
+                appearances.length,
+                (index) => Padding(
+                  padding: EdgeInsets.only(bottom: index < appearances.length - 1 ? 8 : 0),
+                  child: _buildAppearanceCard(appearances[index], index),
+                ),
+              ),
+            ],
+          );
         },
       ),
     );
@@ -5191,7 +5246,16 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
 
         print('🚦 CROSS-VIDEO ROUTES: Successfully loaded ${personGroups.length} person groups with route data');
 
-        // Now use the SAME visualization as single-video mode
+        // Group person groups by camera for separate visualization
+        final groupsByCamera = <String, List<Map<String, dynamic>>>{};
+        for (final group in personGroups) {
+          final cameraName = group['camera_name'] as String? ?? 'Unknown Camera';
+          groupsByCamera.putIfAbsent(cameraName, () => []).add(group);
+        }
+
+        print('🚦 CROSS-VIDEO ROUTES: Routes grouped into ${groupsByCamera.length} camera(s)');
+
+        // Now use the SAME visualization as single-video mode, but grouped by camera
         return SingleChildScrollView(
           child: Column(
             children: [
@@ -5211,7 +5275,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           Text(
-                            'Unified routes from ${personGroups.length} individual(s) across multiple videos',
+                            'Routes from ${personGroups.length} detection(s) across ${groupsByCamera.length} camera(s)',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Colors.grey[600],
                             ),
@@ -5272,15 +5336,61 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                 ),
               ),
               
-              // Routes canvas
-              const SizedBox(height: 8),
-              _buildCrossVideoRoutesCanvas(personGroups),
-              
-              // Legend
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: _buildRoutesLegend(personGroups),
-              ),
+              // Routes canvases - one per camera
+              ...groupsByCamera.entries.map((entry) {
+                final cameraName = entry.key;
+                final cameraGroups = entry.value;
+                
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Camera header (only show if multiple cameras)
+                    if (groupsByCamera.length > 1)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        margin: const EdgeInsets.only(top: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          border: Border(
+                            left: BorderSide(color: Colors.blue.shade700, width: 4),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.videocam, size: 18, color: Colors.blue[700]),
+                            const SizedBox(width: 8),
+                            Text(
+                              cameraName,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.blue[700],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              '${cameraGroups.length} route${cameraGroups.length != 1 ? 's' : ''}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    
+                    // Routes canvas for this camera
+                    const SizedBox(height: 8),
+                    _buildCrossVideoRoutesCanvas(cameraGroups),
+                    
+                    // Legend for this camera
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: _buildRoutesLegend(cameraGroups),
+                    ),
+                  ],
+                );
+              }).toList(),
             ],
           ),
         );
@@ -5412,12 +5522,19 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     final personGroups = <Map<String, dynamic>>[];
 
     // Get all unique video UUIDs from all appearances
+    // Also track camera info for each video
     final allVideoUuids = <String>{};
+    final videoToCameraMap = <String, String>{};  // video_uuid -> camera_name
+    
     for (final analysis in _aggregatedAnalyses!) {
       for (final appearance in analysis.appearances) {
         // Skip empty or invalid video UUIDs
         if (appearance.videoUuid.isNotEmpty && appearance.videoUuid.length >= 8) {
           allVideoUuids.add(appearance.videoUuid);
+          // Track which camera this video belongs to
+          if (appearance.cameraName != null || appearance.cameraId != null) {
+            videoToCameraMap[appearance.videoUuid] = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
+          }
         } else {
           print('⚠️ Skipping invalid video UUID: "${appearance.videoUuid}"');
         }
@@ -5425,6 +5542,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     }
 
     print('🚦 CROSS-VIDEO ROUTES: Found ${allVideoUuids.length} unique videos');
+    print('🚦 CROSS-VIDEO ROUTES: Camera mapping for ${videoToCameraMap.length} videos');
 
     // Fetch person objects data for each video
     final videoRoutesMap = <String, Map<String, dynamic>>{};
@@ -5464,13 +5582,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       print('🚦 CROSS-VIDEO ROUTES: Processing individual $i ($individualId)');
       print('🚦   Individual has ${analysis.appearances.length} appearances');
 
-      final allRoutePoints = <Map<String, dynamic>>[];
+      // Group route points by camera/collection
+      final routePointsByCamera = <String, List<Map<String, dynamic>>>{};
 
       // For each appearance of this individual
       for (int ai = 0; ai < analysis.appearances.length; ai++) {
         final appearance = analysis.appearances[ai];
         final videoUuid = appearance.videoUuid;
         final personObjectUuid = appearance.personObjectUuid;
+        final cameraName = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
         
         // Skip invalid UUIDs
         if (videoUuid.isEmpty || videoUuid.length < 8) {
@@ -5482,7 +5602,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           continue;
         }
         
-        print('🚦   Appearance $ai: video=${videoUuid.substring(0, 8)}, person_object=${personObjectUuid.substring(0, 8)}');
+        print('🚦   Appearance $ai: video=${videoUuid.substring(0, 8)}, camera=$cameraName');
 
         // Get the routes data for this video
         final videoData = videoRoutesMap[videoUuid];
@@ -5519,9 +5639,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             
             print('🚦       ✅ Found ${routePoints.length} route points from ${group['person_id']}');
             
-            // Add all route points from this group
+            // Add route points to the appropriate camera group
+            routePointsByCamera.putIfAbsent(cameraName, () => []);
             for (final point in routePoints) {
-              allRoutePoints.add(point as Map<String, dynamic>);
+              final pointMap = point as Map<String, dynamic>;
+              // Add camera info to each point
+              pointMap['camera_name'] = cameraName;
+              routePointsByCamera[cameraName]!.add(pointMap);
             }
           } else {
             print('🚦       ⚠️ No movement_tracking in group');
@@ -5529,81 +5653,89 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         }
       }
 
-      if (allRoutePoints.isEmpty) {
+      if (routePointsByCamera.isEmpty) {
         print('🚦 Individual $i: ⚠️ No route points found');
         continue;
       }
 
-      // Sort all route points by timestamp or frame_number
-      allRoutePoints.sort((a, b) {
-        // Handle different timestamp formats
-        try {
-          final timestampA = a['timestamp'];
-          final timestampB = b['timestamp'];
+      print('🚦 Individual $i: Found routes in ${routePointsByCamera.length} camera(s)');
+
+      // Create one person group per camera with sorted and sampled routes
+      for (final cameraName in routePointsByCamera.keys) {
+        final cameraRoutePoints = routePointsByCamera[cameraName]!;
+        
+        // Sort route points by timestamp or frame_number
+        cameraRoutePoints.sort((a, b) {
+          // Handle different timestamp formats
+          try {
+            final timestampA = a['timestamp'];
+            final timestampB = b['timestamp'];
+            
+            // If timestamp is a string (ISO format), parse as DateTime
+            if (timestampA is String && timestampB is String) {
+              final timeA = DateTime.parse(timestampA);
+              final timeB = DateTime.parse(timestampB);
+              return timeA.compareTo(timeB);
+            }
+            
+            // If timestamp is a number (Unix timestamp or frame number), compare directly
+            if (timestampA is num && timestampB is num) {
+              return timestampA.compareTo(timestampB);
+            }
+            
+            // Fallback: try to use frame_number if timestamp comparison fails
+            final frameA = a['frame_number'] as num? ?? 0;
+            final frameB = b['frame_number'] as num? ?? 0;
+            return frameA.compareTo(frameB);
+          } catch (e) {
+            print('🚦 Warning: Could not compare timestamps: $e');
+            // Fallback to frame number
+            final frameA = a['frame_number'] as num? ?? 0;
+            final frameB = b['frame_number'] as num? ?? 0;
+            return frameA.compareTo(frameB);
+          }
+        });
+
+        print('🚦 Individual $i, Camera "$cameraName": ${cameraRoutePoints.length} route points');
+
+        // Sample route points if there are too many (threshold: 100 points)
+        const maxRoutePoints = 100;
+        List<Map<String, dynamic>> sampledRoutePoints = cameraRoutePoints;
+        
+        if (cameraRoutePoints.length > maxRoutePoints) {
+          // Calculate sampling interval
+          final interval = (cameraRoutePoints.length / maxRoutePoints).ceil();
+          sampledRoutePoints = [];
           
-          // If timestamp is a string (ISO format), parse as DateTime
-          if (timestampA is String && timestampB is String) {
-            final timeA = DateTime.parse(timestampA);
-            final timeB = DateTime.parse(timestampB);
-            return timeA.compareTo(timeB);
+          // Always include first and last points
+          sampledRoutePoints.add(cameraRoutePoints.first);
+          
+          // Sample intermediate points
+          for (int j = interval; j < cameraRoutePoints.length - 1; j += interval) {
+            sampledRoutePoints.add(cameraRoutePoints[j]);
           }
           
-          // If timestamp is a number (Unix timestamp or frame number), compare directly
-          if (timestampA is num && timestampB is num) {
-            return timestampA.compareTo(timestampB);
+          // Always include last point
+          if (cameraRoutePoints.length > 1) {
+            sampledRoutePoints.add(cameraRoutePoints.last);
           }
           
-          // Fallback: try to use frame_number if timestamp comparison fails
-          final frameA = a['frame_number'] as num? ?? 0;
-          final frameB = b['frame_number'] as num? ?? 0;
-          return frameA.compareTo(frameB);
-        } catch (e) {
-          print('🚦 Warning: Could not compare timestamps: $e');
-          // Fallback to frame number
-          final frameA = a['frame_number'] as num? ?? 0;
-          final frameB = b['frame_number'] as num? ?? 0;
-          return frameA.compareTo(frameB);
+          print('🚦 Individual $i, Camera "$cameraName": Sampled ${cameraRoutePoints.length} → ${sampledRoutePoints.length} points');
         }
-      });
 
-      print('🚦 Individual $i: ✅ Combined ${allRoutePoints.length} route points from ${analysis.appearances.length} appearances');
-
-      // Sample route points if there are too many (threshold: 100 points)
-      const maxRoutePoints = 100;
-      List<Map<String, dynamic>> sampledRoutePoints = allRoutePoints;
-      
-      if (allRoutePoints.length > maxRoutePoints) {
-        // Calculate sampling interval
-        final interval = (allRoutePoints.length / maxRoutePoints).ceil();
-        sampledRoutePoints = [];
-        
-        // Always include first and last points
-        sampledRoutePoints.add(allRoutePoints.first);
-        
-        // Sample intermediate points
-        for (int j = interval; j < allRoutePoints.length - 1; j += interval) {
-          sampledRoutePoints.add(allRoutePoints[j]);
-        }
-        
-        // Always include last point
-        if (allRoutePoints.length > 1) {
-          sampledRoutePoints.add(allRoutePoints.last);
-        }
-        
-        print('🚦 Individual $i: 📊 Sampled ${allRoutePoints.length} points down to ${sampledRoutePoints.length} points (threshold: $maxRoutePoints)');
+        // Create person group for this camera
+        personGroups.add({
+          'person_id': individualId,
+          'camera_name': cameraName,  // Add camera identifier
+          'total_detections': cameraRoutePoints.length,
+          'sampled_points': sampledRoutePoints.length,
+          'movement_tracking': {
+            'route_points': sampledRoutePoints,
+            'total_distance': 0.0,
+            'movement_duration': analysis.totalDurationSeconds / routePointsByCamera.length,  // Approximate duration per camera
+          },
+        });
       }
-
-      // Create unified person group
-      personGroups.add({
-        'person_id': individualId,
-        'total_detections': allRoutePoints.length, // Keep original count
-        'sampled_points': sampledRoutePoints.length, // Add sampled count
-        'movement_tracking': {
-          'route_points': sampledRoutePoints, // Use sampled points for rendering
-          'total_distance': 0.0,
-          'movement_duration': analysis.totalDurationSeconds,
-        },
-      });
     }
 
     print('🚦 CROSS-VIDEO ROUTES: ✅ Final result: ${personGroups.length} person groups with route data');
@@ -6116,6 +6248,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   }
 
   /// Build Best Faces tab for cross-video mode
+  /// COMMENTED OUT - Attendance is now a first-tier tab
+  /*
   Widget _buildFacesTabCrossVideo() {
     if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
       return const Center(child: Text('No data available'));
@@ -6166,15 +6300,19 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       ],
     );
   }
+  */
 
   /// Build Insights tab - AI-powered behavioral insights
+  /// Build Insights tab - COMMENTED OUT
+  /*
   Widget _buildInsightsTab() {
     // Use the same statistics calculations as Statistics tab
     return _buildStatisticsTabCrossVideo();
   }
+  */
 
   /// Build individuals summary list for Attendance tab
-  Widget _buildIndividualsSummaryList() {
+  Widget _buildIndividualsSummaryList(List<AggregatedIndividualAnalysis> analyses, String cameraName) {
     final theme = Theme.of(context);
     final borderColor = theme.colorScheme.outline.withOpacity(0.3);
     final iconColor = theme.colorScheme.primary;
@@ -6216,7 +6354,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${_aggregatedAnalyses!.length} ${_aggregatedAnalyses!.length == 1 ? 'person' : 'people'} tracked in this analysis',
+                      '${analyses.length} ${analyses.length == 1 ? 'person' : 'people'} tracked in this analysis',
                       style: TextStyle(
                         fontSize: 12,
                         color: textColor.withOpacity(0.8),
@@ -6232,7 +6370,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                   color: iconColor,
                   size: 20,
                 ),
-                onPressed: _downloadAttendanceExcel,
+                onPressed: () => _downloadAttendanceExcel(cameraName),
                 tooltip: 'Download Excel',
               ),
             ],
@@ -6303,14 +6441,14 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: _aggregatedAnalyses!.length,
+          itemCount: analyses.length,
           separatorBuilder: (context, index) => Divider(
             height: 1,
             thickness: 1,
             color: borderColor,
           ),
           itemBuilder: (context, index) {
-            final analysis = _aggregatedAnalyses![index];
+            final analysis = analyses[index];
             return _buildIndividualSummaryRow(analysis);
           },
         ),
@@ -6461,10 +6599,25 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   }
 
   /// Download attendance summary as Excel file
-  Future<void> _downloadAttendanceExcel() async {
+  Future<void> _downloadAttendanceExcel(String cameraName) async {
     if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No data to export')),
+      );
+      return;
+    }
+
+    // Filter analyses for this specific camera
+    final cameraAnalyses = _aggregatedAnalyses!.where((analysis) {
+      return analysis.appearances.any((appearance) {
+        final appearanceCameraName = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
+        return appearanceCameraName == cameraName;
+      });
+    }).toList();
+
+    if (cameraAnalyses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No data for this camera')),
       );
       return;
     }
@@ -6481,7 +6634,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       // Get collection name and dates from crossVideoContext
       final crossVideoCtx = widget.crossVideoContext!;
       final isCameraSearch = crossVideoCtx.sessionData['source'] == 'individual_group_camera_search';
-      String collectionName = '';
+      String collectionName = cameraName;  // Use the camera parameter as collection name
       DateTime? startTime;
       DateTime? endTime;
       
@@ -6495,27 +6648,6 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         if (searchParams['end_time'] != null) {
           endTime = DateTime.tryParse(searchParams['end_time'].toString());
         }
-        
-        // Try to get collection from search_parameters
-        collectionName = searchParams['collection_id']?.toString() ?? 
-                        searchParams['collection']?.toString() ?? '';
-      }
-      
-      // For camera searches, camera_name is the collection
-      if (collectionName.isEmpty && isCameraSearch && crossVideoCtx.sessionData.containsKey('camera_name')) {
-        collectionName = crossVideoCtx.sessionData['camera_name'].toString();
-      }
-      
-      // Fallback to context collections
-      if (collectionName.isEmpty && crossVideoCtx.collections.isNotEmpty) {
-        collectionName = crossVideoCtx.collections.first;
-      }
-      
-      // Final fallback to sessionData
-      if (collectionName.isEmpty) {
-        collectionName = crossVideoCtx.sessionData['collection_name']?.toString() ??
-                        crossVideoCtx.sessionData['collection_id']?.toString() ??
-                        'Unknown Collection';
       }
       
       // Format dates
@@ -6524,7 +6656,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       
       // Title row (Row 0)
       sheet.appendRow([
-        excel.TextCellValue('Attendance Summary Report'),
+        excel.TextCellValue('Attendance Summary Report - $collectionName'),
       ]);
       
       // Collection and date info (Rows 1-3)
@@ -6549,8 +6681,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         excel.TextCellValue('Total Appearances'),
       ]);
       
-      // Data rows
-      for (final analysis in _aggregatedAnalyses!) {
+      // Data rows - use filtered analyses for this camera
+      for (final analysis in cameraAnalyses) {
         // Determine display name
         String displayName;
         Demographics? displayDemographics = analysis.demographics;
@@ -6600,8 +6732,9 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         throw Exception('Failed to encode Excel file');
       }
       
-      // Save and share file
-      final fileName = 'attendance_summary_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      // Save and share file with camera name in filename
+      final sanitizedCameraName = cameraName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final fileName = 'attendance_${sanitizedCameraName}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
       
       if (kIsWeb) {
         // For web, trigger browser download using JavaScript
@@ -6677,71 +6810,137 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return const Center(child: Text('No attendance data available'));
     }
 
+    // Group analyses by camera/collection
+    final analysesByCamera = <String, List<AggregatedIndividualAnalysis>>{};
+    for (final analysis in _aggregatedAnalyses!) {
+      // Determine which camera(s) this individual appeared in
+      final camerasForIndividual = <String>{};
+      for (final appearance in analysis.appearances) {
+        final cameraName = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
+        camerasForIndividual.add(cameraName);
+      }
+      
+      // Add this individual to each camera group they appeared in
+      for (final camera in camerasForIndividual) {
+        analysesByCamera.putIfAbsent(camera, () => []).add(analysis);
+      }
+    }
+
     return SingleChildScrollView(
       child: Column(
-        children: [
-          // Individuals Summary List
-          _buildIndividualsSummaryList(),
+        children: analysesByCamera.entries.map((entry) {
+          final cameraName = entry.key;
+          final cameraAnalyses = entry.value;
           
-          const Divider(height: 32, thickness: 2),
-          
-          // Header
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                const Icon(Icons.event_available, color: Colors.blue),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          return Column(
+            children: [
+              // Camera header (only show if multiple cameras)
+              if (analysesByCamera.length > 1)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  margin: const EdgeInsets.only(top: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    border: Border(
+                      left: BorderSide(color: Colors.blue.shade700, width: 4),
+                    ),
+                  ),
+                  child: Row(
                     children: [
+                      Icon(Icons.videocam, size: 18, color: Colors.blue[700]),
+                      const SizedBox(width: 8),
                       Text(
-                        'Attendance Timeline',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        cameraName,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue[700],
+                        ),
                       ),
+                      const SizedBox(width: 12),
                       Text(
-                        'Individual appearances over time',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        '${cameraAnalyses.length} ${cameraAnalyses.length != 1 ? 'people' : 'person'}',
+                        style: TextStyle(
+                          fontSize: 14,
                           color: Colors.grey[600],
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          
-          // Attendance graph
-          Center(
-            child: Container(
-              height: math.max(400, _aggregatedAnalyses!.length * 60.0),
-              margin: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.black12,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: CustomPaint(
-                  painter: AttendanceGraphPainter(_aggregatedAnalyses!),
-                  size: Size.infinite,
+              
+              // Individuals Summary List for this camera
+              _buildIndividualsSummaryList(cameraAnalyses, cameraName),
+              
+              const Divider(height: 32, thickness: 2),
+              
+              // Timeline Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.event_available, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            analysesByCamera.length > 1 
+                              ? 'Attendance Timeline - $cameraName'
+                              : 'Attendance Timeline',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          Text(
+                            'Individual appearances over time',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ),
-        ],
+              
+              // Attendance graph for this camera
+              Center(
+                child: Container(
+                  height: math.max(400, cameraAnalyses.length * 60.0),
+                  margin: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CustomPaint(
+                      painter: AttendanceGraphPainter(cameraAnalyses),
+                      size: Size.infinite,
+                    ),
+                  ),
+                ),
+              ),
+              
+              // Add spacing between cameras
+              if (analysesByCamera.length > 1)
+                const SizedBox(height: 32),
+            ],
+          );
+        }).toList(),
       ),
     );
   }
 
-  /// Build Triggers tab - Event-based notifications and alerts
+  /// Build Triggers tab - Event-based notifications and alerts - COMMENTED OUT
+  /*
   Widget _buildTriggersTab() {
     // Use the new API-integrated triggers widget
     return const TriggersTab();
   }
+  */
 
   Widget _buildFaceCard(FaceData face, String individualId) {
     final qualityScore = face.qualityScore * 100;

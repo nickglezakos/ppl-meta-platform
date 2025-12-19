@@ -479,17 +479,19 @@ async def search_group_in_camera(
     manager: IndividualGroupsManager = Depends(get_groups_manager),
 ) -> GroupCameraSearchResponse:
     """
-    Search for group members within specific camera footage during a time range.
+    Search for group members within camera footage during a time range.
+    
+    Supports both single camera (camera_id) and multiple cameras (camera_ids).
     
     This endpoint:
     1. Fetches all member individual_uuids for the group
-    2. Executes MVR search on specified camera/time range
+    2. Executes MVR search on specified camera(s)/time range
     3. Compares MVR results with group members
     4. Returns matched individuals with appearance data
     
     Args:
         group_id: Group identifier
-        request_body: Camera search parameters
+        request_body: Camera search parameters (supports camera_id OR camera_ids)
         request: FastAPI Request object to extract auth token
         manager: IndividualGroupsManager dependency
         
@@ -501,14 +503,38 @@ async def search_group_in_camera(
         auth_token = request.headers.get("Authorization")
         logger.info(f"Camera search request - auth_token present: {bool(auth_token)}, length: {len(auth_token) if auth_token else 0}")
         
-        response = await manager.search_members_in_camera(
-            group_id=group_id,
-            camera_id=request_body.camera_id,
-            start_time=request_body.start_time,
-            end_time=request_body.end_time,
-            confidence_threshold=request_body.confidence_threshold,
-            auth_token=auth_token,
-        )
+        # Get normalized list of camera IDs
+        camera_ids = request_body.get_camera_ids()
+        
+        if not camera_ids:
+            raise ValueError("At least one camera must be specified (camera_id or camera_ids)")
+        
+        # If multiple cameras, use multi-camera search
+        if len(camera_ids) > 1:
+            logger.info(f"Multi-camera search for group {group_id} across {len(camera_ids)} cameras")
+            response = await manager.search_members_in_cameras(
+                group_id=group_id,
+                camera_ids=camera_ids,
+                start_time=request_body.start_time,
+                end_time=request_body.end_time,
+                confidence_threshold=request_body.confidence_threshold,
+                auth_token=auth_token,
+            )
+        else:
+            # Single camera search (original behavior)
+            logger.info(f"Single camera search for group {group_id} in camera {camera_ids[0]}")
+            response = await manager.search_members_in_camera(
+                group_id=group_id,
+                camera_id=camera_ids[0],
+                start_time=request_body.start_time,
+                end_time=request_body.end_time,
+                confidence_threshold=request_body.confidence_threshold,
+                auth_token=auth_token,
+            )
+            
+            # Convert single camera response to multi-camera format
+            response.camera_ids = [response.camera_id] if response.camera_id else None
+            response.camera_names = [response.camera_name] if response.camera_name else None
         
         return response
     except ValueError as e:

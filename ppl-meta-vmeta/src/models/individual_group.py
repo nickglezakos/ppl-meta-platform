@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class GroupVisibility(str, Enum):
@@ -269,7 +269,8 @@ class BulkAssignGroupsResponse(BaseModel):
 class GroupCameraSearchRequest(BaseModel):
     """Request model for searching group members in camera footage"""
     
-    camera_id: str = Field(..., description="Camera/collection ID to search")
+    camera_id: Optional[str] = Field(None, description="Single camera/collection ID (deprecated, use camera_ids)")
+    camera_ids: Optional[List[str]] = Field(None, description="List of camera/collection IDs to search")
     start_time: datetime = Field(..., description="Search start time")
     end_time: datetime = Field(..., description="Search end time")
     confidence_threshold: float = Field(
@@ -278,6 +279,25 @@ class GroupCameraSearchRequest(BaseModel):
         le=1.0,
         description="Minimum confidence threshold for matches"
     )
+    
+    @model_validator(mode='after')
+    def validate_cameras(self):
+        """Ensure at least one camera is specified"""
+        if not self.camera_id and not self.camera_ids:
+            raise ValueError("Either camera_id or camera_ids must be provided")
+        
+        if self.camera_ids is not None and len(self.camera_ids) == 0:
+            raise ValueError("camera_ids cannot be an empty list")
+        
+        return self
+    
+    def get_camera_ids(self) -> List[str]:
+        """Get normalized list of camera IDs"""
+        if self.camera_ids:
+            return self.camera_ids
+        elif self.camera_id:
+            return [self.camera_id]
+        return []
 
 
 class MatchedIndividual(BaseModel):
@@ -298,8 +318,10 @@ class GroupCameraSearchResponse(BaseModel):
     
     group_id: str
     group_name: str
-    camera_id: str
-    camera_name: str
+    camera_id: Optional[str] = Field(None, description="Single camera ID (deprecated)")
+    camera_name: Optional[str] = Field(None, description="Single camera name (deprecated)")
+    camera_ids: Optional[List[str]] = Field(None, description="List of camera IDs searched")
+    camera_names: Optional[List[str]] = Field(None, description="List of camera names searched")
     search_window: Dict = Field(
         description="Search time range with start_time and end_time"
     )
