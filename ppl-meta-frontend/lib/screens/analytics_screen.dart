@@ -9,6 +9,7 @@ import 'package:excel/excel.dart' as excel;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:js' as js if (dart.library.html) 'dart:js';
+import 'package:fl_chart/fl_chart.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/analytics_models.dart';
@@ -38,6 +39,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   
   // Analytics data
   AnalyticsSummary? _analyticsSummary;
+  Map<String, dynamic>? _timeSeriesData;
+  Map<String, dynamic>? _demographicsData;
+  Map<String, dynamic>? _behavioralData;
   List<Map<String, dynamic>> _cameras = [];
 
   @override
@@ -80,6 +84,60 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         }
       } else {
         throw Exception(response.error ?? 'Failed to load analytics');
+      }
+      
+      // Load time-series data for Level 2 analytics
+      try {
+        final timeSeriesResponse = await apiClient.getTimeBasedAnalytics(
+          timeFilter: _timeFilter,
+          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          interval: _timeFilter == 'today' || _timeFilter == 'last_hour' || _timeFilter == 'last_3_hours' 
+              ? 'hour' 
+              : 'day',
+        );
+        
+        if (mounted && timeSeriesResponse.success && timeSeriesResponse.data != null) {
+          setState(() {
+            _timeSeriesData = timeSeriesResponse.data!;
+          });
+        }
+      } catch (e) {
+        debugPrint('⚠️  Failed to load time-series data: $e');
+        // Don't fail the whole page if time-series fails
+      }
+      
+      // Load demographics data for Level 3 analytics
+      try {
+        final demographicsResponse = await apiClient.getDemographicsBreakdown(
+          timeFilter: _timeFilter,
+          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+        );
+        
+        if (mounted && demographicsResponse.success && demographicsResponse.data != null) {
+          setState(() {
+            _demographicsData = demographicsResponse.data!;
+          });
+        }
+      } catch (e) {
+        debugPrint('⚠️  Failed to load demographics data: $e');
+        // Don't fail the whole page if demographics fails
+      }
+      
+      // Load behavioral analytics data for Level 4 analytics
+      try {
+        final behavioralResponse = await apiClient.getBehavioralAnalytics(
+          timeFilter: _timeFilter,
+          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+        );
+        
+        if (mounted && behavioralResponse.success && behavioralResponse.data != null) {
+          setState(() {
+            _behavioralData = behavioralResponse.data!;
+          });
+        }
+      } catch (e) {
+        debugPrint('⚠️  Failed to load behavioral data: $e');
+        // Don't fail the whole page if behavioral fails
       }
     } catch (e) {
       if (mounted) {
@@ -334,13 +392,28 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             
             const SizedBox(height: 24),
             
-            // Level 1: Basic Metrics (placeholder)
+            // Level 1: Basic Metrics
             _buildBasicMetricsSection(),
             
             const SizedBox(height: 24),
             
-            // Coming soon placeholder
-            _buildComingSoonPlaceholder(),
+            // Level 2: Time-Based Trends
+            if (_timeSeriesData != null) ...[
+              _buildTimeBasedTrendsSection(),
+              const SizedBox(height: 24),
+            ],
+            
+            // Level 3: Demographics
+            if (_demographicsData != null) ...[
+              _buildDemographicsSection(),
+              const SizedBox(height: 24),
+            ],
+            
+            // Level 4: Behavioral Insights
+            if (_behavioralData != null) ...[
+              _buildBehavioralSection(),
+              const SizedBox(height: 24),
+            ],
           ],
         ),
       ),
@@ -494,37 +567,1148 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     );
   }
 
-  /// Build coming soon placeholder
-  Widget _buildComingSoonPlaceholder() {
-    return Card(
-      elevation: 1,
-      child: Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade300, width: 2),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Column(
+  /// Build Level 2: Time-Based Trends section
+  Widget _buildTimeBasedTrendsSection() {
+    if (_timeSeriesData == null) return const SizedBox.shrink();
+    
+    final dataPoints = (_timeSeriesData!['data_points'] as List?) ?? [];
+    final interval = _timeSeriesData!['interval'] as String? ?? 'hour';
+    final peakCount = _timeSeriesData!['peak_count'] as int? ?? 0;
+    final averageCount = (_timeSeriesData!['average_count'] as num?)?.toDouble() ?? 0.0;
+    final totalCount = _timeSeriesData!['total_count'] as int? ?? 0;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Icon(Icons.construction, size: 48, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              'Advanced Analytics Coming Soon',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'LEVEL 2',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Time-based trends, demographics, behavioral analysis, and more',
-              textAlign: TextAlign.center,
+            const SizedBox(width: 8),
+            const Text(
+              'Time-Based Trends',
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // Summary stats cards
+        Row(
+          children: [
+            Expanded(
+              child: _buildTrendStatCard(
+                title: 'Total',
+                value: totalCount.toString(),
+                icon: Icons.people,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildTrendStatCard(
+                title: 'Peak',
+                value: peakCount.toString(),
+                icon: Icons.trending_up,
+                color: Colors.green,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _buildTrendStatCard(
+                title: 'Average',
+                value: averageCount.toStringAsFixed(1),
+                icon: Icons.show_chart,
+                color: Colors.purple,
+              ),
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // Time-series chart
+        if (dataPoints.isNotEmpty) ...[
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.timeline, size: 20, color: Colors.grey.shade700),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Activity Over Time',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade800,
+                        ),
+                      ),
+                      const Spacer(),
+                      Chip(
+                        label: Text(
+                          interval == 'hour' ? 'Hourly' : 'Daily',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        backgroundColor: Colors.blue.shade50,
+                        side: BorderSide(color: Colors.blue.shade200),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    height: 250,
+                    child: _buildTimeSeriesChart(dataPoints, interval),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ] else ...[
+          Card(
+            elevation: 1,
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.info_outline, size: 48, color: Colors.grey.shade400),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No time-series data available for this period',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Build trend stat card
+  Widget _buildTrendStatCard({
+    required String title,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(icon, color: color, size: 16),
+                ),
+                const Spacer(),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
                 color: Colors.grey.shade600,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build time-series line chart using fl_chart
+  Widget _buildTimeSeriesChart(List<dynamic> dataPoints, String interval) {
+    if (dataPoints.isEmpty) {
+      return const Center(child: Text('No data available'));
+    }
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: 1,
+          getDrawingHorizontalLine: (value) {
+            return FlLine(
+              color: Colors.grey.shade200,
+              strokeWidth: 1,
+            );
+          },
+        ),
+        titlesData: FlTitlesData(
+          show: true,
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: dataPoints.length > 12 ? (dataPoints.length / 6).ceilToDouble() : 2,
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index < 0 || index >= dataPoints.length) return const Text('');
+                
+                final point = dataPoints[index] as Map<String, dynamic>;
+                final timestamp = DateTime.parse(point['timestamp'] as String);
+                
+                String label;
+                if (interval == 'hour') {
+                  label = DateFormat('HH:mm').format(timestamp);
+                } else {
+                  label = DateFormat('MM/dd').format(timestamp);
+                }
+                
+                return Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade600,
+                  ),
+                );
+              },
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (value, meta) {
+                return Text(
+                  value.toInt().toString(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade600,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(
+          show: true,
+          border: Border(
+            bottom: BorderSide(color: Colors.grey.shade300),
+            left: BorderSide(color: Colors.grey.shade300),
+          ),
+        ),
+        minX: 0,
+        maxX: (dataPoints.length - 1).toDouble(),
+        minY: 0,
+        maxY: (_timeSeriesData!['peak_count'] as int? ?? 10).toDouble() * 1.2,
+        lineBarsData: [
+          LineChartBarData(
+            spots: dataPoints.asMap().entries.map((entry) {
+              final index = entry.key;
+              final point = entry.value as Map<String, dynamic>;
+              final count = (point['count'] as int? ?? 0).toDouble();
+              return FlSpot(index.toDouble(), count);
+            }).toList(),
+            isCurved: true,
+            color: AppColors.primary,
+            barWidth: 3,
+            isStrokeCapRound: true,
+            dotData: FlDotData(
+              show: dataPoints.length <= 24,
+              getDotPainter: (spot, percent, barData, index) {
+                return FlDotCirclePainter(
+                  radius: 4,
+                  color: Colors.white,
+                  strokeWidth: 2,
+                  strokeColor: AppColors.primary,
+                );
+              },
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              color: AppColors.primary.withOpacity(0.1),
+            ),
+          ),
+        ],
+        lineTouchData: LineTouchData(
+          enabled: true,
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (touchedSpots) {
+              return touchedSpots.map((spot) {
+                final index = spot.x.toInt();
+                if (index < 0 || index >= dataPoints.length) return null;
+                
+                final point = dataPoints[index] as Map<String, dynamic>;
+                final timestamp = DateTime.parse(point['timestamp'] as String);
+                final count = point['count'] as int? ?? 0;
+                
+                String timeLabel;
+                if (interval == 'hour') {
+                  timeLabel = DateFormat('HH:mm').format(timestamp);
+                } else {
+                  timeLabel = DateFormat('MMM dd').format(timestamp);
+                }
+                
+                return LineTooltipItem(
+                  '$timeLabel\n$count people',
+                  const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                );
+              }).toList();
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Build Level 3: Demographics section with pie charts
+  Widget _buildDemographicsSection() {
+    if (_demographicsData == null) return const SizedBox.shrink();
+    
+    final genderData = _demographicsData!['gender_distribution'] as Map<String, dynamic>?;
+    final ageData = _demographicsData!['age_distribution'] as Map<String, dynamic>?;
+    final totalPeople = _demographicsData!['total_people'] as int? ?? 0;
+    
+    if (totalPeople == 0) {
+      return const SizedBox.shrink();
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.purple.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_awesome, size: 14, color: Colors.purple.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Level 3',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.purple.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Icon(Icons.people, color: AppColors.primary, size: 20),
+            const SizedBox(width: 8),
+            const Text(
+              'Demographics Distribution',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // Total people summary
+        Card(
+          elevation: 1,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Icon(Icons.groups, color: AppColors.primary, size: 32),
+                const SizedBox(width: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$totalPeople',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'Total People Analyzed',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        
+        // Gender and Age pie charts - responsive layout
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // Use vertical layout for mobile (width < 600px)
+            final isMobile = constraints.maxWidth < 600;
+            
+            if (isMobile) {
+              return Column(
+                children: [
+                  _buildGenderPieChart(genderData),
+                  const SizedBox(height: 16),
+                  _buildAgePieChart(ageData),
+                ],
+              );
+            } else {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Gender distribution
+                  Expanded(
+                    child: _buildGenderPieChart(genderData),
+                  ),
+                  const SizedBox(width: 16),
+                  // Age distribution
+                  Expanded(
+                    child: _buildAgePieChart(ageData),
+                  ),
+                ],
+              );
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  /// Build gender distribution pie chart
+  Widget _buildGenderPieChart(Map<String, dynamic>? genderData) {
+    if (genderData == null) return const SizedBox.shrink();
+    
+    final male = genderData['male'] as int? ?? 0;
+    final female = genderData['female'] as int? ?? 0;
+    final unknown = genderData['unknown'] as int? ?? 0;
+    final total = male + female + unknown;
+    
+    if (total == 0) return const SizedBox.shrink();
+    
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.wc, color: Colors.blue.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Gender Distribution',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 200,
+              child: PieChart(
+                PieChartData(
+                  sections: [
+                    if (male > 0)
+                      PieChartSectionData(
+                        value: male.toDouble(),
+                        title: '${(male / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.blue.shade600,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (female > 0)
+                      PieChartSectionData(
+                        value: female.toDouble(),
+                        title: '${(female / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.pink.shade400,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (unknown > 0)
+                      PieChartSectionData(
+                        value: unknown.toDouble(),
+                        title: '${(unknown / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.grey.shade400,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 40,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Legend
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                if (male > 0) _buildLegendItem('Male', Colors.blue.shade600, male),
+                if (female > 0) _buildLegendItem('Female', Colors.pink.shade400, female),
+                if (unknown > 0) _buildLegendItem('Unknown', Colors.grey.shade400, unknown),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build age distribution pie chart
+  Widget _buildAgePieChart(Map<String, dynamic>? ageData) {
+    if (ageData == null) return const SizedBox.shrink();
+    
+    final young = ageData['young'] as int? ?? 0;
+    final adult = ageData['adult'] as int? ?? 0;
+    final middleAged = ageData['middle_aged'] as int? ?? 0;
+    final elderly = ageData['elderly'] as int? ?? 0;
+    final unknown = ageData['unknown'] as int? ?? 0;
+    final total = young + adult + middleAged + elderly + unknown;
+    
+    if (total == 0) return const SizedBox.shrink();
+    
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cake, color: Colors.orange.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Age Distribution',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 200,
+              child: PieChart(
+                PieChartData(
+                  sections: [
+                    if (young > 0)
+                      PieChartSectionData(
+                        value: young.toDouble(),
+                        title: '${(young / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.green.shade400,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (adult > 0)
+                      PieChartSectionData(
+                        value: adult.toDouble(),
+                        title: '${(adult / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.blue.shade400,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (middleAged > 0)
+                      PieChartSectionData(
+                        value: middleAged.toDouble(),
+                        title: '${(middleAged / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.orange.shade400,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (elderly > 0)
+                      PieChartSectionData(
+                        value: elderly.toDouble(),
+                        title: '${(elderly / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.purple.shade400,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    if (unknown > 0)
+                      PieChartSectionData(
+                        value: unknown.toDouble(),
+                        title: '${(unknown / total * 100).toStringAsFixed(1)}%',
+                        color: Colors.grey.shade400,
+                        radius: 80,
+                        titleStyle: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 40,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Legend
+            Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                if (young > 0) _buildLegendItem('Young', Colors.green.shade400, young),
+                if (adult > 0) _buildLegendItem('Adult', Colors.blue.shade400, adult),
+                if (middleAged > 0) _buildLegendItem('Middle Aged', Colors.orange.shade400, middleAged),
+                if (elderly > 0) _buildLegendItem('Elderly', Colors.purple.shade400, elderly),
+                if (unknown > 0) _buildLegendItem('Unknown', Colors.grey.shade400, unknown),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build legend item for pie charts
+  Widget _buildLegendItem(String label, Color color, int count) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '$label ($count)',
+          style: const TextStyle(fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  /// Build Level 4: Behavioral Insights section
+  Widget _buildBehavioralSection() {
+    if (_behavioralData == null) return const SizedBox.shrink();
+    
+    final totalDetections = _behavioralData!['total_detections'] as int? ?? 0;
+    final weeklyHeatmap = _behavioralData!['weekly_heatmap'] as Map<String, dynamic>? ?? {};
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.psychology, size: 14, color: Colors.orange.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Level 4',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Icon(Icons.show_chart, color: AppColors.primary, size: 20),
+            const SizedBox(width: 8),
+            const Text(
+              'Behavioral Insights',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // Show message if no data
+        if (totalDetections == 0)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.info_outline, size: 48, color: Colors.grey.shade400),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No behavioral data available',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Try selecting a different time period or camera',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else ...[
+          // Weekly heatmap
+          _buildWeeklyHeatmap(),
+          
+          const SizedBox(height: 16),
+          
+          // Peak times and visit frequency
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Peak times
+              Expanded(
+                child: _buildPeakTimesCard(),
+              ),
+              const SizedBox(width: 16),
+              // Visit frequency
+              Expanded(
+                child: _buildVisitFrequencyCard(),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Camera comparison
+          _buildCameraComparisonChart(),
+        ],
+      ],
+    );
+  }
+
+  /// Build weekly activity heatmap
+  Widget _buildWeeklyHeatmap() {
+    final heatmapData = _behavioralData!['weekly_heatmap'] as Map<String, dynamic>?;
+    if (heatmapData == null) return const SizedBox.shrink();
+    
+    final days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    
+    // Find max value for color scaling
+    int maxValue = 0;
+    for (var dayData in heatmapData.values) {
+      if (dayData is Map<String, dynamic>) {
+        for (var hourValue in dayData.values) {
+          if (hourValue is int && hourValue > maxValue) {
+            maxValue = hourValue;
+          }
+        }
+      }
+    }
+    
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.grid_on, color: Colors.blue.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Weekly Activity Heatmap',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Heatmap grid
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Hour labels
+                  Row(
+                    children: [
+                      const SizedBox(width: 80), // Space for day labels
+                      ...List.generate(24, (hour) {
+                        return Container(
+                          width: 30,
+                          alignment: Alignment.center,
+                          child: Text(
+                            '${hour.toString().padLeft(2, '0')}',
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  // Heatmap rows
+                  ...days.map((day) {
+                    final dayData = heatmapData[day] as Map<String, dynamic>? ?? {};
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Row(
+                        children: [
+                          // Day label
+                          SizedBox(
+                            width: 80,
+                            child: Text(
+                              day.substring(0, 3),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                          // Hour cells
+                          ...List.generate(24, (hour) {
+                            final value = dayData[hour.toString()] as int? ?? 0;
+                            final intensity = maxValue > 0 ? value / maxValue : 0.0;
+                            return Container(
+                              width: 30,
+                              height: 30,
+                              margin: const EdgeInsets.only(right: 2),
+                              decoration: BoxDecoration(
+                                color: value == 0
+                                    ? Colors.grey.shade100
+                                    : Colors.blue.withOpacity(0.2 + (intensity * 0.8)),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              alignment: Alignment.center,
+                              child: value > 0
+                                  ? Text(
+                                      '$value',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w500,
+                                        color: intensity > 0.5 ? Colors.white : Colors.black87,
+                                      ),
+                                    )
+                                  : null,
+                            );
+                          }),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build peak times card
+  Widget _buildPeakTimesCard() {
+    final peakHours = _behavioralData!['peak_hours'] as List? ?? [];
+    final peakDays = _behavioralData!['peak_days'] as List? ?? [];
+    
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.schedule, color: Colors.green.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Peak Activity Times',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (peakHours.isNotEmpty) ...[
+              const Text(
+                'Top Hours',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              ...peakHours.take(3).map((peak) {
+                final timeLabel = peak['time_label'] as String? ?? '';
+                final count = peak['count'] as int? ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(timeLabel, style: const TextStyle(fontSize: 12)),
+                      Text('$count', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+            if (peakDays.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Top Days',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 8),
+              ...peakDays.map((peak) {
+                final day = peak['day'] as String? ?? '';
+                final count = peak['count'] as int? ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(day, style: const TextStyle(fontSize: 12)),
+                      Text('$count', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build visit frequency card
+  Widget _buildVisitFrequencyCard() {
+    final visitFreq = _behavioralData!['visit_frequency'] as Map<String, dynamic>?;
+    if (visitFreq == null) return const SizedBox.shrink();
+    
+    final newVisitors = visitFreq['new_visitors'] as int? ?? 0;
+    final returning = visitFreq['returning_visitors'] as int? ?? 0;
+    final frequent = visitFreq['frequent_visitors'] as int? ?? 0;
+    final total = newVisitors + returning + frequent;
+    
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.repeat, color: Colors.purple.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Visit Frequency',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildFrequencyRow('New', newVisitors, total, Colors.blue.shade400),
+            const SizedBox(height: 8),
+            _buildFrequencyRow('Returning', returning, total, Colors.green.shade400),
+            const SizedBox(height: 8),
+            _buildFrequencyRow('Frequent', frequent, total, Colors.orange.shade400),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build frequency row with progress bar
+  Widget _buildFrequencyRow(String label, int count, int total, Color color) {
+    final percentage = total > 0 ? (count / total * 100).round() : 0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 12)),
+            Text('$count ($percentage%)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+          value: total > 0 ? count / total : 0,
+          backgroundColor: Colors.grey.shade200,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+        ),
+      ],
+    );
+  }
+
+  /// Build camera comparison chart
+  Widget _buildCameraComparisonChart() {
+    final comparison = _behavioralData!['camera_comparison'] as List? ?? [];
+    if (comparison.isEmpty) return const SizedBox.shrink();
+    
+    // Find max for scaling
+    final maxPeople = comparison.fold<int>(0, (max, cam) {
+      final count = cam['total_people'] as int? ?? 0;
+      return count > max ? count : max;
+    });
+    
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.leaderboard, color: Colors.indigo.shade600, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Top Active Cameras',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...comparison.map((cam) {
+              final cameraId = cam['camera_id'] as String? ?? '';
+              final totalPeople = cam['total_people'] as int? ?? 0;
+              final barWidth = maxPeople > 0 ? (totalPeople / maxPeople) : 0.0;
+              
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            cameraId,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          '$totalPeople people',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    LinearProgressIndicator(
+                      value: barWidth,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.indigo.shade400),
+                      minHeight: 8,
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -1065,7 +2249,13 @@ class _FilterDialogState extends State<_FilterDialog> {
   Widget _buildFilterChip(String label, String value) {
     final isSelected = _timeFilter == value;
     return ChoiceChip(
-      label: Text(label),
+      label: Text(
+        label,
+        style: TextStyle(
+          color: isSelected ? AppColors.primary : Colors.grey.shade700,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
       selected: isSelected,
       onSelected: (selected) {
         if (selected) {
@@ -1074,7 +2264,7 @@ class _FilterDialogState extends State<_FilterDialog> {
           });
         }
       },
-      selectedColor: AppColors.primary.withOpacity(0.2),
+      selectedColor: AppColors.primary.withOpacity(0.1),
       backgroundColor: Colors.grey.shade200,
     );
   }

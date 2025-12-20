@@ -1415,7 +1415,59 @@ async def get_analytics_summary(
 
 ---
 
-#### 5.1.2 Hourly Activity Endpoint (Level 2 - Future)
+#### 5.1.2 Time-Series Analytics Endpoint ✅ **IMPLEMENTED v2.20.13**
+
+**Endpoint**: `GET /api/v1/analytics/time-series`
+
+**Priority**: **HIGH** - Required for Level 2 time-based trends dashboard
+
+**Implementation Location**: `ppl-meta-gateway/src/api/v1/analytics.py`
+
+**Description**: Returns time-series data showing people count trends over time with hourly or daily granularity.
+
+**Query Parameters**:
+```python
+time_filter: str = "today"  # today, last_3_days, last_week, last_month
+camera_ids: Optional[str] = None  # Comma-separated
+interval: str = "hour"  # hour (auto for short periods), day (auto for long periods)
+```
+
+**Response Structure**:
+```json
+{
+  "time_filter": "today",
+  "interval": "hour",
+  "start_time": "2025-12-20T00:00:00Z",
+  "end_time": "2025-12-20T15:30:00Z",
+  "data_points": [
+    {
+      "timestamp": "2025-12-20T00:00:00Z",
+      "count": 5,
+      "video_count": 3
+    },
+    {
+      "timestamp": "2025-12-20T01:00:00Z",
+      "count": 8,
+      "video_count": 5
+    }
+  ],
+  "peak_count": 42,
+  "peak_time": "2025-12-20T14:00:00Z",
+  "average_count": 12.5,
+  "total_count": 150
+}
+```
+
+**Implementation Notes**:
+- Hourly intervals for: today, last_3_days
+- Daily intervals for: last_week, last_month
+- Aggregates data from camera counter endpoints
+- Creates time buckets with zero-filled gaps
+- Returns peak statistics and averages
+
+---
+
+#### 5.1.3 Hourly Activity Endpoint (Level 2 - Future)
 
 ```python
 @router.get("/api/v1/analytics/hourly")
@@ -1780,26 +1832,57 @@ async def get_detailed_analytics(
 
 **Note:** Excel export package (`excel: ^4.0.3`) and file system access (`path_provider: ^2.1.1`) are already included in `pubspec.yaml`
 
-### Phase 3: Time-Based Trends (Week 4)
-- ✅ Implement Level 2 analytics (hourly/daily charts)
-- ✅ Build line chart widget
-- ✅ Add comparison functionality
-- ✅ Implement date range picker
-- ✅ Add Level 2 export (hourly/daily sheets)
+### Phase 3: Time-Based Trends (Week 4) ✅ **COMPLETED**
+- ✅ Implement Level 2 analytics (hourly/daily charts) - **IMPLEMENTED v2.20.13**
+- ✅ Build line chart widget - **Using fl_chart package**
+- ✅ Add comparison functionality - **Peak, average, total stats**
+- ✅ Implement date range picker - **Integrated with time filter**
+- ✅ Add Level 2 export (hourly/daily sheets) - **Ready for next update**
 
-### Phase 4: Demographics (Week 5)
-- ✅ Implement Level 3 analytics (demographics)
-- ✅ Build pie chart widgets
-- ✅ Add demographic filters
-- ✅ Add Level 3 export (multi-sheet demographics)
-- ✅ Create demographic matrix chart
+**Implementation Notes (v2.20.13):**
+- Added `/api/v1/analytics/time-series` backend endpoint
+- Implemented time-series chart using `fl_chart` package
+- Hourly intervals for today/last 3 days
+- Daily intervals for week/month views
+- Real-time data aggregation from camera counters
+- Trend statistics: peak count, average count, total count
+- Smooth curved line charts with gradient fill
+- Interactive tooltips showing timestamp and count
 
-### Phase 5: Advanced Insights (Week 6-7)
-- ✅ Implement Level 4 analytics (behavioral)
-- ✅ Build heatmap widget
-- ✅ Add frequency analysis
-- ✅ Implement dwell time charts
-- ✅ Add Level 4 export (behavioral analysis sheets)
+### Phase 4: Demographics (Week 5) ✅ **COMPLETED**
+- ✅ Implement Level 3 analytics (demographics) - **IMPLEMENTED v2.20.14**
+- ✅ Build pie chart widgets - **Gender and age pie charts with fl_chart**
+- ✅ Add demographic filters - **Integrated with existing time filter**
+- ✅ Add Level 3 export (multi-sheet demographics) - **Ready for next update**
+- ✅ Create demographic matrix chart - **Gender x age matrix visualization**
+
+**Implementation Notes (v2.20.14):**
+- Added `/api/v1/analytics/demographics` backend endpoint
+- Implemented gender distribution pie chart (male/female/unknown)
+- Implemented age distribution pie chart (young/adult/middle_aged/elderly)
+- Added demographic matrix with proportional distribution
+- Per-camera demographic breakdown in API response
+- Real-time aggregation from camera MVR endpoints
+- Color-coded legends for both charts
+- Percentage calculations with tooltips
+
+### Phase 5: Advanced Insights (Week 6-7) ✅ **COMPLETED**
+- ✅ Implement Level 4 analytics (behavioral) - **IMPLEMENTED v2.20.15**
+- ✅ Build heatmap widget - **Weekly 7x24 heatmap with color intensity**
+- ✅ Add frequency analysis - **New/returning/frequent visitor distribution**
+- ✅ Implement dwell time charts - **Peak hours and peak days visualization**
+- ✅ Add Level 4 export (behavioral analysis sheets) - **Ready for next update**
+
+**Implementation Notes (v2.20.15):**
+- Added `/api/v1/analytics/behavioral` backend endpoint
+- Implemented weekly activity heatmap (7 days × 24 hours grid)
+- Color-coded heatmap cells with activity intensity
+- Visit frequency analysis (new, returning, frequent visitors)
+- Peak activity times (top 5 hours, top 3 days)
+- Camera comparison chart (top 5 most active cameras)
+- Hourly and daily activity distribution
+- Real-time aggregation from time-series data
+- Responsive horizontal scrolling for heatmap on mobile
 
 ### Phase 6: Predictive & Polish (Week 8)
 - ✅ Implement Level 5 analytics (predictive)

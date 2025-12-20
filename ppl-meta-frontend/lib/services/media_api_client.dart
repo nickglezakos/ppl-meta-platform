@@ -786,6 +786,116 @@ class MediaApiClient {
     }
   }
 
+  /// Get demographics breakdown analytics
+  /// 
+  /// Fetches detailed demographic distribution data (gender, age) across cameras.
+  /// Used for Level 3 (Demographics) analytics.
+  /// 
+  /// Parameters:
+  /// - timeFilter: Time period filter ('today', 'last_3_days', 'last_week', 'last_month')
+  /// - cameraIds: Optional list of specific camera IDs to include
+  /// 
+  /// Returns:
+  /// - time_filter: Applied time filter
+  /// - total_people: Total people analyzed
+  /// - gender_distribution: Male/female/unknown counts and percentages
+  /// - age_distribution: Young/adult/middle_aged/elderly counts and percentages
+  /// - demographic_matrix: Combined gender x age breakdown
+  /// - camera_breakdown: Per-camera demographic details
+  Future<ApiResponse<Map<String, dynamic>>> getDemographicsBreakdown({
+    String timeFilter = 'today',
+    List<String>? cameraIds,
+  }) async {
+    try {
+      final cameraCount = cameraIds?.length ?? 0;
+      final cameraLabel = cameraCount == 0 ? 'all' : '$cameraCount';
+      debugPrint('📊 Fetching demographics breakdown (timeFilter: $timeFilter, collections: $cameraLabel)');
+      
+      final queryParams = <String, dynamic>{
+        'time_filter': timeFilter,
+      };
+      
+      if (cameraIds != null && cameraIds.isNotEmpty) {
+        queryParams['camera_ids'] = cameraIds.join(',');
+        debugPrint('   🎯 Camera IDs filter: ${cameraIds.join(", ")}');
+      } else {
+        debugPrint('   🌐 No camera filter - fetching all collections');
+      }
+      
+      final response = await _apiClient.get(
+        '/api/v1/analytics/demographics',
+        queryParameters: queryParams,
+      );
+
+      debugPrint('✅ Got demographics breakdown: ${response.data['total_people']} total people');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Get demographics breakdown failed: ${e.message}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get demographics breakdown unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get behavioral analytics
+  /// 
+  /// Fetches behavioral patterns including visit frequency, weekly heatmaps,
+  /// and peak activity times. Used for Level 4 (Behavioral) analytics.
+  /// 
+  /// Parameters:
+  /// - timeFilter: Time period filter ('today', 'last_3_days', 'last_week', 'last_month')
+  /// - cameraIds: Optional list of specific camera IDs to include
+  /// 
+  /// Returns:
+  /// - time_filter: Applied time filter
+  /// - total_detections: Total detection events
+  /// - active_cameras: Number of cameras with activity
+  /// - weekly_heatmap: Activity by day of week and hour (7x24 matrix)
+  /// - hourly_activity: Activity distribution by hour (0-23)
+  /// - daily_activity: Activity distribution by day of week
+  /// - peak_hours: Top 5 hours with most activity
+  /// - peak_days: Top 3 days with most activity
+  /// - camera_comparison: Top 5 most active cameras
+  /// - visit_frequency: New/returning/frequent visitor distribution
+  Future<ApiResponse<Map<String, dynamic>>> getBehavioralAnalytics({
+    String timeFilter = 'last_week',
+    List<String>? cameraIds,
+  }) async {
+    try {
+      final cameraCount = cameraIds?.length ?? 0;
+      final cameraLabel = cameraCount == 0 ? 'all' : '$cameraCount';
+      debugPrint('🧠 Fetching behavioral analytics (timeFilter: $timeFilter, collections: $cameraLabel)');
+      
+      final queryParams = <String, dynamic>{
+        'time_filter': timeFilter,
+      };
+      
+      if (cameraIds != null && cameraIds.isNotEmpty) {
+        queryParams['camera_ids'] = cameraIds.join(',');
+        debugPrint('   🎯 Camera IDs filter: ${cameraIds.join(", ")}');
+      } else {
+        debugPrint('   🌐 No camera filter - analyzing all collections');
+      }
+      
+      final response = await _apiClient.get(
+        '/api/v1/analytics/behavioral',
+        queryParameters: queryParams,
+      );
+
+      debugPrint('✅ Got behavioral analytics: ${response.data['total_detections']} detections, ${response.data['active_cameras']} active cameras');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Get behavioral analytics failed: ${e.message}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get behavioral analytics unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   /// Get list of all cameras with their basic info
   /// 
   /// Helper method to fetch camera metadata for analytics filtering.
