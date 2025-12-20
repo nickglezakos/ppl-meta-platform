@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from api.v1.router import api_router
 from api.v1.camera_counters import router as camera_counters_router
+from api.v1.analytics import router as analytics_router
 from api.v1.websockets import router as websockets_router
 from core.advanced_middleware import (
     AdvancedRateLimitMiddleware,
@@ -257,6 +258,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, tags=["Health"])
     app.include_router(api_router, prefix=settings.api_v1_prefix, tags=["API Gateway"])
     app.include_router(camera_counters_router, prefix=settings.api_v1_prefix, tags=["Camera Counters"])
+    app.include_router(analytics_router, prefix=settings.api_v1_prefix, tags=["Analytics"])
     app.include_router(websockets_router, prefix=settings.api_v1_prefix, tags=["WebSockets"])
 
     # Add metrics endpoint

@@ -684,6 +684,134 @@ class MediaApiClient {
     }
   }
 
+  /// Get aggregated analytics summary across all cameras
+  /// 
+  /// Fetches a summary of analytics data across multiple cameras with aggregate metrics.
+  /// This is the primary endpoint for the analytics dashboard Level 1 (Basic Metrics).
+  /// 
+  /// Parameters:
+  /// - timeFilter: Time period filter ('today', 'last_hour', 'last_3_hours', 'last_week', 'last_month')
+  /// - cameraIds: Optional list of specific camera IDs to include (null = all cameras)
+  /// - forceRefresh: Bypass cache and get live data
+  /// 
+  /// Returns:
+  /// - total_people: Total unique people across all cameras
+  /// - active_cameras: Number of cameras with detections
+  /// - total_videos: Total videos analyzed
+  /// - last_detection: Timestamp of most recent detection
+  /// - demographics: Aggregate demographic breakdown
+  /// - camera_breakdown: Per-camera analytics
+  /// - cached: Whether result came from cache
+  Future<ApiResponse<Map<String, dynamic>>> getAnalyticsSummary({
+    String timeFilter = 'today',
+    List<String>? cameraIds,
+    bool forceRefresh = false,
+  }) async {
+    try {
+      debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"})');
+      
+      final queryParams = <String, dynamic>{
+        'time_filter': timeFilter,
+        'force_refresh': forceRefresh,
+      };
+      
+      if (cameraIds != null && cameraIds.isNotEmpty) {
+        queryParams['collection_ids'] = cameraIds.join(',');
+      }
+      
+      final response = await _apiClient.get(
+        '/api/v1/analytics/summary',
+        queryParameters: queryParams,
+      );
+
+      debugPrint('✅ Got analytics summary: ${response.data['total_people']} total people, ${response.data['active_cameras']} active cameras');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Get analytics summary failed: ${e.message}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get analytics summary unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get time-based analytics with trend data
+  /// 
+  /// Fetches time series data showing people count trends over time.
+  /// Used for Level 2 (Time-Based Trends) analytics.
+  /// 
+  /// Parameters:
+  /// - timeFilter: Time period filter ('last_hour', 'last_3_hours', 'today', 'last_week', 'last_month')
+  /// - cameraIds: Optional list of specific camera IDs to include
+  /// - interval: Time interval for data points ('minute', 'hour', 'day')
+  /// 
+  /// Returns:
+  /// - time_filter: Applied time filter
+  /// - data_points: List of time series data points with counts
+  /// - peak_count: Highest count in the period
+  /// - peak_time: Timestamp of peak count
+  /// - average_count: Average count across period
+  Future<ApiResponse<Map<String, dynamic>>> getTimeBasedAnalytics({
+    String timeFilter = 'today',
+    List<String>? cameraIds,
+    String interval = 'hour',
+  }) async {
+    try {
+      debugPrint('📈 Fetching time-based analytics (timeFilter: $timeFilter, interval: $interval)');
+      
+      final queryParams = <String, dynamic>{
+        'time_filter': timeFilter,
+        'interval': interval,
+      };
+      
+      if (cameraIds != null && cameraIds.isNotEmpty) {
+        queryParams['camera_ids'] = cameraIds.join(',');
+      }
+      
+      final response = await _apiClient.get(
+        '/api/v1/analytics/time-series',
+        queryParameters: queryParams,
+      );
+
+      debugPrint('✅ Got time-based analytics: ${(response.data['data_points'] as List).length} data points');
+      
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Get time-based analytics failed: ${e.message}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get time-based analytics unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get list of all cameras with their basic info
+  /// 
+  /// Helper method to fetch camera metadata for analytics filtering.
+  /// Returns list of cameras with IDs, names, and collection info.
+  Future<ApiResponse<List<Map<String, dynamic>>>> getCamerasList() async {
+    try {
+      debugPrint('📹 Fetching cameras list');
+      
+      final response = await _apiClient.get('/api/v1/analytics/cameras');
+
+      debugPrint('✅ Got ${(response.data as List).length} cameras');
+      
+      final cameras = (response.data as List)
+          .map((c) => c as Map<String, dynamic>)
+          .toList();
+      
+      return ApiResponse.success(cameras);
+    } on DioException catch (e) {
+      debugPrint('❌ Get cameras list failed: ${e.message}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Get cameras list unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   /// Generate share link
   Future<ApiResponse<ShareLink>> createShareLink({
     required List<String> itemIds,

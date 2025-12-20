@@ -61,6 +61,7 @@ dependencies:
   logger: ^2.6.1
   path_provider: ^2.1.1
   excel: ^4.0.3
+  timeago: ^3.6.1
   
   # JSON serialization
   json_annotation: ^4.8.1
