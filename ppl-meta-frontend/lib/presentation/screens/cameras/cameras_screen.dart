@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../utils/offline_fonts.dart';
+import '../../../core/models/camera.dart'; // ADDED: Import Camera model
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/camera_status_providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../widgets/camera/camera_card.dart';
-import '../../../widgets/camera/camera_monitoring_dashboard.dart';
+import '../../widgets/camera/camera_card.dart'; // FIXED: Now using presentation/widgets version
+// ARCHIVED: // REMOVED: import '../../../widgets/camera/camera_monitoring_dashboard.dart'; // Complex monitoring widget removed
 import '../../../widgets/custom_app_bar.dart';
 import '../../../widgets/automatic_face_detection_status.dart'; // NEW: Import automatic face detection status
+import 'multi_stream_page.dart'; // NEW: Multi-stream viewer
 
 /// Enhanced cameras screen with real-time status monitoring
 class CamerasScreen extends ConsumerStatefulWidget {
@@ -18,19 +20,56 @@ class CamerasScreen extends ConsumerStatefulWidget {
 }
 
 class _CamerasScreenState extends ConsumerState<CamerasScreen> {
-  bool _showMonitoringDashboard = false;
+  // REMOVED: bool _showMonitoringDashboard = false; // Complex monitoring dashboard removed
   bool _showLiveStreams = false; // Disable streaming by default to prevent auto-connection
+
+  @override
+  void initState() {
+    super.initState();
+    // Load cameras when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(cameraListProvider.notifier).loadCameras();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final cameraListState = ref.watch(cameraListProvider);
-    final monitoringEnabled = ref.watch(isMonitoringEnabledProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: CustomAppBar(
         title: 'Cameras',
         actions: [
+          // Multi-stream viewer button
+          IconButton(
+            onPressed: () {
+              final connectedCameras = cameraListState.cameras.where((camera) {
+                final status = ref.read(cameraStatusProvider(camera.deviceId));
+                return status?.isConnected ?? false;
+              }).toList();
+              
+              if (connectedCameras.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('No connected cameras. Connect cameras first to view streams.'),
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+                return;
+              }
+              
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => MultiStreamPage(cameras: cameraListState.cameras),
+                ),
+              );
+            },
+            icon: const Icon(Icons.view_comfy),
+            color: AppColors.primary,
+            tooltip: 'View All Streams',
+          ),
+          
           // Live streaming toggle
           IconButton(
             onPressed: () {
@@ -45,8 +84,8 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             tooltip: _showLiveStreams ? 'Hide Live Streams' : 'Show Live Streams',
           ),
           
-          // Monitoring dashboard toggle
-          IconButton(
+          // Toggle monitoring dashboard - DISABLED (complex monitoring removed)
+          /* IconButton(
             onPressed: () {
               setState(() {
                 _showMonitoringDashboard = !_showMonitoringDashboard;
@@ -57,10 +96,10 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
               color: AppColors.primary,
             ),
             tooltip: 'Toggle Monitoring Dashboard',
-          ),
+          ), */
           
-          // Global monitoring toggle
-          IconButton(
+          // Global monitoring toggle - DISABLED (complex monitoring removed)
+          /* IconButton(
             onPressed: () {
               if (monitoringEnabled) {
                 ref.read(cameraMonitoringProvider.notifier).stopAllMonitoring();
@@ -76,7 +115,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
               color: monitoringEnabled ? Colors.green : AppColors.textSecondary,
             ),
             tooltip: monitoringEnabled ? 'Stop All Monitoring' : 'Start All Monitoring',
-          ),
+          ), */
           
           // Refresh cameras
           IconButton(
@@ -93,8 +132,8 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
       ),
       body: Column(
         children: [
-          // Monitoring dashboard
-          if (_showMonitoringDashboard) ...[
+          // REMOVED: Monitoring dashboard (complex monitoring removed)
+          /* if (_showMonitoringDashboard) ...[
             Container(
               height: 240,
               child: const CameraMonitoringDashboard(),
@@ -103,7 +142,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             
             // NEW: Automatic Face Detection Status
             const AutomaticFaceDetectionStatus(),
-          ],
+          ], */
           
           // Cameras list
           Expanded(
@@ -138,7 +177,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
     return _buildCamerasList(cameraListState.cameras);
   }
 
-  Widget _buildCamerasList(List<dynamic> cameras) {
+  Widget _buildCamerasList(List<Camera> cameras) {
     if (cameras.isEmpty) {
       return _buildEmptyState();
     }
@@ -156,7 +195,10 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             padding: const EdgeInsets.only(bottom: 16),
             child: CameraCard(
               camera: camera,
-              showStream: _showLiveStreams,
+              onTap: () {
+                // Navigate to camera detail or show stream
+                // TODO: Implement camera detail view
+              },
             ),
           );
         },
@@ -277,12 +319,23 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                 await ref.read(cameraListProvider.notifier).detectCameras(saveToDb: true);
                 
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Camera detection completed!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
+                  final cameras = ref.read(cameraListProvider).cameras;
+                  if (cameras.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('No cameras detected. Check backend logs for errors.'),
+                        backgroundColor: Colors.orange,
+                        duration: Duration(seconds: 5),
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Detected ${cameras.length} camera(s)!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
                 }
               } catch (e) {
                 if (mounted) {

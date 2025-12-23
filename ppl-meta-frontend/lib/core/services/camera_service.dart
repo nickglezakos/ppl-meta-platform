@@ -144,6 +144,9 @@ class CameraService {
     String resolution = '1280x720',
     String format = 'MJPEG',
   }) async {
+    print('📺📺📺 [START_STREAMING_V4] startStreaming called for camera: $cameraId 📺📺📺');
+    print('📺 [VERIFY] This is camera_service.dart startStreaming() method V4!');
+    print('📺 [START_STREAMING_V4] Will call POST /api/v1/streaming/$cameraId/start');
     try {
       final response = await _directCameraClient.post<Map<String, dynamic>>(
         '/api/v1/streaming/$cameraId/start',
@@ -156,11 +159,14 @@ class CameraService {
       );
 
       if (response.data == null) {
+        print('📺❌ [START_STREAMING_V4] Invalid response from streaming service');
         throw const CameraException('Invalid response from streaming service');
       }
 
+      print('📺✅ [START_STREAMING_V4] Successfully started streaming for camera $cameraId');
       return StreamingInfo.fromJson(response.data!);
     } on DioException catch (e) {
+      print('📺❌ [START_STREAMING_V4] DioException: $e');
       throw _handleDioError(e);
     }
   }
@@ -295,30 +301,40 @@ class CameraService {
   }
 
   /// Connect to a camera following the proper workflow:
-  /// 1. Disconnect all cameras first
-  /// 2. Re-detect cameras to refresh state
-  /// 3. Connect to the specific camera
-  /// 4. Auto-create collection for the camera
+  /// 1. Connect to the specific camera
+  /// 2. Auto-create collection for the camera
   Future<bool> connectCamera(String deviceId) async {
     try {
-      print('Step 1: Disconnecting all cameras...');
-      // Step 1: Disconnect all cameras first
-      await disconnectAllCameras();
-      
-      print('Step 2: Re-detecting cameras...');
-      // Step 2: Re-detect cameras to refresh state
-      await detectCameras(saveToDb: true);
-      
-      print('Step 3: Connecting to camera $deviceId...');
-      // Step 3: Connect to the specific camera
+      print('🔌🔌🔌 [CONNECT_CAMERA] START - Connecting to camera $deviceId...');
+      // Connect to the specific camera
       final response = await _cameraApiClient.post<Map<String, dynamic>>(
         '/api/v1/cameras/$deviceId/connect',
       );
       
+      print('🔌🔌🔌 [CONNECT_CAMERA] Response received: ${response.statusCode}');
+      
       if (response.statusCode == 200) {
         print('✅ Successfully connected to camera $deviceId');
         
-        // Step 4: Auto-create collection for this USB camera
+        // Step 4: Auto-start streaming (calls /start endpoint to ensure camera is in active_connections)
+        try {
+          print('🚀🚀🚀 [CONNECT_CAMERA_V4] Step 4: Auto-starting stream for camera $deviceId... 🚀🚀🚀');
+          print('🚀 [VERIFY] This is camera_service.dart connectCamera() with AUTO-START V4!');
+          print('🚀 [CONNECT_CAMERA_V4] Calling POST /api/v1/streaming/$deviceId/start');
+          final streamResponse = await _cameraApiClient.post<Map<String, dynamic>>(
+            '/api/v1/streaming/$deviceId/start',
+          );
+          if (streamResponse.statusCode == 200) {
+            print('🚀✅ [CONNECT_CAMERA_V4] Auto-started streaming for camera $deviceId');
+          } else {
+            print('🚀⚠️ [CONNECT_CAMERA_V4] Failed to auto-start streaming: ${streamResponse.statusCode}');
+          }
+        } catch (e) {
+          print('🚀❌ [CONNECT_CAMERA_V4] Failed to auto-start streaming for $deviceId: $e');
+          // Don't fail connection if streaming start fails
+        }
+        
+        // Step 5: Auto-create collection for this USB camera
         try {
           // Get camera details to get the name
           final cameras = await getCameras();
@@ -575,14 +591,25 @@ class CameraService {
     print('🔥 DEBUG CORE: enableInstantDetection: $enableInstantDetection');
     
     try {
-      // Use Gateway for recording operations (has CORS support for browser requests)
+      // ✅ USE APPROPRIATE TIMEOUTS
+      // Backend needs:
+      // - 2-5s: Create session, start recording loop
+      // - 5-10s: Initialize instant detection (if enabled)
+      // - 2-5s: Network latency, processing overhead
+      // Total: 15-20s safe margin, using 30s for reliability
       final response = await _cameraApiClient.post(
         '/api/v1/streaming/$deviceId/record/start',
         queryParameters: {
           'enable_instant_detection': enableInstantDetection,
         },
+        options: Options(
+          receiveTimeout: const Duration(seconds: 30), // ✅ Adequate for backend
+          sendTimeout: const Duration(seconds: 10),    // ✅ Adequate for request
+        ),
       );
 
+      print('🔥 DEBUG CORE: Got response from record/start: ${response.statusCode}');
+      
       // Transform response to match RecordingResult format
       final sessionData = response.data as Map<String, dynamic>;
       return RecordingResult.fromJson({
@@ -593,6 +620,14 @@ class CameraService {
         'message': sessionData['message'] ?? 'Recording started successfully',
       });
     } on DioException catch (e) {
+      print('🔥 DEBUG CORE: DioException type: ${e.type}, statusCode: ${e.response?.statusCode}');
+      
+      // ✅ CRITICAL FIX: REMOVED TIMEOUT FALLBACK
+      // The old code created fake session IDs on timeout, which corrupted UI state
+      // and made the camera screen inaccessible. If timeout occurs, let the error
+      // propagate so the user sees a proper error message and can retry.
+      // Backend now returns immediately (< 5s) so 30s timeout should never trigger.
+      
       // Handle "already recording" state management issue
       if (e.response?.statusCode == 400 && 
           e.response?.data != null && 
@@ -606,6 +641,10 @@ class CameraService {
         // Retry the recording start with working API
         final retryResponse = await _directCameraClient.post(
           '/streaming/$deviceId/record/start',
+          options: Options(
+            receiveTimeout: const Duration(seconds: 30),
+            sendTimeout: const Duration(seconds: 10),
+          ),
         );
         
         final sessionData = retryResponse.data as Map<String, dynamic>;

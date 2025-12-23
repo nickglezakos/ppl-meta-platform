@@ -278,6 +278,29 @@ async def get_current_user_flexible(
     return auth_service.verify_token(auth_token)
 
 
+async def get_current_user_from_websocket(token: str) -> Dict:
+    """
+    Dependency to get current authenticated user from WebSocket query parameter.
+    
+    Args:
+        token: JWT token from WebSocket query parameters
+        
+    Returns:
+        Dict containing user information
+        
+    Raises:
+        HTTPException: If token is invalid or missing
+    """
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return auth_service.verify_token(token)
+
+
 def require_permission_flexible(permission: str):
     """Permission factory supporting both header and query param auth."""
 

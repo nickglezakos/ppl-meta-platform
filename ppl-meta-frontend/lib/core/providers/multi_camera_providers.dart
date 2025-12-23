@@ -167,13 +167,37 @@ class CameraActions {
       final camera = allCameras.where((c) => c.id == cameraId).firstOrNull;
       if (camera == null) return false;
       
+      print('🔌 [FLUTTER] Connecting to camera: ${camera.deviceId} (${camera.type.name})');
       final success = await _cameraService.connectCamera(camera.deviceId);
+      
       if (success) {
-        await refreshAllCameras();
+        // Give queue worker time to initialize
+        if (camera.type == CameraType.rtsp) {
+          print('⏳ [FLUTTER] RTSP camera - waiting for connection...');
+          // RTSP cameras need 2-5 seconds to establish connection
+          for (int i = 0; i < 10; i++) {
+            await Future.delayed(Duration(milliseconds: 500));
+            await refreshAllCameras();
+            
+            // Check if connected
+            final updatedCameras = await _ref.read(allCamerasProvider.future);
+            final updatedCamera = updatedCameras.where((c) => c.id == cameraId).firstOrNull;
+            if (updatedCamera?.status == 'connected') {
+              print('✅ [FLUTTER] RTSP camera connected after ${(i + 1) * 500}ms');
+              return true;
+            }
+          }
+          print('⚠️ [FLUTTER] RTSP camera connection timeout');
+        } else {
+          // USB cameras connect quickly
+          await Future.delayed(Duration(milliseconds: 300));
+          await refreshAllCameras();
+          print('✅ [FLUTTER] USB camera connected');
+        }
       }
       return success;
     } catch (e) {
-      print('Error connecting to camera $cameraId: $e');
+      print('❌ [FLUTTER] Error connecting to camera $cameraId: $e');
       return false;
     }
   }
@@ -186,13 +210,18 @@ class CameraActions {
       final camera = allCameras.where((c) => c.id == cameraId).firstOrNull;
       if (camera == null) return false;
       
+      print('🔌 [FLUTTER] Disconnecting camera: ${camera.deviceId}');
       final success = await _cameraService.disconnectCamera(camera.deviceId);
+      
       if (success) {
+        // Give queue worker time to cleanup
+        await Future.delayed(Duration(milliseconds: 300));
         await refreshAllCameras();
+        print('✅ [FLUTTER] Camera disconnected');
       }
       return success;
     } catch (e) {
-      print('Error disconnecting from camera $cameraId: $e');
+      print('❌ [FLUTTER] Error disconnecting from camera $cameraId: $e');
       return false;
     }
   }
@@ -234,15 +263,23 @@ class CameraActions {
       final camera = allCameras.where((c) => c.id == cameraId).firstOrNull;
       if (camera == null) return;
       
+      print('🛑 [FLUTTER] Stopping stream for camera: ${camera.deviceId}');
+      
       // Update per-camera stream state
       _ref.read(perCameraStreamProvider(cameraId).notifier).stopStreaming();
       
       await _cameraService.stopStreaming(camera.deviceId);
       
+      // Give time for cleanup and refresh
+      await Future.delayed(Duration(milliseconds: 200));
+      
       // Refresh camera status
       _ref.invalidate(cameraStreamingInfoProvider(cameraId));
+      await refreshAllCameras();
+      
+      print('✅ [FLUTTER] Stream stopped');
     } catch (e) {
-      print('Error stopping streaming for camera $cameraId: $e');
+      print('❌ [FLUTTER] Error stopping streaming for camera $cameraId: $e');
       // Update error state for this specific camera
       _ref.read(perCameraStreamProvider(cameraId).notifier).setError(e.toString());
     }

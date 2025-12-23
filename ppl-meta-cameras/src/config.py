@@ -47,6 +47,12 @@ class Config:
     MAX_SIMULTANEOUS_CAMERAS: int = int(os.getenv("MAX_SIMULTANEOUS_CAMERAS", "10"))
     DEFAULT_CAMERA_RESOLUTION: str = os.getenv("DEFAULT_CAMERA_RESOLUTION", "1280x720")
     DEFAULT_CAMERA_FPS: int = int(os.getenv("DEFAULT_CAMERA_FPS", "30"))
+    
+    # 🎯 Camera Pool Manager - REVERSIBLE FEATURE FLAG
+    # Set to false to use old per-camera threading approach
+    USE_CAMERA_POOL_MANAGER: bool = os.getenv("USE_CAMERA_POOL_MANAGER", "true").lower() == "true"
+    CAMERA_POOL_MAX_CAMERAS: int = int(os.getenv("CAMERA_POOL_MAX_CAMERAS", "5"))
+    CAMERA_POOL_TARGET_FPS: int = int(os.getenv("CAMERA_POOL_TARGET_FPS", "10"))
 
     # Face detection optimization configuration
     FACE_DETECTION_TARGET_FPS: int = int(os.getenv("FACE_DETECTION_TARGET_FPS", "3"))

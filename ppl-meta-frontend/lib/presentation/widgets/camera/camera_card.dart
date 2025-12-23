@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 import '../../../core/models/camera.dart';
 import '../../../core/providers/camera_providers.dart';
+import '../../../core/providers/camera_status_providers.dart';
+import '../../../core/services/camera_service.dart';
+import '../../../core/services/auth_service.dart';
+import '../../../core/config/app_config.dart';
+import '../../pages/camera_stream_page.dart';
 
 class CameraCard extends ConsumerWidget {
   final Camera camera;
@@ -17,6 +23,13 @@ class CameraCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    
+    // Watch WebSocket status for this camera
+    final cameraStatus = ref.watch(cameraStatusProvider(camera.deviceId));
+    final isConnected = cameraStatus?.isConnected ?? false;
+    
+    // 🔍 DEBUG: Log camera status
+    debugPrint('🎥 [CameraCard] ${camera.deviceId}: isConnected=$isConnected, status=${cameraStatus?.status}, cameraStatus=$cameraStatus');
 
     return Card(
       elevation: 2,
@@ -36,7 +49,7 @@ class CameraCard extends ConsumerWidget {
                 children: [
                   Icon(
                     Icons.videocam,
-                    color: camera.isConnected ? Colors.green : Colors.grey,
+                    color: isConnected ? Colors.green : Colors.grey,
                     size: 24,
                   ),
                   const SizedBox(width: 8),
@@ -93,7 +106,22 @@ class CameraCard extends ConsumerWidget {
                   ),
                 ),
               
-              const Spacer(),
+              const SizedBox(height: 12),
+              
+              // Inline stream preview (thumbnail) when connected - TEMPORARILY DISABLED
+              // Uncomment to enable inline thumbnails:
+              // if (isConnected)
+              //   _StreamThumbnail(camera: camera),
+              // 
+              // if (isConnected)
+              //   const SizedBox(height: 12),
+              
+              // Recording status row (isolated widget)
+              if (isConnected)
+                _RecordingStatusRow(cameraId: camera.deviceId),
+              
+              if (isConnected)
+                const SizedBox(height: 8),
               
               // Bottom actions
               Row(
@@ -126,17 +154,42 @@ class CameraCard extends ConsumerWidget {
                   
                   const Spacer(),
                   
+                  // Connection toggle button
+                  _ConnectionButton(camera: camera),
+                  const SizedBox(width: 8),
+                  
                   // Recording and stream controls
-                  if (camera.isConnected) ...[
+                  if (isConnected) ...[
                     _RecordingControls(cameraId: camera.deviceId),
                     const SizedBox(width: 8),
                     IconButton(
-                      onPressed: onTap,
+                      onPressed: () {
+                        // 🔍 DEBUG: Log navigation attempt
+                        debugPrint('🎬 [CameraCard] Navigating to stream for ${camera.deviceId}');
+                        debugPrint('🎬 [CameraCard] Camera: ${camera.toJson()}');
+                        
+                        // Navigate to full-screen stream page
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => CameraStreamPage(camera: camera),
+                          ),
+                        );
+                      },
                       icon: const Icon(Icons.play_circle_outline),
                       iconSize: 20,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       tooltip: 'View stream',
+                    ),
+                  ] else ...[
+                    // 🔍 DEBUG: Show why play button is hidden
+                    Tooltip(
+                      message: 'Camera must be connected to view stream',
+                      child: Icon(
+                        Icons.play_circle_outline,
+                        size: 20,
+                        color: Colors.grey.withOpacity(0.3),
+                      ),
                     ),
                   ],
                 ],
@@ -149,39 +202,40 @@ class CameraCard extends ConsumerWidget {
   }
 }
 
-class _StatusIndicator extends StatelessWidget {
+class _StatusIndicator extends ConsumerWidget {
   final Camera camera;
 
   const _StatusIndicator({required this.camera});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch WebSocket status for this camera
+    final status = ref.watch(cameraStatusProvider(camera.deviceId));
+    
     Color statusColor;
     IconData statusIcon;
     String tooltip;
 
-    switch (camera.connectionStatus) {
-      case CameraConnectionStatus.connected:
-        statusColor = Colors.green;
-        statusIcon = Icons.circle;
-        tooltip = 'Connected';
-        break;
-      case CameraConnectionStatus.connecting:
-        statusColor = Colors.orange;
-        statusIcon = Icons.circle;
-        tooltip = 'Connecting';
-        break;
-      case CameraConnectionStatus.error:
-        statusColor = Colors.red;
-        statusIcon = Icons.error;
-        tooltip = 'Error';
-        break;
-      case CameraConnectionStatus.disconnected:
-      default:
-        statusColor = Colors.grey;
-        statusIcon = Icons.circle;
-        tooltip = 'Disconnected';
-        break;
+    if (status == null) {
+      statusColor = Colors.grey;
+      statusIcon = Icons.circle;
+      tooltip = 'Unknown';
+    } else if (status.isConnected) {
+      statusColor = Colors.green;
+      statusIcon = Icons.circle;
+      tooltip = 'Connected';
+    } else if (status.isConnecting) {
+      statusColor = Colors.orange;
+      statusIcon = Icons.circle;
+      tooltip = 'Connecting...';
+    } else if (status.hasError) {
+      statusColor = Colors.red;
+      statusIcon = Icons.error;
+      tooltip = status.error ?? 'Error';
+    } else {
+      statusColor = Colors.grey;
+      statusIcon = Icons.circle;
+      tooltip = 'Disconnected';
     }
 
     return Tooltip(
@@ -300,6 +354,120 @@ class _RecordingControls extends ConsumerWidget {
   }
 }
 
+/// Recording status row showing timer and info (isolated widget)
+/// Updates every second independently without affecting stream widget
+class _RecordingStatusRow extends ConsumerWidget {
+  final String cameraId;
+
+  const _RecordingStatusRow({required this.cameraId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final recordingState = ref.watch(cameraRecordingProvider(cameraId));
+    
+    if (!recordingState.isRecording) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.red.withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Recording indicator
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              color: Colors.red,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Status text
+          Text(
+            'Recording',
+            style: TextStyle(
+              color: Colors.red,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Timer (isolated widget that rebuilds independently)
+          _RecordingTimer(cameraId: cameraId),
+          const Spacer(),
+          // Frame count (if available)
+          if (recordingState.fileSizeBytes > 0)
+            Text(
+              '${(recordingState.fileSizeBytes / 1024 / 1024).toStringAsFixed(1)} MB',
+              style: TextStyle(
+                color: Colors.grey[700],
+                fontSize: 11,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Recording timer widget that rebuilds every second independently
+/// This isolation prevents the timer from triggering stream widget rebuilds
+class _RecordingTimer extends StatefulWidget {
+  final String cameraId;
+
+  const _RecordingTimer({required this.cameraId});
+
+  @override
+  State<_RecordingTimer> createState() => _RecordingTimerState();
+}
+
+class _RecordingTimerState extends State<_RecordingTimer> {
+  late Timer _timer;
+  Duration _elapsed = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          _elapsed += const Duration(seconds: 1);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final minutes = _elapsed.inMinutes.toString().padLeft(2, '0');
+    final seconds = (_elapsed.inSeconds % 60).toString().padLeft(2, '0');
+    
+    return Text(
+      '$minutes:$seconds',
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        fontFamily: 'monospace',
+      ),
+    );
+  }
+}
+
 /// Pulsing red dot to indicate active recording
 class _PulsingRecordingDot extends StatefulWidget {
   @override
@@ -345,6 +513,176 @@ class _PulsingRecordingDotState extends State<_PulsingRecordingDot>
           decoration: BoxDecoration(
             color: Colors.red.withOpacity(_animation.value),
             shape: BoxShape.circle,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Connection button widget with loading state
+class _ConnectionButton extends ConsumerStatefulWidget {
+  final Camera camera;
+  
+  const _ConnectionButton({required this.camera});
+  
+  @override
+  ConsumerState<_ConnectionButton> createState() => _ConnectionButtonState();
+}
+
+class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
+  bool _isLoading = false;
+  
+  Future<void> _toggleConnection() async {
+    if (_isLoading) return;
+    
+    setState(() => _isLoading = true);
+    
+    try {
+      final cameraService = ref.read(cameraServiceProvider);
+      final status = ref.read(cameraStatusProvider(widget.camera.deviceId));
+      
+      if (status?.isConnected ?? false) {
+        // Disconnect
+        await cameraService.disconnectCamera(widget.camera.deviceId);
+      } else {
+        // Connect
+        await cameraService.connectCamera(widget.camera.deviceId);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Connection failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    final status = ref.watch(cameraStatusProvider(widget.camera.deviceId));
+    final isConnected = status?.isConnected ?? false;
+    
+    if (_isLoading) {
+      return SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          valueColor: AlwaysStoppedAnimation(Colors.blue),
+        ),
+      );
+    }
+    
+    return IconButton(
+      onPressed: _toggleConnection,
+      icon: Icon(
+        isConnected ? Icons.link_off : Icons.link,
+        color: isConnected ? Colors.red : Colors.green,
+      ),
+      iconSize: 20,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(),
+      tooltip: isConnected ? 'Disconnect' : 'Connect',
+    );
+  }
+}
+
+/// Stream thumbnail widget for inline preview in camera card
+class _StreamThumbnail extends ConsumerWidget {
+  final Camera camera;
+  
+  const _StreamThumbnail({required this.camera});
+  
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authService = ref.watch(authServiceProvider);
+    
+    return FutureBuilder<String?>(
+      future: authService.getToken(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Container(
+            height: 180,
+            decoration: BoxDecoration(
+              color: Colors.black12,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        
+        final token = snapshot.data!;
+        final cameraServiceUrl = AppConfig.instance.cameraServiceUrl;
+        final streamUrl = '$cameraServiceUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
+        
+        return InkWell(
+          onTap: () {
+            // Navigate to full-screen stream page
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => CameraStreamPage(camera: camera),
+              ),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              height: 180,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Image.network(
+                streamUrl,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Loading stream...',
+                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red, size: 32),
+                        SizedBox(height: 8),
+                        Text(
+                          'Stream unavailable',
+                          style: TextStyle(color: Colors.red, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
         );
       },

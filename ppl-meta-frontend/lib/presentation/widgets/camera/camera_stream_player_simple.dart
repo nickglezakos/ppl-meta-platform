@@ -121,37 +121,19 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
     }
     
     try {
-      // SIMPLE DIRECT STREAMING - No sessions needed!
-      print('🎥 [SIMPLE_STREAMING] Setting up direct stream for camera: ${camera.deviceId}');
-      
-      // Ensure camera is connected and streaming first
-      try {
-        final cameraActions = ref.read(cameraActionsProvider);
-        
-        // Check if camera is already streaming
-        final allCameras = await ref.refresh(allCamerasProvider.future);
-        final currentCamera = allCameras.where((c) => c.id == widget.cameraId).firstOrNull;
-        
-        if (currentCamera != null && currentCamera.status != 'streaming') {
-          print('Camera not streaming, starting stream automatically...');
-          final streamingInfo = await cameraActions.startStreaming(widget.cameraId);
-          if (streamingInfo == null) {
-            print('Failed to start streaming for camera ${widget.cameraId}');
-            return null;
-          }
-          print('✅ Camera streaming started successfully');
-        }
-      } catch (e) {
-        print('Error ensuring camera is streaming: $e');
-        // Continue anyway, direct streaming might still work
-      }
+
+      // ✅✅✅ FIXED VERSION - NO BLOCKING CALL ✅✅✅
+      debugPrint('🎥 [SIMPLE_STREAMING_V2_FIXED] Setting up direct stream for camera: ${camera.deviceId}');
+      debugPrint('✅ [VERIFY] This is camera_stream_player_SIMPLE.dart - NO startStreaming call!');
       
       // Get authentication token
       final authService = ref.read(authServiceProvider);
       final token = await authService.getToken();
       
+      debugPrint('🔑 [SIMPLE_STREAMING] Got auth token: ${token != null ? "${token.substring(0, 20)}..." : "NULL"}');
+      
       if (token == null) {
-        print('❌ No authentication token available');
+        debugPrint('❌ [SIMPLE_STREAMING] No authentication token available');
         return null;
       }
       
@@ -159,7 +141,7 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
       final baseUrl = AppConfig.instance.cameraServiceUrl;
       final authenticatedUrl = '$baseUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
       
-      print('🎥 [SIMPLE_STREAMING] Direct stream URL: $authenticatedUrl');
+      debugPrint('🎥 [SIMPLE_STREAMING] Direct stream URL: ${authenticatedUrl.replaceAll(token, "***")}');
       
       // Final check before caching the URL
       if (!_isActive || !mounted) {

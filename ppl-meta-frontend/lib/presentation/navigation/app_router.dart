@@ -18,17 +18,17 @@ import '../../screens/collections_screen.dart';
 import '../../screens/profile_screen.dart';
 import '../../screens/features_screen.dart';
 import '../../screens/media_preview_screen.dart';
-import '../../screens/camera_media_sync_screen.dart';
+// ARCHIVED: import '../../screens/camera_media_sync_screen.dart';
 import '../../screens/workflow_dashboard_screen.dart';
 import '../../screens/automation_screen.dart';
 import '../../screens/signage_management_screen.dart';
 import '../../screens/triggers_screen.dart';
 import '../../screens/individual_groups_screen.dart';
 import '../../screens/individual_group_detail_screen.dart';
-import '../../features/cameras/pages/multi_camera_page.dart';
+// ARCHIVED: import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
 import '../../pages/workflow_widget_test_page.dart';
-import '../../pages/enhanced_multi_camera_page.dart';
+// ARCHIVED: import '../../pages/enhanced_multi_camera_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authNotifierProvider);
@@ -146,16 +146,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/cameras',
         name: 'cameras',
         builder: (context, state) => const ProviderScreenWrapper(
-          child: MultiCameraPage(),
+          child: CamerasScreen(), // Using new cameras screen
         ),
       ),
+      /* ARCHIVED: Enhanced multi camera page
       GoRoute(
         path: '/cameras-enhanced',
         name: 'cameras-enhanced',
         builder: (context, state) => const ProviderScreenWrapper(
           child: EnhancedMultiCameraPage(),
         ),
-      ),
+      ), */
       GoRoute(
         path: '/cameras/:cameraId',
         name: 'camera-detail',
@@ -218,13 +219,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
+      /* ARCHIVED: Camera media sync screen
       GoRoute(
         path: '/camera-media-sync',
         name: 'camera-media-sync',
         builder: (context, state) => ProviderScreenWrapper(
           child: CameraMediaSyncScreen(),
         ),
-      ),
+      ), */
       GoRoute(
         path: '/signage',
         name: 'signage',

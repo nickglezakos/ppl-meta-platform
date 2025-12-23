@@ -3,11 +3,13 @@ Camera detection and management service for PPL Meta Cameras.
 """
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 import logging
 import os
 import platform
 import subprocess
+import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +21,7 @@ from src.config import get_config
 from src.database import get_db
 from src.models.camera import Camera, CameraStatus, CameraType
 from src.services.orchestrator_client import OrchestratorClient
+from src.services.camera_pool_manager import camera_pool_manager
 
 # Import streaming session manager for session completion
 from src.services.streaming_session_manager import streaming_session_manager
@@ -40,6 +43,44 @@ class CameraDetectionService:
         self.latest_frames: Dict[str, Tuple] = {}
         # Cache collection UUIDs per camera to prevent creating duplicates
         self.camera_collection_cache: Dict[str, str] = {}  # device_id -> collection_uuid
+        
+        # ✅ FRAME BUFFER: Store shared frames for RTSP cameras to avoid multi-reader conflicts
+        # Note: If CameraPoolManager is enabled, we use its frame_buffers instead
+        self._local_frame_buffers: Dict[str, Tuple[bool, Any]] = {}  # device_id -> (ret, frame)
+        self.frame_reader_tasks: Dict[str, asyncio.Task] = {}  # Background frame readers (REMOVED - using threads)
+        self.frame_reader_threads: Dict[str, threading.Thread] = {}  # Dedicated threads for frame reading
+        self.frame_reader_stop_events: Dict[str, threading.Event] = {}  # Stop signals for threads
+        # Thread pool for SHORT operations only (connect, disconnect, single reads)
+        # NOT for long-running frame reader loops!
+        self._executor = ThreadPoolExecutor(max_workers=10, thread_name_prefix="camera_ops")
+        
+        # 🎯 Start Camera Pool Manager if enabled
+        if config.USE_CAMERA_POOL_MANAGER:
+            camera_pool_manager.max_cameras = config.CAMERA_POOL_MAX_CAMERAS
+            camera_pool_manager.target_fps = config.CAMERA_POOL_TARGET_FPS
+            camera_pool_manager.start()
+            logger.info(
+                f"🎯 [CAMERA-POOL] Enabled (max={config.CAMERA_POOL_MAX_CAMERAS}, "
+                f"fps={config.CAMERA_POOL_TARGET_FPS})"
+            )
+        else:
+            logger.info("🎯 [CAMERA-POOL] Disabled - using per-camera threads")
+    
+    @property
+    def frame_buffers(self) -> Dict[str, Tuple[bool, Any]]:
+        """
+        Get the appropriate frame buffer dict based on camera type.
+        HYBRID APPROACH:
+        - RTSP cameras (dedicated threads) → _local_frame_buffers
+        - USB cameras (pool manager) → camera_pool_manager.frame_buffers
+        Returns a merged view of both buffers.
+        """
+        if config.USE_CAMERA_POOL_MANAGER:
+            # Merge pool manager buffers with local buffers (for RTSP dedicated threads)
+            merged = dict(camera_pool_manager.frame_buffers)
+            merged.update(self._local_frame_buffers)
+            return merged
+        return self._local_frame_buffers
 
     async def detect_available_cameras(self) -> List[Dict]:
         """Detect all available cameras on the system."""
@@ -69,17 +110,27 @@ class CameraDetectionService:
 
         for index in range(max_camera_index):
             try:
-                # Try to open camera
-                cap = cv2.VideoCapture(index)
+                # ✅ Create VideoCapture in thread pool (non-blocking)
+                loop = asyncio.get_event_loop()
+                cap = await loop.run_in_executor(
+                    self._executor,
+                    lambda idx=index: cv2.VideoCapture(idx),
+                )
 
-                if cap.isOpened():
-                    # Get camera properties
-                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    fps = cap.get(cv2.CAP_PROP_FPS)
+                # ✅ Check if opened in thread pool (non-blocking)
+                is_opened = await loop.run_in_executor(self._executor, cap.isOpened)
+                if is_opened:
+                    # ✅ Get camera properties in thread pool (non-blocking)
+                    def get_properties():
+                        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        fps = cap.get(cv2.CAP_PROP_FPS)
+                        return width, height, fps
+                    
+                    width, height, fps = await loop.run_in_executor(self._executor, get_properties)
 
-                    # Try to read a frame to verify camera works
-                    ret, frame = cap.read()
+                    # ✅ Try to read a frame in thread pool (non-blocking)
+                    ret, frame = await loop.run_in_executor(self._executor, cap.read)
 
                     if ret and frame is not None:
                         device_id = f"usb_camera_{index}"
@@ -100,7 +151,8 @@ class CameraDetectionService:
                         cameras.append(camera_info)
                         logger.info(f"Detected USB camera {index}: {width}x{height}")
 
-                cap.release()
+                # ✅ Release in thread pool - CRITICAL: Prevents blocking event loop
+                await loop.run_in_executor(self._executor, cap.release)
 
             except Exception as e:
                 logger.debug(f"Failed to check camera index {index}: {e}")
@@ -123,23 +175,78 @@ class CameraDetectionService:
             logger.warning(f"Camera {device_id} already connected")
             return self.active_connections[device_id]
 
-        # Check if this is a mobile camera - mobile cameras should not be
-        # connected via backend
-        db_gen = get_db()
-        db = next(db_gen)
-        try:
-            camera = db.query(Camera).filter(Camera.device_id == device_id).first()
-            if camera and camera.camera_type == CameraType.MOBILE:
-                logger.info(
-                    f"Skipping backend connection for mobile camera {device_id} "
-                    "- mobile cameras use direct frontend access"
-                )
-                return None
-        finally:
-            db.close()
+        # Check if this is a mobile camera from detected_cameras cache
+        # Mobile cameras should not be connected via backend
+        camera_info_check = self.detected_cameras.get(device_id)
+        if camera_info_check and camera_info_check.get("camera_type") == CameraType.MOBILE:
+            logger.info(
+                f"Skipping backend connection for mobile camera {device_id} "
+                "- mobile cameras use direct frontend access"
+            )
+            return None
 
         # First check detected cameras (USB cameras)
         camera_info = self.detected_cameras.get(device_id)
+        
+        # If USB camera not in cache, check if it's available without full detection
+        if not camera_info and device_id.startswith("usb_camera_"):
+            try:
+                # Extract camera index from device_id (e.g., "usb_camera_0" -> 0)
+                index = int(device_id.split("_")[-1])
+                # Quick check if this specific camera exists
+                loop = asyncio.get_event_loop()
+                test_cap = await loop.run_in_executor(
+                    self._executor,
+                    lambda: cv2.VideoCapture(index)
+                )
+                is_opened = await loop.run_in_executor(self._executor, test_cap.isOpened)
+                if is_opened:
+                    # Camera exists, create minimal info
+                    camera_info = {
+                        "device_id": device_id,
+                        "camera_type": CameraType.USB,
+                        "connection_string": str(index),
+                        "index": index,
+                    }
+                    self.detected_cameras[device_id] = camera_info
+                    logger.info(f"✅ USB camera {device_id} detected on-demand at index {index}")
+                await loop.run_in_executor(self._executor, test_cap.release)
+            except Exception as e:
+                logger.debug(f"Quick USB check failed for {device_id}: {e}")
+        
+        # If RTSP camera not in cache, check database and load it
+        if not camera_info and device_id.startswith("rtsp_"):
+            try:
+                # Load RTSP camera from database in executor (non-blocking)
+                def load_rtsp_from_db():
+                    from src.database import get_db
+                    db = next(get_db())
+                    try:
+                        from src.models.camera import Camera
+                        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                        if camera and camera.camera_type == CameraType.RTSP:
+                            return {
+                                "device_id": camera.device_id,
+                                "name": camera.name,
+                                "camera_type": CameraType.RTSP,
+                                "connection_string": camera.connection_string,
+                                "resolution_width": camera.resolution_width,
+                                "resolution_height": camera.resolution_height,
+                                "max_fps": camera.max_fps,
+                            }
+                        return None
+                    finally:
+                        db.close()
+                
+                loop = asyncio.get_event_loop()
+                camera_info = await loop.run_in_executor(self._executor, load_rtsp_from_db)
+                if camera_info:
+                    self.detected_cameras[device_id] = camera_info
+                    logger.info(f"✅ RTSP camera {device_id} loaded from database to cache")
+                else:
+                    logger.warning(f"⚠️ RTSP camera {device_id} not found in database")
+            except Exception as e:
+                logger.error(f"Failed to load RTSP camera {device_id} from database: {e}")
 
         try:
             if camera_info:
@@ -147,140 +254,230 @@ class CameraDetectionService:
                 if camera_info["camera_type"] == CameraType.USB:
                     index = int(camera_info["connection_string"])
 
-                    # For USB cameras, ensure proper initialization
-                    # to avoid black screen
-                    cap = cv2.VideoCapture(index)
+                    # ✅ For USB cameras, create VideoCapture in thread pool (non-blocking)
+                    loop = asyncio.get_event_loop()
+                    cap = await loop.run_in_executor(
+                        self._executor, 
+                        lambda: cv2.VideoCapture(index)
+                    )
 
                     # Wait a moment for camera to initialize
                     await asyncio.sleep(0.1)
 
-                    if cap.isOpened():
-                        # Set properties to ensure proper frame capture
-                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer
-                        cap.set(cv2.CAP_PROP_FPS, 30)  # Set frame rate
+                    # ✅ Check if opened in thread pool (non-blocking)
+                    is_opened = await loop.run_in_executor(self._executor, cap.isOpened)
+                    if is_opened:
+                        # ✅ Set properties in thread pool (non-blocking)
+                        await loop.run_in_executor(
+                            self._executor,
+                            lambda: cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        )
+                        await loop.run_in_executor(
+                            self._executor,
+                            lambda: cap.set(cv2.CAP_PROP_FPS, 30)
+                        )
 
-                        # Read and discard first few frames to ensure
-                        # fresh frames
+                        # ✅ Read and discard first few frames in thread pool (non-blocking)
+                        loop = asyncio.get_event_loop()
                         for _ in range(3):
-                            ret, _ = cap.read()
+                            ret, _ = await loop.run_in_executor(self._executor, cap.read)
                             if not ret:
                                 break
 
                         self.active_connections[device_id] = cap
                         self.camera_sources[device_id] = index  # Store the device index
                         logger.info(
-                            "Connected to USB camera %s with fresh init", device_id
+                            f"✅ Connected to USB camera {device_id} (index {index}), added to active_connections"
                         )
+                        
+                        # 🎯 USE CAMERA POOL MANAGER if enabled, otherwise use dedicated threads
+                        if config.USE_CAMERA_POOL_MANAGER:
+                            logger.info(f"🎯 [CAMERA-POOL] Adding USB camera {device_id} to pool")
+                            if not camera_pool_manager.add_camera(device_id, cap):
+                                logger.error(f"🎯 [CAMERA-POOL] Failed to add {device_id} - pool full")
+                                cap.release()
+                                del self.active_connections[device_id]
+                                del self.camera_sources[device_id]
+                                return None
+                        else:
+                            # ✅ START DEDICATED THREAD for frame reading (OLD METHOD)
+                            logger.info(f"🎬 Starting dedicated frame reader thread for USB camera {device_id}")
+                            stop_event = threading.Event()
+                            self.frame_reader_stop_events[device_id] = stop_event
+                            thread = threading.Thread(
+                                target=self._camera_frame_reader_thread,
+                                args=(device_id, cap, stop_event),
+                                daemon=True,
+                                name=f"FrameReader-{device_id}"
+                            )
+                            thread.start()
+                            self.frame_reader_threads[device_id] = thread
+                        
                         return cap
                     else:
-                        logger.error("Failed to open USB camera %s", device_id)
+                        logger.error(f"❌ Failed to open USB camera {device_id} at index {index}")
                         cap.release()
                         return None
-            else:
-                # Camera not in detected cameras, check if it's RTSP camera in database
-                db_gen = get_db()
-                db = next(db_gen)
-                try:
-                    camera = (
-                        db.query(Camera).filter(Camera.device_id == device_id).first()
-                    )
-                    if camera and camera.camera_type == CameraType.RTSP:
-                        # Handle RTSP camera connection
-                        # For RTSP cameras, we need to construct RTSP URL from stored data
-                        # The connection_string should contain the RTSP URL
-                        rtsp_url = camera.connection_string
-                        if not rtsp_url:
-                            logger.error(
-                                f"RTSP camera {device_id} has no connection string"
-                            )
-                            return None
+                        
+                elif camera_info["camera_type"] == CameraType.RTSP:
+                    # Handle RTSP camera connection using cached connection string
+                    rtsp_url = camera_info.get("connection_string")
+                    if not rtsp_url:
+                        logger.error(f"RTSP camera {device_id} has no connection string in cache")
+                        return None
 
-                        # URL decode the RTSP URL (e.g., %40 -> @)
-                        from urllib.parse import unquote
+                    # URL decode the RTSP URL (e.g., %40 -> @)
+                    from urllib.parse import unquote
+                    decoded_rtsp_url = unquote(rtsp_url)
 
-                        decoded_rtsp_url = unquote(rtsp_url)
-
-                        logger.info(
-                            f"Connecting to RTSP camera {device_id} at {decoded_rtsp_url}"
-                        )
-                        # Try with explicit FFMPEG backend for better RTSP support
+                    logger.info(f"Connecting to RTSP camera {device_id} at {decoded_rtsp_url}")
+                    
+                    # ✅ Create VideoCapture in thread pool with timeout (non-blocking)
+                    # RTSP connections can be slow, but we timeout after 15 seconds
+                    loop = asyncio.get_event_loop()
+                    
+                    def create_rtsp_capture():
+                        """Create RTSP capture with optimized settings for low latency."""
                         cap = cv2.VideoCapture(decoded_rtsp_url, cv2.CAP_FFMPEG)
-
                         if cap.isOpened():
+                            # Minimize buffer to reduce latency and prevent blocking
+                            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Keep only 1 frame in buffer
+                            # Enable TCP for more reliable streaming (prevents packet loss freezes)
+                            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'H264'))
+                        return cap
+                    
+                    try:
+                        cap = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, create_rtsp_capture),
+                            timeout=15.0  # 15 second timeout for connection
+                        )
+                    except asyncio.TimeoutError:
+                        logger.error(f"❌ RTSP camera {device_id} connection timed out after 15 seconds")
+                        return None
+                    
+                    # ✅ Check if opened in thread pool (non-blocking)
+                    is_opened = await asyncio.wait_for(
+                        loop.run_in_executor(self._executor, cap.isOpened),
+                        timeout=5.0
+                    )
+                    if is_opened:
+                        # ✅ Try to read one test frame in thread pool (non-blocking)
+                        ret, frame = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, cap.read),
+                            timeout=10.0
+                        )
+                        
+                        if ret and frame is not None:
+                            logger.info(f"✅ Connected to RTSP camera {device_id}")
+                            
+                            # 🎯 RTSP cameras ALWAYS use dedicated threads (network latency would block pool)
+                            # Only USB cameras use the pool manager
+                            logger.info(f"🎬 [RTSP-DEDICATED] Starting dedicated thread for RTSP camera {device_id} (network isolation)")
+                            
+                            # Add to active_connections so get_camera_stream() can find it
                             self.active_connections[device_id] = cap
-                            self.camera_sources[device_id] = decoded_rtsp_url  # Store the RTSP URL
-                            logger.info(f"Connected to RTSP camera {device_id}")
+                            
+                            stop_event = threading.Event()
+                            self.frame_reader_stop_events[device_id] = stop_event
+                            thread = threading.Thread(
+                                target=self._camera_frame_reader_thread,
+                                args=(device_id, cap, stop_event),
+                                daemon=True,
+                                name=f"FrameReader-RTSP-{device_id}"
+                            )
+                            thread.start()
+                            self.frame_reader_threads[device_id] = thread
+                            
                             return cap
                         else:
-                            logger.error(
-                                f"Failed to open RTSP camera {device_id} at {decoded_rtsp_url}"
-                            )
-                            return None
-                    elif camera and camera.camera_type == CameraType.MOBILE:
-                        # Handle mobile camera connection
-                        from src.services.mobile_capture import MobileVideoCapture
-                        from src.services.mobile_streaming import (
-                            mobile_streaming_service,
-                        )
-
-                        # Extract mobile camera connection details
-                        connection_string = camera.connection_string  # mobile://ip:port
-                        if not connection_string or not connection_string.startswith(
-                            "mobile://"
-                        ):
-                            logger.error(
-                                f"Invalid mobile camera connection string for {device_id}"
-                            )
-                            return None
-
-                        # Parse connection string: mobile://ip:port
-                        try:
-                            _, address_part = connection_string.split("mobile://", 1)
-                            ip_address, port_str = address_part.split(":")
-                            port = int(port_str)
-                        except ValueError:
-                            logger.error(
-                                f"Failed to parse mobile camera connection string: {connection_string}"
-                            )
-                            return None
-
-                        # Create mobile stream configuration
-                        stream_config = {
-                            "ip_address": ip_address,
-                            "port": port,
-                            "protocol": "rtmp",  # Default to RTMP for mobile cameras
-                            "width": camera.resolution_width or 640,
-                            "height": camera.resolution_height or 480,
-                            "fps": camera.max_fps or 30,
-                        }
-
-                        # Create mobile video capture instance
-                        mobile_cap = MobileVideoCapture(
-                            device_id, mobile_streaming_service
-                        )
-
-                        # Open mobile camera stream
-                        success = await mobile_cap.open()
-                        if success:
-                            self.active_connections[device_id] = mobile_cap
-                            logger.info(f"Connected to mobile camera {device_id}")
-                            return mobile_cap
-                        else:
-                            logger.error(
-                                f"Failed to connect to mobile camera {device_id}"
-                            )
+                            logger.error(f"❌ RTSP camera {device_id} opened but failed to read frame")
+                            await loop.run_in_executor(self._executor, cap.release)
                             return None
                     else:
+                        logger.error(f"❌ Failed to open RTSP camera {device_id} at {decoded_rtsp_url}")
+                        await loop.run_in_executor(self._executor, cap.release)
+                        return None
+                        
+                elif camera_info["camera_type"] == CameraType.MOBILE:
+                    # Handle mobile camera connection using cached connection string
+                    from src.services.mobile_capture import MobileVideoCapture
+                    from src.services.mobile_streaming import (
+                        mobile_streaming_service,
+                    )
+
+                    # Extract mobile camera connection details from cache
+                    connection_string = camera_info.get("connection_string")  # mobile://ip:port
+                    if not connection_string or not connection_string.startswith(
+                        "mobile://"
+                    ):
                         logger.error(
-                            f"Camera {device_id} not found in detected cameras or database"
+                            f"Invalid mobile camera connection string for {device_id}"
                         )
                         return None
-                finally:
-                    db.close()
 
+                    # Parse connection string: mobile://ip:port
+                    try:
+                        _, address_part = connection_string.split("mobile://", 1)
+                        ip_address, port_str = address_part.split(":")
+                        port = int(port_str)
+                    except ValueError:
+                        logger.error(
+                            f"Failed to parse mobile camera connection string: {connection_string}"
+                        )
+                        return None
+
+                    # Create mobile stream configuration
+                    stream_config = {
+                        "ip_address": ip_address,
+                        "port": port,
+                        "protocol": "rtmp",  # Default to RTMP for mobile cameras
+                        "width": camera_info.get("resolution_width", 640),
+                        "height": camera_info.get("resolution_height", 480),
+                        "fps": camera_info.get("max_fps", 30),
+                    }
+
+                    # Create mobile video capture instance
+                    mobile_cap = MobileVideoCapture(
+                        device_id, mobile_streaming_service
+                    )
+
+                    # Open mobile camera stream
+                    success = await mobile_cap.open()
+                    if success:
+                        self.active_connections[device_id] = mobile_cap
+                        logger.info(f"Connected to mobile camera {device_id}")
+                        return mobile_cap
+                    else:
+                        logger.error(
+                            f"Failed to connect to mobile camera {device_id}"
+                        )
+                        return None
+                else:
+                    logger.error(
+                        f"Unknown camera type for {device_id}: {camera_info.get('camera_type')}"
+                    )
+                    return None
+                    
         except Exception as e:
             logger.error(f"Error connecting to camera {device_id}: {e}")
             return None
+        
+        # If camera_info is None (not found in detected cameras)
+        if not camera_info:
+            # Camera not in detected cameras - check if it's RTSP
+            # For RTSP cameras, device_id format is "rtsp_<ip>_<port>"
+            if device_id.startswith("rtsp_"):
+                # RTSP camera - should be in detected_cameras cache
+                # If not, it means it wasn't properly registered
+                logger.error(
+                    f"RTSP camera {device_id} not found in cache. "
+                    "RTSP cameras must be registered via add_rtsp_camera() first."
+                )
+                return None
+            else:
+                # Unknown camera type
+                logger.error(f"Camera {device_id} not found and not a known type")
+                return None
 
     async def disconnect_camera(self, device_id: str, force: bool = False) -> bool:
         """Disconnect from a specific camera.
@@ -310,8 +507,45 @@ class CameraDetectionService:
 
         try:
             cap = self.active_connections[device_id]
-            cap.release()
+            # ✅ Release in thread pool (non-blocking)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(self._executor, cap.release)
             del self.active_connections[device_id]
+            
+            # 🎯 STOP FRAME READER
+            # RTSP cameras always use dedicated threads
+            # USB cameras use pool manager (if enabled) or dedicated threads (if disabled)
+            if device_id in self.frame_reader_threads:
+                # Has dedicated thread (RTSP or USB with pool disabled)
+                logger.info(f"🎬 [FRAME-READER] Signaling stop for {device_id}")
+                if device_id in self.frame_reader_stop_events:
+                    self.frame_reader_stop_events[device_id].set()
+                    
+                    # Wait for thread to finish (with timeout) - NON-BLOCKING via executor
+                    thread = self.frame_reader_threads[device_id]
+                    
+                    def wait_for_thread_stop():
+                        thread.join(timeout=2.0)
+                        if thread.is_alive():
+                            logger.warning(f"🎬 [FRAME-READER] Thread for {device_id} didn't stop cleanly (still alive after 2s)")
+                            return False
+                        logger.info(f"✅ [FRAME-READER] Thread for {device_id} stopped cleanly")
+                        return True
+                    
+                    # Run thread.join in executor to avoid blocking event loop
+                    await loop.run_in_executor(self._executor, wait_for_thread_stop)
+                    
+                    del self.frame_reader_threads[device_id]
+                    del self.frame_reader_stop_events[device_id]
+            elif config.USE_CAMERA_POOL_MANAGER:
+                # USB camera in pool manager
+                logger.info(f"🎯 [CAMERA-POOL] Removing camera {device_id} from pool")
+                camera_pool_manager.remove_camera(device_id)
+            
+            # ✅ Clean up frame buffer
+            if device_id in self.frame_buffers:
+                del self.frame_buffers[device_id]
+            
             logger.info(f"Disconnected from camera {device_id}")
             return True
 
@@ -321,7 +555,18 @@ class CameraDetectionService:
 
     async def get_camera_stream(self, device_id: str) -> Optional[cv2.VideoCapture]:
         """Get active camera stream for reading frames."""
-
+        
+        # Check if camera has dedicated thread (RTSP or USB with pool disabled)
+        if device_id in self.frame_reader_threads:
+            return self.active_connections.get(device_id)
+        
+        # Check if camera is in pool manager (USB with pool enabled)
+        if config.USE_CAMERA_POOL_MANAGER:
+            if device_id in camera_pool_manager.cameras:
+                return camera_pool_manager.cameras[device_id].cap
+            return None
+        
+        # Fallback to old active_connections tracking
         return self.active_connections.get(device_id)
 
     async def capture_frame(self, device_id: str) -> Optional[Tuple[bool, any]]:
@@ -333,11 +578,21 @@ class CameraDetectionService:
             return None
 
         try:
-            ret, frame = cap.read()
-            # Store the latest frame for recording use
-            if ret and frame is not None:
-                self.latest_frames[device_id] = (ret, frame.copy())
-            return (ret, frame)
+            # ✅ Use frame buffer if available (non-blocking)
+            if device_id in self.frame_buffers:
+                ret, frame = self.frame_buffers[device_id]
+                # Store the latest frame for recording use
+                if ret and frame is not None:
+                    self.latest_frames[device_id] = (ret, frame.copy())
+                return (ret, frame)
+            else:
+                # Fallback to direct read in thread pool if buffer not available
+                loop = asyncio.get_event_loop()
+                ret, frame = await loop.run_in_executor(self._executor, cap.read)
+                # Store the latest frame for recording use
+                if ret and frame is not None:
+                    self.latest_frames[device_id] = (ret, frame.copy())
+                return (ret, frame)
 
         except Exception as e:
             logger.error(f"Error capturing frame from camera {device_id}: {e}")
@@ -348,9 +603,16 @@ class CameraDetectionService:
         return self.latest_frames.get(device_id)
 
     async def get_camera_info(self, device_id: str) -> Optional[Dict]:
-        """Get detailed information about a camera."""
-
-        return self.detected_cameras.get(device_id)
+        """Get detailed information about a camera including real-time connection status."""
+        
+        info = self.detected_cameras.get(device_id, {}).copy()
+        
+        # Add real-time connection status
+        info["is_connected"] = device_id in self.active_connections
+        info["is_streaming"] = device_id in self.frame_buffers
+        info["is_recording"] = device_id in self.active_recordings
+        
+        return info if info else None
 
     async def list_active_connections(self) -> List[str]:
         """List all active camera connections."""
@@ -360,61 +622,78 @@ class CameraDetectionService:
     async def disconnect_all(self) -> None:
         """Disconnect all active camera connections."""
 
-        logger.info("Disconnecting all cameras...")
+        logger.info(f"🔌 Disconnecting all cameras... (active: {list(self.active_connections.keys())})")
 
+        # Disconnect cameras safely, catching individual errors
+        errors = []
         for device_id in list(self.active_connections.keys()):
-            await self.disconnect_camera(device_id)
+            try:
+                await self.disconnect_camera(device_id)
+                logger.info(f"✅ Disconnected {device_id}")
+            except Exception as e:
+                logger.error(f"❌ Error disconnecting {device_id}: {e}")
+                errors.append((device_id, str(e)))
 
-        logger.info("All cameras disconnected")
+        if errors:
+            logger.warning(f"⚠️ {len(errors)} camera(s) had disconnect errors: {errors}")
+        
+        logger.info("✅ All cameras disconnect attempted")
 
     async def save_cameras_to_db(self, db: Session) -> int:
-        """Save detected cameras to database."""
+        """Save detected cameras to database (NON-BLOCKING)."""
 
-        saved_count = 0
-
-        for device_id, camera_info in self.detected_cameras.items():
-            try:
-                # Check if camera already exists
-                existing_camera = (
-                    db.query(Camera).filter(Camera.device_id == device_id).first()
-                )
-
-                if existing_camera:
-                    # Update existing camera
-                    existing_camera.status = CameraStatus.AVAILABLE
-                    existing_camera.last_seen = camera_info.get("last_seen")
-                    # Update other properties as needed
-                else:
-                    # Create new camera
-                    new_camera = Camera(
-                        name=camera_info["name"],
-                        device_id=device_id,
-                        camera_type=camera_info["camera_type"],
-                        status=camera_info["status"],
-                        resolution_width=camera_info.get("resolution_width"),
-                        resolution_height=camera_info.get("resolution_height"),
-                        max_fps=camera_info.get("max_fps"),
-                        connection_string=camera_info.get("connection_string"),
-                        supports_streaming=camera_info.get("supports_streaming", True),
-                        supports_recording=camera_info.get("supports_recording", True),
-                    )
-
-                    db.add(new_camera)
-
-                saved_count += 1
-
-            except Exception as e:
-                logger.error(f"Error saving camera {device_id} to database: {e}")
-                continue
-
-        try:
-            db.commit()
-            logger.info(f"Saved {saved_count} cameras to database")
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Error committing cameras to database: {e}")
+        def _save_to_db():
+            """Database operations in thread pool - prevents event loop blocking."""
             saved_count = 0
 
+            for device_id, camera_info in self.detected_cameras.items():
+                try:
+                    # Check if camera already exists
+                    existing_camera = (
+                        db.query(Camera).filter(Camera.device_id == device_id).first()
+                    )
+
+                    if existing_camera:
+                        # Update existing camera
+                        existing_camera.status = CameraStatus.AVAILABLE
+                        existing_camera.last_seen = camera_info.get("last_seen")
+                        # Update other properties as needed
+                    else:
+                        # Create new camera
+                        new_camera = Camera(
+                            name=camera_info["name"],
+                            device_id=device_id,
+                            camera_type=camera_info["camera_type"],
+                            status=camera_info["status"],
+                            resolution_width=camera_info.get("resolution_width"),
+                            resolution_height=camera_info.get("resolution_height"),
+                            max_fps=camera_info.get("max_fps"),
+                            connection_string=camera_info.get("connection_string"),
+                            supports_streaming=camera_info.get("supports_streaming", True),
+                            supports_recording=camera_info.get("supports_recording", True),
+                        )
+
+                        db.add(new_camera)
+
+                    saved_count += 1
+
+                except Exception as e:
+                    logger.error(f"Error saving camera {device_id} to database: {e}")
+                    continue
+
+            try:
+                db.commit()
+                logger.info(f"Saved {saved_count} cameras to database")
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Error committing cameras to database: {e}")
+                saved_count = 0
+
+            return saved_count
+
+        # ✅ Run all database operations in executor - NON-BLOCKING
+        loop = asyncio.get_event_loop()
+        saved_count = await loop.run_in_executor(self._executor, _save_to_db)
         return saved_count
 
     async def get_camera_capabilities(self, device_id: str) -> Optional[Dict]:
@@ -650,11 +929,14 @@ class CameraDetectionService:
         Args:
             enable_instant_detection: If True, automatically start instant detection
         """
+        logger.info(f"🎬 [RECORDING_START] Called for device_id={device_id}, session={session_uuid}")
+        logger.info(f"🔍 [RECORDING_START] Checking queue workers for {device_id}")
+        logger.info(f"🔍 [RECORDING_START] Current active_recordings: {list(self.active_recordings.keys())}")
 
         try:
             # Check if already recording
             if device_id in self.active_recordings:
-                logger.warning(f"Camera {device_id} is already recording")
+                logger.warning(f"❌ [RECORDING_START] Camera {device_id} is already recording")
                 return None
 
             # Check if this is a mobile camera - handle differently
@@ -685,10 +967,22 @@ class CameraDetectionService:
                     segment_duration,
                 )
             else:
-                # For USB/RTSP cameras, check active connections
-                if device_id not in self.active_connections:
-                    logger.error(f"Camera {device_id} not connected for recording")
+                # For USB/RTSP cameras, check queue workers
+                from src.services.camera_service_queue import get_camera_service as get_queue_service
+                queue_service = get_queue_service()
+                
+                logger.info(f"🔍 [RECORDING_START] Checking queue worker for {device_id}")
+                worker = await queue_service.get_camera_stream(device_id)
+                
+                if not worker:
+                    logger.error(f"❌ [RECORDING_START] No queue worker found for {device_id}")
                     return None
+                
+                if worker.status.value != 'connected':
+                    logger.error(f"❌ [RECORDING_START] Queue worker for {device_id} not connected (status: {worker.status.value})")
+                    return None
+                    
+                logger.info(f"✅ [RECORDING_START] Queue worker for {device_id} verified and ready (status: {worker.status.value})")
 
                 result = await self._start_regular_recording_with_session(
                     device_id,
@@ -707,14 +1001,17 @@ class CameraDetectionService:
                     from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
                     manager = get_instant_detection_manager()
                     
-                    # Use the SHARED VideoCapture object to avoid resource contention
-                    cap = self.active_connections.get(device_id)
-                    if cap is None:
-                        logger.error(f"🔍 [INSTANT-DETECT] No active connection found for {device_id}")
+                    # Use queue worker for frames (non-blocking)
+                    from src.services.camera_service_queue import get_camera_service as get_queue_service
+                    queue_service = get_queue_service()
+                    worker = await queue_service.get_camera_stream(device_id)
+                    
+                    if worker is None:
+                        logger.error(f"🔍 [INSTANT-DETECT] No queue worker found for {device_id}")
                         return result
                     
-                    logger.info(f"🔍 [INSTANT-DETECT] Using shared VideoCapture for {device_id}")
-                    manager.start_sampling(device_id, cap)
+                    logger.info(f"🔍 [INSTANT-DETECT] Using queue worker for {device_id}")
+                    manager.start_sampling(device_id, None)  # Pass None, will use queue worker
                     logger.info(f"✅ Auto-started instant detection for camera {device_id}")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to auto-start instant detection for {device_id}: {e}")
@@ -742,13 +1039,19 @@ class CameraDetectionService:
             f"🎬 [SESSION] Starting USB/RTSP recording for {device_id}, session: {session_uuid}"
         )
 
-        cap = self.active_connections[device_id]
-
-        # Get recording parameters
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        raw_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
-        fps = min(raw_fps, 30) if raw_fps > 0 else 30
+        # Get frame properties from queue worker
+        from src.services.camera_service_queue import get_camera_service as get_queue_service
+        queue_service = get_queue_service()
+        
+        # Get a sample frame to determine resolution
+        frame = await queue_service.get_latest_frame(device_id)
+        if frame is None:
+            logger.error(f"❌ [RECORDING_START] No frames available from queue worker for {device_id}")
+            return None
+        
+        # Get recording parameters from frame
+        height, width = frame.shape[:2]
+        fps = 30  # Standard recording FPS
 
         # Create session directory
         session_dir = os.path.join("recordings", device_id, session_uuid)
@@ -1563,8 +1866,13 @@ class CameraDetectionService:
             frame_write_count = 0
             while device_id in self.active_recordings:
                 try:
-                    # Read frame directly from camera with timeout protection
-                    ret, frame = cap.read()
+                    # ✅ READ FROM SHARED FRAME BUFFER (prevents multi-reader conflicts)
+                    if device_id in self.frame_buffers:
+                        ret, frame = self.frame_buffers[device_id]
+                    else:
+                        # Fallback to non-blocking read if buffer not available
+                        loop = asyncio.get_event_loop()
+                        ret, frame = await loop.run_in_executor(self._executor, cap.read)
 
                     if not ret or frame is None:
                         failure_count += 1
@@ -1766,16 +2074,17 @@ class CameraDetectionService:
             finally:
                 db.close()
 
-            cap = self.active_connections[device_id]
+            # Get queue service for frame reading
+            from src.services.camera_service_queue import get_camera_service as get_queue_service
+            queue_service = get_queue_service()
+            
             target_fps = recording_info["fps"]
             segment_duration = recording_info["segment_duration"]
 
-            # Frame timing and skipping logic
-            camera_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
-            skip_ratio = max(1, camera_fps // target_fps)
+            # Frame timing and skipping logic (simplified for queue workers)
             frame_counter = 0
 
-            logger.info(f"🎬 [SEGMENT] Recording with {segment_duration}s segments")
+            logger.info(f"🎬 [SEGMENT] Recording with {segment_duration}s segments (using queue worker)")
 
             # Initialize timing trackers
             loop_start_time = datetime.datetime.now()
@@ -1812,23 +2121,23 @@ class CameraDetectionService:
                         await self._rotate_to_next_segment(device_id, session_service)
                         continue
 
-                    # Read and process frame
-                    ret, frame = cap.read()
-                    if not ret or frame is None:
-                        await asyncio.sleep(0.1)
+                    # ✅ READ FROM QUEUE WORKER BUFFER (non-blocking, no contention)
+                    frame = await queue_service.get_latest_frame(device_id)
+                    
+                    if frame is None:
+                        await asyncio.sleep(0.01)  # Short sleep to avoid spinning
                         continue
 
                     frame_counter += 1
 
-                    # Write frame based on skip ratio (simplified timing)
-                    if frame_counter % skip_ratio == 0:
-                        recording_info["video_writer"].write(frame)
-                        recording_info["frame_count"] += 1
-                        recording_info["total_frame_count"] += 1
-                        total_frames_written += 1  # Track frames for debug
+                    # Write every frame from queue worker (already rate-limited by worker)
+                    recording_info["video_writer"].write(frame)
+                    recording_info["frame_count"] += 1
+                    recording_info["total_frame_count"] += 1
+                    total_frames_written += 1  # Track frames for debug
 
-                    # Small sleep to prevent CPU spinning (camera handles timing)
-                    await asyncio.sleep(0.001)
+                    # Small sleep to prevent CPU spinning (33ms = ~30fps)
+                    await asyncio.sleep(0.033)
 
                 except Exception as e:
                     logger.error(f"Error in segment frame processing: {e}")
@@ -2907,6 +3216,136 @@ class CameraDetectionService:
         finally:
             logger.info(
                 "🎯 [FACE-DETECTION] %s END TRIGGER %s", separator, separator
+            )
+
+
+    def _camera_frame_reader_thread(self, device_id: str, cap: cv2.VideoCapture, stop_event: threading.Event):
+        """
+        DEDICATED THREAD for continuously reading frames from camera.
+        Runs in its own thread (not executor) to avoid thread pool exhaustion.
+        
+        This is a synchronous function that runs in a real thread, allowing
+        multiple cameras to read frames truly concurrently without blocking.
+        
+        For RTSP cameras, uses non-blocking approach to prevent network hangs.
+        """
+        logger.info(f"🎬 [FRAME-READER-THREAD] Started for camera {device_id}")
+        frame_count = 0
+        error_count = 0
+        max_errors = 50
+        is_rtsp = device_id.startswith('rtsp_')
+        
+        try:
+            while not stop_event.is_set() and device_id in self.active_connections:
+                try:
+                    if is_rtsp:
+                        # RTSP: Use grab+retrieve to minimize blocking time
+                        # grab() fetches frame from network (can still block but shorter)
+                        # retrieve() just decodes the grabbed frame (fast, local)
+                        ret = cap.grab()
+                        if ret:
+                            ret, frame = cap.retrieve()
+                        else:
+                            frame = None
+                    else:
+                        # USB: Direct read is fine (local, fast)
+                        ret, frame = cap.read()
+                    
+                    if ret and frame is not None:
+                        # Store in LOCAL buffer (thread-safe with GIL)
+                        self._local_frame_buffers[device_id] = (ret, frame.copy())
+                        frame_count += 1
+                        error_count = 0
+                        
+                        # Log every 100 frames
+                        if frame_count % 100 == 0:
+                            logger.debug(f"🎬 [FRAME-READER-THREAD] {device_id}: {frame_count} frames")
+                        
+                        # Small sleep to prevent CPU spinning
+                        # RTSP: shorter sleep for network latency tolerance
+                        # USB: slightly longer sleep for efficiency  
+                        time.sleep(0.005 if is_rtsp else 0.01)
+                    else:
+                        error_count += 1
+                        if error_count > max_errors:
+                            logger.error(f"🎬 [FRAME-READER-THREAD] Too many errors for {device_id}, stopping")
+                            break
+                        time.sleep(0.1)
+                        
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"🎬 [FRAME-READER-THREAD] Error reading from {device_id}: {e}")
+                    if error_count > max_errors:
+                        logger.error(f"🎬 [FRAME-READER-THREAD] Too many errors, stopping")
+                        break
+                    time.sleep(0.1)
+                    
+        except Exception as e:
+            logger.error(f"🎬 [FRAME-READER-THREAD] Fatal error for {device_id}: {e}")
+        finally:
+            logger.info(
+                f"🎬 [FRAME-READER-THREAD] Stopped for {device_id} "
+                f"(frames: {frame_count}, errors: {error_count})"
+            )
+
+
+    async def _camera_frame_reader_loop(self, device_id: str, cap: cv2.VideoCapture):
+        """
+        DEPRECATED: Use _camera_frame_reader_thread instead.
+        This async version causes thread pool exhaustion.
+        Kept for compatibility but should not be called.
+        """
+        logger.warning(f"⚠️ [DEPRECATED] _camera_frame_reader_loop called for {device_id} - use thread version!")
+        logger.info(f"🎬 [FRAME-READER] Started for camera {device_id}")
+        frame_count = 0
+        error_count = 0
+        max_errors = 50  # Allow some errors before giving up
+        
+        try:
+            while device_id in self.active_connections:
+                try:
+                    # ✅ Run blocking cap.read() in thread pool to prevent event loop blocking
+                    # This allows multiple cameras to read simultaneously without freezing
+                    loop = asyncio.get_event_loop()
+                    ret, frame = await loop.run_in_executor(self._executor, cap.read)
+                    
+                    if ret and frame is not None:
+                        # Store in shared buffer for all consumers
+                        self.frame_buffers[device_id] = (ret, frame.copy())
+                        frame_count += 1
+                        error_count = 0  # Reset error counter on success
+                        
+                        # Log every 100 frames for monitoring
+                        if frame_count % 100 == 0:
+                            logger.debug(f"🎬 [FRAME-READER] {device_id}: {frame_count} frames read")
+                        
+                        # Small yield to other tasks
+                        await asyncio.sleep(0.001)
+                    else:
+                        error_count += 1
+                        if error_count > max_errors:
+                            logger.error(
+                                f"🎬 [FRAME-READER] Too many errors ({error_count}) for {device_id}, stopping"
+                            )
+                            break
+                        await asyncio.sleep(0.1)
+                        
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"🎬 [FRAME-READER] Error reading frame from {device_id}: {e}")
+                    if error_count > max_errors:
+                        logger.error(f"🎬 [FRAME-READER] Too many errors, stopping reader for {device_id}")
+                        break
+                    await asyncio.sleep(0.1)
+                    
+        except asyncio.CancelledError:
+            logger.info(f"🎬 [FRAME-READER] Cancelled for {device_id}")
+        except Exception as e:
+            logger.error(f"🎬 [FRAME-READER] Fatal error for {device_id}: {e}")
+        finally:
+            logger.info(
+                f"🎬 [FRAME-READER] Stopped for {device_id} "
+                f"(frames: {frame_count}, errors: {error_count})"
             )
 
 

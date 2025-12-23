@@ -121,6 +121,15 @@ async def lifespan(_app: FastAPI):
             db.close()
     except Exception as e:
         logger.error(f"Failed to cleanup stale recording sessions: {e}")
+    
+    # Initialize Redis status notification service
+    try:
+        from src.services.status_notification_service import initialize_status_service
+        await initialize_status_service()
+        logger.info("✅ Redis status notification service initialized")
+    except Exception as e:
+        logger.warning(f"⚠️ Redis status service not available: {e}")
+        logger.info("Status updates will work locally but not across instances")
 
     # Start Celery worker for instant detection (background process)
     celery_process = None
@@ -237,6 +246,14 @@ async def lifespan(_app: FastAPI):
         logger.info("Mobile camera cleanup service stopped successfully")
     except Exception as e:
         logger.error(f"Error stopping mobile camera cleanup service: {e}")
+    
+    # Shutdown Redis status notification service
+    try:
+        from src.services.status_notification_service import shutdown_status_service
+        await shutdown_status_service()
+        logger.info("Redis status notification service stopped")
+    except Exception as e:
+        logger.error(f"Error stopping status notification service: {e}")
 
     # Deregister service
     if service_discovery_available and service_discovery_client:

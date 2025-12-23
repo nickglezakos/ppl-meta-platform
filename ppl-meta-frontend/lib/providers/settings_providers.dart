@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
 import '../models/settings_models.dart';
-import '../core/services/multi_camera_service.dart';
+// REMOVED: import '../core/services/multi_camera_service.dart'; // Archived - unused
 import 'api_providers.dart';
 
 // ====================

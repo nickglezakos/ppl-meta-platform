@@ -80,18 +80,15 @@ class InstantDetectionSampler:
         
         Args:
             camera_id: Unique camera identifier
-            camera_capture: Shared cv2.VideoCapture object from recording session
+            camera_capture: Legacy parameter (can be None) - we now use queue workers
         """
-        # Check if we need to restart due to camera reconnection (new capture object)
-        camera_changed = (
-            self._current_camera_id != camera_id or 
-            self._current_capture is not camera_capture
-        )
+        # Check if we need to restart due to camera change
+        camera_changed = self._current_camera_id != camera_id
         
         if camera_changed and self._running:
             logger.info(
-                f"🔄 Camera changed (was: {self._current_camera_id}, now: {camera_id}) or "
-                f"capture object changed - restarting instant detection"
+                f"🔄 Camera changed (was: {self._current_camera_id}, now: {camera_id}) - "
+                f"restarting instant detection"
             )
             self.stop_sampling()
         
@@ -106,19 +103,19 @@ class InstantDetectionSampler:
             self._running = False
             self._detection_thread = None
         
-        # Store current camera and capture for future comparison
+        # Store current camera (we now use queue workers, not capture object)
         self._current_camera_id = camera_id
-        self._current_capture = camera_capture
+        self._current_capture = None  # Not used anymore
         
         self._running = True
         self._detection_thread = threading.Thread(
             target=self._sample_loop,
-            args=(camera_id, camera_capture),
+            args=(camera_id, None),  # Pass None for capture - use queue worker
             daemon=True,
             name=f"instant-detection-{camera_id}"
         )
         self._detection_thread.start()
-        logger.info(f"🚀 Instant detection sampler started for camera {camera_id} (using shared capture)")
+        logger.info(f"🚀 Instant detection sampler started for camera {camera_id} (using queue worker)")
     
     def stop_sampling(self):
         """Stop the sampling thread"""
@@ -134,7 +131,7 @@ class InstantDetectionSampler:
     
     def _sample_loop(self, camera_id: str, camera_capture):
         """
-        Main sampling loop - runs every N seconds using shared VideoCapture.
+        Main sampling loop - runs every N seconds using queue worker frames.
         Now submits frames to Celery for non-blocking processing.
         """
         consecutive_failures = 0
@@ -144,14 +141,27 @@ class InstantDetectionSampler:
             try:
                 start_time = time.time()
                 
-                # Check if capture is still valid before attempting to read
-                if not camera_capture or not camera_capture.isOpened():
-                    logger.warning(f"⚠️ Camera capture closed or invalid for {camera_id}, stopping instant detection")
-                    self._running = False
-                    break
+                # Check if queue worker is still active
+                # Import here to avoid circular dependency
+                import asyncio
+                from src.services.camera_service_queue import get_camera_service as get_queue_service
                 
-                # Capture 3 frames with temporal spacing (using shared capture)
-                frames = self._capture_3_frames_shared(camera_capture)
+                # Run async check in a new event loop (we're in a thread)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    queue_service = get_queue_service()
+                    worker = loop.run_until_complete(queue_service.get_camera_stream(camera_id))
+                    
+                    if not worker or worker.status.value != 'connected':
+                        logger.warning(f"⚠️ Queue worker not connected for {camera_id}, stopping instant detection")
+                        self._running = False
+                        break
+                finally:
+                    loop.close()
+                
+                # Capture 3 frames from queue worker
+                frames = self._capture_3_frames_from_queue(camera_id)
                 
                 if len(frames) == 3:
                     # Submit to Celery for background processing (non-blocking)
@@ -219,7 +229,62 @@ class InstantDetectionSampler:
         
         logger.info(f"🛑 Instant detection sample loop exited for {camera_id}")
     
-    def _capture_3_frames_shared(self, cap) -> List[Dict]:
+    def _capture_3_frames_from_queue(self, camera_id: str) -> List[Dict]:
+        """
+        Capture 3 frames from queue worker buffer (non-blocking, no contention).
+        
+        Temporal spacing:
+        - Frame 0: t=0.0s
+        - Frame 1: t=0.5s (temporal_window / 2)
+        - Frame 2: t=1.0s (temporal_window)
+        
+        Total window: 1 second (captures motion context)
+        
+        Args:
+            camera_id: Camera device ID
+        
+        Returns:
+            List of frame dictionaries with frame, timestamp, and index
+        """
+        frames = []
+        
+        try:
+            import asyncio
+            from src.services.camera_service_queue import get_camera_service as get_queue_service
+            
+            frame_spacing = self.temporal_window / 2  # 0.5s for 1.0s window
+            
+            for i in range(3):
+                # Read frame from queue worker (non-blocking)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    queue_service = get_queue_service()
+                    frame = loop.run_until_complete(queue_service.get_latest_frame(camera_id))
+                finally:
+                    loop.close()
+                
+                if frame is not None:
+                    logger.debug(f"📸 [INSTANT-DETECT] Frame {i} from queue worker for {camera_id}")
+                    frames.append({
+                        "frame": frame.copy(),
+                        "timestamp": i * frame_spacing,
+                        "frame_index": i
+                    })
+                    
+                    # Wait between frames (except after last frame)
+                    if i < 2:
+                        time.sleep(frame_spacing)
+                else:
+                    logger.warning(f"Failed to capture frame {i} from queue worker")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error capturing frames from queue worker: {e}")
+        
+        return frames
+    
+    def _capture_3_frames_shared(self, camera_id: str, cap) -> List[Dict]:
         """
         Capture 3 frames from SHARED camera stream (no new VideoCapture).
         
@@ -231,6 +296,7 @@ class InstantDetectionSampler:
         Total window: 1 second (captures motion context)
         
         Args:
+            camera_id: Camera device ID (needed to access frame buffer for RTSP)
             cap: Shared cv2.VideoCapture object from recording session
         
         Returns:
@@ -246,7 +312,16 @@ class InstantDetectionSampler:
             frame_spacing = self.temporal_window / 2  # 0.5s for 1.0s window
             
             for i in range(3):
-                ret, frame = cap.read()
+                # ✅ READ FROM FRAME BUFFER if available (RTSP cameras)
+                from src.services.camera_detection import camera_service
+                
+                if camera_id in camera_service.frame_buffers:
+                    ret, frame = camera_service.frame_buffers[camera_id]
+                    logger.debug(f"📸 [INSTANT-DETECT] Frame {i} from BUFFER for {camera_id}")
+                else:
+                    # USB cameras read directly
+                    ret, frame = cap.read()
+                    logger.debug(f"📸 [INSTANT-DETECT] Frame {i} from DIRECT READ for {camera_id}")
                 
                 if ret and frame is not None:
                     logger.debug(f"📸 Captured frame {i}: shape={frame.shape}, size={frame.size}")

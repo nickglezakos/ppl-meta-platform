@@ -6,11 +6,12 @@ import asyncio
 import base64
 import io
 import logging
+import time
 from typing import Dict
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -23,7 +24,7 @@ from src.security.auth import (
     require_view_stream_flexible,
     security,
 )
-from src.services.camera_detection import camera_service
+from src.services.camera_service_queue import get_camera_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,17 +35,29 @@ async def start_stream(
     device_id: str, current_user: Dict = Depends(get_current_user)
 ) -> Dict:
     """Start streaming from a specific camera."""
+    logger.info(f"🎬 [START_STREAM] Called for device_id={device_id}, user={current_user.get('sub')}")
 
     try:
-        # Connect to camera if not already connected
-        connection = await camera_service.get_camera_stream(device_id)
-        if not connection:
-            connection = await camera_service.connect_camera(device_id)
-            if not connection:
+        # ✅ Use queue-based camera service
+        queue_service = get_camera_service()
+        
+        # Check if camera is already connected
+        worker = queue_service.get_camera_stream(device_id)
+        logger.info(f"🔍 [START_STREAM] Worker found: {worker is not None}")
+        
+        # ✅ Check if worker exists and is connected
+        if not worker:
+            logger.info(f"🔌 [START_STREAM] Camera {device_id} not connected, connecting now...")
+            connection_success = await queue_service.connect_camera(device_id)
+            if not connection_success:
+                logger.error(f"❌ [START_STREAM] Failed to connect camera {device_id}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to connect to camera {device_id}",
                 )
+            logger.info(f"✅ [START_STREAM] Successfully connected camera {device_id}")
+        else:
+            logger.info(f"✅ [START_STREAM] Camera {device_id} already connected")
 
         logger.info(
             f"User {current_user.get('sub')} started stream for camera {device_id}"
@@ -90,53 +103,122 @@ async def video_stream(
             width, height, fps = quality_settings.get(
                 quality, quality_settings["medium"]
             )
+            
+            # Publish streaming started event
+            try:
+                from src.services.status_notification_service import get_status_service, CameraStatusEvent
+                status_service = get_status_service()
+                await status_service.publish_status_change(
+                    device_id,
+                    CameraStatusEvent.STREAMING_STARTED,
+                    {
+                        "quality": quality,
+                        "resolution": f"{width}x{height}",
+                        "fps": fps,
+                        "user_id": current_user.get('sub')
+                    }
+                )
+            except Exception as e:
+                logger.debug(f"Could not publish streaming_started event: {e}")
+
+            consecutive_failures = 0
+            max_consecutive_failures = 50  # 5 seconds at 10fps before giving up
+            last_frame_time = time.time()
+            stream_timeout = 30.0  # 30 seconds without frames = timeout
 
             while True:
-                # Get camera stream on EACH iteration to handle reconnections
-                cap = await camera_service.get_camera_stream(device_id)
-                if not cap or not cap.isOpened():
-                    logger.warning(f"Camera {device_id} not available for streaming")
+                try:
+                    # Check for stream timeout
+                    if time.time() - last_frame_time > stream_timeout:
+                        logger.error(f"⏱️ Stream timeout for {device_id} - no frames for {stream_timeout}s")
+                        break
+
+                    # ✅ Use queue-based camera service to get frames from worker buffer
+                    queue_service = get_camera_service()
+                    frame = await queue_service.get_latest_frame(device_id)
+                    
+                    if frame is None:
+                        consecutive_failures += 1
+                        if consecutive_failures >= max_consecutive_failures:
+                            logger.error(f"❌ Too many frame read failures for {device_id}, stopping stream")
+                            break
+                        logger.debug(f"No frame available from {device_id} (failure {consecutive_failures}/{max_consecutive_failures})")
+                        await asyncio.sleep(0.1)
+                        continue
+
+                    # Reset failure counter on success
+                    consecutive_failures = 0
+                    last_frame_time = time.time()
+
+                    # Resize frame if needed
+                    if frame.shape[1] != width or frame.shape[0] != height:
+                        frame = cv2.resize(frame, (width, height))
+
+                    # Encode frame as JPEG
+                    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    frame_bytes = buffer.tobytes()
+
+                    # Yield frame in multipart format
+                    yield (
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                    )
+
+                    # Small delay to control frame rate
+                    await asyncio.sleep(1.0 / fps)
+                    
+                except GeneratorExit:
+                    # Client disconnected - graceful exit
+                    logger.info(f"🔌 Client disconnected from stream {device_id}")
                     break
-
-                ret, frame = cap.read()
-                if not ret:
-                    logger.warning(f"Failed to read frame from camera {device_id}")
-                    # Don't break immediately - camera might be temporarily busy
+                except Exception as e:
+                    consecutive_failures += 1
+                    logger.error(f"Error in stream loop for {device_id}: {e}")
+                    if consecutive_failures >= max_consecutive_failures:
+                        logger.error(f"❌ Too many errors for {device_id}, stopping stream")
+                        break
                     await asyncio.sleep(0.1)
-                    continue
-
-                # Resize frame if needed
-                if frame.shape[1] != width or frame.shape[0] != height:
-                    frame = cv2.resize(frame, (width, height))
-
-                # Encode frame as JPEG
-                _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                frame_bytes = buffer.tobytes()
-
-                # Yield frame in multipart format
-                yield (
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                    
+            logger.info(f"🛑 Stream ended for {device_id}")
+            
+            # Publish streaming stopped event
+            try:
+                from src.services.status_notification_service import get_status_service, CameraStatusEvent
+                status_service = get_status_service()
+                await status_service.publish_status_change(
+                    device_id,
+                    CameraStatusEvent.STREAMING_STOPPED,
+                    {
+                        "user_id": current_user.get('sub')
+                    }
                 )
-
-                # Small delay to control frame rate
-                await asyncio.sleep(1.0 / fps)
+            except Exception as e:
+                logger.debug(f"Could not publish streaming_stopped event: {e}")
 
         except Exception as e:
             logger.error(f"Error in video stream for camera {device_id}: {e}")
             return
 
+    logger.info(f"🎥 [VIDEO_STREAM] Request for device_id={device_id}, user={current_user.get('sub')}")
+    
     try:
-        # Check if camera is connected
-        cap = await camera_service.get_camera_stream(device_id)
-        if not cap:
+        # Check if camera worker exists and is connected
+        queue_service = get_camera_service()
+        worker = await queue_service.get_camera_stream(device_id)
+        logger.info(f"🔍 [VIDEO_STREAM] Worker found: {worker is not None}, Status: {worker.status.value if worker else 'N/A'}")
+        
+        if not worker or worker.status.value != 'connected':
+            logger.error(f"❌ [VIDEO_STREAM] Camera {device_id} worker not connected")
+            from src.services.worker_manager import get_worker_manager
+            manager = get_worker_manager()
+            logger.error(f"❌ [VIDEO_STREAM] Available workers: {list(manager.workers.keys())}")
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Camera {device_id} not connected",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Camera {device_id} not connected. Please connect via /cameras/{device_id}/connect first",
             )
 
         logger.info(
-            f"User {current_user.get('sub')} accessing video stream for camera {device_id}"
+            f"✅ [VIDEO_STREAM] User {current_user.get('sub')} accessing video stream for camera {device_id}"
         )
 
         return StreamingResponse(
@@ -242,6 +324,7 @@ async def start_recording(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: Dict = Depends(get_current_user),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> Dict:
     """Start recording from a specific camera with session tracking.
     
@@ -355,31 +438,9 @@ async def start_recording(
             f"{recording_session.session_uuid} for camera {device_id}"
         )
 
-        # Notify VMeta service of recording start for polling activation
-        try:
-            import httpx
-            from datetime import datetime
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    "http://localhost:8008/api/v1/recording/started",
-                    json={
-                        "collection_id": device_id,
-                        "session_uuid": recording_session.session_uuid,
-                        "device_id": device_id,
-                        "user_id": current_user.get("sub") or "",
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
-                        "metadata": {}
-                    },
-                    headers={"Authorization": f"Bearer {credentials.credentials}"}
-                )
-                logger.info(
-                    f"📹 Notified VMeta of recording start: {recording_session.session_uuid}"
-                )
-        except Exception as e:
-            logger.warning(f"Failed to notify VMeta of recording start: {e}")
-            # Don't fail the recording if VMeta notification fails
-
-        return {
+        # ✅ RETURN IMMEDIATELY - Don't wait for VMeta notification
+        logger.info(f"📤 [RECORD-START] Preparing response for session {recording_session.session_uuid}")
+        response_data = {
             "status": "success",
             "message": f"Recording started for camera {device_id}",
             "device_id": device_id,
@@ -388,6 +449,20 @@ async def start_recording(
             "started_at": recording_info.get("started_at"),
             "segment_duration": recording_config["segment_duration_seconds"],
         }
+        
+        logger.info(f"✅ [RECORD-START] Returning response immediately, VMeta notification scheduled")
+        
+        # ✅ SCHEDULE VMETA NOTIFICATION AS BACKGROUND TASK
+        # This runs AFTER the response is sent to the client
+        background_tasks.add_task(
+            notify_vmeta_recording_start,
+            device_id=device_id,
+            session_uuid=recording_session.session_uuid,
+            user_id=current_user.get("sub"),
+            auth_token=credentials.credentials,
+        )
+        
+        return response_data
 
     except HTTPException:
         raise
@@ -397,6 +472,42 @@ async def start_recording(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start recording",
         ) from e
+
+
+# ✅ SEPARATE FUNCTION FOR BACKGROUND VMETA NOTIFICATION
+async def notify_vmeta_recording_start(
+    device_id: str,
+    session_uuid: str,
+    user_id: str,
+    auth_token: str,
+) -> None:
+    """Background task to notify VMeta service of recording start."""
+    try:
+        import httpx
+        from datetime import datetime
+        
+        logger.info(f"📹 [VMETA-NOTIFY] Starting background VMeta notification for {session_uuid}")
+        
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.post(
+                "http://localhost:8008/api/v1/recording/started",
+                json={
+                    "collection_id": device_id,
+                    "session_uuid": session_uuid,
+                    "device_id": device_id,
+                    "user_id": user_id or "",
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "metadata": {}
+                },
+                headers={"Authorization": f"Bearer {auth_token}"}
+            )
+            logger.info(
+                f"✅ [VMETA-NOTIFY] VMeta notified successfully: {session_uuid}, "
+                f"status: {response.status_code}"
+            )
+    except Exception as e:
+        # Log but don't fail - recording already started successfully
+        logger.warning(f"⚠️ [VMETA-NOTIFY] Failed to notify VMeta: {e}")
 
 
 @router.post("/{device_id}/record/stop")

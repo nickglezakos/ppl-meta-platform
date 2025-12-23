@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/unified_search_service.dart';
 import '../../services/virtual_collection_service.dart';
 import '../../services/media_api_client.dart';
-import '../../services/camera_collection_service.dart';
+import '../services/camera_collection_service.dart';
 import '../../models/media_models.dart';
 import 'camera_providers.dart';
 

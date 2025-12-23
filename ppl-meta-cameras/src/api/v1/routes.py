@@ -9,6 +9,7 @@ from src.api.v1.endpoints.instant_detection import router as instant_detection_r
 from src.api.v1.endpoints.mobile_streaming import router as mobile_streaming_router
 from src.api.v1.endpoints.recording_sessions import router as recording_sessions_router
 from src.api.v1.endpoints.streaming import router as streaming_router
+from src.api.v1.endpoints.status_websocket import router as status_websocket_router
 
 # Create main v1 router
 v1_router = APIRouter()
@@ -19,6 +20,7 @@ v1_router.include_router(streaming_router, prefix="/streaming", tags=["Streaming
 v1_router.include_router(
     mobile_streaming_router, prefix="/streaming", tags=["Mobile Streaming"]
 )
+v1_router.include_router(status_websocket_router, prefix="/cameras", tags=["Status WebSocket"])
 v1_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 v1_router.include_router(recording_sessions_router, tags=["Recording Sessions"])
 v1_router.include_router(instant_detection_router, prefix="/instant-detection", tags=["Instant Detection"])

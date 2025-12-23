@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     HTTPException,
     Request,
@@ -28,7 +29,7 @@ from src.security.auth import (
     require_detect_cameras,
     require_view_cameras,
 )
-from src.services.camera_detection import camera_service
+from src.services.camera_service_queue import get_camera_service
 from src.services.session_auth import session_manager
 from src.services.session_aware_face_detector import session_aware_face_detector
 from src.services.session_statistics_broadcaster import statistics_broadcaster
@@ -85,15 +86,22 @@ async def list_cameras(
 
     try:
         cameras = db.query(Camera).all()
+        
+        # Get real-time worker status
+        queue_service = get_camera_service()
 
         camera_list = []
         for camera in cameras:
+            # Check if camera has an active worker
+            worker = await queue_service.get_camera_stream(camera.device_id)
+            realtime_status = worker.status.value if worker else "disconnected"
+            
             camera_dict = {
                 "id": camera.id,
                 "name": camera.name,
                 "device_id": camera.device_id,
                 "camera_type": camera.camera_type.value,
-                "status": camera.status.value,
+                "status": realtime_status,  # Use real-time worker status
                 "resolution": f"{camera.resolution_width}x{camera.resolution_height}",
                 "max_fps": camera.max_fps,
                 "supports_streaming": camera.supports_streaming,
@@ -116,6 +124,64 @@ async def list_cameras(
         )
 
 
+@router.get("/{device_id}/realtime-status", dependencies=[Depends(require_view_cameras)])
+async def get_camera_realtime_status(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Get REAL-TIME camera status from memory (NO database query).
+    
+    Returns instant state including:
+    - Connection status
+    - Frame availability
+    - Frame count and age
+    - Error status
+    
+    This endpoint is FAST and used by streaming to check if frames are available.
+    """
+    try:
+        from src.services.camera_pool_manager import camera_pool_manager
+        from src.config import get_config
+        
+        config = get_config()
+        
+        if config.USE_CAMERA_POOL_MANAGER:
+            # Get state from pool manager (instant, no DB)
+            state = camera_pool_manager.get_camera_state(device_id)
+            return {
+                "device_id": device_id,
+                "realtime": True,
+                "source": "camera_pool_manager",
+                **state
+            }
+        else:
+            # Check queue-based worker status
+            queue_service = get_camera_service()
+            worker = await queue_service.get_camera_stream(device_id)
+            
+            is_connected = worker is not None and worker.status.value == "connected"
+            has_frames = worker is not None and worker.has_frames()
+            
+            return {
+                "device_id": device_id,
+                "realtime": True,
+                "source": "queue_worker",
+                "status": worker.status.value if worker else "disconnected",
+                "has_frames": has_frames,
+                "is_reading": is_connected
+            }
+    
+    except Exception as e:
+        logger.error(f"Error getting realtime status for {device_id}: {e}")
+        return {
+            "device_id": device_id,
+            "realtime": True,
+            "status": "error",
+            "error": str(e)
+        }
+
+
 @router.post("/detect", dependencies=[Depends(require_detect_cameras)])
 async def detect_cameras(
     save_to_db: bool = True,
@@ -125,7 +191,9 @@ async def detect_cameras(
     """Detect available cameras and optionally save to database."""
 
     try:
-        detected_cameras = await camera_service.detect_available_cameras()
+        # ✅ Use queue-based camera service for detection
+        queue_service = get_camera_service()
+        detected_cameras = await queue_service.detect_available_cameras()
 
         result = {
             "detected_count": len(detected_cameras),
@@ -134,7 +202,26 @@ async def detect_cameras(
         }
 
         if save_to_db:
-            saved_count = await camera_service.save_cameras_to_db(db)
+            # Save detected cameras to database
+            saved_count = 0
+            for cam_info in detected_cameras:
+                device_id = cam_info.get('device_id')
+                camera_type_str = cam_info.get('camera_type', 'USB')
+                camera_type = CameraType[camera_type_str] if camera_type_str in CameraType.__members__ else CameraType.USB
+                
+                existing = db.query(Camera).filter(Camera.device_id == device_id).first()
+                if not existing:
+                    new_camera = Camera(
+                        device_id=device_id,
+                        camera_type=camera_type,
+                        name=cam_info.get('name', device_id),
+                        location=cam_info.get('location', ''),
+                        status=CameraStatus.DISCONNECTED,
+                    )
+                    db.add(new_camera)
+                    saved_count += 1
+            
+            db.commit()
             result["saved_to_db"] = True
             result["saved_count"] = saved_count
 
@@ -154,6 +241,7 @@ async def detect_cameras(
 @router.post("/{device_id}/connect", dependencies=[Depends(require_connect_camera)])
 async def connect_camera(
     device_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
@@ -179,9 +267,9 @@ async def connect_camera(
         if camera.camera_type == CameraType.MOBILE:
             # For mobile cameras, "connecting" means marking them as available for streaming
             # The actual streaming connection is handled directly between frontend and mobile app
+            # ✅ NO DATABASE UPDATE - state managed in memory
             camera.status = CameraStatus.CONNECTED
             camera.last_seen = datetime.utcnow()
-            db.commit()
 
             logger.info(
                 f"User {current_user.get('sub')} manually connected mobile camera {device_id}"
@@ -197,24 +285,51 @@ async def connect_camera(
             }
 
         # Connect to USB/other camera types
-        connection = await camera_service.connect_camera(device_id)
-        if not connection:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to connect to camera {device_id}",
-            )
+        # ✅ For RTSP cameras, connection can take 15+ seconds
+        # Use background task to avoid gateway timeout
+        if camera.camera_type == CameraType.RTSP:
+            # Return immediately, connect in background
+            async def connect_rtsp():
+                # ✅ Use queue-based camera service for RTSP connection
+                queue_service = get_camera_service()
+                connection_success = await queue_service.connect_camera(device_id)
+                if connection_success:
+                    # ✅ NO DATABASE UPDATE - state managed in memory
+                    camera.status = CameraStatus.CONNECTED
+                    logger.info(f"✅ Background connection successful for RTSP camera {device_id}")
+                else:
+                    logger.error(f"❌ Background connection failed for RTSP camera {device_id}")
+            
+            background_tasks.add_task(connect_rtsp)
+            
+            logger.info(f"User {current_user.get('sub')} initiated connection to RTSP camera {device_id} (background)")
+            
+            return {
+                "device_id": device_id,
+                "status": "connecting",
+                "message": f"RTSP camera {device_id} connection initiated (this may take 10-15 seconds)",
+            }
+        else:
+            # USB cameras connect quickly, can wait
+            # ✅ Use queue-based camera service for connection
+            queue_service = get_camera_service()
+            connection_success = await queue_service.connect_camera(device_id)
+            if not connection_success:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to connect to camera {device_id}",
+                )
 
-        # Update camera status in database
-        camera.status = CameraStatus.CONNECTED
-        db.commit()
+            # ✅ NO DATABASE UPDATE - state managed in memory
+            camera.status = CameraStatus.CONNECTED
 
-        logger.info(f"User {current_user.get('sub')} connected to camera {device_id}")
+            logger.info(f"User {current_user.get('sub')} connected to camera {device_id}")
 
-        return {
-            "device_id": device_id,
-            "status": "connected",
-            "message": f"Successfully connected to camera {device_id}",
-        }
+            return {
+                "device_id": device_id,
+                "status": "connected",
+                "message": f"Successfully connected to camera {device_id}",
+            }
 
     except HTTPException:
         raise
@@ -238,8 +353,9 @@ async def disconnect_camera(
         # Clean up any active streaming sessions for this device
         cleaned_sessions = session_manager.cleanup_sessions_for_device(device_id)
 
-        # Disconnect from camera (if currently connected)
-        success = await camera_service.disconnect_camera(device_id)
+        # Disconnect from camera using queue service (if currently connected)
+        queue_service = get_camera_service()
+        success = await queue_service.disconnect_camera(device_id)
 
         # Update camera status in database regardless of current connection state
         # This fixes state inconsistencies where DB shows "connected" but no active connection exists
@@ -310,7 +426,14 @@ async def get_camera_info(
             )
 
         # Get runtime info from service
-        runtime_info = await camera_service.get_camera_info(device_id)
+        # Get runtime information from queue worker
+        queue_service = get_camera_service()
+        worker = await queue_service.get_camera_stream(device_id)
+        runtime_info = {
+            'is_connected': worker is not None and worker.status.value == 'connected',
+            'frames_read': worker.frames_read if worker else 0,
+            'last_frame_time': worker.last_frame_time if worker else None,
+        } if worker else {}
 
         camera_info = {
             "id": camera.id,
@@ -367,7 +490,20 @@ async def list_active_connections(
     """List all active camera connections."""
 
     try:
-        active_connections = await camera_service.list_active_connections()
+        # Get connected workers from queue service
+        from src.services.worker_manager import get_worker_manager
+        manager = get_worker_manager()
+        connected_workers = manager.get_connected_workers()
+        
+        active_connections = []
+        for device_id, worker in connected_workers.items():
+            stats = worker.get_stats()
+            active_connections.append({
+                "device_id": device_id,
+                "status": worker.status.value,
+                "frames_read": stats["frames_read"],
+                "uptime": stats.get("uptime_seconds", 0)
+            })
 
         logger.info(
             f"User {current_user.get('sub')} listed {len(active_connections)} active connections"
@@ -393,13 +529,23 @@ async def disconnect_all_cameras(
     """Disconnect all active camera connections (admin only)."""
 
     try:
+        logger.info(f"🔌 User {current_user.get('sub')} requesting disconnect-all")
+        
         # Clean up all active streaming sessions
         cleaned_sessions = session_manager.cleanup_all_sessions()
+        logger.info(f"Cleaned {cleaned_sessions} streaming sessions")
 
-        await camera_service.disconnect_all()
+        # Disconnect all cameras using queue service
+        queue_service = get_camera_service()
+        from src.services.worker_manager import get_worker_manager
+        manager = get_worker_manager()
+        workers = manager.get_all_workers()
+        
+        for device_id in workers.keys():
+            await queue_service.disconnect_camera(device_id)
 
         logger.info(
-            "Admin %s disconnected all cameras, cleaned %d sessions",
+            "✅ Admin %s disconnected all cameras, cleaned %d sessions",
             current_user.get("sub"),
             cleaned_sessions,
         )
@@ -411,10 +557,10 @@ async def disconnect_all_cameras(
         }
 
     except Exception as e:
-        logger.error("Error disconnecting all cameras: %s", e)
+        logger.error("❌ Error in disconnect-all endpoint: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to disconnect all cameras",
+            detail=f"Failed to disconnect all cameras: {str(e)}",
         ) from e
 
 
@@ -539,7 +685,8 @@ async def remove_rtsp_camera(
 
         # Disconnect if connected
         if camera.status == CameraStatus.CONNECTED:
-            await camera_service.disconnect_camera(device_id)
+            queue_service = get_camera_service()
+            await queue_service.disconnect_camera(device_id)
 
         # Delete the camera
         db.delete(camera)
@@ -883,7 +1030,8 @@ async def unregister_mobile_camera(
 
         # Disconnect if connected
         if camera.status == CameraStatus.CONNECTED:
-            await camera_service.disconnect_camera(device_id)
+            queue_service = get_camera_service()
+            await queue_service.disconnect_camera(device_id)
 
         # Delete the camera
         camera_name = camera.name
@@ -1462,4 +1610,262 @@ async def update_camera_settings(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update camera settings: {str(e)}",
+        )
+
+
+# =============================================================================
+# RECORDING ENDPOINTS - Phase 2: Backend Recording Implementation
+# =============================================================================
+
+
+@router.post("/{device_id}/recording/start", dependencies=[Depends(require_connect_camera)])
+async def start_recording(
+    device_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user)
+) -> Dict:
+    """
+    Start recording from camera worker buffer.
+    
+    Flow:
+    1. Get worker for device_id
+    2. Create recording session
+    3. Start background task to read from worker.get_latest_frame()
+    4. Write frames to video file
+    5. Return session_id
+    """
+    try:
+        # Get camera service and worker
+        camera_service = get_camera_service()
+        from src.services.worker_manager import get_worker_manager
+        manager = get_worker_manager()
+        
+        worker = manager.get_worker(device_id)
+        if not worker:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera worker not found for {device_id}"
+            )
+        
+        # Check worker status
+        from src.services.camera_worker import CameraStatus
+        if worker.status != CameraStatus.CONNECTED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Camera not connected (status: {worker.status.value})"
+            )
+        
+        # Get recording service
+        from src.services.recording_service import get_recording_service
+        recording_service = get_recording_service()
+        
+        # Check if already recording
+        active_session = await recording_service.get_active_session(device_id)
+        if active_session:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Camera {device_id} is already recording (session: {active_session['id']})"
+            )
+        
+        # Create recording session
+        user_id = current_user.get('sub', 'unknown')
+        session_id = await recording_service.create_session(
+            device_id=device_id,
+            user_id=user_id
+        )
+        
+        # Small delay to ensure WebSocket listeners are ready
+        await asyncio.sleep(0.1)
+        
+        # Publish recording_started event immediately (before background task)
+        try:
+            from src.services.status_notification_service import get_status_service, CameraStatusEvent
+            status_service = get_status_service()
+            await status_service.publish_status_change(
+                device_id, 
+                CameraStatusEvent.RECORDING_STARTED,
+                {
+                    "session_id": session_id,
+                    "resolution": f"{worker.camera_info.get('resolution_width', 1280)}x{worker.camera_info.get('resolution_height', 720)}",
+                    "fps": worker.camera_info.get('max_fps', 30)
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Could not publish recording_started event: {e}")
+        
+        # Start recording task (reads from worker buffer)
+        background_tasks.add_task(
+            recording_service.record_from_worker,
+            worker=worker,
+            session_id=session_id
+        )
+        
+        logger.info(f"🎥 User {user_id} started recording on {device_id} (session: {session_id})")
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "device_id": device_id,
+            "message": "Recording started",
+            "started_at": datetime.utcnow().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error starting recording for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to start recording: {str(e)}"
+        )
+
+
+@router.post("/{device_id}/recording/stop", dependencies=[Depends(require_connect_camera)])
+async def stop_recording(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user)
+) -> Dict:
+    """
+    Stop active recording session.
+    
+    Returns recording details including duration, frame count, and file path.
+    """
+    try:
+        # Get recording service
+        from src.services.recording_service import get_recording_service
+        recording_service = get_recording_service()
+        
+        # Get active session
+        active_session = await recording_service.get_active_session(device_id)
+        if not active_session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No active recording found for camera {device_id}"
+            )
+        
+        session_id = active_session['id']
+        
+        # Stop recording
+        session_info = await recording_service.stop_session(session_id)
+        
+        # Calculate duration
+        if 'stopped_at' in session_info and 'started_at' in session_info:
+            duration = (session_info['stopped_at'] - session_info['started_at']).total_seconds()
+        else:
+            duration = session_info.get('duration', 0)
+        
+        user_id = current_user.get('sub', 'unknown')
+        logger.info(f"🛑 User {user_id} stopped recording on {device_id} (session: {session_id}, duration: {duration:.1f}s)")
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "device_id": device_id,
+            "duration": duration,
+            "frame_count": session_info.get('frame_count', 0),
+            "file_path": session_info.get('file_path'),
+            "message": "Recording stopped successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error stopping recording for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to stop recording: {str(e)}"
+        )
+
+
+@router.get("/{device_id}/recording/status", dependencies=[Depends(require_view_cameras)])
+async def get_recording_status(
+    device_id: str,
+    current_user: Dict = Depends(get_current_user)
+) -> Dict:
+    """
+    Get current recording status for a camera.
+    
+    Returns whether recording is active, session info, duration, and frame count.
+    """
+    try:
+        # Get recording service
+        from src.services.recording_service import get_recording_service
+        recording_service = get_recording_service()
+        
+        # Get active session
+        active_session = await recording_service.get_active_session(device_id)
+        
+        if active_session:
+            # Calculate current duration
+            duration = (datetime.utcnow() - active_session['started_at']).total_seconds()
+            
+            return {
+                "is_recording": True,
+                "session_id": active_session['id'],
+                "device_id": device_id,
+                "started_at": active_session['started_at'].isoformat(),
+                "duration": duration,
+                "frame_count": active_session.get('frame_count', 0),
+                "status": active_session.get('status', 'recording')
+            }
+        else:
+            return {
+                "is_recording": False,
+                "device_id": device_id,
+                "session_id": None,
+                "duration": 0,
+                "frame_count": 0,
+                "message": "No active recording"
+            }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting recording status for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get recording status: {str(e)}"
+        )
+
+
+@router.get("/recordings/active", dependencies=[Depends(require_view_cameras)])
+async def list_active_recordings(
+    current_user: Dict = Depends(get_current_user)
+) -> Dict:
+    """
+    List all currently active recording sessions across all cameras.
+    
+    Returns list of active sessions with device info, duration, and frame counts.
+    """
+    try:
+        # Get recording service
+        from src.services.recording_service import get_recording_service
+        recording_service = get_recording_service()
+        
+        # Get all active sessions
+        active_sessions = recording_service.get_active_sessions()
+        
+        # Format sessions with current duration
+        sessions_list = []
+        for session in active_sessions:
+            duration = (datetime.utcnow() - session['started_at']).total_seconds()
+            sessions_list.append({
+                "session_id": session['id'],
+                "device_id": session['device_id'],
+                "user_id": session['user_id'],
+                "started_at": session['started_at'].isoformat(),
+                "duration": duration,
+                "frame_count": session.get('frame_count', 0),
+                "status": session.get('status', 'recording')
+            })
+        
+        return {
+            "active_count": len(sessions_list),
+            "sessions": sessions_list
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error listing active recordings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list active recordings: {str(e)}"
         )
