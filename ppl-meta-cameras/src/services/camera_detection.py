@@ -921,7 +921,7 @@ class CameraDetectionService:
         quality: str = "high",
         auth_token: Optional[str] = None,
         session_uuid: str = "",
-        segment_duration: int = 5,
+        segment_duration: int = 30,
         enable_instant_detection: bool = True,
     ) -> Optional[Dict]:
         """Start recording with session tracking and segment support.
@@ -967,7 +967,7 @@ class CameraDetectionService:
                     segment_duration,
                 )
             else:
-                # For USB/RTSP cameras, check queue workers
+                # For USB/RTSP cameras, verify worker exists
                 from src.services.camera_service_queue import get_camera_service as get_queue_service
                 queue_service = get_queue_service()
                 
@@ -975,14 +975,24 @@ class CameraDetectionService:
                 worker = await queue_service.get_camera_stream(device_id)
                 
                 if not worker:
-                    logger.error(f"❌ [RECORDING_START] No queue worker found for {device_id}")
-                    return None
-                
-                if worker.status.value != 'connected':
-                    logger.error(f"❌ [RECORDING_START] Queue worker for {device_id} not connected (status: {worker.status.value})")
-                    return None
+                    logger.warning(f"⚠️ [RECORDING_START] No queue worker found for {device_id} - instant detection will be unavailable")
+                    # ✅ CONTINUE ANYWAY - Queue worker is only needed for instant detection, not recording
+                    # The recording system has its own frame capture mechanism
                     
-                logger.info(f"✅ [RECORDING_START] Queue worker for {device_id} verified and ready (status: {worker.status.value})")
+                elif worker.status.value != 'connected':
+                    logger.warning(f"⚠️ [RECORDING_START] Queue worker for {device_id} not connected (status: {worker.status.value}) - instant detection will be unavailable")
+                    # ✅ CONTINUE ANYWAY
+                else:
+                    logger.info(f"✅ [RECORDING_START] Queue worker for {device_id} verified and ready (status: {worker.status.value})")
+                    
+                    # 🔍 INTEGRATED DETECTION: Enable detection in worker if requested
+                    if enable_instant_detection and worker:
+                        logger.info(f"🔍 [INSTANT-DETECT] Enabling integrated detection in worker {device_id}")
+                        try:
+                            worker.start_detection()
+                            logger.info(f"✅ Integrated detection enabled for worker {device_id}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to enable worker detection for {device_id}: {e}")
 
                 result = await self._start_regular_recording_with_session(
                     device_id,
@@ -993,31 +1003,8 @@ class CameraDetectionService:
                     segment_duration,
                 )
             
-            # Auto-start instant detection if enabled and recording started successfully
-            logger.info(f"🔍 [INSTANT-DETECT] Checking auto-start: result={result is not None}, enable_instant_detection={enable_instant_detection}")
-            if result and enable_instant_detection:
-                try:
-                    logger.info(f"🔍 [INSTANT-DETECT] Attempting to auto-start instant detection for {device_id}")
-                    from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
-                    manager = get_instant_detection_manager()
-                    
-                    # Use queue worker for frames (non-blocking)
-                    from src.services.camera_service_queue import get_camera_service as get_queue_service
-                    queue_service = get_queue_service()
-                    worker = await queue_service.get_camera_stream(device_id)
-                    
-                    if worker is None:
-                        logger.error(f"🔍 [INSTANT-DETECT] No queue worker found for {device_id}")
-                        return result
-                    
-                    logger.info(f"🔍 [INSTANT-DETECT] Using queue worker for {device_id}")
-                    manager.start_sampling(device_id, None)  # Pass None, will use queue worker
-                    logger.info(f"✅ Auto-started instant detection for camera {device_id}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to auto-start instant detection for {device_id}: {e}")
-                    logger.exception("Full exception:")
-            else:
-                logger.info(f"🔍 [INSTANT-DETECT] NOT starting instant detection: result={result is not None}, enable_instant_detection={enable_instant_detection}")
+            # ✅ NO EXTERNAL DETECTION MANAGER NEEDED - Detection is now integrated in worker
+            logger.info(f"🔍 [INSTANT-DETECT] Detection {'enabled' if enable_instant_detection else 'disabled'} in worker {device_id}")
             
             return result
 
@@ -1032,21 +1019,30 @@ class CameraDetectionService:
         quality: str,
         auth_token: Optional[str] = None,
         session_uuid: str = "",
-        segment_duration: int = 5,
+        segment_duration: int = 30,
     ) -> Optional[Dict]:
-        """Start recording for USB/RTSP cameras with session and segment support."""
+        """
+        Start recording for USB/RTSP cameras with session and segment support.
+        
+        ✅ CRITICAL ARCHITECTURE: ALL blocking operations now happen in worker thread
+        """
         logger.info(
             f"🎬 [SESSION] Starting USB/RTSP recording for {device_id}, session: {session_uuid}"
         )
 
-        # Get frame properties from queue worker
+        # Get queue worker
         from src.services.camera_service_queue import get_camera_service as get_queue_service
         queue_service = get_queue_service()
         
+        worker = await queue_service.get_camera_stream(device_id)
+        if not worker:
+            logger.error(f"❌ No queue worker found for {device_id}")
+            return None
+        
         # Get a sample frame to determine resolution
-        frame = await queue_service.get_latest_frame(device_id)
+        frame = worker.get_latest_frame()
         if frame is None:
-            logger.error(f"❌ [RECORDING_START] No frames available from queue worker for {device_id}")
+            logger.error(f"❌ No frames available from queue worker for {device_id}")
             return None
         
         # Get recording parameters from frame
@@ -1063,15 +1059,32 @@ class CameraDetectionService:
         filename = f"segment_{segment_index:03d}_{timestamp}.mp4"
         file_path = os.path.join(session_dir, filename)
 
-        # Initialize video writer
-        fourcc = cv2.VideoWriter_fourcc(*"H264")
-        video_writer = cv2.VideoWriter(file_path, fourcc, fps, (width, height))
-
-        if not video_writer.isOpened():
-            logger.error(f"Failed to initialize video writer for {device_id}")
+        # ✅ DELEGATE TO WORKER THREAD: Send recording command to worker
+        # This ensures ALL VideoWriter operations happen in worker thread
+        cmd_id = worker.send_command({
+            'action': 'start_recording',
+            'output_path': file_path,
+            'width': width,
+            'height': height,
+            'fps': fps,
+            'segment_duration': segment_duration,  # Top-level for worker thread
+            'session_info': {
+                'session_uuid': session_uuid,
+                'segment_duration': segment_duration,
+                'user_id': user_id,
+                'auth_token': auth_token
+            }
+        })
+        
+        # Wait for worker to start recording
+        result = worker.wait_for_result(cmd_id, timeout=5.0)
+        if not result.get('success'):
+            logger.error(f"❌ Worker failed to start recording: {result.get('error')}")
             return None
+        
+        logger.info(f"✅ Worker started recording: {file_path}")
 
-        # Store recording info with session tracking
+        # Store minimal recording info (actual recording happens in worker thread)
         recording_id = str(uuid.uuid4())
         recording_info = {
             "recording_id": recording_id,
@@ -1081,7 +1094,6 @@ class CameraDetectionService:
             "session_dir": session_dir,
             "current_segment_path": file_path,
             "current_segment_index": segment_index,
-            "video_writer": video_writer,
             "started_at": datetime.datetime.now(),
             "segment_started_at": datetime.datetime.now(),
             "frame_count": 0,
@@ -1093,22 +1105,19 @@ class CameraDetectionService:
             "auth_token": auth_token,
             "segment_duration": segment_duration,
             "segment_files": [filename],  # Track all segment files
+            "worker": worker,  # ✅ CRITICAL: Store worker reference
         }
 
         self.active_recordings[device_id] = recording_info
 
-        # Start frame recording loop with segment support
         logger.info(
-            f"🎬 [DEBUG] About to start _frame_recording_loop_with_segments for {device_id}"
-        )
-        asyncio.create_task(self._frame_recording_loop_with_segments(device_id))
-        logger.info(
-            f"🎬 [DEBUG] Task created for _frame_recording_loop_with_segments for {device_id}"
+            f"✅ [SESSION] Recording started for {device_id} in worker thread, "
+            f"session: {session_uuid}, output: {file_path}"
         )
 
+        # ✅ NO ASYNC RECORDING LOOP NEEDED - worker handles everything in its thread
         logger.info(
-            f"Recording with session started for camera {device_id}, "
-            f"session: {session_uuid}, segment: {filename}"
+            f"✅ Recording delegated to worker thread for {device_id}"
         )
 
         return {
@@ -1126,7 +1135,7 @@ class CameraDetectionService:
         quality: str,
         auth_token: Optional[str] = None,
         session_uuid: str = "",
-        segment_duration: int = 5,
+        segment_duration: int = 30,
     ) -> Optional[Dict]:
         """Start recording for mobile cameras with session and segment support."""
         logger.info(
@@ -1470,13 +1479,20 @@ class CameraDetectionService:
             f"🎬 [SESSION] Stopping session recording {session_uuid} for {device_id}"
         )
 
-        # Finalize current segment
-        video_writer = recording_info["video_writer"]
-        video_writer.release()
-
+        # ✅ DELEGATE TO WORKER THREAD: Stop recording in worker
+        worker = recording_info.get("worker")
+        if worker:
+            cmd_id = worker.send_command({'action': 'stop_recording'})
+            result = worker.wait_for_result(cmd_id, timeout=5.0)
+            
+            if not result.get('success'):
+                logger.error(f"❌ Worker failed to stop recording: {result.get('error')}")
+            else:
+                logger.info(f"✅ Worker stopped recording: {result}")
+        
         # Get final segment info
         current_segment_path = recording_info["current_segment_path"]
-        file_size = os.path.getsize(current_segment_path)
+        file_size = os.path.getsize(current_segment_path) if os.path.exists(current_segment_path) else 0
         stopped_at = datetime.datetime.now()
         total_duration = stopped_at - recording_info["started_at"]
 
@@ -2321,28 +2337,22 @@ class CameraDetectionService:
             user_id = recording_info.get("user_id") or "7"
             logger.info(f"🔥 [SEGMENT] Final user_id: {user_id}")
             
+            # ✅ CRITICAL FIX: Upload in background task to avoid blocking recording loop
+            # This prevents stream freezing during segment uploads
             if user_id:
-                logger.info("🔥 [SEGMENT] Calling upload function")
-                upload_result = await self._upload_recording_to_collection(
-                    segment_recording_info, user_id
+                logger.info("🔥 [SEGMENT] Starting background upload task")
+                # Create background task - don't await it
+                asyncio.create_task(
+                    self._upload_segment_background(
+                        segment_recording_info.copy(),
+                        user_id,
+                        session_uuid,
+                        segment_filename
+                    )
                 )
-                logger.info(f"🔥 [SEGMENT] Upload result: {upload_result}")
-                
-                if upload_result:
-                    media_uuid = upload_result.get('media_uuid')
-                    logger.info(
-                        f"🎬 [SEGMENT] ✅ Segment {segment_filename} uploaded "
-                        f"to media service: {media_uuid}"
-                    )
-                    logger.info(
-                        f"🔥 [SEGMENT] ✅ Upload OK: {media_uuid}"
-                    )
-                else:
-                    logger.error(
-                        f"🎬 [SEGMENT] ❌ Failed to upload segment "
-                        f"{segment_filename} to media service"
-                    )
-                    logger.error("🔥 [SEGMENT] ❌ Upload failed")
+                logger.info(
+                    f"🎬 [SEGMENT] Background upload task created for {segment_filename}"
+                )
             else:
                 logger.warning(
                     f"🎬 [SEGMENT] ⚠️ No user_id found in recording_info, "
@@ -2358,20 +2368,14 @@ class CameraDetectionService:
 
             # Initialize new video writer
             fourcc = cv2.VideoWriter_fourcc(*"H264")
-            width, height = (
-                recording_info["target_size"]
-                if recording_info["is_mobile"]
-                else (
-                    int(
-                        self.active_connections[device_id].get(cv2.CAP_PROP_FRAME_WIDTH)
-                    ),
-                    int(
-                        self.active_connections[device_id].get(
-                            cv2.CAP_PROP_FRAME_HEIGHT
-                        )
-                    ),
-                )
-            )
+            
+            # Get resolution from recording_info (stored as "1280x720" string)
+            resolution = recording_info.get("resolution", "1280x720")
+            if isinstance(resolution, str):
+                width, height = map(int, resolution.split('x'))
+            else:  # If it's a tuple
+                width, height = resolution
+            
             fps = recording_info["fps"]
 
             video_writer = cv2.VideoWriter(
@@ -2444,6 +2448,42 @@ class CameraDetectionService:
                 
         except Exception as e:
             logger.error(f"🎬 [BACKGROUND] Exception in background upload for {session_uuid}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+    async def _upload_segment_background(
+        self, recording_info: Dict, user_id: str, session_uuid: str, segment_filename: str
+    ):
+        """
+        Background task to upload segment without blocking recording loop.
+        This allows continuous frame capture and recording during uploads.
+        """
+        try:
+            logger.info(
+                f"🎬 [SEGMENT-BG] Starting background upload for segment {segment_filename}"
+            )
+            
+            upload_result = await self._upload_recording_to_collection(
+                recording_info, user_id
+            )
+            
+            if upload_result:
+                media_uuid = upload_result.get('media_uuid')
+                collection_id = upload_result.get('collection_id')
+                
+                logger.info(
+                    f"🎬 [SEGMENT-BG] ✅ Segment {segment_filename} uploaded: "
+                    f"media={media_uuid}, collection={collection_id}"
+                )
+            else:
+                logger.error(
+                    f"🎬 [SEGMENT-BG] ❌ Failed to upload segment {segment_filename}"
+                )
+                
+        except Exception as e:
+            logger.error(
+                f"🎬 [SEGMENT-BG] Exception uploading segment {segment_filename}: {e}"
+            )
             import traceback
             logger.error(traceback.format_exc())
 

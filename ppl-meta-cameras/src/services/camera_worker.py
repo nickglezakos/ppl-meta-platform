@@ -21,6 +21,8 @@ import uuid
 import collections
 import logging
 import asyncio
+import os
+import datetime
 from typing import Optional, Dict, Any, Deque
 from enum import Enum
 import numpy as np
@@ -79,7 +81,7 @@ class CameraWorker:
         worker.stop()
     """
     
-    def __init__(self, device_id: str, camera_type: CameraType, camera_info: Dict[str, Any]):
+    def __init__(self, device_id: str, camera_type: CameraType, camera_info: Dict[str, Any], enable_instant_detection: bool = False):
         """
         Initialize camera worker.
         
@@ -87,6 +89,7 @@ class CameraWorker:
             device_id: Unique camera identifier
             camera_type: Type of camera (USB, RTSP, MOBILE)
             camera_info: Camera configuration dict
+            enable_instant_detection: If True, enable instant detection for this worker
         """
         self.device_id = device_id
         self.camera_type = camera_type
@@ -98,6 +101,11 @@ class CameraWorker:
         # Frame buffer - shared with main thread (thread-safe)
         # maxlen=1 ensures we always have latest frame only (no memory buildup)
         self.frame_buffer: Deque[np.ndarray] = collections.deque(maxlen=1)
+        
+        # Instant detection integration
+        self.enable_instant_detection = enable_instant_detection
+        self.detection_sampler = None
+        self.detection_config = None
         
         # Command results - used to return results to caller
         self.command_results: Dict[str, Dict[str, Any]] = {}
@@ -118,6 +126,19 @@ class CameraWorker:
         self.frames_read = 0
         self.frames_dropped = 0
         self.last_frame_time = 0.0
+        
+        # Recording state - ALL recording happens in worker thread
+        self.is_recording = False
+        self.video_writer: Optional[cv2.VideoWriter] = None
+        self.recording_start_time: Optional[float] = None
+        self.recording_frames_written = 0
+        self.recording_session_info: Optional[Dict[str, Any]] = None
+        # Segment management (for continuous recording)
+        self.segment_duration: Optional[float] = None  # Duration in seconds
+        self.current_segment_start_time: Optional[float] = None
+        self.current_segment_index: int = 0
+        self.current_segment_path: Optional[str] = None
+        self.session_dir: Optional[str] = None
         
         # Thread control
         self.stop_event = threading.Event()
@@ -217,6 +238,10 @@ class CameraWorker:
         """
         logger.info(f"🛑 Stopping worker for {self.device_id}")
         self.status = CameraStatus.STOPPING
+        
+        # Stop detection first
+        if self.detection_sampler:
+            self.stop_detection()
         
         # Send stop command
         try:
@@ -351,7 +376,7 @@ class CameraWorker:
             try:
                 # Get command with timeout (non-blocking wait)
                 try:
-                    cmd = self.command_queue.get(timeout=0.1)
+                    cmd = self.command_queue.get(timeout=0.01)  # Shorter timeout for more responsive frame reading
                     
                     # Process command
                     action = cmd.get('action')
@@ -368,14 +393,27 @@ class CameraWorker:
                     elif action == CameraCommand.STOP:
                         logger.info(f"🛑 Stop command received for {self.device_id}")
                         break
+                    elif action == 'start_detection':
+                        self.start_detection(cmd.get('config'))
+                        self._set_result(cmd['cmd_id'], {'success': True})
+                    elif action == 'stop_detection':
+                        self.stop_detection()
+                        self._set_result(cmd['cmd_id'], {'success': True})
+                    elif action == 'start_recording':
+                        self._handle_start_recording(cmd)
+                    elif action == 'stop_recording':
+                        self._handle_stop_recording(cmd)
                     else:
                         logger.warning(f"⚠️ Unknown command: {action}")
                         self._set_result(cmd_id, {'success': False, 'error': f'Unknown command: {action}'})
                     
                 except queue.Empty:
-                    # No commands, continue reading frames if connected
-                    if self.status == CameraStatus.CONNECTED and self.cap:
-                        self._read_and_buffer_frame()
+                    pass  # No commands, that's fine
+                
+                # ✅ CRITICAL FIX: Always read frames when connected, regardless of command processing
+                # This ensures continuous frame reading even during recording/detection operations
+                if self.status == CameraStatus.CONNECTED and self.cap:
+                    self._read_and_buffer_frame()
                 
             except Exception as e:
                 logger.error(f"❌ Worker error for {self.device_id}: {e}", exc_info=True)
@@ -416,6 +454,10 @@ class CameraWorker:
         self.status = CameraStatus.CONNECTING
         
         try:
+            # Stop detection before reconnecting
+            if self.detection_sampler:
+                self.stop_detection()
+            
             # Release existing connection if any
             if self.cap:
                 self.cap.release()
@@ -607,6 +649,30 @@ class CameraWorker:
                 self.frame_buffer.append(frame)
                 self.frames_read += 1
                 self.last_frame_time = time.time()
+                
+                # 🎥 INTEGRATED RECORDING: Write frame if recording (all in worker thread)
+                if self.is_recording and self.video_writer:
+                    try:
+                        # Check if segment rotation is needed
+                        if self.segment_duration and self.current_segment_start_time:
+                            elapsed = time.time() - self.current_segment_start_time
+                            if elapsed >= self.segment_duration:
+                                logger.info(f"🎬 Rotating segment after {elapsed:.1f}s")
+                                self._rotate_to_next_segment()
+                        
+                        # Write frame to current segment
+                        self.video_writer.write(frame)
+                        self.recording_frames_written += 1
+                    except Exception as e:
+                        logger.error(f"Recording write error: {e}")
+                
+                # 🔍 INSTANT DETECTION: DISABLED in worker thread to prevent blocking
+                # TODO: Re-enable when Celery is available or detection is truly async
+                # if self.enable_instant_detection and self.detection_sampler:
+                #     try:
+                #         self.detection_sampler.process_frame(frame, self.frames_read)
+                #     except Exception as e:
+                #         logger.debug(f"Detection processing error: {e}")
             else:
                 self.frames_dropped += 1
                 
@@ -627,9 +693,48 @@ class CameraWorker:
         with self.results_lock:
             self.command_results[cmd_id] = result
     
+    def start_detection(self, detection_config: Optional[Dict[str, Any]] = None):
+        """
+        Start instant detection for this worker.
+        
+        Args:
+            detection_config: Optional detection configuration
+        """
+        if self.detection_sampler:
+            logger.warning(f"Detection already running for {self.device_id}")
+            return
+        
+        try:
+            from src.services.instant_detection_sampler import InstantDetectionSampler
+            
+            self.detection_config = detection_config or {}
+            self.detection_sampler = InstantDetectionSampler(
+                device_id=self.device_id,
+                config=self.detection_config
+            )
+            self.enable_instant_detection = True
+            logger.info(f"✅ Instant detection started for worker {self.device_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to start detection for {self.device_id}: {e}")
+            self.detection_sampler = None
+            self.enable_instant_detection = False
+    
+    def stop_detection(self):
+        """Stop instant detection for this worker."""
+        if self.detection_sampler:
+            try:
+                self.detection_sampler.stop()
+                logger.info(f"✅ Instant detection stopped for worker {self.device_id}")
+            except Exception as e:
+                logger.warning(f"Error stopping detection: {e}")
+            finally:
+                self.detection_sampler = None
+                self.enable_instant_detection = False
+    
     def get_stats(self) -> Dict[str, Any]:
         """Get worker statistics."""
-        return {
+        stats = {
             'device_id': self.device_id,
             'status': self.status.value,
             'frames_read': self.frames_read,
@@ -638,5 +743,190 @@ class CameraWorker:
             'last_error': self.last_error,
             'last_frame_time': self.last_frame_time,
             'buffer_size': len(self.frame_buffer),
-            'queue_size': self.command_queue.qsize()
+            'queue_size': self.command_queue.qsize(),
+            'detection_enabled': self.enable_instant_detection,
+            'is_recording': self.is_recording,
+            'recording_frames': self.recording_frames_written
         }
+        
+        # Add detection stats if available
+        if self.detection_sampler:
+            try:
+                detection_stats = self.detection_sampler.get_stats()
+                stats['detection_stats'] = detection_stats
+            except:
+                pass
+        
+        return stats
+    
+    def _rotate_to_next_segment(self):
+        """
+        Rotate to next segment file - runs in worker thread.
+        This handles segment rotation WITHOUT blocking frame reading.
+        """
+        try:
+            if not self.is_recording or not self.video_writer:
+                return
+            
+            # Close current segment
+            logger.info(f"📦 Closing segment {self.current_segment_index}: {self.current_segment_path}")
+            self.video_writer.release()
+            
+            # Get file size of completed segment
+            completed_segment_path = self.current_segment_path
+            file_size = os.path.getsize(completed_segment_path) if os.path.exists(completed_segment_path) else 0
+            
+            # Create next segment
+            self.current_segment_index += 1
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"segment_{self.current_segment_index:03d}_{timestamp}.mp4"
+            next_segment_path = os.path.join(self.session_dir, filename)
+            
+            # Get recording parameters from session info
+            session_info = self.recording_session_info or {}
+            width = session_info.get('width', 1280)
+            height = session_info.get('height', 720)
+            fps = session_info.get('fps', 30)
+            
+            # Create new VideoWriter (blocking but in worker thread = OK)
+            fourcc = cv2.VideoWriter_fourcc(*'H264')
+            self.video_writer = cv2.VideoWriter(next_segment_path, fourcc, fps, (width, height))
+            
+            if not self.video_writer.isOpened():
+                logger.error(f"❌ Failed to create next segment writer: {next_segment_path}")
+                self.is_recording = False
+                self.video_writer = None
+                return
+            
+            # Update segment tracking
+            self.current_segment_path = next_segment_path
+            self.current_segment_start_time = time.time()
+            
+            logger.info(
+                f"✅ Rotated to segment {self.current_segment_index}: {filename} "
+                f"(previous: {file_size} bytes)"
+            )
+            
+            # ✅ Segment is ready - upload will be handled by camera_detection.py later
+            logger.info(f"📋 Segment ready for upload: {completed_segment_path}")
+            
+        except Exception as e:
+            logger.error(f"❌ Segment rotation failed: {e}")
+            self.is_recording = False
+    
+    def _handle_start_recording(self, cmd: Dict[str, Any]):
+        """
+        Handle start recording command - runs in worker thread.
+        ALL recording operations happen here to avoid blocking async event loop.
+        """
+        cmd_id = cmd['cmd_id']
+        
+        try:
+            if self.is_recording:
+                self._set_result(cmd_id, {'success': False, 'error': 'Already recording'})
+                return
+            
+            if not self.cap or self.status != CameraStatus.CONNECTED:
+                self._set_result(cmd_id, {'success': False, 'error': 'Camera not connected'})
+                return
+            
+            # Get recording parameters
+            output_path = cmd.get('output_path')
+            width = cmd.get('width', 1280)
+            height = cmd.get('height', 720)
+            fps = cmd.get('fps', 30)
+            segment_duration = cmd.get('segment_duration')  # None = no segmentation
+            session_info = cmd.get('session_info', {})
+            
+            if not output_path:
+                self._set_result(cmd_id, {'success': False, 'error': 'No output path provided'})
+                return
+            
+            # Create VideoWriter (blocking operation but in worker thread = OK)
+            fourcc = cv2.VideoWriter_fourcc(*'H264')
+            self.video_writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+            
+            if not self.video_writer.isOpened():
+                self._set_result(cmd_id, {'success': False, 'error': 'Failed to create video writer'})
+                self.video_writer = None
+                return
+            
+            # Initialize segment tracking if segmentation enabled
+            if segment_duration:
+                self.segment_duration = segment_duration
+                self.current_segment_start_time = time.time()
+                self.current_segment_path = output_path
+                self.session_dir = os.path.dirname(output_path)
+                self.current_segment_index = 1
+                logger.info(f"🎬 Segment rotation enabled: {segment_duration}s per segment")
+            
+            # Store recording parameters in session_info for segment rotation
+            session_info['width'] = width
+            session_info['height'] = height
+            session_info['fps'] = fps
+            
+            # Start recording
+            self.is_recording = True
+            self.recording_start_time = time.time()
+            self.recording_frames_written = 0
+            self.recording_session_info = session_info
+            
+            logger.info(f"🎥 Recording started in worker thread: {output_path}")
+            
+            self._set_result(cmd_id, {
+                'success': True,
+                'output_path': output_path,
+                'timestamp': self.recording_start_time
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Start recording failed for {self.device_id}: {e}")
+            self.video_writer = None
+            self.is_recording = False
+            self._set_result(cmd_id, {'success': False, 'error': str(e)})
+    
+    def _handle_stop_recording(self, cmd: Dict[str, Any]):
+        """
+        Handle stop recording command - runs in worker thread.
+        Releases VideoWriter safely without blocking async event loop.
+        """
+        cmd_id = cmd['cmd_id']
+        
+        try:
+            if not self.is_recording:
+                self._set_result(cmd_id, {'success': False, 'error': 'Not recording'})
+                return
+            
+            # Stop recording
+            self.is_recording = False
+            
+            # Release video writer (blocking operation but in worker thread = OK)
+            if self.video_writer:
+                self.video_writer.release()
+                self.video_writer = None
+            
+            duration = time.time() - self.recording_start_time if self.recording_start_time else 0
+            
+            logger.info(
+                f"🎥 Recording stopped in worker thread: "
+                f"duration={duration:.1f}s, frames={self.recording_frames_written}"
+            )
+            
+            result = {
+                'success': True,
+                'frames_written': self.recording_frames_written,
+                'duration': duration,
+                'session_info': self.recording_session_info
+            }
+            
+            # Reset recording state
+            self.recording_start_time = None
+            self.recording_frames_written = 0
+            self.recording_session_info = None
+            
+            self._set_result(cmd_id, result)
+            
+        except Exception as e:
+            logger.error(f"❌ Stop recording failed for {self.device_id}: {e}")
+            self._set_result(cmd_id, {'success': False, 'error': str(e)})

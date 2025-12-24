@@ -25,6 +25,7 @@ from src.security.auth import (
     security,
 )
 from src.services.camera_service_queue import get_camera_service
+from src.services.camera_detection import camera_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -375,7 +376,7 @@ async def start_recording(
         # Get recording configuration (with segment support)
         recording_config = {
             "quality": "high",
-            "segment_duration_seconds": 30,  # Default segment duration
+            "segment_duration_seconds": 30,  # 30-second segments
             "auto_face_detection_enabled": True,
             "video_codec": "h264",
             "audio_enabled": False,
