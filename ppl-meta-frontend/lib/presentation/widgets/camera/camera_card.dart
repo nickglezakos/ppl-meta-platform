@@ -8,6 +8,8 @@ import '../../../core/services/camera_service.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/config/app_config.dart';
 import '../../pages/camera_stream_page.dart';
+import '../../../widgets/camera/camera_counter_widget.dart';
+import '../../../widgets/camera/instant_detection_widget.dart';
 
 class CameraCard extends ConsumerWidget {
   final Camera camera;
@@ -105,6 +107,19 @@ class CameraCard extends ConsumerWidget {
                     ],
                   ),
                 ),
+              
+              const SizedBox(height: 12),
+              
+              // Counter widgets - MVR People Counter
+              CameraCounterWidget(
+                cameraId: camera.deviceId,
+              ),
+              const SizedBox(height: 8),
+              
+              // Counter widgets - Instant Detection
+              InstantDetectionWidget(
+                cameraId: camera.deviceId,
+              ),
               
               const SizedBox(height: 12),
               

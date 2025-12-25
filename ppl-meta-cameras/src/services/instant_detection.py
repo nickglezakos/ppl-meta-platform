@@ -403,17 +403,23 @@ class InstantDetectionSampler:
         """
         start_time = time.time()
         
+        logger.info(f"🚀🚀🚀 [_process_3_frames] STARTING instant detection for camera {camera_id} with {len(frames)} frames")
+        
         # Generate session UUID for this instant detection iteration
         session_uuid = str(uuid.uuid4())
         
         # Step 1: Send frames to Vision Service for face detection
         all_face_detections = []
+        frame_index_map = {}  # Map Vision Service frame_index to our frames array position
         
         async with aiohttp.ClientSession() as session:
-            for frame_data in frames:
+            for array_position, frame_data in enumerate(frames):
                 frame = frame_data["frame"]
                 frame_index = frame_data["frame_index"]
                 timestamp = frame_data["timestamp"]
+                
+                # Store mapping from Vision's frame_index to our array position
+                frame_index_map[frame_index] = array_position
                 
                 # Call Vision Service API for detection
                 detections = await self._detect_faces_via_vision_service(
@@ -436,12 +442,16 @@ class InstantDetectionSampler:
         
         # Step 3: Age/gender detection via VMeta Service
         # Only process ONE face per person (the best quality one)
+        logger.info(f"🧬 Step 3: Starting age/gender detection for {len(person_objects)} people")
+        logger.info(f"📊 DEBUG: frames array length = {len(frames)}")
+        
         async with aiohttp.ClientSession() as session:
             for person in person_objects:
                 # Get faces for this person
                 person_faces = person.get("faces", [])
                 
                 if not person_faces:
+                    logger.warning(f"⚠️ Person has no faces, using default age/gender")
                     person["age_gender"] = self._default_age_gender()
                     continue
                 
@@ -452,16 +462,22 @@ class InstantDetectionSampler:
                 )
                 
                 # Get the frame for this face
-                frame_index = best_face.get("frame_index", 0)
-                if frame_index < len(frames):
+                frame_index_from_vision = best_face.get("frame_index", 0)
+                array_position = frame_index_map.get(frame_index_from_vision, 0)
+                
+                logger.info(f"📊 DEBUG: Processing person with frame_index_from_vision={frame_index_from_vision}, mapped to array_position={array_position}, frames length={len(frames)}")
+                
+                if array_position < len(frames):
                     # Get age/gender from VMeta Service (DeepFace models)
+                    logger.info(f"🎯 Calling VMeta for person with face at array position {array_position} (original frame {frame_index_from_vision})")
                     age_gender = await self._get_age_gender_via_vmeta_service(
                         session,
-                        frames[frame_index]["frame"],
+                        frames[array_position]["frame"],
                         best_face["bbox"]
                     )
                     person["age_gender"] = age_gender
                 else:
+                    logger.error(f"❌ SKIP VMeta: array_position {array_position} >= len(frames) {len(frames)}")
                     person["age_gender"] = self._default_age_gender()
         
         processing_time = time.time() - start_time
@@ -590,25 +606,40 @@ class InstantDetectionSampler:
             
             url = f"{self.vmeta_service_url}/api/v1/ml/detect-age-gender"
             
-            async with session.post(url, data=data) as response:
+            logger.info(f"🔍 Calling VMeta age/gender endpoint: {url}")
+            
+            # Add 2-second timeout to prevent blocking
+            timeout = aiohttp.ClientTimeout(total=2.0)
+            async with session.post(url, data=data, timeout=timeout) as response:
                 if response.status == 200:
                     result = await response.json()
+                    
+                    logger.info(f"✅ VMeta age/gender response: {result}")
+                    logger.info(f"📊 Response details - age_min: {result.get('age_min')}, age_max: {result.get('age_max')}, gender: {result.get('gender')}, gender_conf: {result.get('gender_confidence')}")
                     
                     # Format age range from min/max
                     age_min = result.get("age_min", 0)
                     age_max = result.get("age_max", 100)
                     age_range = f"({age_min}-{age_max})"
                     
-                    return {
+                    age_gender_result = {
                         "age_range": age_range,
                         "age_confidence": result.get("age_confidence", 0.0),
                         "gender": result.get("gender", "unknown"),
                         "gender_confidence": result.get("gender_confidence", 0.0)
                     }
+                    
+                    logger.info(f"📊 Formatted age/gender: {age_gender_result}")
+                    
+                    return age_gender_result
                 else:
-                    logger.error(f"VMeta Service age/gender error: {response.status}")
+                    response_text = await response.text()
+                    logger.error(f"❌ VMeta Service age/gender error: {response.status} - {response_text}")
                     return self._default_age_gender()
         
+        except asyncio.TimeoutError:
+            logger.warning(f"⏱️ VMeta age/gender timeout (>2s) - returning unknown")
+            return self._default_age_gender()
         except Exception as e:
             logger.error(f"Error getting age/gender from VMeta: {e}")
             return self._default_age_gender()
@@ -909,6 +940,9 @@ class InstantDetectionSampler:
             camera_id: Camera identifier
             frames: List of 3 frame dictionaries
         """
+        result = None
+        celery_success = False
+        
         try:
             from src.tasks.instant_detection_tasks import process_instant_detection
             import base64
@@ -930,20 +964,57 @@ class InstantDetectionSampler:
             )
             
             logger.debug(f"✅ [CELERY] Task submitted: {task.id} for {camera_id}")
+            celery_success = True
             
-        except ImportError:
-            logger.error("❌ [CELERY] Task module not found - falling back to synchronous")
-            # Fallback to synchronous processing if Celery not available
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self._process_3_frames(camera_id, frames))
-            self._cache_result(camera_id, result)
-            loop.close()
-        except Exception as e:
-            logger.error(f"❌ [CELERY] Failed to submit task: {e}", exc_info=True)
+        except (ImportError, Exception) as e:
+            # 🚀 CRITICAL: Fallback MUST be non-blocking to prevent camera worker freeze
+            # Run synchronous processing in separate thread
+            logger.warning(f"⚠️ [CELERY] Not available ({type(e).__name__}: {e}) - using threaded fallback")
+            
+            def _process_in_thread():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(self._process_3_frames(camera_id, frames))
+                    
+                    # Add timestamp to result
+                    from datetime import datetime
+                    result["timestamp"] = datetime.utcnow().isoformat() + 'Z'
+                    
+                    # Cache in memory (instance cache)
+                    self._cache_result(camera_id, result)
+                    
+                    # 🔥 CRITICAL: Also cache in Redis for cross-process access
+                    try:
+                        import redis
+                        import json
+                        r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+                        cache_key = f"instant_detection:{camera_id}"
+                        r.setex(cache_key, 300, json.dumps(result))  # 5 min TTL
+                        logger.info(f"✅ [THREAD] Cached in both memory and Redis for {camera_id} at {result['timestamp']}")
+                    except Exception as redis_error:
+                        logger.warning(f"⚠️ [THREAD] Redis cache failed, using memory only: {redis_error}")
+                    
+                    loop.close()
+                    
+                    # Push to webhook and Redis pub/sub from thread
+                    if result and self.webhook_enabled and self.webhook_url:
+                        self._push_to_webhook_sync(camera_id, result)
+                    if result:
+                        self._publish_to_redis_sync(camera_id, result)
+                        
+                except Exception as sync_error:
+                    logger.error(f"❌ [THREAD] Fallback processing failed: {sync_error}", exc_info=True)
+            
+            # Start processing in background thread (non-blocking)
+            import threading
+            thread = threading.Thread(target=_process_in_thread, daemon=True)
+            thread.start()
+            logger.debug(f"✅ [THREAD] Started background processing for {camera_id}")
+            return  # Return immediately, don't block
         
-        # Push to webhook if enabled (non-blocking)
-        if self.webhook_enabled and self.webhook_url:
+        # Push to webhook if enabled (non-blocking) - only if we have result from sync processing
+        if result and self.webhook_enabled and self.webhook_url:
             logger.info(f"📤 Pushing to webhook: {self.webhook_url}")
             try:
                 # Use threading instead of asyncio since we're in a sync context
@@ -957,17 +1028,18 @@ class InstantDetectionSampler:
             except Exception as e:
                 logger.error(f"❌ Failed to start webhook thread: {e}")
         
-        # Publish to Redis Pub/Sub for real-time subscribers (non-blocking)
-        try:
-            import threading
-            thread = threading.Thread(
-                target=self._publish_to_redis_sync,
-                args=(camera_id, result),
-                daemon=True
-            )
-            thread.start()
-        except Exception as e:
-            logger.error(f"❌ Failed to start Redis publish thread: {e}")
+        # Publish to Redis Pub/Sub for real-time subscribers (non-blocking) - only if we have result
+        if result:
+            try:
+                import threading
+                thread = threading.Thread(
+                    target=self._publish_to_redis_sync,
+                    args=(camera_id, result),
+                    daemon=True
+                )
+                thread.start()
+            except Exception as e:
+                logger.error(f"❌ Failed to start Redis publish thread: {e}")
     
     def _push_to_webhook_sync(self, camera_id: str, result: Dict):
         """

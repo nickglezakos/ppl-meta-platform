@@ -76,8 +76,8 @@ async def get_instant_results(
     """
     Get latest instant detection results for a camera.
     
-    Results are kept in memory until replaced by next iteration.
-    This allows other hooks to access instant results while recording is active.
+    Results are kept in Redis cache (cross-process) until replaced by next iteration.
+    This allows frontend to access instant results while recording is active.
     
     Args:
         camera_id: Camera device ID
@@ -85,6 +85,67 @@ async def get_instant_results(
     Returns:
         Latest detection results or 404 if no results available
     """
+    # 🔥 CRITICAL: Check Redis first (Celery workers cache here)
+    try:
+        import redis
+        import json
+        import time
+        
+        r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+        cache_key = f"instant_detection:{camera_id}"
+        cached_bytes = r.get(cache_key)
+        
+        if cached_bytes:
+            result = json.loads(cached_bytes.decode('utf-8'))
+            
+            # Check if result has a timestamp and if it's too old (> 5 minutes = stale)
+            result_timestamp = result.get('timestamp')
+            age_seconds = 0
+            
+            if result_timestamp:
+                from datetime import datetime
+                try:
+                    result_time = datetime.fromisoformat(result_timestamp.replace('Z', '+00:00'))
+                    age_seconds = (datetime.utcnow().replace(tzinfo=result_time.tzinfo) - result_time).total_seconds()
+                    
+                    # If older than 5 minutes, consider it stale (match Redis TTL)
+                    if age_seconds > 300:
+                        logger.warning(f"⚠️ Redis cache is stale ({age_seconds:.1f}s old) for {camera_id}, deleting and returning 404")
+                        r.delete(cache_key)  # Clean up stale data
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"No instant detection results for camera {camera_id}. Start instant detection first."
+                        )
+                except Exception as dt_error:
+                    logger.warning(f"⚠️ Could not parse timestamp '{result_timestamp}': {dt_error}, treating as stale")
+                    r.delete(cache_key)  # Clean up unparseable data
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"No instant detection results for camera {camera_id}. Start instant detection first."
+                    )
+            else:
+                # No timestamp = old cached data before we added timestamps
+                logger.warning(f"⚠️ Redis cache has no timestamp for {camera_id}, treating as stale and deleting")
+                r.delete(cache_key)
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No instant detection results for camera {camera_id}. Start instant detection first."
+                )
+            
+            logger.info(f"✅ Retrieved instant detection result from Redis for {camera_id} ({age_seconds:.1f}s old)")
+            
+            # Add metadata
+            result["_metadata"] = {
+                "cached_at": time.time(),
+                "source": "redis",
+                "age_seconds": age_seconds
+            }
+            
+            return result
+    except Exception as e:
+        logger.warning(f"Failed to check Redis cache: {e}")
+    
+    # Fallback to in-memory cache (for backward compatibility)
     cached_data = manager.results_cache.get(camera_id)
     
     if cached_data is None:
@@ -98,7 +159,8 @@ async def get_instant_results(
     result["_metadata"] = {
         "cached_at": cached_data["cached_at"],
         "iteration": cached_data["iteration"],
-        "age_seconds": time.time() - cached_data["cached_at"]
+        "age_seconds": time.time() - cached_data["cached_at"],
+        "source": "memory"
     }
     
     return result

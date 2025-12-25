@@ -34,23 +34,62 @@ When people are detected, shows:
 
 ## Integration
 
-### Camera Card Structure
+### Camera Card Structure (Updated December 25, 2025)
 ```
 Camera Card
 ├── Camera Header (name, status, specs)
+├── Resolution and Details
+├── Camera Counter Widget (MVR people detected) ← Shows historical count
+├── Instant Detection Widget (real-time detections) ← Shows live detections
 ├── Stream Section (if active)
-├── Action Buttons (start, stop, snapshot)
-├── Camera Counter Widget (MVR people detected)
-└── Instant Detection Widget (real-time detections) ← NEW
+└── Action Buttons (start, stop, snapshot)
 ```
 
-### Added to Camera Card
+### Camera Stream Page Structure (New December 25, 2025)
+```
+Camera Stream Page
+├── Video Stream (full width, top)
+└── Control Bar (bottom)
+    ├── Recording Status Bar (if recording)
+    ├── Counter Widgets Row
+    │   ├── Camera Counter Widget (left)
+    │   └── Instant Detection Widget (right)
+    └── Control Buttons (back, record, fullscreen)
+```
+
+### Integration Code
+
+**In Camera Card** (`camera_card.dart`):
 ```dart
-// In camera_card.dart
-InstantDetectionWidget(
-  cameraId: widget.camera.deviceId,
-  refreshInterval: const Duration(seconds: 5),
+// After camera details section
+CameraCounterWidget(
+  cameraId: camera.deviceId,
 ),
+const SizedBox(height: 8),
+InstantDetectionWidget(
+  cameraId: camera.deviceId,
+),
+```
+
+**In Camera Stream Page** (`camera_stream_page.dart`):
+```dart
+// In control bar Column, before control buttons Row
+Row(
+  children: [
+    Expanded(
+      child: CameraCounterWidget(
+        cameraId: camera.deviceId,
+      ),
+    ),
+    const SizedBox(width: 8),
+    Expanded(
+      child: InstantDetectionWidget(
+        cameraId: camera.deviceId,
+      ),
+    ),
+  ],
+),
+const SizedBox(height: 8),
 ```
 
 ## API Integration

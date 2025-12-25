@@ -142,6 +142,7 @@ import os
 from pydantic import BaseModel, Field
 from ml.age_estimator import AgeEstimator
 from ml.gender_classifier import GenderClassifier
+from api.v1.ml_inference import get_age_estimator, get_gender_classifier
 
 # Get the database client from the main app
 try:
@@ -1595,8 +1596,8 @@ async def merge_individuals_by_similarity(
                 }
                 
                 try:
-                    # Age estimation
-                    age_estimator = AgeEstimator(age_tolerance=5)
+                    # Age estimation (using singleton)
+                    age_estimator = get_age_estimator()
                     age_result = age_estimator.estimate_age(
                         cropped_face_resized,
                         enforce_detection=False
@@ -1606,8 +1607,8 @@ async def merge_individuals_by_similarity(
                         demographics['age_max'] = age_result.get('max_age')
                         demographics['age_confidence'] = age_result.get('confidence')
                     
-                    # Gender classification
-                    gender_classifier = GenderClassifier(confidence_threshold=0.6)
+                    # Gender classification (using singleton)
+                    gender_classifier = get_gender_classifier()
                     gender_result = gender_classifier.classify_gender(
                         cropped_face_resized,
                         enforce_detection=False

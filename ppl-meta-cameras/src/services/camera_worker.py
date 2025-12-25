@@ -669,13 +669,13 @@ class CameraWorker:
                     except Exception as e:
                         logger.error(f"Recording write error: {e}")
                 
-                # 🔍 INSTANT DETECTION: DISABLED in worker thread to prevent blocking
-                # TODO: Re-enable when Celery is available or detection is truly async
-                # if self.enable_instant_detection and self.detection_sampler:
-                #     try:
-                #         self.detection_sampler.process_frame(frame, self.frames_read)
-                #     except Exception as e:
-                #         logger.debug(f"Detection processing error: {e}")
+                # 🔍 INSTANT DETECTION: Process frame if enabled
+                # Sampler collects frames and submits to Celery (non-blocking)
+                if self.enable_instant_detection and self.detection_sampler:
+                    try:
+                        self.detection_sampler.process_frame(frame, self.frames_read)
+                    except Exception as e:
+                        logger.debug(f"Detection processing error: {e}")
             else:
                 self.frames_dropped += 1
                 

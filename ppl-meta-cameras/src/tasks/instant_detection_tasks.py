@@ -67,6 +67,24 @@ def process_instant_detection(
         result = detector._process_frames_sync(camera_id, frames_data)
         
         if result:
+            # Add timestamp to result
+            from datetime import datetime
+            result["timestamp"] = datetime.utcnow().isoformat() + 'Z'
+            
+            # 🔥 CRITICAL: Cache result in Redis so frontend API can access it
+            # (Can't use instance cache since Celery worker and FastAPI are separate processes)
+            try:
+                import redis
+                r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+                cache_key = f"instant_detection:{camera_id}"
+                # Store with 5 minute TTL
+                r.setex(cache_key, 300, json.dumps(result))
+                logger.info(f"📦 [CELERY] Cached result in Redis for {camera_id} at {result['timestamp']} - frontend API can now access it")
+            except Exception as e:
+                logger.error(f"❌ [CELERY] Failed to cache in Redis: {e}")
+                # Fallback to instance cache (won't work cross-process but better than nothing)
+                detector._cache_result(camera_id, result)
+            
             # Publish to Redis Pub/Sub
             _publish_to_redis(camera_id, result)
             

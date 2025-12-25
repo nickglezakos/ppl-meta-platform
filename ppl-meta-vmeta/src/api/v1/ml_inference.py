@@ -22,9 +22,29 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Initialize ML models
-age_estimator = AgeEstimator(age_tolerance=5)
-gender_classifier = GenderClassifier(confidence_threshold=0.6)
+# Global model instances (shared across all requests)
+_age_estimator = None
+_gender_classifier = None
+
+def get_age_estimator() -> AgeEstimator:
+    """Get or create age estimator singleton."""
+    global _age_estimator
+    if _age_estimator is None:
+        logger.info("🔧 Creating AgeEstimator singleton...")
+        _age_estimator = AgeEstimator(age_tolerance=5)
+        # Pre-warm the model
+        _age_estimator._ensure_model_loaded()
+    return _age_estimator
+
+def get_gender_classifier() -> GenderClassifier:
+    """Get or create gender classifier singleton."""
+    global _gender_classifier
+    if _gender_classifier is None:
+        logger.info("🔧 Creating GenderClassifier singleton...")
+        _gender_classifier = GenderClassifier(confidence_threshold=0.6)
+        # Pre-warm the model
+        _gender_classifier._ensure_model_loaded()
+    return _gender_classifier
 
 
 class AgeGenderResponse(BaseModel):
@@ -61,14 +81,18 @@ async def detect_age_gender(
         if face_image is None:
             raise HTTPException(status_code=400, detail="Invalid image format")
         
+        # Get singleton instances
+        age_est = get_age_estimator()
+        gender_clf = get_gender_classifier()
+        
         # Estimate age
-        age_result = age_estimator.estimate_age(
+        age_result = age_est.estimate_age(
             face_image,
             enforce_detection=False
         )
         
         # Classify gender
-        gender_result = gender_classifier.classify_gender(
+        gender_result = gender_clf.classify_gender(
             face_image,
             enforce_detection=False
         )
@@ -111,8 +135,10 @@ async def ml_status():
     
     Returns model loading status and readiness.
     """
+    age_est = get_age_estimator()
+    gender_clf = get_gender_classifier()
     return {
-        "age_model_loaded": age_estimator._model_loaded,
-        "gender_model_loaded": gender_classifier._model_loaded,
-        "ready": age_estimator._model_loaded and gender_classifier._model_loaded
+        "age_model_loaded": age_est._model_loaded,
+        "gender_model_loaded": gender_clf._model_loaded,
+        "ready": age_est._model_loaded and gender_clf._model_loaded
     }
