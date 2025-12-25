@@ -23,7 +23,7 @@ import logging
 import asyncio
 import os
 import datetime
-from typing import Optional, Dict, Any, Deque
+from typing import Optional, Dict, Any, Deque, List
 from enum import Enum
 import numpy as np
 
@@ -139,6 +139,9 @@ class CameraWorker:
         self.current_segment_index: int = 0
         self.current_segment_path: Optional[str] = None
         self.session_dir: Optional[str] = None
+        self.completed_segments: List[str] = []  # Track all completed segments
+        self.batch_upload_size: int = 5  # Upload segments in batches of 5 (aligned with MVR batch size)
+        self.segments_since_last_upload: int = 0  # Counter for incremental uploads
         
         # Thread control
         self.stop_event = threading.Event()
@@ -746,7 +749,9 @@ class CameraWorker:
             'queue_size': self.command_queue.qsize(),
             'detection_enabled': self.enable_instant_detection,
             'is_recording': self.is_recording,
-            'recording_frames': self.recording_frames_written
+            'recording_frames': self.recording_frames_written,
+            'pending_segments_for_upload': len(self.completed_segments),
+            'segments_since_last_upload': self.segments_since_last_upload
         }
         
         # Add detection stats if available
@@ -758,6 +763,60 @@ class CameraWorker:
                 pass
         
         return stats
+    
+    def get_segments_for_upload(self) -> List[str]:
+        """
+        Get and clear segments that are ready for upload.
+        Called when batch upload threshold is reached.
+        Thread-safe.
+        """
+        segments = self.completed_segments.copy()
+        self.completed_segments = []
+        self.segments_since_last_upload = 0
+        
+        if segments:
+            logger.info(f"📤 Returning {len(segments)} segments for batch upload")
+        
+        return segments
+    
+    def _publish_batch_ready_event(self, session_uuid: str, segments: List[str]):
+        """
+        Publish segment batch ready event to Redis (runs in separate thread).
+        
+        Args:
+            session_uuid: Recording session UUID
+            segments: List of segment paths ready for upload
+        """
+        try:
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                from src.services.status_notification_service import get_status_service
+                
+                status_service = get_status_service()
+                
+                # Publish segment batch ready event
+                loop.run_until_complete(
+                    status_service.publish_segment_batch_ready(
+                        device_id=self.device_id,
+                        session_uuid=session_uuid,
+                        segment_count=len(segments),
+                        segments=segments
+                    )
+                )
+                
+                logger.info(
+                    f"📤 Published batch ready event to Redis: {self.device_id} "
+                    f"({len(segments)} segments)"
+                )
+                
+            finally:
+                loop.close()
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to publish batch ready event: {e}")
     
     def _rotate_to_next_segment(self):
         """
@@ -808,8 +867,28 @@ class CameraWorker:
                 f"(previous: {file_size} bytes)"
             )
             
-            # ✅ Segment is ready - upload will be handled by camera_detection.py later
-            logger.info(f"📋 Segment ready for upload: {completed_segment_path}")
+            # ✅ Track completed segment
+            self.completed_segments.append(completed_segment_path)
+            self.segments_since_last_upload += 1
+            logger.info(
+                f"📋 Segment {len(self.completed_segments)} completed: {completed_segment_path} "
+                f"({self.segments_since_last_upload}/{self.batch_upload_size} since last upload)"
+            )
+            
+            # 🚀 Trigger incremental upload when batch size reached
+            if self.segments_since_last_upload >= self.batch_upload_size:
+                logger.info(f"🚀 Batch upload threshold reached ({self.batch_upload_size} segments)")
+                
+                # Publish to Redis for immediate event-driven upload (non-blocking)
+                segments_to_upload = self.completed_segments.copy()
+                session_uuid = self.recording_session_info.get('session_uuid') if self.recording_session_info else None
+                
+                # Publish in separate thread to avoid blocking worker
+                threading.Thread(
+                    target=self._publish_batch_ready_event,
+                    args=(session_uuid, segments_to_upload),
+                    daemon=True
+                ).start()
             
         except Exception as e:
             logger.error(f"❌ Segment rotation failed: {e}")
@@ -859,7 +938,10 @@ class CameraWorker:
                 self.current_segment_path = output_path
                 self.session_dir = os.path.dirname(output_path)
                 self.current_segment_index = 1
+                self.completed_segments = []  # Reset completed segments list
+                self.segments_since_last_upload = 0  # Reset batch upload counter
                 logger.info(f"🎬 Segment rotation enabled: {segment_duration}s per segment")
+                logger.info(f"📦 Batch upload enabled: uploading every {self.batch_upload_size} segments")
             
             # Store recording parameters in session_info for segment rotation
             session_info['width'] = width
@@ -913,17 +995,27 @@ class CameraWorker:
                 f"duration={duration:.1f}s, frames={self.recording_frames_written}"
             )
             
+            # Collect any remaining segments not yet uploaded
+            segments_to_upload = self.completed_segments.copy()
+            if self.current_segment_path:
+                segments_to_upload.append(self.current_segment_path)
+            
             result = {
                 'success': True,
                 'frames_written': self.recording_frames_written,
                 'duration': duration,
-                'session_info': self.recording_session_info
+                'session_info': self.recording_session_info,
+                'remaining_segments': segments_to_upload,  # Only segments not yet uploaded
+                'total_segments': self.current_segment_index
             }
             
             # Reset recording state
             self.recording_start_time = None
             self.recording_frames_written = 0
             self.recording_session_info = None
+            self.completed_segments = []  # Clear completed segments list
+            self.current_segment_path = None
+            self.segments_since_last_upload = 0
             
             self._set_result(cmd_id, result)
             

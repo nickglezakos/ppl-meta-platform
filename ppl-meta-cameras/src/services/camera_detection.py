@@ -65,6 +65,11 @@ class CameraDetectionService:
             )
         else:
             logger.info("🎯 [CAMERA-POOL] Disabled - using per-camera threads")
+        
+        # 📤 Start incremental segment upload monitor (Redis pub/sub)
+        self.segment_upload_task: Optional[asyncio.Task] = None
+        self.segment_upload_running = False
+        self.redis_pubsub: Optional[Any] = None
     
     @property
     def frame_buffers(self) -> Dict[str, Tuple[bool, Any]]:
@@ -1521,23 +1526,31 @@ class CameraDetectionService:
         except Exception as e:
             logger.error(f"Error finalizing recording session {session_uuid}: {e}")
 
-        # Upload ONLY the final segment (other segments already uploaded during rotation)
-        # Do this in background so stop recording returns immediately
-        logger.info(f"🎬 [SESSION] Scheduling background upload for final segment of session {session_uuid}")
+        # Extract remaining segments from worker result (batches already uploaded incrementally)
+        remaining_segments = result.get('remaining_segments', [])
+        total_segments = result.get('total_segments', 0)
         
-        # Create modified recording_info for final segment only
-        final_segment_recording_info = recording_info.copy()
-        final_segment_recording_info["current_segment_path"] = current_segment_path
-        
-        # Schedule upload in background (non-blocking)
-        import asyncio
-        asyncio.create_task(
-            self._upload_final_segment_background(
-                final_segment_recording_info, 
-                user_id, 
-                session_uuid
+        if remaining_segments:
+            logger.info(
+                f"🎬 [SESSION] Scheduling background upload for {len(remaining_segments)} "
+                f"remaining segments of session {session_uuid} (total recorded: {total_segments})"
             )
-        )
+            
+            # Schedule upload in background (non-blocking)
+            import asyncio
+            asyncio.create_task(
+                self._upload_all_segments_background(
+                    recording_info,
+                    user_id, 
+                    session_uuid,
+                    remaining_segments
+                )
+            )
+        else:
+            logger.info(
+                f"🎬 [SESSION] No remaining segments to upload for {session_uuid} "
+                f"(all {total_segments} segments uploaded incrementally)"
+            )
         
         logger.info(f"🎬 [SESSION] Background upload scheduled, continuing with stop recording response")
         
@@ -2401,6 +2414,59 @@ class CameraDetectionService:
         except Exception as e:
             logger.error(f"Error rotating to next segment for {device_id}: {e}")
 
+    async def _upload_all_segments_background(
+        self, recording_info: Dict, user_id: str, session_uuid: str, segments_to_upload: List[str]
+    ):
+        """
+        Background task to upload ALL segments without blocking stop recording response.
+        This allows the stop recording endpoint to return immediately.
+        """
+        try:
+            logger.info(f"🎬 [BACKGROUND] Starting background upload for {len(segments_to_upload)} segments of session {session_uuid}")
+            
+            uploaded_count = 0
+            failed_count = 0
+            
+            for segment_path in segments_to_upload:
+                try:
+                    # Create modified recording_info for this segment
+                    segment_recording_info = recording_info.copy()
+                    segment_recording_info["current_segment_path"] = segment_path
+                    segment_recording_info["output_path"] = segment_path
+                    
+                    logger.info(f"🎬 [BACKGROUND] Uploading segment {uploaded_count + 1}/{len(segments_to_upload)}: {segment_path}")
+                    
+                    upload_result = await self._upload_recording_to_collection(
+                        segment_recording_info, user_id
+                    )
+                    
+                    if upload_result:
+                        collection_id = upload_result.get("collection_id")
+                        media_uuid = upload_result.get("media_uuid")
+                        uploaded_count += 1
+                        
+                        logger.info(
+                            f"🎬 [BACKGROUND] ✅ Segment {uploaded_count}/{len(segments_to_upload)} uploaded: "
+                            f"collection={collection_id}, media={media_uuid}"
+                        )
+                    else:
+                        failed_count += 1
+                        logger.error(f"🎬 [BACKGROUND] ❌ Upload failed for segment: {segment_path}")
+                        
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"🎬 [BACKGROUND] Exception uploading segment {segment_path}: {e}")
+            
+            logger.info(
+                f"🎬 [BACKGROUND] ✅ Upload completed for session {session_uuid}: "
+                f"{uploaded_count} successful, {failed_count} failed"
+            )
+                
+        except Exception as e:
+            logger.error(f"🎬 [BACKGROUND] Exception in background upload for {session_uuid}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
     async def _upload_final_segment_background(
         self, recording_info: Dict, user_id: str, session_uuid: str
     ):
@@ -2795,9 +2861,28 @@ class CameraDetectionService:
                             # ✅ RE-ENABLED - November 20, 2025
                             # Service-to-service authentication is working properly.
                             # In-memory person-objects workflow now creates person_objects automatically.
-                            await self._check_and_trigger_face_detection(
-                                media_uuid, session, headers
+                            
+                            # 🎯 ROBUST FIX v2.21.7: Poll media service with exponential backoff
+                            # Verifies media is actually committed to database before proceeding
+                            # More reliable than Redis events - checks actual DB state
+                            media_exists = await self._wait_for_media_committed(
+                                media_uuid, headers
                             )
+                            
+                            if media_exists:
+                                logger.info(
+                                    f"✅ [UPLOAD] Media {media_uuid} confirmed in database, "
+                                    f"triggering face detection"
+                                )
+                                await self._check_and_trigger_face_detection(
+                                    media_uuid, session, headers
+                                )
+                            else:
+                                logger.error(
+                                    f"❌ [UPLOAD] Media {media_uuid} never became available in database - "
+                                    f"SKIPPING face detection to prevent 404 errors"
+                                )
+                                # Don't trigger face detection if media not found
 
                             # Find or create camera collection and assign video
                             logger.info(
@@ -3036,6 +3121,74 @@ class CameraDetectionService:
             )
             return False
 
+    async def _wait_for_media_committed(self, media_uuid: str, headers: Dict) -> bool:
+        """Poll media service to verify media exists in database.
+        
+        Uses exponential backoff: 0.5s, 1s, 2s, 4s, 8s (total ~15.5s max)
+        This is more reliable than Redis events as it verifies actual DB state.
+        
+        Args:
+            media_uuid: UUID of the uploaded media
+            headers: Auth headers for media service requests
+            
+        Returns:
+            True if media found in database, False after all attempts
+        """
+        delays = [0.5, 1.0, 2.0, 4.0, 8.0]  # Exponential backoff
+        total_waited = 0.0
+        
+        logger.info(
+            f"⏳ [MEDIA-VERIFY] Starting verification for media {media_uuid} "
+            f"(max {sum(delays):.1f}s with exponential backoff)"
+        )
+        
+        for attempt, delay in enumerate(delays, 1):
+            # Wait before checking (exponential backoff)
+            await asyncio.sleep(delay)
+            total_waited += delay
+            
+            try:
+                # Query media service directly to verify DB state
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"http://localhost:8000/api/v1/media/{media_uuid}",
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=5)
+                    ) as response:
+                        if response.status == 200:
+                            logger.info(
+                                f"✅ [MEDIA-VERIFY] Media {media_uuid} confirmed in database "
+                                f"(attempt {attempt}/{len(delays)}, waited {total_waited:.1f}s)"
+                            )
+                            return True
+                        elif response.status == 404:
+                            logger.debug(
+                                f"🔍 [MEDIA-VERIFY] Attempt {attempt}/{len(delays)}: "
+                                f"Media {media_uuid} not yet in database, retrying..."
+                            )
+                        else:
+                            logger.warning(
+                                f"⚠️ [MEDIA-VERIFY] Attempt {attempt}/{len(delays)}: "
+                                f"Unexpected status {response.status}"
+                            )
+                            
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"⚠️ [MEDIA-VERIFY] Attempt {attempt}/{len(delays)}: "
+                    f"Request timeout"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ [MEDIA-VERIFY] Attempt {attempt}/{len(delays)}: "
+                    f"Error: {e}"
+                )
+        
+        logger.error(
+            f"❌ [MEDIA-VERIFY] Media {media_uuid} not found in database after "
+            f"{len(delays)} attempts (total {total_waited:.1f}s) - giving up"
+        )
+        return False
+    
     async def _check_and_trigger_face_detection(
         self, media_uuid: str, session, headers: Dict
     ):
@@ -3387,6 +3540,171 @@ class CameraDetectionService:
                 f"🎬 [FRAME-READER] Stopped for {device_id} "
                 f"(frames: {frame_count}, errors: {error_count})"
             )
+
+    async def _monitor_segment_uploads(self):
+        """
+        Event-driven monitor using Redis pub/sub for segment batch notifications.
+        Subscribes to segment batch ready events and triggers uploads immediately.
+        No polling - purely event-driven.
+        """
+        logger.info("📤 [SEGMENT-UPLOAD] Redis subscriber starting")
+        
+        try:
+            from src.services.status_notification_service import get_status_service
+            import redis.asyncio as redis
+            
+            status_service = get_status_service()
+            
+            # Ensure Redis is connected
+            if not status_service.connected:
+                await status_service.connect()
+            
+            if not status_service.connected:
+                logger.error("📤 [SEGMENT-UPLOAD] Redis not available, monitor disabled")
+                return
+            
+            # Subscribe to all camera segment channels using pattern
+            self.redis_pubsub = status_service.redis_client.pubsub()
+            await self.redis_pubsub.psubscribe("camera:segments:*")
+            
+            logger.info("📤 [SEGMENT-UPLOAD] Subscribed to camera:segments:* events")
+            
+            # Listen for messages
+            async for message in self.redis_pubsub.listen():
+                if not self.segment_upload_running:
+                    break
+                
+                if message['type'] != 'pmessage':
+                    continue
+                
+                try:
+                    # Parse message data
+                    data = json.loads(message['data'])
+                    device_id = data.get('device_id')
+                    session_uuid = data.get('session_uuid')
+                    segments = data.get('segments', [])
+                    event = data.get('event')
+                    
+                    if event != 'batch_ready':
+                        continue
+                    
+                    logger.info(
+                        f"📤 [SEGMENT-UPLOAD] Received batch ready event: {device_id} "
+                        f"({len(segments)} segments, session {session_uuid})"
+                    )
+                    
+                    # Get recording info for this device
+                    recording_info = self.active_recordings.get(device_id)
+                    
+                    if not recording_info:
+                        logger.warning(
+                            f"📤 [SEGMENT-UPLOAD] No active recording for {device_id}, skipping"
+                        )
+                        continue
+                    
+                    user_id = recording_info.get('user_id')
+                    
+                    if not segments or not user_id:
+                        logger.warning(
+                            f"📤 [SEGMENT-UPLOAD] Missing segments or user_id for {device_id}"
+                        )
+                        continue
+                    
+                    # Trigger upload in background (non-blocking)
+                    logger.info(
+                        f"📤 [SEGMENT-UPLOAD] Triggering batch upload: {len(segments)} segments"
+                    )
+                    
+                    asyncio.create_task(
+                        self._upload_segment_batch_background(
+                            recording_info=recording_info,
+                            user_id=user_id,
+                            session_uuid=session_uuid,
+                            segments=segments
+                        )
+                    )
+                    
+                except json.JSONDecodeError as e:
+                    logger.error(f"📤 [SEGMENT-UPLOAD] Failed to parse message: {e}")
+                except Exception as e:
+                    logger.error(f"📤 [SEGMENT-UPLOAD] Error processing message: {e}")
+                    
+        except asyncio.CancelledError:
+            logger.info("📤 [SEGMENT-UPLOAD] Monitor cancelled")
+        except Exception as e:
+            logger.error(f"📤 [SEGMENT-UPLOAD] Fatal error in monitor: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+        finally:
+            if self.redis_pubsub:
+                try:
+                    await self.redis_pubsub.unsubscribe()
+                    await self.redis_pubsub.close()
+                except Exception as e:
+                    logger.error(f"📤 [SEGMENT-UPLOAD] Error closing pubsub: {e}")
+            logger.info("📤 [SEGMENT-UPLOAD] Monitor stopped")
+    
+    def start_segment_upload_monitor(self):
+        """Start the background segment upload monitor."""
+        if not self.segment_upload_running:
+            self.segment_upload_running = True
+            self.segment_upload_task = asyncio.create_task(self._monitor_segment_uploads())
+            logger.info("📤 [SEGMENT-UPLOAD] Monitor task created")
+    
+    def stop_segment_upload_monitor(self):
+        """Stop the background segment upload monitor."""
+        if self.segment_upload_running:
+            self.segment_upload_running = False
+            if self.segment_upload_task:
+                self.segment_upload_task.cancel()
+            logger.info("📤 [SEGMENT-UPLOAD] Monitor stopped")
+    
+    async def _upload_segment_batch_background(
+        self, recording_info: Dict, user_id: str, session_uuid: str, segments: List[str]
+    ):
+        """Upload a batch of segments in background without blocking recording."""
+        try:
+            logger.info(
+                f"📤 [BATCH-UPLOAD] Starting upload of {len(segments)} segments "
+                f"for session {session_uuid}"
+            )
+            
+            uploaded = 0
+            failed = 0
+            
+            for segment_path in segments:
+                try:
+                    # Create segment-specific recording info
+                    segment_info = recording_info.copy()
+                    segment_info["output_path"] = segment_path
+                    segment_info["current_segment_path"] = segment_path
+                    
+                    # Upload segment
+                    result = await self._upload_recording_to_collection(segment_info, user_id)
+                    
+                    if result:
+                        uploaded += 1
+                        media_uuid = result.get('media_uuid')
+                        logger.info(
+                            f"📤 [BATCH-UPLOAD] ✅ Segment {uploaded}/{len(segments)} uploaded: {media_uuid}"
+                        )
+                    else:
+                        failed += 1
+                        logger.error(f"📤 [BATCH-UPLOAD] ❌ Failed to upload: {segment_path}")
+                        
+                except Exception as e:
+                    failed += 1
+                    logger.error(f"📤 [BATCH-UPLOAD] Exception uploading {segment_path}: {e}")
+            
+            logger.info(
+                f"📤 [BATCH-UPLOAD] Completed for session {session_uuid}: "
+                f"{uploaded} uploaded, {failed} failed"
+            )
+            
+        except Exception as e:
+            logger.error(f"📤 [BATCH-UPLOAD] Fatal error for session {session_uuid}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
 
 # Global camera detection service instance

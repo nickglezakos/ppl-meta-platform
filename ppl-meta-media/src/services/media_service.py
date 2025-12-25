@@ -129,6 +129,11 @@ class MediaService:
         self.db.add(media)
         self.db.commit()
         self.db.refresh(media)
+        
+        # 🎯 v2.21.7: Redis event publishing DISABLED
+        # Camera service now uses direct DB polling (more reliable)
+        # Kept for reference - can be removed in future version
+        # await self._publish_media_ready_event(str(media.uuid))
 
         # Save file to storage
         await self._save_file_to_storage(content, storage_path)
@@ -1095,6 +1100,38 @@ class MediaService:
         with open(full_path, "wb") as f:
             f.write(content)
 
+    async def _publish_media_ready_event(self, media_uuid: str):
+        """Publish media ready event to Redis after DB commit."""
+        try:
+            import redis.asyncio as aioredis
+            import os
+            
+            redis_host = os.getenv("REDIS_HOST", "localhost")
+            redis_port = int(os.getenv("REDIS_PORT", 6379))
+            redis_db = int(os.getenv("REDIS_DB", 0))
+            
+            redis_client = await aioredis.from_url(
+                f"redis://{redis_host}:{redis_port}/{redis_db}",
+                encoding="utf-8",
+                decode_responses=True
+            )
+            
+            channel = f"media:ready:{media_uuid}"
+            message = json.dumps({
+                "media_uuid": media_uuid,
+                "event": "ready",
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            
+            await redis_client.publish(channel, message)
+            await redis_client.close()
+            
+            logger.info(f"📤 [MEDIA-READY] Published event for media {media_uuid}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ [MEDIA-READY] Failed to publish event: {e}")
+            # Don't fail upload if Redis publish fails
+    
     async def _process_media_async(self, media: Media):
         """Process media asynchronously (thumbnails, metadata extraction, etc.)."""
 

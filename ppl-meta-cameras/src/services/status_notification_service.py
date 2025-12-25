@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Optional, Set
+from typing import Dict, Optional, Set, List
 from enum import Enum
 
 import redis.asyncio as redis
@@ -162,6 +162,63 @@ class StatusNotificationService:
         except Exception as e:
             logger.error(f"❌ Failed to publish status for {device_id}: {e}", exc_info=True)
             # Try to reconnect
+            try:
+                await self.connect()
+            except:
+                pass
+    
+    async def publish_segment_batch_ready(
+        self,
+        device_id: str,
+        session_uuid: str,
+        segment_count: int,
+        segments: List[str]
+    ):
+        """
+        Publish event when a batch of segments is ready for upload.
+        
+        Args:
+            device_id: Camera device identifier
+            session_uuid: Recording session UUID
+            segment_count: Number of segments in batch
+            segments: List of segment file paths
+        """
+        if not self.connected:
+            logger.debug(f"Redis not connected, skipping segment batch event for {device_id}")
+            return
+        
+        try:
+            channel = f"camera:segments:{device_id}"
+            
+            message = {
+                "device_id": device_id,
+                "session_uuid": session_uuid,
+                "event": "batch_ready",
+                "segment_count": segment_count,
+                "segments": segments,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            message_json = json.dumps(message)
+            
+            # Try to publish, reconnect once if needed
+            try:
+                await self.redis_client.publish(channel, message_json)
+                logger.info(
+                    f"📤 Published segment batch ready: {device_id} "
+                    f"({segment_count} segments, session {session_uuid})"
+                )
+            except (ConnectionError, TimeoutError, OSError, RuntimeError) as conn_err:
+                logger.warning(f"⚠️ Redis connection lost, attempting reconnect: {conn_err}")
+                await self.connect()
+                if self.connected:
+                    await self.redis_client.publish(channel, message_json)
+                    logger.info("✅ Reconnected and published segment batch event")
+                else:
+                    raise
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to publish segment batch event for {device_id}: {e}")
             try:
                 await self.connect()
             except:
