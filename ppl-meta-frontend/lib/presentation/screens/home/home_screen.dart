@@ -261,15 +261,6 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.video_camera_front,
-                        iconColor: Colors.green, // Distinct color for enhanced cameras
-                        title: 'Enhanced Cameras',
-                        subtitle: 'Phase 5 recording management',
-                        onTap: () {
-                          context.go('/cameras-enhanced');
-                        },
-                      ),
-                      _ActionCard(
                         icon: Icons.collections,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Collections',
@@ -289,34 +280,16 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       _ActionCard(
                         icon: Icons.auto_awesome,
-                        iconColor: AppColors.primary, // Use primary color for workflows
-                        title: 'Workflows',
-                        subtitle: 'Face detection dashboard',
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Monitoring',
+                        subtitle: 'System & workflow monitoring',
                         onTap: () {
                           context.go('/workflows');
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.smart_toy,
-                        iconColor: Colors.purple, // Distinct color for automation
-                        title: 'Automation',
-                        subtitle: 'Smart automation rules',
-                        onTap: () {
-                          context.go('/automation');
-                        },
-                      ),
-                      _ActionCard(
-                        icon: Icons.sync,
-                        iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Camera Media Sync',
-                        subtitle: 'Monitor snapshot syncing',
-                        onTap: () {
-                          context.go('/camera-media-sync');
-                        },
-                      ),
-                      _ActionCard(
                         icon: Icons.display_settings,
-                        iconColor: Colors.orange, // Distinct color for signage
+                        iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Signage Management',
                         subtitle: 'Manage digital signage playlists',
                         onTap: () {
@@ -325,7 +298,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       _ActionCard(
                         icon: Icons.notifications_active,
-                        iconColor: Colors.orange, // Orange color for triggers/alerts
+                        iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Triggers',
                         subtitle: 'Manage automated alerts',
                         onTap: () {
@@ -334,7 +307,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       _ActionCard(
                         icon: Icons.group_work,
-                        iconColor: Colors.deepPurple, // Distinct color for individual groups
+                        iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Individual Groups',
                         subtitle: 'Organize people by groups',
                         onTap: () {

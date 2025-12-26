@@ -45,6 +45,8 @@ adb logcat | grep -i "flutter\|signage\|ppl"
 
 flutter logs
 
+same cyan color (AppColors.secondary)
+
 
 summary token budget is running low
 

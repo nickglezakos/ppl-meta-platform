@@ -1,8 +1,12 @@
 """
 PPL Meta Orchestrator - Models Package
-Phase 4 Database Models for Recording Session Persistence
+Phase 4 Database Models for Recording Session Persistence + Workflow Monitoring
 """
 
 from .recording_session import RecordingSession, RecordingSessionStatus, SessionStatus
 
-__all__ = ["RecordingSession", "RecordingSessionStatus", "SessionStatus"]
+__all__ = [
+    "RecordingSession", 
+    "RecordingSessionStatus", 
+    "SessionStatus"
+]

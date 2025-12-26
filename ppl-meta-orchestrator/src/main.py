@@ -80,15 +80,27 @@ async def lifespan(_app: FastAPI):
     global consul_client, service_manager, workflow_orchestrator, workflow_endpoints
     logger.info("Starting PPL Meta Orchestrator Service with Phase 1 capabilities...")
 
-    # Initialize Phase 4 database tables
+    # Initialize database tables
     try:
-        logger.info("Initializing Phase 4 recording session database tables...")
-        from database import engine
-        from models.recording_session import Base
-
-        # Create all tables
+        logger.info("Initializing database tables...")
+        from database import engine, Base
+        from models.recording_session import Base as RecordingBase
+        
+        # Import workflow models directly from models.py to ensure they're registered with Base
+        import sys
+        import os
+        # Add src directory to path
+        src_dir = os.path.dirname(__file__)
+        if src_dir not in sys.path:
+            sys.path.insert(0, src_dir)
+        
+        # Now import from workflow_models.py
+        import workflow_models  # This imports workflow_models.py with WorkflowExecution, etc.
+        
+        # Create all tables (recording sessions + workflow tracking)
+        RecordingBase.metadata.create_all(bind=engine)
         Base.metadata.create_all(bind=engine)
-        logger.info("✅ Phase 4 database tables initialized successfully")
+        logger.info("✅ Database tables initialized successfully (recording + workflow)")
     except Exception as db_error:
         logger.error(f"Failed to initialize database tables: {db_error}")
         logger.warning("Continuing without database persistence")
@@ -338,6 +350,17 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize Workflows Registry endpoints: {e}")
         logger.warning("Continuing without Workflows Registry features")
+
+    # Monitoring Dashboard Endpoints (Unified Workflow Monitoring)
+    try:
+        from api.monitoring_endpoints import router as monitoring_router
+
+        app.include_router(monitoring_router)
+        logger.info("✅ Monitoring dashboard endpoints initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize Monitoring dashboard endpoints: {e}")
+        logger.warning("Continuing without Monitoring dashboard features")
 
     # Initialize service discovery if available
     try:

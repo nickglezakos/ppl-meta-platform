@@ -26,6 +26,9 @@ httpx>=0.25.0
 # Phase 2 automation dependencies
 pytz>=2024.1
 
+# Caching for monitoring dashboard
+redis>=5.0.0
+
 # Shared modules dependencies
 # python-consul and httpx are already included above
 # -r ../shared/service_discovery/requirements.txt

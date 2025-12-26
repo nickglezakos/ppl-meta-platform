@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 # Database URL from environment
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://nickadmin:change-this-password@localhost:5433/ppl_orchestrator_db",
+    "postgresql://nickadmin:change-this-password@localhost:5432/ppl_orchestrator_db",
 )
 
 engine = create_engine(DATABASE_URL)

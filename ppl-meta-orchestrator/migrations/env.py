@@ -11,12 +11,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 # Import the database setup and models
 try:
     from src.database import Base
-    from src.models import WorkflowExecution  # Import to register with metadata
+    from src.workflow_models import WorkflowExecution  # Import to register with metadata
 
     target_metadata = Base.metadata
     database_url = os.getenv(
         "DATABASE_URL",
-        "postgresql://nickadmin:change-this-password@localhost:5433/ppl_orchestrator_db",
+        "postgresql://nickadmin:change-this-password@localhost:5432/ppl_orchestrator_db",
     )
 except ImportError:
     # Fallback for when running from different contexts
@@ -25,7 +25,7 @@ except ImportError:
     Base = declarative_base()
     target_metadata = Base.metadata
     database_url = (
-        "postgresql://nickadmin:change-this-password@localhost:5433/ppl_orchestrator_db"
+        "postgresql://nickadmin:change-this-password@localhost:5432/ppl_orchestrator_db"
     )
 
 # this is the Alembic Config object, which provides
