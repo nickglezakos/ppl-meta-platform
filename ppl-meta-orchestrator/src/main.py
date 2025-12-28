@@ -362,6 +362,17 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to initialize Monitoring dashboard endpoints: {e}")
         logger.warning("Continuing without Monitoring dashboard features")
 
+    # Workflow Settings Endpoints (People Velocity Sensitivity)
+    try:
+        from api.workflow_settings_endpoints import router as workflow_settings_router
+
+        app.include_router(workflow_settings_router)
+        logger.info("✅ Workflow settings endpoints initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize Workflow settings endpoints: {e}")
+        logger.warning("Continuing without Workflow settings features")
+
     # Initialize service discovery if available
     try:
         import socket

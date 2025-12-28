@@ -560,6 +560,72 @@ class SettingsValidation {
   }
 }
 
+// ====================
+// Workflow Settings
+// ====================
+
+@JsonSerializable()
+class WorkflowSettings {
+  final double velocitySensitivity;
+  final double minValue;
+  final double maxValue;
+  final String description;
+  final String? recommendation;
+
+  WorkflowSettings({
+    required this.velocitySensitivity,
+    required this.minValue,
+    required this.maxValue,
+    required this.description,
+    this.recommendation,
+  });
+
+  factory WorkflowSettings.fromJson(Map<String, dynamic> json) =>
+      _$WorkflowSettingsFromJson(json);
+
+  Map<String, dynamic> toJson() => _$WorkflowSettingsToJson(this);
+
+  factory WorkflowSettings.defaultSettings() {
+    return WorkflowSettings(
+      velocitySensitivity: 20.0,
+      minValue: 5.0,
+      maxValue: 50.0,
+      description: 'Face tracking tolerance percentage for temporal grouping',
+      recommendation: 'Recommended for normal walking speed (default)',
+    );
+  }
+
+  WorkflowSettings copyWith({
+    double? velocitySensitivity,
+    double? minValue,
+    double? maxValue,
+    String? description,
+    String? recommendation,
+  }) {
+    return WorkflowSettings(
+      velocitySensitivity: velocitySensitivity ?? this.velocitySensitivity,
+      minValue: minValue ?? this.minValue,
+      maxValue: maxValue ?? this.maxValue,
+      description: description ?? this.description,
+      recommendation: recommendation ?? this.recommendation,
+    );
+  }
+
+  String getRecommendationForValue(double value) {
+    if (value < 10.0) {
+      return 'Recommended for very slow-moving or stationary subjects';
+    } else if (value < 15.0) {
+      return 'Recommended for slow-moving subjects';
+    } else if (value < 25.0) {
+      return 'Recommended for normal walking speed (default)';
+    } else if (value < 35.0) {
+      return 'Recommended for fast-moving subjects or running';
+    } else {
+      return 'Recommended for very fast movement or sports scenarios';
+    }
+  }
+}
+
 class ValidationResult {
   final bool isValid;
   final List<String> errors;

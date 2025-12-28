@@ -18,6 +18,7 @@ Key Features:
 """
 
 import asyncio
+import httpx
 import json
 import logging
 import uuid
@@ -73,9 +74,13 @@ class PPLThreadWorkflowController:
         self.quality_analyzer = PersonQualityAnalyzer()
 
         # Workflow configuration
-        self.default_tolerance_percent = 20.0
+        self.orchestrator_url = "http://localhost:8002"
+        self.orchestrator_token = "internal-service-token-ppl-meta-vision"
+        self.default_tolerance_percent = 20.0  # Fallback if orchestrator unreachable
         self.max_processing_time_minutes = 30
         self.batch_size = 100
+        self._velocity_sensitivity_cache = None
+        self._cache_timestamp = None
 
     def _is_valid_uuid(self, uuid_string: str) -> bool:
         """Check if string is a valid UUID format."""
@@ -84,6 +89,62 @@ class PPLThreadWorkflowController:
             return True
         except ValueError:
             return False
+
+    async def _fetch_velocity_sensitivity_from_orchestrator(self) -> float:
+        """
+        Fetch velocity sensitivity setting from orchestrator service.
+        
+        Uses caching to avoid repeated API calls within the same workflow session.
+        Falls back to default_tolerance_percent if orchestrator is unreachable.
+        
+        Returns:
+            Velocity sensitivity percentage (5.0-50.0)
+        """
+        # Check cache (valid for 60 seconds)
+        if self._velocity_sensitivity_cache is not None and self._cache_timestamp:
+            cache_age = (datetime.now() - self._cache_timestamp).total_seconds()
+            if cache_age < 60:
+                logger.debug(f"Using cached velocity sensitivity: {self._velocity_sensitivity_cache}%")
+                return self._velocity_sensitivity_cache
+        
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(
+                    f"{self.orchestrator_url}/api/v1/settings/workflow/velocity-sensitivity",
+                    headers={"Authorization": f"Bearer {self.orchestrator_token}"}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    value = data.get("value", self.default_tolerance_percent)
+                    
+                    # Update cache
+                    self._velocity_sensitivity_cache = value
+                    self._cache_timestamp = datetime.now()
+                    
+                    logger.info(
+                        f"Fetched velocity sensitivity from orchestrator: {value}% "
+                        f"(recommendation: {data.get('recommendation', 'N/A')})"
+                    )
+                    return value
+                else:
+                    logger.warning(
+                        f"Orchestrator returned status {response.status_code}, "
+                        f"using fallback: {self.default_tolerance_percent}%"
+                    )
+                    return self.default_tolerance_percent
+                    
+        except httpx.TimeoutException:
+            logger.warning(
+                f"Orchestrator timeout, using fallback: {self.default_tolerance_percent}%"
+            )
+            return self.default_tolerance_percent
+        except Exception as e:
+            logger.warning(
+                f"Error fetching velocity sensitivity from orchestrator: {e}, "
+                f"using fallback: {self.default_tolerance_percent}%"
+            )
+            return self.default_tolerance_percent
 
     def find_session_uuid_by_media_uuid(self, media_uuid: str) -> Optional[str]:
         """
@@ -221,7 +282,7 @@ class PPLThreadWorkflowController:
     async def start_person_objects_workflow(
         self,
         session_uuid: str,
-        tolerance_percent: float = 20.0,
+        tolerance_percent: Optional[float] = None,
         enable_quality_analysis: bool = True,
         enable_age_detection: bool = True,
         workflow_metadata: Optional[Dict] = None,
@@ -239,7 +300,7 @@ class PPLThreadWorkflowController:
 
         Args:
             session_uuid: Face detection session to process
-            tolerance_percent: Position matching tolerance (default 20%)
+            tolerance_percent: Position matching tolerance (5.0-50.0%). If None, fetches from orchestrator
             enable_quality_analysis: Enable best face quality analysis
             enable_age_detection: Enable age estimation (future enhancement)
             workflow_metadata: Additional workflow metadata
@@ -248,6 +309,10 @@ class PPLThreadWorkflowController:
             Workflow execution results with person objects data in PPL Mini format
         """
         workflow_id = str(uuid.uuid4())
+        
+        # Fetch velocity sensitivity from orchestrator if not provided
+        if tolerance_percent is None:
+            tolerance_percent = await self._fetch_velocity_sensitivity_from_orchestrator()
         start_time = datetime.now()
 
         logger.info(
@@ -429,7 +494,7 @@ class PPLThreadWorkflowController:
         self,
         face_detections: List[Dict],
         session_uuid: str,
-        tolerance_percent: float = 20.0,
+        tolerance_percent: Optional[float] = None,
         enable_quality_analysis: bool = True,
         enable_age_detection: bool = True,
         workflow_metadata: Optional[Dict] = None,
@@ -443,7 +508,7 @@ class PPLThreadWorkflowController:
         Args:
             face_detections: List of face detection dicts (from Enhanced Logic V2)
             session_uuid: Session UUID to associate workflow with
-            tolerance_percent: Position matching tolerance (default 20%)
+            tolerance_percent: Position matching tolerance (5.0-50.0%). If None, fetches from orchestrator
             enable_quality_analysis: Enable best face quality analysis
             enable_age_detection: Enable age estimation (future enhancement)
             workflow_metadata: Additional workflow metadata
@@ -452,6 +517,10 @@ class PPLThreadWorkflowController:
             Workflow execution results with person objects data in PPL Mini format
         """
         workflow_id = str(uuid.uuid4())
+        
+        # Fetch velocity sensitivity from orchestrator if not provided
+        if tolerance_percent is None:
+            tolerance_percent = await self._fetch_velocity_sensitivity_from_orchestrator()
         start_time = datetime.now()
 
         logger.info(

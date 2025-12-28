@@ -188,3 +188,21 @@ Map<String, dynamic> _$ConfigurationBundleToJson(
       'exportDate': instance.exportDate.toIso8601String(),
       'metadata': instance.metadata,
     };
+
+WorkflowSettings _$WorkflowSettingsFromJson(Map<String, dynamic> json) =>
+    WorkflowSettings(
+      velocitySensitivity: (json['velocitySensitivity'] as num).toDouble(),
+      minValue: (json['minValue'] as num).toDouble(),
+      maxValue: (json['maxValue'] as num).toDouble(),
+      description: json['description'] as String,
+      recommendation: json['recommendation'] as String?,
+    );
+
+Map<String, dynamic> _$WorkflowSettingsToJson(WorkflowSettings instance) =>
+    <String, dynamic>{
+      'velocitySensitivity': instance.velocitySensitivity,
+      'minValue': instance.minValue,
+      'maxValue': instance.maxValue,
+      'description': instance.description,
+      'recommendation': instance.recommendation,
+    };

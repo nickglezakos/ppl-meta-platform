@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../models/face_detection_models.dart';
 import '../../../providers/workflow_providers.dart';
+import '../../../providers/settings_providers.dart' as settings_providers;
+import '../../../models/settings_models.dart' as settings_models;
 
 /// Settings model for workflow configuration
 class WorkflowSettings {
@@ -158,6 +160,13 @@ class _WorkflowSettingsSectionState extends ConsumerState<WorkflowSettingsSectio
                   _buildSectionHeader('MVR People Creation'),
                   const SizedBox(height: 12),
                   _buildMvrQualitySlider(settings),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Velocity Sensitivity Settings
+                  _buildSectionHeader('Face Tracking Sensitivity'),
+                  const SizedBox(height: 12),
+                  _buildVelocitySensitivitySlider(),
                   
                   const SizedBox(height: 24),
                   
@@ -573,6 +582,168 @@ class _WorkflowSettingsSectionState extends ConsumerState<WorkflowSettingsSectio
           ),
         ),
       ],
+    );
+  }
+  
+  Widget _buildVelocitySensitivitySlider() {
+    final velocitySettings = ref.watch(settings_providers.workflowSettingsProvider);
+    
+    return velocitySettings.when(
+      data: (data) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Movement Tolerance',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${data.velocitySensitivity.toStringAsFixed(1)}%',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: AppColors.primary,
+                inactiveTrackColor: AppColors.divider,
+                thumbColor: AppColors.primary,
+                overlayColor: AppColors.primary.withOpacity(0.2),
+              ),
+              child: Slider(
+                value: data.velocitySensitivity,
+                min: data.minValue,
+                max: data.maxValue,
+                divisions: 45,
+                onChanged: (value) {
+                  ref.read(settings_providers.workflowSettingsProvider.notifier)
+                      .updateVelocitySensitivity(value);
+                },
+              ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Slow',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  'Normal',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  'Fast',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Controls how much face position can vary while tracking the same person. '
+              'Lower = stricter tracking (better for stationary subjects), '
+              'Higher = looser tracking (better for moving subjects).',
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            if (data.recommendation != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, size: 20, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        data.recommendation!,
+                        style: AppTextStyles.caption.copyWith(
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: CircularProgressIndicator(),
+        ),
+      ),
+      error: (error, _) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.red.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.red),
+                const SizedBox(width: 8),
+                Text(
+                  'Failed to load setting',
+                  style: AppTextStyles.bodyMedium.copyWith(color: Colors.red),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: () => ref.read(settings_providers.workflowSettingsProvider.notifier).refresh(),
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.surface,
+                foregroundColor: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
   

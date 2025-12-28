@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 import '../models/settings_models.dart';
 // REMOVED: import '../core/services/multi_camera_service.dart'; // Archived - unused
 import 'api_providers.dart';
@@ -746,5 +747,89 @@ class ImportExportNotifier extends StateNotifier<ImportExportState> {
     // For web, return a default path (not actually used for file operations)
     // For mobile/desktop, this would use path_provider
     return '/ppl_meta_backups';
+  }
+}
+// ====================
+// Workflow Settings Provider
+// ====================
+
+final workflowSettingsProvider = StateNotifierProvider<WorkflowSettingsNotifier, AsyncValue<WorkflowSettings>>((ref) {
+  return WorkflowSettingsNotifier();
+});
+
+class WorkflowSettingsNotifier extends StateNotifier<AsyncValue<WorkflowSettings>> {
+  final http.Client _client = http.Client();
+
+  WorkflowSettingsNotifier() : super(const AsyncValue.loading()) {
+    print('🔧 WorkflowSettingsNotifier: Initializing...');
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    print('🔧 WorkflowSettingsNotifier: Loading settings from orchestrator...');
+    try {
+      final response = await _client.get(
+        Uri.parse('http://localhost:8002/api/v1/settings/workflow/velocity-sensitivity'),
+        headers: {'Authorization': 'Bearer internal-service-token-ppl-meta-frontend'},
+      );
+      print('🔧 WorkflowSettingsNotifier: Response status = ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final settings = WorkflowSettings(
+          velocitySensitivity: (data['value'] as num).toDouble(),
+          minValue: (data['min_value'] as num).toDouble(),
+          maxValue: (data['max_value'] as num).toDouble(),
+          description: data['description'] as String,
+          recommendation: data['recommendation'] as String?,
+        );
+        print('🔧 WorkflowSettingsNotifier: Loaded settings - velocity=${settings.velocitySensitivity}%');
+        state = AsyncValue.data(settings);
+      } else {
+        throw Exception('Failed to load workflow settings: ${response.statusCode}');
+      }
+    } catch (e) {
+      // Fallback to default if orchestrator unavailable
+      print('🔧 WorkflowSettingsNotifier: Error loading from orchestrator: $e');
+      print('🔧 WorkflowSettingsNotifier: Using default settings (20.0%)');
+      state = AsyncValue.data(WorkflowSettings.defaultSettings());
+    }
+  }
+
+  Future<void> updateVelocitySensitivity(double value) async {
+    print('🔧 WorkflowSettingsNotifier: Updating velocity sensitivity to $value%...');
+    try {
+      final response = await _client.put(
+        Uri.parse('http://localhost:8002/api/v1/settings/workflow/velocity-sensitivity'),
+        headers: {
+          'Authorization': 'Bearer internal-service-token-ppl-meta-frontend',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'value': value,
+          'updated_by': 'frontend_user',
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final currentSettings = state.valueOrNull ?? WorkflowSettings.defaultSettings();
+        state = AsyncValue.data(
+          currentSettings.copyWith(
+            velocitySensitivity: (data['value'] as num).toDouble(),
+            recommendation: data['recommendation'] as String?,
+          ),
+        );
+      } else {
+        throw Exception('Failed to update velocity sensitivity: ${response.statusCode}');
+      }
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      rethrow;
+    }
+  }
+
+  Future<void> refresh() async {
+    await _loadSettings();
   }
 }

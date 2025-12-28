@@ -79,9 +79,9 @@ class PersonObjectsWorkflowRequest(BaseModel):
         min_length=36,
         max_length=36,
     )
-    tolerance_percent: float = Field(
-        default=20.0,
-        description="Position matching tolerance percentage (5.0-50.0)",
+    tolerance_percent: Optional[float] = Field(
+        default=None,
+        description="Position matching tolerance percentage (5.0-50.0). If not provided, fetches from orchestrator settings.",
         ge=5.0,
         le=50.0,
     )
@@ -106,11 +106,11 @@ class PersonObjectsWorkflowRequest(BaseModel):
         schema_extra = {
             "example": {
                 "session_uuid": "550e8400-e29b-41d4-a716-446655440002",
-                "tolerance_percent": 20.0,
+                "tolerance_percent": None,
                 "enable_quality_analysis": True,
                 "enable_age_detection": True,
                 "workflow_metadata": {
-                    "description": "Security footage person analysis",
+                    "description": "Security footage person analysis (uses orchestrator setting)",
                     "camera_location": "Main entrance",
                 },
             }
@@ -131,9 +131,9 @@ class PersonObjectsFromFacesRequest(BaseModel):
         description="Face detection data from Enhanced Logic V2",
         min_items=1,
     )
-    tolerance_percent: float = Field(
-        default=20.0,
-        description="Position matching tolerance percentage (5.0-50.0)",
+    tolerance_percent: Optional[float] = Field(
+        default=None,
+        description="Position matching tolerance percentage (5.0-50.0). If not provided, fetches from orchestrator settings.",
         ge=5.0,
         le=50.0,
     )
