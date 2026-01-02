@@ -27,7 +27,7 @@ http://192.168.21.253:8000
 fresh.user@example.com
 NewPassword234!
 
-curl -X POST 'http://localhost:8001/api/v1/users/login' \
+curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 

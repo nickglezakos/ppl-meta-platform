@@ -4,12 +4,14 @@ import 'dart:async';
 import '../../../core/models/camera.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/camera_status_providers.dart';
+import '../../../core/providers/multi_camera_providers.dart';
 import '../../../core/services/camera_service.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/config/app_config.dart';
 import '../../pages/camera_stream_page.dart';
 import '../../../widgets/camera/camera_counter_widget.dart';
 import '../../../widgets/camera/instant_detection_widget.dart';
+import 'rtsp_camera_dialog.dart';
 
 class CameraCard extends ConsumerWidget {
   final Camera camera;
@@ -169,6 +171,28 @@ class CameraCard extends ConsumerWidget {
                   
                   const Spacer(),
                   
+                  // RTSP Edit button (only for RTSP cameras)
+                  if (camera.type == CameraType.rtsp) ...[
+                    IconButton(
+                      onPressed: () => _showEditRTSPDialog(context, ref, camera),
+                      icon: const Icon(Icons.edit),
+                      iconSize: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Edit camera',
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () => _showDeleteRTSPDialog(context, ref, camera),
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      iconSize: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Delete camera',
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  
                   // Connection toggle button
                   _ConnectionButton(camera: camera),
                   const SizedBox(width: 8),
@@ -212,6 +236,68 @@ class CameraCard extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+  
+  static void _showEditRTSPDialog(BuildContext context, WidgetRef ref, Camera camera) {
+    showDialog(
+      context: context,
+      builder: (context) => RTSPCameraDialog(
+        camera: camera,
+        isEditing: true,
+      ),
+    ).then((result) {
+      if (result == true) {
+        // Reload cameras after edit
+        ref.read(cameraListProvider.notifier).loadCameras();
+      }
+    });
+  }
+  
+  static void _showDeleteRTSPDialog(BuildContext context, WidgetRef ref, Camera camera) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Camera'),
+        content: Text('Are you sure you want to delete ${camera.name}? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              
+              // Show loading
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Deleting camera...')),
+              );
+              
+              final cameraActions = ref.read(cameraActionsProvider);
+              final success = await cameraActions.removeRTSPCamera(camera.deviceId);
+              
+              if (success) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Camera deleted successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to delete camera'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }

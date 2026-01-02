@@ -628,22 +628,28 @@ class CameraWorker:
         Called continuously when camera is connected.
         This keeps buffer fresh for instant detection and streaming.
         
-        For RTSP cameras, uses aggressive frame grabbing to minimize latency.
+        For RTSP cameras, uses frame grabbing to minimize latency.
+        ⚠️ CRITICAL: For recording, we need to read ALL frames, not skip them!
         """
         try:
             if not self.cap:
                 return
             
-            # ⚡ RTSP LAG FIX: For RTSP cameras, grab multiple times to flush buffer
-            # This ensures we always get the LATEST frame, not a buffered old one
+            # For RTSP cameras, flush buffer only when NOT recording
+            # When recording, we need every frame for proper playback speed
             if self.camera_type == CameraType.RTSP:
-                # Grab (decode but don't retrieve) up to 3 frames to flush buffer
-                for _ in range(3):
-                    if not self.cap.grab():
-                        break
-                
-                # Now retrieve the latest frame
-                ret, frame = self.cap.retrieve()
+                if self.is_recording:
+                    # When recording: Read every frame for accurate video timing
+                    ret, frame = self.cap.read()
+                else:
+                    # When NOT recording (streaming/detection only): Flush buffer for low latency
+                    # Grab (decode but don't retrieve) up to 2 frames to flush buffer
+                    for _ in range(2):
+                        if not self.cap.grab():
+                            break
+                    
+                    # Retrieve the latest frame
+                    ret, frame = self.cap.retrieve()
             else:
                 # USB cameras: Normal read (no lag issues)
                 ret, frame = self.cap.read()

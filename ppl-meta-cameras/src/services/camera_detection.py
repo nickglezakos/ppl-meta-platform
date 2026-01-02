@@ -1282,15 +1282,26 @@ class CameraDetectionService:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         raw_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
 
-        # Cap FPS for USB/RTSP cameras to prevent fast playback
-        # USB cameras often report 60-90+ FPS which causes fast playback
-        # Cap to 30 FPS for consistent playback speed
-        fps = min(raw_fps, 30) if raw_fps > 0 else 30
-
-        logger.info(
-            f"🎬 [DEBUG] Camera properties - Width: {width}, Height: {height}, "
-            f"Raw FPS: {raw_fps}, Capped FPS: {fps}"
-        )
+        # For RTSP cameras, CAP_PROP_FPS often returns unreliable values
+        # Check camera type and use appropriate FPS
+        camera_type = self.camera_types.get(device_id, "USB")
+        
+        if camera_type == "RTSP":
+            # RTSP cameras: Use fixed 30 FPS for reliable playback
+            # RTSP streams don't always report correct FPS and can cause playback issues
+            fps = 30
+            logger.info(
+                f"🎬 [RTSP] Using fixed 30 FPS for RTSP camera {device_id} "
+                f"(raw FPS reported: {raw_fps})"
+            )
+        else:
+            # USB cameras: Cap FPS to prevent fast playback
+            # USB cameras often report 60-90+ FPS which causes fast playback
+            fps = min(raw_fps, 30) if raw_fps > 0 else 30
+            logger.info(
+                f"🎬 [USB] Camera properties - Width: {width}, Height: {height}, "
+                f"Raw FPS: {raw_fps}, Capped FPS: {fps}"
+            )
 
         # Generate recording file path
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1861,8 +1872,25 @@ class CameraDetectionService:
             target_fps = recording_info["fps"]
             cap = self.active_connections[device_id]
 
+            # Get camera type to determine FPS handling
+            camera_type = self.camera_types.get(device_id, "USB")
+            
             # Get camera's actual FPS for frame skipping calculation
-            camera_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+            raw_camera_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+            
+            # For RTSP cameras, don't trust the reported FPS
+            # Use target FPS to avoid frame skipping issues
+            if camera_type == "RTSP":
+                camera_fps = target_fps  # Don't skip frames for RTSP
+                logger.info(
+                    f"🎬 [RTSP] Using target FPS {target_fps} for frame timing "
+                    f"(ignoring raw FPS: {raw_camera_fps})"
+                )
+            else:
+                camera_fps = raw_camera_fps
+                logger.info(
+                    f"🎬 [USB] Using camera FPS: {camera_fps} for frame skipping"
+                )
 
             # Calculate frame skipping ratio
             # If camera is 90fps and target is 30fps, skip every 3rd frame (90/30=3)

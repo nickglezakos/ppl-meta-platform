@@ -6,6 +6,7 @@ import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/camera_status_providers.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../widgets/camera/camera_card.dart'; // FIXED: Now using presentation/widgets version
+import '../../widgets/camera/rtsp_camera_dialog.dart'; // ADDED: Import RTSP dialog
 // ARCHIVED: // REMOVED: import '../../../widgets/camera/camera_monitoring_dashboard.dart'; // Complex monitoring widget removed
 import '../../../widgets/custom_app_bar.dart';
 import '../../../widgets/automatic_face_detection_status.dart'; // NEW: Import automatic face detection status
@@ -150,16 +151,24 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           ),
         ],
       ),
-      // Removed floating action button for detect cameras as per user request
-      // floatingActionButton: FloatingActionButton.extended(
-      //   onPressed: () {
-      //     _showDetectCamerasDialog();
-      //   },
-      //   icon: const Icon(Icons.camera_alt),
-      //   label: const Text('Detect Cameras'),
-      //   backgroundColor: AppColors.primary,
-      //   foregroundColor: Colors.white,
-      // ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          showDialog(
+            context: context,
+            builder: (context) => const RTSPCameraDialog(
+              isEditing: false,
+            ),
+          ).then((result) {
+            if (result == true) {
+              // Reload cameras after adding
+              ref.read(cameraListProvider.notifier).loadCameras();
+            }
+          });
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Add RTSP Camera'),
+        backgroundColor: AppColors.primary,
+      ),
     );
   }
 

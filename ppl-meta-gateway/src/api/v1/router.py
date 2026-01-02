@@ -1039,6 +1039,39 @@ async def disconnect_all_cameras(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+# RTSP Camera Routes
+@api_router.post("/cameras/rtsp")
+async def add_rtsp_camera(request: Request):
+    """Proxy add RTSP camera to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.put("/cameras/rtsp/{device_id}")
+async def update_rtsp_camera(request: Request):
+    """Proxy update RTSP camera to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.delete("/cameras/rtsp/{device_id}")
+async def delete_rtsp_camera(request: Request):
+    """Proxy delete RTSP camera to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/rtsp/{device_id}")
+async def get_rtsp_camera(request: Request):
+    """Proxy get RTSP camera by device ID to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
 # Streaming Service Routes
 @api_router.post("/streaming/{device_id}/start")
 async def start_streaming(request: Request):
