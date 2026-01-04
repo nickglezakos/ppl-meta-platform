@@ -185,6 +185,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'media-preview',
         builder: (context, state) {
           final mediaItem = state.extra as MediaItem?;
+          final collectionId = state.uri.queryParameters['collectionId'];
           if (mediaItem == null) {
             return const Scaffold(
               body: Center(
@@ -193,7 +194,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             );
           }
           return ProviderScreenWrapper(
-            child: EnhancedMediaPreviewScreen(mediaItem: mediaItem),
+            child: EnhancedMediaPreviewScreen(
+              mediaItem: mediaItem,
+              collectionId: collectionId,
+            ),
           );
         },
       ),

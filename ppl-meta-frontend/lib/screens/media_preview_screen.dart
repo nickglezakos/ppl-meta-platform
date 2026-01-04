@@ -23,10 +23,12 @@ import 'person_objects_detail_screen.dart';
 /// Features smart video player, comprehensive status display, and workflow controls
 class EnhancedMediaPreviewScreen extends ConsumerStatefulWidget {
   final MediaItem mediaItem;
+  final String? collectionId;
 
   const EnhancedMediaPreviewScreen({
     super.key,
     required this.mediaItem,
+    this.collectionId,
   });
 
   @override
@@ -1414,6 +1416,11 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     return DarkCustomAppBar(
       title: widget.mediaItem.originalFilename ?? widget.mediaItem.filename ?? 'Media Preview',
       onBackPressed: () {
+        // If we have a collection ID, navigate back to that specific collection
+        if (widget.collectionId != null) {
+          context.go('/collections?initialCollectionId=${widget.collectionId}');
+          return;
+        }
         if (context.canPop()) {
           context.pop();
         } else {

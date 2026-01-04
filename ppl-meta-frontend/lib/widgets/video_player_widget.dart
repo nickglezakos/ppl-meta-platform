@@ -9,6 +9,8 @@ class VideoPlayerWidget extends StatefulWidget {
   final Map<String, String>? headers;
   final Function(VideoPlayerController?)? onControllerReady;
   final String? collectionId; // Add collection ID to determine mobile camera source
+  final Map<String, dynamic>? technicalMetadata; // Video metadata for playback correction
+  final int? videoDuration; // Video duration in seconds
 
   const VideoPlayerWidget({
     super.key,
@@ -16,6 +18,8 @@ class VideoPlayerWidget extends StatefulWidget {
     this.headers,
     this.onControllerReady,
     this.collectionId, // Make collection ID available
+    this.technicalMetadata, // For calculating actual FPS
+    this.videoDuration, // Duration from MediaItem
   });
 
   @override
@@ -366,127 +370,68 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     );
   }
 
-  /// Apply mobile camera speed correction based on collection camera device type
+  /// Apply metadata-based playback speed correction
+  /// Uses actual frame_count and duration from video metadata to calculate precise correction
   Future<void> _applyMobileCameraSpeedCorrection() async {
     if (_controller == null || !_controller!.value.isInitialized) return;
     
     try {
-      final duration = _controller!.value.duration;
-      final durationSeconds = duration.inMilliseconds / 1000.0;
+      print('📊 Applying metadata-based playback speed correction...');
       
-      print('📱 Checking video for mobile camera correction - Duration: ${durationSeconds}s');
+      // Try to get metadata from widget parameters
+      final metadata = widget.technicalMetadata;
+      final duration = widget.videoDuration;
       
-      // Check if this video belongs to a mobile camera collection
-      final isMobileCollection = await _isMobileCameraCollection();
-      
-      if (!isMobileCollection) {
-        print('📱 Not from mobile camera collection, skipping speed correction');
-        // Ensure playback speed is set to normal for non-mobile videos
+      if (metadata == null || duration == null || duration == 0) {
+        print('⚠️ No metadata available for correction - using normal speed');
         await _controller!.setPlaybackSpeed(1.0);
-        print('🎬 Set playback speed to 1.0x for USB/RTSP camera video');
         return;
       }
       
-      print('📱 Mobile camera collection detected - applying speed correction');
+      // Extract total frames from metadata
+      final totalFrames = metadata['total_frames'] as int?;
+      final frameRate = metadata['frame_rate'] as num? ?? metadata['fps'] as num?;
       
-      // Apply duration-based speed correction for mobile camera videos
-      final correctionRatio = _calculateMobileSpeedCorrection(durationSeconds);
+      if (totalFrames == null || totalFrames == 0) {
+        print('⚠️ No frame count in metadata - using normal speed');
+        await _controller!.setPlaybackSpeed(1.0);
+        return;
+      }
       
-      await _controller!.setPlaybackSpeed(correctionRatio);
-      print('✅ Applied mobile camera speed correction: ${correctionRatio.toStringAsFixed(3)}x');
+      // Calculate actual FPS from metadata
+      final durationSeconds = duration.toDouble();
+      final actualFps = totalFrames / durationSeconds;
+      
+      // Get declared FPS (what the video claims)
+      final declaredFps = (frameRate?.toDouble() ?? 30.0);
+      
+      // Calculate correction factor
+      // If video has more frames than it should (e.g., 37 FPS written but claims 30 FPS),
+      // we need to slow down: correction = declaredFps / actualFps
+      final correction = declaredFps / actualFps;
+      
+      print('📊 Metadata-based correction:');
+      print('   Total frames: $totalFrames');
+      print('   Duration: ${durationSeconds.toStringAsFixed(2)}s');
+      print('   Actual FPS: ${actualFps.toStringAsFixed(2)}');
+      print('   Declared FPS: $declaredFps');
+      print('   Correction factor: ${correction.toStringAsFixed(4)}x');
+      
+      // Only apply correction if it's significantly different from 1.0
+      // (avoid correcting videos that don't need it)
+      if ((correction - 1.0).abs() > 0.02) {
+        await _controller!.setPlaybackSpeed(correction);
+        print('✅ Applied playback speed correction: ${correction.toStringAsFixed(4)}x');
+      } else {
+        await _controller!.setPlaybackSpeed(1.0);
+        print('✅ Video frame rate matches declared rate - no correction needed');
+      }
       
     } catch (e) {
-      print('⚠️ Error applying mobile camera speed correction: $e');
+      print('⚠️ Error applying metadata-based speed correction: $e');
+      // Fallback to normal speed if correction fails
+      await _controller?.setPlaybackSpeed(1.0);
     }
-  }
-  
-  /// Check if the current video belongs to a mobile camera collection
-  Future<bool> _isMobileCameraCollection() async {
-    try {
-      print('📱 Detecting mobile camera collection...');
-      print('📱 Video URL: ${widget.videoUrl}');
-      print('📱 Collection ID: ${widget.collectionId}');
-      
-      // Check 1: Known mobile camera collection UUID
-      const knownMobileCollectionId = '4fe59481-c5f9-4b32-89aa-237897077220';
-      
-      if (widget.collectionId == knownMobileCollectionId) {
-        print('📱 ✅ Detected via collection ID match');
-        return true;
-      }
-      
-      // Check 2: URL contains mobile camera collection UUID
-      if (widget.videoUrl.contains(knownMobileCollectionId)) {
-        print('📱 ✅ Detected via URL collection UUID');
-        return true;
-      }
-      
-      // Check 3: URL contains mobile camera indicators
-      final mobileIndicators = [
-        'mobile_recording_',
-        'camera_mobile_',
-        'mobile_TKQ1',
-        'TKQ1.221114.001', // Specific mobile device ID
-        'mcam-', // Mobile camera prefix
-      ];
-      
-      for (final indicator in mobileIndicators) {
-        if (widget.videoUrl.contains(indicator)) {
-          print('📱 ✅ Detected via URL indicator: $indicator');
-          return true;
-        }
-      }
-      
-      // Check 4: Stream token URL pattern for mobile collection
-      if (widget.videoUrl.contains('/media/stream-token/')) {
-        // Extract the media UUID and check if it belongs to mobile collection
-        final tokenMatch = RegExp(r'/stream-token/([a-f0-9-]+)').firstMatch(widget.videoUrl);
-        if (tokenMatch != null) {
-          final mediaUuid = tokenMatch.group(1);
-          print('📱 Found media UUID: $mediaUuid');
-          
-          // Only apply mobile correction if we have clear mobile indicators
-          // Don't assume all stream-token videos are mobile
-          print('📱 ❌ Stream token found but no mobile indicators - treating as regular camera');
-          return false;
-        }
-      }
-      
-      print('📱 ❌ No mobile camera indicators found');
-      return false;
-      
-    } catch (e) {
-      print('⚠️ Error checking mobile camera collection: $e');
-      return false;
-    }
-  }
-  
-  /// Calculate speed correction for mobile camera videos
-  double _calculateMobileSpeedCorrection(double durationSeconds) {
-    // Mobile videos are encoded at 30 FPS but captured at much lower rates
-    // Correction factor based on actual mobile frame capture patterns:
-    
-    double estimatedActualFps;
-    if (durationSeconds < 1.0) {
-      estimatedActualFps = 6.0;  // Very short recordings: ~6 FPS
-    } else if (durationSeconds < 3.0) {
-      estimatedActualFps = 8.0;  // Short recordings: ~8 FPS  
-    } else if (durationSeconds < 10.0) {
-      estimatedActualFps = 10.0; // Medium recordings: ~10 FPS
-    } else {
-      estimatedActualFps = 12.0; // Longer recordings: ~12 FPS
-    }
-    
-    const double declaredFps = 30.0; // What OpenCV encodes
-    final correction = estimatedActualFps / declaredFps;
-    
-    print('📱 Mobile speed calculation:');
-    print('   Duration: ${durationSeconds.toStringAsFixed(2)}s');
-    print('   Estimated actual FPS: $estimatedActualFps');
-    print('   Declared FPS: $declaredFps');
-    print('   Correction ratio: ${correction.toStringAsFixed(3)}');
-    
-    return correction;
   }
   
   /// Start monitoring playback speed to detect timing issues

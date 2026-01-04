@@ -129,6 +129,28 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             ),
             tooltip: 'Refresh Cameras',
           ),
+          
+          // Add RTSP Camera
+          IconButton(
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => const RTSPCameraDialog(
+                  isEditing: false,
+                ),
+              ).then((result) {
+                if (result == true) {
+                  // Reload cameras after adding
+                  ref.read(cameraListProvider.notifier).loadCameras();
+                }
+              });
+            },
+            icon: Icon(
+              Icons.add,
+              color: AppColors.primary,
+            ),
+            tooltip: 'Add RTSP Camera',
+          ),
         ],
       ),
       body: Column(
@@ -150,24 +172,6 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             child: _buildCamerasContent(cameraListState),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          showDialog(
-            context: context,
-            builder: (context) => const RTSPCameraDialog(
-              isEditing: false,
-            ),
-          ).then((result) {
-            if (result == true) {
-              // Reload cameras after adding
-              ref.read(cameraListProvider.notifier).loadCameras();
-            }
-          });
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Add RTSP Camera'),
-        backgroundColor: AppColors.primary,
       ),
     );
   }

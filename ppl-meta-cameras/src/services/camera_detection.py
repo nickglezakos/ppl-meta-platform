@@ -1878,23 +1878,25 @@ class CameraDetectionService:
             # Get camera's actual FPS for frame skipping calculation
             raw_camera_fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
             
-            # For RTSP cameras, don't trust the reported FPS
-            # Use target FPS to avoid frame skipping issues
+            # For RTSP cameras, determine actual stream FPS
+            # Many RTSP cameras run at 25 FPS (PAL) or variable rates
             if camera_type == "RTSP":
-                camera_fps = target_fps  # Don't skip frames for RTSP
+                # For RTSP, use time-based frame limiting only
+                # Don't use skip_ratio since RTSP FPS can be unreliable
+                camera_fps = target_fps
+                skip_ratio = 1  # Process every frame, but time-limit writes
                 logger.info(
-                    f"🎬 [RTSP] Using target FPS {target_fps} for frame timing "
-                    f"(ignoring raw FPS: {raw_camera_fps})"
+                    f"🎬 [RTSP] Recording at {target_fps} FPS with time-based limiting "
+                    f"(camera reports: {raw_camera_fps} FPS, but using precise timing)"
                 )
             else:
+                # For USB cameras, use skip ratio if camera runs faster than target
                 camera_fps = raw_camera_fps
+                skip_ratio = max(1, camera_fps // target_fps)
                 logger.info(
-                    f"🎬 [USB] Using camera FPS: {camera_fps} for frame skipping"
+                    f"🎬 [USB] Using camera FPS: {camera_fps} for frame skipping, "
+                    f"skip ratio: {skip_ratio}"
                 )
-
-            # Calculate frame skipping ratio
-            # If camera is 90fps and target is 30fps, skip every 3rd frame (90/30=3)
-            skip_ratio = max(1, camera_fps // target_fps)
             frame_counter = 0
 
             # Frame timing control for consistent FPS
@@ -1952,37 +1954,65 @@ class CameraDetectionService:
                     failure_count = 0
                     frame_counter += 1
 
-                    # Only write frames based on skip ratio to achieve target FPS
+                    # Only write frames based on skip ratio AND timing to achieve target FPS
+                    # For RTSP: skip_ratio=1, so timing check is critical
+                    # For USB: skip_ratio>1 reduces frame rate, timing ensures precision
+                    should_write_frame = False
+                    
                     if frame_counter % skip_ratio == 0:
-                        # Check if it's time to write the next frame
                         current_time = time.time()
+                        
+                        # STRICT timing check: Only write if we've reached the next frame time
+                        # This prevents writing too many frames regardless of camera FPS
                         if current_time >= next_frame_time:
-                            video_writer.write(frame)
-                            recording_info["frame_count"] += 1
-                            frame_write_count += 1
-
-                            # Schedule next frame time
+                            should_write_frame = True
+                            
+                            # Calculate how much time we're behind schedule
+                            time_drift = current_time - next_frame_time
+                            
+                            # Schedule next frame time (add target interval from current time)
+                            # This prevents drift accumulation
                             next_frame_time = current_time + target_frame_interval
+                            
+                            if time_drift > 0.05:  # Log if more than 50ms behind
+                                logger.debug(
+                                    f"🎬 Frame timing drift: {time_drift*1000:.1f}ms behind for {device_id}"
+                                )
+                    
+                    if should_write_frame:
+                        video_writer.write(frame)
+                        recording_info["frame_count"] += 1
+                        frame_write_count += 1
 
-                            # Log progress every 30 written frames
-                            if frame_write_count % 30 == 0:
-                                elapsed = current_time - start_time
-                                expected_frames = elapsed * target_fps
-                                timing_accuracy = (
-                                    (frame_write_count / expected_frames) * 100
-                                    if expected_frames > 0
-                                    else 100
-                                )
-                                logger.info(
-                                    f"🎬 [DEBUG] ✅ Wrote {frame_write_count} frames for {device_id} "
-                                    f"(read {frame_counter} total, timing: {timing_accuracy:.1f}%)"
-                                )
+                        # Log progress every 30 written frames
+                        if frame_write_count % 30 == 0:
+                            current_time = time.time()
+                            elapsed = current_time - start_time
+                            expected_frames = elapsed * target_fps
+                            timing_accuracy = (
+                                (frame_write_count / expected_frames) * 100
+                                if expected_frames > 0
+                                else 100
+                            )
+                            logger.info(
+                                f"🎬 [DEBUG] ✅ Wrote {frame_write_count} frames for {device_id} "
+                                f"(read {frame_counter} total, timing: {timing_accuracy:.1f}%)"
+                            )
 
                     # Calculate sleep time to maintain proper frame timing
+                    # Sleep just enough to avoid busy-waiting, but not so long we miss frames
                     current_time = time.time()
-                    sleep_time = max(
-                        0.001, min(0.033, next_frame_time - current_time)
-                    )  # Cap between 1ms and 33ms
+                    time_until_next_frame = next_frame_time - current_time
+                    
+                    # For RTSP: Sleep shorter to catch frames at correct timing
+                    # For USB: Sleep longer since skip_ratio handles frame reduction
+                    if camera_type == "RTSP":
+                        # RTSP: Very short sleep to check timing frequently
+                        sleep_time = max(0.001, min(0.010, time_until_next_frame))  # 1-10ms
+                    else:
+                        # USB: Longer sleep is OK since skip_ratio reduces reads
+                        sleep_time = max(0.001, min(0.033, time_until_next_frame))  # 1-33ms
+                    
                     await asyncio.sleep(sleep_time)
 
                 except Exception as frame_error:

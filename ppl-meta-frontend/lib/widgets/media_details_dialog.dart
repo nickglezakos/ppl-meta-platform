@@ -345,6 +345,8 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
                       'Authorization': 'Bearer ${apiClient.authToken}',
                   },
                   collectionId: widget.collectionId, // Pass collection ID
+                  technicalMetadata: widget.item.technicalMetadata, // Pass metadata for speed correction
+                  videoDuration: widget.item.duration, // Pass duration for speed correction
                 ),
               ),
             ),
@@ -770,8 +772,12 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
     // Close the dialog first
     Navigator.of(context).pop();
     
-    // Navigate to the full screen preview
-    context.go('/media-preview', extra: widget.item);
+    // Navigate to the full screen preview with collection context
+    if (widget.collectionId != null) {
+      context.go('/media-preview?collectionId=${widget.collectionId}', extra: widget.item);
+    } else {
+      context.go('/media-preview', extra: widget.item);
+    }
   }
 
   Future<void> _downloadMedia() async {

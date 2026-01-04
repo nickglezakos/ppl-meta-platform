@@ -176,17 +176,17 @@ class CameraCard extends ConsumerWidget {
                     IconButton(
                       onPressed: () => _showEditRTSPDialog(context, ref, camera),
                       icon: const Icon(Icons.edit),
-                      iconSize: 20,
-                      padding: EdgeInsets.zero,
+                      iconSize: 28,
+                      padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
                       tooltip: 'Edit camera',
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     IconButton(
                       onPressed: () => _showDeleteRTSPDialog(context, ref, camera),
                       icon: const Icon(Icons.delete, color: Colors.red),
-                      iconSize: 20,
-                      padding: EdgeInsets.zero,
+                      iconSize: 28,
+                      padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
                       tooltip: 'Delete camera',
                     ),
@@ -195,12 +195,12 @@ class CameraCard extends ConsumerWidget {
                   
                   // Connection toggle button
                   _ConnectionButton(camera: camera),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   
                   // Recording and stream controls
                   if (isConnected) ...[
                     _RecordingControls(cameraId: camera.deviceId),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     IconButton(
                       onPressed: () {
                         // 🔍 DEBUG: Log navigation attempt
@@ -215,8 +215,8 @@ class CameraCard extends ConsumerWidget {
                         );
                       },
                       icon: const Icon(Icons.play_circle_outline),
-                      iconSize: 20,
-                      padding: EdgeInsets.zero,
+                      iconSize: 28,
+                      padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
                       tooltip: 'View stream',
                     ),
@@ -226,7 +226,7 @@ class CameraCard extends ConsumerWidget {
                       message: 'Camera must be connected to view stream',
                       child: Icon(
                         Icons.play_circle_outline,
-                        size: 20,
+                        size: 28,
                         color: Colors.grey.withOpacity(0.3),
                       ),
                     ),
@@ -413,7 +413,7 @@ class _RecordingControls extends ConsumerWidget {
         children: [
           // Recording indicator with pulsing animation
           _PulsingRecordingDot(),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
           // Stop recording button
           IconButton(
             onPressed: recordingState.isLoading 
@@ -421,13 +421,13 @@ class _RecordingControls extends ConsumerWidget {
                 : () => recordingNotifier.stopRecording(),
             icon: recordingState.isLoading
                 ? const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 1.5),
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
                   )
                 : const Icon(Icons.stop_circle, color: Colors.red),
-            iconSize: 20,
-            padding: EdgeInsets.zero,
+            iconSize: 28,
+            padding: const EdgeInsets.all(8),
             constraints: const BoxConstraints(),
             tooltip: recordingState.isLoading ? 'Stopping...' : 'Stop recording',
           ),
@@ -441,13 +441,13 @@ class _RecordingControls extends ConsumerWidget {
             : () => recordingNotifier.startRecording(),
         icon: recordingState.isLoading
             ? const SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(strokeWidth: 1.5),
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
               )
             : const Icon(Icons.fiber_manual_record, color: Colors.red),
-        iconSize: 20,
-        padding: EdgeInsets.zero,
+        iconSize: 28,
+        padding: const EdgeInsets.all(8),
         constraints: const BoxConstraints(),
         tooltip: recordingState.isLoading ? 'Starting...' : 'Start recording',
       );
@@ -672,12 +672,15 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
     final isConnected = status?.isConnected ?? false;
     
     if (_isLoading) {
-      return SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation(Colors.blue),
+      return Container(
+        padding: const EdgeInsets.all(8),
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            valueColor: AlwaysStoppedAnimation(Colors.blue),
+          ),
         ),
       );
     }
@@ -688,8 +691,8 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
         isConnected ? Icons.link_off : Icons.link,
         color: isConnected ? Colors.red : Colors.green,
       ),
-      iconSize: 20,
-      padding: EdgeInsets.zero,
+      iconSize: 28,
+      padding: const EdgeInsets.all(8),
       constraints: const BoxConstraints(),
       tooltip: isConnected ? 'Disconnect' : 'Connect',
     );
