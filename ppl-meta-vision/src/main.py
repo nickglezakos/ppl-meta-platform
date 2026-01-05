@@ -1406,13 +1406,36 @@ async def get_video_frame_faces(
         media_service_url = PPL_META_CONFIG["media_service"]["url"]
 
         try:
+            # Get user authentication (support internal service tokens)
+            import os
+            INTERNAL_SERVICE_TOKEN = os.getenv(
+                "INTERNAL_SERVICE_TOKEN",
+                "ppl-meta-internal-service-secret-key-change-in-production"
+            )
+            
+            # Check if this is an internal service request
+            is_internal_service = False
+            user_uuid = None
+            if authorization and authorization.startswith("Bearer "):
+                token = authorization.split(" ", 1)[1]
+                if token == INTERNAL_SERVICE_TOKEN:
+                    is_internal_service = True
+                    # Use a system user UUID for internal service requests
+                    user_uuid = "00000000-0000-0000-0000-000000000000"
+                    logger.info("Internal service request - using system user UUID")
+            
+            if not is_internal_service:
+                user_uuid = get_user_uuid_from_profile(authorization) if authorization else None
+                if not user_uuid:
+                    raise HTTPException(status_code=401, detail="Authentication required")
+
             # Prepare headers for media service requests
             headers = {}
             if authorization:
                 headers["Authorization"] = authorization
 
-            # Build media URL without user_id (service-to-service call, no access control needed)
-            media_url = f"{media_service_url}/api/v1/media/{media_id}"
+            # Build media URL with user_id for access control (service-to-service or user request)
+            media_url = f"{media_service_url}/api/v1/media/{media_id}?user_id={user_uuid}"
 
             # Get media info from media service
             media_response = requests.get(media_url, headers=headers)
@@ -1835,8 +1858,9 @@ async def bulk_process_video_faces(
         headers = {"Authorization": authorization} if authorization else {}
         media_service_url = PPL_META_CONFIG["media_service"]["url"]
 
-        # Get media info first (service-to-service call, no user_id needed)
-        media_url = f"{media_service_url}/api/v1/media/{media_id}"
+        # Get media info first (service-to-service call with user_id for access control)
+        # For internal service requests, use system user UUID; for user requests, use their UUID
+        media_url = f"{media_service_url}/api/v1/media/{media_id}?user_id={user_uuid}"
         media_response = requests.get(media_url, headers=headers)
         if media_response.status_code != 200:
             # Complete session with error if applicable

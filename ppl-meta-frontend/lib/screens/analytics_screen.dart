@@ -14,6 +14,7 @@ import '../core/theme/app_theme.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/analytics_models.dart';
 import '../services/media_api_client.dart';
+import '../services/analytics_api_client.dart';
 import '../core/providers/camera_providers.dart';
 
 /// MVR Analytics Dashboard - showing people detection insights from camera collections
@@ -39,6 +40,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   
   // Analytics data
   AnalyticsSummary? _analyticsSummary;
+  MvrQualityMetrics? _mvrQualityMetrics;  // NEW: MVR quality data
   Map<String, dynamic>? _timeSeriesData;
   Map<String, dynamic>? _demographicsData;
   Map<String, dynamic>? _behavioralData;
@@ -84,6 +86,49 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         }
       } else {
         throw Exception(response.error ?? 'Failed to load analytics');
+      }
+      
+      // Load MVR quality metrics (NEW)
+      try {
+        debugPrint('🔍 Analytics: Attempting to load MVR quality metrics...');
+        final analyticsApiClient = ref.read(analyticsApiClientProvider);
+        debugPrint('🔍 Analytics: Got analyticsApiClient: ${analyticsApiClient.runtimeType}');
+        
+        final qualityResponse = await analyticsApiClient.getMvrQualityMetrics(
+          timeFilter: _timeFilter,
+          collectionName: null, // null = all collections
+        );
+        
+        debugPrint('🔍 Analytics: Quality response success: ${qualityResponse.success}');
+        if (qualityResponse.data != null) {
+          debugPrint('🔍 Analytics: Quality data keys: ${qualityResponse.data!.keys}');
+          debugPrint('🔍 Analytics: Average quality: ${qualityResponse.data!['average_quality']}');
+          debugPrint('🔍 Analytics: Quality grade: ${qualityResponse.data!['quality_grade']}');
+        } else {
+          debugPrint('⚠️  Analytics: Quality response data is null');
+        }
+        
+        if (mounted && qualityResponse.success && qualityResponse.data != null) {
+          final metrics = MvrQualityMetrics.fromJson(qualityResponse.data!);
+          debugPrint('✅ Analytics: Successfully parsed MvrQualityMetrics');
+          debugPrint('   - Has quality data: ${metrics.hasQualityData}');
+          debugPrint('   - Average quality: ${metrics.averageQuality}');
+          debugPrint('   - Quality grade: ${metrics.qualityGrade}');
+          
+          setState(() {
+            _mvrQualityMetrics = metrics;
+          });
+          debugPrint('✅ Analytics: State updated with MVR quality metrics');
+        } else {
+          debugPrint('⚠️  Analytics: Quality response not successful or data null');
+          if (!qualityResponse.success) {
+            debugPrint('   - Error: ${qualityResponse.error}');
+          }
+        }
+      } catch (e, stackTrace) {
+        debugPrint('❌ Analytics: Failed to load MVR quality metrics: $e');
+        debugPrint('   Stack trace: $stackTrace');
+        // Don't fail the whole page if quality metrics fails
       }
       
       // Load time-series data for Level 2 analytics
@@ -397,6 +442,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             
             const SizedBox(height: 24),
             
+            // NEW: MVR Quality Metrics Section
+            if (_mvrQualityMetrics != null) ...[
+              _buildMvrQualitySection(),
+              const SizedBox(height: 24),
+            ],
+            
             // Level 2: Time-Based Trends
             if (_timeSeriesData != null) ...[
               _buildTimeBasedTrendsSection(),
@@ -422,6 +473,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
   /// Build Level 1: Basic metrics section
   Widget _buildBasicMetricsSection() {
+    debugPrint('🎨 Analytics: Building basic metrics section');
+    debugPrint('   - _mvrQualityMetrics: ${_mvrQualityMetrics != null ? "LOADED" : "NULL"}');
+    if (_mvrQualityMetrics != null) {
+      debugPrint('   - hasQualityData: ${_mvrQualityMetrics!.hasQualityData}');
+      debugPrint('   - averageQuality: ${_mvrQualityMetrics!.averageQuality}');
+      debugPrint('   - qualityGrade: ${_mvrQualityMetrics!.qualityGrade}');
+    }
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -489,15 +548,25 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                   color: Colors.orange,
                   subtitle: 'In time range',
                 ),
-                _buildMetricCard(
-                  title: 'Last Detection',
-                  value: _analyticsSummary?.lastDetection != null
-                      ? _formatRelativeTime(_analyticsSummary!.lastDetection!)
-                      : '--',
-                  icon: Icons.access_time,
-                  color: Colors.purple,
-                  subtitle: 'Most recent',
-                ),
+                // NEW: Show Image Quality as main metric
+                if (_mvrQualityMetrics != null && _mvrQualityMetrics!.hasQualityData)
+                  _buildMetricCard(
+                    title: 'Image Quality',
+                    value: _mvrQualityMetrics!.averageQuality?.toStringAsFixed(2) ?? '--',
+                    icon: Icons.high_quality,
+                    color: _getQualityGradeColor(_mvrQualityMetrics!.qualityGrade ?? 'Unknown'),
+                    subtitle: _mvrQualityMetrics!.qualityGrade ?? 'No grade',
+                  )
+                else
+                  _buildMetricCard(
+                    title: 'Last Detection',
+                    value: _analyticsSummary?.lastDetection != null
+                        ? _formatRelativeTime(_analyticsSummary!.lastDetection!)
+                        : '--',
+                    icon: Icons.access_time,
+                    color: Colors.purple,
+                    subtitle: 'Most recent',
+                  ),
               ],
             );
           },
@@ -2019,6 +2088,429 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         );
       }
     }
+  }
+
+  /// Build MVR Quality Metrics Section
+  Widget _buildMvrQualitySection() {
+    if (_mvrQualityMetrics == null) return const SizedBox();
+    
+    final metrics = _mvrQualityMetrics!;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'LEVEL 1.5',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.deepPurple,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'MVR Quality Metrics',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'Quality metrics from MVR (Multi-Video Recognition) tracking system',
+              child: Icon(Icons.info_outline, size: 18, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        // Tracking sessions overview
+        Card(
+          elevation: 2,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.track_changes, size: 20, color: Colors.deepPurple.shade700),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tracking Sessions Overview',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildQualityMetricTile(
+                        label: 'Sessions',
+                        value: metrics.trackingSessionsCount.toString(),
+                        icon: Icons.collections,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildQualityMetricTile(
+                        label: 'Individuals',
+                        value: metrics.totalIndividuals.toString(),
+                        icon: Icons.person,
+                        color: Colors.green,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildQualityMetricTile(
+                        label: 'MVR People',
+                        value: metrics.totalMvrPeople.toString(),
+                        icon: Icons.people_alt,
+                        color: Colors.orange,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildQualityMetricTile(
+                        label: 'Videos',
+                        value: metrics.totalVideosProcessed.toString(),
+                        icon: Icons.video_library,
+                        color: Colors.purple,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // Quality scores breakdown
+        Card(
+          elevation: 2,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.analytics, size: 20, color: Colors.deepPurple.shade700),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Quality Scores',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (metrics.qualityGrade != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _getQualityGradeColor(metrics.qualityGrade!).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _getQualityGradeColor(metrics.qualityGrade!),
+                            width: 2,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _getQualityGradeIcon(metrics.qualityGrade!),
+                              size: 16,
+                              color: _getQualityGradeColor(metrics.qualityGrade!),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              metrics.qualityGrade!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: _getQualityGradeColor(metrics.qualityGrade!),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Quality statistics
+                if (metrics.hasQualityData) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Average Quality',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              metrics.averageQuality?.toStringAsFixed(3) ?? '--',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 50,
+                        color: Colors.grey.shade300,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Range',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${metrics.minQuality?.toStringAsFixed(2) ?? '--'} → ${metrics.maxQuality?.toStringAsFixed(2) ?? '--'}',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 50,
+                        color: Colors.grey.shade300,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Std Dev',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              metrics.qualityStdDev?.toStringAsFixed(3) ?? '--',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // Data completeness progress bar
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Data Completeness',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '${metrics.qualityCompleteness.toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: metrics.qualityCompleteness / 100,
+                          minHeight: 8,
+                          backgroundColor: Colors.grey.shade200,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _getCompletenessColor(metrics.qualityCompleteness),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${metrics.mvrWithQuality} with quality',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${metrics.mvrWithoutQuality} without quality',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        children: [
+                          Icon(Icons.info_outline, size: 48, color: Colors.grey.shade400),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No quality data available for this time period',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQualityMetricTile({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getQualityGradeColor(String grade) {
+    switch (grade.toLowerCase()) {
+      case 'excellent':
+        return Colors.green.shade700;
+      case 'good':
+        return Colors.lightGreen.shade700;
+      case 'fair':
+        return Colors.orange.shade700;
+      case 'poor':
+        return Colors.deepOrange.shade700;
+      case 'very poor':
+        return Colors.red.shade700;
+      default:
+        return Colors.grey.shade700;
+    }
+  }
+
+  IconData _getQualityGradeIcon(String grade) {
+    switch (grade.toLowerCase()) {
+      case 'excellent':
+        return Icons.stars;
+      case 'good':
+        return Icons.thumb_up;
+      case 'fair':
+        return Icons.horizontal_rule;
+      case 'poor':
+        return Icons.thumb_down;
+      case 'very poor':
+        return Icons.warning;
+      default:
+        return Icons.help_outline;
+    }
+  }
+
+  Color _getCompletenessColor(double percentage) {
+    if (percentage >= 80) return Colors.green;
+    if (percentage >= 60) return Colors.lightGreen;
+    if (percentage >= 40) return Colors.orange;
+    if (percentage >= 20) return Colors.deepOrange;
+    return Colors.red;
   }
 }
 

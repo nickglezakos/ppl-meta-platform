@@ -318,6 +318,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add global exception handler to catch all unhandled exceptions
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch all unhandled exceptions and log them."""
+    logger.error(f"❌ Unhandled exception in {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -332,6 +345,18 @@ app.include_router(health.router, tags=["health"])
 app.include_router(workflows.router, prefix="/api/v1/workflows", tags=["workflows"])
 app.include_router(embeddings.router, prefix="/api/v1/embeddings", tags=["embeddings"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
+
+# Add Quality Metrics router
+try:
+    from api.v1.quality_metrics import router as quality_metrics_router
+    app.include_router(
+        quality_metrics_router,
+        prefix="/api/v1",
+        tags=["quality-metrics"]
+    )
+    logger.info("✅ Quality Metrics API registered")
+except Exception as e:
+    logger.warning(f"⚠️ Quality Metrics API not available: {e}")
 
 # Add Individual Groups router
 try:

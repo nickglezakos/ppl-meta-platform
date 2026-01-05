@@ -1089,6 +1089,28 @@ class CameraDetectionService:
         
         logger.info(f"✅ Worker started recording: {file_path}")
 
+        # Notify VMeta service of recording start for continuous pipeline activation
+        try:
+            import httpx
+            logger.info(f"📹 [VMETA-NOTIFY] Notifying VMeta of recording start for {session_uuid}")
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(
+                    "http://localhost:8008/api/v1/recording/started",
+                    json={
+                        "collection_id": device_id,
+                        "session_uuid": session_uuid,
+                        "device_id": device_id,
+                        "user_id": user_id or "",
+                        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                        "metadata": {}
+                    },
+                    headers={"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+                )
+                logger.info(f"✅ [VMETA-NOTIFY] VMeta notified of recording start: {session_uuid}")
+        except Exception as e:
+            # Log but don't fail - recording already started successfully
+            logger.warning(f"⚠️ [VMETA-NOTIFY] Failed to notify VMeta of recording start: {e}")
+
         # Store minimal recording info (actual recording happens in worker thread)
         recording_id = str(uuid.uuid4())
         recording_info = {
@@ -1605,6 +1627,35 @@ class CameraDetectionService:
         }
 
         await self._publish_recording_completion_event(device_id, result, user_id)
+
+        # Notify VMeta service of recording stop for final batch processing
+        try:
+            import httpx
+            logger.info(f"🛑 [VMETA-NOTIFY] Notifying VMeta of recording stop for {session_uuid}")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    "http://localhost:8008/api/v1/recording/stopped",
+                    json={
+                        "collection_id": device_id,
+                        "session_uuid": session_uuid,
+                        "device_id": device_id,
+                        "user_id": user_id or "",
+                        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                        "video_count": len(segment_files),
+                        "metadata": {
+                            "duration_seconds": int(total_duration.total_seconds()),
+                            "total_frame_count": recording_info["total_frame_count"]
+                        }
+                    },
+                    headers={"Authorization": f"Bearer {recording_info.get('auth_token')}"} if recording_info.get('auth_token') else {}
+                )
+                logger.info(
+                    f"✅ [VMETA-NOTIFY] VMeta notified of recording stop: {session_uuid} "
+                    f"({len(segment_files)} videos)"
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ [VMETA-NOTIFY] Failed to notify VMeta of recording stop: {e}")
+            # Don't fail the stop operation if VMeta notification fails
 
         logger.info(
             f"🎬 [SESSION] ✅ Session recording completed for {device_id}: {len(segment_files)} segments"

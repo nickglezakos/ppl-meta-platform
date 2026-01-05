@@ -133,9 +133,15 @@ async def get_db_connection() -> asyncpg.Connection:
     **Returns:**
         asyncpg.Connection: Database connection
     """
-    pool = await get_db_pool()
+    from main import db_client
     
-    async with pool.acquire() as conn:
+    if not db_client or not db_client.pool:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not initialized"
+        )
+    
+    async with db_client.pool.acquire() as conn:
         yield conn
 
 

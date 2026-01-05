@@ -1084,3 +1084,288 @@ async def get_behavioral_analytics(
     except Exception as e:
         logger.error(f"Error in get_behavioral_analytics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch behavioral analytics: {str(e)}")
+
+
+@router.get(
+    "/analytics/quality-metrics",
+    summary="Get average face quality metrics by collection",
+    description="Returns average image quality from individual objects (not MVR objects) for camera/collection(s)",
+)
+async def get_quality_metrics(
+    request: Request,
+    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month"),
+    collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs (null = all collections)", alias="camera_ids"),
+    current_user: dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Get average face quality metrics from individual objects filtered by collection.
+    
+    **Data Source:** Calculates quality from individual_video_appearances (individual objects, NOT MVR objects)
+    
+    **Returns:**
+    - overall_average_quality: Average quality across ALL filtered collections combined
+    - collection_breakdown: Array of per-collection quality metrics, each containing:
+      - collection_name: Name of the collection/camera
+      - average_quality: Average quality for THIS collection only
+      - individual_count: Number of individuals in this collection
+      - min_quality, max_quality, quality_std_dev: Distribution statistics
+    - Quality distribution statistics across all collections
+    
+    **Multi-Collection Behavior:**
+    When multiple collections are filtered, returns:
+    1. Overall average quality aggregated across all collections (weighted by individual count)
+    2. Separate average quality for each individual collection in the breakdown array
+    
+    Args:
+        request: FastAPI request object to extract auth headers
+        time_filter: Time period for filtering individuals
+        collection_ids: Optional comma-separated collection IDs (null = all collections)
+        current_user: Authenticated user from JWT token
+        
+    Returns:
+        Dict containing:
+        - overall_average_quality: Weighted average across all filtered collections
+        - collection_breakdown: Per-collection metrics array
+        - total_individuals: Total count across all collections
+        - active_collections: Number of collections with data
+    """
+    try:
+        logger.info(f"📊 Fetching quality metrics (time_filter: {time_filter}, collections: {collection_ids})")
+        
+        # Extract auth token from request headers
+        auth_header = request.headers.get("authorization", "")
+        auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
+        
+        # Parse time filter
+        start_time, end_time = _parse_time_filter(time_filter)
+        
+        # Parse collection IDs
+        selected_collection_ids = None
+        if collection_ids:
+            selected_collection_ids = [cid.strip() for cid in collection_ids.split(",") if cid.strip()]
+            logger.info(f"📋 Quality metrics filtering by collection_ids: {selected_collection_ids}")
+        else:
+            logger.info(f"📋 Quality metrics fetching ALL collections (no filter provided)")
+        
+        # Get collections list from Media service
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                params={"limit": 1000}
+            )
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch collections list: {response.status_code}")
+                raise HTTPException(status_code=500, detail="Failed to fetch collections")
+            
+            all_cameras = response.json()
+            logger.info(f"📊 Got {len(all_cameras)} total collections from Media service")
+        
+        # Filter cameras if specific ones requested
+        if selected_collection_ids:
+            before_filter = len(all_cameras)
+            all_cameras = [cam for cam in all_cameras if cam.get("collection_name") in selected_collection_ids or cam.get("name") in selected_collection_ids]
+            logger.info(f"🔍 Filtered {before_filter} collections down to {len(all_cameras)} matching filter")
+            if len(all_cameras) > 0:
+                logger.info(f"✅ Matched collections: {[cam.get('collection_name') or cam.get('name') for cam in all_cameras]}")
+            else:
+                logger.warning(f"⚠️  NO collections matched filter! Available collections: {[cam.get('collection_name') or cam.get('name') for cam in response.json()[:5]]}")
+        else:
+            logger.info(f"📊 Processing all {len(all_cameras)} collections (no filter)")
+        
+        # Query vmeta service for quality metrics per collection
+        collection_quality_data = []
+        total_individuals = 0
+        overall_quality_sum = 0.0
+        overall_quality_count = 0
+        
+        VMETA_SERVICE_URL = "http://localhost:8008"
+        
+        for idx, camera in enumerate(all_cameras, 1):
+            collection_name = camera.get("collection_name") or camera.get("name")
+            if not collection_name:
+                logger.warning(f"⚠️  Skipping camera #{idx} - no collection_name or name field")
+                continue
+            
+            logger.info(f"📡 [{idx}/{len(all_cameras)}] Fetching quality metrics for: {collection_name}")
+            
+            try:
+                # Query vmeta service for quality metrics
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    vmeta_url = f"{VMETA_SERVICE_URL}/api/v1/individuals/quality-metrics"
+                    response = await client.get(
+                        vmeta_url,
+                        headers={"Authorization": f"Bearer {auth_token}"},
+                        params={
+                            "collection_name": collection_name,
+                            "start_time": start_time.isoformat(),
+                            "end_time": end_time.isoformat()
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        avg_quality = data.get("average_quality", 0.0)
+                        individual_count = data.get("individual_count", 0)
+                        
+                        if individual_count > 0:
+                            collection_quality_data.append({
+                                "collection_name": collection_name,
+                                "average_quality": round(avg_quality, 2),
+                                "individual_count": individual_count,
+                                "min_quality": round(data.get("min_quality", 0.0), 2),
+                                "max_quality": round(data.get("max_quality", 0.0), 2),
+                                "quality_std_dev": round(data.get("quality_std_dev", 0.0), 2)
+                            })
+                            
+                            total_individuals += individual_count
+                            overall_quality_sum += avg_quality * individual_count
+                            overall_quality_count += individual_count
+                            
+                            logger.info(f"   ✅ {collection_name}: avg={avg_quality:.2f}, count={individual_count}")
+                        else:
+                            logger.info(f"   ⚠️  {collection_name}: No individuals found in time range")
+                    
+                    elif response.status_code == 404:
+                        logger.info(f"   ⚠️  {collection_name}: No data in vmeta")
+                    else:
+                        logger.warning(f"   ❌ {collection_name}: vmeta returned {response.status_code}")
+            
+            except httpx.TimeoutException:
+                logger.warning(f"   ⏱️  {collection_name}: Request timeout")
+            except Exception as e:
+                logger.error(f"   ❌ {collection_name}: Error - {e}")
+        
+        # Calculate overall average
+        overall_average_quality = 0.0
+        if overall_quality_count > 0:
+            overall_average_quality = overall_quality_sum / overall_quality_count
+        
+        # Sort collections by average quality (descending)
+        collection_quality_data.sort(key=lambda x: x["average_quality"], reverse=True)
+        
+        logger.info(f"✅ Quality metrics aggregation complete: {total_individuals} individuals across {len(collection_quality_data)} collections")
+        
+        return {
+            "time_filter": time_filter,
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat(),
+            "total_individuals": total_individuals,
+            "active_collections": len(collection_quality_data),
+            "overall_average_quality": round(overall_average_quality, 2),
+            "collection_breakdown": collection_quality_data,
+            "quality_grade": _get_quality_grade(overall_average_quality),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in get_quality_metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch quality metrics: {str(e)}")
+
+
+def _get_quality_grade(quality: float) -> str:
+    """Get quality grade label based on quality score (0-1 scale)."""
+    if quality >= 0.8:
+        return "Excellent"
+    elif quality >= 0.6:
+        return "Good"
+    elif quality >= 0.4:
+        return "Fair"
+    elif quality >= 0.2:
+        return "Poor"
+    else:
+        return "Very Poor"
+
+
+@router.get(
+    "/analytics/mvr-quality-metrics",
+    summary="Get quality metrics via MVR data tree (RECOMMENDED)",
+    description="Returns quality metrics by following MVR → Individual data hierarchy. Includes all successfully processed data even if representative_faces extraction failed.",
+)
+async def get_mvr_quality_metrics(
+    request: Request,
+    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month"),
+    collection_name: Optional[str] = Query(None, description="Collection name filter (null = aggregate all)"),
+    current_user: dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Get quality metrics following MVR → Individual data tree.
+    
+    **This is the RECOMMENDED endpoint** as it uses the correct data access pattern:
+    1. Queries tracking sessions for collection + timeframe
+    2. Gets individuals and MVR people counts from tracking sessions
+    3. Extracts representative_faces from individuals where available
+    4. Returns accurate counts matching batch processing results
+    
+    **Advantages over /analytics/quality-metrics:**
+    - Includes ALL successfully processed individuals (not just those with representative_faces)
+    - Uses tracking session metadata for accurate counts
+    - Shows data completeness (individuals with vs without quality data)
+    - Matches continuous pipeline results (individuals_found, unique_mvr_people_count)
+    
+    **Returns:**
+    - total_individuals: Total individuals from tracking sessions
+    - total_mvr_people: Total MVR people from tracking sessions  
+    - tracking_sessions_count: Number of completed tracking sessions
+    - average_quality: Average quality from available representative_faces
+    - data_completeness: Percentage of individuals with quality data
+    
+    Args:
+        request: FastAPI request object
+        time_filter: Time period filter
+        collection_name: Optional collection name filter
+        current_user: Authenticated user
+        
+    Returns:
+        Comprehensive quality metrics following MVR data tree
+    """
+    try:
+        # Get time range based on filter
+        end_time = datetime.now(timezone.utc)
+        if time_filter == "today":
+            start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif time_filter == "last_3_days":
+            start_time = end_time - timedelta(days=3)
+        elif time_filter == "last_week":
+            start_time = end_time - timedelta(days=7)
+        elif time_filter == "last_month":
+            start_time = end_time - timedelta(days=30)
+        else:
+            start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        logger.info(f"📊 MVR Quality Metrics (time_filter: {time_filter}, collection: {collection_name or 'ALL'})")
+        
+        VMETA_SERVICE_URL = "http://localhost:8008"
+        
+        # Query vmeta MVR quality metrics endpoint
+        # For now, query with a default collection name (will aggregate all if not filtering by collection)
+        vmeta_url = f"{VMETA_SERVICE_URL}/api/v1/mvr/quality-metrics"
+        params = {
+            "collection_name": collection_name or "all",  # Use "all" as placeholder
+            "start_time": start_time.isoformat(),
+            "end_time": end_time.isoformat()
+        }
+        
+        headers = {"Authorization": request.headers.get("Authorization")}
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.get(vmeta_url, params=params, headers=headers)
+            response.raise_for_status()
+            metrics = response.json()
+        
+        logger.info(f"✅ MVR Quality Metrics: {metrics.get('total_individuals')} individuals, "
+                   f"{metrics.get('total_mvr_people')} MVR people, "
+                   f"quality: {metrics.get('average_quality', 0):.3f}")
+        
+        # Add quality grade and timestamp
+        metrics["quality_grade"] = _get_quality_grade(metrics.get("average_quality", 0))
+        metrics["time_filter"] = time_filter
+        metrics["generated_at"] = datetime.now(timezone.utc).isoformat()
+        metrics["data_source"] = "MVR → Individual tree (recommended)"
+        
+        return metrics
+    
+    except Exception as e:
+        logger.error(f"Error in get_mvr_quality_metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch MVR quality metrics: {str(e)}")

@@ -345,7 +345,12 @@ class MediaService:
         if not media:
             return None
 
-        # Check access permissions
+        # Skip access control for internal service requests (system user UUID)
+        system_user_uuid = UUID("00000000-0000-0000-0000-000000000000")
+        if user_id == system_user_uuid:
+            return media
+
+        # Check access permissions for regular user requests
         if not media.is_public and user_id != media.uploaded_by:
             return None
 

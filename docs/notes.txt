@@ -39,6 +39,28 @@ tail -n 200 /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-vmeta.log
 b24ad688-26f0-4e1e-9484-4fecec18df9c (that's your "Nick" MVR person!)
 
 
++++++++
+
+{
+    "session_uuid": "b5b0f910-09ac-44d0-a6f1-3881e9566a1c",
+    "status": "completed",
+    "collections": [
+        "None Collection"
+    ],
+    "created_at": "2026-01-05T18:43:03.414290",
+    "started_at": "2026-01-05T18:43:03.433443",
+    "completed_at": "2026-01-05T18:43:15.629010",
+    "total_videos": 3,
+    "processed_videos": 3,
+    "individuals_found": 1,
+    "unique_mvr_people_count": 1,
+    "cache_hits": 0
+}
+
+
+
++++++++
+
 cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-signage-simple-player
 
 adb logcat | grep -i "flutter\|signage\|ppl"

@@ -2369,10 +2369,9 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                         if auth_token:
                             headers['Authorization'] = f'Bearer {auth_token}' if not auth_token.startswith('Bearer ') else auth_token
                         
-                        # Call Enhanced Logic V2 endpoint
-                        response = await client.post(
+                        # Call Enhanced Logic V2 endpoint (GET method)
+                        response = await client.get(
                             f"http://localhost:8002/api/v1/media/{video_uuid}/faces/enhanced-v2",
-                            json={},
                             headers=headers
                         )
                         
@@ -2710,6 +2709,18 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                 end_ts = start_ts + timedelta(seconds=30)
                                 person_object_uuid = str(uuid4())
                                 
+                                # Extract representative_faces from person_objects for quality metrics
+                                representative_faces = None
+                                person_objects_dict = individual_data.get('person_objects', {})
+                                if video_uuid in person_objects_dict:
+                                    person_obj = person_objects_dict[video_uuid]
+                                    if isinstance(person_obj, dict):
+                                        representative_faces = person_obj.get('representative_faces')
+                                        if representative_faces:
+                                            # Convert to JSON string for JSONB storage
+                                            import json
+                                            representative_faces = json.dumps({'faces': representative_faces})
+                                
                                 db_operations.append(('appearance', {
                                     'individual_uuid': individual_uuid,
                                     'video_uuid': video_uuid,
@@ -2718,7 +2729,8 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                     'end_timestamp': end_ts,
                                     'entry_bbox': [100, 200, 150, 300],
                                     'exit_bbox': [110, 210, 160, 310],
-                                    'confidence': individual_data['temporal_score']
+                                    'confidence': individual_data['temporal_score'],
+                                    'representative_faces': representative_faces
                                 }))
                             except Exception as e:
                                 logger.error(f"Failed to prepare appearance: {e}")
@@ -2769,8 +2781,9 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                             INSERT INTO individual_video_appearances (
                                                 individual_uuid, video_uuid, person_object_uuid,
                                                 start_timestamp, end_timestamp,
-                                                entry_bbox, exit_bbox, confidence
-                                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                                entry_bbox, exit_bbox, confidence,
+                                                representative_faces
+                                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
                                             ON CONFLICT DO NOTHING
                                         """,
                                             params['individual_uuid'],
@@ -2780,7 +2793,8 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                             params['end_timestamp'],
                                             params['entry_bbox'],
                                             params['exit_bbox'],
-                                            params['confidence']
+                                            params['confidence'],
+                                            params.get('representative_faces')
                                         )
                                 
                                 logger.info(f"✅ Transaction committed: {len(matched_individuals)} individuals created")

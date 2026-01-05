@@ -10,6 +10,7 @@ import '../models/snapshot_result.dart';
 import '../models/collection_models.dart';
 import '../api/api_client.dart';
 import '../../services/media_api_client.dart';
+import '../../services/analytics_api_client.dart';
 import '../../providers/settings_providers.dart';
 
 /// Provider for camera service
@@ -22,6 +23,12 @@ final cameraServiceProvider = Provider<CameraService>((ref) {
 final mediaApiClientProvider = Provider<MediaApiClient>((ref) {
   final apiClient = ref.watch(apiClientProvider);
   return MediaApiClient(apiClient);
+});
+
+/// Provider for AnalyticsApiClient with authenticated ApiClient
+final analyticsApiClientProvider = Provider<AnalyticsApiClient>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return AnalyticsApiClient(apiClient);
 });
 
 /// State for camera list
