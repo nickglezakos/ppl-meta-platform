@@ -131,7 +131,7 @@ Cache Metrics Tracking:
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import uuid4, UUID
 import logging
 import json
 import hashlib
@@ -1111,6 +1111,235 @@ async def match_person_objects_within_group(
     return individuals
 
 
+async def _create_single_mvr_person(
+    db_client,
+    individual_data: dict,
+    session_uuid: str,
+    auth_token: str
+):
+    """
+    Create MVR person for a single individual (when no merging is needed).
+    
+    Args:
+        db_client: Database client
+        individual_data: Individual dict with structure:
+            {
+                'individual_uuid': str,
+                'video_uuids': List[str],
+                'person_objects': Dict[video_uuid, person_object_dict],
+                'temporal_score': float
+            }
+        session_uuid: Tracking session UUID
+        auth_token: Authorization token
+    """
+    from uuid import uuid4
+    import numpy as np
+    
+    individual_uuid = individual_data['individual_uuid']
+    video_uuids = individual_data['video_uuids']
+    person_objects_by_video = individual_data['person_objects']
+    
+    logger.info(f"[SINGLE MVR] Creating MVR person for individual {individual_uuid[:8]}...")
+    
+    # Pick representative face from first video
+    if not video_uuids or not person_objects_by_video:
+        logger.warning(f"[SINGLE MVR] No video data for individual {individual_uuid[:8]}, skipping")
+        return
+    
+    representative_video_uuid = video_uuids[0]
+    person_object = person_objects_by_video.get(representative_video_uuid)
+    
+    logger.info(f"[SINGLE MVR DEBUG] video_uuids: {video_uuids}, person_object type: {type(person_object)}")
+    
+    if not person_object:
+        logger.warning(f"[SINGLE MVR] No person_object for individual {individual_uuid[:8]}, skipping")
+        return
+    
+    # Get representative faces
+    representative_faces = person_object.get('representative_faces', [])
+    
+    # DEBUG: Log what we got
+    logger.info(f"[SINGLE MVR DEBUG] representative_faces type: {type(representative_faces)}, value: {str(representative_faces)[:200]}")
+    
+    if not representative_faces:
+        logger.warning(f"[SINGLE MVR] No representative faces for individual {individual_uuid[:8]}, skipping")
+        return
+    
+    # Parse representative_faces if it's a JSON string
+    import json
+    if isinstance(representative_faces, str):
+        try:
+            representative_faces = json.loads(representative_faces)
+            logger.info(f"[SINGLE MVR DEBUG] After JSON parse - type: {type(representative_faces)}")
+        except json.JSONDecodeError as e:
+            logger.error(f"[SINGLE MVR] Failed to parse representative_faces JSON for individual {individual_uuid[:8]}: {e}")
+            return
+    
+    # Check if it's a valid list
+    if not isinstance(representative_faces, list):
+        logger.warning(f"[SINGLE MVR] representative_faces is not a list (type={type(representative_faces)}), trying to convert")
+        # If it's a dict, might be a single face object OR {"faces": [...]} structure
+        if isinstance(representative_faces, dict):
+            # Check if it has "faces" key (common structure from database)
+            if "faces" in representative_faces:
+                representative_faces = representative_faces["faces"]
+                logger.info(f"[SINGLE MVR DEBUG] Extracted faces array from dict, count: {len(representative_faces)}")
+            else:
+                # Single face object, wrap it
+                representative_faces = [representative_faces]
+        else:
+            logger.error(f"[SINGLE MVR] Cannot convert representative_faces to list for individual {individual_uuid[:8]}")
+            return
+    
+    if not representative_faces:
+        logger.warning(f"[SINGLE MVR] Empty representative_faces list for individual {individual_uuid[:8]}")
+        return
+    
+    best_face = representative_faces[0]  # First is highest quality
+    
+    # If best_face still has "face_data" wrapper, extract it
+    if isinstance(best_face, dict) and "face_data" in best_face:
+        best_face = best_face["face_data"]
+        logger.info(f"[SINGLE MVR DEBUG] Extracted face_data from wrapper")
+    
+    # Generate embedding using FaceNetProcessor (same as merge pipeline)
+    try:
+        # Import required modules
+        import numpy as np
+        import cv2
+        import aiohttp
+        import os
+        
+        # Import FaceNet processor
+        from ml.facenet_processor import FaceNetProcessor
+        
+        # Initialize processor
+        facenet_processor = FaceNetProcessor()
+        
+        # Extract bbox and frame info from face_data
+        bbox = best_face.get('bbox', [])
+        frame_number = best_face.get('frame_number')
+        
+        # Validate required fields
+        if not bbox or not isinstance(bbox, list) or len(bbox) != 4:
+            logger.warning(f"[SINGLE MVR] Invalid bbox for individual {individual_uuid[:8]}: {bbox}")
+            return
+        
+        if frame_number is None:
+            logger.warning(f"[SINGLE MVR] Missing frame_number for individual {individual_uuid[:8]}")
+            return
+        
+        # Construct media URL for frame extraction
+        # Use gateway URL to fetch the frame
+        gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080").rstrip("/")
+        media_url = f"{gateway_url}/api/v1/media/{representative_video_uuid}/frame/{frame_number}?format=jpeg"
+        
+        logger.info(f"[SINGLE MVR] Fetching frame from: {media_url}")
+        
+        if not media_url or not bbox:
+            logger.warning(f"[SINGLE MVR] Missing media_url or bbox for individual {individual_uuid[:8]}")
+            return
+        
+        # Fetch frame
+        headers = {}
+        if auth_token:
+            if not auth_token.startswith('Bearer'):
+                headers['Authorization'] = f'Bearer {auth_token}'
+            else:
+                headers['Authorization'] = auth_token
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(media_url, headers=headers) as response:
+                if response.status != 200:
+                    logger.warning(f"[SINGLE MVR] Failed to fetch frame: {response.status}")
+                    return
+                
+                frame_bytes = await response.read()
+        
+        # Decode and crop frame
+        frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            logger.warning(f"[SINGLE MVR] Failed to decode frame")
+            return
+        
+        # Crop face using bbox (array format: [x1, y1, x2, y2])
+        x_min = int(bbox[0])
+        y_min = int(bbox[1])
+        x_max = int(bbox[2])
+        y_max = int(bbox[3])
+        
+        # Ensure bbox is within frame bounds
+        x_min = max(0, x_min)
+        y_min = max(0, y_min)
+        x_max = min(frame.shape[1], x_max)
+        y_max = min(frame.shape[0], y_max)
+        
+        logger.info(f"[SINGLE MVR] Cropping face at bbox: [{x_min}, {y_min}, {x_max}, {y_max}]")
+        
+        face_crop = frame[y_min:y_max, x_min:x_max]
+        
+        # Validate face crop
+        if face_crop.size == 0:
+            logger.warning(f"[SINGLE MVR] Empty face crop for individual {individual_uuid[:8]}")
+            return
+        
+        # Generate embedding using FaceNetProcessor
+        embedding = facenet_processor.extract_embedding(face_crop, enforce_detection=False)
+        
+        if embedding is None:
+            logger.warning(f"[SINGLE MVR] Failed to generate embedding for individual {individual_uuid[:8]}")
+            return
+        
+        logger.info(f"[SINGLE MVR] Successfully generated embedding for individual {individual_uuid[:8]}, shape: {embedding.shape}")
+        
+        # Convert to list for PostgreSQL vector type
+        if isinstance(embedding, np.ndarray):
+            embedding = embedding.tolist()
+        
+        # Convert list to string format for pgvector (must be string representation)
+        embedding_str = str(embedding)
+        
+        confidence = best_face.get('confidence', 0.5)
+        quality = best_face.get('quality', 0.5)
+        # Normalize quality to 0-1 range if needed
+        if quality > 1.0:
+            quality = quality / 100.0
+        
+        logger.info(f"[SINGLE MVR] Preparing to create MVR person for individual {individual_uuid[:8]}: confidence={confidence}, quality={quality}, embedding_len={len(embedding)}")
+        
+        # Create MVR person in database
+        mvr_people_uuid = str(uuid4())
+        
+        async with db_client.pool.acquire() as conn:
+            async with conn.transaction():
+                # Create MVR person
+                await conn.execute("""
+                    INSERT INTO mvr_people (
+                        mvr_people_uuid, featured_individual_uuid, 
+                        face_embedding, confidence_score, quality_score, face_quality,
+                        created_at, updated_at
+                    ) VALUES ($1, $2, $3::vector, $4, $5, $6, NOW(), NOW())
+                """, mvr_people_uuid, individual_uuid, embedding_str, confidence, quality, quality)
+                
+                # Create mapping
+                await conn.execute("""
+                    INSERT INTO individual_mvr_mapping (
+                        individual_uuid, mvr_people_uuid,
+                        similarity_score, confidence_score, quality_score,
+                        is_representative, linked_by_session,
+                        link_method
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                """, individual_uuid, mvr_people_uuid, 1.0, confidence, confidence, 
+                    True, session_uuid, 'auto_create')
+        
+        logger.info(f"✅ [SINGLE MVR] Created MVR person {mvr_people_uuid[:8]} for individual {individual_uuid[:8]}")
+        
+    except Exception as e:
+        logger.error(f"[SINGLE MVR] Failed to create MVR person: {e}", exc_info=True)
+
+
 async def merge_individuals_by_similarity(
     db_client,
     session_uuid: str,
@@ -1165,10 +1394,16 @@ async def merge_individuals_by_similarity(
     except Exception:
         pass
     
-    # Skip if not enough individuals to merge
+    # If only 1 individual, create MVR person directly (no merge needed)
     if len(matched_individuals) < 2:
-        logger.info("[MERGE] Less than 2 individuals, skipping merge")
-        return 0
+        logger.info("[MERGE] Only 1 individual - creating single MVR person (no merge needed)")
+        if len(matched_individuals) == 1:
+            # Create MVR person for the single individual
+            await _create_single_mvr_person(db_client, matched_individuals[0], session_uuid, auth_token)
+            return 0  # 0 merges performed (but 1 MVR person created)
+        else:
+            logger.info("[MERGE] No individuals to process")
+            return 0
     
     try:
         # ================================================================
@@ -1411,6 +1646,30 @@ async def merge_individuals_by_similarity(
                 
                 # Get representative faces (already ranked by Orchestrator)
                 representative_faces = person_obj.get('representative_faces', [])
+                
+                # Parse representative_faces if it's a JSON string (same as single MVR path)
+                import json
+                if isinstance(representative_faces, str):
+                    try:
+                        representative_faces = json.loads(representative_faces)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"[MERGE] Failed to parse representative_faces JSON for individual {individual_uuid[:8]}: {e}")
+                        failure_stats['no_representative_faces'] += 1
+                        continue
+                
+                # Check if it's a valid list
+                if not isinstance(representative_faces, list):
+                    # If it's a dict, might be {"faces": [...]} structure
+                    if isinstance(representative_faces, dict) and "faces" in representative_faces:
+                        representative_faces = representative_faces["faces"]
+                    elif isinstance(representative_faces, dict):
+                        # Single face object, wrap it
+                        representative_faces = [representative_faces]
+                    else:
+                        logger.error(f"[MERGE] Cannot convert representative_faces to list for individual {individual_uuid[:8]}")
+                        failure_stats['no_representative_faces'] += 1
+                        continue
+                
                 if not representative_faces:
                     logger.warning(
                         f"[MERGE] No representative faces for "
@@ -1433,12 +1692,12 @@ async def merge_individuals_by_similarity(
                 # Use first face (highest quality as ranked by Orchestrator)
                 best_face = representative_faces[0]
                 
-                # Extract face_data (handle both dict and object structures)
-                if isinstance(best_face, dict):
-                    face_data = best_face.get('face_data', {})
+                # If best_face has "face_data" wrapper, extract it (same as single MVR path)
+                if isinstance(best_face, dict) and "face_data" in best_face:
+                    face_data = best_face["face_data"]
                 else:
-                    # If it's an object with attributes
-                    face_data = getattr(best_face, 'face_data', {})
+                    # face_data might be at the top level
+                    face_data = best_face if isinstance(best_face, dict) else {}
                 
                 bbox = face_data.get('bbox')
                 frame_number = face_data.get('frame_number', 0)
@@ -2087,15 +2346,17 @@ async def merge_individuals_by_similarity(
                                     confidence_score,
                                     quality_score,
                                     is_representative,
-                                    linked_by_session
-                                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                    linked_by_session,
+                                    link_method
+                                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                             """, params['individual_uuid'],
                                 params['mvr_people_uuid'],
                                 params['similarity_score'],
                                 params['confidence_score'],
                                 params['quality_score'],
                                 params['is_representative'],
-                                params['linked_by_session'])
+                                params['linked_by_session'],
+                                'auto_merge')
             
             # Transaction complete - log success OUTSIDE the transaction
             logger.info(
@@ -2856,43 +3117,80 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
             except Exception:
                 pass
             
-            # Phase 2: Merge individuals based on facial similarity
-            # (DeepFace/FaceNet) and create MVR people
-            # CRITICAL: Run for ANY number of individuals (even 1) to create MVR people
+            # Phase 2: Queue MVR creation in background (Queue B)
+            # This decouples MVR creation from video discovery/individual creation
+            # Benefits:
+            # - Session completes faster (non-blocking)
+            # - MVR creation can be retried independently
+            # - Individuals can be processed even if created later
             if len(created_individual_uuids) >= 1:
-                # DEBUG: Entering merge block
+                # DEBUG: Entering queue B
                 try:
                     async with db_client.pool.acquire() as conn:
                         await conn.execute("""
                             UPDATE tracking_sessions
                             SET failed_videos = array_append(failed_videos, $2)
                             WHERE session_uuid = $1
-                        """, session_uuid, "entering_merge_block")
+                        """, session_uuid, "entering_queue_b_mvr_creation")
                 except Exception:
                     pass
                     
                 logger.info(
-                    f"Starting embedding-based merging for "
-                    f"{len(all_matched_individuals)} individuals..."
+                    f"🔄 [Queue B] Queuing MVR creation for "
+                    f"{len(created_individual_uuids)} individuals..."
                 )
                 try:
-                    # Pass full matched_individuals data (with person_objects) to merge function
-                    # This allows merge to work entirely in memory without querying the database
-                    merged_count = await merge_individuals_by_similarity(
-                        db_client=db_client,
-                        session_uuid=session_uuid,
-                        matched_individuals=all_matched_individuals,
-                        auth_token=auth_token,
-                        similarity_threshold=0.70  # More lenient threshold
-                    )
+                    # Get MVR background processor from global state
+                    from api.dependencies import get_mvr_background_processor
+                    import main
                     
-                    logger.info(
-                        f"Merged {merged_count} duplicate individuals. "
-                        f"Final count will be queried from database."
-                    )
-                except Exception as merge_error:
+                    mvr_processor = main.mvr_background_processor
+                    
+                    if mvr_processor:
+                        # Queue MVR creation (non-blocking)
+                        queue_result = await mvr_processor.queue_session_mvr_creation(
+                            session_uuid=session_uuid,
+                            individual_uuids=[UUID(uid) for uid in created_individual_uuids],
+                            auth_token=auth_token,
+                            similarity_threshold=0.70
+                        )
+                        
+                        logger.info(
+                            f"✅ [Queue B] MVR creation queued for session {session_uuid}: "
+                            f"{queue_result['individual_count']} individuals queued, "
+                            f"task_id={queue_result['task_id']}"
+                        )
+                        
+                        # DEBUG: Write queue success to database
+                        try:
+                            async with db_client.pool.acquire() as conn:
+                                await conn.execute("""
+                                    UPDATE tracking_sessions
+                                    SET failed_videos = array_append(failed_videos, $2)
+                                    WHERE session_uuid = $1
+                                """, session_uuid,
+                                    f"queue_b_success: {queue_result['individual_count']}_individuals_queued")
+                        except Exception:
+                            pass
+                    else:
+                        logger.warning(
+                            "⚠️ [Queue B] MVR background processor not initialized, "
+                            "falling back to synchronous merge"
+                        )
+                        # Fallback: Run synchronously if processor not available
+                        merged_count = await merge_individuals_by_similarity(
+                            db_client=db_client,
+                            session_uuid=session_uuid,
+                            matched_individuals=all_matched_individuals,
+                            auth_token=auth_token,
+                            similarity_threshold=0.70
+                        )
+                        logger.info(
+                            f"Merged {merged_count} duplicate individuals (synchronous fallback)."
+                        )
+                except Exception as queue_error:
                     logger.error(
-                        f"Embedding-based merging failed: {merge_error}"
+                        f"❌ [Queue B] Failed to queue MVR creation: {queue_error}"
                     )
                     # DEBUG: Write error to database
                     try:
@@ -2904,10 +3202,10 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                 )
                                 WHERE session_uuid = $1
                             """, session_uuid,
-                                f"merge_error: {str(merge_error)[:200]}")
+                                f"queue_b_error: {str(queue_error)[:200]}")
                     except Exception:
                         pass
-                    # Continue without merging - keep original individuals
+                    # Continue - MVR creation will be retried by background processor
         else:
             processed_count = len(videos)
             logger.info(

@@ -444,10 +444,11 @@ class MVRService:
         
         for person_obj in person_objects:
             try:
-                # Check face quality
-                face_quality = person_obj.get('face_quality', person_obj.get('quality_score', 0.8))
-                logger.warning(f"[QUALITY CHECK] Person {person_obj.get('person_object_uuid')}: quality={face_quality:.2f}, threshold={min_face_quality}")
-                print(f"[MVR DEBUG] Quality check: {face_quality:.2f} >= {min_face_quality}?", flush=True)
+                # Check face quality (Orchestrator returns 0-100, database expects 0.0-1.0)
+                raw_quality = person_obj.get('quality_score', 80.0)
+                face_quality = raw_quality / 100.0 if raw_quality > 1.0 else raw_quality
+                logger.warning(f"[QUALITY CHECK] Person {person_obj.get('person_object_uuid')}: quality={face_quality:.3f} (raw={raw_quality:.2f}), threshold={min_face_quality}")
+                print(f"[MVR DEBUG] Quality check: {face_quality:.3f} >= {min_face_quality}?", flush=True)
                 
                 if face_quality < min_face_quality:
                     logger.warning(
@@ -678,6 +679,10 @@ class MVRService:
                     individual_uuid = UUID('00000000-0000-0000-0000-000000000000')
                 
                 # Create MVR person record in database
+                # Normalize face_quality to 0.0-1.0 range (orchestrator returns 0-100)
+                best_quality = best_ind['quality_score']
+                normalized_face_quality = best_quality / 100.0 if best_quality > 1.0 else best_quality
+                
                 mvr_result = await self.repository.create_mvr_people(
                     face_embedding=canonical_embedding,
                     featured_individual_uuid=individual_uuid,
@@ -686,9 +691,9 @@ class MVRService:
                     age_confidence=demographics.get('age_confidence') if demographics else None,
                     gender=demographics.get('gender') if demographics else None,
                     gender_confidence=demographics.get('gender_confidence') if demographics else None,
-                    quality_score=float(avg_quality),
+                    quality_score=float(avg_quality / 100.0 if avg_quality > 1.0 else avg_quality),
                     confidence_score=float(avg_confidence),
-                    face_quality=float(best_ind['quality_score']),
+                    face_quality=float(normalized_face_quality),
                     featured_person_object_uuid=UUID(best_ind['person_object_uuid']),
                     featured_video_uuid=media_uuid,
                     auto_created=False,

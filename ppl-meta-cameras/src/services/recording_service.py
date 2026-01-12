@@ -10,6 +10,7 @@ This service handles:
 
 import asyncio
 import cv2
+import httpx
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -133,6 +134,14 @@ class RecordingService:
             frame_count = 0
             
             logger.info(f"🎥 [RECORDING] Started {session_id} ({width}x{height} @ {fps}fps)")
+            
+            # Publish recording started event
+            await self._publish_recording_event(device_id, "recording_started", {
+                "session_id": session_id,
+                "resolution": f"{width}x{height}",
+                "fps": fps,
+                "output_path": str(output_path)
+            })
             
             # Recording loop
             while self.active_recordings.get(session_id, False):
@@ -302,7 +311,7 @@ class RecordingService:
     
     async def _publish_recording_event(self, device_id: str, event: str, details: Dict):
         """
-        Publish recording event to status notification service.
+        Publish recording event to status notification service AND vmeta service.
         
         Args:
             device_id: Camera device identifier
@@ -310,6 +319,8 @@ class RecordingService:
             details: Event details
         """
         logger.info(f"🔔 Attempting to publish {event} for {device_id}")
+        
+        # Publish to Redis (status notifications)
         try:
             from src.services.status_notification_service import get_status_service, CameraStatusEvent
             
@@ -323,11 +334,36 @@ class RecordingService:
             if status_event:
                 status_service = get_status_service()
                 await status_service.publish_status_change(device_id, status_event, details)
-                logger.info(f"📡 Published {event} for {device_id}")
+                logger.info(f"📡 Published {event} to Redis for {device_id}")
             else:
                 logger.warning(f"Unknown event type: {event}")
         except Exception as e:
-            logger.warning(f"Could not publish recording event {event}: {e}")
+            logger.warning(f"Could not publish recording event to Redis {event}: {e}")
+        
+        # Forward to vmeta service (continuous pipeline trigger)
+        try:
+            import os
+            vmeta_url = os.getenv("VMETA_URL", "http://localhost:8008")
+            endpoint = f"{vmeta_url}/api/v1/recording-events"
+            
+            # Build vmeta event payload
+            vmeta_payload = {
+                "event_type": event,
+                "device_id": device_id,
+                "session_id": details.get("session_id"),
+                "collection": device_id,  # Use device_id as collection identifier
+                "timestamp": datetime.now().isoformat(),
+                "details": details
+            }
+            
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(endpoint, json=vmeta_payload)
+                response.raise_for_status()
+                logger.info(f"✅ [VMETA] Forwarded {event} to vmeta: {endpoint}")
+        except httpx.HTTPError as e:
+            logger.warning(f"⚠️ [VMETA] Failed to forward {event} to vmeta: {e}")
+        except Exception as e:
+            logger.warning(f"⚠️ [VMETA] Unexpected error forwarding {event} to vmeta: {e}")
 
 
 # Global recording service instance

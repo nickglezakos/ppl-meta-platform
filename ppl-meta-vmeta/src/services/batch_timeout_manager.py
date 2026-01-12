@@ -572,9 +572,9 @@ class PollingFallbackManager:
                 try:
                     # Only poll if there are active recordings
                     if self._active_recordings:
-                        logger.debug(
-                            f"Polling {len(self._active_recordings)} "
-                            f"active recording(s)"
+                        logger.info(
+                            f"🔍 Polling {len(self._active_recordings)} "
+                            f"active recording(s): {list(self._active_recordings.keys())}"
                         )
                         await self._poll_for_videos()
                     else:
@@ -632,8 +632,8 @@ class PollingFallbackManager:
                 )
                 return
             
-            logger.debug(
-                f"Polling for videos from {len(active_collection_ids)} "
+            logger.info(
+                f"🎥 Polling for videos from {len(active_collection_ids)} "
                 f"active collection(s): {active_collection_ids}"
             )
             

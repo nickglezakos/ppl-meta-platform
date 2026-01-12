@@ -141,12 +141,32 @@ async def lifespan(app: FastAPI):
                 ml_processor=ml_processor
             )
 
+            # Initialize hierarchical merge scheduler (Queue C)
+            from background.hierarchical_merge_scheduler import HierarchicalMergeScheduler
+            
+            hierarchical_merge_scheduler = HierarchicalMergeScheduler(
+                repository=mvr_repository,
+                mvr_matcher=mvr_matcher,
+                enabled=True,  # Enable Queue C
+                periodic_interval_minutes=30,  # Run every 30 minutes
+                lookback_minutes=120,  # Merge MVR created in last 2 hours
+                post_session_delay_seconds=30,  # Wait 30s after Queue B
+                similarity_threshold=0.70,
+                max_retries=3,
+                retry_delay_seconds=10.0
+            )
+
             mvr_background_processor = MVRBackgroundProcessor(
                 mvr_service=mvr_service,
                 mvr_matcher=mvr_matcher,
+                hierarchical_scheduler=hierarchical_merge_scheduler,  # Link Queue B→C
                 max_retries=3,
                 retry_delay=5.0
             )
+
+            # Start periodic hierarchical merging (Queue C background task)
+            await hierarchical_merge_scheduler.start_periodic_merge()
+            logger.info("✅ Hierarchical merge scheduler started (Queue C)")
 
             mvr_integration_hook = MVRIntegrationHook(
                 background_processor=mvr_background_processor
@@ -155,8 +175,9 @@ async def lifespan(app: FastAPI):
             # Register hook globally for easy access
             mvr_helper.set_mvr_integration_hook(mvr_integration_hook)
 
-            # Store pool for cleanup
+            # Store pool and scheduler for cleanup
             app.state.mvr_pool = mvr_pool
+            app.state.hierarchical_merge_scheduler = hierarchical_merge_scheduler
 
             logger.info("✅ MVR-People services initialized successfully")
 
@@ -270,7 +291,7 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Batch Processing services initialized")
             logger.info(
                 "✅ Polling manager started "
-                "(30s interval, batch_size=5, collection=usb_camera_0)"
+                "(30s interval, batch_size=5, recording-aware mode)"
             )
             
         except Exception as e:
@@ -466,6 +487,14 @@ async def shutdown_event():
     """Cleanup on shutdown."""
     logger.info("🛑 Shutting down vmeta service...")
     
+    # Stop hierarchical merge scheduler if it exists
+    if hasattr(app.state, 'hierarchical_merge_scheduler'):
+        try:
+            await app.state.hierarchical_merge_scheduler.stop_periodic_merge()
+            logger.info("✅ Hierarchical merge scheduler stopped")
+        except Exception as e:
+            logger.error(f"❌ Error stopping hierarchical merge scheduler: {e}")
+    
     # Stop polling manager if it exists
     if hasattr(app.state, 'polling_manager'):
         try:
@@ -481,6 +510,14 @@ async def shutdown_event():
             logger.info("✅ Batch processing pool closed")
         except Exception as e:
             logger.error(f"❌ Error closing batch pool: {e}")
+    
+    # Close MVR pool if it exists
+    if hasattr(app.state, 'mvr_pool'):
+        try:
+            await app.state.mvr_pool.close()
+            logger.info("✅ MVR pool closed")
+        except Exception as e:
+            logger.error(f"❌ Error closing MVR pool: {e}")
 
 
 if __name__ == "__main__":

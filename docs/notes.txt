@@ -13,7 +13,24 @@ https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-fin
 
 *************************************************
 
++++++++
 
+Good catch! There are actually two different Queue C operations:
+
+Post-session merge (30 seconds delay) - What just executed
+
+Runs immediately after each batch session completes
+Merges only the MVR people created in THAT specific session
+Logs show: delay=30s and Waiting 30s
+11:19:37 → 11:20:07 = 30 seconds ✅
+Periodic hierarchical merge (30 minutes interval) - Hasn't run yet
+
+Background scheduler runs every 30 minutes
+Merges ALL MVR people created in the last 120 minutes across all sessions
+This is the one with the 30-minute interval
+The logs show the post-session merge (quick 30-second cleanup after each batch), not the periodic merge. The periodic 30-minute merge would show different log messages and would merge across multiple sessions.
+
++++++++
 
 - **Email**: `fresh.user@example.com`
 - **Password**: `NewPassword234!`
@@ -39,27 +56,6 @@ tail -n 200 /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-vmeta.log
 b24ad688-26f0-4e1e-9484-4fecec18df9c (that's your "Nick" MVR person!)
 
 
-+++++++
-
-{
-    "session_uuid": "b5b0f910-09ac-44d0-a6f1-3881e9566a1c",
-    "status": "completed",
-    "collections": [
-        "None Collection"
-    ],
-    "created_at": "2026-01-05T18:43:03.414290",
-    "started_at": "2026-01-05T18:43:03.433443",
-    "completed_at": "2026-01-05T18:43:15.629010",
-    "total_videos": 3,
-    "processed_videos": 3,
-    "individuals_found": 1,
-    "unique_mvr_people_count": 1,
-    "cache_hits": 0
-}
-
-
-
-+++++++
 
 cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-signage-simple-player
 

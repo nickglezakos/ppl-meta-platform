@@ -1372,6 +1372,14 @@ class CameraDetectionService:
         self.active_recordings[device_id] = recording_info
         logger.info(f"🎬 [DEBUG] Added recording to active_recordings for {device_id}")
 
+        # Send recording_started event to vmeta
+        await self._send_vmeta_recording_event(device_id, "recording_started", {
+            "recording_id": recording_id,
+            "resolution": f"{width}x{height}",
+            "fps": fps,
+            "file_path": file_path
+        })
+
         # Start frame recording task
         asyncio.create_task(self._frame_recording_loop(device_id))
         logger.info(f"🎬 [DEBUG] Frame recording loop task created for {device_id}")
@@ -1443,6 +1451,14 @@ class CameraDetectionService:
         }
 
         self.active_recordings[device_id] = recording_info
+
+        # Send recording_started event to vmeta
+        await self._send_vmeta_recording_event(device_id, "recording_started", {
+            "recording_id": recording_id,
+            "resolution": f"{width}x{height}",
+            "fps": target_fps,
+            "file_path": file_path
+        })
 
         # Start mobile frame recording task
         asyncio.create_task(self._mobile_recording_loop(device_id))
@@ -1776,6 +1792,14 @@ class CameraDetectionService:
         # Complete face detection session and publish event
         await self._complete_face_detection_session(device_id)
         await self._publish_recording_completion_event(device_id, result, user_id)
+        
+        # Send recording_stopped event to vmeta
+        await self._send_vmeta_recording_event(device_id, "recording_stopped", {
+            "recording_id": result.get("recording_id"),
+            "frame_count": result.get("frame_count", 0),
+            "duration": result.get("duration", 0),
+            "file_path": result.get("file_path")
+        })
 
         logger.info(f"🎬 [DEBUG] ✅ Stop recording complete for {device_id}: {result}")
         return result
@@ -3767,6 +3791,33 @@ class CameraDetectionService:
             if self.segment_upload_task:
                 self.segment_upload_task.cancel()
             logger.info("📤 [SEGMENT-UPLOAD] Monitor stopped")
+    
+    async def _send_vmeta_recording_event(self, device_id: str, event_type: str, details: Dict):
+        """Send recording event to vmeta service for continuous pipeline trigger."""
+        try:
+            import httpx
+            import os
+            
+            vmeta_url = os.getenv("VMETA_URL", "http://localhost:8008")
+            endpoint = f"{vmeta_url}/api/v1/recording-events"
+            
+            # Build vmeta event payload
+            payload = {
+                "event_type": event_type,
+                "device_id": device_id,
+                "collection": device_id,  # Use device_id as collection identifier
+                "timestamp": datetime.datetime.now().isoformat(),
+                "details": details
+            }
+            
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.post(endpoint, json=payload)
+                response.raise_for_status()
+                logger.info(f"✅ [VMETA] Sent {event_type} event to vmeta for {device_id}")
+        except httpx.HTTPError as e:
+            logger.warning(f"⚠️ [VMETA] Failed to send {event_type} to vmeta: {e}")
+        except Exception as e:
+            logger.warning(f"⚠️ [VMETA] Error sending {event_type} to vmeta: {e}")
     
     async def _upload_segment_batch_background(
         self, recording_info: Dict, user_id: str, session_uuid: str, segments: List[str]
