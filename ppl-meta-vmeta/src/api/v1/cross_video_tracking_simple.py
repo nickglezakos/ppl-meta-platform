@@ -1400,6 +1400,23 @@ async def merge_individuals_by_similarity(
         if len(matched_individuals) == 1:
             # Create MVR person for the single individual
             await _create_single_mvr_person(db_client, matched_individuals[0], session_uuid, auth_token)
+            
+            # Update unique_mvr_people_count in tracking session
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET unique_mvr_people_count = (
+                        SELECT COUNT(DISTINCT mvr_people_uuid)
+                        FROM individual_mvr_mapping
+                        WHERE individual_uuid IN (
+                            SELECT individual_uuid 
+                            FROM session_individuals 
+                            WHERE session_uuid = $1
+                        )
+                    )
+                    WHERE session_uuid = $1
+                """, session_uuid)
+            
             return 0  # 0 merges performed (but 1 MVR person created)
         else:
             logger.info("[MERGE] No individuals to process")

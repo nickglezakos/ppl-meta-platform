@@ -273,10 +273,28 @@ async def get_mvr_quality_metrics(
         collection_display = collection_name if collection_name and collection_name != "all" else "ALL"
         logger.info(f"📊 MVR Quality Metrics for {collection_display} ({start_time} to {end_time})")
         
-        # Convert timezone-aware datetimes to timezone-naive for database query
-        # Database stores timestamps without timezone info
-        start_time_naive = start_time.replace(tzinfo=None) if start_time.tzinfo else start_time
-        end_time_naive = end_time.replace(tzinfo=None) if end_time.tzinfo else end_time
+        # Database columns are 'timestamp without time zone'
+        # But PostgreSQL still stores the server's local time
+        # When we insert with NOW(), it uses the server's local timezone
+        # So we need to convert incoming UTC times to local timezone, then strip timezone info
+        
+        # First ensure times are timezone-aware (assume UTC if not)
+        from datetime import timezone as tz
+        import pytz
+        
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=tz.utc)
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=tz.utc)
+        
+        # Convert to local timezone (server timezone where data was inserted)
+        # Most systems use UTC or local TZ - let's use the current system timezone
+        # Since NOW() in postgres uses server local time
+        local_tz = pytz.timezone('Europe/Athens')  # UTC+2 (adjust if your server uses different TZ)
+        start_time_local = start_time.astimezone(local_tz).replace(tzinfo=None)
+        end_time_local = end_time.astimezone(local_tz).replace(tzinfo=None)
+        
+        logger.info(f"📊 Query time range (local): {start_time_local} to {end_time_local}")
         
         # Step 1: Get all tracking sessions for this collection + timeframe
         sessions_query = """
@@ -295,7 +313,7 @@ async def get_mvr_quality_metrics(
             ORDER BY created_at DESC
         """
         
-        sessions = await db_connection.fetch(sessions_query, start_time_naive, end_time_naive)
+        sessions = await db_connection.fetch(sessions_query, start_time_local, end_time_local)
         
         if not sessions:
             logger.info(f"No completed tracking sessions found for {collection_display}")
@@ -342,14 +360,14 @@ async def get_mvr_quality_metrics(
         FROM mvr_people
         WHERE created_at >= $1
             AND created_at <= $2
-            AND is_merged = false
-            AND merged_into_uuid IS NULL
+            AND is_orphaned = false
+            AND merged_into_mvr_uuid IS NULL
         ORDER BY created_at DESC
         """
         
-        mvr_people = await db_connection.fetch(mvr_query, start_time_naive, end_time_naive)
+        mvr_people = await db_connection.fetch(mvr_query, start_time_local, end_time_local)
         
-        logger.info(f"Found {len(mvr_people)} MVR people with quality scores")
+        logger.info(f"Found {len(mvr_people)} MVR people records")
         
         # Step 4: Extract quality scores from MVR people
         all_quality_scores = []
@@ -357,14 +375,20 @@ async def get_mvr_quality_metrics(
         mvr_without_quality = 0
         
         for mvr in mvr_people:
-            quality = mvr['face_quality'] or mvr['quality_score']
+            # Use face_quality if available, otherwise fall back to quality_score
+            # Check for None explicitly since 0.0 is a valid (though poor) quality score
+            quality = mvr['face_quality'] if mvr['face_quality'] is not None else mvr['quality_score']
             
-            if quality and quality > 0.0:
+            if quality is not None and quality > 0.0:
                 # Quality is already normalized (0-1 range)
-                all_quality_scores.append(quality)
+                all_quality_scores.append(float(quality))
                 mvr_with_quality += 1
             else:
                 mvr_without_quality += 1
+                if quality is None:
+                    logger.debug(f"MVR {mvr['mvr_people_uuid']} has no quality score (both fields None)")
+                else:
+                    logger.debug(f"MVR {mvr['mvr_people_uuid']} has zero quality: {quality}")
         
         # Step 5: Calculate aggregate statistics
         if all_quality_scores:
