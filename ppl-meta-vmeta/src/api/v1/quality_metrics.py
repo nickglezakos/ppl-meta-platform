@@ -407,6 +407,74 @@ async def get_mvr_quality_metrics(
                    f"{mvr_with_quality} with quality data, "
                    f"avg quality: {avg_quality:.3f}")
         
+        # Step 6: Get demographics from MVR people
+        demographics_query = """
+        SELECT 
+            gender,
+            age_min,
+            age_max
+        FROM mvr_people
+        WHERE created_at >= $1
+            AND created_at <= $2
+            AND is_orphaned = false
+            AND merged_into_mvr_uuid IS NULL
+        """
+        
+        mvr_demographics = await db_connection.fetch(demographics_query, start_time_local, end_time_local)
+        
+        # Count MVR people with demographics
+        mvr_with_gender = sum(1 for m in mvr_demographics if m['gender'] is not None)
+        mvr_with_age = sum(1 for m in mvr_demographics if m['age_min'] is not None and m['age_max'] is not None)
+        
+        # Count gender distribution
+        gender_counts = {"Male": 0, "Female": 0, "Unknown": 0}
+        for m in mvr_demographics:
+            gender = m['gender']
+            if gender == "Male":
+                gender_counts["Male"] += 1
+            elif gender == "Female":
+                gender_counts["Female"] += 1
+            else:
+                gender_counts["Unknown"] += 1
+        
+        # Count age distribution
+        age_ranges = {
+            "0-17": 0,
+            "18-24": 0,
+            "25-34": 0,
+            "35-44": 0,
+            "45-54": 0,
+            "55-64": 0,
+            "65+": 0,
+            "Unknown": 0
+        }
+        
+        for m in mvr_demographics:
+            age_min = m['age_min']
+            age_max = m['age_max']
+            
+            if age_min is None or age_max is None:
+                age_ranges["Unknown"] += 1
+            else:
+                # Use average age for classification
+                avg_age = (age_min + age_max) / 2
+                if avg_age < 18:
+                    age_ranges["0-17"] += 1
+                elif avg_age < 25:
+                    age_ranges["18-24"] += 1
+                elif avg_age < 35:
+                    age_ranges["25-34"] += 1
+                elif avg_age < 45:
+                    age_ranges["35-44"] += 1
+                elif avg_age < 55:
+                    age_ranges["45-54"] += 1
+                elif avg_age < 65:
+                    age_ranges["55-64"] += 1
+                else:
+                    age_ranges["65+"] += 1
+        
+        logger.info(f"Demographics: {mvr_with_gender} with gender, {mvr_with_age} with age")
+        
         return {
             "collection_name": collection_display,
             "start_time": start_time.isoformat(),
@@ -426,6 +494,17 @@ async def get_mvr_quality_metrics(
                 "total_mvr_people": total_mvr_people,
                 "mvr_with_quality_scores": mvr_with_quality,
                 "percentage": round((mvr_with_quality / total_mvr_people * 100) if total_mvr_people > 0 else 0, 2)
+            },
+            "demographics": {
+                "total_mvr_people": total_mvr_people,
+                "mvr_with_gender": mvr_with_gender,
+                "mvr_with_age": mvr_with_age,
+                "gender_distribution": gender_counts,
+                "age_distribution": age_ranges,
+                "completeness": {
+                    "gender_percentage": round((mvr_with_gender / total_mvr_people * 100) if total_mvr_people > 0 else 0, 2),
+                    "age_percentage": round((mvr_with_age / total_mvr_people * 100) if total_mvr_people > 0 else 0, 2)
+                }
             }
         }
     except Exception as e:

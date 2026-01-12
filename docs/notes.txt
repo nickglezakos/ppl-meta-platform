@@ -51,6 +51,18 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 192.168.1.68
 8006
 
+
++++++++++++
+
+ TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | jq -r '.access_token') && curl -s "http://localhost:8008/api/v1/mvr/quality-metrics?session_uuid=ea34327a-d595-4cb3-bd29-e079e2c70e2f&start_time=2026-01-12T00:00:00&end_time=2026-01-12T23:59:59" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+  TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | jq -r '.access_token') && curl -s "http://localhost:8008/api/v1/mvr/quality-metrics?session_uuid=ea34327a-d595-4cb3-bd29-e079e2c70e2f&start_time=2026-01-12T00:00:00&end_time=2026-01-12T23:59:59" -H "Authorization: Bearer $TOKEN" | jq '{demographics, data_completeness}'
+
+++++++++++++
+
+
+
+
 tail -n 200 /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-vmeta.log 2>&1 | tail -50
 
 b24ad688-26f0-4e1e-9484-4fecec18df9c (that's your "Nick" MVR person!)

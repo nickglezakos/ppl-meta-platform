@@ -87,6 +87,15 @@ class MVRRepository:
         """
         async with self.pool.acquire() as conn:
             try:
+                # Validate and normalize face_quality (must be between 0.0-1.0, NOT NULL)
+                if face_quality is None:
+                    face_quality = 0.5  # Default if missing
+                # Normalize if > 1.0 (percentage to decimal)
+                if face_quality > 1.0:
+                    face_quality = face_quality / 100.0
+                # Clamp to valid range [0.0, 1.0]
+                face_quality = max(0.0, min(1.0, float(face_quality)))
+                
                 # Convert numpy array to pgvector string format
                 # pgvector expects format: '[val1,val2,val3,...]'
                 embedding_list = face_embedding.tolist()

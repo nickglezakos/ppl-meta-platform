@@ -1303,10 +1303,43 @@ async def _create_single_mvr_person(
         
         confidence = best_face.get('confidence', 0.5)
         quality = best_face.get('quality', 0.5)
+        
+        # Ensure quality is never None and is in valid range
+        if quality is None:
+            quality = 0.5
         # Normalize quality to 0-1 range if needed
         if quality > 1.0:
             quality = quality / 100.0
+        # Clamp to valid range
+        quality = max(0.0, min(1.0, float(quality)))
         
+        # Extract demographics using ML models (same as merge path)
+        gender = None
+        age_min = None
+        age_max = None
+        gender_confidence = None
+        age_confidence = None
+        
+        try:
+            # Use demographic analysis singletons (imported at top of file)
+            # Age estimation
+            age_estimator = get_age_estimator()
+            age_result = age_estimator.estimate_age(face_crop, enforce_detection=False)
+            if age_result:
+                age_min = age_result.get('min_age')
+                age_max = age_result.get('max_age')
+                age_confidence = age_result.get('confidence')
+            
+            # Gender classification
+            gender_classifier = get_gender_classifier()
+            gender_result = gender_classifier.classify_gender(face_crop, enforce_detection=False)
+            if gender_result:
+                gender = gender_result.get('gender')
+                gender_confidence = gender_result.get('confidence')
+        except Exception as e:
+            logger.warning(f"[SINGLE MVR] Demographics extraction failed for {individual_uuid[:8]}: {e}")
+        
+        logger.info(f"[SINGLE MVR] Demographics: gender={gender}, age={age_min}-{age_max}")
         logger.info(f"[SINGLE MVR] Preparing to create MVR person for individual {individual_uuid[:8]}: confidence={confidence}, quality={quality}, embedding_len={len(embedding)}")
         
         # Create MVR person in database
@@ -1319,9 +1352,11 @@ async def _create_single_mvr_person(
                     INSERT INTO mvr_people (
                         mvr_people_uuid, featured_individual_uuid, 
                         face_embedding, confidence_score, quality_score, face_quality,
+                        gender, gender_confidence, age_min, age_max, age_confidence,
                         created_at, updated_at
-                    ) VALUES ($1, $2, $3::vector, $4, $5, $6, NOW(), NOW())
-                """, mvr_people_uuid, individual_uuid, embedding_str, confidence, quality, quality)
+                    ) VALUES ($1, $2, $3::vector, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+                """, mvr_people_uuid, individual_uuid, embedding_str, confidence, quality, quality,
+                    gender, gender_confidence, age_min, age_max, age_confidence)
                 
                 # Create mapping
                 await conn.execute("""

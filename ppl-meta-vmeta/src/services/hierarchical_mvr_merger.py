@@ -491,6 +491,10 @@ class HierarchicalMVRMerger:
             merged_into_uuid=winner_uuid
         )
         
+        # Select best demographics from all MVR people in group
+        # Priority: highest quality MVR with non-null demographics
+        best_demographics = self._select_best_demographics(group)
+        
         # Build merge metadata
         merge_info = {
             "super_individual_uuid": str(winner_uuid),
@@ -499,16 +503,49 @@ class HierarchicalMVRMerger:
             "is_standalone": False,
             "winner_quality": winner["quality_score"],
             "similarities": similarities,
-            "demographics": {
-                "gender": winner.get("gender"),
-                "age_min": winner.get("age_min"),
-                "age_max": winner.get("age_max")
-            }
+            "demographics": best_demographics
         }
         
         logger.info(f"Group merged successfully: {len(losers)} MVR orphaned")
         
         return winner_uuid, merge_info
+    
+    def _select_best_demographics(self, group: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Select best demographics from a group of MVR people.
+        
+        Strategy:
+        1. Find MVR with best quality that has gender (if any)
+        2. Find MVR with best quality that has age (if any)
+        3. If no valid demographics, return None values
+        
+        Args:
+            group: List of MVR people (already sorted by quality_score DESC)
+            
+        Returns:
+            Dict with gender, age_min, age_max from best quality sources
+        """
+        best_gender = None
+        best_age_min = None
+        best_age_max = None
+        
+        # Group is already sorted by quality_score DESC
+        # Find best quality MVR with valid gender
+        for mvr in group:
+            if best_gender is None and mvr.get("gender") is not None:
+                best_gender = mvr["gender"]
+            if best_age_min is None and mvr.get("age_min") is not None and mvr.get("age_max") is not None:
+                best_age_min = mvr["age_min"]
+                best_age_max = mvr["age_max"]
+            # Early exit if we found both
+            if best_gender is not None and best_age_min is not None:
+                break
+        
+        return {
+            "gender": best_gender,
+            "age_min": best_age_min,
+            "age_max": best_age_max
+        }
     
     async def get_super_individual_hierarchy(
         self,
