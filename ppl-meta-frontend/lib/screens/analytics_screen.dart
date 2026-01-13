@@ -1507,7 +1507,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                           alignment: Alignment.center,
                           child: Text(
                             '${hour.toString().padLeft(2, '0')}',
-                            style: const TextStyle(fontSize: 10),
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade400,
+                            ),
                           ),
                         );
                       }),
@@ -1526,31 +1529,35 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                             width: 80,
                             child: Text(
                               day.substring(0, 3),
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                              style: TextStyle(
+                                fontSize: 12, 
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey.shade300,
+                              ),
                             ),
                           ),
                           // Hour cells
                           ...List.generate(24, (hour) {
                             final value = dayData[hour.toString()] as int? ?? 0;
-                            final intensity = maxValue > 0 ? value / maxValue : 0.0;
                             return Container(
                               width: 30,
                               height: 30,
                               margin: const EdgeInsets.only(right: 2),
                               decoration: BoxDecoration(
-                                color: value == 0
-                                    ? Colors.grey.shade100
-                                    : Colors.blue.withOpacity(0.2 + (intensity * 0.8)),
+                                color: Colors.grey.shade800,
                                 borderRadius: BorderRadius.circular(4),
+                                border: value > 0 
+                                    ? Border.all(color: AppColors.primary, width: 1.5)
+                                    : Border.all(color: Colors.grey.shade700, width: 0.5),
                               ),
                               alignment: Alignment.center,
                               child: value > 0
                                   ? Text(
                                       '$value',
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         fontSize: 9,
-                                        fontWeight: FontWeight.w500,
-                                        color: intensity > 0.5 ? Colors.white : Colors.black87,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
                                       ),
                                     )
                                   : null,

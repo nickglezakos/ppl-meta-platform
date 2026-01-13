@@ -1004,8 +1004,8 @@ class IndividualGroupsManager:
         import uuid
         
         logger.info(
-            f"Searching for group {group_id} members in camera {camera_id} "
-            f"from {start_time} to {end_time}"
+            f"🔍 Camera Search: Searching for group {group_id} members in camera {camera_id} "
+            f"from {start_time} to {end_time} with threshold={confidence_threshold}"
         )
         
         # Get group details and members
@@ -1144,6 +1144,9 @@ class IndividualGroupsManager:
         async with self.db.pool.acquire() as conn:
             if video_uuids:
                 # Get MVR people detected in these videos
+                # Use overlap logic: appearance overlaps with search window if:
+                # - appearance starts before search window ends AND
+                # - appearance ends after search window starts
                 mvr_query = """
                     SELECT DISTINCT mvr_people_uuid
                     FROM individual_mvr_mapping
@@ -1151,24 +1154,25 @@ class IndividualGroupsManager:
                         SELECT DISTINCT individual_uuid
                         FROM individual_video_appearances
                         WHERE video_uuid = ANY($1::uuid[])
-                          AND start_timestamp >= $2
-                          AND end_timestamp <= $3
+                          AND start_timestamp < $3
+                          AND end_timestamp > $2
                     )
                 """
                 mvr_rows = await conn.fetch(mvr_query, video_uuids, start_time, end_time)
             else:
                 # Fallback: Get all MVR people in time range
+                # Use overlap logic
                 mvr_query = """
                     SELECT DISTINCT imm.mvr_people_uuid
                     FROM individual_mvr_mapping imm
                     JOIN individual_video_appearances iva ON imm.individual_uuid = iva.individual_uuid
-                    WHERE iva.start_timestamp >= $1
-                      AND iva.end_timestamp <= $2
+                    WHERE iva.start_timestamp < $2
+                      AND iva.end_timestamp > $1
                 """
                 mvr_rows = await conn.fetch(mvr_query, start_time, end_time)
             
             search_mvr_uuids = [str(row['mvr_people_uuid']) for row in mvr_rows]
-            logger.info(f"Found {len(search_mvr_uuids)} MVR people in camera footage")
+            logger.info(f"Found {len(search_mvr_uuids)} MVR people in camera footage (before normalization)")
             
             if not search_mvr_uuids:
                 logger.info(f"No MVR people found in time range, returning empty result")
@@ -1186,6 +1190,33 @@ class IndividualGroupsManager:
                     matched_individuals=[],
                     search_session_uuid=f"camera_search_{group_id}_{int(datetime.utcnow().timestamp())}",
                 )
+            
+            # CRITICAL FIX: Normalize camera MVR UUIDs to super-individuals (same as group members)
+            normalize_camera_query = """
+                WITH input_mvr AS (
+                    SELECT unnest($1::text[]::uuid[]) AS mvr_uuid
+                ),
+                normalized AS (
+                    -- Keep MVR if it's not a merged child (it's either super-individual or standalone)
+                    SELECT im.mvr_uuid
+                    FROM input_mvr im
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM mvr_merge_hierarchy mh
+                        WHERE mh.merged_mvr_uuid = im.mvr_uuid
+                    )
+                    
+                    UNION
+                    
+                    -- If MVR is a merged child, replace with its super-individual
+                    SELECT mh.super_individual_uuid AS mvr_uuid
+                    FROM input_mvr im
+                    INNER JOIN mvr_merge_hierarchy mh ON mh.merged_mvr_uuid = im.mvr_uuid
+                )
+                SELECT DISTINCT mvr_uuid FROM normalized
+            """
+            normalized_camera_rows = await conn.fetch(normalize_camera_query, search_mvr_uuids)
+            search_mvr_uuids = set(str(row['mvr_uuid']) for row in normalized_camera_rows)
+            logger.info(f"Camera MVR people normalize to {len(search_mvr_uuids)} super-individuals: {list(search_mvr_uuids)[:5]}")
         
         # Step 3: Use vmeta's MVRMatcher service for comparison
         # Get embeddings for group members first, then use similarity search
@@ -1195,49 +1226,122 @@ class IndividualGroupsManager:
         
         all_matched_mvr_uuids = set()
         
-        async with self.db.pool.acquire() as conn:
-            for member_uuid in member_uuids:
-                try:
-                    # Get face embedding for this group member
-                    embedding_query = """
-                        SELECT face_embedding 
-                        FROM mvr_people 
-                        WHERE mvr_people_uuid = $1 
-                          AND face_embedding IS NOT NULL
-                    """
-                    embedding_row = await conn.fetchrow(embedding_query, uuid.UUID(member_uuid))
-                    
-                    if not embedding_row or not embedding_row['face_embedding']:
-                        logger.warning(f"No embedding found for member {member_uuid[:8]}")
-                        continue
-                    
-                    # Parse embedding (pgvector format)
-                    face_embedding = self._parse_pgvector(embedding_row['face_embedding'])
-                    
-                    # Use existing MVRRepository method for similarity search
-                    # This searches only among the MVR people found in camera footage
-                    matches = await mvr_repository.find_similar_mvr_people(
-                        face_embedding=face_embedding,
-                        similarity_threshold=confidence_threshold,
-                        max_results=100,  # Get all matches above threshold
-                        exclude_orphaned=True
-                    )
-                    
-                    # Filter matches to only include those from camera footage
-                    for match in matches:
-                        match_uuid = str(match['mvr_people_uuid'])
-                        if match_uuid in search_mvr_uuids:
-                            all_matched_mvr_uuids.add(match_uuid)
-                            logger.info(
-                                f"Member {member_uuid[:8]} matched {match_uuid[:8]} "
-                                f"(similarity: {match['similarity_score']:.3f})"
-                            )
-                            
-                except Exception as e:
-                    logger.error(f"Failed to match member {member_uuid[:8]}: {e}")
-                    continue
+        logger.info(f"🔍 Starting comparison - Group members: {len(member_mvr_uuids)}, Camera MVR people: {len(search_mvr_uuids)}")
+        logger.info(f"🔍 Group member super-individual UUIDs: {member_mvr_uuids}")
+        logger.info(f"🔍 Camera super-individual UUIDs (sample): {list(search_mvr_uuids)[:5]}")
         
-        logger.info(f"Found {len(all_matched_mvr_uuids)} unique matched MVR people using MVRRepository")
+        # STEP 1: Direct super-individual UUID matching (after normalization)
+        direct_matches = member_mvr_uuids.intersection(search_mvr_uuids)
+        if direct_matches:
+            logger.info(f"✅ Direct super-individual UUID matches found: {len(direct_matches)} - {direct_matches}")
+            all_matched_mvr_uuids.update(direct_matches)
+        else:
+            logger.info(f"❌ No direct UUID matches - will use embedding similarity")
+        
+        # NEW LOGIC: Direct embedding comparison between group members and camera MVR people
+        # Instead of searching the entire database, compare group member embeddings directly with camera MVR embeddings
+        
+        import numpy as np
+        
+        # Step 1: Get top-3 embeddings for ALL group members
+        group_member_embeddings = {}  # member_uuid -> [(embedding, quality, source), ...]
+        
+        async with self.db.pool.acquire() as conn:
+            top_embeddings_query = """
+                WITH super_individual_hierarchy AS (
+                    -- Get the super-individual itself
+                    SELECT mvr_people_uuid, face_quality, face_embedding, created_at, 'super_individual' as source
+                    FROM mvr_people
+                    WHERE mvr_people_uuid = $1
+                    
+                    UNION
+                    
+                    -- Get all merged children
+                    SELECT mp.mvr_people_uuid, mp.face_quality, mp.face_embedding, mp.created_at, 'merged_child' as source
+                    FROM mvr_people mp
+                    JOIN mvr_merge_hierarchy mh ON mh.merged_mvr_uuid = mp.mvr_people_uuid
+                    WHERE mh.super_individual_uuid = $1
+                )
+                SELECT mvr_people_uuid, face_embedding, face_quality, source
+                FROM super_individual_hierarchy
+                WHERE face_embedding IS NOT NULL
+                ORDER BY 
+                    face_quality DESC NULLS LAST,
+                    created_at DESC
+                LIMIT 3
+            """
+            
+            for member_uuid in member_mvr_uuids:
+                rows = await conn.fetch(top_embeddings_query, uuid.UUID(member_uuid))
+                if rows:
+                    embeddings = []
+                    for row in rows:
+                        emb = self._parse_pgvector(row['face_embedding'])
+                        embeddings.append((emb, row['face_quality'] or 0.0, row['source']))
+                    group_member_embeddings[member_uuid] = embeddings
+                    quality_scores = [f"{q:.2f}" for _, q, _ in embeddings]
+                    logger.info(f"🔍 Group member {member_uuid[:8]}: Loaded {len(embeddings)} embeddings (qualities: {quality_scores})")
+                else:
+                    logger.warning(f"No embeddings found for group member {member_uuid[:8]}")
+            
+            # Step 2: Get top-3 embeddings for ALL camera MVR super-individuals
+            camera_mvr_embeddings = {}  # camera_super_uuid -> [(embedding, quality, source), ...]
+            
+            for camera_uuid in search_mvr_uuids:
+                rows = await conn.fetch(top_embeddings_query, uuid.UUID(camera_uuid))
+                if rows:
+                    embeddings = []
+                    for row in rows:
+                        emb = self._parse_pgvector(row['face_embedding'])
+                        embeddings.append((emb, row['face_quality'] or 0.0, row['source']))
+                    camera_mvr_embeddings[camera_uuid] = embeddings
+                    quality_scores = [f"{q:.2f}" for _, q, _ in embeddings]
+                    logger.info(f"🔍 Camera MVR {camera_uuid[:8]}: Loaded {len(embeddings)} embeddings (qualities: {quality_scores})")
+                else:
+                    logger.warning(f"No embeddings found for camera MVR {camera_uuid[:8]}")
+            
+            # Step 3: Compare ALL group member embeddings against ALL camera MVR embeddings
+            logger.info(f"🔍 Starting direct embedding comparison: {len(group_member_embeddings)} group members vs {len(camera_mvr_embeddings)} camera MVR people")
+            
+            # Track matches per member for later merging
+            member_matches = {}  # member_uuid -> {camera_mvr_uuid: similarity_score}
+            
+            for member_uuid, member_embs in group_member_embeddings.items():
+                best_matches = []  # (camera_uuid, similarity_score)
+                all_scores = []  # For debugging: track all similarity scores
+                member_matches[member_uuid] = {}  # Initialize for this member
+                
+                for camera_uuid, camera_embs in camera_mvr_embeddings.items():
+                    # Compare all combinations and keep the best score
+                    best_score = 0.0
+                    for member_emb, member_q, member_src in member_embs:
+                        for camera_emb, camera_q, camera_src in camera_embs:
+                            # Compute cosine similarity
+                            similarity = float(np.dot(member_emb, camera_emb) / (np.linalg.norm(member_emb) * np.linalg.norm(camera_emb)))
+                            if similarity > best_score:
+                                best_score = similarity
+                    
+                    all_scores.append((camera_uuid, best_score))
+                    
+                    if best_score >= confidence_threshold:
+                        best_matches.append((camera_uuid, best_score))
+                        member_matches[member_uuid][camera_uuid] = best_score  # Store for merging
+                        logger.info(f"✅ Member {member_uuid[:8]} matched camera MVR {camera_uuid[:8]} (similarity: {best_score:.3f})")
+                
+                if best_matches:
+                    # Sort by score and add to matched set
+                    best_matches.sort(key=lambda x: x[1], reverse=True)
+                    for cam_uuid, score in best_matches:
+                        all_matched_mvr_uuids.add(cam_uuid)
+                    logger.info(f"🔍 Member {member_uuid[:8]}: Found {len(best_matches)} matches above threshold {confidence_threshold}")
+                else:
+                    # Show top 5 scores even if below threshold
+                    all_scores.sort(key=lambda x: x[1], reverse=True)
+                    top_scores = [(cam[:8], f"{score:.3f}") for cam, score in all_scores[:5]]
+                    logger.warning(f"🔍 Member {member_uuid[:8]}: No matches found above threshold {confidence_threshold}. Top 5 scores: {top_scores}")
+
+        
+        logger.info(f"Found {len(all_matched_mvr_uuids)} unique matched MVR people using direct embedding comparison")
         
         if not all_matched_mvr_uuids:
             return GroupCameraSearchResponse(
@@ -1254,6 +1358,66 @@ class IndividualGroupsManager:
                 matched_individuals=[],
                 search_session_uuid=f"camera_search_{group_id}_{int(datetime.utcnow().timestamp())}",
             )
+        
+        # Step 3.5: Merge matched camera MVR people into group member's super-individual
+        # For each group member that had matches, merge all matched camera MVR people into that member's super-individual
+        async with self.db.pool.acquire() as conn:
+            for member_uuid, camera_mvr_matches in member_matches.items():
+                if not camera_mvr_matches:
+                    continue
+                
+                # member_uuid is the MVR person UUID (from member_uuids which are MVR UUIDs)
+                # This member_uuid is already the super-individual UUID for the group member
+                member_super_uuid = member_uuid
+                logger.info(f"🔗 Merging {len(camera_mvr_matches)} camera MVR people into member super-individual {member_super_uuid[:8]}")
+                
+                # Merge each matched camera MVR into the member's super-individual
+                for camera_mvr_uuid, similarity_score in camera_mvr_matches.items():
+                    # Skip if already the same person
+                    if camera_mvr_uuid == member_super_uuid:
+                        logger.info(f"  ↳ {camera_mvr_uuid[:8]} is already the super-individual, skipping")
+                        continue
+                    
+                    # Check if this camera MVR is already in a hierarchy
+                    check_hierarchy_query = """
+                        SELECT super_individual_uuid 
+                        FROM mvr_merge_hierarchy 
+                        WHERE merged_mvr_uuid = $1
+                    """
+                    existing_super_row = await conn.fetchrow(check_hierarchy_query, uuid.UUID(camera_mvr_uuid))
+                    
+                    if existing_super_row:
+                        existing_super_uuid = str(existing_super_row['super_individual_uuid'])
+                        if existing_super_uuid == member_super_uuid:
+                            logger.info(f"  ↳ {camera_mvr_uuid[:8]} already merged into {member_super_uuid[:8]}, skipping")
+                            continue
+                        else:
+                            logger.warning(f"  ↳ {camera_mvr_uuid[:8]} already belongs to different super {existing_super_uuid[:8]}, skipping")
+                            continue
+                    
+                    # Insert merge record
+                    try:
+                        merge_insert_query = """
+                            INSERT INTO mvr_merge_hierarchy (
+                                super_individual_uuid,
+                                merged_mvr_uuid,
+                                similarity_score,
+                                merge_timestamp,
+                                merge_level
+                            ) VALUES ($1, $2, $3, $4, $5)
+                            ON CONFLICT (super_individual_uuid, merged_mvr_uuid) DO NOTHING
+                        """
+                        await conn.execute(
+                            merge_insert_query,
+                            uuid.UUID(member_super_uuid),
+                            uuid.UUID(camera_mvr_uuid),
+                            similarity_score,
+                            datetime.utcnow(),
+                            1  # merge_level: 1 = direct child
+                        )
+                        logger.info(f"  ✅ Merged {camera_mvr_uuid[:8]} into {member_super_uuid[:8]} (similarity: {similarity_score:.3f})")
+                    except Exception as e:
+                        logger.error(f"  ❌ Failed to merge {camera_mvr_uuid[:8]} into {member_super_uuid[:8]}: {e}")
         
         # Step 4: Get individual UUIDs for matched MVR people
         async with self.db.pool.acquire() as conn:
@@ -1290,6 +1454,7 @@ class IndividualGroupsManager:
             # Step 5: Get appearance details for matched individuals
             if video_uuids:
                 # Get individual appearances by video for route drawing
+                # Use overlap logic for timestamp filtering
                 appearances_query = """
                     SELECT
                         iva.individual_uuid,
@@ -1301,8 +1466,8 @@ class IndividualGroupsManager:
                     FROM individual_video_appearances iva
                     WHERE iva.individual_uuid = ANY($1::uuid[])
                       AND iva.video_uuid = ANY($2::uuid[])
-                      AND iva.start_timestamp >= $3
-                      AND iva.end_timestamp <= $4
+                      AND iva.start_timestamp < $4
+                      AND iva.end_timestamp > $3
                       AND iva.confidence >= $5
                     ORDER BY iva.individual_uuid, iva.start_timestamp ASC
                 """
@@ -1316,6 +1481,7 @@ class IndividualGroupsManager:
                 )
             else:
                 # Fallback: no collection filter
+                # Use overlap logic for timestamp filtering
                 appearances_query = """
                     SELECT
                         iva.individual_uuid,
@@ -1326,8 +1492,8 @@ class IndividualGroupsManager:
                         iva.confidence
                     FROM individual_video_appearances iva
                     WHERE iva.individual_uuid = ANY($1::uuid[])
-                      AND iva.start_timestamp >= $2
-                      AND iva.end_timestamp <= $3
+                      AND iva.start_timestamp < $3
+                      AND iva.end_timestamp > $2
                       AND iva.confidence >= $4
                     ORDER BY iva.individual_uuid, iva.start_timestamp ASC
                 """

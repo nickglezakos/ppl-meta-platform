@@ -509,14 +509,18 @@ async def search_group_in_camera(
         if not camera_ids:
             raise ValueError("At least one camera must be specified (camera_id or camera_ids)")
         
+        # Convert timezone-aware datetimes to timezone-naive UTC for database queries
+        start_time = request_body.start_time.replace(tzinfo=None) if request_body.start_time.tzinfo else request_body.start_time
+        end_time = request_body.end_time.replace(tzinfo=None) if request_body.end_time.tzinfo else request_body.end_time
+        
         # If multiple cameras, use multi-camera search
         if len(camera_ids) > 1:
             logger.info(f"Multi-camera search for group {group_id} across {len(camera_ids)} cameras")
             response = await manager.search_members_in_cameras(
                 group_id=group_id,
                 camera_ids=camera_ids,
-                start_time=request_body.start_time,
-                end_time=request_body.end_time,
+                start_time=start_time,
+                end_time=end_time,
                 confidence_threshold=request_body.confidence_threshold,
                 auth_token=auth_token,
             )
@@ -526,8 +530,8 @@ async def search_group_in_camera(
             response = await manager.search_members_in_camera(
                 group_id=group_id,
                 camera_id=camera_ids[0],
-                start_time=request_body.start_time,
-                end_time=request_body.end_time,
+                start_time=start_time,
+                end_time=end_time,
                 confidence_threshold=request_body.confidence_threshold,
                 auth_token=auth_token,
             )

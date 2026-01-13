@@ -274,10 +274,10 @@ class GroupCameraSearchRequest(BaseModel):
     start_time: datetime = Field(..., description="Search start time")
     end_time: datetime = Field(..., description="Search end time")
     confidence_threshold: float = Field(
-        default=0.7,
+        default=0.5,
         ge=0.0,
         le=1.0,
-        description="Minimum confidence threshold for matches"
+        description="Minimum confidence threshold for matches (default: 0.5)"
     )
     
     @model_validator(mode='after')

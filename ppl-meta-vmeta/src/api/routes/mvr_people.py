@@ -1698,7 +1698,10 @@ async def search_mvr_people_by_videos(
     ),
     limit: int = Body(100, description="Max results (default: 100, max: 500)"),
     force_refresh: bool = Body(False, description="Force cache refresh"),
+    auto_merge: bool = Body(False, description="Automatically merge similar MVR people before returning results"),
+    similarity_threshold: float = Body(0.70, ge=0.0, le=1.0, description="Similarity threshold for auto-merge (0-1)"),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_matcher = Depends(get_mvr_matcher),
     cache_client = Depends(get_cache_client),
     current_user: dict = Depends(get_current_user),
 ):
@@ -1706,11 +1709,16 @@ async def search_mvr_people_by_videos(
     Search for existing MVR people detected in specific videos.
     
     This endpoint fetches EXISTING MVR people and their linked individuals
-    that appear in the provided video UUIDs. It does NOT trigger any merge
-    operations - it only retrieves cached data.
+    that appear in the provided video UUIDs. By default, it returns cached data
+    without triggering any merge operations.
+    
+    **Auto-Merge (NEW):** Set auto_merge=true to automatically run hierarchical
+    merging on the found MVR people before returning results. This is useful for
+    multi-day searches where the periodic merge (120-min lookback) hasn't merged
+    individuals across days.
     
     **Caching:** Results are cached in Redis for 1 hour to improve performance.
-    Use force_refresh=true to bypass cache.
+    Use force_refresh=true to bypass cache. Auto-merge bypasses cache.
     
     **Use Case:** Fetch existing MVR analysis results for a collection's
     videos without reprocessing.
@@ -1723,21 +1731,25 @@ async def search_mvr_people_by_videos(
     - end_time: Optional end time filter (ISO 8601)
     - limit: Maximum results to return (default: 100, max: 500)
     - force_refresh: Bypass cache and fetch fresh data
+    - auto_merge: Run hierarchical merge before returning (default: false)
+    - similarity_threshold: Threshold for auto-merge (default: 0.70)
     
     **Returns:**
     - 200 OK: List of MVR people with aggregated data
     - 400 Bad Request: Invalid parameters
     - 500 Internal Server Error: Database error
     
-    **Performance:** ~200ms cached, ~2-3s uncached for large collections
+    **Performance:** ~200ms cached, ~2-3s uncached, ~5-10s with auto-merge
     """
     logger.info(
         f"Searching existing MVR people for {len(video_uuids)} videos "
-        f"(user: {current_user.get('email')}, force_refresh: {force_refresh})"
+        f"(user: {current_user.get('email')}, force_refresh: {force_refresh}, "
+        f"auto_merge: {auto_merge})"
     )
     
-    # Check cache first (unless force_refresh)
-    if not force_refresh and cache_client.is_connected():
+    # Check cache first (unless force_refresh or auto_merge)
+    # Auto-merge always bypasses cache since it modifies the database
+    if not force_refresh and not auto_merge and cache_client.is_connected():
         cached_result = await cache_client.get_mvr_search_results(
             video_uuids=video_uuids,
             start_time=start_time,
@@ -1847,18 +1859,44 @@ async def search_mvr_people_by_videos(
             for mvr_record in mvr_records:
                 mvr_uuid = str(mvr_record['mvr_people_uuid'])
                 
-                # Get all linked individual UUIDs for this MVR person
+                # Check if this MVR is a super-individual (has merged children)
+                merged_children_query = """
+                    SELECT merged_mvr_uuid
+                    FROM mvr_merge_hierarchy
+                    WHERE super_individual_uuid = $1
+                """
+                merged_children_rows = await conn.fetch(
+                    merged_children_query, mvr_uuid
+                )
+                merged_mvr_uuids = [
+                    str(row['merged_mvr_uuid']) for row in merged_children_rows
+                ]
+                is_super_individual = len(merged_mvr_uuids) > 0
+                
+                # Get all MVR UUIDs to query (parent + merged children)
+                all_mvr_uuids = [mvr_uuid] + merged_mvr_uuids
+                logger.debug(
+                    f"MVR {mvr_uuid[:8]}... is_super={is_super_individual}, "
+                    f"checking {len(all_mvr_uuids)} MVR UUIDs"
+                )
+                
+                # Get all linked individual UUIDs for this MVR and its merged children
                 linked_individuals_query = """
-                    SELECT individual_uuid
+                    SELECT DISTINCT individual_uuid
                     FROM individual_mvr_mapping
-                    WHERE mvr_people_uuid = $1
+                    WHERE mvr_people_uuid = ANY($1::uuid[])
                 """
                 linked_rows = await conn.fetch(
-                    linked_individuals_query, mvr_uuid
+                    linked_individuals_query, all_mvr_uuids
                 )
                 linked_individual_uuids = [
                     str(row['individual_uuid']) for row in linked_rows
                 ]
+                
+                logger.debug(
+                    f"MVR {mvr_uuid[:8]}... has {len(linked_individual_uuids)} "
+                    f"total individuals (including merged MVRs)"
+                )
                 
                 # Get appearances for these individuals in our target videos
                 # NOTE: We do NOT filter by start_time/end_time here because:
@@ -1905,6 +1943,12 @@ async def search_mvr_people_by_videos(
                 first_seen = min(app.start_timestamp for app in appearances)
                 last_seen = max(app.end_timestamp for app in appearances)
                 
+                logger.info(
+                    f"MVR {mvr_uuid[:8]}... final stats: "
+                    f"{len(appearances)} appearances across {unique_videos} videos "
+                    f"(is_super={is_super_individual}, merged_count={len(merged_mvr_uuids)})"
+                )
+                
                 # Format age range if available
                 age_display = None
                 if mvr_record['age_min'] and mvr_record['age_max']:
@@ -1925,6 +1969,8 @@ async def search_mvr_people_by_videos(
                     ),
                     quality_score=float(mvr_record['quality_score'] or 0.0),
                     appearances=appearances,
+                    merged_mvr_uuids=merged_mvr_uuids,
+                    is_super_individual=is_super_individual,
                     estimated_age=age_display,
                     estimated_gender=mvr_record['gender']
                 )
@@ -1934,6 +1980,61 @@ async def search_mvr_people_by_videos(
             logger.info(
                 f"Found {len(results)} existing MVR people in videos"
             )
+            
+            # Apply auto-merge if requested
+            if auto_merge and len(results) > 1:
+                logger.info(
+                    f"🔄 Auto-merge requested: attempting to merge {len(results)} MVR people "
+                    f"(threshold: {similarity_threshold})"
+                )
+                
+                try:
+                    from services.hierarchical_mvr_merger import HierarchicalMVRMerger
+                    
+                    # Initialize merger
+                    merger = HierarchicalMVRMerger(
+                        repository=mvr_repository,
+                        mvr_matcher=mvr_matcher
+                    )
+                    
+                    # Get MVR UUIDs to merge
+                    mvr_uuids_to_merge = [UUID(r.mvr_people_uuid) for r in results]
+                    
+                    # Perform hierarchical merge
+                    merge_result = await merger.merge_hierarchical(
+                        mvr_uuids=mvr_uuids_to_merge,
+                        similarity_threshold=similarity_threshold,
+                        min_similarity_check=0.50
+                    )
+                    
+                    logger.info(
+                        f"✅ Auto-merge complete: {merge_result['statistics']['total_mvr']} → "
+                        f"{merge_result['statistics']['super_individuals']} super-individuals"
+                    )
+                    
+                    # Re-query to get updated results after merge
+                    # We need to re-run the whole query to get the merged structure
+                    logger.info("Re-querying after auto-merge to get updated results...")
+                    
+                    # Recursively call this function WITHOUT auto_merge to get fresh results
+                    return await search_mvr_people_by_videos(
+                        video_uuids=video_uuids,
+                        start_time=start_time,
+                        end_time=end_time,
+                        limit=limit,
+                        force_refresh=True,  # Force fresh query
+                        auto_merge=False,  # Don't merge again
+                        similarity_threshold=similarity_threshold,
+                        mvr_repository=mvr_repository,
+                        mvr_matcher=mvr_matcher,
+                        cache_client=cache_client,
+                        current_user=current_user
+                    )
+                    
+                except Exception as merge_error:
+                    logger.error(f"Auto-merge failed: {merge_error}", exc_info=True)
+                    # Continue with unmerged results if merge fails
+                    logger.warning("Returning unmerged results due to merge error")
             
             # Build response
             response_data = {
@@ -1947,7 +2048,9 @@ async def search_mvr_people_by_videos(
                         start_time.isoformat() if start_time else None
                     ),
                     "end_time": end_time.isoformat() if end_time else None,
-                    "limit": limit
+                    "limit": limit,
+                    "auto_merge": auto_merge,
+                    "similarity_threshold": similarity_threshold if auto_merge else None
                 },
                 "message": f"Found {len(results)} existing MVR people"
             }

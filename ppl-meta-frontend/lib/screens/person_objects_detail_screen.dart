@@ -2022,9 +2022,9 @@ class _PersonObjectsDetailScreenState
       final endTimeStr = searchParameters['end_time'] as String;
       final startTime = DateTime.parse(startTimeStr);
       final endTime = DateTime.parse(endTimeStr);
-      final confidenceThreshold = searchParameters['confidence_threshold'] as double? ?? 0.75;
+      final confidenceThreshold = searchParameters['confidence_threshold'] as double? ?? 0.5;
 
-      print('📹 Loading camera search results: cameras=${cameras.join(", ")}, time=$startTime to $endTime');
+      print('📹 Loading camera search results: cameras=${cameras.join(", ")}, time=$startTime to $endTime, threshold=$confidenceThreshold');
       
       final response = await individualGroupsApiClient.searchGroupInCamera(
         groupId: groupId,
