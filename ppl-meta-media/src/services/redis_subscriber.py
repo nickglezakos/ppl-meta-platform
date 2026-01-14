@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 from uuid import UUID
 
@@ -137,7 +137,6 @@ class InstantDetectionSubscriber:
             # Find active triggers for this camera
             triggers = db.query(Trigger).filter(
                 Trigger.is_active == True,
-                Trigger.enable_demographic_conditions == True,
                 Trigger.camera_device_id == camera_id
             ).all()
             
@@ -149,7 +148,7 @@ class InstantDetectionSubscriber:
             
             triggers_fired = 0
             fired_trigger_ids = []
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             
             # Evaluate each trigger
             for trigger in triggers:
@@ -177,11 +176,11 @@ class InstantDetectionSubscriber:
                 logger.info(f"\n🔥🔥🔥 TRIGGER FIRED! 🔥🔥🔥")
                 triggers_fired += 1
                 fired_trigger_ids.append(trigger.id)
-                trigger.last_fired_at = datetime.now()
+                trigger.last_fired_at = datetime.now(timezone.utc)
                 
-                # Execute signage action if configured
-                if trigger.signage_device_ids and trigger.signage_playlist_id:
-                    await self._execute_signage_action(trigger, db)
+                # Execute action if configured
+                if trigger.action_uuid:
+                    await self._execute_trigger_action(trigger, db)
             
             # Commit all updates
             db.commit()
@@ -247,16 +246,50 @@ class InstantDetectionSubscriber:
         logger.info(f"  ✅ ALL CONDITIONS PASSED")
         return True
     
-    async def _execute_signage_action(self, trigger: Trigger, db: Session):
-        """Execute signage playlist switch action"""
-        logger.info(f"  🎬 Executing signage action...")
-        logger.info(f"     Target Playlist UUID: {trigger.signage_playlist_id}")
-        logger.info(f"     Transition Mode: {trigger.signage_transition_mode}")
-        logger.info(f"     Fade Duration: {trigger.signage_fade_duration_ms}ms")
+    async def _execute_trigger_action(self, trigger: Trigger, db: Session):
+        """Execute the action associated with this trigger"""
+        from src.models.user_trigger_action import UserTriggerAction
+        
+        logger.info(f"  🎬 Executing trigger action...")
+        logger.info(f"     Action UUID: {trigger.action_uuid}")
+        
+        # Look up the action
+        action = db.query(UserTriggerAction).filter(
+            UserTriggerAction.uuid == trigger.action_uuid
+        ).first()
+        
+        if not action:
+            logger.error(f"     ❌ Action not found: {trigger.action_uuid}")
+            return
+        
+        logger.info(f"     Action Type: {action.action_type}")
+        logger.info(f"     Action Name: {action.name}")
+        
+        # Handle digital_signage action type
+        if action.action_type == "digital_signage":
+            await self._execute_signage_action(action, db)
+        else:
+            logger.warning(f"     ⚠️ Unsupported action type: {action.action_type}")
+    
+    async def _execute_signage_action(self, action, db: Session):
+        """Execute signage playlist switch action from action config"""
+        logger.info(f"  📺 Executing digital signage action...")
         
         try:
-            device_ids = json.loads(trigger.signage_device_ids)
+            # Parse action_config to get signage settings
+            config = json.loads(action.action_config) if isinstance(action.action_config, str) else action.action_config
+            
+            device_ids = config.get("device_ids", [])
+            playlist_id = config.get("playlist_id")
+            transition_mode = config.get("transition_mode", "immediate")
+            
+            logger.info(f"     Target Playlist UUID: {playlist_id}")
+            logger.info(f"     Transition Mode: {transition_mode}")
             logger.info(f"     Target Device IDs: {device_ids}")
+            
+            if not device_ids or not playlist_id:
+                logger.error(f"     ❌ Missing device_ids or playlist_id in action config")
+                return
             
             playback_service = SignagePlaybackService(db)
             
@@ -266,7 +299,7 @@ class InstantDetectionSubscriber:
                     
                     logger.info(f"\n     📱 Sending switch command to device:")
                     logger.info(f"        Device UUID: {device_uuid}")
-                    logger.info(f"        Target Playlist: {trigger.signage_playlist_id}")
+                    logger.info(f"        Target Playlist: {playlist_id}")
                     
                     # Create PlaybackControlRequest
                     from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
@@ -278,7 +311,7 @@ class InstantDetectionSubscriber:
                     control_request = PlaybackControlRequest(
                         device_ids=[device_uuid],
                         command=PlaybackCommand.START,
-                        video_list_id=UUID(trigger.signage_playlist_id),
+                        video_list_id=UUID(playlist_id),
                         parameters=playback_params
                     )
                     
@@ -292,7 +325,9 @@ class InstantDetectionSubscriber:
                     logger.error(f"Error switching playlist for device {device_uuid_str}: {e}")
         
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse signage_device_ids for trigger {trigger.id}: {e}")
+            logger.error(f"Failed to parse action_config: {e}")
+        except Exception as e:
+            logger.error(f"Error executing signage action: {e}", exc_info=True)
 
 
 # Global subscriber instance

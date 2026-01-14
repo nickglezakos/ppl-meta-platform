@@ -52,6 +52,7 @@ class InstantDetectionSampler:
         vision_service_url: str = "http://localhost:8003",
         vmeta_service_url: str = "http://localhost:8008",
         orchestrator_service_url: str = "http://localhost:8002",
+        media_service_url: str = "http://localhost:8000",
         sampling_interval: int = 5,
         temporal_window: float = 1.0
     ):
@@ -62,6 +63,7 @@ class InstantDetectionSampler:
         self.vision_service_url = vision_service_url
         self.vmeta_service_url = vmeta_service_url
         self.orchestrator_service_url = orchestrator_service_url
+        self.media_service_url = media_service_url
         self.sampling_interval = sampling_interval
         self.temporal_window = temporal_window
         
@@ -1002,6 +1004,8 @@ class InstantDetectionSampler:
                         self._push_to_webhook_sync(camera_id, result)
                     if result:
                         self._publish_to_redis_sync(camera_id, result)
+                        # Evaluate triggers after publishing to Redis
+                        self._evaluate_triggers_sync(camera_id, result)
                         
                 except Exception as sync_error:
                     logger.error(f"❌ [THREAD] Fallback processing failed: {sync_error}", exc_info=True)
@@ -1040,6 +1044,19 @@ class InstantDetectionSampler:
                 thread.start()
             except Exception as e:
                 logger.error(f"❌ Failed to start Redis publish thread: {e}")
+        
+        # Evaluate triggers after detection (non-blocking)
+        if result:
+            try:
+                import threading
+                thread = threading.Thread(
+                    target=self._evaluate_triggers_sync,
+                    args=(camera_id, result),
+                    daemon=True
+                )
+                thread.start()
+            except Exception as e:
+                logger.error(f"❌ Failed to start trigger evaluation thread: {e}")
     
     def _push_to_webhook_sync(self, camera_id: str, result: Dict):
         """
@@ -1155,6 +1172,83 @@ class InstantDetectionSampler:
             logger.warning(f"⚠️ Redis connection failed (instant detection pub/sub)")
         except Exception as e:
             logger.error(f"❌ Redis publish error: {e}")
+    
+    def _evaluate_triggers_sync(self, camera_id: str, result: Dict):
+        """
+        Evaluate triggers against instant detection results (synchronous version for threading).
+        
+        Calls Media Service trigger evaluation endpoint to check if any active triggers
+        should execute actions based on the demographic data.
+        
+        Args:
+            camera_id: Camera identifier
+            result: Detection result dictionary with demographics
+        """
+        try:
+            import requests
+            
+            # Extract demographic data
+            demographics = result.get("demographics", {})
+            people_count = result.get("people_count", 0)
+            
+            # Prepare payload in CounterDataRequest format expected by trigger evaluation
+            # Convert instant detection format to counter data format
+            gender_distribution = {}
+            if demographics.get("total_male", 0) > 0:
+                gender_distribution["male"] = demographics["total_male"]
+            if demographics.get("total_female", 0) > 0:
+                gender_distribution["female"] = demographics["total_female"]
+            
+            # Map age demographics to age distribution (simplified mapping)
+            age_distribution = {}
+            young = demographics.get("total_young", 0)
+            adult = demographics.get("total_adult", 0)
+            if young > 0:
+                age_distribution["0-18"] = young
+            if adult > 0:
+                age_distribution["19-30"] = int(adult * 0.5)  # Split adults across age ranges
+                age_distribution["31-50"] = int(adult * 0.3)
+                age_distribution["51+"] = int(adult * 0.2)
+            
+            payload = {
+                "camera_device_id": camera_id,
+                "total_count": people_count,
+                "gender_distribution": gender_distribution if gender_distribution else None,
+                "age_distribution": age_distribution if age_distribution else None,
+                "timestamp": result.get("timestamp", datetime.utcnow().isoformat())
+            }
+            
+            trigger_url = f"{self.media_service_url}/api/v1/triggers/evaluate"
+            
+            logger.info(
+                f"🎯 Evaluating triggers for {camera_id}: "
+                f"people_count={people_count}, demographics={demographics}"
+            )
+            
+            response = requests.post(
+                trigger_url,
+                json=payload,
+                timeout=3
+            )
+            
+            if response.status_code == 200:
+                result_data = response.json()
+                triggered = result_data.get("triggered_actions", [])
+                if triggered:
+                    logger.info(
+                        f"✅ Triggers evaluated: {len(triggered)} action(s) triggered for {camera_id}"
+                    )
+                else:
+                    logger.debug(f"✅ Triggers evaluated: No actions triggered for {camera_id}")
+            else:
+                logger.warning(
+                    f"⚠️ Trigger evaluation returned {response.status_code}: {response.text}"
+                )
+        
+        except requests.Timeout:
+            logger.warning(f"⚠️ Trigger evaluation timeout (3s): {camera_id}")
+        except Exception as e:
+            logger.error(f"❌ Trigger evaluation error: {e}", exc_info=True)
     
     def _process_frames_sync(self, camera_id: str, frames_data: List[str]) -> Optional[Dict]:
         """

@@ -27,7 +27,7 @@ from ..schemas.trigger import (
     TriggerResponse,
     TriggerUpdate,
 )
-from ..services.trigger_evaluation import CounterData, TriggerEvaluationService
+from ..services.trigger_evaluation import DemographicData, TriggerEvaluationService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/triggers", tags=["triggers"])
@@ -263,18 +263,40 @@ async def evaluate_triggers(
     ```
     """
     try:
-        # Convert Pydantic model to service CounterData
-        counter = CounterData(
+        # Convert old CounterDataRequest format to new DemographicData format
+        demographics = {}
+        
+        # Convert gender distribution to percentages
+        if counter_data.gender_distribution:
+            total = counter_data.total_count or sum(counter_data.gender_distribution.values())
+            if total > 0:
+                demographics['percent_male'] = (counter_data.gender_distribution.get('male', 0) / total) * 100
+                demographics['percent_female'] = (counter_data.gender_distribution.get('female', 0) / total) * 100
+        
+        # Convert age distribution to percentages (map old ranges to new ranges)
+        if counter_data.age_distribution:
+            total = counter_data.total_count or sum(counter_data.age_distribution.values())
+            if total > 0:
+                # Map old age ranges to new format
+                demographics['percent_age_0_12'] = (counter_data.age_distribution.get('0-18', 0) / total) * 100 * 0.7  # approximate
+                demographics['percent_age_13_17'] = (counter_data.age_distribution.get('0-18', 0) / total) * 100 * 0.3  # approximate
+                demographics['percent_age_18_24'] = (counter_data.age_distribution.get('19-30', 0) / total) * 100 * 0.5
+                demographics['percent_age_25_34'] = (counter_data.age_distribution.get('19-30', 0) / total) * 100 * 0.5 + (counter_data.age_distribution.get('31-50', 0) / total) * 100 * 0.2
+                demographics['percent_age_35_44'] = (counter_data.age_distribution.get('31-50', 0) / total) * 100 * 0.5
+                demographics['percent_age_45_54'] = (counter_data.age_distribution.get('31-50', 0) / total) * 100 * 0.3 + (counter_data.age_distribution.get('51+', 0) / total) * 100 * 0.3
+                demographics['percent_age_55_64'] = (counter_data.age_distribution.get('51+', 0) / total) * 100 * 0.4
+                demographics['percent_age_65_plus'] = (counter_data.age_distribution.get('51+', 0) / total) * 100 * 0.3
+        
+        demographic_data = DemographicData(
             camera_device_id=counter_data.camera_device_id,
-            total_count=counter_data.total_count,
-            age_distribution=counter_data.age_distribution,
-            gender_distribution=counter_data.gender_distribution,
+            people_count=counter_data.total_count,
+            demographics=demographics,
             timestamp=counter_data.timestamp
         )
         
         # Evaluate triggers
         evaluation_service = TriggerEvaluationService(db)
-        results = evaluation_service.evaluate_all_active_triggers(counter)
+        results = evaluation_service.evaluate_all_active_triggers(demographic_data)
     except Exception as e:
         import logging
         logging.error(f"Error evaluating triggers: {e}")
@@ -290,7 +312,7 @@ async def evaluate_triggers(
                 passed=passed,
                 reason=reason,
                 person_count=counter_data.total_count,
-                timestamp=counter.timestamp
+                timestamp=counter_data.timestamp
             )
         )
     
@@ -300,7 +322,7 @@ async def evaluate_triggers(
     return TriggerEvaluationResponse(
         camera_device_id=counter_data.camera_device_id,
         total_count=counter_data.total_count,
-        evaluated_at=counter.timestamp,
+        evaluated_at=counter_data.timestamp,
         triggers_evaluated=len(results),
         triggers_passed=triggers_passed,
         results=evaluation_results

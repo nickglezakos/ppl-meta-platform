@@ -1,9 +1,11 @@
 """
 Trigger Evaluation Service
 
-Evaluates triggers against camera counter data and determines if conditions are met.
+Evaluates triggers against camera demographic data and determines if conditions are met.
+Now uses unified demographic_conditions format.
 """
 
+import json
 import logging
 from datetime import datetime, time
 from typing import Dict, List, Optional, Tuple
@@ -11,52 +13,68 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from ..models.trigger import (
-    Trigger,
-    PersonCountOperator,
-    AgeRangeOperator,
-    GenderFilter
-)
+from ..models.trigger import Trigger
 
 logger = logging.getLogger(__name__)
 
 
-class CounterData:
-    """Data structure for camera counter results."""
+class DemographicData:
+    """Data structure for camera demographic results."""
     
     def __init__(
         self,
         camera_device_id: str,
-        total_count: int,
-        age_distribution: Optional[Dict[str, int]] = None,
-        gender_distribution: Optional[Dict[str, int]] = None,
+        people_count: int,
+        demographics: Dict[str, any],
         timestamp: Optional[datetime] = None
     ):
+        """
+        Args:
+            camera_device_id: Camera device identifier
+            people_count: Total number of people detected
+            demographics: Dictionary containing demographic data with keys:
+                - percent_male: Percentage of males (0-100)
+                - percent_female: Percentage of females (0-100)
+                - percent_age_0_12: Percentage in age range 0-12
+                - percent_age_13_17: Percentage in age range 13-17
+                - percent_age_18_24: Percentage in age range 18-24
+                - percent_age_25_34: Percentage in age range 25-34
+                - percent_age_35_44: Percentage in age range 35-44
+                - percent_age_45_54: Percentage in age range 45-54
+                - percent_age_55_64: Percentage in age range 55-64
+                - percent_age_65_plus: Percentage in age range 65+
+            timestamp: When the data was captured
+        """
         self.camera_device_id = camera_device_id
-        self.total_count = total_count
-        self.age_distribution = age_distribution or {}
-        self.gender_distribution = gender_distribution or {}
+        self.people_count = people_count
+        self.demographics = demographics
         self.timestamp = timestamp or datetime.utcnow()
         
+    def get_field_value(self, field: str) -> Optional[float]:
+        """Get value for a demographic field."""
+        if field == 'people_count':
+            return float(self.people_count)
+        return self.demographics.get(field)
+        
     def __repr__(self):
-        return f"<CounterData camera={self.camera_device_id} count={self.total_count}>"
+        return f"<DemographicData camera={self.camera_device_id} count={self.people_count}>"
 
 
 class TriggerEvaluationService:
-    """Service for evaluating triggers against counter data."""
+    """Service for evaluating triggers against demographic data."""
     
     def __init__(self, db: Session):
         self.db = db
     
     def evaluate_all_active_triggers(
         self,
-        counter_data: CounterData
+        demographic_data: DemographicData
     ) -> List[Tuple[Trigger, bool, str]]:
         """
-        Evaluate all active triggers for a given camera counter update.
+        Evaluate all active triggers for a given camera demographic update.
         
         Args:
-            counter_data: Counter data from camera
+            demographic_data: Demographic data from camera
             
         Returns:
             List of tuples: (trigger, passed, reason)
@@ -64,12 +82,12 @@ class TriggerEvaluationService:
         # Get all active triggers for this camera
         triggers = self.db.query(Trigger).filter(
             Trigger.is_active == True,
-            Trigger.camera_device_id == counter_data.camera_device_id
+            Trigger.camera_device_id == demographic_data.camera_device_id
         ).all()
         
         results = []
         for trigger in triggers:
-            passed, reason = self.evaluate_trigger(trigger, counter_data)
+            passed, reason = self.evaluate_trigger(trigger, demographic_data)
             results.append((trigger, passed, reason))
             
             if passed:
@@ -86,46 +104,93 @@ class TriggerEvaluationService:
     def evaluate_trigger(
         self,
         trigger: Trigger,
-        counter_data: CounterData
+        demographic_data: DemographicData
     ) -> Tuple[bool, str]:
         """
-        Evaluate a single trigger against counter data.
+        Evaluate a single trigger against demographic data.
         
         Args:
             trigger: Trigger to evaluate
-            counter_data: Counter data to check against
+            demographic_data: Demographic data to check against
             
         Returns:
             Tuple of (passed: bool, reason: str)
         """
         # Step 1: Check time span
-        if not self._check_time_span(trigger.time_span, counter_data.timestamp):
+        if not self._check_time_span(trigger.time_span, demographic_data.timestamp):
             return False, f"Outside time span: {trigger.time_span}"
         
-        # Step 2: Apply filters to get filtered count
-        filtered_count = self._apply_filters(
-            counter_data,
-            trigger.age_range_operator,
-            trigger.age_range_value,
-            trigger.gender_filter
-        )
+        # Step 2: Parse demographic conditions
+        try:
+            conditions = json.loads(trigger.demographic_conditions) if isinstance(trigger.demographic_conditions, str) else trigger.demographic_conditions
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse demographic_conditions: {e}")
+            return False, "Invalid demographic conditions format"
         
-        # Step 3: Check person count threshold
-        person_count_passed = self._check_person_count(
-            filtered_count,
-            trigger.person_count_operator,
-            trigger.person_count_value
-        )
+        if not conditions or not isinstance(conditions, list):
+            return False, "No demographic conditions defined"
         
-        if person_count_passed:
-            filter_desc = self._get_filter_description(
-                trigger.age_range_operator,
-                trigger.age_range_value,
-                trigger.gender_filter
-            )
-            return True, f"Count {filtered_count} {trigger.person_count_operator} {trigger.person_count_value}{filter_desc}"
+        # Step 3: Evaluate all conditions (all must pass)
+        failed_conditions = []
+        passed_conditions = []
+        
+        for condition in conditions:
+            field = condition.get('field')
+            operator = condition.get('operator')
+            threshold = condition.get('value')
+            
+            if not all([field, operator, threshold is not None]):
+                failed_conditions.append(f"Invalid condition: {condition}")
+                continue
+            
+            actual_value = demographic_data.get_field_value(field)
+            
+            if actual_value is None:
+                failed_conditions.append(f"{field}: no data")
+                continue
+            
+            condition_met = self._evaluate_condition(actual_value, operator, threshold)
+            
+            if condition_met:
+                passed_conditions.append(f"{field} {operator} {threshold} (actual: {actual_value})")
+            else:
+                failed_conditions.append(f"{field} {operator} {threshold} (actual: {actual_value})")
+        
+        # All conditions must pass
+        if failed_conditions:
+            return False, f"Conditions failed: {'; '.join(failed_conditions)}"
         else:
-            return False, f"Count {filtered_count} does not meet threshold {trigger.person_count_operator} {trigger.person_count_value}"
+            return True, f"All conditions met: {'; '.join(passed_conditions)}"
+    
+    def _evaluate_condition(self, actual: float, operator: str, threshold: float) -> bool:
+        """
+        Evaluate a single demographic condition.
+        
+        Args:
+            actual: Actual value from demographic data
+            operator: Comparison operator (gt, gte, lt, lte, eq)
+            threshold: Threshold value
+            
+        Returns:
+            True if condition met, False otherwise
+        """
+        try:
+            if operator == 'gt':
+                return actual > threshold
+            elif operator == 'gte':
+                return actual >= threshold
+            elif operator == 'lt':
+                return actual < threshold
+            elif operator == 'lte':
+                return actual <= threshold
+            elif operator == 'eq':
+                return actual == threshold
+            else:
+                logger.error(f"Unknown operator: {operator}")
+                return False
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error evaluating condition: {e}")
+            return False
     
     def _check_time_span(self, time_span: str, current_time: datetime) -> bool:
         """
@@ -138,8 +203,6 @@ class TriggerEvaluationService:
         Returns:
             True if within time span, False otherwise
         """
-        # TODO: Implement full time span parsing
-        # For now, accept "any" or assume always active
         if time_span.lower() == "any":
             return True
         
@@ -157,116 +220,17 @@ class TriggerEvaluationService:
                     end_time = datetime.strptime(end_str.strip(), "%H:%M").time()
                     
                     current_time_only = current_time.time()
-                    return start_time <= current_time_only <= end_time
+                    
+                    # Handle overnight time spans (e.g., 22:00-06:00)
+                    if start_time <= end_time:
+                        return start_time <= current_time_only <= end_time
+                    else:
+                        return current_time_only >= start_time or current_time_only <= end_time
         except Exception as e:
             logger.warning(f"Could not parse time span '{time_span}': {e}")
             return True  # Default to always active if can't parse
         
         return True  # Default to always active
-    
-    def _apply_filters(
-        self,
-        counter_data: CounterData,
-        age_operator: Optional[AgeRangeOperator],
-        age_value: Optional[str],
-        gender: Optional[GenderFilter]
-    ) -> int:
-        """
-        Apply age and gender filters to counter data.
-        
-        Args:
-            counter_data: Raw counter data
-            age_operator: Age comparison operator
-            age_value: Age threshold value
-            gender: Gender filter
-            
-        Returns:
-            Filtered person count
-        """
-        count = counter_data.total_count
-        
-        # If no filters, return total
-        if (not age_operator or age_operator == AgeRangeOperator.ANY) and \
-           (not gender or gender == GenderFilter.ANY):
-            return count
-        
-        # TODO: Implement actual filtering based on age_distribution and gender_distribution
-        # For now, return total count
-        # This requires access to individual detection data with ages and genders
-        
-        logger.warning(
-            "Age/Gender filtering not yet implemented. "
-            "Using total count. Filters: age=%s:%s, gender=%s",
-            age_operator, age_value, gender
-        )
-        
-        return count
-    
-    def _check_person_count(
-        self,
-        actual_count: int,
-        operator: PersonCountOperator,
-        threshold_value: str
-    ) -> bool:
-        """
-        Check if person count meets threshold condition.
-        
-        Args:
-            actual_count: Actual person count
-            operator: Comparison operator
-            threshold_value: Threshold value(s)
-            
-        Returns:
-            True if condition met, False otherwise
-        """
-        try:
-            if operator == PersonCountOperator.LESS_THAN:
-                threshold = int(threshold_value)
-                return actual_count < threshold
-            
-            elif operator == PersonCountOperator.MORE_THAN:
-                threshold = int(threshold_value)
-                return actual_count > threshold
-            
-            elif operator == PersonCountOperator.EQUALS:
-                threshold = int(threshold_value)
-                return actual_count == threshold
-            
-            elif operator == PersonCountOperator.BETWEEN:
-                # Parse range: "5-15"
-                if "-" in threshold_value:
-                    min_val, max_val = threshold_value.split("-")
-                    return int(min_val) <= actual_count <= int(max_val)
-                else:
-                    logger.warning(f"Invalid BETWEEN value: {threshold_value}")
-                    return False
-            
-            else:
-                logger.error(f"Unknown operator: {operator}")
-                return False
-                
-        except ValueError as e:
-            logger.error(f"Error parsing threshold value '{threshold_value}': {e}")
-            return False
-    
-    def _get_filter_description(
-        self,
-        age_operator: Optional[AgeRangeOperator],
-        age_value: Optional[str],
-        gender: Optional[GenderFilter]
-    ) -> str:
-        """Generate human-readable filter description."""
-        parts = []
-        
-        if age_operator and age_operator != AgeRangeOperator.ANY:
-            parts.append(f"age {age_operator} {age_value}")
-        
-        if gender and gender != GenderFilter.ANY:
-            parts.append(f"gender={gender}")
-        
-        if parts:
-            return f" (filtered: {', '.join(parts)})"
-        return ""
     
     def get_active_triggers_for_camera(self, camera_device_id: str) -> List[Trigger]:
         """Get all active triggers monitoring a specific camera."""
