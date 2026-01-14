@@ -65,7 +65,7 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 
 b24ad688-26f0-4e1e-9484-4fecec18df9c (that's your "Nick" MVR person!)
 
-
+ 
 
 cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-signage-simple-player
 

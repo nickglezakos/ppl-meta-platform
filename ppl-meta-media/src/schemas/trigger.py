@@ -9,67 +9,54 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 
 
-class PersonCountOperatorEnum(str):
-    """Person count operators."""
-    LESS_THAN = "less_than"
-    MORE_THAN = "more_than"
-    EQUALS = "equals"
-    BETWEEN = "between"
+class DemographicCondition(BaseModel):
+    """Single demographic condition."""
+    field: str = Field(
+        ...,
+        description="Demographic field: people_count, percent_male, percent_female, percent_age_0_12, percent_age_13_17, percent_age_18_24, percent_age_25_34, percent_age_35_44, percent_age_45_54, percent_age_55_64, percent_age_65_plus"
+    )
+    operator: str = Field(
+        ...,
+        description="Comparison operator: gt, gte, lt, lte, eq"
+    )
+    value: float = Field(
+        ...,
+        description="Threshold value"
+    )
 
+    @field_validator('field')
+    @classmethod
+    def validate_field(cls, v: str) -> str:
+        valid = [
+            'people_count', 'percent_male', 'percent_female',
+            'percent_age_0_12', 'percent_age_13_17', 'percent_age_18_24',
+            'percent_age_25_34', 'percent_age_35_44', 'percent_age_45_54',
+            'percent_age_55_64', 'percent_age_65_plus'
+        ]
+        if v not in valid:
+            raise ValueError(f'field must be one of {valid}')
+        return v
 
-class AgeRangeOperatorEnum(str):
-    """Age range operators."""
-    LESS_THAN = "less_than"
-    MORE_THAN = "more_than"
-    BETWEEN = "between"
-    ANY = "any"
-
-
-class GenderFilterEnum(str):
-    """Gender filter options."""
-    MALE = "male"
-    FEMALE = "female"
-    ANY = "any"
-
-
-class TriggerActionEnum(str):
-    """Trigger actions."""
-    ALERT = "alert"
-    EMAIL = "email"
-    WEBHOOK = "webhook"
-    LOG = "log"
+    @field_validator('operator')
+    @classmethod
+    def validate_operator(cls, v: str) -> str:
+        valid = ['gt', 'gte', 'lt', 'lte', 'eq']
+        if v not in valid:
+            raise ValueError(f'operator must be one of {valid}')
+        return v
 
 
 class TriggerBase(BaseModel):
     """Base trigger schema with common fields."""
     
-    person_count_operator: str = Field(
+    demographic_conditions: List[DemographicCondition] = Field(
         ...,
-        description="Comparison operator: less_than, more_than, equals, between"
-    )
-    person_count_value: str = Field(
-        ...,
-        description="Person count threshold (e.g., '5', '10-20' for between)",
-        min_length=1,
-        max_length=50
-    )
-    age_range_operator: Optional[str] = Field(
-        None,
-        description="Age comparison operator: less_than, more_than, between, any"
-    )
-    age_range_value: Optional[str] = Field(
-        None,
-        description="Age threshold (e.g., '18', '65', '18-30' for between)",
-        max_length=50
-    )
-    gender_filter: Optional[str] = Field(
-        "any",
-        description="Gender filter: male, female, any",
-        max_length=50
+        description="List of demographic conditions (all must match)",
+        min_length=1
     )
     time_span: str = Field(
         ...,
-        description="Time span when active (e.g., 'Mon-Fri 09:00-17:00')",
+        description="Time span when active (e.g., 'Mon-Fri 09:00-17:00', 'any')",
         min_length=1,
         max_length=100
     )
@@ -84,18 +71,9 @@ class TriggerBase(BaseModel):
         description="Friendly name of the camera",
         max_length=255
     )
-    action: str = Field(
-        default="alert",
-        description="Action to execute: alert, email, webhook, log (deprecated - use action_uuid)"
-    )
-    action_config: Optional[str] = Field(
-        None,
-        description="Additional action configuration (JSON string)",
-        max_length=500
-    )
     action_uuid: Optional[UUID] = Field(
         None,
-        description="UUID of the linked user action"
+        description="UUID of the linked user action (alert, webhook, email, digital_signage, etc.)"
     )
     tracking_duration: str = Field(
         default="10 minutes",
@@ -105,6 +83,11 @@ class TriggerBase(BaseModel):
     is_active: bool = Field(
         default=True,
         description="Whether trigger is active"
+    )
+    cooldown_seconds: int = Field(
+        default=60,
+        ge=0,
+        description="Minimum seconds between trigger firings to prevent spam"
     )
     name: Optional[str] = Field(
         None,
@@ -116,73 +99,6 @@ class TriggerBase(BaseModel):
         description="Optional description",
         max_length=500
     )
-    enable_demographic_conditions: bool = Field(
-        default=False,
-        description="Enable demographic-based trigger evaluation"
-    )
-    demographic_conditions: Optional[str] = Field(
-        None,
-        description='JSON array of demographic conditions: [{"field": "percent_male", "operator": "gte", "value": 60}]'
-    )
-    signage_device_ids: Optional[str] = Field(
-        None,
-        description='JSON array of signage device UUIDs: ["device-uuid-1", "device-uuid-2"]'
-    )
-    signage_playlist_id: Optional[str] = Field(
-        None,
-        description="Playlist UUID to play when trigger fires",
-        max_length=255
-    )
-    signage_transition_mode: str = Field(
-        default="immediate",
-        description="Playlist transition mode: immediate | after_current | fade"
-    )
-    signage_fade_duration_ms: int = Field(
-        default=2000,
-        ge=0,
-        description="Fade duration in milliseconds"
-    )
-    cooldown_seconds: int = Field(
-        default=60,
-        ge=0,
-        description="Minimum seconds between trigger firings"
-    )
-
-    @field_validator('person_count_operator')
-    @classmethod
-    def validate_operator(cls, v: str) -> str:
-        valid = ['less_than', 'more_than', 'equals', 'between']
-        if v not in valid:
-            raise ValueError(f'person_count_operator must be one of {valid}')
-        return v
-
-    @field_validator('age_range_operator')
-    @classmethod
-    def validate_age_range_operator(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        valid = ['less_than', 'more_than', 'between', 'any']
-        if v not in valid:
-            raise ValueError(f'age_range_operator must be one of {valid}')
-        return v
-
-    @field_validator('gender_filter')
-    @classmethod
-    def validate_gender_filter(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return 'any'
-        valid = ['male', 'female', 'any']
-        if v not in valid:
-            raise ValueError(f'gender_filter must be one of {valid}')
-        return v
-
-    @field_validator('action')
-    @classmethod
-    def validate_action(cls, v: str) -> str:
-        valid = ['alert', 'email', 'webhook', 'log']
-        if v not in valid:
-            raise ValueError(f'action must be one of {valid}')
-        return v
 
 
 class TriggerCreate(TriggerBase):
@@ -193,74 +109,47 @@ class TriggerCreate(TriggerBase):
 class TriggerUpdate(BaseModel):
     """Schema for updating a trigger (all fields optional)."""
     
-    person_count_operator: Optional[str] = None
-    person_count_value: Optional[str] = None
-    age_range_operator: Optional[str] = None
-    age_range_value: Optional[str] = None
-    gender_filter: Optional[str] = None
+    demographic_conditions: Optional[List[DemographicCondition]] = None
     time_span: Optional[str] = None
     camera_device_id: Optional[str] = None
     camera_name: Optional[str] = None
-    action: Optional[str] = None
-    action_config: Optional[str] = None
     action_uuid: Optional[UUID] = None
     tracking_duration: Optional[str] = None
     is_active: Optional[bool] = None
+    cooldown_seconds: Optional[int] = None
     name: Optional[str] = None
     description: Optional[str] = None
-    enable_demographic_conditions: Optional[bool] = None
-    demographic_conditions: Optional[str] = None
-    signage_device_ids: Optional[str] = None
-    signage_playlist_id: Optional[str] = None
-    signage_transition_mode: Optional[str] = None
-    signage_fade_duration_ms: Optional[int] = None
-    cooldown_seconds: Optional[int] = None
-
-    @field_validator('person_count_operator')
-    @classmethod
-    def validate_operator(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            valid = ['less_than', 'more_than', 'equals', 'between']
-            if v not in valid:
-                raise ValueError(f'person_count_operator must be one of {valid}')
-        return v
-
-    @field_validator('age_range_operator')
-    @classmethod
-    def validate_age_range_operator(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            valid = ['less_than', 'more_than', 'between', 'any']
-            if v not in valid:
-                raise ValueError(f'age_range_operator must be one of {valid}')
-        return v
-
-    @field_validator('gender_filter')
-    @classmethod
-    def validate_gender_filter(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            valid = ['male', 'female', 'any']
-            if v not in valid:
-                raise ValueError(f'gender_filter must be one of {valid}')
-        return v
-
-    @field_validator('action')
-    @classmethod
-    def validate_action(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            valid = ['alert', 'email', 'webhook', 'log']
-            if v not in valid:
-                raise ValueError(f'action must be one of {valid}')
-        return v
 
 
-class TriggerResponse(TriggerBase):
+class TriggerResponse(BaseModel):
     """Schema for trigger response."""
     
     id: int
     uuid: UUID
+    demographic_conditions: List[DemographicCondition]
+    time_span: str
+    camera_device_id: str
+    camera_name: Optional[str]
+    action_uuid: Optional[UUID]
+    action_name: Optional[str] = Field(None, description="Name of the linked user action")
+    tracking_duration: str
+    is_active: bool
+    cooldown_seconds: int
+    last_fired_at: Optional[datetime]
+    name: Optional[str]
+    description: Optional[str]
     created_at: datetime
     updated_at: Optional[datetime]
-    action_name: Optional[str] = Field(None, description="Name of the linked user action")
+
+    @field_validator('demographic_conditions', mode='before')
+    @classmethod
+    def parse_demographic_conditions(cls, v):
+        """Parse demographic_conditions if it's a JSON string."""
+        if isinstance(v, str):
+            import json
+            parsed = json.loads(v)
+            return [DemographicCondition(**item) for item in parsed]
+        return v
 
     class Config:
         from_attributes = True

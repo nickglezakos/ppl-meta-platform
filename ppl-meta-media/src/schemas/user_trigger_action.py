@@ -13,15 +13,15 @@ class UserTriggerActionBase(BaseModel):
     """Base schema with common fields"""
     name: str = Field(..., min_length=1, max_length=255, description="Action name")
     description: Optional[str] = Field(None, description="Action description")
-    action_type: str = Field(..., description="Action type: alert, email, webhook, log")
-    action_config: Optional[str] = Field(None, description="JSON configuration for action")
+    action_type: str = Field(..., description="Action type: alert, email, webhook, log, digital_signage")
+    action_config: Optional[str] = Field(None, description="JSON configuration for action. For digital_signage: {\"device_ids\": [...], \"playlist_id\": \"...\", \"transition_mode\": \"immediate|after_current|fade\", \"fade_duration_ms\": 2000}")
     is_active: bool = Field(True, description="Whether action is active")
     created_by: Optional[str] = Field(None, description="Username/email of creator")
     
     @validator('action_type')
     def validate_action_type(cls, v):
         """Validate action type is one of the supported types"""
-        allowed_types = ['alert', 'email', 'webhook', 'log']
+        allowed_types = ['alert', 'email', 'webhook', 'log', 'digital_signage']
         if v not in allowed_types:
             raise ValueError(f"action_type must be one of {allowed_types}, got '{v}'")
         return v
@@ -47,7 +47,7 @@ class UserTriggerActionUpdate(BaseModel):
     def validate_action_type(cls, v):
         """Validate action type if provided"""
         if v is not None:
-            allowed_types = ['alert', 'email', 'webhook', 'log']
+            allowed_types = ['alert', 'email', 'webhook', 'log', 'digital_signage']
             if v not in allowed_types:
                 raise ValueError(f"action_type must be one of {allowed_types}, got '{v}'")
         return v
