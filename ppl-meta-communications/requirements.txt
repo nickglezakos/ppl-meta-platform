@@ -1,0 +1,42 @@
+# PPL Meta Communications Service - Requirements
+
+# Core FastAPI and dependencies
+fastapi==0.103.0
+uvicorn[standard]==0.23.2
+pydantic>=2.4.0
+pydantic-settings>=2.0.0
+python-dotenv==1.0.0
+
+# Database
+psycopg[binary]>=3.1.0
+SQLAlchemy>=2.0.25
+alembic==1.11.1
+
+# HTTP client for webhooks and service communication
+httpx>=0.24.0
+
+# Email dependencies
+aiosmtplib>=3.0.0  # Async SMTP client
+
+# Redis for queuing and rate limiting
+redis>=5.0.0
+aioredis>=2.0.0
+
+# Push notifications (optional - install if using Firebase/APNS)
+# firebase-admin>=6.0.0  # Firebase Cloud Messaging
+# aioapns>=3.0.0  # Apple Push Notification Service
+
+# Security
+PyJWT>=2.8.0
+passlib[bcrypt]>=1.7.4
+cryptography>=41.0.0
+
+# Monitoring and metrics
+prometheus-client>=0.19.0
+psutil>=5.9.0
+
+# Development dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.0.0
+flake8>=6.0.0
