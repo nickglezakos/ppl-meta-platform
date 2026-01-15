@@ -62,6 +62,8 @@ class WebhookService:
             triggered_by=triggered_by,
             trigger_type=trigger_type,
             trigger_id=trigger_id,
+            installation_id=self.config.INSTALLATION_ID,
+            tenant_name=self.config.TENANT_NAME,
             attempts=0,
         )
         self.db.add(log)
@@ -181,6 +183,8 @@ class WebhookService:
             triggered_by=triggered_by,
             trigger_type=trigger_type,
             trigger_id=trigger_id,
+            installation_id=installation_id,
+            tenant_name=tenant_name,
             max_retries=webhook_config.max_retries,
             retry_delay=webhook_config.retry_delay_seconds,
         )

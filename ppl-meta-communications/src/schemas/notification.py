@@ -68,6 +68,8 @@ class CommunicationLogQuery(BaseModel):
     recipient: Optional[str] = Field(None, description="Filter by recipient")
     triggered_by: Optional[str] = Field(None, description="Filter by trigger source")
     trigger_id: Optional[str] = Field(None, description="Filter by trigger ID")
+    installation_id: Optional[str] = Field(None, description="Filter by installation/tenant ID")
+    tenant_name: Optional[str] = Field(None, description="Filter by tenant name (partial match)")
     start_date: Optional[str] = Field(None, description="Filter by start date (ISO format)")
     end_date: Optional[str] = Field(None, description="Filter by end date (ISO format)")
     page: int = Field(1, ge=1, description="Page number")
@@ -88,6 +90,8 @@ class CommunicationLogResponse(BaseModel):
     triggered_by: Optional[str]
     trigger_type: Optional[str]
     trigger_id: Optional[str]
+    installation_id: Optional[str]
+    tenant_name: Optional[str]
     attempts: int
     last_attempt_at: Optional[str]
     delivered_at: Optional[str]

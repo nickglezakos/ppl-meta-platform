@@ -60,6 +60,8 @@ class NotificationService:
             triggered_by=triggered_by,
             trigger_type=trigger_type,
             trigger_id=trigger_id,
+            installation_id=installation_id,
+            tenant_name=tenant_name,
             attempts=0,
         )
         self.db.add(log)
@@ -141,6 +143,8 @@ class AuditLogService:
                 trigger_id=event_type,
                 attempts=1,
                 delivered_at=datetime.now(timezone.utc),
+                installation_id=self.config.INSTALLATION_ID,
+                tenant_name=self.config.TENANT_NAME,
             )
             self.db.add(log)
             self.db.commit()
@@ -167,6 +171,8 @@ class CommunicationLogService:
         recipient: Optional[str] = None,
         triggered_by: Optional[str] = None,
         trigger_id: Optional[str] = None,
+        installation_id: Optional[str] = None,
+        tenant_name: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         page: int = 1,
@@ -191,6 +197,10 @@ class CommunicationLogService:
             query = query.filter(CommunicationLog.triggered_by == triggered_by)
         if trigger_id:
             query = query.filter(CommunicationLog.trigger_id == trigger_id)
+        if installation_id:
+            query = query.filter(CommunicationLog.installation_id == installation_id)
+        if tenant_name:
+            query = query.filter(CommunicationLog.tenant_name.ilike(f"%{tenant_name}%"))
         if start_date:
             query = query.filter(CommunicationLog.created_at >= start_date)
         if end_date:
@@ -204,7 +214,6 @@ class CommunicationLogService:
         logs = query.order_by(CommunicationLog.created_at.desc()).offset(offset).limit(page_size).all()
 
         return logs, total
-
     def get_log_by_uuid(self, log_uuid: UUID) -> Optional[CommunicationLog]:
         """Get a single communication log by UUID."""
         return self.db.query(CommunicationLog).filter(CommunicationLog.uuid == log_uuid).first()

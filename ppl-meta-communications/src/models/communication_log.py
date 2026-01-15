@@ -54,6 +54,10 @@ class CommunicationLog(Base):
     trigger_type = Column(String(100), nullable=True)  # e.g., "trigger_action", "manual", "scheduled"
     trigger_id = Column(String(200), nullable=True, index=True)  # ID of trigger/action that caused this
     
+    # Multi-tenant / Installation tracking
+    installation_id = Column(String(200), nullable=True, index=True)  # UUID of admin/owner user for this installation
+    tenant_name = Column(String(200), nullable=True)  # Optional human-readable tenant/installation name
+    
     # Delivery tracking
     attempts = Column(Integer, default=0)
     last_attempt_at = Column(DateTime(timezone=True), nullable=True)

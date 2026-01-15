@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     AUDIT_LOG_ENABLED: bool = Field(default=True, env="AUDIT_LOG_ENABLED")
     AUDIT_LOG_RETENTION_DAYS: int = Field(default=90, env="AUDIT_LOG_RETENTION_DAYS")
 
+    # Installation/Tenant Configuration (for edge deployment multi-tenancy)
+    INSTALLATION_ID: Optional[str] = Field(default=None, env="INSTALLATION_ID")
+    TENANT_NAME: Optional[str] = Field(default=None, env="TENANT_NAME")
+
     # Redis Configuration (for queuing and rate limiting)
     REDIS_URL: str = Field(default="redis://localhost:6379/0", env="REDIS_URL")
     REDIS_ENABLED: bool = Field(default=True, env="REDIS_ENABLED")

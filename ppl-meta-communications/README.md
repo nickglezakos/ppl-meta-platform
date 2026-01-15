@@ -40,7 +40,24 @@ A microservice for handling all outbound communications in the PPL Meta platform
 - Trigger source tracking (trigger IDs, types)
 - Paginated query API with filters
 
+### 🏢 Edge Deployment Multi-Tenancy
+- Installation-level identification for edge deployments
+- Automatic inclusion of installation_id and tenant_name in all logs
+- Support for remote troubleshooting and log aggregation
+- No need to pass tenant info through API calls—configured once at installation
+
 ## Architecture
+
+**Deployment Model**: Edge/On-Premise Multi-Instance
+
+Each customer runs a complete independent installation of ppl-meta-platform on their own hardware. The Communications Service is part of each local installation and includes:
+
+- Local database (ppl_communications_db)
+- Installation-specific identification (INSTALLATION_ID, TENANT_NAME)
+- All communication logs tagged with installation context
+- Support for remote troubleshooting via VPN/SSH or log export
+
+Future: Central licensing service will issue application keys per installation.
 
 The service follows the standard PPL Meta microservice architecture:
 
@@ -82,6 +99,22 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your configuration
 ```
+
+**IMPORTANT: Set Installation Identifiers**
+
+During platform installation, generate and set unique installation identifiers:
+
+```bash
+# Generate unique installation ID
+python -c "import uuid; print(uuid.uuid4())"
+# Example output: 550e8400-e29b-41d4-a716-446655440000
+
+# Edit .env and set:
+INSTALLATION_ID=550e8400-e29b-41d4-a716-446655440000
+TENANT_NAME=Customer Name - Site Location
+```
+
+These values will be automatically included in all communication logs for support and troubleshooting.
 
 ### 4. Configure Database
 
