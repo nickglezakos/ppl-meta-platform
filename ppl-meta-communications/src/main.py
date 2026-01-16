@@ -36,21 +36,21 @@ print(f"📝 Communications service logging to: {log_file}", flush=True)
 # Add the parent directory to Python path to import shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from src.config import get_config
-from src.database import Base, engine, test_connection
-from src.microservice_config import CONSUL_CONFIG
+from .config import get_config
+from .database import Base, engine, test_connection
+from .microservice_config import CONSUL_CONFIG
 
 # Import models for table creation
-from src.models.communication_log import CommunicationLog, CommunicationType, CommunicationStatus
-from src.models.email_template import EmailTemplate
-from src.models.webhook_config import WebhookConfig
+from .models.communication_log import CommunicationLog, CommunicationType, CommunicationStatus
+from .models.email_template import EmailTemplate
+from .models.webhook_config import WebhookConfig
 
 # Import routes
-from src.routes.email import router as email_router
-from src.routes.webhook import router as webhook_router
-from src.routes.notification import router as notification_router
-from src.routes.audit import router as audit_router
-from src.api.health import router as health_router
+from .routes.email import router as email_router
+from .routes.webhook import router as webhook_router
+from .routes.notification import router as notification_router
+from .routes.audit import router as audit_router
+from .api.health import router as health_router
 
 # Try to import shared modules
 try:
