@@ -19,8 +19,24 @@ from src.models.trigger import Trigger
 from src.models.signage import SignageDevice
 from src.services.signage_service import SignageService, SignagePlaybackService
 from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
+from src.services.communications_client import CommunicationsClient
+from src.config import get_config
 
 logger = logging.getLogger(__name__)
+
+# Module-level communications client singleton
+_communications_client = None
+
+
+def get_communications_client() -> CommunicationsClient:
+    """Get or create communications client singleton."""
+    global _communications_client
+    if _communications_client is None:
+        config = get_config()
+        _communications_client = CommunicationsClient(
+            base_url=config.COMMUNICATIONS_SERVICE_URL
+        )
+    return _communications_client
 
 
 class InstantDetectionSubscriber:
@@ -265,9 +281,15 @@ class InstantDetectionSubscriber:
         logger.info(f"     Action Type: {action.action_type}")
         logger.info(f"     Action Name: {action.name}")
         
-        # Handle digital_signage action type
+        # Route to appropriate handler
         if action.action_type == "digital_signage":
             await self._execute_signage_action(action, db)
+        elif action.action_type == "email":
+            await self._execute_email_action(action, trigger, db)
+        elif action.action_type == "webhook":
+            await self._execute_webhook_action(action, trigger, db)
+        elif action.action_type == "log":
+            await self._execute_log_action(action, trigger, db)
         else:
             logger.warning(f"     ⚠️ Unsupported action type: {action.action_type}")
     
@@ -328,6 +350,146 @@ class InstantDetectionSubscriber:
             logger.error(f"Failed to parse action_config: {e}")
         except Exception as e:
             logger.error(f"Error executing signage action: {e}", exc_info=True)
+    
+    async def _execute_email_action(self, action, trigger: Trigger, db: Session):
+        """Execute email action via Communications Service."""
+        logger.info(f"  📧 Executing email action...")
+        
+        try:
+            # Parse action_config
+            config = json.loads(action.action_config) if isinstance(action.action_config, str) else action.action_config
+            
+            # Handle both 'to' (single string) and 'recipients' (list) formats
+            recipients = config.get("recipients")
+            if not recipients:
+                # Try 'to' field (Flutter UI format)
+                to_field = config.get("to", "")
+                if isinstance(to_field, str):
+                    recipients = [email.strip() for email in to_field.split(',') if email.strip()]
+                elif isinstance(to_field, list):
+                    recipients = to_field
+                else:
+                    recipients = []
+            
+            # Handle CC field
+            cc = config.get("cc", [])
+            if not isinstance(cc, list):
+                cc = [str(cc)] if cc else []
+            
+            subject = config.get("subject", "Trigger Alert")
+            body_template = config.get("body", "Trigger '{trigger_name}' was fired.")
+            
+            # Substitute variables in template
+            body = body_template.format(
+                trigger_name=trigger.name,
+                trigger_id=str(trigger.uuid),
+            )
+            
+            logger.info(f"     Recipients: {recipients}")
+            logger.info(f"     CC: {cc}")
+            logger.info(f"     Subject: {subject}")
+            
+            if not recipients:
+                logger.error(f"     ❌ No recipients configured in action")
+                return
+            
+            # Call Communications Service
+            # Note: installation_id and tenant_name are automatically included from Communications Service config
+            comms_client = get_communications_client()
+            result = await comms_client.send_email(
+                to=recipients,
+                cc=cc if cc else None,
+                subject=subject,
+                text_body=body,
+                triggered_by="media_service",
+                trigger_type="trigger_action",
+                trigger_id=str(trigger.uuid),
+            )
+            
+            if result.get("success"):
+                logger.info(f"     ✅ Email sent successfully. Log UUID: {result.get('log_uuid')}")
+            else:
+                logger.error(f"     ❌ Email failed: {result.get('message')}")
+        
+        except Exception as e:
+            logger.error(f"     ❌ Error executing email action: {e}", exc_info=True)
+    
+    async def _execute_webhook_action(self, action, trigger: Trigger, db: Session):
+        """Execute webhook action via Communications Service."""
+        logger.info(f"  🔗 Executing webhook action...")
+        
+        try:
+            # Parse action_config
+            config = json.loads(action.action_config) if isinstance(action.action_config, str) else action.action_config
+            
+            webhook_url = config.get("url")
+            method = config.get("method", "POST")
+            
+            # Build payload
+            payload = {
+                "event": "trigger_fired",
+                "trigger_id": str(trigger.uuid),
+                "trigger_name": trigger.name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "data": config.get("payload_data", {}),
+            }
+            
+            logger.info(f"     Webhook URL: {webhook_url}")
+            logger.info(f"     Method: {method}")
+            
+            # Call Communications Service
+            # Note: installation_id and tenant_name are automatically included from Communications Service config
+            comms_client = get_communications_client()
+            result = await comms_client.send_webhook(
+                url=webhook_url,
+                payload=payload,
+                method=method,
+                triggered_by="media_service",
+                trigger_type="trigger_action",
+                trigger_id=str(trigger.uuid),
+            )
+            
+            if result.get("success"):
+                logger.info(f"     ✅ Webhook sent successfully. Log UUID: {result.get('log_uuid')}")
+                logger.info(f"     Status Code: {result.get('status_code')}")
+            else:
+                logger.error(f"     ❌ Webhook failed: {result.get('message')}")
+        
+        except Exception as e:
+            logger.error(f"     ❌ Error executing webhook action: {e}", exc_info=True)
+    
+    async def _execute_log_action(self, action, trigger: Trigger, db: Session):
+        """Execute audit log action via Communications Service."""
+        logger.info(f"  📋 Executing audit log action...")
+        
+        try:
+            # Parse action_config
+            config = json.loads(action.action_config) if isinstance(action.action_config, str) else action.action_config
+            
+            event_data = {
+                "trigger_id": str(trigger.uuid),
+                "trigger_name": trigger.name,
+                "action_name": action.name,
+                "custom_data": config.get("data", {}),
+            }
+            
+            # Call Communications Service
+            # Note: installation_id and tenant_name are automatically included from Communications Service config
+            comms_client = get_communications_client()
+            result = await comms_client.log_audit_event(
+                event_type="trigger_fired",
+                event_source="media_service",
+                event_data=event_data,
+                severity=config.get("severity", "info"),
+            )
+            
+            if result.get("success"):
+                logger.info(f"     ✅ Audit log created. Log UUID: {result.get('log_uuid')}")
+            else:
+                logger.error(f"     ❌ Audit log failed: {result.get('message')}")
+        
+        except Exception as e:
+            logger.error(f"     ❌ Error executing log action: {e}", exc_info=True)
 
 
 # Global subscriber instance
