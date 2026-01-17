@@ -49,13 +49,44 @@ class EmailService:
         Returns:
             tuple: (success, message, log_uuid)
         """
-        if not self.config.is_mail_configured():
-            logger.error("Email is not configured. Check MAIL_* environment variables.")
+        # Try to get settings from database first
+        from ..models.email_settings import EmailSettings
+        db_settings = self.db.query(EmailSettings).first()
+        
+        # Use database settings if available and enabled, otherwise fallback to config
+        if db_settings and db_settings.mail_enabled:
+            mail_config = {
+                'server': db_settings.mail_server,
+                'port': db_settings.mail_port,
+                'username': db_settings.mail_username,
+                'password': db_settings.mail_password,
+                'from': db_settings.mail_from,
+                'from_name': db_settings.mail_from_name,
+                'starttls': db_settings.mail_starttls,
+                'ssl_tls': db_settings.mail_ssl_tls,
+                'use_credentials': db_settings.use_credentials,
+            }
+            logger.info("Using database email settings")
+        elif self.config.is_mail_configured():
+            mail_config = {
+                'server': self.config.MAIL_SERVER,
+                'port': self.config.MAIL_PORT,
+                'username': self.config.MAIL_USERNAME,
+                'password': self.config.MAIL_PASSWORD,
+                'from': self.config.MAIL_FROM,
+                'from_name': self.config.MAIL_FROM_NAME,
+                'starttls': self.config.MAIL_STARTTLS,
+                'ssl_tls': self.config.MAIL_SSL_TLS,
+                'use_credentials': self.config.USE_CREDENTIALS,
+            }
+            logger.info("Using environment email settings")
+        else:
+            logger.error("Email is not configured. Check database settings or MAIL_* environment variables.")
             return False, "Email service not configured", None
 
         # Use configured defaults if not provided
-        sender_email = from_email or self.config.MAIL_FROM
-        sender_name = from_name or self.config.MAIL_FROM_NAME
+        sender_email = from_email or mail_config['from']
+        sender_name = from_name or mail_config['from_name']
 
         # Create communication log
         log = CommunicationLog(
@@ -100,18 +131,19 @@ class EmailService:
             log.attempts += 1
             self.db.commit()
 
-            if self.config.MAIL_STARTTLS:
-                # Use STARTTLS
-                with smtplib.SMTP(self.config.MAIL_SERVER, self.config.MAIL_PORT) as server:
-                    server.starttls()
-                    if self.config.USE_CREDENTIALS:
-                        server.login(self.config.MAIL_USERNAME, self.config.MAIL_PASSWORD)
+            if mail_config['ssl_tls']:
+                # Use SSL/TLS (port 465)
+                with smtplib.SMTP_SSL(mail_config['server'], mail_config['port']) as server:
+                    if mail_config['use_credentials']:
+                        server.login(mail_config['username'], mail_config['password'])
                     server.sendmail(sender_email, all_recipients, msg.as_string())
             else:
-                # Use SSL/TLS
-                with smtplib.SMTP_SSL(self.config.MAIL_SERVER, self.config.MAIL_PORT) as server:
-                    if self.config.USE_CREDENTIALS:
-                        server.login(self.config.MAIL_USERNAME, self.config.MAIL_PASSWORD)
+                # Use STARTTLS (port 587) or plain SMTP
+                with smtplib.SMTP(mail_config['server'], mail_config['port']) as server:
+                    if mail_config['starttls']:
+                        server.starttls()
+                    if mail_config['use_credentials']:
+                        server.login(mail_config['username'], mail_config['password'])
                     server.sendmail(sender_email, all_recipients, msg.as_string())
 
             # Update log on success

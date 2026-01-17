@@ -44,12 +44,14 @@ from .microservice_config import CONSUL_CONFIG
 from .models.communication_log import CommunicationLog, CommunicationType, CommunicationStatus
 from .models.email_template import EmailTemplate
 from .models.webhook_config import WebhookConfig
+from .models.email_settings import EmailSettings
 
 # Import routes
 from .routes.email import router as email_router
 from .routes.webhook import router as webhook_router
 from .routes.notification import router as notification_router
 from .routes.audit import router as audit_router
+from .routes.email_settings import router as email_settings_router
 from .api.health import router as health_router
 
 # Try to import shared modules
@@ -166,6 +168,7 @@ app.include_router(email_router, prefix="/api/v1")
 app.include_router(webhook_router, prefix="/api/v1")
 app.include_router(notification_router, prefix="/api/v1")
 app.include_router(audit_router, prefix="/api/v1")
+app.include_router(email_settings_router)
 
 
 @app.get("/")
