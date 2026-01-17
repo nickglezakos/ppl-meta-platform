@@ -54,6 +54,9 @@ class Settings(BaseSettings):
         default="http://localhost:8080", env="GATEWAY_SERVICE_URL"
     )
     VISION_SERVICE_URL: Optional[str] = Field(default=None, env="VISION_SERVICE_URL")
+    COMMUNICATIONS_SERVICE_URL: str = Field(
+        default="http://localhost:8009", env="COMMUNICATIONS_SERVICE_URL"
+    )
 
     # Standardized Mail Configuration (consistent across all services)
     MAIL_USERNAME: str = Field(default="", env="MAIL_USERNAME")

@@ -14,7 +14,16 @@ class UserTriggerActionBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Action name")
     description: Optional[str] = Field(None, description="Action description")
     action_type: str = Field(..., description="Action type: alert, email, webhook, log, digital_signage")
-    action_config: Optional[str] = Field(None, description="JSON configuration for action. For digital_signage: {\"device_ids\": [...], \"playlist_id\": \"...\", \"transition_mode\": \"immediate|after_current|fade\", \"fade_duration_ms\": 2000}")
+    action_config: Optional[str] = Field(
+        None, 
+        description=(
+            "JSON configuration for action.\n"
+            "- digital_signage: {\"device_ids\": [...], \"playlist_id\": \"...\", \"transition_mode\": \"immediate|after_current|fade\", \"fade_duration_ms\": 2000}\n"
+            "- email: {\"recipients\": [\"email1@example.com\", \"email2@example.com\"], \"subject\": \"Alert: {trigger_name}\", \"body\": \"Trigger fired at {timestamp}\"}\n"
+            "- webhook: {\"url\": \"https://webhook.site/...\", \"method\": \"POST\", \"payload_data\": {\"custom_field\": \"value\"}}\n"
+            "- log: {\"severity\": \"info|warning|error\", \"data\": {\"category\": \"trigger_events\", \"tags\": [\"marketing\"]}}"
+        )
+    )
     is_active: bool = Field(True, description="Whether action is active")
     created_by: Optional[str] = Field(None, description="Username/email of creator")
     

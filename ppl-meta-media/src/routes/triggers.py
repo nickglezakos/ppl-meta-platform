@@ -50,7 +50,16 @@ async def create_trigger(
     - **is_active**: Whether trigger is active
     """
     try:
-        db_trigger = Trigger(**trigger.model_dump())
+        trigger_data = trigger.model_dump()
+        
+        # Convert demographic_conditions list to JSON string for storage
+        if 'demographic_conditions' in trigger_data and trigger_data['demographic_conditions'] is not None:
+            trigger_data['demographic_conditions'] = json.dumps([
+                cond.model_dump() if hasattr(cond, 'model_dump') else cond
+                for cond in trigger_data['demographic_conditions']
+            ])
+        
+        db_trigger = Trigger(**trigger_data)
         db.add(db_trigger)
         db.commit()
         db.refresh(db_trigger)
@@ -148,6 +157,15 @@ async def update_trigger(
     
     # Update only provided fields
     update_data = trigger_update.model_dump(exclude_unset=True)
+    
+    # Convert demographic_conditions list to JSON string for storage
+    if 'demographic_conditions' in update_data and update_data['demographic_conditions'] is not None:
+        import json
+        update_data['demographic_conditions'] = json.dumps([
+            cond.model_dump() if hasattr(cond, 'model_dump') else cond
+            for cond in update_data['demographic_conditions']
+        ])
+    
     for field, value in update_data.items():
         setattr(db_trigger, field, value)
     
