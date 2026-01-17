@@ -90,6 +90,7 @@ SERVICES = {
     "vision": "http://localhost:8003",
     "cameras": "http://localhost:8005",
     "vmeta": "http://localhost:8008",
+    "communications": "http://localhost:8009",
 }
 
 # Add validation support
@@ -736,6 +737,148 @@ async def get_etl_jobs(request: Request):
 async def get_etl_job_status(request: Request):
     """Proxy get ETL job status to Media service."""
     return await _proxy_to_media_service(request)
+
+
+# Trigger Routes - Proxy to Media service
+@api_router.get("/triggers/")
+async def list_triggers(request: Request):
+    """Proxy list triggers to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/triggers/{trigger_id}")
+async def get_trigger(request: Request):
+    """Proxy get trigger to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/triggers/")
+async def create_trigger(request: Request):
+    """Proxy create trigger to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.put("/triggers/{trigger_id}")
+async def update_trigger(request: Request):
+    """Proxy update trigger to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.delete("/triggers/{trigger_id}")
+async def delete_trigger(request: Request):
+    """Proxy delete trigger to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.patch("/triggers/{trigger_id}/toggle")
+async def toggle_trigger(request: Request):
+    """Proxy toggle trigger to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+# User Actions Routes - Proxy to Media service
+@api_router.get("/user-actions/")
+async def list_user_actions(request: Request):
+    """Proxy list user actions to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/user-actions/{action_id}")
+async def get_user_action(request: Request):
+    """Proxy get user action to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/user-actions/")
+async def create_user_action(request: Request):
+    """Proxy create user action to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.put("/user-actions/{action_id}")
+async def update_user_action(request: Request):
+    """Proxy update user action to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.delete("/user-actions/{action_id}")
+async def delete_user_action(request: Request):
+    """Proxy delete user action to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+# Email Settings Routes (Communications Service)
+async def _proxy_to_communications_service(request: Request) -> Response:
+    """Helper function to proxy requests to the Communications service."""
+    try:
+        # Build target URL - keep full path including /api/v1
+        path = request.url.path
+        target_url = f"{SERVICES['communications']}{path}"
+
+        # Forward query parameters
+        if request.url.query:
+            target_url += f"?{request.url.query}"
+
+        # Prepare headers (forward authorization)
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower() not in ["host", "content-length"]
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                content=await request.body(),
+                timeout=30.0,
+            )
+
+            # Filter out CORS and other headers that should be set by gateway middleware
+            filtered_headers = {
+                key: value
+                for key, value in response.headers.items()
+                if key.lower() not in [
+                    "access-control-allow-origin",
+                    "access-control-allow-credentials",
+                    "access-control-allow-methods",
+                    "access-control-allow-headers",
+                    "access-control-expose-headers",
+                ]
+            }
+
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=filtered_headers,
+                media_type=response.headers.get("content-type", "application/json"),
+            )
+
+    except httpx.RequestError as e:
+        logger.error(f"Communications service request error: {e}")
+        raise HTTPException(status_code=503, detail=f"Communications service unavailable: {str(e)}")
+    except Exception as e:
+        logger.error(f"Communications service proxy error: {e}")
+        raise HTTPException(status_code=500, detail=f"Gateway error: {str(e)}")
+
+
+@api_router.get("/settings/email")
+async def get_email_settings(request: Request):
+    """Proxy get email settings to Communications service."""
+    return await _proxy_to_communications_service(request)
+
+
+@api_router.put("/settings/email")
+async def update_email_settings(request: Request):
+    """Proxy update email settings to Communications service."""
+    return await _proxy_to_communications_service(request)
+
+
+@api_router.post("/settings/email/test")
+async def test_email_settings(request: Request):
+    """Proxy test email settings to Communications service."""
+    return await _proxy_to_communications_service(request)
 
 
 @api_router.get("/debug-user-profile")
