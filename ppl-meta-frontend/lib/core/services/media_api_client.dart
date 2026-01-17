@@ -11,7 +11,7 @@ class MediaApiClient {
   late final Dio _dio;
   final Logger _logger = Logger();
   
-  static const String _baseUrl = 'http://localhost:8000/api/v1';
+  static const String _baseUrl = 'http://localhost/api/media/api/v1';
   static const Duration _connectTimeout = Duration(seconds: 30);
   static const Duration _receiveTimeout = Duration(minutes: 5);
   
