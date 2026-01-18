@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'developer_settings_page.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
@@ -99,6 +100,18 @@ class ProfilePage extends ConsumerWidget {
               },
             ),
             _ProfileOption(
+              icon: Icons.developer_mode,
+              title: 'Developer Settings',
+              subtitle: 'Marketing tools and screenshots',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const DeveloperSettingsPage(),
+                  ),
+                );
+              },
+            ),
+            _ProfileOption(
               icon: Icons.help,
               title: 'Help & Support',
               subtitle: 'Get help and contact support',
@@ -115,7 +128,7 @@ class ProfilePage extends ConsumerWidget {
               onTap: () {
                 showAboutDialog(
                   context: context,
-                  applicationName: 'PPL Meta Platform',
+                  applicationName: 'Eyenet Vision',
                   applicationVersion: '1.0.0',
                   applicationIcon: Icon(
                     Icons.apps,
@@ -123,7 +136,7 @@ class ProfilePage extends ConsumerWidget {
                     color: Theme.of(context).primaryColor,
                   ),
                   children: [
-                    const Text('A Flutter frontend for the PPL Meta Platform microservices ecosystem.'),
+                    const Text('A Flutter frontend for the Eyenet Vision microservices ecosystem.'),
                   ],
                 );
               },

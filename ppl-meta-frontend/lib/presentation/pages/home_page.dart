@@ -9,7 +9,7 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PPL Meta Platform'),
+        title: const Text('Eyenet Vision'),
         actions: [
           IconButton(
             icon: const Icon(Icons.person),
@@ -30,7 +30,7 @@ class HomePage extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Welcome to PPL Meta Platform',
+                      'Welcome to Eyenet Vision',
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                     const SizedBox(height: 8),

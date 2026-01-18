@@ -10,7 +10,7 @@ class SimplePPLMetaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PPL Meta Platform - Simple Test',
+      title: 'Eyenet Vision - Simple Test',
       theme: ThemeData.dark(useMaterial3: true),
       home: const SimpleHomePage(),
     );
@@ -24,14 +24,14 @@ class SimpleHomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PPL Meta Platform'),
+        title: const Text('Eyenet Vision'),
       ),
       body: const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              'PPL Meta Platform',
+              'Eyenet Vision',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 16),

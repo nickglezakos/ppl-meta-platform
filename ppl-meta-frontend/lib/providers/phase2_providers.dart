@@ -43,7 +43,7 @@ final cameraServiceProvider = Provider<CameraService>((ref) {
 /// Media API client provider for cloud operations
 final mediaApiClientProvider = Provider<MediaApiClient>((ref) {
   return MediaApiClient(
-    baseUrl: 'http://localhost:8000', // ppl-meta-media service
+    baseUrl: 'http://localhost/api/media', // ppl-meta-media service via nginx
   );
 });
 

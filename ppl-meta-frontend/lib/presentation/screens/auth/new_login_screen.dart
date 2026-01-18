@@ -85,7 +85,7 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
               const SizedBox(height: 24),
               
               Text(
-                'Welcome to PPL Meta',
+                'Welcome to Eyenet Vision',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),

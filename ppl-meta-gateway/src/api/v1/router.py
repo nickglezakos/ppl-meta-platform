@@ -881,6 +881,25 @@ async def test_email_settings(request: Request):
     return await _proxy_to_communications_service(request)
 
 
+# Audit Logs Routes (Communications Service)
+@api_router.get("/audit/logs")
+async def get_audit_logs(request: Request):
+    """Proxy get audit/communication logs to Communications service."""
+    return await _proxy_to_communications_service(request)
+
+
+@api_router.get("/audit/logs/{log_uuid}")
+async def get_audit_log_detail(request: Request):
+    """Proxy get specific audit/communication log to Communications service."""
+    return await _proxy_to_communications_service(request)
+
+
+@api_router.post("/audit/log")
+async def create_audit_log(request: Request):
+    """Proxy create audit log to Communications service."""
+    return await _proxy_to_communications_service(request)
+
+
 @api_router.get("/debug-user-profile")
 async def debug_user_profile():
     """Debug route for user profile testing."""

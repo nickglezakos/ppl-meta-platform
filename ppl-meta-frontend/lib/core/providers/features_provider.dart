@@ -95,7 +95,7 @@ class FeaturesNotifier extends AsyncNotifier<FeaturesState> {
       final apiClient = ref.read(apiClientProvider);
       
       // Call the Node service directly since gateway might not be updated yet
-      final response = await apiClient.get('http://localhost:8001/capabilities/my-capabilities');
+      final response = await apiClient.get('http://localhost/api/node/capabilities/my-capabilities');
       
       if (response.data != null && response.data.containsKey('capabilities')) {
         return List<String>.from(response.data['capabilities']);

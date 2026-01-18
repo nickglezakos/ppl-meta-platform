@@ -5,6 +5,7 @@ import '../core/providers/auth_provider.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/change_password_dialog.dart';
 import '../widgets/custom_app_bar.dart';
+import '../presentation/pages/developer_settings_page.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -207,6 +208,18 @@ class ProfileScreen extends ConsumerWidget {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Privacy settings coming soon!'),
+                  ),
+                );
+              },
+            ),
+            _SettingsOption(
+              icon: Icons.developer_mode,
+              title: 'Developer Settings',
+              subtitle: 'Marketing tools and screenshots',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const DeveloperSettingsPage(),
                   ),
                 );
               },

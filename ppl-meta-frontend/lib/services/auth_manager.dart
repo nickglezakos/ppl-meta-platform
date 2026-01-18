@@ -27,7 +27,7 @@ class AuthManager {
   final List<VoidCallback> _authStateListeners = [];
   
   AuthManager(this._prefs) : _dio = Dio(BaseOptions(
-    baseUrl: 'http://localhost:8001',
+    baseUrl: 'http://localhost/api/node',
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 30),
   )) {

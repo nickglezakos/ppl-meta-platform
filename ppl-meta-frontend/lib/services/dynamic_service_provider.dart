@@ -16,8 +16,8 @@ class DynamicServiceConfig {
   void _initializeStaticUrls() {
     // These are fallback URLs when discovery service is not available
     _staticUrls['gateway'] = 'http://localhost:8080';
-    _staticUrls['node'] = 'http://localhost:8001';
-    _staticUrls['media'] = 'http://localhost:8000';
+    _staticUrls['node'] = 'http://localhost/api/node';
+    _staticUrls['media'] = 'http://localhost/api/media';
     _staticUrls['orchestrator'] = 'http://localhost:8002';
     _staticUrls['vision'] = 'http://localhost:8003';
     _staticUrls['cameras'] = 'http://localhost:8005';

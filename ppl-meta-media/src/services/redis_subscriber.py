@@ -466,10 +466,14 @@ class InstantDetectionSubscriber:
             # Parse action_config
             config = json.loads(action.action_config) if isinstance(action.action_config, str) else action.action_config
             
+            # Extract message/body from config
+            message = config.get("message") or config.get("body") or config.get("content", "")
+            
             event_data = {
                 "trigger_id": str(trigger.uuid),
                 "trigger_name": trigger.name,
                 "action_name": action.name,
+                "message": message,
                 "custom_data": config.get("data", {}),
             }
             

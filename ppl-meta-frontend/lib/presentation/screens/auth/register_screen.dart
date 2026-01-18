@@ -58,7 +58,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                           // Title
                           Text(
-                            'Join PPL Meta Platform',
+                            'Join Eyenet Vision',
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),

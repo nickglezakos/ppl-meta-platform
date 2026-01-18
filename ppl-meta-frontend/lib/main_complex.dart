@@ -25,7 +25,7 @@ class PPLMetaApp extends ConsumerWidget {
     final router = ref.watch(appRouterProvider);
     
     return MaterialApp.router(
-      title: 'PPL Meta Platform v2.0.0',
+      title: 'Eyenet Vision v2.23.1',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.dark,

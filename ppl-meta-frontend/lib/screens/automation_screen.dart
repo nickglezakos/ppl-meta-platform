@@ -366,7 +366,7 @@ class _AutomationScreenState extends ConsumerState<AutomationScreen>
                                 ),
                               ),
                               Text(
-                                'Smart automation for your PPL Meta platform',
+                                'Smart automation for your Eyenet Vision platform',
                                 style: AppTextStyles.bodyMedium.copyWith(
                                   color: AppColors.textSecondary,
                                 ),
@@ -1027,7 +1027,7 @@ class AutomationDashboardTab extends ConsumerWidget {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   SizedBox(height: 8),
-                  Text('Welcome to the PPL Meta Automation Engine!'),
+                  Text('Welcome to the Eyenet Vision Automation Engine!'),
                   SizedBox(height: 8),
                   Text('Here you can create and manage automation rules for:'),
                   SizedBox(height: 8),
