@@ -7,6 +7,7 @@ import 'core/theme/app_theme.dart';
 import 'presentation/navigation/app_router.dart';
 import 'services/dynamic_service_provider.dart';
 import 'widgets/global_screenshot_overlay.dart';
+import 'widgets/alert_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,9 +55,11 @@ class PPLMetaApp extends ConsumerWidget {
       routerConfig: router,
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        // Wrap entire app with global screenshot overlay
-        return GlobalScreenshotOverlay(
-          child: child ?? const SizedBox.shrink(),
+        // Wrap entire app with alert overlay, then screenshot overlay
+        return AlertOverlay(
+          child: GlobalScreenshotOverlay(
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
     );

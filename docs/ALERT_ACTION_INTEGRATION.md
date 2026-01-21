@@ -1,14 +1,22 @@
-# Alert Action Integration Documentation
+Again# Alert Action Integration Documentation
 
-**Version:** 2.23.6  
+**Version:** 2.23.7  
 **Date:** January 21, 2026  
-**Status:** ✅ Complete
+**Status:** ✅ Complete (with On-Screen Display)
 
 ---
 
 ## Overview
 
-The Alert (On-Screen) action type allows triggers to display visual alert notifications when conditions are met. This action type is particularly useful for real-time monitoring and immediate visual feedback in the platform.
+The Alert (On-Screen) action type allows triggers to display visual alert notifications when conditions are met. This action type provides **complete end-to-end functionality** including:
+
+- ✅ Alert configuration UI in frontend
+- ✅ Backend execution and logging
+- ✅ **Real-time on-screen display** with animated overlays
+- ✅ Automatic polling and notification delivery
+- ✅ Works across all screens and navigation states
+
+When a trigger fires with an alert action, the alert is immediately logged and will appear as an animated notification overlay on the screen within 5 seconds.
 
 ---
 
@@ -20,12 +28,15 @@ The Alert (On-Screen) action type allows triggers to display visual alert notifi
 - **Severity**: Alert severity level (info, warning, error, critical)
 - **Duration**: How long the alert should be displayed (in seconds)
 
-### Alert Execution
+### Alert Execution & Display
 
 When a trigger fires with an alert action:
 1. Alert details are extracted from action configuration
 2. Alert is logged via Communications Service as an audit event
-3. Alert can be retrieved and displayed in real-time via audit logs API
+3. **Frontend polling service automatically detects new alerts**
+4. **Animated alert overlay appears on screen** (regardless of current page)
+5. **Alert auto-dismisses** after configured duration
+6. Alert remains in audit logs for historical review
 
 ---
 
@@ -190,36 +201,73 @@ Alerts are logged in the Communications Service and can be viewed in:
   - Trigger information
   - Timestamp
 
-### Real-Time Alert Display (Future Enhancement)
+### Real-Time Alert Display (✅ IMPLEMENTED)
 
-For real-time on-screen display, implement a frontend notification system that:
-1. Polls `/api/v1/audit/logs?type=audit&event_type=alert` endpoint
-2. Displays recent alert logs as toast/snackbar notifications
-3. Uses severity to determine color scheme
-4. Auto-dismisses after duration_seconds
+**Alert Notification System** is now fully implemented with automatic on-screen display!
 
-Example implementation:
+#### How It Works
+
+1. **Alert Polling Service** (`alert_notification_service.dart`)
+   - Automatically polls Communications Service every 5 seconds
+   - Fetches audit logs with `type=audit_log`
+   - Processes new alerts and emits them via Stream
+
+2. **Alert Overlay Widget** (`alert_overlay.dart`)
+   - Wraps entire application at root level
+   - Displays alerts as animated cards in top-right corner
+   - Shows alerts on top of ANY screen
+   - Auto-dismisses after configured duration
+   - Supports manual dismissal via close button
+
+3. **Global Integration** (`main.dart`)
+   - Alert overlay integrated at app root level
+   - Alerts visible regardless of navigation state
+   - No screen-specific code required
+
+#### Alert Display Features
+
+- **Animated Entry**: Smooth slide-in animation from right
+- **Severity Colors**:
+  - 🔵 Info: Blue
+  - 🟠 Warning: Orange  
+  - 🔴 Error: Red
+  - 🟣 Critical: Purple
+- **Rich Information**:
+  - Severity badge
+  - Trigger name
+  - Alert message
+  - Action name
+  - Relative timestamp
+- **Auto-Dismiss**: Respects configured duration
+- **Manual Dismiss**: Close button for immediate removal
+- **Multiple Alerts**: Stacks multiple simultaneous alerts
+- **Responsive**: Constrains max width for readability
+
+#### Implementation Details
 
 ```dart
-// Poll for new alerts
-Timer.periodic(Duration(seconds: 5), (timer) async {
-  final logs = await communicationsClient.fetchLogs(
-    type: 'audit',
-    pageSize: 10,
-  );
-  
-  for (final log in logs) {
-    final eventData = jsonDecode(log.eventData);
-    if (eventData['severity'] != null) {
-      _showAlert(
-        message: eventData['message'],
-        severity: eventData['severity'],
-        duration: eventData['duration_seconds'],
-      );
-    }
-  }
+// Service automatically starts polling when app launches
+final alertNotificationServiceProvider = Provider<AlertNotificationService>((ref) {
+  final client = ref.watch(communicationsApiClientProvider);
+  final service = AlertNotificationService(client);
+  service.startPolling(); // Starts automatic polling
+  return service;
 });
+
+// Overlay integrated in main.dart builder
+builder: (context, child) {
+  return AlertOverlay(
+    child: GlobalScreenshotOverlay(
+      child: child ?? const SizedBox.shrink(),
+    ),
+  );
+}
 ```
+
+#### Files Added
+
+- `lib/services/alert_notification_service.dart` - Polling service and alert model
+- `lib/widgets/alert_overlay.dart` - UI overlay widget with animations
 
 ---
 
@@ -372,17 +420,31 @@ Response includes alert logs with:
 3. Ensure severity is one of: info, warning, error, critical
 4. Review action_config JSON syntax
 
+### Alerts Not Displaying On Screen
+
+**Issue:** Alerts are logged but not showing on screen
+
+**Solutions:**
+1. Verify alert polling service is running
+2. Check browser console for errors
+3. Ensure Communications Service is accessible
+4. Check that alert_overlay is integrated in main.dart
+5. Try triggering alert again and watch for animation
+
 ---
 
 ## Future Enhancements
 
 ### Planned Features
 
-1. **Real-Time Alert Display**
-   - WebSocket push notifications
-   - Toast/snackbar UI components
-   - Sound notifications
-   - Desktop notifications
+1. **✅ Real-Time Alert Display** - IMPLEMENTED
+   - ✅ Polling-based notification system
+   - ✅ Animated overlay UI components
+   - ✅ Auto-dismiss with configurable duration
+   - ✅ Manual dismissal
+   - 🔄 WebSocket push notifications (future)
+   - 🔄 Sound notifications (future)
+   - 🔄 Desktop notifications (future)
 
 2. **Alert Templates**
    - Pre-configured alert messages
