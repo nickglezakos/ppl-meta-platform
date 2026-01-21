@@ -290,6 +290,8 @@ class InstantDetectionSubscriber:
             await self._execute_webhook_action(action, trigger, db)
         elif action.action_type == "log":
             await self._execute_log_action(action, trigger, db)
+        elif action.action_type == "alert":
+            await self._execute_alert_action(action, trigger, db)
         else:
             logger.warning(f"     ⚠️ Unsupported action type: {action.action_type}")
     
@@ -494,6 +496,52 @@ class InstantDetectionSubscriber:
         
         except Exception as e:
             logger.error(f"     ❌ Error executing log action: {e}", exc_info=True)
+    
+    async def _execute_alert_action(self, action, trigger: Trigger, db: Session):
+        """Execute alert action via Communications Service."""
+        logger.info(f"  🔔 Executing alert action...")
+        
+        try:
+            # Parse action_config
+            config = json.loads(action.action_config) if isinstance(action.action_config, str) else action.action_config
+            
+            # Extract alert settings
+            message = config.get("message", "Alert triggered")
+            severity = config.get("severity", "warning")
+            duration_seconds = config.get("duration_seconds", 30)
+            
+            # Build alert data
+            alert_data = {
+                "trigger_id": str(trigger.uuid),
+                "trigger_name": trigger.name,
+                "action_name": action.name,
+                "message": message,
+                "severity": severity,
+                "duration_seconds": duration_seconds,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            
+            logger.info(f"     Message: {message}")
+            logger.info(f"     Severity: {severity}")
+            logger.info(f"     Duration: {duration_seconds}s")
+            
+            # Call Communications Service to log the alert
+            # This creates an audit log entry that can be displayed as on-screen alerts
+            comms_client = get_communications_client()
+            result = await comms_client.log_audit_event(
+                event_type="alert",
+                event_source="media_service",
+                event_data=alert_data,
+                severity=severity,
+            )
+            
+            if result.get("success"):
+                logger.info(f"     ✅ Alert logged successfully. Log UUID: {result.get('log_uuid')}")
+            else:
+                logger.error(f"     ❌ Alert logging failed: {result.get('message')}")
+        
+        except Exception as e:
+            logger.error(f"     ❌ Error executing alert action: {e}", exc_info=True)
 
 
 # Global subscriber instance
