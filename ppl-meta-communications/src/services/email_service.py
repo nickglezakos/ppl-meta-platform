@@ -5,7 +5,7 @@ import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ class EmailService:
         bcc: Optional[List[str]] = None,
         from_email: Optional[str] = None,
         from_name: Optional[str] = None,
+        payload: Optional[Dict] = None,
         triggered_by: Optional[str] = None,
         trigger_type: Optional[str] = None,
         trigger_id: Optional[str] = None,
@@ -89,13 +90,17 @@ class EmailService:
         sender_name = from_name or mail_config['from_name']
 
         # Create communication log
+        # Merge provided payload with email metadata
+        email_payload = payload.copy() if payload else {}
+        email_payload.update({"cc": cc, "bcc": bcc, "html_body": html_body})
+        
         log = CommunicationLog(
             type=CommunicationType.EMAIL,
             status=CommunicationStatus.PENDING,
             recipient=", ".join(to),
             subject=subject,
             content=text_body,
-            payload={"cc": cc, "bcc": bcc, "html_body": html_body},
+            payload=email_payload,
             triggered_by=triggered_by,
             trigger_type=trigger_type,
             trigger_id=trigger_id,

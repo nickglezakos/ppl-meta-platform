@@ -19,6 +19,7 @@ class EmailSendRequest(BaseModel):
     from_email: Optional[EmailStr] = Field(None, description="Sender email (uses config default if not provided)")
     from_name: Optional[str] = Field(None, description="Sender name (uses config default if not provided)")
     attachments: Optional[List[Dict]] = Field(None, description="Attachments (future feature)")
+    payload: Optional[Dict] = Field(None, description="Additional structured data (e.g., demographics, trigger data)")
     
     # Trigger tracking
     triggered_by: Optional[str] = Field(None, description="Service/user that triggered this email")

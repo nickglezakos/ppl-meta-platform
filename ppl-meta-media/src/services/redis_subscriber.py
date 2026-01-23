@@ -62,7 +62,8 @@ class InstantDetectionSubscriber:
         
         # Message deduplication: Store processed message IDs (timestamp + camera_id)
         self._processed_messages = set()
-        self._max_processed_cache = 1000  # Keep last 1000 processed messages
+        self._max_processed_cache = 1000
+        self._current_detection_data = {}  # Store current detection data for actions  # Keep last 1000 processed messages
         
     async def start(self):
         """Start subscribing to instant-detection channel"""
@@ -186,6 +187,14 @@ class InstantDetectionSubscriber:
         logger.info(f"👥 People Count: {people_count}")
         logger.info(f"📊 Demographics: {demographics}")
         logger.info(f"⏰ Timestamp: {timestamp}")
+        
+        # Store demographics data for action execution
+        self._current_detection_data = {
+            "people_count": people_count,
+            "demographics": demographics,
+            "timestamp": timestamp,
+            "camera_id": camera_id,
+        }
         
         db: Session = SessionLocal()
         
@@ -435,6 +444,21 @@ class InstantDetectionSubscriber:
                 logger.error(f"     ❌ No recipients configured in action")
                 return
             
+            # Get detection data if available
+            detection_data = getattr(self, '_current_detection_data', {})
+            
+            # Build payload with detection data and trigger info
+            email_payload = {
+                "trigger_name": trigger.name,
+                "trigger_description": trigger.description or "",
+                "camera_id": detection_data.get("camera_id"),
+                "detection_timestamp": detection_data.get("timestamp"),
+                "people_count": detection_data.get("people_count"),
+                "demographics": detection_data.get("demographics", {}),
+            }
+            
+            logger.info(f"     Email payload with demographics: {email_payload}")
+            
             # Call Communications Service
             # Note: installation_id and tenant_name are automatically included from Communications Service config
             comms_client = get_communications_client()
@@ -446,6 +470,7 @@ class InstantDetectionSubscriber:
                 triggered_by="media_service",
                 trigger_type="trigger_action",
                 trigger_id=str(trigger.uuid),
+                payload=email_payload,
             )
             
             if result.get("success"):
@@ -511,11 +536,18 @@ class InstantDetectionSubscriber:
             # Extract message/body from config
             message = config.get("message") or config.get("body") or config.get("content", "")
             
+            # Get detection data if available
+            detection_data = getattr(self, '_current_detection_data', {})
+            
             event_data = {
                 "trigger_id": str(trigger.uuid),
                 "trigger_name": trigger.name,
                 "action_name": action.name,
                 "message": message,
+                "people_count": detection_data.get("people_count", 0),
+                "demographics": detection_data.get("demographics", {}),
+                "camera_id": detection_data.get("camera_id"),
+                "detection_timestamp": detection_data.get("timestamp"),
                 "custom_data": config.get("data", {}),
             }
             
@@ -550,6 +582,9 @@ class InstantDetectionSubscriber:
             severity = config.get("severity", "warning")
             duration_seconds = config.get("duration_seconds", 30)
             
+            # Get detection data if available
+            detection_data = getattr(self, '_current_detection_data', {})
+            
             # Build alert data
             alert_data = {
                 "trigger_id": str(trigger.uuid),
@@ -558,6 +593,10 @@ class InstantDetectionSubscriber:
                 "message": message,
                 "severity": severity,
                 "duration_seconds": duration_seconds,
+                "people_count": detection_data.get("people_count", 0),
+                "demographics": detection_data.get("demographics", {}),
+                "camera_id": detection_data.get("camera_id"),
+                "detection_timestamp": detection_data.get("timestamp"),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             

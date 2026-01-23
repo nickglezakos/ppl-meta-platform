@@ -34,6 +34,7 @@ class CommunicationsClient:
         triggered_by: Optional[str] = None,
         trigger_type: Optional[str] = None,
         trigger_id: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Send an email via Communications Service.
         
@@ -46,13 +47,14 @@ class CommunicationsClient:
             triggered_by: Optional identifier of what triggered this email
             trigger_type: Optional type of trigger (e.g., "trigger_action")
             trigger_id: Optional UUID of the trigger
+            payload: Optional additional structured data (e.g., demographics)
             
         Returns:
             Dict with success status and log UUID or error message
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                payload = {
+                request_body = {
                     "to": to,
                     "subject": subject,
                     "text_body": text_body,
@@ -62,11 +64,13 @@ class CommunicationsClient:
                     "trigger_id": trigger_id,
                 }
                 if cc:
-                    payload["cc"] = cc
+                    request_body["cc"] = cc
+                if payload:
+                    request_body["payload"] = payload
                     
                 response = await client.post(
                     f"{self.base_url}/api/v1/email/send",
-                    json=payload
+                    json=request_body
                 )
                 response.raise_for_status()
                 return response.json()

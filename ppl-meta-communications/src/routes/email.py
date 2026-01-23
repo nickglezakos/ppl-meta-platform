@@ -42,6 +42,7 @@ async def send_email(
         bcc=request.bcc,
         from_email=request.from_email,
         from_name=request.from_name,
+        payload=request.payload,
         triggered_by=request.triggered_by,
         trigger_type=request.trigger_type,
         trigger_id=request.trigger_id,
