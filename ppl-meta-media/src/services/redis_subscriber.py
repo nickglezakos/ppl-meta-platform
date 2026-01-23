@@ -60,6 +60,10 @@ class InstantDetectionSubscriber:
         self.running = False
         self._task = None
         
+        # Message deduplication: Store processed message IDs (timestamp + camera_id)
+        self._processed_messages = set()
+        self._max_processed_cache = 1000  # Keep last 1000 processed messages
+        
     async def start(self):
         """Start subscribing to instant-detection channel"""
         if self.running:
@@ -115,6 +119,26 @@ class InstantDetectionSubscriber:
                         # Parse message
                         data = json.loads(message["data"])
                         
+                        # Create unique message ID for deduplication
+                        camera_id = data.get("camera_id")
+                        timestamp = data.get("timestamp")
+                        message_id = f"{camera_id}:{timestamp}"
+                        
+                        # Skip if already processed
+                        if message_id in self._processed_messages:
+                            logger.debug(f"⏭️ Skipping duplicate message: {message_id}")
+                            continue
+                        
+                        # Add to processed set
+                        self._processed_messages.add(message_id)
+                        
+                        # Limit cache size to prevent memory growth
+                        if len(self._processed_messages) > self._max_processed_cache:
+                            # Remove oldest half of entries
+                            to_remove = len(self._processed_messages) - (self._max_processed_cache // 2)
+                            for _ in range(to_remove):
+                                self._processed_messages.pop()
+                        
                         # Evaluate triggers
                         await self._handle_instant_detection(data)
                         
@@ -138,6 +162,22 @@ class InstantDetectionSubscriber:
         people_count = data.get("people_count", 0)
         demographics = data.get("demographics", {})
         timestamp = data.get("timestamp")
+        
+        # Validate message freshness - ignore messages older than 10 seconds
+        try:
+            message_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            age_seconds = (now - message_time).total_seconds()
+            
+            if age_seconds > 10:
+                logger.warning(
+                    f"⏰ Skipping stale message: {camera_id} "
+                    f"(age: {age_seconds:.1f}s, threshold: 10s)"
+                )
+                return
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.warning(f"⚠️ Could not parse timestamp '{timestamp}': {e}")
+            # Continue processing even if timestamp parsing fails
         
         logger.info(f"\n{'='*80}")
         logger.info(f"🔔 INSTANT DETECTION EVENT (Redis Pub/Sub)")

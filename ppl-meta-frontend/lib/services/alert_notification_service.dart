@@ -11,7 +11,9 @@ class AlertNotificationService {
   Timer? _pollTimer;
   final StreamController<AlertNotification> _alertController = StreamController.broadcast();
   final Set<String> _processedAlertIds = {};
+  final Set<String> _shownAlertIds = {}; // Track alerts already shown to user
   bool _isInitialized = false;
+  bool _isFirstPoll = true; // Flag to skip showing old alerts on first load
   
   AlertNotificationService(this._client, this._authService);
   
@@ -66,6 +68,18 @@ class AlertNotificationService {
       
       print('📋 AlertNotificationService: Fetched ${response.logs.length} audit logs');
       
+      // On first poll, just mark all as seen without showing them
+      if (_isFirstPoll) {
+        for (final log in response.logs) {
+          if (log.payload != null && log.payload!['message'] != null) {
+            _shownAlertIds.add(log.uuid);
+          }
+        }
+        print('🔕 AlertNotificationService: First poll - marked ${_shownAlertIds.length} existing alerts as seen');
+        _isFirstPoll = false;
+        return; // Don't show any alerts on first poll
+      }
+      
       // Filter for alert events that haven't been processed
       for (final log in response.logs) {
         if (_processedAlertIds.contains(log.uuid)) {
@@ -81,6 +95,15 @@ class AlertNotificationService {
             // Verify this is an alert type
             if (eventData['severity'] != null) {
               _processedAlertIds.add(log.uuid);
+              
+              // Skip if already shown to user
+              if (_shownAlertIds.contains(log.uuid)) {
+                print('⏭️ AlertNotificationService: Skipping already-shown alert: ${log.uuid}');
+                continue;
+              }
+              
+              // Mark as shown
+              _shownAlertIds.add(log.uuid);
               
               // Create and emit alert notification
               final alert = AlertNotification(
@@ -106,6 +129,12 @@ class AlertNotificationService {
       if (_processedAlertIds.length > 100) {
         final toRemove = _processedAlertIds.length - 100;
         _processedAlertIds.removeAll(_processedAlertIds.take(toRemove));
+      }
+      
+      // Clean up old shown alert IDs (keep only last 100)
+      if (_shownAlertIds.length > 100) {
+        final toRemove = _shownAlertIds.length - 100;
+        _shownAlertIds.removeAll(_shownAlertIds.take(toRemove));
       }
       
     } catch (e) {
