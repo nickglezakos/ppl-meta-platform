@@ -1251,6 +1251,22 @@ async def update_camera_pipeline_settings(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+@api_router.get("/cameras/{device_id}/workflow-settings")
+async def get_camera_workflow_settings(request: Request):
+    """Proxy get camera workflow settings to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.patch("/cameras/{device_id}/workflow-settings")
+async def update_camera_workflow_settings(request: Request):
+    """Proxy update camera workflow settings to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
 # Streaming Service Routes
 @api_router.post("/streaming/{device_id}/start")
 async def start_streaming(request: Request):

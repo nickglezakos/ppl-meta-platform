@@ -1748,6 +1748,166 @@ async def update_pipeline_settings(
             "segment_duration_seconds": camera.segment_duration_seconds,
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update pipeline settings for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update pipeline settings: {str(e)}",
+        )
+
+
+@router.get("/{device_id}/workflow-settings", dependencies=[Depends(require_connect_camera)])
+async def get_workflow_settings(
+    device_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Get workflow settings (face detection & performance) for a specific camera.
+    
+    Args:
+        device_id: Camera device ID
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        Current workflow settings
+    """
+    try:
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+        
+        return {
+            "device_id": camera.device_id,
+            "camera_name": camera.name,
+            "auto_face_detection": camera.auto_face_detection if hasattr(camera, 'auto_face_detection') else False,
+            "detection_methods": camera.detection_methods if hasattr(camera, 'detection_methods') else ["opencv", "dlib"],
+            "processing_options": camera.processing_options if hasattr(camera, 'processing_options') else {},
+            "confidence_threshold": camera.confidence_threshold if hasattr(camera, 'confidence_threshold') else 0.7,
+            "enable_performance_optimization": camera.enable_performance_optimization if hasattr(camera, 'enable_performance_optimization') else True,
+            "show_performance_indicators": camera.show_performance_indicators if hasattr(camera, 'show_performance_indicators') else True,
+            "default_playback_mode": camera.default_playback_mode if hasattr(camera, 'default_playback_mode') else "auto",
+            "mvr_quality_threshold": camera.mvr_quality_threshold if hasattr(camera, 'mvr_quality_threshold') else 0.20,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get workflow settings for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get workflow settings: {str(e)}",
+        )
+
+
+@router.patch("/{device_id}/workflow-settings", dependencies=[Depends(require_connect_camera)])
+async def update_workflow_settings(
+    device_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Update workflow settings (face detection & performance) for a specific camera.
+    
+    Args:
+        device_id: Camera device ID
+        request: HTTP request with JSON body
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        Updated workflow settings
+    """
+    try:
+        # Parse JSON body
+        body = await request.json()
+        auto_face_detection = body.get('auto_face_detection')
+        detection_methods = body.get('detection_methods')
+        processing_options = body.get('processing_options')
+        confidence_threshold = body.get('confidence_threshold')
+        enable_performance_optimization = body.get('enable_performance_optimization')
+        show_performance_indicators = body.get('show_performance_indicators')
+        default_playback_mode = body.get('default_playback_mode')
+        mvr_quality_threshold = body.get('mvr_quality_threshold')
+        
+        # Validate confidence threshold
+        if confidence_threshold is not None and (confidence_threshold < 0.0 or confidence_threshold > 1.0):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Confidence threshold must be between 0.0 and 1.0",
+            )
+        
+        # Validate mvr_quality_threshold
+        if mvr_quality_threshold is not None and (mvr_quality_threshold < 0.0 or mvr_quality_threshold > 1.0):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="MVR quality threshold must be between 0.0 and 1.0",
+            )
+        
+        # Validate detection methods
+        valid_methods = ["opencv", "dlib", "mtcnn", "yolo"]
+        if detection_methods is not None:
+            for method in detection_methods:
+                if method not in valid_methods:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid detection method: {method}. Valid methods: {valid_methods}",
+                    )
+        
+        # Get camera from database
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+        
+        # Update settings (only if provided)
+        if auto_face_detection is not None:
+            camera.auto_face_detection = auto_face_detection
+        if detection_methods is not None:
+            camera.detection_methods = detection_methods
+        if processing_options is not None:
+            camera.processing_options = processing_options
+        if confidence_threshold is not None:
+            camera.confidence_threshold = confidence_threshold
+        if enable_performance_optimization is not None:
+            camera.enable_performance_optimization = enable_performance_optimization
+        if show_performance_indicators is not None:
+            camera.show_performance_indicators = show_performance_indicators
+        if default_playback_mode is not None:
+            camera.default_playback_mode = default_playback_mode
+        if mvr_quality_threshold is not None:
+            camera.mvr_quality_threshold = mvr_quality_threshold
+        
+        db.commit()
+        db.refresh(camera)
+        
+        logger.info(
+            f"📹 Updated workflow settings for {device_id}: "
+            f"auto_face_detection={camera.auto_face_detection}, "
+            f"detection_methods={camera.detection_methods}"
+        )
+        
+        return {
+            "device_id": camera.device_id,
+            "camera_name": camera.name,
+            "auto_face_detection": camera.auto_face_detection,
+            "detection_methods": camera.detection_methods,
+            "processing_options": camera.processing_options,
+            "confidence_threshold": camera.confidence_threshold,
+            "enable_performance_optimization": camera.enable_performance_optimization,
+            "show_performance_indicators": camera.show_performance_indicators,
+            "default_playback_mode": camera.default_playback_mode,
+            "mvr_quality_threshold": camera.mvr_quality_threshold,
+            "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
+        }
     
     except HTTPException:
         raise

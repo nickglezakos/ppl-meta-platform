@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/settings/network_settings_section.dart';
 import '../../widgets/settings/storage_settings_section.dart';
-import '../../widgets/settings/workflow_settings_section.dart';
 import '../../widgets/settings/camera_settings_section.dart';
 import '../../widgets/settings/communications_settings_section.dart';
 import 'cross_video_tracking_section.dart';
@@ -26,11 +25,6 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             // Camera Settings Section (Instant Detection)
             CameraSettingsSection(),
-            
-            SizedBox(height: 24),
-            
-            // Workflow Settings Section
-            WorkflowSettingsSection(),
             
             SizedBox(height: 24),
 

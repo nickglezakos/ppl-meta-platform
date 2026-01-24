@@ -516,8 +516,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         // Summary cards grid
         LayoutBuilder(
           builder: (context, constraints) {
-            final isWide = constraints.maxWidth > 800;
+            final isWide = constraints.maxWidth > 1000;
+            final isTablet = constraints.maxWidth > 600 && constraints.maxWidth <= 1000;
             final crossAxisCount = isWide ? 4 : 2;
+            
+            // Adjust aspect ratio based on screen size
+            double childAspectRatio;
+            if (isWide) {
+              childAspectRatio = 1.6;
+            } else if (isTablet) {
+              childAspectRatio = 1.5;
+            } else {
+              childAspectRatio = 1.3;
+            }
             
             return GridView.count(
               crossAxisCount: crossAxisCount,
@@ -525,7 +536,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
-              childAspectRatio: isWide ? 1.5 : 1.2,
+              childAspectRatio: childAspectRatio,
               children: [
                 _buildMetricCard(
                   title: 'Total People',
@@ -586,10 +597,11 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     return Card(
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
@@ -605,28 +617,34 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 Icon(Icons.trending_up, size: 16, color: Colors.grey.shade400),
               ],
             ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+            const SizedBox(height: 8),
+            Flexible(
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               title,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 color: Colors.grey.shade700,
                 fontWeight: FontWeight.w500,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             if (subtitle != null)
               Text(
                 subtitle,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: Colors.grey.shade500,
                 ),
               ),

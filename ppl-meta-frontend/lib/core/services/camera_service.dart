@@ -759,6 +759,79 @@ class CameraService {
     }
   }
 
+  /// Get workflow settings for a camera
+  Future<Map<String, dynamic>> getWorkflowSettings(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.get(
+        '/api/v1/cameras/$deviceId/workflow-settings',
+      );
+
+      if (response.data == null) {
+        throw const CameraException('Invalid response from camera service');
+      }
+
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// Update workflow settings for a camera
+  Future<Map<String, dynamic>> updateWorkflowSettings(
+    String deviceId, {
+    bool? autoFaceDetection,
+    List<String>? detectionMethods,
+    Map<String, dynamic>? processingOptions,
+    double? confidenceThreshold,
+    bool? enablePerformanceOptimization,
+    bool? showPerformanceIndicators,
+    String? defaultPlaybackMode,
+    double? mvrQualityThreshold,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      
+      if (autoFaceDetection != null) {
+        body['auto_face_detection'] = autoFaceDetection;
+      }
+      if (detectionMethods != null) {
+        body['detection_methods'] = detectionMethods;
+      }
+      if (processingOptions != null) {
+        body['processing_options'] = processingOptions;
+      }
+      if (confidenceThreshold != null) {
+        body['confidence_threshold'] = confidenceThreshold;
+      }
+      if (enablePerformanceOptimization != null) {
+        body['enable_performance_optimization'] = enablePerformanceOptimization;
+      }
+      if (showPerformanceIndicators != null) {
+        body['show_performance_indicators'] = showPerformanceIndicators;
+      }
+      if (defaultPlaybackMode != null) {
+        body['default_playback_mode'] = defaultPlaybackMode;
+      }
+      if (mvrQualityThreshold != null) {
+        body['mvr_quality_threshold'] = mvrQualityThreshold;
+      }
+
+      final response = await _cameraApiClient.patch(
+        '/api/v1/cameras/$deviceId/workflow-settings',
+        data: body,
+      );
+
+      if (response.data == null) {
+        throw const CameraException('Invalid response from camera service');
+      }
+
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+
   /// Stop recording for a camera
   /// 
   /// [autoStopInstantDetection] - If false, keeps camera connected and instant detection running.

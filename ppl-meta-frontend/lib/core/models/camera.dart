@@ -20,6 +20,16 @@ class Camera {
   final int instantDetectionIntervalSeconds;
   final int segmentDurationSeconds;
 
+  // Workflow settings (face detection & performance)
+  final bool autoFaceDetection;
+  final List<String> detectionMethods;
+  final Map<String, dynamic> processingOptions;
+  final double confidenceThreshold;
+  final bool enablePerformanceOptimization;
+  final bool showPerformanceIndicators;
+  final String defaultPlaybackMode;
+  final double mvrQualityThreshold;
+
   const Camera({
     required this.id,
     required this.deviceId,
@@ -38,6 +48,14 @@ class Camera {
     this.recordingPipelineEnabled = true,
     this.instantDetectionIntervalSeconds = 5,
     this.segmentDurationSeconds = 30,
+    this.autoFaceDetection = false,
+    this.detectionMethods = const ['opencv', 'dlib'],
+    this.processingOptions = const {},
+    this.confidenceThreshold = 0.7,
+    this.enablePerformanceOptimization = true,
+    this.showPerformanceIndicators = true,
+    this.defaultPlaybackMode = 'auto',
+    this.mvrQualityThreshold = 0.20,
   });
 
   factory Camera.fromJson(Map<String, dynamic> json) {
@@ -88,6 +106,14 @@ class Camera {
       recordingPipelineEnabled: json['recording_pipeline_enabled'] as bool? ?? true,
       instantDetectionIntervalSeconds: json['instant_detection_interval_seconds'] as int? ?? 5,
       segmentDurationSeconds: json['segment_duration_seconds'] as int? ?? 30,
+      autoFaceDetection: json['auto_face_detection'] as bool? ?? false,
+      detectionMethods: (json['detection_methods'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? ['opencv', 'dlib'],
+      processingOptions: Map<String, dynamic>.from(json['processing_options'] as Map<String, dynamic>? ?? {}),
+      confidenceThreshold: (json['confidence_threshold'] as num?)?.toDouble() ?? 0.7,
+      enablePerformanceOptimization: json['enable_performance_optimization'] as bool? ?? true,
+      showPerformanceIndicators: json['show_performance_indicators'] as bool? ?? true,
+      defaultPlaybackMode: json['default_playback_mode'] as String? ?? 'auto',
+      mvrQualityThreshold: (json['mvr_quality_threshold'] as num?)?.toDouble() ?? 0.20,
     );
   }
 
@@ -110,6 +136,14 @@ class Camera {
       'recording_pipeline_enabled': recordingPipelineEnabled,
       'instant_detection_interval_seconds': instantDetectionIntervalSeconds,
       'segment_duration_seconds': segmentDurationSeconds,
+      'auto_face_detection': autoFaceDetection,
+      'detection_methods': detectionMethods,
+      'processing_options': processingOptions,
+      'confidence_threshold': confidenceThreshold,
+      'enable_performance_optimization': enablePerformanceOptimization,
+      'show_performance_indicators': showPerformanceIndicators,
+      'default_playback_mode': defaultPlaybackMode,
+      'mvr_quality_threshold': mvrQualityThreshold,
     };
   }
 
@@ -130,6 +164,14 @@ class Camera {
     bool? recordingPipelineEnabled,
     int? instantDetectionIntervalSeconds,
     int? segmentDurationSeconds,
+    bool? autoFaceDetection,
+    List<String>? detectionMethods,
+    Map<String, dynamic>? processingOptions,
+    double? confidenceThreshold,
+    bool? enablePerformanceOptimization,
+    bool? showPerformanceIndicators,
+    String? defaultPlaybackMode,
+    double? mvrQualityThreshold,
   }) {
     return Camera(
       id: id ?? this.id,
@@ -148,6 +190,14 @@ class Camera {
       recordingPipelineEnabled: recordingPipelineEnabled ?? this.recordingPipelineEnabled,
       instantDetectionIntervalSeconds: instantDetectionIntervalSeconds ?? this.instantDetectionIntervalSeconds,
       segmentDurationSeconds: segmentDurationSeconds ?? this.segmentDurationSeconds,
+      autoFaceDetection: autoFaceDetection ?? this.autoFaceDetection,
+      detectionMethods: detectionMethods ?? this.detectionMethods,
+      processingOptions: processingOptions ?? this.processingOptions,
+      confidenceThreshold: confidenceThreshold ?? this.confidenceThreshold,
+      enablePerformanceOptimization: enablePerformanceOptimization ?? this.enablePerformanceOptimization,
+      showPerformanceIndicators: showPerformanceIndicators ?? this.showPerformanceIndicators,
+      defaultPlaybackMode: defaultPlaybackMode ?? this.defaultPlaybackMode,
+      mvrQualityThreshold: mvrQualityThreshold ?? this.mvrQualityThreshold,
     );
   }
 

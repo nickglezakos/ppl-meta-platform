@@ -91,6 +91,16 @@ class Camera(Base):
     instant_detection_interval_seconds = Column(Integer, default=5)
     segment_duration_seconds = Column(Integer, default=30)
 
+    # Workflow Configuration (Face Detection & Performance)
+    auto_face_detection = Column(Boolean, default=False)
+    detection_methods = Column(JSON, default=lambda: ['opencv', 'dlib'])  # ['opencv', 'dlib', 'mtcnn', 'yolo']
+    processing_options = Column(JSON, default=dict)  # Additional processing options
+    confidence_threshold = Column(Float, default=0.7)
+    enable_performance_optimization = Column(Boolean, default=True)
+    show_performance_indicators = Column(Boolean, default=True)
+    default_playback_mode = Column(String(50), default='auto')
+    mvr_quality_threshold = Column(Float, default=0.20)
+
     # Recording profile assignment - TODO: Add when Phase 2 is implemented
     # recording_profile_id = Column(
     #     Integer, ForeignKey("camera_recording_profiles.id"), nullable=True
