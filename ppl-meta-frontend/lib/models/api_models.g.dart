@@ -404,6 +404,7 @@ EnhancedLogicV2Response _$EnhancedLogicV2ResponseFromJson(
       ),
       processingTime: (json['processing_time'] as num).toDouble(),
       message: json['message'] as String,
+      detectionResult: json['detection_result'] as Map<String, dynamic>?,
     );
 
 Map<String, dynamic> _$EnhancedLogicV2ResponseToJson(
@@ -418,6 +419,7 @@ Map<String, dynamic> _$EnhancedLogicV2ResponseToJson(
       'faces_by_frame': instance.facesByFrame,
       'processing_time': instance.processingTime,
       'message': instance.message,
+      'detection_result': instance.detectionResult,
     };
 
 EnhancedLogicV2Face _$EnhancedLogicV2FaceFromJson(Map<String, dynamic> json) =>

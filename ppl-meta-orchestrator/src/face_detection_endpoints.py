@@ -465,14 +465,27 @@ class FaceDetectionSessionManager:
 
                     processing_time = time.time() - start_time
 
+                    # Create detection_result with full face data for frontend
+                    detection_result = {
+                        "success": True,
+                        "total_faces": stored_face_count,
+                        "faces_by_frame": faces_by_frame,  # All faces organized by frame
+                        "source": "vision_service_database",
+                        "processing_method": "stored_faces"
+                    }
+
                     return {
                         "success": True,
                         "session_uuid": session_uuid,
                         "media_id": media_id,
                         "source": "stored_faces",
-                        "total_faces": stored_face_count,
-                        "faces": enhanced_faces,  # Now includes distance data
-                        "faces_by_frame": faces_by_frame,
+                        "total_faces": len(enhanced_faces),  # Representative faces count
+                        "faces": enhanced_faces,  # 5 representative faces selected by person-objects
+                        "faces_by_frame": {  # Representative faces by frame (for backward compatibility)
+                            str(face["frame_number"]): [face] 
+                            for face in enhanced_faces
+                        },
+                        "detection_result": detection_result,  # Full detection data with all faces
                         "processing_time": processing_time,
                         "person_objects_created": person_objects_result.get("person_count", 0),
                         "person_objects_workflow_id": person_objects_result.get("workflow_id"),

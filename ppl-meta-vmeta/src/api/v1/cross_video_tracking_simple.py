@@ -1031,68 +1031,39 @@ async def match_person_objects_within_group(
         pass
     
     # Step 2: Match person_objects across videos using temporal/spatial logic
-    # Simple greedy matching: if videos are temporally consecutive and have person_objects,
-    # assume same person appears across videos
+    # FIXED: Create one individual per person detected, preserving ALL faces
     
     individuals = []
-    matched_video_uuids = set()
     
-    # Sort videos by timestamp
-    sorted_videos = sorted(videos_data, key=lambda v: v.get('timestamp', ''))
+    # Collect ALL person_objects from ALL videos
+    all_person_objects = []
+    for video_uuid, person_objs in video_person_objects.items():
+        for person_obj in person_objs:
+            all_person_objects.append({
+                'video_uuid': video_uuid,
+                'person_obj': person_obj
+            })
     
-    for i, video in enumerate(sorted_videos):
-        video_uuid = video['uuid']
+    logger.info(f"📊 Total person_objects across all videos: {len(all_person_objects)}")
+    
+    # Create one individual for each person_object
+    # Each individual represents ONE person with ALL their faces from ONE video
+    for person_data in all_person_objects:
+        video_uuid = person_data['video_uuid']
+        person_obj = person_data['person_obj']
         
-        if video_uuid in matched_video_uuids:
-            continue  # Already assigned to an individual
-        
-        person_objs = video_person_objects.get(video_uuid, [])
-        if not person_objs:
-            continue  # No person detected in this video
-        
-        # Start a new individual
-        individual_videos = [video_uuid]
-        individual_person_objects = {video_uuid: person_objs[0]}  # Use first person_object
-        matched_video_uuids.add(video_uuid)
-        
-        # Try to match with subsequent videos in the group
-        for j in range(i + 1, len(sorted_videos)):
-            next_video = sorted_videos[j]
-            next_uuid = next_video['uuid']
-            
-            if next_uuid in matched_video_uuids:
-                continue
-            
-            next_person_objs = video_person_objects.get(next_uuid, [])
-            if not next_person_objs:
-                continue
-            
-            # Temporal check: are videos consecutive (within 60 seconds)?
-            try:
-                curr_time = datetime.fromisoformat(video['timestamp'].replace('Z', '+00:00'))
-                next_time = datetime.fromisoformat(next_video['timestamp'].replace('Z', '+00:00'))
-                time_diff = abs((next_time - curr_time).total_seconds())
-                
-                if time_diff <= 60:  # Within 60 seconds = likely same person
-                    individual_videos.append(next_uuid)
-                    individual_person_objects[next_uuid] = next_person_objs[0]
-                    matched_video_uuids.add(next_uuid)
-                    logger.info(f"✅ Matched {video_uuid[:8]} with {next_uuid[:8]} (time_diff: {time_diff}s)")
-            except Exception as e:
-                logger.warning(f"Failed to compare timestamps: {e}")
-        
-        # Create individual record
+        # Create individual record for this person
         individual_uuid = str(uuid4())
         individuals.append({
             'individual_uuid': individual_uuid,
-            'video_uuids': individual_videos,
-            'person_objects': individual_person_objects,
+            'video_uuids': [video_uuid],  # Currently appears in one video
+            'person_objects': {video_uuid: person_obj},  # Store complete person_object with ALL faces
             'temporal_score': 0.85  # Default score for temporal matches
         })
         
         logger.info(
-            f"✅ Created individual {individual_uuid[:8]} appearing in "
-            f"{len(individual_videos)} videos: {[v[:8] for v in individual_videos]}"
+            f"✅ Created individual {individual_uuid[:8]} for person {person_obj.get('person_uuid', 'unknown')[:8]} "
+            f"in video {video_uuid[:8]} with {person_obj.get('face_count', 0)} faces"
         )
     
     # Log completion to database

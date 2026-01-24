@@ -48,7 +48,7 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!'
 
-192.168.1.68  
+192.168.1.68
 8006
 
 /Users/nickgklezakos/Documents/ppl-meta-code/docs/guides/developer/ppl-meta-logging.md

@@ -533,6 +533,8 @@ class EnhancedLogicV2Response {
   @JsonKey(name: 'processing_time')
   final double processingTime;
   final String message;
+  @JsonKey(name: 'detection_result')
+  final Map<String, dynamic>? detectionResult;  // Contains full face data with all frames
 
   EnhancedLogicV2Response({
     required this.success,
@@ -544,6 +546,7 @@ class EnhancedLogicV2Response {
     required this.facesByFrame,
     required this.processingTime,
     required this.message,
+    this.detectionResult,
   });
 
   factory EnhancedLogicV2Response.fromJson(Map<String, dynamic> json) =>

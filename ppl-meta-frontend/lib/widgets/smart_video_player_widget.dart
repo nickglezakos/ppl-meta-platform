@@ -75,6 +75,16 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     _faceDataCache = ref.read(faceDataCacheProvider);
     _mediaFaceDataNotifier = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid).notifier);
     
+    // 🔥 CACHE INVALIDATION: Clear old cached face data (5 representative faces)
+    // This ensures we fetch fresh data using faces_by_frame (all 72 faces)
+    final globalManager = FaceDataMemoryManager.instance;
+    globalManager.clearMediaData(widget.mediaItem.uuid);
+    debugPrint('🗑️ CACHE CLEARED: Invalidated old face data for ${widget.mediaItem.uuid}');
+    
+    // Also clear the MediaFaceDataProvider cache
+    _faceDataCache.clear();
+    debugPrint('🗑️ PROVIDER CACHE CLEARED: Invalidated MediaFaceDataProvider cache');
+    
     // [FIX] DISABLED automatic provider face loading - the overlay now handles this directly
     // The overlay calls Enhanced Logic V2 API directly in _checkForStoredFaces()
     // Old code was causing duplicate API calls:
@@ -472,9 +482,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       debugPrint('_loadStoredFaceData() called - ensuring MediaFaceDataProvider data is loaded...');
       
       // 🔧 LOADING FIX: Wait for MediaFaceDataProvider to load data instead of just reading current state
-      // First ensure the provider starts loading
+      // 🔥 CACHE FIX: Force refresh to bypass old cached data (5 representative faces) and fetch all faces
       final notifier = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid).notifier);
-      notifier.loadFaces();
+      notifier.loadFaces(forceRefresh: true);  // Force refresh to get updated faces_by_frame data
       
       // Wait for the provider to have data (with timeout)
       var attempts = 0;
@@ -826,56 +836,105 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         
         debugPrint('[LOAD FACES] 📊 Enhanced Logic V2 Response:');
         debugPrint('[LOAD FACES]    Total faces: ${enhancedData.totalFaces}');
-        debugPrint('[LOAD FACES]    Faces array length: ${enhancedData.faces.length}');
+        debugPrint('[LOAD FACES]    Faces array length: ${enhancedData.faces.length} (representative faces only)');
         debugPrint('[LOAD FACES]    Source: ${enhancedData.source}');
-        debugPrint('[LOAD FACES]    Faces by frame keys: ${enhancedData.facesByFrame.keys.length}');
         
-        // Log each face with its frame number
-        for (int i = 0; i < enhancedData.faces.length; i++) {
-          final face = enhancedData.faces[i];
-          debugPrint('[LOAD FACES]    Face $i: frame=${face.frameNumber}, confidence=${face.confidence}, bbox=${face.bbox}');
+        // 🔥 CRITICAL FIX: Use detection_result.faces_by_frame to get ALL 72 faces!
+        // - enhancedData.facesByFrame only has 5 representative frames (690, 700, 710, 720, 730)
+        // - enhancedData.detectionResult['faces_by_frame'] has ALL 72 faces across all frames
+        Map<String, dynamic>? allFacesByFrame;
+        
+        if (enhancedData.detectionResult != null && 
+            enhancedData.detectionResult!.containsKey('faces_by_frame')) {
+          allFacesByFrame = enhancedData.detectionResult!['faces_by_frame'] as Map<String, dynamic>;
+          debugPrint('[LOAD FACES] 🎯 Using detection_result.faces_by_frame with ${allFacesByFrame.keys.length} frames (ALL faces)');
+        } else {
+          // Fallback to top-level faces_by_frame (only representative faces)
+          debugPrint('[LOAD FACES] ⚠️ detection_result not available, falling back to representative faces_by_frame');
+          allFacesByFrame = {};
+          for (final entry in enhancedData.facesByFrame.entries) {
+            allFacesByFrame[entry.key] = entry.value.map((f) => {
+              'bbox': f.bbox,
+              'confidence': f.confidence,
+              'method': f.method,
+            }).toList();
+          }
         }
         
-        // Convert Enhanced Logic V2 faces to FaceDetection objects
-        final List<FaceDetection> faces = enhancedData.faces.map((face) {
-          return FaceDetection(
-            boundingBox: FaceBoundingBox(
-              left: face.bbox[0],
-              top: face.bbox[1],
-              width: face.bbox[2] - face.bbox[0],  // right - left = width
-              height: face.bbox[3] - face.bbox[1], // bottom - top = height
-            ),
-            confidence: face.confidence,
-            method: face.method,
-          );
-        }).toList();
+        debugPrint('[LOAD FACES] 🔥 Processing ${allFacesByFrame.keys.length} frames from faces_by_frame');
+        
+        // Flatten faces_by_frame into a single list of ALL faces
+        final List<FaceDetection> faces = [];
+        for (final entry in allFacesByFrame.entries) {
+          final facesList = entry.value as List<dynamic>;
+          for (final faceData in facesList) {
+            final Map<String, dynamic> faceMap = faceData is Map<String, dynamic> 
+                ? faceData 
+                : {
+                    'bbox': (faceData as dynamic).bbox,
+                    'confidence': (faceData as dynamic).confidence,
+                    'method': (faceData as dynamic).method,
+                  };
+            
+            final bbox = faceMap['bbox'] as List<dynamic>;
+            faces.add(FaceDetection(
+              boundingBox: FaceBoundingBox(
+                left: (bbox[0] as num).toDouble(),
+                top: (bbox[1] as num).toDouble(),
+                width: (bbox[2] as num).toDouble() - (bbox[0] as num).toDouble(),
+                height: (bbox[3] as num).toDouble() - (bbox[1] as num).toDouble(),
+              ),
+              confidence: (faceMap['confidence'] as num?)?.toDouble() ?? 0.9,
+              method: faceMap['method'] as String? ?? 'unknown',
+            ));
+          }
+        }
+        
+        debugPrint('[LOAD FACES] ✅ Converted ${faces.length} faces from faces_by_frame (ALL detections)');
         
         // Store in global cache
-        // Convert to frame-based structure for memory cache
+        // Convert to frame-based structure for memory cache using ALL faces_by_frame data
         final globalManager = FaceDataMemoryManager.instance;
         final memoryCache = <int, List<FaceDetection>>{};
         final storedFacesByFrame = <String, List<FaceDetection>>{};
         
-        for (final face in enhancedData.faces) {
-          final frameNum = face.frameNumber;
+        // Use ALL faces_by_frame data for frame-based cache
+        for (final entry in allFacesByFrame.entries) {
+          final frameNum = int.parse(entry.key);
           final frameKey = 'frame_$frameNum';
+          final frameFaces = <FaceDetection>[];
+          final facesList = entry.value as List<dynamic>;
           
-          final faceDetection = FaceDetection(
-            boundingBox: FaceBoundingBox(
-              left: face.bbox[0],
-              top: face.bbox[1],
-              width: face.bbox[2] - face.bbox[0],
-              height: face.bbox[3] - face.bbox[1],
-            ),
-            confidence: face.confidence,
-            method: face.method,
-          );
+          for (final faceData in facesList) {
+            final Map<String, dynamic> faceMap = faceData is Map<String, dynamic> 
+                ? faceData 
+                : {
+                    'bbox': (faceData as dynamic).bbox,
+                    'confidence': (faceData as dynamic).confidence,
+                    'method': (faceData as dynamic).method,
+                  };
+            
+            final bbox = faceMap['bbox'] as List<dynamic>;
+            final faceDetection = FaceDetection(
+              boundingBox: FaceBoundingBox(
+                left: (bbox[0] as num).toDouble(),
+                top: (bbox[1] as num).toDouble(),
+                width: (bbox[2] as num).toDouble() - (bbox[0] as num).toDouble(),
+                height: (bbox[3] as num).toDouble() - (bbox[1] as num).toDouble(),
+              ),
+              confidence: (faceMap['confidence'] as num?)?.toDouble() ?? 0.9,
+              method: faceMap['method'] as String? ?? 'unknown',
+            );
+            
+            frameFaces.add(faceDetection);
+          }
           
-          memoryCache.putIfAbsent(frameNum, () => []).add(faceDetection);
-          storedFacesByFrame.putIfAbsent(frameKey, () => []).add(faceDetection);
+          memoryCache[frameNum] = frameFaces;
+          storedFacesByFrame[frameKey] = frameFaces;
         }
         
         globalManager.storeFaceData(widget.mediaItem.uuid, memoryCache, storedFacesByFrame);
+        debugPrint('[LOAD FACES] 📦 Stored ${memoryCache.keys.length} frames in global cache');
         
         setState(() {
           _storedFaceData = faces;

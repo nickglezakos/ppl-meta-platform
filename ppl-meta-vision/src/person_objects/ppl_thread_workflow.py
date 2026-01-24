@@ -440,7 +440,11 @@ class PPLThreadWorkflowController:
                 )
                 try:
                     self._store_quality_analysis_results(
-                        workflow_id, best_quality_faces, person_id_mapping
+                        workflow_id,
+                        best_quality_faces,
+                        person_id_mapping,
+                        quality_rankings=quality_analysis_results.get("quality_rankings", {}),
+                        face_mappings=grouping_results["face_mappings"],
                     )
                 except Exception as qa_error:
                     logger.error("Quality analysis storage failed: %s", qa_error)
@@ -610,9 +614,13 @@ class PPLThreadWorkflowController:
                     len(best_quality_faces),
                 )
 
-                # Store quality analysis results
+                # Store quality analysis results with representative faces and route data
                 self._store_quality_analysis_results(
-                    workflow_id, best_quality_faces, person_id_mapping
+                    workflow_id,
+                    best_quality_faces,
+                    person_id_mapping,
+                    quality_rankings=quality_analysis_results.get("quality_rankings", {}),
+                    face_mappings=grouping_results["face_mappings"],
                 )
 
             # Step 7: Update workflow status to completed
@@ -1249,8 +1257,10 @@ class PPLThreadWorkflowController:
         workflow_id: str,
         best_quality_faces: Dict,
         person_id_mapping: Dict[str, str],
+        quality_rankings: Dict = None,  # NEW: Quality rankings for representative faces
+        face_mappings: List[Dict] = None,  # NEW: For complete route data
     ) -> None:
-        """Update person objects with quality analysis results."""
+        """Update person objects with quality analysis results, representative faces, and route data."""
         try:
             logger.info(
                 "Entering _store_quality_analysis_results for workflow %s",
@@ -1275,6 +1285,36 @@ class PPLThreadWorkflowController:
                     f"quality_data keys: {list(quality_data.keys()) if isinstance(quality_data, dict) else 'Not a dict'}"
                 )
 
+                # Get top 5 representative faces for this person (for MVR quality display)
+                representative_faces_data = []
+                if quality_rankings and person_id in quality_rankings:
+                    representative_faces_data = quality_rankings[person_id][:5]  # Top 5
+                
+                # Get ALL faces route data for this person (for overlay visualization)
+                all_faces_route = []
+                if face_mappings:
+                    for mapping in face_mappings:
+                        if mapping.get("person_id") == person_id:
+                            face_det = mapping.get("face_detection", {})
+                            all_faces_route.append({
+                                "face_id": str(mapping.get("face_detection_id", "")),
+                                "frame_number": face_det.get("frame_number", 0),
+                                "bbox": [
+                                    face_det.get("bbox_x1", 0),
+                                    face_det.get("bbox_y1", 0),
+                                    face_det.get("bbox_x2", 0),
+                                    face_det.get("bbox_y2", 0),
+                                ],
+                                "confidence": face_det.get("confidence", 0.0),
+                                "position": {
+                                    "x": mapping.get("position_x", 0.0),
+                                    "y": mapping.get("position_y", 0.0),
+                                },
+                            })
+                    # Sort by frame number for proper route visualization
+                    all_faces_route.sort(key=lambda x: x["frame_number"])
+                
+                import json
                 update_query = """
                 UPDATE person_objects 
                 SET 
@@ -1282,6 +1322,8 @@ class PPLThreadWorkflowController:
                     quality_score = %s,
                     estimated_age = %s,
                     distance_from_camera = %s,
+                    representative_faces = %s,
+                    all_faces_route_data = %s,
                     updated_at = NOW()
                 WHERE person_id = %s AND workflow_id = %s
                 """
@@ -1304,6 +1346,7 @@ class PPLThreadWorkflowController:
                 estimated_age = None  # Future enhancement for age detection
 
                 logger.info(f"About to execute query with face_id: {face_id}")
+                logger.info(f"Storing {len(representative_faces_data)} representative faces and {len(all_faces_route)} route points")
                 cursor.execute(
                     update_query,
                     (
@@ -1311,6 +1354,8 @@ class PPLThreadWorkflowController:
                         quality_data["quality_score"],
                         estimated_age,
                         None,  # Distance calculation - future enhancement
+                        json.dumps(representative_faces_data),  # NEW: Top 5 quality faces
+                        json.dumps(all_faces_route),  # NEW: Complete route data
                         actual_person_uuid,  # Use the mapped UUID instead of person_id
                         workflow_id,
                     ),

@@ -306,8 +306,8 @@ class VisionDatabase:
     ) -> List[Dict[str, Any]]:
         """Get face detections for media, optionally filtered by frame.
         
-        Returns only faces from the most recent processing session to avoid
-        duplicates from multiple test runs.
+        Returns ALL face detections for the media without time-window filtering.
+        Session tracking is now handled via face_detection_sessions table.
         """
         if not self.connection:
             return []
@@ -317,32 +317,12 @@ class VisionDatabase:
                 cursor_factory=psycopg2.extras.RealDictCursor
             )
 
-            # First, get the most recent created_at timestamp for this media_id
-            # This ensures we only get faces from the latest processing session
-            cursor.execute(
-                """
-                SELECT MAX(created_at) as latest_processing
-                FROM face_detections 
-                WHERE media_id = %s
-                """,
-                (media_id,)
-            )
-            latest_row = cursor.fetchone()
-            
-            if not latest_row or not latest_row['latest_processing']:
-                cursor.close()
-                return []
-            
-            latest_processing = latest_row['latest_processing']
-            
-            # Now get faces from the latest processing session only
-            # Use a small time window (1 second) to group faces from same session
+            # Build query to get ALL faces for this media_id
             query = """
                 SELECT * FROM face_detections 
-                WHERE media_id = %s 
-                AND created_at >= %s - INTERVAL '1 second'
+                WHERE media_id = %s
             """
-            params: List[Any] = [media_id, latest_processing]
+            params: List[Any] = [media_id]
 
             if frame_number is not None:
                 query += " AND frame_number = %s"
@@ -381,7 +361,7 @@ class VisionDatabase:
                     }
                 )
 
-            logger.info(f"Retrieved {len(detections)} faces for media {media_id} from latest processing session at {latest_processing}")
+            logger.info(f"Retrieved {len(detections)} faces for media {media_id}")
             return detections
 
         except Exception as e:

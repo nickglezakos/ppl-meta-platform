@@ -467,14 +467,20 @@ class PollingFallbackManager:
     async def stop_recording(
         self,
         collection_id: str,
-        session_uuid: str
+        session_uuid: str,
+        grace_period_seconds: int = 120
     ) -> Dict[str, Any]:
         """
         Handle recording stopped event - trigger final batch and stop polling.
         
+        Waits for a grace period to catch videos still being processed (upload + face detection)
+        before triggering the final batch. This ensures videos that were recorded but still
+        processing when stop was called get included in the final batch.
+        
         Args:
             collection_id: Camera collection ID
             session_uuid: Recording session UUID
+            grace_period_seconds: Time to wait for delayed videos (default 120s/2min)
             
         Returns:
             Dict with processing results
@@ -483,8 +489,8 @@ class PollingFallbackManager:
             f"🛑 Recording stopped: {collection_id}, session: {session_uuid}"
         )
         
-        # Remove from active recordings
-        recording_info = self._active_recordings.pop(collection_id, None)
+        # Keep recording info but mark as stopped
+        recording_info = self._active_recordings.get(collection_id)
         
         if not recording_info:
             logger.warning(
@@ -495,7 +501,23 @@ class PollingFallbackManager:
                 'message': 'Recording not found'
             }
         
+        # Mark as stopped but keep polling for grace period
+        recording_info['stopped_at'] = datetime.utcnow()
+        recording_info['grace_period_until'] = datetime.utcnow() + timedelta(seconds=grace_period_seconds)
+        
+        logger.info(
+            f"⏰ Keeping polling active for {grace_period_seconds}s grace period "
+            f"to catch videos still being processed"
+        )
+        
         self._stats['recordings_stopped'] += 1
+        
+        # Wait for grace period while continuing to poll for new videos with faces
+        logger.info(f"⏳ Waiting {grace_period_seconds}s for delayed video processing...")
+        await asyncio.sleep(grace_period_seconds)
+        
+        # Now remove from active recordings and trigger final batch
+        recording_info = self._active_recordings.pop(collection_id, None)
         
         # Trigger final batch for all remaining pending videos in THIS collection
         videos_processed = 0
@@ -508,7 +530,7 @@ class PollingFallbackManager:
             if pending_videos:
                 logger.info(
                     f"Processing final batch for {collection_id}: {len(pending_videos)} "
-                    f"remaining videos"
+                    f"remaining videos (after {grace_period_seconds}s grace period)"
                 )
                 
                 await self._trigger_batch_processing(
@@ -531,7 +553,8 @@ class PollingFallbackManager:
             'session_duration': (
                 datetime.utcnow() - recording_info['started_at']
             ).total_seconds(),
-            'message': 'Final batch triggered'
+            'grace_period_seconds': grace_period_seconds,
+            'message': 'Final batch triggered after grace period'
         }
 
     

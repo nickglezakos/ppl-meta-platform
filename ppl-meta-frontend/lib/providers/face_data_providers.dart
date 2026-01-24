@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/orchestrator_api_client.dart';
 import '../services/media_api_client.dart'; // For FaceDetection and FaceBoundingBox classes
+import '../models/api_models.dart'; // For EnhancedLogicV2Face
 
 // =============================================================================
 // FACE DATA PROVIDERS
@@ -255,29 +256,75 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
           // Enhanced Logic V2 response structure
           totalFaces = enhancedV2Data.totalFaces;
           
-          // Convert Enhanced Logic V2 faces to FaceDetection objects
-          faces = enhancedV2Data.faces.map((face) {
-            return FaceDetection(
-              id: 'enhanced_v2_face_${enhancedV2Data.faces.indexOf(face)}',
-              mediaId: mediaId,
-              boundingBox: FaceBoundingBox(
-                left: face.bbox[0],
-                top: face.bbox[1],
-                width: face.bbox[2] - face.bbox[0],
-                height: face.bbox[3] - face.bbox[1],
-              ),
-              confidence: face.confidence,
-              timestamp: DateTime.now(),
-              method: face.method,
-              metadata: {
-                'frame_number': face.frameNumber,
-                'original_timestamp': face.timestamp,
-                'source': 'enhanced_v2',
-              },
-            );
-          }).toList();
+          // 🔥 FIX: Use detection_result.faces_by_frame to get ALL detected faces!
+          // The 'faces' array only contains 3-5 representative faces per person
+          // The top-level 'faces_by_frame' also only has representative faces (5 frames)
+          // The 'detection_result.faces_by_frame' contains ALL detected faces (72 across all frames)
+          print('🔍 ENHANCED V2: faces array has ${enhancedV2Data.faces.length} faces (representative)');
+          print('🔍 ENHANCED V2: top-level faces_by_frame has ${enhancedV2Data.facesByFrame.keys.length} frames');
+          print('🔍 ENHANCED V2: detection_result available: ${enhancedV2Data.detectionResult != null}');
           
-          print('✅ ENHANCED V2: Successfully loaded $totalFaces faces using Enhanced Logic V2 with frame metadata');
+          // Use detection_result.faces_by_frame if available (contains ALL faces)
+          Map<String, dynamic> facesSource = {};
+          if (enhancedV2Data.detectionResult != null && 
+              enhancedV2Data.detectionResult!.containsKey('faces_by_frame')) {
+            facesSource = enhancedV2Data.detectionResult!['faces_by_frame'] as Map<String, dynamic>;
+            print('✅ ENHANCED V2: Using detection_result.faces_by_frame with ${facesSource.keys.length} frames (ALL faces)');
+          } else {
+            // Fallback to top-level faces_by_frame (only representatives)
+            print('⚠️ ENHANCED V2: detection_result not available, using top-level faces_by_frame');
+            facesSource = enhancedV2Data.facesByFrame.map((k, v) => MapEntry(k, v));
+          }
+          
+          // Flatten faces_by_frame into a single list of ALL faces
+          int faceIndex = 0;
+          for (final entry in facesSource.entries) {
+            final frameNumber = int.parse(entry.key);
+            final facesInFrame = entry.value;
+            
+            // Handle both List<EnhancedLogicV2Face> and List<Map<String, dynamic>>
+            for (final faceData in facesInFrame) {
+              // Extract bbox, confidence, method from either object or map
+              List<double> bbox;
+              double confidence;
+              String method;
+              
+              if (faceData is Map<String, dynamic>) {
+                // Raw map from detection_result
+                final bboxRaw = faceData['bbox'] as List;
+                bbox = bboxRaw.map((e) => (e as num).toDouble()).toList();
+                confidence = (faceData['confidence'] as num).toDouble();
+                method = faceData['method'] as String;
+              } else {
+                // EnhancedLogicV2Face object from top-level faces_by_frame
+                final face = faceData as EnhancedLogicV2Face;
+                bbox = face.bbox;
+                confidence = face.confidence;
+                method = face.method;
+              }
+              
+              faces.add(FaceDetection(
+                id: 'enhanced_v2_face_$faceIndex',
+                mediaId: mediaId,
+                boundingBox: FaceBoundingBox(
+                  left: bbox[0],
+                  top: bbox[1],
+                  width: bbox[2] - bbox[0],
+                  height: bbox[3] - bbox[1],
+                ),
+                confidence: confidence,
+                timestamp: DateTime.now(),
+                method: method,
+                metadata: {
+                  'frame_number': frameNumber,
+                  'source': 'enhanced_v2_all_faces',
+                },
+              ));
+              faceIndex++;
+            }
+          }
+          
+          print('✅ ENHANCED V2: Successfully loaded ${faces.length} faces from faces_by_frame (ALL faces, not just representatives)');
         } else {
           throw Exception('Enhanced Logic V2 response data is null');
         }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../widgets/settings/network_settings_section.dart';
 import '../../widgets/settings/storage_settings_section.dart';
-import '../../widgets/settings/camera_settings_section.dart';
 import '../../widgets/settings/communications_settings_section.dart';
 import 'cross_video_tracking_section.dart';
 import '../../../widgets/custom_app_bar.dart';
@@ -23,16 +22,6 @@ class SettingsScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Camera Settings Section (Instant Detection)
-            CameraSettingsSection(),
-            
-            SizedBox(height: 24),
-
-            // Cross-Video Tracking Section (Merge Individuals Rules)
-            CrossVideoTrackingSection(),
-
-            SizedBox(height: 24),
-            
             // Communications Settings Section (Email/SMTP)
             CommunicationsSettingsSection(),
             
@@ -46,11 +35,44 @@ class SettingsScreen extends ConsumerWidget {
             // Storage Settings Section
             StorageSettingsSection(),
             
-            // Additional sections can be added here in the future
-            // e.g., UserSettingsSection(), AppearanceSettingsSection(), etc.
+            SizedBox(height: 24),
+            
+            // MVR Settings Section
+            _MVRSettingsSection(),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// MVR Settings Section
+class _MVRSettingsSection extends StatelessWidget {
+  const _MVRSettingsSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Row(
+            children: [
+              Icon(Icons.face, color: AppColors.primary, size: 28),
+              const SizedBox(width: 12),
+              Text(
+                'MVR Settings',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+              ),
+            ],
+          ),
+        ),
+        const CrossVideoTrackingSection(),
+      ],
     );
   }
 }
