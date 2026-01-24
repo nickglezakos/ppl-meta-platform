@@ -13,6 +13,12 @@ class Camera {
   final CameraType type;
   final Map<String, dynamic>? metadata;
   final bool supportsRecording;
+  
+  // Pipeline settings
+  final bool instantDetectionEnabled;
+  final bool recordingPipelineEnabled;
+  final int instantDetectionIntervalSeconds;
+  final int segmentDurationSeconds;
 
   const Camera({
     required this.id,
@@ -28,6 +34,10 @@ class Camera {
     this.type = CameraType.usb,
     this.metadata,
     this.supportsRecording = false,
+    this.instantDetectionEnabled = true,
+    this.recordingPipelineEnabled = true,
+    this.instantDetectionIntervalSeconds = 5,
+    this.segmentDurationSeconds = 30,
   });
 
   factory Camera.fromJson(Map<String, dynamic> json) {
@@ -74,6 +84,10 @@ class Camera {
       type: cameraType,
       metadata: metadata,
       supportsRecording: json['supports_recording'] as bool? ?? false,
+      instantDetectionEnabled: json['instant_detection_enabled'] as bool? ?? true,
+      recordingPipelineEnabled: json['recording_pipeline_enabled'] as bool? ?? true,
+      instantDetectionIntervalSeconds: json['instant_detection_interval_seconds'] as int? ?? 5,
+      segmentDurationSeconds: json['segment_duration_seconds'] as int? ?? 30,
     );
   }
 
@@ -92,6 +106,10 @@ class Camera {
       'type': type.name,
       'metadata': metadata,
       'supports_recording': supportsRecording,
+      'instant_detection_enabled': instantDetectionEnabled,
+      'recording_pipeline_enabled': recordingPipelineEnabled,
+      'instant_detection_interval_seconds': instantDetectionIntervalSeconds,
+      'segment_duration_seconds': segmentDurationSeconds,
     };
   }
 
@@ -108,6 +126,10 @@ class Camera {
     String? streamUrl,
     CameraType? type,
     Map<String, dynamic>? metadata,
+    bool? instantDetectionEnabled,
+    bool? recordingPipelineEnabled,
+    int? instantDetectionIntervalSeconds,
+    int? segmentDurationSeconds,
   }) {
     return Camera(
       id: id ?? this.id,
@@ -122,6 +144,10 @@ class Camera {
       streamUrl: streamUrl ?? this.streamUrl,
       type: type ?? this.type,
       metadata: metadata ?? this.metadata,
+      instantDetectionEnabled: instantDetectionEnabled ?? this.instantDetectionEnabled,
+      recordingPipelineEnabled: recordingPipelineEnabled ?? this.recordingPipelineEnabled,
+      instantDetectionIntervalSeconds: instantDetectionIntervalSeconds ?? this.instantDetectionIntervalSeconds,
+      segmentDurationSeconds: segmentDurationSeconds ?? this.segmentDurationSeconds,
     );
   }
 
@@ -131,6 +157,32 @@ class Camera {
   /// Check if this is a mobile camera
   bool get isMobileCamera => type == CameraType.mobile || 
       (metadata != null && metadata!['connection_string']?.toString().startsWith('mobile://') == true);
+  
+  /// Get pipeline mode description
+  String get pipelineModeDescription {
+    if (instantDetectionEnabled && recordingPipelineEnabled) {
+      return 'Both Pipelines Active';
+    } else if (instantDetectionEnabled) {
+      return 'Instant Detection Only';
+    } else if (recordingPipelineEnabled) {
+      return 'Recording Only';
+    } else {
+      return 'Disabled';
+    }
+  }
+  
+  /// Get short pipeline mode
+  String get pipelineMode {
+    if (instantDetectionEnabled && recordingPipelineEnabled) {
+      return 'Both';
+    } else if (instantDetectionEnabled) {
+      return 'Detection';
+    } else if (recordingPipelineEnabled) {
+      return 'Recording';
+    } else {
+      return 'None';
+    }
+  }
 
   /// Get the direct MJPEG stream URL for mobile cameras
   /// Returns null if this is not a mobile camera or if connection info is not available

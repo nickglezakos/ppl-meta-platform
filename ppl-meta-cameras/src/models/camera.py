@@ -85,6 +85,12 @@ class Camera(Base):
     last_error = Column(Text)
     is_active = Column(Boolean, default=True)
 
+    # Pipeline Configuration (Instant Detection + Recording Decoupling)
+    instant_detection_enabled = Column(Boolean, default=True)
+    recording_pipeline_enabled = Column(Boolean, default=True)
+    instant_detection_interval_seconds = Column(Integer, default=5)
+    segment_duration_seconds = Column(Integer, default=30)
+
     # Recording profile assignment - TODO: Add when Phase 2 is implemented
     # recording_profile_id = Column(
     #     Integer, ForeignKey("camera_recording_profiles.id"), nullable=True

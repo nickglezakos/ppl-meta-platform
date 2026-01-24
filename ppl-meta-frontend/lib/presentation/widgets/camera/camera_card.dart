@@ -9,6 +9,7 @@ import '../../../core/services/camera_service.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/config/app_config.dart';
 import '../../pages/camera_stream_page.dart';
+import '../../screens/cameras/camera_pipeline_settings_screen.dart';
 import '../../../widgets/camera/camera_counter_widget.dart';
 import '../../../widgets/camera/instant_detection_widget.dart';
 import 'rtsp_camera_dialog.dart';
@@ -66,6 +67,51 @@ class CameraCard extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  // Pipeline status indicators
+                  if (camera.instantDetectionEnabled)
+                    Tooltip(
+                      message: 'Instant Detection Active',
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Icon(
+                          Icons.bolt,
+                          color: Colors.orange,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 4),
+                  if (camera.recordingPipelineEnabled)
+                    Tooltip(
+                      message: 'Recording Pipeline Active',
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Icon(
+                          Icons.fiber_manual_record,
+                          color: Colors.red,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 4),
+                  // Pipeline settings button
+                  IconButton(
+                    onPressed: () => _showPipelineSettings(context, ref, camera),
+                    icon: const Icon(Icons.tune, size: 20),
+                    iconSize: 20,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Pipeline Settings',
+                  ),
+                  const SizedBox(width: 4),
                   // Collection status indicator
                   _CollectionStatusIndicator(cameraId: camera.deviceId),
                   const SizedBox(width: 8),
@@ -238,6 +284,19 @@ class CameraCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+  
+  static void _showPipelineSettings(BuildContext context, WidgetRef ref, Camera camera) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CameraPipelineSettingsScreen(camera: camera),
+      ),
+    ).then((result) {
+      if (result == true) {
+        // Reload cameras after settings change
+        ref.read(cameraListProvider.notifier).loadCameras();
+      }
+    });
   }
   
   static void _showEditRTSPDialog(BuildContext context, WidgetRef ref, Camera camera) {

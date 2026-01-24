@@ -932,7 +932,7 @@ class CameraDetectionService:
         """Start recording with session tracking and segment support.
         
         Args:
-            enable_instant_detection: If True, automatically start instant detection
+            enable_instant_detection: If True, automatically start instant detection (legacy parameter - overridden by pipeline settings)
         """
         logger.info(f"🎬 [RECORDING_START] Called for device_id={device_id}, session={session_uuid}")
         logger.info(f"🔍 [RECORDING_START] Checking queue workers for {device_id}")
@@ -944,11 +944,34 @@ class CameraDetectionService:
                 logger.warning(f"❌ [RECORDING_START] Camera {device_id} is already recording")
                 return None
 
-            # Check if this is a mobile camera - handle differently
+            # 🔧 PIPELINE SETTINGS: Read pipeline configuration from database
             db_gen = get_db()
             db = next(db_gen)
             try:
                 camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                
+                if not camera:
+                    logger.error(f"❌ [RECORDING_START] Camera {device_id} not found in database")
+                    return None
+                
+                # 🔧 Get pipeline settings (use database values)
+                instant_detection_enabled = camera.instant_detection_enabled
+                recording_pipeline_enabled = camera.recording_pipeline_enabled
+                instant_detection_interval = camera.instant_detection_interval_seconds or 5
+                segment_duration_from_db = camera.segment_duration_seconds or segment_duration
+                
+                # Override segment_duration with database value if recording is enabled
+                if recording_pipeline_enabled:
+                    segment_duration = segment_duration_from_db
+                
+                logger.info(
+                    f"🔧 [PIPELINE-SETTINGS] device={device_id}, "
+                    f"instant_detection={instant_detection_enabled}, "
+                    f"recording={recording_pipeline_enabled}, "
+                    f"detection_interval={instant_detection_interval}s, "
+                    f"segment_duration={segment_duration}s"
+                )
+                
                 is_mobile = camera and camera.camera_type == CameraType.MOBILE
             finally:
                 db.close()
@@ -980,36 +1003,68 @@ class CameraDetectionService:
                 worker = await queue_service.get_camera_stream(device_id)
                 
                 if not worker:
-                    logger.warning(f"⚠️ [RECORDING_START] No queue worker found for {device_id} - instant detection will be unavailable")
-                    # ✅ CONTINUE ANYWAY - Queue worker is only needed for instant detection, not recording
-                    # The recording system has its own frame capture mechanism
+                    # 🔧 PIPELINE CHECK: Worker is required for both pipelines
+                    if recording_pipeline_enabled or instant_detection_enabled:
+                        logger.error(f"❌ [RECORDING_START] No queue worker found for {device_id} - cannot start pipelines")
+                        return None
                     
                 elif worker.status.value != 'connected':
-                    logger.warning(f"⚠️ [RECORDING_START] Queue worker for {device_id} not connected (status: {worker.status.value}) - instant detection will be unavailable")
-                    # ✅ CONTINUE ANYWAY
+                    logger.warning(f"⚠️ [RECORDING_START] Queue worker for {device_id} not connected (status: {worker.status.value})")
+                    # Allow continuing if recording pipeline is enabled (has fallback mechanism)
+                    if not recording_pipeline_enabled:
+                        logger.error(f"❌ [RECORDING_START] Worker not connected and recording disabled - cannot proceed")
+                        return None
                 else:
                     logger.info(f"✅ [RECORDING_START] Queue worker for {device_id} verified and ready (status: {worker.status.value})")
                     
-                    # 🔍 INTEGRATED DETECTION: Enable detection in worker if requested
-                    if enable_instant_detection and worker:
-                        logger.info(f"🔍 [INSTANT-DETECT] Enabling integrated detection in worker {device_id}")
+                    # 🔧 INTEGRATED DETECTION: Enable detection in worker based on pipeline settings
+                    if instant_detection_enabled and worker:
+                        logger.info(f"🔍 [INSTANT-DETECT] Enabling integrated detection in worker {device_id} (interval: {instant_detection_interval}s)")
                         try:
                             worker.start_detection()
                             logger.info(f"✅ Integrated detection enabled for worker {device_id}")
                         except Exception as e:
                             logger.warning(f"⚠️ Failed to enable worker detection for {device_id}: {e}")
+                    else:
+                        logger.info(f"⏸️ [INSTANT-DETECT] Instant detection disabled for {device_id} per pipeline settings")
 
-                result = await self._start_regular_recording_with_session(
-                    device_id,
-                    user_id,
-                    quality,
-                    auth_token,
-                    session_uuid,
-                    segment_duration,
-                )
+                # 🔧 RECORDING PIPELINE: Only start recording if enabled
+                if recording_pipeline_enabled:
+                    result = await self._start_regular_recording_with_session(
+                        device_id,
+                        user_id,
+                        quality,
+                        auth_token,
+                        session_uuid,
+                        segment_duration,
+                    )
+                else:
+                    # Instant-detection-only mode for regular cameras
+                    logger.info(
+                        f"📸 [INSTANT-ONLY] Starting instant-detection-only mode for {device_id}"
+                    )
+                    result = {
+                        "device_id": device_id,
+                        "session_uuid": session_uuid,
+                        "mode": "instant_detection_only",
+                        "started_at": datetime.datetime.now().isoformat()
+                    }
+                    # Store minimal recording info to track session
+                    self.active_recordings[device_id] = {
+                        "device_id": device_id,
+                        "user_id": user_id,
+                        "session_uuid": session_uuid,
+                        "mode": "instant_detection_only",
+                        "started_at": datetime.datetime.now(),
+                        "is_mobile": False,
+                    }
             
-            # ✅ NO EXTERNAL DETECTION MANAGER NEEDED - Detection is now integrated in worker
-            logger.info(f"🔍 [INSTANT-DETECT] Detection {'enabled' if enable_instant_detection else 'disabled'} in worker {device_id}")
+            # 🔧 PIPELINE STATUS: Log final pipeline state
+            logger.info(
+                f"🔧 [PIPELINE-STATUS] {device_id}: "
+                f"instant_detection={'✅' if instant_detection_enabled else '❌'}, "
+                f"recording={'✅' if recording_pipeline_enabled else '❌'}"
+            )
             
             return result
 
@@ -1477,7 +1532,7 @@ class CameraDetectionService:
         """Stop recording video from camera and finalize files.
         
         Args:
-            auto_stop_instant_detection: If True, automatically stop instant detection
+            auto_stop_instant_detection: If True, automatically stop instant detection (legacy parameter - overridden by pipeline settings)
         """
         import traceback
 
@@ -1496,6 +1551,50 @@ class CameraDetectionService:
             recording_info = self.active_recordings[device_id]
             logger.info(f"🎬 [DEBUG] Found active recording for {device_id}")
 
+            # 🔧 PIPELINE SETTINGS: Check if this is instant-detection-only mode
+            is_instant_only = recording_info.get("mode") == "instant_detection_only"
+            
+            if is_instant_only:
+                # Handle instant-detection-only session stop
+                logger.info(f"📸 [INSTANT-ONLY] Stopping instant-detection-only session for {device_id}")
+                
+                session_uuid = recording_info.get("session_uuid")
+                started_at = recording_info.get("started_at", datetime.datetime.now())
+                stopped_at = datetime.datetime.now()
+                duration = stopped_at - started_at
+                
+                # Remove from active recordings
+                del self.active_recordings[device_id]
+                
+                # 🔧 Read pipeline settings to determine if we should stop instant detection
+                db_gen = get_db()
+                db = next(db_gen)
+                try:
+                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                    should_stop_detection = camera and not camera.instant_detection_enabled
+                finally:
+                    db.close()
+                
+                # Stop instant detection in worker if instant detection is now disabled
+                if should_stop_detection:
+                    try:
+                        from src.services.camera_service_queue import get_camera_service as get_queue_service
+                        queue_service = get_queue_service()
+                        worker = await queue_service.get_camera_stream(device_id)
+                        if worker:
+                            worker.stop_detection()
+                            logger.info(f"✅ Stopped instant detection for {device_id}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to stop instant detection for {device_id}: {e}")
+                
+                return {
+                    "device_id": device_id,
+                    "session_uuid": session_uuid,
+                    "mode": "instant_detection_only",
+                    "duration_seconds": int(duration.total_seconds()),
+                    "stopped_at": stopped_at.isoformat(),
+                }
+
             # Check if this is a session-based recording with segments
             is_session_recording = "session_uuid" in recording_info
 
@@ -1508,15 +1607,27 @@ class CameraDetectionService:
                     device_id, user_id, recording_info
                 )
             
-            # Auto-stop instant detection if enabled and recording stopped successfully
-            if result and auto_stop_instant_detection:
+            # 🔧 PIPELINE SETTINGS: Auto-stop instant detection based on current settings
+            if result:
+                db_gen = get_db()
+                db = next(db_gen)
                 try:
-                    from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
-                    manager = get_instant_detection_manager()
-                    manager.stop_sampling()
-                    logger.info(f"✅ Auto-stopped instant detection for camera {device_id}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to auto-stop instant detection for {device_id}: {e}")
+                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                    instant_detection_enabled = camera and camera.instant_detection_enabled
+                finally:
+                    db.close()
+                
+                # Only auto-stop if instant detection is now disabled in settings
+                if auto_stop_instant_detection and not instant_detection_enabled:
+                    try:
+                        from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
+                        manager = get_instant_detection_manager()
+                        manager.stop_sampling()
+                        logger.info(f"✅ Auto-stopped instant detection for camera {device_id} (disabled in settings)")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to auto-stop instant detection for {device_id}: {e}")
+                elif instant_detection_enabled:
+                    logger.info(f"⏸️ Instant detection remains active for {device_id} (enabled in settings)")
             
             return result
 

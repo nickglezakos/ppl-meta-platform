@@ -713,6 +713,52 @@ class CameraService {
     }
   }
 
+  /// Get pipeline settings for a camera
+  Future<Map<String, dynamic>> getPipelineSettings(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.get(
+        '/api/v1/cameras/$deviceId/pipeline-settings',
+      );
+
+      if (response.data == null) {
+        throw const CameraException('Invalid response from camera service');
+      }
+
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
+  /// Update pipeline settings for a camera
+  Future<Map<String, dynamic>> updatePipelineSettings(
+    String deviceId, {
+    required bool instantDetectionEnabled,
+    required bool recordingPipelineEnabled,
+    required int instantDetectionIntervalSeconds,
+    required int segmentDurationSeconds,
+  }) async {
+    try {
+      final response = await _cameraApiClient.patch(
+        '/api/v1/cameras/$deviceId/pipeline-settings',
+        queryParameters: {
+          'instant_detection_enabled': instantDetectionEnabled,
+          'recording_pipeline_enabled': recordingPipelineEnabled,
+          'instant_detection_interval_seconds': instantDetectionIntervalSeconds,
+          'segment_duration_seconds': segmentDurationSeconds,
+        },
+      );
+
+      if (response.data == null) {
+        throw const CameraException('Invalid response from camera service');
+      }
+
+      return response.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      throw _handleDioError(e);
+    }
+  }
+
   /// Stop recording for a camera
   /// 
   /// [autoStopInstantDetection] - If false, keeps camera connected and instant detection running.

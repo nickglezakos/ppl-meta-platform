@@ -1614,6 +1614,153 @@ async def update_camera_settings(
 
 
 # =============================================================================
+# PIPELINE SETTINGS ENDPOINTS - Instant Detection & Recording Decoupling
+# =============================================================================
+
+
+@router.get("/{device_id}/pipeline-settings", dependencies=[Depends(require_view_cameras)])
+async def get_pipeline_settings(
+    device_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Get current pipeline settings for a specific camera.
+    
+    Returns the instant detection and recording pipeline configuration
+    for the specified camera.
+    
+    Args:
+        device_id: Camera device ID
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        Pipeline settings including instant detection and recording configuration
+    """
+    try:
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+        
+        return {
+            "device_id": camera.device_id,
+            "camera_name": camera.name,
+            "instant_detection_enabled": camera.instant_detection_enabled,
+            "recording_pipeline_enabled": camera.recording_pipeline_enabled,
+            "instant_detection_interval_seconds": camera.instant_detection_interval_seconds,
+            "segment_duration_seconds": camera.segment_duration_seconds,
+            "created_at": camera.created_at.isoformat() if camera.created_at else None,
+            "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting pipeline settings for {device_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get pipeline settings: {str(e)}",
+        )
+
+
+@router.patch("/{device_id}/pipeline-settings", dependencies=[Depends(require_connect_camera)])
+async def update_pipeline_settings(
+    device_id: str,
+    instant_detection_enabled: bool,
+    recording_pipeline_enabled: bool,
+    instant_detection_interval_seconds: int = 5,
+    segment_duration_seconds: int = 30,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Update pipeline settings for a specific camera.
+    
+    Allows independent control of instant detection and recording pipelines.
+    At least one pipeline must be enabled.
+    
+    Args:
+        device_id: Camera device ID
+        instant_detection_enabled: Enable instant detection pipeline
+        recording_pipeline_enabled: Enable recording and continuous detection pipeline
+        instant_detection_interval_seconds: Interval for instant detection (1-60 seconds)
+        segment_duration_seconds: Segment duration for recording (5-300 seconds)
+        db: Database session
+        current_user: Current authenticated user
+        
+    Returns:
+        Updated pipeline settings
+    """
+    try:
+        # Validate: At least one pipeline must be enabled
+        if not instant_detection_enabled and not recording_pipeline_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one pipeline must be enabled (instant detection or recording)",
+            )
+        
+        # Validate interval ranges
+        if instant_detection_interval_seconds < 1 or instant_detection_interval_seconds > 60:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Instant detection interval must be between 1 and 60 seconds",
+            )
+        
+        if segment_duration_seconds < 5 or segment_duration_seconds > 300:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Segment duration must be between 5 and 300 seconds",
+            )
+        
+        # Get camera from database
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+        
+        # Update settings
+        camera.instant_detection_enabled = instant_detection_enabled
+        camera.recording_pipeline_enabled = recording_pipeline_enabled
+        camera.instant_detection_interval_seconds = instant_detection_interval_seconds
+        camera.segment_duration_seconds = segment_duration_seconds
+        
+        db.commit()
+        db.refresh(camera)
+        
+        logger.info(
+            f"📹 Updated pipeline settings for {device_id}: "
+            f"instant_detection={instant_detection_enabled}, "
+            f"recording_pipeline={recording_pipeline_enabled}"
+        )
+        
+        return {
+            "device_id": camera.device_id,
+            "camera_name": camera.name,
+            "instant_detection_enabled": camera.instant_detection_enabled,
+            "recording_pipeline_enabled": camera.recording_pipeline_enabled,
+            "instant_detection_interval_seconds": camera.instant_detection_interval_seconds,
+            "segment_duration_seconds": camera.segment_duration_seconds,
+            "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating pipeline settings for {device_id}: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update pipeline settings: {str(e)}",
+        )
+
+
+# =============================================================================
 # RECORDING ENDPOINTS - Phase 2: Backend Recording Implementation
 # =============================================================================
 
