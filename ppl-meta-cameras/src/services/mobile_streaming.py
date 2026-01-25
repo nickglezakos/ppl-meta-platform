@@ -390,7 +390,57 @@ class MobileCameraStreamingService:
 
     def has_active_mobile_camera(self, device_id: str) -> bool:
         """Check if a mobile camera is actively streaming."""
-        return device_id in self.active_mobile_streams
+        if device_id not in self.active_mobile_streams:
+            return False
+        
+        # Check if we've received frames recently (within last 10 seconds)
+        stream_info = self.active_mobile_streams[device_id]
+        last_frame_time = stream_info.get("last_frame_time", 0)
+        time_since_last_frame = time.time() - last_frame_time
+        
+        if time_since_last_frame > 10.0:
+            logger.warning(f"📱 Mobile camera {device_id} inactive for {time_since_last_frame:.1f}s, marking as disconnected")
+            return False
+        
+        return True
+    
+    async def cleanup_stale_cameras(self):
+        """Remove mobile cameras that haven't sent frames in a while."""
+        stale_cameras = []
+        current_time = time.time()
+        
+        for device_id, stream_info in self.active_mobile_streams.items():
+            last_frame_time = stream_info.get("last_frame_time", 0)
+            time_since_last_frame = current_time - last_frame_time
+            
+            # Consider stale if no frames for 30 seconds
+            if time_since_last_frame > 30.0:
+                logger.warning(f"🧹 Cleaning up stale mobile camera {device_id} (no frames for {time_since_last_frame:.1f}s)")
+                stale_cameras.append(device_id)
+        
+        # Remove stale cameras
+        for device_id in stale_cameras:
+            await self.stop_mobile_camera_stream(device_id)
+            
+            # Update camera status in database
+            try:
+                from src.database import SessionLocal
+                from src.models.camera import Camera, CameraStatus
+                
+                db = SessionLocal()
+                try:
+                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                    if camera:
+                        camera.status = CameraStatus.DISCONNECTED
+                        db.commit()
+                        logger.info(f"✅ Updated status to disconnected for {device_id}")
+                except Exception as e:
+                    logger.error(f"❌ Error updating camera status: {e}")
+                    db.rollback()
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error(f"❌ Error accessing database: {e}")
 
 
 # Global instance

@@ -2256,7 +2256,15 @@ class CameraDetectionService:
             from src.services.mobile_streaming import mobile_streaming_service
 
             frame_count = 0
+            no_frame_count = 0
+            max_no_frame_count = 100  # 10 seconds without frames = disconnected
+            
             while device_id in self.active_recordings:
+                # Check if mobile camera is still connected
+                if not mobile_streaming_service.has_active_mobile_camera(device_id):
+                    logger.warning(f"📱 [MOBILE_RECORDING] Mobile camera {device_id} disconnected, stopping recording")
+                    break
+                
                 # Get frame data from mobile streaming service
                 frame_data = (
                     await mobile_streaming_service.get_latest_mobile_frame_data(
@@ -2265,11 +2273,18 @@ class CameraDetectionService:
                 )
 
                 if frame_data is None:
+                    no_frame_count += 1
+                    if no_frame_count >= max_no_frame_count:
+                        logger.warning(f"📱 [MOBILE_RECORDING] No frames for {device_id} for 10s, assuming disconnected")
+                        break
                     logger.debug(
-                        f"🎬 [MOBILE_RECORDING] No mobile frame available for recording {device_id}"
+                        f"🎬 [MOBILE_RECORDING] No mobile frame available for recording {device_id} ({no_frame_count}/{max_no_frame_count})"
                     )
                     await asyncio.sleep(0.1)
                     continue
+                
+                # Reset no-frame counter on successful frame
+                no_frame_count = 0
 
                 logger.debug(
                     f"🎬 [MOBILE_RECORDING] Got frame data for {device_id}: {type(frame_data)}"
@@ -2479,14 +2494,14 @@ class CameraDetectionService:
                         await self._rotate_to_next_segment(device_id, session_service)
                         continue
 
-                    # Get mobile frame
-                    frame_data = mobile_streaming_service.get_mobile_frame(device_id)
+                    # Get mobile frame data
+                    frame_data = await mobile_streaming_service.get_latest_mobile_frame_data(device_id)
                     if frame_data is None:
                         await asyncio.sleep(0.1)
                         continue
 
-                    # Decode and process frame
-                    frame = mobile_streaming_service.decode_mobile_frame(frame_data)
+                    # Extract frame from frame data
+                    frame = frame_data.get('frame')
                     if frame is None:
                         continue
 

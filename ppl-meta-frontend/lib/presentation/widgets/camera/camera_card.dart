@@ -29,12 +29,32 @@ class CameraCard extends ConsumerWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     
-    // Watch WebSocket status for this camera
-    final cameraStatus = ref.watch(cameraStatusProvider(camera.deviceId));
-    final isConnected = cameraStatus?.isConnected ?? false;
+    // Watch camera list to rebuild when camera status changes
+    final cameraListState = ref.watch(cameraListProvider);
+    final updatedCamera = cameraListState.cameras.firstWhere(
+      (c) => c.deviceId == camera.deviceId,
+      orElse: () => camera,
+    );
     
-    // 🔍 DEBUG: Log camera status
-    debugPrint('🎥 [CameraCard] ${camera.deviceId}: isConnected=$isConnected, status=${cameraStatus?.status}, cameraStatus=$cameraStatus');
+    debugPrint('🔄 [CameraCard] BUILD triggered for ${camera.deviceId}');
+    
+    // Watch WebSocket status for this camera
+    final cameraStatus = ref.watch(cameraStatusProvider(updatedCamera.deviceId));
+    
+    // For mobile cameras, use the camera's own status field since they don't use WebSocket
+    // For USB/RTSP cameras, use WebSocket status if available, otherwise use camera status
+    final bool isConnected = updatedCamera.type == CameraType.mobile 
+        ? updatedCamera.status.toLowerCase() == 'connected'
+        : (cameraStatus?.isConnected ?? updatedCamera.status.toLowerCase() == 'connected');
+    
+    // 🔍 DEBUG: Log camera status evaluation
+    debugPrint('🎥 [CameraCard] ${updatedCamera.deviceId}:');
+    debugPrint('   📌 Type: ${updatedCamera.type}');
+    debugPrint('   📌 Camera.status: ${updatedCamera.status}');
+    debugPrint('   📌 WebSocket.status: ${cameraStatus?.status}');
+    debugPrint('   📌 WebSocket.isConnected: ${cameraStatus?.isConnected}');
+    debugPrint('   ✅ Final isConnected: $isConnected');
+    debugPrint('   🎬 Play button visible: $isConnected');
 
     return Card(
       elevation: 2,
@@ -60,7 +80,7 @@ class CameraCard extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      camera.name,
+                      updatedCamera.name,
                       style: textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -68,7 +88,7 @@ class CameraCard extends ConsumerWidget {
                     ),
                   ),
                   // Pipeline status indicators
-                  if (camera.instantDetectionEnabled)
+                  if (updatedCamera.instantDetectionEnabled)
                     Tooltip(
                       message: 'Instant Detection Active',
                       child: Container(
@@ -85,7 +105,7 @@ class CameraCard extends ConsumerWidget {
                       ),
                     ),
                   const SizedBox(width: 4),
-                  if (camera.recordingPipelineEnabled)
+                  if (updatedCamera.recordingPipelineEnabled)
                     Tooltip(
                       message: 'Recording Pipeline Active',
                       child: Container(
@@ -104,7 +124,7 @@ class CameraCard extends ConsumerWidget {
                   const SizedBox(width: 4),
                   // Pipeline settings button
                   IconButton(
-                    onPressed: () => _showPipelineSettings(context, ref, camera),
+                    onPressed: () => _showPipelineSettings(context, ref, updatedCamera),
                     icon: const Icon(Icons.tune, size: 20),
                     iconSize: 20,
                     padding: const EdgeInsets.all(4),
@@ -113,9 +133,9 @@ class CameraCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: 4),
                   // Collection status indicator
-                  _CollectionStatusIndicator(cameraId: camera.deviceId),
+                  _CollectionStatusIndicator(cameraId: updatedCamera.deviceId),
                   const SizedBox(width: 8),
-                  _StatusIndicator(camera: camera),
+                  _StatusIndicator(camera: updatedCamera),
                 ],
               ),
               
@@ -218,9 +238,9 @@ class CameraCard extends ConsumerWidget {
                   const Spacer(),
                   
                   // RTSP Edit button (only for RTSP cameras)
-                  if (camera.type == CameraType.rtsp) ...[
+                  if (updatedCamera.type == CameraType.rtsp) ...[
                     IconButton(
-                      onPressed: () => _showEditRTSPDialog(context, ref, camera),
+                      onPressed: () => _showEditRTSPDialog(context, ref, updatedCamera),
                       icon: const Icon(Icons.edit),
                       iconSize: 28,
                       padding: const EdgeInsets.all(8),
@@ -229,7 +249,7 @@ class CameraCard extends ConsumerWidget {
                     ),
                     const SizedBox(width: 12),
                     IconButton(
-                      onPressed: () => _showDeleteRTSPDialog(context, ref, camera),
+                      onPressed: () => _showDeleteRTSPDialog(context, ref, updatedCamera),
                       icon: const Icon(Icons.delete, color: Colors.red),
                       iconSize: 28,
                       padding: const EdgeInsets.all(8),
@@ -240,23 +260,23 @@ class CameraCard extends ConsumerWidget {
                   ],
                   
                   // Connection toggle button
-                  _ConnectionButton(camera: camera),
+                  _ConnectionButton(camera: updatedCamera),
                   const SizedBox(width: 12),
                   
                   // Recording and stream controls
                   if (isConnected) ...[
-                    _RecordingControls(cameraId: camera.deviceId),
+                    _RecordingControls(cameraId: updatedCamera.deviceId),
                     const SizedBox(width: 12),
                     IconButton(
                       onPressed: () {
                         // 🔍 DEBUG: Log navigation attempt
-                        debugPrint('🎬 [CameraCard] Navigating to stream for ${camera.deviceId}');
-                        debugPrint('🎬 [CameraCard] Camera: ${camera.toJson()}');
+                        debugPrint('🎬 [CameraCard] Navigating to stream for ${updatedCamera.deviceId}');
+                        debugPrint('🎬 [CameraCard] Camera: ${updatedCamera.toJson()}');
                         
                         // Navigate to full-screen stream page
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (context) => CameraStreamPage(camera: camera),
+                            builder: (context) => CameraStreamPage(camera: updatedCamera),
                           ),
                         );
                       },
@@ -702,12 +722,44 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
       final cameraService = ref.read(cameraServiceProvider);
       final status = ref.read(cameraStatusProvider(widget.camera.deviceId));
       
-      if (status?.isConnected ?? false) {
+      // For mobile cameras, use camera.status since they don't use WebSocket
+      // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
+      final isConnected = widget.camera.type == CameraType.mobile
+          ? widget.camera.status.toLowerCase() == 'connected'
+          : (status?.isConnected ?? widget.camera.status.toLowerCase() == 'connected');
+      
+      debugPrint('🔌 [ConnectionButton] Toggle check: deviceId=${widget.camera.deviceId}, type=${widget.camera.type}, isConnected=$isConnected');
+      
+      if (isConnected) {
         // Disconnect
+        debugPrint('🔌 [ConnectionButton] Starting disconnect for ${widget.camera.deviceId}');
         await cameraService.disconnectCamera(widget.camera.deviceId);
+        debugPrint('🔌 [ConnectionButton] Disconnect API call completed');
+        
+        // Wait a moment for backend to update status
+        debugPrint('⏳ [ConnectionButton] Waiting 500ms for backend status update...');
+        await Future.delayed(const Duration(milliseconds: 500));
+        
+        // Refresh camera list to get updated disconnection status
+        debugPrint('🔄 [ConnectionButton] Calling loadCameras() to refresh list...');
+        await ref.read(cameraListProvider.notifier).loadCameras();
+        debugPrint('✅ [ConnectionButton] Camera disconnected and status refreshed');
       } else {
         // Connect
-        await cameraService.connectCamera(widget.camera.deviceId);
+        debugPrint('🔌 [ConnectionButton] Starting connect for ${widget.camera.deviceId}');
+        final success = await cameraService.connectCamera(widget.camera.deviceId);
+        debugPrint('🔌 [ConnectionButton] Connect API call completed: success=$success');
+        
+        if (success) {
+          // Wait a moment for backend to update status
+          debugPrint('⏳ [ConnectionButton] Waiting 500ms for backend status update...');
+          await Future.delayed(const Duration(milliseconds: 500));
+          
+          // Refresh camera list to get updated connection status
+          debugPrint('🔄 [ConnectionButton] Calling loadCameras() to refresh list...');
+          await ref.read(cameraListProvider.notifier).loadCameras();
+          debugPrint('✅ [ConnectionButton] Camera connected and status refreshed');
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -728,7 +780,12 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
   @override
   Widget build(BuildContext context) {
     final status = ref.watch(cameraStatusProvider(widget.camera.deviceId));
-    final isConnected = status?.isConnected ?? false;
+    
+    // For mobile cameras, use camera.status since they don't use WebSocket
+    // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
+    final isConnected = widget.camera.type == CameraType.mobile
+        ? widget.camera.status.toLowerCase() == 'connected'
+        : (status?.isConnected ?? widget.camera.status.toLowerCase() == 'connected');
     
     if (_isLoading) {
       return Container(

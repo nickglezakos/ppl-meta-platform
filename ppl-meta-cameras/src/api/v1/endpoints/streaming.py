@@ -126,6 +126,15 @@ async def video_stream(
             max_consecutive_failures = 50  # 5 seconds at 10fps before giving up
             last_frame_time = time.time()
             stream_timeout = 30.0  # 30 seconds without frames = timeout
+            
+            # Determine if this is a mobile camera
+            is_mobile = device_id.startswith('mobile_')
+            if is_mobile:
+                from src.services.mobile_streaming import mobile_streaming_service
+                logger.info(f"📱 [GENERATE_FRAMES] Using mobile streaming service for {device_id}")
+            else:
+                queue_service = get_camera_service()
+                logger.info(f"🎥 [GENERATE_FRAMES] Using queue service for {device_id}")
 
             while True:
                 try:
@@ -134,9 +143,13 @@ async def video_stream(
                         logger.error(f"⏱️ Stream timeout for {device_id} - no frames for {stream_timeout}s")
                         break
 
-                    # ✅ Use queue-based camera service to get frames from worker buffer
-                    queue_service = get_camera_service()
-                    frame = await queue_service.get_latest_frame(device_id)
+                    # Get frame based on camera type
+                    if is_mobile:
+                        # Mobile cameras: get frames from mobile_streaming_service
+                        frame = await mobile_streaming_service.get_latest_mobile_frame(device_id)
+                    else:
+                        # USB/RTSP cameras: get frames from worker queue
+                        frame = await queue_service.get_latest_frame(device_id)
                     
                     if frame is None:
                         consecutive_failures += 1
@@ -203,20 +216,38 @@ async def video_stream(
     logger.info(f"🎥 [VIDEO_STREAM] Request for device_id={device_id}, user={current_user.get('sub')}")
     
     try:
-        # Check if camera worker exists and is connected
-        queue_service = get_camera_service()
-        worker = await queue_service.get_camera_stream(device_id)
-        logger.info(f"🔍 [VIDEO_STREAM] Worker found: {worker is not None}, Status: {worker.status.value if worker else 'N/A'}")
+        # Check if this is a mobile camera
+        is_mobile = device_id.startswith('mobile_')
         
-        if not worker or worker.status.value != 'connected':
-            logger.error(f"❌ [VIDEO_STREAM] Camera {device_id} worker not connected")
-            from src.services.worker_manager import get_worker_manager
-            manager = get_worker_manager()
-            logger.error(f"❌ [VIDEO_STREAM] Available workers: {list(manager.workers.keys())}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Camera {device_id} not connected. Please connect via /cameras/{device_id}/connect first",
-            )
+        if is_mobile:
+            # Mobile cameras send frames via WebSocket to mobile_streaming_service
+            logger.info(f"📱 [VIDEO_STREAM] Mobile camera detected: {device_id}")
+            from src.services.mobile_streaming import mobile_streaming_service
+            
+            # Check if mobile camera has active stream
+            if not mobile_streaming_service.has_active_mobile_camera(device_id):
+                logger.error(f"❌ [VIDEO_STREAM] Mobile camera {device_id} not streaming")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Mobile camera {device_id} not actively streaming frames",
+                )
+            logger.info(f"✅ [VIDEO_STREAM] Mobile camera {device_id} is actively streaming")
+        else:
+            # USB/RTSP cameras use worker queue architecture
+            logger.info(f"🎥 [VIDEO_STREAM] USB/RTSP camera detected: {device_id}")
+            queue_service = get_camera_service()
+            worker = await queue_service.get_camera_stream(device_id)
+            logger.info(f"🔍 [VIDEO_STREAM] Worker found: {worker is not None}, Status: {worker.status.value if worker else 'N/A'}")
+            
+            if not worker or worker.status.value != 'connected':
+                logger.error(f"❌ [VIDEO_STREAM] Camera {device_id} worker not connected")
+                from src.services.worker_manager import get_worker_manager
+                manager = get_worker_manager()
+                logger.error(f"❌ [VIDEO_STREAM] Available workers: {list(manager.workers.keys())}")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Camera {device_id} not connected. Please connect via /cameras/{device_id}/connect first",
+                )
 
         logger.info(
             f"✅ [VIDEO_STREAM] User {current_user.get('sub')} accessing video stream for camera {device_id}"

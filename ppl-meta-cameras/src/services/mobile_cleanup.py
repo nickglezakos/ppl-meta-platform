@@ -65,12 +65,19 @@ class MobileCameraCleanupService:
 
     async def cleanup_stale_mobile_cameras(self) -> int:
         """
-        Mark stale mobile cameras as available.
+        Mark stale mobile cameras as available and cleanup streaming service.
 
         Returns:
             Number of cameras updated
         """
         try:
+            # First cleanup stale cameras in mobile streaming service
+            try:
+                from src.services.mobile_streaming import mobile_streaming_service
+                await mobile_streaming_service.cleanup_stale_cameras()
+            except Exception as e:
+                logger.error(f"Error cleaning up mobile streaming service: {e}")
+            
             db_gen = get_db()
             db = next(db_gen)
 

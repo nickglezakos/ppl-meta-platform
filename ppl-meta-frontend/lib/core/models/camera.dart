@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// Camera device model with enhanced metadata and multi-camera support
 class Camera {
   final String id;
@@ -234,33 +236,11 @@ class Camera {
     }
   }
 
-  /// Get the direct MJPEG stream URL for mobile cameras
-  /// Returns null if this is not a mobile camera or if connection info is not available
+  /// Direct stream URL removed - all cameras now use backend proxy streaming
+  /// Mobile cameras stream frames via WebSocket to backend, which serves them as MJPEG
   String? get directStreamUrl {
-    if (!isMobileCamera) return null;
-    
-    // For mobile cameras, check if we have the backend server IP
-    // This should be the computer's IP where the cameras service is running
-    final backendIP = metadata?['backend_ip'] as String?;
-    final port = metadata?['backend_port'] as int?;
-    
-    if (backendIP != null) {
-      // Use the backend server's IP (computer where cameras service runs)
-      final camerasServicePort = port ?? 8005;
-      final baseUrl = 'http://$backendIP:$camerasServicePort';
-      return '$baseUrl/api/v1/streaming/$deviceId/video';
-    }
-    
-    // Fallback: For mobile cameras, use the cameras service streaming endpoint
-    // This uses the backend's /api/v1/streaming/{device_id}/video endpoint
-    // which can handle mobile camera frames received via the mobile app
-    
-    // Get the cameras service URL (typically port 8005)
-    // This should be configured to match the current environment
-    const camerasServiceUrl = 'http://localhost:8005'; // TODO: Make this configurable
-    
-    // Return the streaming endpoint URL
-    return '$camerasServiceUrl/api/v1/streaming/$deviceId/video';
+    // All cameras (USB/RTSP/Mobile) now use backend streaming consistently
+    return null;
   }
 }
 

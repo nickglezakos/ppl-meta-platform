@@ -121,10 +121,11 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
     }
     
     try {
-
-      // ✅✅✅ FIXED VERSION - NO BLOCKING CALL ✅✅✅
-      debugPrint('🎥 [SIMPLE_STREAMING_V2_FIXED] Setting up direct stream for camera: ${camera.deviceId}');
-      debugPrint('✅ [VERIFY] This is camera_stream_player_SIMPLE.dart - NO startStreaming call!');
+      debugPrint('🎥 [SIMPLE_STREAMING] Setting up stream for camera: ${camera.deviceId}');
+      
+      // All cameras (USB/RTSP/Mobile) use backend streaming with authentication
+      // Mobile cameras send frames via WebSocket to backend, which serves them as MJPEG
+      debugPrint('🎥 [SIMPLE_STREAMING] Using backend proxy streaming for ${camera.type} camera');
       
       // Get authentication token
       final authService = ref.read(authServiceProvider);
@@ -137,11 +138,11 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         return null;
       }
       
-      // Create simple direct streaming URL with token - same for all camera types
+      // Create backend streaming URL with token
       final baseUrl = AppConfig.instance.cameraServiceUrl;
       final authenticatedUrl = '$baseUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
       
-      debugPrint('🎥 [SIMPLE_STREAMING] Direct stream URL: ${authenticatedUrl.replaceAll(token, "***")}');
+      debugPrint('🎥 [SIMPLE_STREAMING] Backend stream URL: ${authenticatedUrl.replaceAll(token, "***")}');
       
       // Final check before caching the URL
       if (!_isActive || !mounted) {
