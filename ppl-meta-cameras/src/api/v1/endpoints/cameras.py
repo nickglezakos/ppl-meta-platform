@@ -92,20 +92,27 @@ async def list_cameras(
 
         camera_list = []
         for camera in cameras:
-            # Check if camera has an active worker
-            worker = await queue_service.get_camera_stream(camera.device_id)
-            realtime_status = worker.status.value if worker else "disconnected"
+            # For mobile cameras, use database status (they don't have workers)
+            # For USB/RTSP cameras, check real-time worker status
+            if camera.camera_type == CameraType.MOBILE:
+                # Mobile cameras don't use workers - check database status
+                realtime_status = camera.status.value
+            else:
+                # Check if camera has an active worker
+                worker = await queue_service.get_camera_stream(camera.device_id)
+                realtime_status = worker.status.value if worker else "disconnected"
             
             camera_dict = {
                 "id": camera.id,
                 "name": camera.name,
                 "device_id": camera.device_id,
                 "camera_type": camera.camera_type.value,
-                "status": realtime_status,  # Use real-time worker status
+                "status": realtime_status,  # Use appropriate status based on camera type
                 "resolution": f"{camera.resolution_width}x{camera.resolution_height}",
                 "max_fps": camera.max_fps,
                 "supports_streaming": camera.supports_streaming,
                 "supports_recording": camera.supports_recording,
+                "connection_string": camera.connection_string,  # Include for mobile cameras
                 "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
                 "created_at": (
                     camera.created_at.isoformat() if camera.created_at else None
@@ -267,9 +274,12 @@ async def connect_camera(
         if camera.camera_type == CameraType.MOBILE:
             # For mobile cameras, "connecting" means marking them as available for streaming
             # The actual streaming connection is handled directly between frontend and mobile app
-            # ✅ NO DATABASE UPDATE - state managed in memory
             camera.status = CameraStatus.CONNECTED
             camera.last_seen = datetime.utcnow()
+            
+            # ✅ COMMIT STATUS TO DATABASE for mobile cameras so frontend can see the update
+            db.commit()
+            db.refresh(camera)
 
             logger.info(
                 f"User {current_user.get('sub')} manually connected mobile camera {device_id}"

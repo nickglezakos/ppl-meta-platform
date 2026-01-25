@@ -302,11 +302,13 @@ class CameraService {
 
   /// Connect to a camera following the proper workflow:
   /// 1. Connect to the specific camera
-  /// 2. Auto-create collection for the camera
+  /// 2. Auto-start streaming (USB/RTSP only)
+  /// 3. Auto-create collection (USB/RTSP only)
   Future<bool> connectCamera(String deviceId) async {
     try {
       print('🔌🔌🔌 [CONNECT_CAMERA] START - Connecting to camera $deviceId...');
-      // Connect to the specific camera
+      
+      // Step 1: Connect to the specific camera
       final response = await _cameraApiClient.post<Map<String, dynamic>>(
         '/api/v1/cameras/$deviceId/connect',
       );
@@ -316,25 +318,34 @@ class CameraService {
       if (response.statusCode == 200) {
         print('✅ Successfully connected to camera $deviceId');
         
-        // Step 4: Auto-start streaming (calls /start endpoint to ensure camera is in active_connections)
+        // Check camera type from response
+        final cameraType = response.data?['camera_type']?.toString().toLowerCase();
+        final isMobileCamera = cameraType == 'mobile';
+        
+        if (isMobileCamera) {
+          // Mobile cameras don't use backend streaming - they stream directly from mobile app
+          print('📱 [CONNECT_CAMERA] Mobile camera connected - skipping backend streaming setup');
+          print('📱 [CONNECT_CAMERA] Mobile camera uses direct streaming from device');
+          return true;
+        }
+        
+        // Step 2: Auto-start streaming (USB/RTSP cameras only)
         try {
-          print('🚀🚀🚀 [CONNECT_CAMERA_V4] Step 4: Auto-starting stream for camera $deviceId... 🚀🚀🚀');
-          print('🚀 [VERIFY] This is camera_service.dart connectCamera() with AUTO-START V4!');
-          print('🚀 [CONNECT_CAMERA_V4] Calling POST /api/v1/streaming/$deviceId/start');
+          print('🚀 [CONNECT_CAMERA] Auto-starting stream for $cameraType camera $deviceId...');
           final streamResponse = await _cameraApiClient.post<Map<String, dynamic>>(
             '/api/v1/streaming/$deviceId/start',
           );
           if (streamResponse.statusCode == 200) {
-            print('🚀✅ [CONNECT_CAMERA_V4] Auto-started streaming for camera $deviceId');
+            print('🚀✅ [CONNECT_CAMERA] Auto-started streaming for camera $deviceId');
           } else {
-            print('🚀⚠️ [CONNECT_CAMERA_V4] Failed to auto-start streaming: ${streamResponse.statusCode}');
+            print('🚀⚠️ [CONNECT_CAMERA] Failed to auto-start streaming: ${streamResponse.statusCode}');
           }
         } catch (e) {
-          print('🚀❌ [CONNECT_CAMERA_V4] Failed to auto-start streaming for $deviceId: $e');
+          print('🚀❌ [CONNECT_CAMERA] Failed to auto-start streaming for $deviceId: $e');
           // Don't fail connection if streaming start fails
         }
         
-        // Step 5: Auto-create collection for this USB camera
+        // Step 3: Auto-create collection for USB/RTSP cameras
         try {
           // Get camera details to get the name
           final cameras = await getCameras();
@@ -343,7 +354,7 @@ class CameraService {
             orElse: () => Camera(
               id: deviceId,
               deviceId: deviceId,
-              name: 'USB Camera $deviceId',
+              name: 'Camera $deviceId',
               status: 'connected',
               type: CameraType.usb,
               isActive: true,
@@ -351,9 +362,9 @@ class CameraService {
           );
           
           await _collectionService.setupCameraWithCollection(camera);
-          print('✅ Auto-created collection for USB camera: ${camera.name}');
+          print('✅ Auto-created collection for camera: ${camera.name}');
         } catch (e) {
-          print('⚠️ Failed to auto-create collection for USB camera $deviceId: $e');
+          print('⚠️ Failed to auto-create collection for camera $deviceId: $e');
           // Don't fail the camera connection if collection creation fails
         }
         
