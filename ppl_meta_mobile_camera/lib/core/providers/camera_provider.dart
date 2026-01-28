@@ -265,7 +265,8 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
     clearError();
 
     try {
-      print('Attempting to switch camera...');
+      print('🔄 [CAMERA_PROVIDER] Attempting to switch camera...');
+      print('🔄 [CAMERA_PROVIDER] Current streaming state: $_isStreaming');
       
       // Check if camera service is properly initialized
       if (!_cameraService.isInitialized) {
@@ -276,7 +277,9 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
       if (success) {
         _currentConfig = _cameraService.currentConfig;
         _isFrontCamera = _currentConfig?.camera.lensDirection == CameraLensDirection.front;
-        print('✅ Camera switched successfully to ${_isFrontCamera ? 'front' : 'back'} camera');
+        print('✅ [CAMERA_PROVIDER] Camera switched successfully to ${_isFrontCamera ? 'front' : 'back'} camera');
+        print('✅ [CAMERA_PROVIDER] Streaming state after switch: ${_cameraService.isStreaming}');
+        _isStreaming = _cameraService.isStreaming;
         notifyListeners();
       } else {
         final errorMsg = 'Failed to switch camera - only ${_cameraService.availableCameras?.length ?? 0} camera(s) available';
@@ -284,7 +287,7 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
         _setError(errorMsg);
       }
     } catch (e) {
-      print('❌ Error switching camera: $e');
+      print('❌ [CAMERA_PROVIDER] Error switching camera: $e');
       _setError('Error switching camera: ${e.toString()}');
     } finally {
       _setLoading(false);

@@ -145,11 +145,21 @@ async def video_stream(
 
                     # Get frame based on camera type
                     if is_mobile:
-                        # Mobile cameras: get frames from mobile_streaming_service
-                        frame = await mobile_streaming_service.get_latest_mobile_frame(device_id)
+                        # Mobile cameras: get frames with metadata (including orientation)
+                        frame_data = await mobile_streaming_service.get_latest_mobile_frame_data(device_id)
+                        if frame_data:
+                            frame = frame_data.get("frame")
+                            rotation_angle = frame_data.get("rotation_angle", 0)
+                            orientation = frame_data.get("orientation", "portraitUp")
+                        else:
+                            frame = None
+                            rotation_angle = 0
+                            orientation = "portraitUp"
                     else:
                         # USB/RTSP cameras: get frames from worker queue
                         frame = await queue_service.get_latest_frame(device_id)
+                        rotation_angle = 0  # USB/RTSP cameras don't need rotation
+                        orientation = "landscapeLeft"
                     
                     if frame is None:
                         consecutive_failures += 1
@@ -164,9 +174,45 @@ async def video_stream(
                     consecutive_failures = 0
                     last_frame_time = time.time()
 
-                    # Resize frame if needed
-                    if frame.shape[1] != width or frame.shape[0] != height:
-                        frame = cv2.resize(frame, (width, height))
+                    # Apply rotation for mobile cameras based on rotation_angle
+                    # The mobile app calculates the rotation needed to transform from
+                    # camera sensor's natural orientation to correct display orientation
+                    if is_mobile and rotation_angle != 0:
+                        if rotation_angle == 90:
+                            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                        elif rotation_angle == 180:
+                            frame = cv2.rotate(frame, cv2.ROTATE_180)
+                        elif rotation_angle == 270:
+                            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                        logger.debug(f"📱 Rotated mobile frame by {rotation_angle}° ({orientation})")
+                    elif is_mobile:
+                        logger.debug(f"📱 No rotation needed: {rotation_angle}° ({orientation})")
+
+                    # Resize frame if needed (maintain aspect ratio for mobile cameras)
+                    if is_mobile:
+                        # For mobile cameras, maintain aspect ratio
+                        # Calculate scaling to fit within target dimensions
+                        frame_height, frame_width = frame.shape[:2]
+                        target_aspect = width / height
+                        frame_aspect = frame_width / frame_height
+                        
+                        # Only resize if frame is significantly different from target
+                        if abs(frame_width - width) > 10 or abs(frame_height - height) > 10:
+                            if frame_aspect > target_aspect:
+                                # Frame is wider - fit to width
+                                new_width = width
+                                new_height = int(width / frame_aspect)
+                            else:
+                                # Frame is taller - fit to height
+                                new_height = height
+                                new_width = int(height * frame_aspect)
+                            
+                            frame = cv2.resize(frame, (new_width, new_height))
+                            logger.debug(f"📱 Resized frame from {frame_width}x{frame_height} to {new_width}x{new_height} (maintaining aspect ratio)")
+                    else:
+                        # For non-mobile cameras, resize normally
+                        if frame.shape[1] != width or frame.shape[0] != height:
+                            frame = cv2.resize(frame, (width, height))
 
                     # Encode frame as JPEG
                     _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])

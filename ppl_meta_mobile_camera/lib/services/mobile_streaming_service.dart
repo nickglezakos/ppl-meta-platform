@@ -284,25 +284,27 @@ class MobileStreamingService {
     if (!_isStreaming) return;
     
     // Send frame to backend asynchronously (don't block camera stream)
-    _sendFrameToBackend(image);
+    // Note: This callback is not used when integrated with CameraService
+    // Default to rear camera for legacy compatibility
+    _sendFrameToBackend(image, isFrontCamera: false);
     
     // Update stats
     _updateStats(StreamingStats.fromFrame(image));
   }
   
   /// Public method to send frame to backend (called by CameraService)
-  Future<void> sendFrameToBackend(CameraImage image) async {
+  Future<void> sendFrameToBackend(CameraImage image, {required bool isFrontCamera}) async {
     developer.log('sendFrameToBackend called - _isStreaming: $_isStreaming, _backendUrl: $_backendUrl, _accessToken: ${_accessToken != null ? "present" : "null"}', name: _logTag);
     if (!_isStreaming || _backendUrl == null || _accessToken == null) {
       developer.log('Skipping frame send - conditions not met', name: _logTag);
       return;
     }
     developer.log('Sending frame to backend: ${image.width}x${image.height}', name: _logTag);
-    await _sendFrameToBackend(image);
+    await _sendFrameToBackend(image, isFrontCamera: isFrontCamera);
   }
   
   /// Send camera frame to backend
-  Future<void> _sendFrameToBackend(CameraImage image) async {
+  Future<void> _sendFrameToBackend(CameraImage image, {required bool isFrontCamera}) async {
     try {
       // Convert CameraImage to JPEG bytes
       final bytes = await _convertCameraImageToJpeg(image);
@@ -314,8 +316,8 @@ class MobileStreamingService {
       // Get device ID from stored value or session fallback
       final deviceId = _deviceId ?? _currentSession?.rtmpUrl.split('/').last ?? 'unknown';
       
-      // Send to backend frame endpoint
-      await _sendFrameDataToBackend(deviceId, base64Data, image);
+      // Send to backend frame endpoint with camera direction
+      await _sendFrameDataToBackend(deviceId, base64Data, image, isFrontCamera: isFrontCamera);
       
     } catch (e) {
       developer.log('Error sending frame to backend: $e', name: _logTag, level: 900);
@@ -375,7 +377,7 @@ class MobileStreamingService {
   }
   
   /// Send frame data to backend via HTTP
-  Future<void> _sendFrameDataToBackend(String deviceId, String base64Data, CameraImage image) async {
+  Future<void> _sendFrameDataToBackend(String deviceId, String base64Data, CameraImage image, {required bool isFrontCamera}) async {
     try {
       if (_backendUrl == null || _accessToken == null) {
         developer.log('Backend connection info not available', name: _logTag, level: 900);
@@ -387,13 +389,13 @@ class MobileStreamingService {
       // Get current orientation from OrientationService
       final orientationService = _getOrientationService();
       final currentOrientation = orientationService?.currentOrientation ?? DeviceOrientation.portraitUp;
-      final rotationAngle = _getRotationAngle(currentOrientation);
+      final rotationAngle = _getRotationAngle(currentOrientation, isFrontCamera: isFrontCamera);
       
-      // Debug logging for orientation
-      developer.log('📱 [FRAME_SEND_DEBUG] Sending frame with orientation data:', name: _logTag);
-      developer.log('📱 [FRAME_SEND_DEBUG] - Orientation: $currentOrientation', name: _logTag);
-      developer.log('📱 [FRAME_SEND_DEBUG] - Rotation angle: $rotationAngle°', name: _logTag);
-      developer.log('📱 [FRAME_SEND_DEBUG] - Frame size: ${image.width}x${image.height}', name: _logTag);
+      // Debug logging for orientation - using print() to ensure it shows in flutter logs
+      print('📱 [FRAME_SEND_DEBUG] Sending frame with orientation data:');
+      print('📱 [FRAME_SEND_DEBUG] - Orientation: $currentOrientation');
+      print('📱 [FRAME_SEND_DEBUG] - Rotation angle: $rotationAngle°');
+      print('📱 [FRAME_SEND_DEBUG] - Frame size: ${image.width}x${image.height}');
       
       final frameData = {
         'device_id': deviceId,
@@ -623,22 +625,32 @@ class MobileStreamingService {
   }
 
   /// Get rotation angle for the orientation
-  /// Camera sensor captures in landscape, so we need to rotate frames
+  /// Camera sensor captures in landscape (720x480), so we need to rotate frames
   /// to match the device orientation for proper display
-  int _getRotationAngle(DeviceOrientation orientation) {
+  /// Front cameras need different rotation because they're mirrored
+  int _getRotationAngle(DeviceOrientation orientation, {required bool isFrontCamera}) {
+    // Debug logging
+    print('🔄 [ROTATION_DEBUG] isFrontCamera parameter: $isFrontCamera');
+    
     switch (orientation) {
       case DeviceOrientation.portraitUp:
-        // Phone held upright, camera captures landscape -> rotate 90° clockwise
-        return 90;
+        // Phone held upright, camera captures landscape
+        // Rear camera: rotate 90° clockwise
+        // Front camera: rotate 270° clockwise (180° different due to mirroring)
+        final angle = isFrontCamera ? 270 : 90;
+        print('🔄 [ROTATION_DEBUG] portraitUp -> ${isFrontCamera ? "front" : "rear"} camera -> $angle°');
+        return angle;
       case DeviceOrientation.landscapeLeft:
-        // Phone held landscape left, camera captures landscape -> no rotation
+        // Phone held landscape left, camera captures landscape -> no rotation needed
         return 0;
       case DeviceOrientation.portraitDown:
-        // Phone held upside down, camera captures landscape -> rotate 270° clockwise  
-        return 270;
+        // Phone held upside down, camera captures landscape
+        // Rear camera: rotate 270° clockwise
+        // Front camera: rotate 90° clockwise
+        return isFrontCamera ? 90 : 270;
       case DeviceOrientation.landscapeRight:
-        // Phone held landscape right, camera captures landscape -> rotate 180°
-        return 180;
+        // Phone held landscape right, camera captures landscape -> no rotation needed
+        return 0;
     }
   }
   

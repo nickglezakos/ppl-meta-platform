@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 // import 'package:camera/camera.dart'; // Unused import removed
 import '../../../core/core.dart';
+import '../../../core/services/orientation_service.dart';
 import '../../../models/camera_registration_result.dart';
 // import '../../../services/automatic_streaming_workflow.dart'; // Unused import removed
 import '../../../services/device_identifier_service.dart';
@@ -47,6 +48,10 @@ class _CameraScreenState extends State<CameraScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _initializeCamera();
+        
+        // Initialize orientation detection
+        OrientationService.instance.setContext(context);
+        OrientationService.instance.startOrientationDetection();
       }
     });
   }

@@ -27,13 +27,13 @@ class CameraPreviewWidget extends StatelessWidget {
       onTapUp: onTap,
       child: Stack(
         children: [
-          // Camera Preview - Use ClipRect to ensure proper display
+          // Camera Preview - Use BoxFit.contain to show entire frame with black bars
           Positioned.fill(
             child: ClipRect(
               child: OverflowBox(
                 alignment: Alignment.center,
                 child: FittedBox(
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                   child: SizedBox(
                     width: controller!.value.previewSize?.height ?? 1,
                     height: controller!.value.previewSize?.width ?? 1,

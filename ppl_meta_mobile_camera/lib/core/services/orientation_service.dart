@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 /// Service to detect device orientation changes
 /// Orientation data is now sent with each frame instead of separate API calls
@@ -10,39 +11,59 @@ class OrientationService {
 
   DeviceOrientation _currentOrientation = DeviceOrientation.portraitUp;
   Timer? _orientationTimer;
+  BuildContext? _context;
 
   DeviceOrientation get currentOrientation => _currentOrientation;
 
-  /// Start listening for orientation changes
-  Future<void> startOrientationDetection() async {
-    print('📱 Starting orientation detection...');
-    
-    // Get initial orientation
-    _currentOrientation = await _getCurrentOrientation();
-    print('📱 Initial orientation: $_currentOrientation');
-    
-    // Poll orientation every 500ms to detect changes
-    _orientationTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) async {
-      final newOrientation = await _getCurrentOrientation();
-      if (newOrientation != _currentOrientation) {
-        print('📱 Orientation changed from $_currentOrientation to $newOrientation');
-        _currentOrientation = newOrientation;
-        // Orientation data will be sent with the next frame automatically
-      }
-    });
+  /// Set the context for orientation detection (call from your main widget)
+  void setContext(BuildContext context) {
+    _context = context;
+    print('📱 [ORIENTATION] Context set for orientation detection');
   }
 
-  /// Get current device orientation
+  /// Start listening for orientation changes
+  Future<void> startOrientationDetection() async {
+    print('📱 [ORIENTATION] Starting orientation detection...');
+    
+    // Lock to portrait-only mode for consistent camera streaming
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    print('📱 [ORIENTATION] Locked to portrait-only mode');
+    
+    // Always use portraitUp since we locked the orientation
+    _currentOrientation = DeviceOrientation.portraitUp;
+    print('📱 [ORIENTATION] Orientation: $_currentOrientation (locked)');
+  }
+
+  /// Get current device orientation from MediaQuery
   Future<DeviceOrientation> _getCurrentOrientation() async {
     try {
-      // For now, we'll use a simple approach. In a real implementation,
-      // you might want to use sensors or platform-specific code to detect orientation
+      // If we have a context, use MediaQuery to get actual orientation
+      if (_context != null && _context!.mounted) {
+        final orientation = MediaQuery.of(_context!).orientation;
+        final width = MediaQuery.of(_context!).size.width;
+        final height = MediaQuery.of(_context!).size.height;
+        
+        print('📱 [ORIENTATION] MediaQuery: ${orientation.name}, Size: ${width.toInt()}x${height.toInt()}');
+        
+        // Determine orientation based on screen dimensions
+        if (orientation == Orientation.portrait) {
+          // For portrait, we could be portraitUp or portraitDown
+          // Default to portraitUp as we can't distinguish without sensors
+          return DeviceOrientation.portraitUp;
+        } else {
+          // For landscape, we could be landscapeLeft or landscapeRight
+          // Default to landscapeLeft
+          return DeviceOrientation.landscapeLeft;
+        }
+      }
       
-      // This is a placeholder - in practice, you'd implement proper orientation detection
-      // You could use the device's accelerometer or other sensors
+      // Fallback
+      print('📱 [ORIENTATION] No context available, using fallback');
       return DeviceOrientation.portraitUp;
     } catch (e) {
-      print('📱 Error getting orientation: $e');
+      print('📱 [ORIENTATION] Error getting orientation: $e');
       return DeviceOrientation.portraitUp;
     }
   }

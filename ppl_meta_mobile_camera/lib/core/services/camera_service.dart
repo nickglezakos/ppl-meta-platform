@@ -314,6 +314,18 @@ class CameraService {
         return false;
       }
 
+      print('🔄 [CAMERA_SWITCH] Starting camera switch...');
+      print('🔄 [CAMERA_SWITCH] Current streaming state: $_isStreaming');
+      
+      // Save streaming state before switching
+      final wasStreaming = _isStreaming;
+      
+      // Stop streaming if active
+      if (wasStreaming) {
+        print('🔄 [CAMERA_SWITCH] Stopping streaming before switch...');
+        await stopStreaming();
+      }
+
       final currentDirection = _currentConfig!.camera.lensDirection;
       final newDirection = currentDirection == CameraLensDirection.back
           ? CameraLensDirection.front
@@ -325,13 +337,25 @@ class CameraService {
       );
 
       if (newCamera == _currentConfig!.camera) {
+        print('❌ [CAMERA_SWITCH] No alternative camera found');
         return false; // No alternative camera found
       }
 
       final newConfig = _currentConfig!.copyWith(camera: newCamera);
-      return await setupCamera(newConfig);
+      print('🔄 [CAMERA_SWITCH] Setting up new camera...');
+      final setupSuccess = await setupCamera(newConfig);
+      
+      // Restart streaming if it was active before
+      if (setupSuccess && wasStreaming) {
+        print('🔄 [CAMERA_SWITCH] Restarting streaming after camera switch...');
+        await Future.delayed(Duration(milliseconds: 300)); // Brief delay for stability
+        await startStreaming();
+        print('✅ [CAMERA_SWITCH] Streaming restarted successfully');
+      }
+      
+      return setupSuccess;
     } catch (e) {
-      print('Failed to switch camera: $e');
+      print('❌ [CAMERA_SWITCH] Failed to switch camera: $e');
       return false;
     }
   }
@@ -475,15 +499,21 @@ class CameraService {
   /// Stop video streaming
   Future<bool> stopStreaming() async {
     try {
-      if (_controller == null || !_isStreaming) {
+      if (_controller == null) {
+        _isStreaming = false;
         return true;
       }
 
-      await _controller!.stopImageStream();
-      _isStreaming = false;
+      if (_isStreaming) {
+        print('🛑 [STOP_STREAMING] Stopping image stream...');
+        await _controller!.stopImageStream();
+        _isStreaming = false;
+        print('✅ [STOP_STREAMING] Image stream stopped');
+      }
       return true;
     } catch (e) {
-      print('Failed to stop streaming: $e');
+      print('❌ [STOP_STREAMING] Failed to stop streaming: $e');
+      _isStreaming = false;
       return false;
     }
   }
@@ -494,7 +524,9 @@ class CameraService {
     print('🔍 _onImageStreamData called - _streamingService: ${_streamingService != null ? "CONNECTED" : "NULL"}, _isStreaming: $_isStreaming');
     if (_streamingService != null && _isStreaming) {
       print('✅ Sending frame to backend via streaming service');
-      _streamingService!.sendFrameToBackend(image);
+      // Pass the current camera lens direction with each frame
+      final isFrontCamera = _controller?.description.lensDirection == CameraLensDirection.front;
+      _streamingService!.sendFrameToBackend(image, isFrontCamera: isFrontCamera);
     } else {
       print('❌ NOT sending frame - streamingService: ${_streamingService != null ? "OK" : "NULL"}, isStreaming: $_isStreaming');
     }
