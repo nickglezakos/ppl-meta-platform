@@ -102,6 +102,12 @@ class CameraWorker:
         # maxlen=1 ensures we always have latest frame only (no memory buildup)
         self.frame_buffer: Deque[np.ndarray] = collections.deque(maxlen=1)
         
+        # Mobile camera support - fetch frames from MobileStreamingService
+        self.mobile_streaming_service = None
+        if camera_type == CameraType.MOBILE:
+            from src.services.mobile_streaming import mobile_streaming_service
+            self.mobile_streaming_service = mobile_streaming_service
+        
         # Instant detection integration
         self.enable_instant_detection = enable_instant_detection
         self.detection_sampler = None
@@ -142,6 +148,9 @@ class CameraWorker:
         self.completed_segments: List[str] = []  # Track all completed segments
         self.batch_upload_size: int = 5  # Upload segments in batches of 5 (aligned with MVR batch size)
         self.segments_since_last_upload: int = 0  # Counter for incremental uploads
+        
+        # Collection assignment cache
+        self.collection_cache: Dict[str, str] = {}  # device_id -> collection_uuid mapping
         
         # Thread control
         self.stop_event = threading.Event()
@@ -415,7 +424,8 @@ class CameraWorker:
                 
                 # ✅ CRITICAL FIX: Always read frames when connected, regardless of command processing
                 # This ensures continuous frame reading even during recording/detection operations
-                if self.status == CameraStatus.CONNECTED and self.cap:
+                # Mobile cameras don't have self.cap, but still need frame reading!
+                if self.status == CameraStatus.CONNECTED and (self.cap or self.camera_type == CameraType.MOBILE):
                     self._read_and_buffer_frame()
                 
             except Exception as e:
@@ -468,6 +478,51 @@ class CameraWorker:
             
             logger.info(f"📷 [WORKER-{self.device_id}] About to call cv2.VideoCapture...")
             create_start = time.time()
+            
+            # Handle mobile cameras differently - no VideoCapture needed
+            if self.camera_type == CameraType.MOBILE:
+                logger.info(f"📱 [WORKER-{self.device_id}] Mobile camera - using MobileStreamingService")
+                
+                # Verify mobile streaming service is receiving frames
+                if not self.mobile_streaming_service.is_receiving_frames(self.device_id):
+                    raise Exception(f"Mobile camera {self.device_id} not sending frames")
+                
+                # Get initial frame from mobile service
+                frame_data = self.mobile_streaming_service.get_latest_mobile_frame_data(self.device_id)
+                if not frame_data:
+                    raise Exception("No frames available from mobile camera")
+                
+                frame = frame_data["frame"]
+                rotation_angle = frame_data.get("rotation_angle", 0)
+                
+                # Apply rotation if needed
+                if rotation_angle != 0:
+                    frame = self._rotate_frame(frame, rotation_angle)
+                    logger.info(f"📱 Rotated initial frame by {rotation_angle}° for {self.device_id}")
+                
+                width, height = frame.shape[1], frame.shape[0]
+                fps = self.camera_info.get("max_fps", 30)
+                
+                # Add first frame to buffer
+                self.frame_buffer.append(frame)
+                self.last_frame_time = time.time()
+                self.frames_read = 1
+                
+                self.status = CameraStatus.CONNECTED
+                self.error_count = 0
+                
+                result = {
+                    'success': True,
+                    'device_id': self.device_id,
+                    'width': width,
+                    'height': height,
+                    'fps': fps,
+                    'connection_string': 'mobile_streaming'
+                }
+                
+                logger.info(f"✅ Mobile camera connected: {self.device_id} ({width}x{height} @ {fps}fps)")
+                self._set_result(cmd_id, result)
+                return
             
             # Create VideoCapture with timeout (BLOCKING - but in worker thread)
             if self.camera_type == CameraType.USB:
@@ -575,7 +630,26 @@ class CameraWorker:
         cmd_id = cmd['cmd_id']
         
         try:
-            if not self.cap or self.status != CameraStatus.CONNECTED:
+            if self.status != CameraStatus.CONNECTED:
+                self._set_result(cmd_id, {'success': False, 'error': 'Camera not connected'})
+                return
+            
+            # Handle mobile cameras
+            if self.camera_type == CameraType.MOBILE:
+                frame_data = self.mobile_streaming_service.get_latest_mobile_frame_data(self.device_id)
+                if frame_data and frame_data.get("frame") is not None:
+                    frame = frame_data["frame"]
+                    self.frame_buffer.append(frame)
+                    self.frames_read += 1
+                    self.last_frame_time = time.time()
+                    self._set_result(cmd_id, {'success': True, 'frame_available': True})
+                else:
+                    self.frames_dropped += 1
+                    self._set_result(cmd_id, {'success': False, 'error': 'No frame from mobile camera'})
+                return
+            
+            # Handle USB/RTSP cameras
+            if not self.cap:
                 self._set_result(cmd_id, {'success': False, 'error': 'Camera not connected'})
                 return
             
@@ -629,15 +703,30 @@ class CameraWorker:
         This keeps buffer fresh for instant detection and streaming.
         
         For RTSP cameras, uses frame grabbing to minimize latency.
+        For MOBILE cameras, fetches from MobileStreamingService and applies rotation.
         ⚠️ CRITICAL: For recording, we need to read ALL frames, not skip them!
         """
         try:
-            if not self.cap:
+            # Handle mobile cameras - fetch from mobile streaming service with rotation
+            if self.camera_type == CameraType.MOBILE:
+                frame_data = self.mobile_streaming_service.get_latest_mobile_frame_data(self.device_id)
+                if frame_data and frame_data.get("frame") is not None:
+                    frame = frame_data["frame"]
+                    rotation_angle = frame_data.get("rotation_angle", 0)
+                    
+                    # Apply rotation based on device orientation
+                    if rotation_angle != 0:
+                        frame = self._rotate_frame(frame, rotation_angle)
+                        logger.debug(f"📱 Rotated frame by {rotation_angle}° for {self.device_id}")
+                    
+                    ret = True
+                else:
+                    ret, frame = False, None
+            elif not self.cap:
                 return
-            
             # For RTSP cameras, flush buffer only when NOT recording
             # When recording, we need every frame for proper playback speed
-            if self.camera_type == CameraType.RTSP:
+            elif self.camera_type == CameraType.RTSP:
                 if self.is_recording:
                     # When recording: Read every frame for accurate video timing
                     ret, frame = self.cap.read()
@@ -701,6 +790,27 @@ class CameraWorker:
         """Store command result (thread-safe)."""
         with self.results_lock:
             self.command_results[cmd_id] = result
+    
+    def _rotate_frame(self, frame: np.ndarray, rotation_angle: int) -> np.ndarray:
+        """
+        Apply rotation to frame based on mobile device orientation.
+        
+        Args:
+            frame: Input frame from mobile camera
+            rotation_angle: Rotation angle (90, 180, 270)
+        
+        Returns:
+            Rotated frame
+        """
+        import cv2
+        if rotation_angle == 90:
+            return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif rotation_angle == 180:
+            return cv2.rotate(frame, cv2.ROTATE_180)
+        elif rotation_angle == 270:
+            return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        else:
+            return frame
     
     def start_detection(self, detection_config: Optional[Dict[str, Any]] = None):
         """
@@ -881,24 +991,227 @@ class CameraWorker:
                 f"({self.segments_since_last_upload}/{self.batch_upload_size} since last upload)"
             )
             
-            # 🚀 Trigger incremental upload when batch size reached
-            if self.segments_since_last_upload >= self.batch_upload_size:
-                logger.info(f"🚀 Batch upload threshold reached ({self.batch_upload_size} segments)")
+            # 🚀 Upload completed segment to media service immediately
+            # This is the EXACT same mechanism used by USB/RTSP cameras
+            session_uuid = self.recording_session_info.get('session_uuid') if self.recording_session_info else None
+            user_id = self.recording_session_info.get('user_id') if self.recording_session_info else None
+            
+            if session_uuid and user_id:
+                logger.info(f"📤 Uploading segment {len(self.completed_segments)} to media service...")
                 
-                # Publish to Redis for immediate event-driven upload (non-blocking)
-                segments_to_upload = self.completed_segments.copy()
-                session_uuid = self.recording_session_info.get('session_uuid') if self.recording_session_info else None
-                
-                # Publish in separate thread to avoid blocking worker
+                # Upload in separate thread to avoid blocking worker
                 threading.Thread(
-                    target=self._publish_batch_ready_event,
-                    args=(session_uuid, segments_to_upload),
+                    target=self._upload_segment_to_media,
+                    args=(completed_segment_path, session_uuid, user_id),
                     daemon=True
                 ).start()
+            else:
+                logger.warning(f"⚠️ Cannot upload segment - missing session_uuid or user_id")
             
         except Exception as e:
             logger.error(f"❌ Segment rotation failed: {e}")
             self.is_recording = False
+    
+    def _upload_segment_to_media(self, segment_path: str, session_uuid: str, user_id: str):
+        """
+        Upload a segment to the media service - EXACT same method used by USB/RTSP cameras.
+        This runs in a separate thread to avoid blocking the worker's frame reading loop.
+        """
+        try:
+            import requests
+            from pathlib import Path
+            
+            logger.info(f"📤 [UPLOAD] Starting upload: {segment_path}")
+            
+            # Verify file exists
+            path_obj = Path(segment_path)
+            if not path_obj.exists():
+                logger.error(f"❌ [UPLOAD] File not found: {segment_path}")
+                return
+            
+            file_size = path_obj.stat().st_size
+            logger.info(f"📤 [UPLOAD] File size: {file_size} bytes")
+            
+            # Get auth token from session info
+            auth_token = self.recording_session_info.get('auth_token') if self.recording_session_info else None
+            
+            # Fetch user GUID from node service (media service requires UUID, not integer ID)
+            user_guid = None
+            if user_id:
+                try:
+                    headers = {}
+                    if auth_token:
+                        headers['Authorization'] = f'Bearer {auth_token}'
+                    
+                    node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                    logger.info(f"📤 [UPLOAD] Fetching user GUID from: {node_url}")
+                    
+                    response = requests.get(node_url, headers=headers, timeout=5)
+                    if response.status_code == 200:
+                        user_data = response.json()
+                        user_guid = user_data.get('guid')
+                        logger.info(f"📤 [UPLOAD] ✅ Got user GUID: {user_guid}")
+                    else:
+                        logger.error(f"❌ [UPLOAD] Failed to fetch GUID: HTTP {response.status_code}")
+                        return
+                except Exception as e:
+                    logger.error(f"❌ [UPLOAD] Exception fetching GUID: {e}")
+                    return
+            
+            if not user_guid:
+                logger.error(f"❌ [UPLOAD] No user GUID available, cannot upload")
+                return
+            
+            # Prepare multipart form data
+            with open(segment_path, 'rb') as f:
+                files = {
+                    'file': (f'segment_{self.device_id}_{path_obj.name}', f, 'video/mp4')
+                }
+                
+                data = {
+                    'media_type': 'video',
+                    'user_id': user_guid,  # Use GUID instead of integer ID
+                    'title': f'Camera Recording - {self.device_id}',
+                    'description': f'Segment from camera {self.device_id}',
+                    'tags': f'["camera","recording","{self.device_id}"]',
+                    'is_public': 'false',
+                    'device_name': self.device_id
+                }
+                
+                headers = {}
+                if auth_token:
+                    headers['Authorization'] = f'Bearer {auth_token}'
+                
+                # Upload to media service
+                MEDIA_SERVICE_URL = "http://localhost:8000"
+                response = requests.post(
+                    f"{MEDIA_SERVICE_URL}/api/v1/media/upload",
+                    files=files,
+                    data=data,
+                    headers=headers,
+                    timeout=60
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    media_uuid = result.get('uuid')
+                    logger.info(f"✅ [UPLOAD] Segment uploaded successfully: {media_uuid}")
+                    
+                    # Remove from completed_segments list (so it's not uploaded again on stop)
+                    try:
+                        if segment_path in self.completed_segments:
+                            self.completed_segments.remove(segment_path)
+                            logger.info(f"📋 [UPLOAD] Removed {segment_path} from completed_segments list")
+                    except Exception as e:
+                        logger.warning(f"⚠️ [UPLOAD] Could not remove from completed_segments: {e}")
+                    
+                    # Assign to camera collection (so vmeta can find it via database polling)
+                    self._assign_to_collection_sync(media_uuid, user_guid, headers)
+                    
+                else:
+                    logger.error(f"❌ [UPLOAD] Failed: HTTP {response.status_code} - {response.text[:200]}")
+                    
+        except Exception as e:
+            logger.error(f"❌ [UPLOAD] Exception during upload: {e}")
+    
+    def _assign_to_collection_sync(self, media_uuid: str, user_guid: str, headers: Dict):
+        """
+        Assign media to camera collection using IN-MEMORY collection UUID.
+        Uses collection_uuid from recording_session_info (set at recording start).
+        """
+        import requests
+        
+        try:
+            # 🎯 IN-MEMORY: Use collection UUID from session info (no database lookup!)
+            collection_uuid = self.recording_session_info.get('collection_uuid') if self.recording_session_info else None
+            
+            if not collection_uuid:
+                logger.warning(f"⚠️ [COLLECTION] No collection_uuid in session_info for {self.device_id}")
+                # Fallback to database lookup (should rarely happen)
+                collection_uuid = self._find_or_create_collection_sync(user_guid, headers)
+            else:
+                logger.info(f"🎯 [IN-MEMORY] Using collection UUID from session: {collection_uuid}")
+            
+            if not collection_uuid:
+                logger.error(f"❌ [COLLECTION] Could not find/create collection for {self.device_id}")
+                return
+            
+            # Assign media to collection
+            endpoint = f"http://localhost:8000/api/v1/media/collections/{collection_uuid}/add/{media_uuid}"
+            response = requests.post(
+                endpoint,
+                headers=headers,
+                params={"user_id": user_guid},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"✅ [COLLECTION] Assigned media {media_uuid} to collection {collection_uuid}")
+            else:
+                logger.error(f"❌ [COLLECTION] Failed to assign: HTTP {response.status_code} - {response.text[:200]}")
+                
+        except Exception as e:
+            logger.error(f"❌ [COLLECTION] Exception: {e}")
+    
+    def _find_or_create_collection_sync(self, user_guid: str, headers: Dict) -> Optional[str]:
+        """
+        Find existing camera collection or create new one.
+        Synchronous version for use in upload thread.
+        """
+        import requests
+        
+        try:
+            # Check in-memory cache first
+            if self.device_id in self.collection_cache:
+                cached_uuid = self.collection_cache[self.device_id]
+                logger.info(f"📦 [COLLECTION] Using cached: {cached_uuid}")
+                return cached_uuid
+            
+            # Try to find existing collection by camera device ID
+            lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{self.device_id}"
+            logger.info(f"📦 [COLLECTION] Looking for existing: {self.device_id}")
+            
+            response = requests.get(lookup_url, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                collection_data = response.json()
+                if collection_data:
+                    collection_uuid = collection_data.get("uuid")
+                    logger.info(f"📦 [COLLECTION] Found existing: {collection_uuid}")
+                    self.collection_cache[self.device_id] = collection_uuid
+                    return collection_uuid
+            
+            # Collection not found, create new one
+            logger.info(f"📦 [COLLECTION] Creating new collection for {self.device_id}")
+            
+            create_data = {
+                "name": f"Camera {self.device_id}",
+                "description": f"Recordings from camera {self.device_id}",
+                "is_public": False,
+                "user_id": user_guid,
+                "camera_device_id": self.device_id
+            }
+            
+            response = requests.post(
+                "http://localhost:8000/api/v1/media/collections",
+                json=create_data,
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                collection_data = response.json()
+                collection_uuid = collection_data.get("uuid")
+                logger.info(f"✅ [COLLECTION] Created new: {collection_uuid}")
+                self.collection_cache[self.device_id] = collection_uuid
+                return collection_uuid
+            else:
+                logger.error(f"❌ [COLLECTION] Failed to create: HTTP {response.status_code} - {response.text[:200]}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ [COLLECTION] Exception: {e}")
+            return None
     
     def _handle_start_recording(self, cmd: Dict[str, Any]):
         """
@@ -912,7 +1225,13 @@ class CameraWorker:
                 self._set_result(cmd_id, {'success': False, 'error': 'Already recording'})
                 return
             
-            if not self.cap or self.status != CameraStatus.CONNECTED:
+            # Mobile cameras don't have self.cap, check type or connection status
+            if self.status != CameraStatus.CONNECTED:
+                self._set_result(cmd_id, {'success': False, 'error': 'Camera not connected'})
+                return
+            
+            # For USB/RTSP cameras, verify VideoCapture exists
+            if self.camera_type in [CameraType.USB, CameraType.RTSP] and not self.cap:
                 self._set_result(cmd_id, {'success': False, 'error': 'Camera not connected'})
                 return
             

@@ -1346,6 +1346,23 @@ async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
 
                     await websocket.send_text(json.dumps(response))
 
+                elif message.get("type") == "stop_stream":
+                    # Stop the mobile camera stream and reject future frames
+                    from src.services.mobile_streaming import mobile_streaming_service
+                    
+                    success = await mobile_streaming_service.stop_mobile_camera_stream(device_id)
+                    
+                    response = {
+                        "type": "stream_stopped",
+                        "device_id": device_id,
+                        "success": success,
+                        "message": "Camera stream stopped" if success else "Failed to stop stream",
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                    
+                    logger.info(f"🛑 Stopped mobile camera stream for {device_id}, success={success}")
+                    await websocket.send_text(json.dumps(response))
+
                 elif message.get("type") == "frame_data":
                     # Handle incoming frame data with session-aware face detection
                     frame_response = {

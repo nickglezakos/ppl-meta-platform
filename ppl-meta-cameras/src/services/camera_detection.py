@@ -976,88 +976,57 @@ class CameraDetectionService:
             finally:
                 db.close()
 
+            # 🎯 UNIFIED QUEUE ARCHITECTURE: All cameras (USB, RTSP, MOBILE) use queue workers
+            logger.info(f"🎯 [RECORDING_START] Using queue-based worker for {device_id} (mobile: {is_mobile})")
+            
+            # For mobile cameras, ensure queue worker is connected first
             if is_mobile:
-                # For mobile cameras, check if we're receiving frames
                 from src.services.mobile_streaming import mobile_streaming_service
-
+                from src.services.camera_service_queue import get_camera_service as get_queue_service
+                
+                # Check if mobile app is sending frames
                 if not mobile_streaming_service.has_active_mobile_camera(device_id):
                     logger.error(
-                        f"Mobile camera {device_id} not streaming for recording"
+                        f"❌ Mobile camera {device_id} not streaming - cannot start recording"
                     )
                     return None
-
-                result = await self._start_mobile_recording_with_session(
-                    device_id,
-                    user_id,
-                    quality,
-                    auth_token,
-                    session_uuid,
-                    segment_duration,
-                )
-            else:
-                # For USB/RTSP cameras, verify worker exists
-                from src.services.camera_service_queue import get_camera_service as get_queue_service
-                queue_service = get_queue_service()
                 
-                logger.info(f"🔍 [RECORDING_START] Checking queue worker for {device_id}")
+                # Ensure queue worker is connected to mobile camera
+                queue_service = get_queue_service()
                 worker = await queue_service.get_camera_stream(device_id)
                 
                 if not worker:
-                    # 🔧 PIPELINE CHECK: Worker is required for both pipelines
-                    if recording_pipeline_enabled or instant_detection_enabled:
-                        logger.error(f"❌ [RECORDING_START] No queue worker found for {device_id} - cannot start pipelines")
+                    logger.info(f"📱 [MOBILE] Connecting queue worker for {device_id}")
+                    success = await queue_service.connect_camera(device_id)
+                    if not success:
+                        logger.error(f"❌ Failed to connect queue worker for mobile camera {device_id}")
                         return None
-                    
-                elif worker.status.value != 'connected':
-                    logger.warning(f"⚠️ [RECORDING_START] Queue worker for {device_id} not connected (status: {worker.status.value})")
-                    # Allow continuing if recording pipeline is enabled (has fallback mechanism)
-                    if not recording_pipeline_enabled:
-                        logger.error(f"❌ [RECORDING_START] Worker not connected and recording disabled - cannot proceed")
-                        return None
-                else:
-                    logger.info(f"✅ [RECORDING_START] Queue worker for {device_id} verified and ready (status: {worker.status.value})")
-                    
-                    # 🔧 INTEGRATED DETECTION: Enable detection in worker based on pipeline settings
-                    if instant_detection_enabled and worker:
-                        logger.info(f"🔍 [INSTANT-DETECT] Enabling integrated detection in worker {device_id} (interval: {instant_detection_interval}s)")
-                        try:
-                            worker.start_detection()
-                            logger.info(f"✅ Integrated detection enabled for worker {device_id}")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Failed to enable worker detection for {device_id}: {e}")
-                    else:
-                        logger.info(f"⏸️ [INSTANT-DETECT] Instant detection disabled for {device_id} per pipeline settings")
-
-                # 🔧 RECORDING PIPELINE: Only start recording if enabled
-                if recording_pipeline_enabled:
-                    result = await self._start_regular_recording_with_session(
-                        device_id,
-                        user_id,
-                        quality,
-                        auth_token,
-                        session_uuid,
-                        segment_duration,
-                    )
-                else:
-                    # Instant-detection-only mode for regular cameras
-                    logger.info(
-                        f"📸 [INSTANT-ONLY] Starting instant-detection-only mode for {device_id}"
-                    )
-                    result = {
-                        "device_id": device_id,
-                        "session_uuid": session_uuid,
-                        "mode": "instant_detection_only",
-                        "started_at": datetime.datetime.now().isoformat()
-                    }
-                    # Store minimal recording info to track session
-                    self.active_recordings[device_id] = {
-                        "device_id": device_id,
-                        "user_id": user_id,
-                        "session_uuid": session_uuid,
-                        "mode": "instant_detection_only",
-                        "started_at": datetime.datetime.now(),
-                        "is_mobile": False,
-                    }
+                    worker = await queue_service.get_camera_stream(device_id)
+                
+                logger.info(f"✅ [MOBILE] Queue worker ready for {device_id}")
+            
+            # 🔧 INTEGRATED DETECTION: Enable detection in worker for ALL camera types (USB/RTSP/MOBILE)
+            from src.services.camera_service_queue import get_camera_service as get_queue_service
+            queue_service = get_queue_service()
+            worker = await queue_service.get_camera_stream(device_id)
+            
+            if worker and instant_detection_enabled:
+                logger.info(f"🔍 [INSTANT-DETECT] Enabling integrated detection in worker {device_id} (interval: {instant_detection_interval}s)")
+                try:
+                    worker.start_detection()
+                    logger.info(f"✅ Integrated detection enabled for worker {device_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to enable worker detection for {device_id}: {e}")
+            
+            # Use unified recording path for ALL camera types (USB/RTSP/MOBILE)
+            result = await self._start_regular_recording_with_session(
+                device_id,
+                user_id,
+                quality,
+                auth_token,
+                session_uuid,
+                segment_duration,
+            )
             
             # 🔧 PIPELINE STATUS: Log final pipeline state
             logger.info(
@@ -1099,6 +1068,67 @@ class CameraDetectionService:
             logger.error(f"❌ No queue worker found for {device_id}")
             return None
         
+        # 🎯 IN-MEMORY COLLECTION: Find or create collection UUID ONCE at recording start
+        # This avoids database lookups during every segment upload
+        collection_uuid = None
+        try:
+            import aiohttp
+            headers = {}
+            if auth_token:
+                headers['Authorization'] = f'Bearer {auth_token}'
+            
+            # Get user GUID first (media service requires UUID format)
+            user_guid = None
+            if user_id:
+                async with aiohttp.ClientSession() as session:
+                    node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                    async with session.get(node_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                        if response.status == 200:
+                            user_data = await response.json()
+                            user_guid = user_data.get('guid')
+                            logger.info(f"📦 [COLLECTION] Got user GUID: {user_guid}")
+            
+            if user_guid:
+                # Try to find existing collection
+                async with aiohttp.ClientSession() as session:
+                    lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}"
+                    async with session.get(lookup_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                        if response.status == 200:
+                            collection_data = await response.json()
+                            if collection_data:
+                                collection_uuid = collection_data.get('uuid')
+                                logger.info(f"📦 [COLLECTION] Found existing: {collection_uuid}")
+                
+                # Create collection if not found
+                if not collection_uuid:
+                    logger.info(f"📦 [COLLECTION] Creating new collection for {device_id}")
+                    async with aiohttp.ClientSession() as session:
+                        create_data = {
+                            "name": f"Camera {device_id}",
+                            "description": f"Recordings from camera {device_id}",
+                            "is_public": False,
+                            "user_id": user_guid,
+                            "camera_device_id": device_id
+                        }
+                        async with session.post(
+                            "http://localhost:8000/api/v1/media/collections",
+                            json=create_data,
+                            headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as response:
+                            if response.status == 200:
+                                collection_data = await response.json()
+                                collection_uuid = collection_data.get('uuid')
+                                logger.info(f"✅ [COLLECTION] Created new: {collection_uuid}")
+            
+            if collection_uuid:
+                logger.info(f"🎯 [IN-MEMORY] Collection UUID will be passed in session_info: {collection_uuid}")
+            else:
+                logger.warning(f"⚠️ [COLLECTION] Could not determine collection UUID for {device_id}")
+        
+        except Exception as e:
+            logger.warning(f"⚠️ [COLLECTION] Error getting collection UUID: {e}")
+        
         # Get a sample frame to determine resolution
         frame = worker.get_latest_frame()
         if frame is None:
@@ -1132,7 +1162,8 @@ class CameraDetectionService:
                 'session_uuid': session_uuid,
                 'segment_duration': segment_duration,
                 'user_id': user_id,
-                'auth_token': auth_token
+                'auth_token': auth_token,
+                'collection_uuid': collection_uuid  # 🎯 IN-MEMORY: Pass collection UUID
             }
         })
         
@@ -1152,7 +1183,7 @@ class CameraDetectionService:
                 await client.post(
                     "http://localhost:8008/api/v1/recording/started",
                     json={
-                        "collection_id": device_id,
+                        "collection_id": collection_uuid or device_id,  # Use collection UUID if available
                         "session_uuid": session_uuid,
                         "device_id": device_id,
                         "user_id": user_id or "",
@@ -1161,7 +1192,7 @@ class CameraDetectionService:
                     },
                     headers={"Authorization": f"Bearer {auth_token}"} if auth_token else {}
                 )
-                logger.info(f"✅ [VMETA-NOTIFY] VMeta notified of recording start: {session_uuid}")
+                logger.info(f"✅ [VMETA-NOTIFY] VMeta notified of recording start: {session_uuid}, collection: {collection_uuid or device_id}")
         except Exception as e:
             # Log but don't fail - recording already started successfully
             logger.warning(f"⚠️ [VMETA-NOTIFY] Failed to notify VMeta of recording start: {e}")
@@ -1187,6 +1218,7 @@ class CameraDetectionService:
             "auth_token": auth_token,
             "segment_duration": segment_duration,
             "segment_files": [filename],  # Track all segment files
+            "collection_uuid": collection_uuid,  # Store collection UUID for vmeta notifications
             "worker": worker,  # ✅ CRITICAL: Store worker reference
         }
 
@@ -1223,6 +1255,66 @@ class CameraDetectionService:
         logger.info(
             f"🎬 [SESSION] Starting mobile recording for {device_id}, session: {session_uuid}"
         )
+
+        # 📦 Get collection UUID before starting recording (IN-MEMORY architecture)
+        collection_uuid = None
+        try:
+            import aiohttp
+            
+            # Get user GUID first (required for collection queries)
+            user_guid = None
+            if user_id and auth_token:
+                headers = {'Authorization': f'Bearer {auth_token}'}
+                async with aiohttp.ClientSession() as session:
+                    node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                    async with session.get(node_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                        if response.status == 200:
+                            user_data = await response.json()
+                            user_guid = user_data.get('guid')
+                            logger.info(f"🔑 [GUID] Got user GUID: {user_guid}")
+            
+            # Try to find existing collection for this camera
+            if user_guid:
+                logger.info(f"📦 [COLLECTION] Looking up collection for {device_id}")
+                headers = {'Authorization': f'Bearer {auth_token}'}
+                async with aiohttp.ClientSession() as session:
+                    lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}"
+                    async with session.get(lookup_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                        if response.status == 200:
+                            collection_data = await response.json()
+                            if collection_data:
+                                collection_uuid = collection_data.get('uuid')
+                                logger.info(f"📦 [COLLECTION] Found existing: {collection_uuid}")
+                
+                # Create collection if not found
+                if not collection_uuid:
+                    logger.info(f"📦 [COLLECTION] Creating new collection for {device_id}")
+                    async with aiohttp.ClientSession() as session:
+                        create_data = {
+                            "name": f"Camera {device_id}",
+                            "description": f"Recordings from camera {device_id}",
+                            "is_public": False,
+                            "user_id": user_guid,
+                            "camera_device_id": device_id
+                        }
+                        async with session.post(
+                            "http://localhost:8000/api/v1/media/collections",
+                            json=create_data,
+                            headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as response:
+                            if response.status == 200:
+                                collection_data = await response.json()
+                                collection_uuid = collection_data.get('uuid')
+                                logger.info(f"✅ [COLLECTION] Created new: {collection_uuid}")
+            
+            if collection_uuid:
+                logger.info(f"🎯 [IN-MEMORY] Collection UUID for mobile camera: {collection_uuid}")
+            else:
+                logger.warning(f"⚠️ [COLLECTION] Could not determine collection UUID for {device_id}")
+        
+        except Exception as e:
+            logger.warning(f"⚠️ [COLLECTION] Error getting collection UUID: {e}")
 
         # Get target size for mobile recording
         width, height = 1920, 1080  # Default HD for mobile
@@ -1269,9 +1361,39 @@ class CameraDetectionService:
             "auth_token": auth_token,
             "segment_duration": segment_duration,
             "segment_files": [filename],  # Track all segment files
+            "collection_uuid": collection_uuid,  # Store collection UUID for vmeta notifications
         }
 
         self.active_recordings[device_id] = recording_info
+
+        # 🔧 Start mobile worker for frame processing (if not already started)
+        from src.services.mobile_streaming import mobile_streaming_service
+        if not mobile_streaming_service.has_mobile_worker(device_id):
+            try:
+                logger.info(f"🚀 [RECORDING] Starting mobile worker for {device_id}")
+                # Get camera info from database
+                db_gen = get_db()
+                db = next(db_gen)
+                try:
+                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                    if camera:
+                        camera_info = {
+                            "device_id": device_id,
+                            "instant_detection_enabled": camera.instant_detection_enabled,
+                            "instant_detection_interval_seconds": camera.instant_detection_interval_seconds or 5,
+                        }
+                        await mobile_streaming_service.start_mobile_worker(
+                            device_id=device_id,
+                            camera_info=camera_info,
+                            enable_instant_detection=camera.instant_detection_enabled
+                        )
+                        logger.info(f"✅ [RECORDING] Mobile worker started for {device_id}")
+                    else:
+                        logger.warning(f"⚠️ [RECORDING] Camera not found in database: {device_id}")
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error(f"❌ [RECORDING] Failed to start mobile worker: {e}")
 
         # Start mobile frame recording task with segment support
         asyncio.create_task(self._mobile_recording_loop_with_segments(device_id))
@@ -1456,7 +1578,22 @@ class CameraDetectionService:
         quality: str,
         auth_token: Optional[str] = None,
     ) -> Optional[Dict]:
-        """Start recording for mobile cameras using frame data from mobile service."""
+        """Start recording for mobile cameras using mobile worker."""
+
+        from src.services.mobile_streaming import mobile_streaming_service
+
+        # Start mobile worker with instant detection enabled
+        logger.info(f"🚀 [MOBILE_RECORDING] Starting mobile worker for {device_id}")
+        mobile_worker = await mobile_streaming_service.start_mobile_worker(
+            device_id, 
+            enable_instant_detection=True
+        )
+        
+        if not mobile_worker:
+            logger.error(f"❌ [MOBILE_RECORDING] Failed to start mobile worker for {device_id}")
+            return None
+
+        logger.info(f"✅ [MOBILE_RECORDING] Mobile worker started for {device_id}")
 
         # Get quality settings for mobile recording
         # Note: FPS is now used as a fallback/target rate - actual recording
@@ -1686,37 +1823,100 @@ class CameraDetectionService:
         except Exception as e:
             logger.error(f"Error finalizing recording session {session_uuid}: {e}")
 
-        # Extract remaining segments from worker result (batches already uploaded incrementally)
+        # ✅ v2.24.14: Upload any remaining segments (final segment that didn't rotate)
         remaining_segments = result.get('remaining_segments', [])
-        total_segments = result.get('total_segments', 0)
-        
         if remaining_segments:
-            logger.info(
-                f"🎬 [SESSION] Scheduling background upload for {len(remaining_segments)} "
-                f"remaining segments of session {session_uuid} (total recorded: {total_segments})"
-            )
+            logger.info(f"📤 [UPLOAD] Uploading {len(remaining_segments)} remaining segment(s) on stop")
+            session_info = result.get('session_info', {})
+            user_id = session_info.get('user_id')
+            auth_token = session_info.get('auth_token')
+            collection_uuid = session_info.get('collection_uuid')
             
-            # Schedule upload in background (non-blocking)
-            import asyncio
-            asyncio.create_task(
-                self._upload_all_segments_background(
-                    recording_info,
-                    user_id, 
-                    session_uuid,
-                    remaining_segments
-                )
-            )
-        else:
-            logger.info(
-                f"🎬 [SESSION] No remaining segments to upload for {session_uuid} "
-                f"(all {total_segments} segments uploaded incrementally)"
-            )
+            if user_id and auth_token and collection_uuid:
+                # Upload remaining segments in background thread
+                import threading
+                import requests
+                
+                def upload_remaining():
+                    """Upload remaining segments with all necessary auth info."""
+                    for segment_path in remaining_segments:
+                        if not os.path.exists(segment_path):
+                            logger.warning(f"⚠️ [UPLOAD] Segment not found: {segment_path}")
+                            continue
+                        
+                        logger.info(f"📤 [UPLOAD] Uploading final segment: {segment_path}")
+                        
+                        try:
+                            # Get user GUID
+                            headers = {'Authorization': f'Bearer {auth_token}'}
+                            node_url = f"http://localhost:8001/api/v1/users/{user_id}"
+                            response = requests.get(node_url, headers=headers, timeout=5)
+                            
+                            if response.status_code != 200:
+                                logger.error(f"❌ [UPLOAD] Failed to fetch GUID: HTTP {response.status_code}")
+                                continue
+                            
+                            user_guid = response.json().get('guid')
+                            if not user_guid:
+                                logger.error(f"❌ [UPLOAD] No GUID in response")
+                                continue
+                            
+                            logger.info(f"✅ [UPLOAD] Got user GUID: {user_guid}")
+                            
+                            # Upload file
+                            with open(segment_path, 'rb') as f:
+                                files = {'file': (f'segment_{device_id}_{os.path.basename(segment_path)}', f, 'video/mp4')}
+                                data = {
+                                    'media_type': 'video',
+                                    'user_id': user_guid,
+                                    'title': f'Camera Recording - {device_id}',
+                                    'description': f'Segment from camera {device_id}',
+                                    'tags': f'["camera","recording","{device_id}"]',
+                                    'is_public': 'false',
+                                    'device_name': device_id
+                                }
+                                
+                                response = requests.post(
+                                    "http://localhost:8000/api/v1/media/upload",
+                                    files=files,
+                                    data=data,
+                                    headers=headers,
+                                    timeout=60
+                                )
+                                
+                                if response.status_code == 200:
+                                    media_uuid = response.json().get('uuid')
+                                    logger.info(f"✅ [UPLOAD] Segment uploaded: {media_uuid}")
+                                    
+                                    # Assign to collection using in-memory UUID
+                                    assign_url = f"http://localhost:8000/api/v1/media/collections/{collection_uuid}/add/{media_uuid}"
+                                    response = requests.post(assign_url, headers=headers, params={"user_id": user_guid}, timeout=10)
+                                    
+                                    if response.status_code == 200:
+                                        logger.info(f"✅ [COLLECTION] Assigned {media_uuid} to {collection_uuid}")
+                                    else:
+                                        logger.error(f"❌ [COLLECTION] Failed: HTTP {response.status_code}")
+                                else:
+                                    logger.error(f"❌ [UPLOAD] Failed: HTTP {response.status_code}")
+                                    
+                        except Exception as e:
+                            logger.error(f"❌ [UPLOAD] Exception: {e}")
+                
+                upload_thread = threading.Thread(target=upload_remaining, daemon=True)
+                upload_thread.start()
+                logger.info(f"✅ [UPLOAD] Started background upload of {len(remaining_segments)} remaining segment(s)")
+            else:
+                logger.warning(f"⚠️ [UPLOAD] Cannot upload: user_id={user_id}, auth_token={bool(auth_token)}, collection_uuid={collection_uuid}")
         
-        logger.info(f"🎬 [SESSION] Background upload scheduled, continuing with stop recording response")
+        total_segments = result.get('total_segments', 0)
+        logger.info(
+            f"🎬 [SESSION] Recording stopped for {session_uuid}: "
+            f"{total_segments} segments were uploaded incrementally during recording"
+        )
         
         # Return immediately without waiting for upload
         # Note: Media upload happens in background, collection_id will be updated later
-        collection_id = device_id  # Use device_id as collection_id
+        collection_uuid = recording_info.get("collection_uuid", device_id)  # Use actual collection UUID
         media_uuid = None  # Will be set by background task
 
         # IMPORTANT: DO NOT release the camera capture here!
@@ -1735,6 +1935,17 @@ class CameraDetectionService:
         )
         del self.active_recordings[device_id]
 
+        # Stop mobile worker for mobile cameras
+        is_mobile = recording_info.get("is_mobile", False)
+        if is_mobile:
+            try:
+                from src.services.mobile_streaming import mobile_streaming_service
+                logger.info(f"🛑 [CLEANUP] Stopping mobile worker for {device_id}")
+                await mobile_streaming_service.stop_mobile_worker(device_id)
+                logger.info(f"✅ [CLEANUP] Mobile worker stopped for {device_id}")
+            except Exception as e:
+                logger.error(f"❌ [CLEANUP] Failed to stop mobile worker for {device_id}: {e}")
+
         # Complete face detection session
         await self._complete_face_detection_session(device_id)
 
@@ -1748,7 +1959,7 @@ class CameraDetectionService:
             "segment_count": len(segment_files),
             "segment_files": segment_files,
             "session_dir": recording_info["session_dir"],
-            "collection_id": collection_id,
+            "collection_id": collection_uuid,
             "media_uuid": media_uuid,
             "stopped_at": stopped_at.isoformat(),
         }
@@ -1763,7 +1974,7 @@ class CameraDetectionService:
                 await client.post(
                     "http://localhost:8008/api/v1/recording/stopped",
                     json={
-                        "collection_id": device_id,
+                        "collection_id": collection_uuid,  # Use collection UUID for consistency
                         "session_uuid": session_uuid,
                         "device_id": device_id,
                         "user_id": user_id or "",
@@ -1778,7 +1989,7 @@ class CameraDetectionService:
                 )
                 logger.info(
                     f"✅ [VMETA-NOTIFY] VMeta notified of recording stop: {session_uuid} "
-                    f"({len(segment_files)} videos)"
+                    f"(collection: {collection_uuid}, {len(segment_files)} videos)"
                 )
         except Exception as e:
             logger.warning(f"⚠️ [VMETA-NOTIFY] Failed to notify VMeta of recording stop: {e}")
@@ -1877,6 +2088,17 @@ class CameraDetectionService:
         # Clean up recording info
         del self.active_recordings[device_id]
         logger.info(f"🎬 [DEBUG] Removed {device_id} from active recordings")
+
+        # Stop mobile worker for mobile cameras
+        is_mobile = recording_info.get("is_mobile", False)
+        if is_mobile:
+            try:
+                from src.services.mobile_streaming import mobile_streaming_service
+                logger.info(f"🛑 [CLEANUP] Stopping mobile worker for {device_id}")
+                await mobile_streaming_service.stop_mobile_worker(device_id)
+                logger.info(f"✅ [CLEANUP] Mobile worker stopped for {device_id}")
+            except Exception as e:
+                logger.error(f"❌ [CLEANUP] Failed to stop mobile worker for {device_id}: {e}")
 
         # Upload to media service and assign to camera collection
         logger.info(f"🎬 [DEBUG] Starting upload to collection for {device_id}")
@@ -2231,7 +2453,7 @@ class CameraDetectionService:
                 del self.active_recordings[device_id]
 
     async def _mobile_recording_loop(self, device_id: str):
-        """Record frames from mobile camera stream data."""
+        """Record frames from mobile camera worker."""
 
         try:
             recording_info = self.active_recordings.get(device_id)
@@ -2255,6 +2477,14 @@ class CameraDetectionService:
             # Import mobile streaming service
             from src.services.mobile_streaming import mobile_streaming_service
 
+            # Get mobile worker
+            mobile_worker = mobile_streaming_service.get_mobile_worker(device_id)
+            if not mobile_worker:
+                logger.error(f"🎬 [MOBILE_RECORDING] No mobile worker found for {device_id}")
+                return
+
+            logger.info(f"🎬 [MOBILE_RECORDING] Using mobile worker for {device_id}")
+
             frame_count = 0
             no_frame_count = 0
             max_no_frame_count = 100  # 10 seconds without frames = disconnected
@@ -2265,20 +2495,16 @@ class CameraDetectionService:
                     logger.warning(f"📱 [MOBILE_RECORDING] Mobile camera {device_id} disconnected, stopping recording")
                     break
                 
-                # Get frame data from mobile streaming service
-                frame_data = (
-                    await mobile_streaming_service.get_latest_mobile_frame_data(
-                        device_id
-                    )
-                )
+                # Get frame from mobile worker (already rotated)
+                frame = mobile_worker.get_latest_frame()
 
-                if frame_data is None:
+                if frame is None:
                     no_frame_count += 1
                     if no_frame_count >= max_no_frame_count:
                         logger.warning(f"📱 [MOBILE_RECORDING] No frames for {device_id} for 10s, assuming disconnected")
                         break
                     logger.debug(
-                        f"🎬 [MOBILE_RECORDING] No mobile frame available for recording {device_id} ({no_frame_count}/{max_no_frame_count})"
+                        f"🎬 [MOBILE_RECORDING] No frame available from worker for {device_id} ({no_frame_count}/{max_no_frame_count})"
                     )
                     await asyncio.sleep(0.1)
                     continue
@@ -2287,26 +2513,10 @@ class CameraDetectionService:
                 no_frame_count = 0
 
                 logger.debug(
-                    f"🎬 [MOBILE_RECORDING] Got frame data for {device_id}: {type(frame_data)}"
+                    f"🎬 [MOBILE_RECORDING] Got frame from worker for {device_id}: shape {frame.shape}"
                 )
 
-                frame = frame_data["frame"]
-                rotation_angle = frame_data.get("rotation_angle", 0)
-
-                logger.debug(
-                    f"🎬 [MOBILE_RECORDING] Frame shape: {frame.shape}, rotation: {rotation_angle}"
-                )
-
-                # Apply rotation if needed
-                if rotation_angle != 0:
-                    if rotation_angle == 90:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                    elif rotation_angle == 180:
-                        frame = cv2.rotate(frame, cv2.ROTATE_180)
-                    elif rotation_angle == 270:
-                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-
-                # Resize frame to target recording size
+                # Frame is already rotated by worker, just resize to target recording size
                 if frame.shape[1] != target_size[0] or frame.shape[0] != target_size[1]:
                     frame = cv2.resize(frame, target_size)
 
@@ -2494,18 +2704,21 @@ class CameraDetectionService:
                         await self._rotate_to_next_segment(device_id, session_service)
                         continue
 
-                    # Get mobile frame data
-                    frame_data = await mobile_streaming_service.get_latest_mobile_frame_data(device_id)
-                    if frame_data is None:
+                    # Get frame from mobile worker (already rotated)
+                    mobile_worker = mobile_streaming_service.get_mobile_worker(device_id)
+                    
+                    if not mobile_worker:
+                        logger.warning(f"⚠️ [SEGMENT] No mobile worker found for {device_id}")
                         await asyncio.sleep(0.1)
                         continue
-
-                    # Extract frame from frame data
-                    frame = frame_data.get('frame')
+                    
+                    # Use worker's processed frame (already rotated)
+                    frame = mobile_worker.get_latest_frame()
                     if frame is None:
+                        await asyncio.sleep(0.033)  # ~30fps
                         continue
 
-                    # Resize frame to target size
+                    # Resize frame to target recording size if needed
                     if (
                         frame.shape[1] != target_size[0]
                         or frame.shape[0] != target_size[1]
@@ -2673,58 +2886,7 @@ class CameraDetectionService:
         except Exception as e:
             logger.error(f"Error rotating to next segment for {device_id}: {e}")
 
-    async def _upload_all_segments_background(
-        self, recording_info: Dict, user_id: str, session_uuid: str, segments_to_upload: List[str]
-    ):
-        """
-        Background task to upload ALL segments without blocking stop recording response.
-        This allows the stop recording endpoint to return immediately.
-        """
-        try:
-            logger.info(f"🎬 [BACKGROUND] Starting background upload for {len(segments_to_upload)} segments of session {session_uuid}")
-            
-            uploaded_count = 0
-            failed_count = 0
-            
-            for segment_path in segments_to_upload:
-                try:
-                    # Create modified recording_info for this segment
-                    segment_recording_info = recording_info.copy()
-                    segment_recording_info["current_segment_path"] = segment_path
-                    segment_recording_info["output_path"] = segment_path
-                    
-                    logger.info(f"🎬 [BACKGROUND] Uploading segment {uploaded_count + 1}/{len(segments_to_upload)}: {segment_path}")
-                    
-                    upload_result = await self._upload_recording_to_collection(
-                        segment_recording_info, user_id
-                    )
-                    
-                    if upload_result:
-                        collection_id = upload_result.get("collection_id")
-                        media_uuid = upload_result.get("media_uuid")
-                        uploaded_count += 1
-                        
-                        logger.info(
-                            f"🎬 [BACKGROUND] ✅ Segment {uploaded_count}/{len(segments_to_upload)} uploaded: "
-                            f"collection={collection_id}, media={media_uuid}"
-                        )
-                    else:
-                        failed_count += 1
-                        logger.error(f"🎬 [BACKGROUND] ❌ Upload failed for segment: {segment_path}")
-                        
-                except Exception as e:
-                    failed_count += 1
-                    logger.error(f"🎬 [BACKGROUND] Exception uploading segment {segment_path}: {e}")
-            
-            logger.info(
-                f"🎬 [BACKGROUND] ✅ Upload completed for session {session_uuid}: "
-                f"{uploaded_count} successful, {failed_count} failed"
-            )
-                
-        except Exception as e:
-            logger.error(f"🎬 [BACKGROUND] Exception in background upload for {session_uuid}: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+    # ✅ v2.24.11: Removed _upload_all_segments_background - uploads now handled by camera_worker
 
     async def _upload_final_segment_background(
         self, recording_info: Dict, user_id: str, session_uuid: str

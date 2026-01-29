@@ -26,6 +26,13 @@ class MobileCameraStreamingService:
         self.active_mobile_streams: Dict[str, Dict[str, Any]] = {}
         self.stream_queues: Dict[str, Queue] = {}
         self.rtmp_servers: Dict[str, subprocess.Popen] = {}
+        
+        # Mobile camera workers for pipeline integration
+        self.mobile_workers: Dict[str, Any] = {}  # device_id -> MobileCameraWorker
+        self.worker_auto_start = True  # Auto-start workers when frames arrive
+        
+        # Track stopped cameras to reject incoming frames
+        self.stopped_cameras: Dict[str, float] = {}  # device_id -> stop_timestamp
 
     async def setup_mobile_camera_stream(
         self, device_id: str, stream_config: Dict[str, Any]
@@ -245,6 +252,10 @@ class MobileCameraStreamingService:
             del self.active_mobile_streams[device_id]
             if device_id in self.stream_queues:
                 del self.stream_queues[device_id]
+            
+            # Mark camera as stopped to reject incoming frames
+            self.stopped_cameras[device_id] = time.time()
+            logger.info(f"🛑 Marked {device_id} as stopped - will reject incoming frames")
 
             logger.info(f"Stopped mobile camera stream for {device_id}")
             return True
@@ -294,16 +305,30 @@ class MobileCameraStreamingService:
         """Receive and store a frame from a mobile camera."""
 
         try:
-            logger.info(
+            # Check if camera has been stopped - reject frames
+            if device_id in self.stopped_cameras:
+                stop_time = self.stopped_cameras[device_id]
+                elapsed = time.time() - stop_time
+                logger.warning(
+                    f"🚫 Rejecting frame from stopped camera {device_id} (stopped {elapsed:.1f}s ago)"
+                )
+                return False
+            
+            logger.debug(
                 f"📱 [MOBILE_SERVICE_DEBUG] Storing frame with orientation: {orientation}, rotation: {rotation_angle}"
             )
-            logger.info(
+            logger.debug(
                 f"📱 [MOBILE_SERVICE_DEBUG] Frame shape: {frame.shape}, timestamp: {timestamp}"
             )
 
             # Check if we have an active stream for this device, if not create it
             if device_id not in self.active_mobile_streams:
                 logger.info(f"Auto-setting up mobile camera stream for {device_id}")
+                
+                # Clear stopped flag when restarting stream
+                if device_id in self.stopped_cameras:
+                    del self.stopped_cameras[device_id]
+                    logger.info(f"✅ Cleared stopped flag for {device_id} - accepting frames again")
 
                 # Auto-setup mobile camera stream with default configuration
                 stream_config = {
@@ -344,6 +369,11 @@ class MobileCameraStreamingService:
 
             frame_queue.put_nowait(frame_data)
             logger.debug(f"Received frame from mobile camera {device_id}")
+            
+            # 🎯 QUEUE ARCHITECTURE: Mobile workers are now managed by CameraService queue system
+            # Auto-start is disabled - workers are started via queue when recording/streaming begins
+            # This prevents conflict with the unified queue-based CameraWorker implementation
+            
             return True
 
         except Exception as e:
@@ -355,9 +385,12 @@ class MobileCameraStreamingService:
         frame_data = await self.get_latest_mobile_frame_data(device_id)
         return frame_data["frame"] if frame_data else None
 
-    async def get_latest_mobile_frame_data(self, device_id: str) -> Optional[Dict]:
-        """Get the latest frame data with metadata from a mobile camera."""
-
+    def get_latest_mobile_frame_data(self, device_id: str) -> Optional[Dict]:
+        """
+        Get the latest frame data with metadata from a mobile camera (SYNC version for worker threads).
+        
+        This is a synchronous method safe to call from worker threads.
+        """
         if device_id not in self.stream_queues:
             return None
 
@@ -376,6 +409,11 @@ class MobileCameraStreamingService:
                 f"Error getting latest frame from mobile camera {device_id}: {e}"
             )
             return None
+    
+    async def get_latest_mobile_frame_data_async(self, device_id: str) -> Optional[Dict]:
+        """Get the latest frame data with metadata from a mobile camera (ASYNC version)."""
+        # Just call the sync version - queue operations are thread-safe
+        return self.get_latest_mobile_frame_data(device_id)
 
     async def shutdown(self):
         """Shutdown all mobile camera streams."""
@@ -404,6 +442,10 @@ class MobileCameraStreamingService:
         
         return True
     
+    def is_receiving_frames(self, device_id: str) -> bool:
+        """Check if mobile camera is currently receiving frames (alias for has_active_mobile_camera)."""
+        return self.has_active_mobile_camera(device_id)
+    
     async def cleanup_stale_cameras(self):
         """Remove mobile cameras that haven't sent frames in a while."""
         stale_cameras = []
@@ -421,6 +463,10 @@ class MobileCameraStreamingService:
         # Remove stale cameras
         for device_id in stale_cameras:
             await self.stop_mobile_camera_stream(device_id)
+            
+            # Stop worker if exists
+            if device_id in self.mobile_workers:
+                await self.stop_mobile_worker(device_id)
             
             # Update camera status in database
             try:
@@ -441,6 +487,115 @@ class MobileCameraStreamingService:
                     db.close()
             except Exception as e:
                 logger.error(f"❌ Error accessing database: {e}")
+    
+    async def start_mobile_worker(self, device_id: str, camera_info: Optional[Dict[str, Any]] = None, enable_instant_detection: bool = False):
+        """
+        Start background worker for mobile camera frame processing.
+        
+        This enables instant detection, recording, and pipeline integration.
+        
+        Args:
+            device_id: Mobile device identifier
+            camera_info: Camera configuration (optional, will fetch from DB if not provided)
+            enable_instant_detection: Enable instant detection for this camera
+        """
+        if device_id in self.mobile_workers:
+            logger.info(f"✅ Mobile worker already running for {device_id}")
+            return
+        
+        # Get camera info if not provided
+        if camera_info is None:
+            try:
+                from src.database import SessionLocal
+                from src.models.camera import Camera
+                
+                db = SessionLocal()
+                try:
+                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                    if camera:
+                        camera_info = {
+                            "device_id": device_id,
+                            "name": camera.name,
+                            "camera_type": "mobile",
+                            "resolution": camera.resolution,
+                        }
+                    else:
+                        logger.warning(f"⚠️ Camera {device_id} not found in database, using defaults")
+                        camera_info = {
+                            "device_id": device_id,
+                            "name": device_id,
+                            "camera_type": "mobile",
+                        }
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.error(f"❌ Error fetching camera info: {e}")
+                camera_info = {
+                    "device_id": device_id,
+                    "name": device_id,
+                    "camera_type": "mobile",
+                }
+        
+        # Import and start worker
+        try:
+            from src.services.mobile_camera_worker import start_mobile_worker
+            
+            worker = await start_mobile_worker(
+                device_id=device_id,
+                camera_info=camera_info,
+                enable_instant_detection=enable_instant_detection
+            )
+            
+            self.mobile_workers[device_id] = worker
+            logger.info(f"✅ Started mobile worker for {device_id} (instant_detection={enable_instant_detection})")
+            
+        except Exception as e:
+            logger.error(f"❌ Error starting mobile worker for {device_id}: {e}")
+    
+    async def stop_mobile_worker(self, device_id: str):
+        """
+        Stop background worker for mobile camera.
+        
+        Args:
+            device_id: Mobile device identifier
+        """
+        if device_id not in self.mobile_workers:
+            logger.warning(f"⚠️ No active mobile worker for {device_id}")
+            return
+        
+        try:
+            from src.services.mobile_camera_worker import stop_mobile_worker
+            
+            await stop_mobile_worker(device_id)
+            del self.mobile_workers[device_id]
+            logger.info(f"✅ Stopped mobile worker for {device_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error stopping mobile worker for {device_id}: {e}")
+    
+    def get_mobile_worker(self, device_id: str) -> Optional[Any]:
+        """
+        Get the mobile camera worker for a device.
+        
+        Args:
+            device_id: Mobile device identifier
+        
+        Returns:
+            MobileCameraWorker instance or None
+        """
+        return self.mobile_workers.get(device_id)
+    
+    def has_mobile_worker(self, device_id: str) -> bool:
+        """
+        Check if a mobile camera worker is active.
+        
+        Args:
+            device_id: Mobile device identifier
+        
+        Returns:
+            True if worker is active
+        """
+        return device_id in self.mobile_workers
 
 
 # Global instance

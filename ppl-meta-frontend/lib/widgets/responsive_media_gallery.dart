@@ -563,7 +563,7 @@ class _MediaGridItem extends ConsumerWidget {
       child: Image.network(
         imageUrl ?? '',
         headers: headers,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain, // Changed from cover to maintain aspect ratio
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) {
             return child;

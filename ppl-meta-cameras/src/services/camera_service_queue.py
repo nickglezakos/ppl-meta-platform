@@ -65,10 +65,53 @@ class CameraService:
         usb_cameras = await self._detect_usb_cameras()
         cameras.extend(usb_cameras)
         
+        # Detect mobile cameras from database
+        mobile_cameras = await self._detect_mobile_cameras()
+        cameras.extend(mobile_cameras)
+        
         # Update cache
         self.detected_cameras = {cam["device_id"]: cam for cam in cameras}
         
-        logger.info(f"✅ Detected {len(cameras)} cameras")
+        logger.info(f"✅ Detected {len(cameras)} cameras (USB: {len(usb_cameras)}, Mobile: {len(mobile_cameras)})")
+        return cameras
+    
+    async def _detect_mobile_cameras(self) -> List[Dict]:
+        """Detect mobile cameras from database."""
+        cameras = []
+        
+        try:
+            def load_mobile_from_db():
+                from src.database import get_db
+                from src.models.camera import Camera
+                
+                db = next(get_db())
+                try:
+                    mobile_cameras = db.query(Camera).filter(Camera.camera_type == CameraType.MOBILE).all()
+                    return [
+                        {
+                            "device_id": cam.device_id,
+                            "name": cam.name,
+                            "camera_type": CameraType.MOBILE,
+                            "connection_string": cam.connection_string or "",
+                            "resolution_width": cam.resolution_width or 1920,
+                            "resolution_height": cam.resolution_height or 1080,
+                            "max_fps": cam.max_fps or 30,
+                            "instant_detection_enabled": cam.instant_detection_enabled,
+                            "instant_detection_interval_seconds": cam.instant_detection_interval_seconds,
+                            "status": "available"
+                        }
+                        for cam in mobile_cameras
+                    ]
+                finally:
+                    db.close()
+            
+            loop = asyncio.get_event_loop()
+            cameras = await loop.run_in_executor(None, load_mobile_from_db)
+            logger.info(f"📱 Detected {len(cameras)} mobile cameras from database")
+            
+        except Exception as e:
+            logger.error(f"❌ Error detecting mobile cameras: {e}")
+        
         return cameras
     
     async def _detect_usb_cameras(self) -> List[Dict]:
@@ -184,6 +227,12 @@ class CameraService:
             # If not in cache and RTSP camera, load from database
             elif not camera_info and device_id.startswith("rtsp_"):
                 camera_info = await self._load_rtsp_from_database(device_id)
+                if camera_info:
+                    self.detected_cameras[device_id] = camera_info
+            
+            # If not in cache and mobile camera, load from database
+            elif not camera_info and device_id.startswith("mobile_"):
+                camera_info = await self._load_mobile_from_database(device_id)
                 if camera_info:
                     self.detected_cameras[device_id] = camera_info
             
@@ -366,6 +415,44 @@ class CameraService:
             return None
         
         return worker.get_stats()
+    
+    async def _load_mobile_from_database(self, device_id: str) -> Optional[Dict]:
+        """Load mobile camera info from database."""
+        try:
+            def load_from_db():
+                from src.database import get_db
+                from src.models.camera import Camera
+                
+                db = next(get_db())
+                try:
+                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                    if camera and camera.camera_type == CameraType.MOBILE:
+                        return {
+                            "device_id": camera.device_id,
+                            "name": camera.name,
+                            "camera_type": CameraType.MOBILE,
+                            "connection_string": camera.connection_string or "",
+                            "resolution_width": camera.resolution_width or 1920,
+                            "resolution_height": camera.resolution_height or 1080,
+                            "max_fps": camera.max_fps or 30,
+                            "instant_detection_enabled": camera.instant_detection_enabled,
+                            "instant_detection_interval_seconds": camera.instant_detection_interval_seconds,
+                        }
+                    return None
+                finally:
+                    db.close()
+            
+            loop = asyncio.get_event_loop()
+            camera_info = await loop.run_in_executor(None, load_from_db)
+            
+            if camera_info:
+                logger.info(f"📱 Loaded mobile camera {device_id} from database")
+            
+            return camera_info
+            
+        except Exception as e:
+            logger.error(f"❌ Error loading mobile camera {device_id}: {e}")
+            return None
     
     async def _load_rtsp_from_database(self, device_id: str) -> Optional[Dict]:
         """Load RTSP camera info from database."""

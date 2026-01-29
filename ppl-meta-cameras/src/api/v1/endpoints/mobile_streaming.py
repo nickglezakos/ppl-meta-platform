@@ -287,11 +287,11 @@ async def receive_mobile_camera_frame(
     """Receive a video frame from a mobile camera."""
 
     try:
-        logger.info(f"📱 [FRAME_DEBUG] Received frame from mobile camera {device_id}")
-        logger.info(
+        logger.debug(f"📱 [FRAME_DEBUG] Received frame from mobile camera {device_id}")
+        logger.debug(
             f"📱 [FRAME_DEBUG] Frame metadata - orientation: {frame_data.orientation}, rotation_angle: {frame_data.rotation_angle}"
         )
-        logger.info(
+        logger.debug(
             f"📱 [FRAME_DEBUG] Raw frame data received - timestamp: {frame_data.timestamp}"
         )
 
@@ -395,6 +395,16 @@ async def get_mobile_current_frame(
         orientation = frame_data.get("orientation", "portraitUp")
         rotation_angle = frame_data.get("rotation_angle", 0)
         timestamp = frame_data.get("timestamp", 0)
+
+        # Apply rotation to frame for proper display
+        if rotation_angle != 0:
+            if rotation_angle == 90:
+                frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            elif rotation_angle == 180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
+            elif rotation_angle == 270:
+                frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            logger.debug(f"📱 Rotated frame by {rotation_angle}° for {device_id}")
 
         # Encode frame as base64 JPEG
         _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])

@@ -129,12 +129,10 @@ async def video_stream(
             
             # Determine if this is a mobile camera
             is_mobile = device_id.startswith('mobile_')
-            if is_mobile:
-                from src.services.mobile_streaming import mobile_streaming_service
-                logger.info(f"📱 [GENERATE_FRAMES] Using mobile streaming service for {device_id}")
-            else:
-                queue_service = get_camera_service()
-                logger.info(f"🎥 [GENERATE_FRAMES] Using queue service for {device_id}")
+            
+            # 🎯 UNIFIED QUEUE ARCHITECTURE: All cameras use queue workers now
+            queue_service = get_camera_service()
+            logger.info(f"🎥 [GENERATE_FRAMES] Using queue service worker for {device_id} (mobile: {is_mobile})")
 
             while True:
                 try:
@@ -143,23 +141,8 @@ async def video_stream(
                         logger.error(f"⏱️ Stream timeout for {device_id} - no frames for {stream_timeout}s")
                         break
 
-                    # Get frame based on camera type
-                    if is_mobile:
-                        # Mobile cameras: get frames with metadata (including orientation)
-                        frame_data = await mobile_streaming_service.get_latest_mobile_frame_data(device_id)
-                        if frame_data:
-                            frame = frame_data.get("frame")
-                            rotation_angle = frame_data.get("rotation_angle", 0)
-                            orientation = frame_data.get("orientation", "portraitUp")
-                        else:
-                            frame = None
-                            rotation_angle = 0
-                            orientation = "portraitUp"
-                    else:
-                        # USB/RTSP cameras: get frames from worker queue
-                        frame = await queue_service.get_latest_frame(device_id)
-                        rotation_angle = 0  # USB/RTSP cameras don't need rotation
-                        orientation = "landscapeLeft"
+                    # Get frame from queue worker (works for USB/RTSP/MOBILE)
+                    frame = await queue_service.get_latest_frame(device_id)
                     
                     if frame is None:
                         consecutive_failures += 1
@@ -174,19 +157,8 @@ async def video_stream(
                     consecutive_failures = 0
                     last_frame_time = time.time()
 
-                    # Apply rotation for mobile cameras based on rotation_angle
-                    # The mobile app calculates the rotation needed to transform from
-                    # camera sensor's natural orientation to correct display orientation
-                    if is_mobile and rotation_angle != 0:
-                        if rotation_angle == 90:
-                            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-                        elif rotation_angle == 180:
-                            frame = cv2.rotate(frame, cv2.ROTATE_180)
-                        elif rotation_angle == 270:
-                            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-                        logger.debug(f"📱 Rotated mobile frame by {rotation_angle}° ({orientation})")
-                    elif is_mobile:
-                        logger.debug(f"📱 No rotation needed: {rotation_angle}° ({orientation})")
+                    # Mobile camera frames are already rotated by the queue worker
+                    # No additional rotation needed
 
                     # Resize frame if needed (maintain aspect ratio for mobile cameras)
                     if is_mobile:
@@ -266,18 +238,34 @@ async def video_stream(
         is_mobile = device_id.startswith('mobile_')
         
         if is_mobile:
-            # Mobile cameras send frames via WebSocket to mobile_streaming_service
+            # 🎯 UNIFIED QUEUE ARCHITECTURE: Mobile cameras now use queue workers too
             logger.info(f"📱 [VIDEO_STREAM] Mobile camera detected: {device_id}")
             from src.services.mobile_streaming import mobile_streaming_service
             
-            # Check if mobile camera has active stream
+            # Check if mobile camera is sending frames to backend
             if not mobile_streaming_service.has_active_mobile_camera(device_id):
-                logger.error(f"❌ [VIDEO_STREAM] Mobile camera {device_id} not streaming")
+                logger.error(f"❌ [VIDEO_STREAM] Mobile camera {device_id} not streaming to backend")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail=f"Mobile camera {device_id} not actively streaming frames",
                 )
-            logger.info(f"✅ [VIDEO_STREAM] Mobile camera {device_id} is actively streaming")
+            
+            # Ensure queue worker is connected
+            queue_service = get_camera_service()
+            worker = await queue_service.get_camera_stream(device_id)
+            
+            if not worker:
+                logger.info(f"📱 [VIDEO_STREAM] Connecting queue worker for mobile camera {device_id}")
+                success = await queue_service.connect_camera(device_id)
+                if not success:
+                    logger.error(f"❌ Failed to connect queue worker for mobile camera {device_id}")
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail=f"Failed to connect mobile camera worker",
+                    )
+                worker = await queue_service.get_camera_stream(device_id)
+            
+            logger.info(f"✅ [VIDEO_STREAM] Mobile camera {device_id} queue worker ready")
         else:
             # USB/RTSP cameras use worker queue architecture
             logger.info(f"🎥 [VIDEO_STREAM] USB/RTSP camera detected: {device_id}")
