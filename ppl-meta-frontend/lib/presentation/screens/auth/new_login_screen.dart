@@ -77,10 +77,16 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Logo and title
-              const Icon(
-                Icons.security,
-                size: 80,
-                color: Colors.blue,
+              Image.asset(
+                'assets/images/eyenet-logo.png',
+                height: 100,
+                errorBuilder: (context, error, stackTrace) {
+                  return const Icon(
+                    Icons.security,
+                    size: 80,
+                    color: Colors.blue,
+                  );
+                },
               ),
               const SizedBox(height: 24),
               

@@ -20,6 +20,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
   late TabController _tabController;
   bool _isInitialized = false;
   String? _discoveredServerUrl;
+  bool _isHowTosExpanded = false;  // Track expansion state for How Tos
 
   @override
   void initState() {
@@ -198,25 +199,34 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // PPL Meta Logo
+              // Eyenet Vision Logo
               Container(
-                width: isSmallScreen ? 60 : 80,
-                height: isSmallScreen ? 60 : 80,
+                width: isSmallScreen ? 80 : 100,
+                height: isSmallScreen ? 80 : 100,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
+                  color: Theme.of(context).colorScheme.surface,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
                   ],
                 ),
-                child: Icon(
-                  Icons.camera_alt_rounded,
-                  size: isSmallScreen ? 30 : 40,
-                  color: Theme.of(context).colorScheme.onPrimary,
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/logo.png',
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      // Fallback to icon if image fails to load
+                      return Icon(
+                        Icons.camera_alt_rounded,
+                        size: isSmallScreen ? 40 : 50,
+                        color: Theme.of(context).colorScheme.primary,
+                      );
+                    },
+                  ),
                 ),
               ),
               
@@ -224,7 +234,7 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
               
               // Title
               Text(
-            'PPL Meta Camera',
+            'Eyenet Vision',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: Theme.of(context).colorScheme.onSurface,
@@ -290,30 +300,181 @@ class _AuthenticationScreenState extends State<AuthenticationScreen>
 
   Widget _buildFooter() {
     return Container(
-      padding: const EdgeInsets.all(24.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+      ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Version Info
-          Text(
-            'PPL Meta Mobile Camera v1.0.0',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+          // How Tos Expandable Section
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isHowTosExpanded = !_isHowTosExpanded;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.help_outline,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'How Tos',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Icon(
+                      _isHowTosExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
             ),
+          ),
+          
+          // Expandable Content
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: _isHowTosExpanded
+                ? Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainer.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHowToSection(
+                          icon: Icons.cloud,
+                          title: 'Server Connection',
+                          steps: [
+                            'Enter your server URL (e.g., http://192.168.1.68:8001)',
+                            'Or use the full platform URL if provided',
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildHowToSection(
+                          icon: Icons.login,
+                          title: 'Login Credentials',
+                          steps: [
+                            'Use your existing account username and password',
+                            'Contact your administrator if you need credentials',
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildHowToSection(
+                          icon: Icons.app_registration,
+                          title: 'Camera Registration',
+                          steps: [
+                            'After login, you\'ll be asked to register this device',
+                            'Enter a unique name for your mobile camera',
+                            'Grant camera and storage permissions when prompted',
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildHowToSection(
+                          icon: Icons.error_outline,
+                          title: 'Troubleshooting',
+                          steps: [
+                            'Ensure your device is on the same network as the server',
+                            'Check that the server URL is correct and accessible',
+                            'Contact your system administrator for access codes',
+                          ],
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
           
           const SizedBox(height: 8),
           
-          // Help Link
-          TextButton.icon(
-            onPressed: () => _showHelpDialog(),
-            icon: const Icon(Icons.help_outline, size: 16),
-            label: const Text('Need Help?'),
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.primary,
+          // Version Info
+          Text(
+            'Eyenet Vision v1.0.0',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
             ),
           ),
+          const SizedBox(height: 4),
         ],
       ),
+    );
+  }
+
+  Widget _buildHowToSection({
+    required IconData icon,
+    required String title,
+    required List<String> steps,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...steps.map((step) => Padding(
+              padding: const EdgeInsets.only(left: 24, bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '• ',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      step,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+      ],
     );
   }
 

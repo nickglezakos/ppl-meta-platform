@@ -24,6 +24,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   String? _detectedNetwork;
+  bool _isHowTosExpanded = false;  // Track expansion state for How Tos
 
   @override
   void initState() {
@@ -183,7 +184,33 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PPL Meta Setup'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/logo.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Icon(
+                      Icons.camera_alt_rounded,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.primary,
+                    );
+                  },
+                ),
+              ),
+            ),
+            const Text('Eyenet Vision'),
+          ],
+        ),
         centerTitle: true,
         automaticallyImplyLeading: false, // Remove back button since this is the main auth screen
       ),
@@ -225,9 +252,9 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
               
               const SizedBox(height: 24),
               
-              // PPL Meta Platform Connection
+              // Platform Connection
               const Text(
-                'PPL Meta Platform Connection',
+                'Platform Connection',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -337,7 +364,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 child: _isLoading
                     ? const CircularProgressIndicator()
                     : const Text(
-                        'Connect to PPL Meta Platform',
+                        'Connect to Platform',
                         style: TextStyle(fontSize: 16),
                       ),
               ),
@@ -359,33 +386,201 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 ),
               ],
               
+              const SizedBox(height: 32),
+              
+              // How Tos Expandable Section at bottom
+              _buildHowTosSection(),
+              
               const SizedBox(height: 16),
               
-              // Help Text
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'How to find your platform connection:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    SizedBox(height: 8),
-                    Text('1. Check the PPL Meta console for "Discovery Service running on port XXXX"'),
-                    Text('2. Find the IP of the machine running PPL Meta'),
-                    Text('3. Enter the last part of that IP and the port number'),
-                  ],
+              // Version Info
+              Center(
+                child: Text(
+                  'Eyenet Vision v1.0.0',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  ),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHowTosSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          // How Tos Header (clickable)
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isHowTosExpanded = !_isHowTosExpanded;
+                });
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.help_outline,
+                          size: 20,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'How Tos',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Icon(
+                      _isHowTosExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          
+          // Expandable Content
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: _isHowTosExpanded
+                ? Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHowToItem(
+                          icon: Icons.network_check,
+                          title: 'Finding Your Platform',
+                          steps: [
+                            'Check your network: ${_detectedNetwork ?? "192.168.X.X"}',
+                            'Find the IP of the machine running the platform',
+                            'Enter just the last part (e.g., 68 for 192.168.1.68)',
+                            'Default port is usually 8006 for Discovery Service',
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildHowToItem(
+                          icon: Icons.login,
+                          title: 'Login Credentials',
+                          steps: [
+                            'Use your existing platform account credentials',
+                            'If you don\'t have an account, contact your administrator',
+                            'Default test credentials: fresh.user@example.com',
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildHowToItem(
+                          icon: Icons.camera_alt,
+                          title: 'After Login',
+                          steps: [
+                            'You\'ll be prompted to register this device as a camera',
+                            'Choose a unique name for your mobile camera',
+                            'Grant camera and storage permissions when requested',
+                            'Your device will appear in the platform\'s camera list',
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildHowToItem(
+                          icon: Icons.error_outline,
+                          title: 'Troubleshooting',
+                          steps: [
+                            'Ensure your device is on the same network as the platform',
+                            'Verify the platform is running (check console logs)',
+                            'Try different IP addresses if connection fails',
+                            'Contact your system administrator for assistance',
+                          ],
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHowToItem({
+    required IconData icon,
+    required String title,
+    required List<String> steps,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...steps.map((step) => Padding(
+              padding: const EdgeInsets.only(left: 26, bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '• ',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      step,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+      ],
     );
   }
 

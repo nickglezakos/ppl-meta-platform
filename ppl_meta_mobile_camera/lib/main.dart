@@ -11,7 +11,7 @@ void main() async {
   
   // Initialize logging system
   await AppLogger.instance.initialize();
-  AppLogger.instance.info('🚀 PPL Meta Mobile Camera starting...');
+  AppLogger.instance.info('🚀 Eyenet Vision starting...');
   
   // Initialize discovery service - user configuration required
   await DiscoveryConfigService.instance.initialize();

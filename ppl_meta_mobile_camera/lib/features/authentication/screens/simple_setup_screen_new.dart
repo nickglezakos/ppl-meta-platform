@@ -21,6 +21,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   
   bool _isLoading = false;
   String? _errorMessage;
+  bool _isHowTosExpanded = false;
 
   @override
   void initState() {
@@ -107,7 +108,6 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PPL Meta Setup'),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -117,44 +117,38 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
               
-              // Instructions
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Setup Instructions:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '1. Open the web frontend at http://localhost:3000/#/settings',
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '2. Check the IP address of the PPL Meta Platform services',
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '3. Enter the complete backend IP address below',
-                    ),
-                  ],
+              // Logo
+              Center(
+                child: Image.asset(
+                  'assets/images/eyenet-logo.png',
+                  height: 120,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(Icons.visibility, size: 120);
+                  },
                 ),
               ),
               
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               
-              // PPL Meta Platform Connection
+              // App subtitle
+              Center(
+                child: Text(
+                  'Mobile Camera App',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: 32),
+              
+              // Platform Connection
               const Text(
-                'PPL Meta Platform Connection',
+                'Platform Connection',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -271,7 +265,7 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 child: _isLoading
                     ? const CircularProgressIndicator()
                     : const Text(
-                        'Connect to PPL Meta Platform',
+                        'Connect to Platform',
                         style: TextStyle(fontSize: 16),
                       ),
               ),
@@ -312,33 +306,184 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
                 ),
               ],
               
+              const SizedBox(height: 24),
+              
+              // How Tos Dropdown
+              _buildHowTosSection(),
+              
               const SizedBox(height: 16),
               
-              // Help Text
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'How to find your platform connection:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    SizedBox(height: 8),
-                    Text('1. Check the PPL Meta console for "Discovery Service running on port XXXX"'),
-                    Text('2. Find the IP of the machine running PPL Meta'),
-                    Text('3. Enter the last part of that IP and the port number'),
-                  ],
+              // Version Info
+              Center(
+                child: Text(
+                  'Eyenet Vision v1.0.0',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
                 ),
               ),
+              
+              const SizedBox(height: 8),
             ],
           ),
         ),
       ),
+    );
+  }
+  
+  Widget _buildHowTosSection() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          // Dropdown Header
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isHowTosExpanded = !_isHowTosExpanded;
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.help_outline,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'How Tos',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _isHowTosExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          // Expandable Content
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: _isHowTosExpanded
+                ? Container(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Divider(
+                          color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                        ),
+                        const SizedBox(height: 12),
+                        
+                        // Setup Instructions
+                        _buildHowToSection(
+                          'Setup Instructions',
+                          [
+                            '1. Open the web frontend at http://localhost:3000/#/settings',
+                            '2. Check the IP address of the Eyenet Vision Platform services',
+                            '3. Enter the complete backend IP address below',
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 16),
+                        
+                        // Server Connection
+                        _buildHowToSection(
+                          'Server Connection',
+                          [
+                            '• Check the IP address shown for backend services in settings',
+                            '• Enter the complete IP address in the "Backend IP Address" field',
+                            '• Default port is 8006 (Discovery Service)',
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 16),
+                        
+                        // Login Credentials
+                        _buildHowToSection(
+                          'Login Credentials',
+                          [
+                            '• Username and password are required to authenticate',
+                            '• Use the same credentials as the web frontend',
+                            '• Contact your administrator if you need access',
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 16),
+                        
+                        // Camera Registration
+                        _buildHowToSection(
+                          'Camera Registration',
+                          [
+                            '• After successful login, you\'ll be prompted to register the camera',
+                            '• Choose a descriptive camera name',
+                            '• The camera will appear in the web frontend',
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 16),
+                        
+                        // Troubleshooting
+                        _buildHowToSection(
+                          'Troubleshooting',
+                          [
+                            '• Ensure the backend services are running',
+                            '• Check that your device is on the same network',
+                            '• Verify the IP address and port are correct',
+                            '• Check firewall settings if connection fails',
+                          ],
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildHowToSection(String title, List<String> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...items.map((item) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                item,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+            )),
+      ],
     );
   }
 

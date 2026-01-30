@@ -86,16 +86,13 @@ class _CameraControlsState extends State<CameraControls>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              // Gallery Button
-              _buildGalleryButton(),
+              // Snapshot Button (smaller, left)
+              _buildSnapshotButton(),
               
-              // Video Button (NEW: Simplified streaming workflow)
+              // Video Button (center - streaming)
               _buildVideoButton(),
               
-              // Capture Button
-              _buildCaptureButton(),
-              
-              // Switch Camera Button
+              // Switch Camera Button (right)
               _buildSwitchCameraButton(),
             ],
           ),
@@ -115,8 +112,8 @@ class _CameraControlsState extends State<CameraControls>
               // Timer Button (Future feature)
               _buildTimerButton(),
               
-              // Aspect Ratio Button (Future feature)
-              _buildAspectRatioButton(),
+              // Gallery Button (moved from top row)
+              _buildGalleryButton(),
             ],
           ),
         ],
@@ -273,6 +270,39 @@ class _CameraControlsState extends State<CameraControls>
     );
   }
 
+  Widget _buildSnapshotButton() {
+    return GestureDetector(
+      onTap: () => _handleCapture(),
+      child: AnimatedBuilder(
+        animation: _captureAnimationController,
+        builder: (context, child) {
+          final scale = 1.0 - (_captureAnimationController.value * 0.1);
+          
+          return Transform.scale(
+            scale: scale,
+            child: Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.9),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white,
+                  width: 2,
+                ),
+              ),
+              child: const Icon(
+                Icons.camera_alt,
+                color: Colors.black,
+                size: 24,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildCaptureButton() {
     return GestureDetector(
       onTap: () => _handleCapture(),
@@ -411,37 +441,6 @@ class _CameraControlsState extends State<CameraControls>
         ),
         child: const Icon(
           Icons.timer,
-          color: Colors.white,
-          size: 20,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAspectRatioButton() {
-    return GestureDetector(
-      onTap: () {
-        // Future: Aspect ratio functionality
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Aspect ratio feature coming soon!'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      },
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withOpacity(0.5),
-            width: 1,
-          ),
-        ),
-        child: const Icon(
-          Icons.aspect_ratio,
           color: Colors.white,
           size: 20,
         ),

@@ -1,5 +1,5 @@
 name: ppl_meta_mobile_camera
-description: "PPL Meta Mobile Camera - Transform Android devices into network cameras"
+description: "Eyenet Vision - Transform Android devices into intelligent vision cameras"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -78,6 +78,11 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  assets:
+    - assets/logo.png
+    - assets/images/eyenet-logo.png
+    - assets/images/eye-icon.png
+    - assets/images/favicon.ico
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

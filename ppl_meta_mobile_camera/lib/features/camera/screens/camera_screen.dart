@@ -15,7 +15,7 @@ import '../widgets/camera_settings_panel.dart';
 // import '../widgets/streaming_panel.dart'; // Unused import removed
 import 'gallery_screen.dart';
 import 'platform_connection_screen.dart';
-import '../../authentication/screens/authentication_screen.dart';
+import '../../authentication/screens/simple_setup_screen_new.dart';
 
 /// Main camera screen with preview, controls, and settings
 class CameraScreen extends StatefulWidget {
@@ -120,7 +120,7 @@ class _CameraScreenState extends State<CameraScreen>
             if (mounted) {
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(
-                  builder: (context) => const AuthenticationScreen(),
+                  builder: (context) => const SimpleSetupScreen(),
                 ),
               );
             }
@@ -204,119 +204,24 @@ class _CameraScreenState extends State<CameraScreen>
         ),
         child: Row(
           children: [
-            // PPL Meta Logo
+            // Eyenet Vision Logo
             Container(
-              width: 40,
               height: 40,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.camera_alt,
-                color: Theme.of(context).colorScheme.onPrimary,
-                size: 20,
-              ),
-            ),
-            
-            const SizedBox(width: 12),
-            
-            // Title and Status
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'PPL Meta Camera',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: authProvider.isServerOnline 
-                              ? Colors.green 
-                              : Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        authProvider.isServerOnline ? 'Online' : 'Offline',
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      // Add refresh button for connection status
-                      if (!authProvider.isServerOnline)
-                        GestureDetector(
-                          onTap: () => authProvider.refreshServerConnection(),
-                          child: const Icon(
-                            Icons.refresh,
-                            color: Colors.white70,
-                            size: 14,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Image.asset(
+                'assets/images/eyenet-logo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.visibility,
+                    color: Colors.white,
+                    size: 32,
+                  );
+                },
               ),
             ),
             
-            // Streaming Toggle - SIMPLIFIED WORKFLOW
-            Consumer<CameraProvider>(
-              builder: (context, cameraProvider, child) {
-                return IconButton(
-                  onPressed: () => _handleSimpleStreamingWorkflow(),
-                  icon: Icon(
-                    cameraProvider.isStreaming 
-                        ? Icons.videocam 
-                        : Icons.videocam_off,
-                    color: cameraProvider.isStreaming 
-                        ? Colors.red 
-                        : Colors.white,
-                  ),
-                  tooltip: cameraProvider.isStreaming 
-                      ? 'Stop Streaming' 
-                      : 'Setup Camera & Stream',
-                );
-              },
-            ),
-            
-            // Platform Connection
-            Consumer<PlatformStreamingProvider>(
-              builder: (context, streamingProvider, child) {
-                return IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const PlatformConnectionScreen(),
-                      ),
-                    );
-                  },
-                  icon: Icon(
-                    streamingProvider.isConnectedToPlatform
-                        ? Icons.wifi
-                        : Icons.wifi_off,
-                    color: streamingProvider.isConnectedToPlatform
-                        ? Colors.green
-                        : Colors.white,
-                  ),
-                  tooltip: streamingProvider.isConnectedToPlatform
-                      ? 'Connected to Platform'
-                      : 'Connect to Platform',
-                );
-              },
-            ),
+            const Spacer(),
             
             // Settings
             IconButton(
@@ -842,7 +747,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) => const AuthenticationScreen(),
+          builder: (context) => const SimpleSetupScreen(),
         ),
       );
     }

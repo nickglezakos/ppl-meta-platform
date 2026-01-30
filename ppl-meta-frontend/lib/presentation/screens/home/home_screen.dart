@@ -15,7 +15,13 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Eyenet Vision'),
+        title: Image.asset(
+          'assets/images/eyenet-logo.png',
+          height: 32,
+          errorBuilder: (context, error, stackTrace) {
+            return const Text('Eyenet Vision');
+          },
+        ),
         actions: [
           PopupMenuButton<String>(
             color: AppColors.widgetFill,
