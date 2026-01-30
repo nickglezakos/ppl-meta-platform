@@ -574,6 +574,91 @@ class _PlatformConnectionScreenState extends State<PlatformConnectionScreen> {
               ],
             ),
             
+            // Background Streaming Toggle
+            if (streamingProvider.isStreaming) ...[
+              const SizedBox(height: 16),
+              Card(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                child: Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.screen_lock_portrait,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Background Streaming',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Continue streaming when app is minimized',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          streamingProvider.isBackgroundServiceRunning
+                              ? '✅ Background Mode Active'
+                              : 'Enable Background Mode',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: streamingProvider.isBackgroundServiceRunning 
+                                ? FontWeight.bold 
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        subtitle: Text(
+                          streamingProvider.isBackgroundServiceRunning
+                              ? 'You can now minimize the app safely'
+                              : 'Tap to continue streaming in background',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        value: streamingProvider.isBackgroundServiceRunning,
+                        onChanged: (value) async {
+                          if (value) {
+                            await streamingProvider.startBackgroundStreaming();
+                          } else {
+                            await streamingProvider.stopBackgroundStreaming();
+                          }
+                        },
+                      ),
+                      if (streamingProvider.isBackgroundServiceRunning) ...[
+                        const Divider(),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Notification will show streaming status. Pull down notification shade to see details.',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            
             // Streaming Statistics
             if (streamingProvider.streamingStats != null) ...[
               const SizedBox(height: 16),

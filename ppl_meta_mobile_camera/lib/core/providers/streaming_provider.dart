@@ -7,6 +7,7 @@ import '../services/authentication_service.dart';
 import '../interfaces/camera_interface.dart';
 import '../../services/device_identifier_service.dart';
 import '../../services/auto_camera_registration_service.dart';
+import '../../services/background_streaming_service.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
@@ -25,6 +26,10 @@ class PlatformStreamingProvider extends ChangeNotifier {
   bool _isStreaming = false;
   StreamingConfig _streamingConfig = StreamingConfig();
   StreamingStats? _streamingStats;
+  
+  // Background streaming state
+  bool _backgroundStreamingEnabled = false;
+  bool _isBackgroundServiceRunning = false;
   
   // Discovery
   List<PlatformDiscoveryResult> _discoveredPlatforms = [];
@@ -47,6 +52,8 @@ class PlatformStreamingProvider extends ChangeNotifier {
   bool get isDiscovering => _isDiscovering;
   MobileCameraStatus get status => _status;
   String? get statusMessage => _statusMessage;
+  bool get backgroundStreamingEnabled => _backgroundStreamingEnabled;
+  bool get isBackgroundServiceRunning => _isBackgroundServiceRunning;
   
   int get connectedClients => MJPEGStreamingService.instance.clientCount;
 
@@ -513,6 +520,11 @@ class PlatformStreamingProvider extends ChangeNotifier {
     if (!_isStreaming) return;
 
     try {
+      // Stop background service if running
+      if (_isBackgroundServiceRunning) {
+        await stopBackgroundStreaming();
+      }
+
       // Stop image stream from camera
       final cameraInterface = CameraInterface.instance;
       if (cameraInterface != null) {
@@ -529,6 +541,72 @@ class PlatformStreamingProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       _statusMessage = 'Error stopping stream: $e';
+      notifyListeners();
+    }
+  }
+
+  /// Enable/disable background streaming mode
+  Future<void> setBackgroundStreamingEnabled(bool enabled) async {
+    _backgroundStreamingEnabled = enabled;
+    
+    // Save preference
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('bg_streaming_enabled', enabled);
+    
+    notifyListeners();
+  }
+
+  /// Start background streaming service
+  Future<bool> startBackgroundStreaming() async {
+    if (!_isRegistered || !_isStreaming) {
+      _statusMessage = 'Must be registered and streaming to enable background mode';
+      notifyListeners();
+      return false;
+    }
+
+    if (_isBackgroundServiceRunning) {
+      return true;
+    }
+
+    try {
+      final cameraName = _cameraInfo?.name ?? 'Mobile Camera';
+      final deviceId = _registeredDeviceId ?? 'unknown';
+      final platformUrl = _platformUrl ?? '';
+
+      // Initialize and start background service
+      await BackgroundStreamingService.instance.initialize();
+      
+      final success = await BackgroundStreamingService.instance.startService(
+        platformUrl: platformUrl,
+        deviceId: deviceId,
+        cameraName: cameraName,
+      );
+
+      if (success) {
+        _isBackgroundServiceRunning = true;
+        _statusMessage = 'Background streaming active - you can minimize the app';
+        notifyListeners();
+      }
+
+      return success;
+    } catch (e) {
+      _statusMessage = 'Failed to start background streaming: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Stop background streaming service
+  Future<void> stopBackgroundStreaming() async {
+    if (!_isBackgroundServiceRunning) return;
+
+    try {
+      await BackgroundStreamingService.instance.stopService();
+      _isBackgroundServiceRunning = false;
+      _statusMessage = 'Background streaming stopped';
+      notifyListeners();
+    } catch (e) {
+      _statusMessage = 'Error stopping background streaming: $e';
       notifyListeners();
     }
   }

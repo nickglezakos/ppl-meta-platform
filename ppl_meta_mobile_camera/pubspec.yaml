@@ -59,6 +59,10 @@ dependencies:
   wakelock_plus: ^1.2.8  # Keep screen on during streaming
   connectivity_plus: ^6.0.5  # Network connectivity monitoring
   http_parser: ^4.0.2  # For multipart HTTP streaming
+  # Background streaming dependencies
+  flutter_background_service: ^5.0.10  # Background execution support
+  flutter_local_notifications: ^17.2.1+2  # Notification support for foreground service
+  battery_plus: ^6.0.3  # Battery monitoring
 
 dev_dependencies:
   flutter_test:

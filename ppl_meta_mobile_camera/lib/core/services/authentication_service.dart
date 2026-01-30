@@ -544,16 +544,35 @@ class AuthenticationService {
   Future<bool> validateToken() async {
     try {
       if (_serverUrl.isEmpty || _authToken == null) {
+        print('❌ [VALIDATE_TOKEN] Missing server URL or token');
         return false;
       }
 
+      print('🔍 [VALIDATE_TOKEN] Validating token with platform services endpoint...');
+      
+      // Use platform services endpoint to validate token (more reliable than auth/validate)
       final response = await http.get(
-        Uri.parse('$_serverUrl/api/v1/auth/validate'),
-        headers: getAuthHeaders(),
-      );
+        Uri.parse('$_serverUrl/api/v1/users/platform/services'),
+        headers: {
+          'Authorization': 'Bearer $_authToken',
+          'Accept': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 10));
 
-      return response.statusCode == 200;
+      print('📥 [VALIDATE_TOKEN] Response status: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        print('✅ [VALIDATE_TOKEN] Token is valid');
+        return true;
+      } else if (response.statusCode == 401) {
+        print('❌ [VALIDATE_TOKEN] Token is invalid or expired');
+        return false;
+      } else {
+        print('⚠️ [VALIDATE_TOKEN] Unexpected status code: ${response.statusCode}');
+        return false;
+      }
     } catch (e) {
+      print('💥 [VALIDATE_TOKEN] Validation error: $e');
       return false;
     }
   }

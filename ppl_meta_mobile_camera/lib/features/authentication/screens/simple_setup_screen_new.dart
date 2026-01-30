@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../services/simplified_discovery_client.dart';
 import '../../../services/discovery_based_authentication_service.dart';
 import '../../../services/discovery_config_service.dart';
 import '../../../core/providers/authentication_provider.dart';
+import '../../../core/services/authentication_service.dart';
 
 class SimpleSetupScreen extends StatefulWidget {
   const SimpleSetupScreen({super.key});
@@ -13,6 +15,12 @@ class SimpleSetupScreen extends StatefulWidget {
 }
 
 class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
+  // Storage keys for persistent credentials
+  static const String _backendIPKey = 'saved_backend_ip';
+  static const String _portKey = 'saved_port';
+  static const String _usernameKey = 'saved_username';
+  static const String _passwordKey = 'saved_password';
+  
   final _backendIPController = TextEditingController(text: '');
   final _portController = TextEditingController(text: '8006');
   final _usernameController = TextEditingController();
@@ -20,17 +28,114 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
   final _formKey = GlobalKey<FormState>();
   
   bool _isLoading = false;
+  bool _isAttemptingAutoLogin = true;
   String? _errorMessage;
   bool _isHowTosExpanded = false;
+  bool _hasStoredCredentials = false;
 
   @override
   void initState() {
     super.initState();
-    // No automatic detection - user must input complete backend IP
+    _attemptAutoLogin();
   }
 
-  Future<void> _connectAndAuthenticate() async {
-    if (!_formKey.currentState!.validate()) return;
+  /// Attempt automatic login with stored credentials
+  Future<void> _attemptAutoLogin() async {
+    try {
+      final authService = AuthenticationService.instance;
+      
+      // Check if we have a valid token already
+      if (authService.isAuthenticated && authService.authToken != null) {
+        print('🔐 Existing authentication found, validating token...');
+        
+        // Validate the existing token
+        final isValid = await authService.validateToken();
+        if (isValid) {
+          print('✅ Existing token is valid, auto-login successful');
+          // Update provider state
+          if (mounted) {
+            final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
+            authProvider.notifyListeners();
+          }
+          return;
+        } else {
+          print('⚠️ Existing token is invalid, clearing credentials');
+          await authService.clearCredentials();
+        }
+      }
+      
+      // Load saved credentials
+      final prefs = await SharedPreferences.getInstance();
+      final savedBackendIP = prefs.getString(_backendIPKey);
+      final savedPort = prefs.getString(_portKey);
+      final savedUsername = prefs.getString(_usernameKey);
+      final savedPassword = prefs.getString(_passwordKey);
+      
+      if (savedBackendIP != null && savedUsername != null && savedPassword != null) {
+        print('🔑 Found stored credentials, attempting auto-login...');
+        setState(() {
+          _hasStoredCredentials = true;
+          _isLoading = true;
+        });
+        
+        // Set controllers with saved values
+        _backendIPController.text = savedBackendIP;
+        _portController.text = savedPort ?? '8006';
+        _usernameController.text = savedUsername;
+        _passwordController.text = savedPassword;
+        
+        // Attempt automatic connection and authentication
+        await _connectAndAuthenticate(isAutoLogin: true);
+      } else {
+        print('📝 No stored credentials found, showing login form');
+        setState(() {
+          _hasStoredCredentials = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Auto-login error: $e');
+      setState(() {
+        _errorMessage = 'Auto-login failed. Please login manually.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAttemptingAutoLogin = false;
+        });
+      }
+    }
+  }
+
+  /// Save credentials to persistent storage
+  Future<void> _saveCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_backendIPKey, _backendIPController.text.trim());
+      await prefs.setString(_portKey, _portController.text.trim());
+      await prefs.setString(_usernameKey, _usernameController.text.trim());
+      await prefs.setString(_passwordKey, _passwordController.text.trim());
+      print('✅ Credentials saved to persistent storage');
+    } catch (e) {
+      print('❌ Failed to save credentials: $e');
+    }
+  }
+
+  /// Clear stored credentials
+  Future<void> _clearStoredCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_backendIPKey);
+      await prefs.remove(_portKey);
+      await prefs.remove(_usernameKey);
+      await prefs.remove(_passwordKey);
+      print('🗑️ Stored credentials cleared');
+    } catch (e) {
+      print('❌ Failed to clear credentials: $e');
+    }
+  }
+
+  Future<void> _connectAndAuthenticate({bool isAutoLogin = false}) async {
+    if (!isAutoLogin && !_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
@@ -85,6 +190,9 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
       if (loginSuccess) {
         print('🎉 Authentication successful! App state updated.');
         
+        // Save credentials for future auto-login
+        await _saveCredentials();
+        
         // Navigation will be handled automatically by MainNavigator
         // since AuthenticationProvider.isAuthenticated is now true
         
@@ -97,6 +205,12 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
         _errorMessage = 'Connection failed: $e';
       });
       print('❌ Setup failed: $e');
+      
+      // If auto-login failed, clear stored credentials
+      if (isAutoLogin) {
+        await _clearStoredCredentials();
+        print('🗑️ Cleared invalid stored credentials');
+      }
     } finally {
       setState(() {
         _isLoading = false;
@@ -106,9 +220,56 @@ class _SimpleSetupScreenState extends State<SimpleSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading screen during auto-login attempt
+    if (_isAttemptingAutoLogin) {
+      return Scaffold(
+        appBar: AppBar(
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(
+                'Checking saved credentials...',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
+        actions: [
+          // Add logout button if credentials are stored
+          if (_hasStoredCredentials)
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'Clear saved credentials',
+              onPressed: () async {
+                await _clearStoredCredentials();
+                await AuthenticationService.instance.clearCredentials();
+                setState(() {
+                  _hasStoredCredentials = false;
+                  _backendIPController.clear();
+                  _usernameController.clear();
+                  _passwordController.clear();
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Credentials cleared. Please login again.')),
+                  );
+                }
+              },
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
