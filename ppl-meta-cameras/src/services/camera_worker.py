@@ -133,6 +133,11 @@ class CameraWorker:
         self.frames_dropped = 0
         self.last_frame_time = 0.0
         
+        # FPS tracking for accurate recording
+        self.frame_timestamps: List[float] = []  # Track recent frame timestamps
+        self.max_fps_samples = 30  # Use last 30 frames to calculate FPS
+        self.measured_fps: Optional[float] = None  # Actual measured FPS
+        
         # Recording state - ALL recording happens in worker thread
         self.is_recording = False
         self.video_writer: Optional[cv2.VideoWriter] = None
@@ -316,6 +321,15 @@ class CameraWorker:
                 result = self.command_results.pop(cmd_id)
                 return result
         return None
+    
+    def get_measured_fps(self) -> Optional[float]:
+        """
+        Get the measured FPS from recent frames.
+        
+        Returns:
+            Measured FPS if available (based on last 30 frames), None if not enough data
+        """
+        return self.measured_fps
     
     def wait_for_result(self, cmd_id: str, timeout: float = 15.0) -> Dict[str, Any]:
         """
@@ -746,7 +760,19 @@ class CameraWorker:
             if ret and frame is not None:
                 self.frame_buffer.append(frame)
                 self.frames_read += 1
-                self.last_frame_time = time.time()
+                current_time = time.time()
+                self.last_frame_time = current_time
+                
+                # 📊 Track frame timestamps for FPS measurement
+                self.frame_timestamps.append(current_time)
+                if len(self.frame_timestamps) > self.max_fps_samples:
+                    self.frame_timestamps.pop(0)
+                
+                # Calculate measured FPS from recent frames
+                if len(self.frame_timestamps) >= 2:
+                    time_span = self.frame_timestamps[-1] - self.frame_timestamps[0]
+                    if time_span > 0:
+                        self.measured_fps = (len(self.frame_timestamps) - 1) / time_span
                 
                 # 🎥 INTEGRATED RECORDING: Write frame if recording (all in worker thread)
                 if self.is_recording and self.video_writer:
@@ -962,7 +988,18 @@ class CameraWorker:
             session_info = self.recording_session_info or {}
             width = session_info.get('width', 1280)
             height = session_info.get('height', 720)
-            fps = session_info.get('fps', 30)
+            
+            # 📊 Re-measure FPS for new segment (frame rate may have changed)
+            # Don't use cached FPS from session_info - measure current rate
+            if self.measured_fps and self.measured_fps > 1.0:
+                fps = min(round(self.measured_fps, 2), 30.0)  # Keep decimals for accuracy
+                logger.info(f"📊 [ROTATION] Re-measured FPS for segment {self.current_segment_index + 1}: {self.measured_fps:.2f} → {fps} fps")
+            else:
+                fps = session_info.get('fps', 30.0)
+                logger.warning(f"⚠️ [ROTATION] Measured FPS not available, using {fps} fps from session")
+            
+            # Update session_info with new FPS for this segment
+            session_info['fps'] = fps
             
             # Create new VideoWriter (blocking but in worker thread = OK)
             fourcc = cv2.VideoWriter_fourcc(*'H264')

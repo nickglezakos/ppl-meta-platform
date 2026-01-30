@@ -1137,7 +1137,16 @@ class CameraDetectionService:
         
         # Get recording parameters from frame
         height, width = frame.shape[:2]
-        fps = 30  # Standard recording FPS
+        
+        # 📊 Use measured FPS from worker (actual frame rate) instead of hardcoded value
+        # Mobile cameras may send frames at lower rates (5-10 fps) which causes fast playback if we use 30 fps
+        measured_fps = worker.get_measured_fps()
+        if measured_fps and measured_fps > 1.0:
+            fps = min(round(measured_fps, 2), 30.0)  # Cap at 30 fps, keep decimals for accuracy
+            logger.info(f"📊 Using measured FPS: {measured_fps:.2f} → {fps} fps for recording")
+        else:
+            fps = 30.0  # Fallback to 30 fps if measurement not available yet
+            logger.warning(f"⚠️ Measured FPS not available, using default {fps} fps")
 
         # Create session directory
         session_dir = os.path.join("recordings", device_id, session_uuid)
