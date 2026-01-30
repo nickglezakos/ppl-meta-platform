@@ -305,22 +305,6 @@ class MobileCameraStreamingService:
         """Receive and store a frame from a mobile camera."""
 
         try:
-            # Check if camera has been stopped - reject frames
-            if device_id in self.stopped_cameras:
-                stop_time = self.stopped_cameras[device_id]
-                elapsed = time.time() - stop_time
-                logger.warning(
-                    f"🚫 Rejecting frame from stopped camera {device_id} (stopped {elapsed:.1f}s ago)"
-                )
-                return False
-            
-            logger.debug(
-                f"📱 [MOBILE_SERVICE_DEBUG] Storing frame with orientation: {orientation}, rotation: {rotation_angle}"
-            )
-            logger.debug(
-                f"📱 [MOBILE_SERVICE_DEBUG] Frame shape: {frame.shape}, timestamp: {timestamp}"
-            )
-
             # Check if we have an active stream for this device, if not create it
             if device_id not in self.active_mobile_streams:
                 logger.info(f"Auto-setting up mobile camera stream for {device_id}")
@@ -345,6 +329,22 @@ class MobileCameraStreamingService:
                         f"Failed to auto-setup mobile camera stream for {device_id}"
                     )
                     return False
+
+            # Check if camera has been stopped - reject frames (but only after checking for restart)
+            if device_id in self.stopped_cameras:
+                stop_time = self.stopped_cameras[device_id]
+                elapsed = time.time() - stop_time
+                logger.warning(
+                    f"🚫 Rejecting frame from stopped camera {device_id} (stopped {elapsed:.1f}s ago)"
+                )
+                return False
+            
+            logger.debug(
+                f"📱 [MOBILE_SERVICE_DEBUG] Storing frame with orientation: {orientation}, rotation: {rotation_angle}"
+            )
+            logger.debug(
+                f"📱 [MOBILE_SERVICE_DEBUG] Frame shape: {frame.shape}, timestamp: {timestamp}"
+            )
 
             stream_info = self.active_mobile_streams[device_id]
             frame_queue = self.stream_queues[device_id]

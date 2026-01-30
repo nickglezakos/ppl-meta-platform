@@ -186,6 +186,12 @@ async def video_stream(
                         if frame.shape[1] != width or frame.shape[0] != height:
                             frame = cv2.resize(frame, (width, height))
 
+                    # Convert RGB to BGR for mobile cameras (JPEG is RGB, OpenCV expects BGR)
+                    if is_mobile and len(frame.shape) == 3 and frame.shape[2] == 3:
+                        # Check if frame is RGB (mobile cameras store as RGB from JPEG)
+                        # OpenCV imencode expects BGR
+                        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
                     # Encode frame as JPEG
                     _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                     frame_bytes = buffer.tobytes()

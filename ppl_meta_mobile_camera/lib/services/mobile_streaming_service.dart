@@ -353,6 +353,7 @@ class MobileStreamingService {
           final int g = (yValue - 0.344 * (uValue - 128) - 0.714 * (vValue - 128)).clamp(0, 255).toInt();
           final int b = (yValue + 1.772 * (uValue - 128)).clamp(0, 255).toInt();
           
+          // Store as RGB (JPEG standard format)
           final int rgbIndex = (y * width + x) * 3;
           rgbBytes[rgbIndex] = r;
           rgbBytes[rgbIndex + 1] = g;

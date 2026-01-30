@@ -315,6 +315,7 @@ async def receive_mobile_camera_frame(
             frame_bytes = base64.b64decode(frame_data.frame_data)
 
             # Convert to numpy array for processing
+            # Store as RGB (JPEG format), convert to BGR later when needed
             image = Image.open(io.BytesIO(frame_bytes))
             frame = np.array(image)
 
