@@ -108,11 +108,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
         _logger.i('AuthNotifier: Authentication valid, setting authenticated state');
         state = AuthState.authenticated(user);
       } else {
-        _logger.w('AuthNotifier: User is null despite having token, setting unauthenticated');
+        // Check if we still have a token - if yes, it might be a temporary network issue
+        final tokenAfterCheck = await _authService.getToken();
+        if (tokenAfterCheck != null) {
+          _logger.w('AuthNotifier: User fetch failed but token still exists - keeping current auth state (might be network issue)');
+          // Don't change state if we still have a token - could be temporary network issue
+          // Only set unauthenticated if the token was actually cleared
+          if (state.isAuthenticated) {
+            _logger.i('AuthNotifier: Keeping existing authenticated state despite temporary user fetch failure');
+            return;
+          }
+        }
+        _logger.w('AuthNotifier: User is null and token cleared, setting unauthenticated');
         state = const AuthState.unauthenticated();
       }
     } catch (e) {
       _logger.e('AuthNotifier: checkAuth error: $e');
+      // Don't automatically set to unauthenticated on errors - check if we still have a token
+      final token = await _authService.getToken();
+      if (token != null && state.isAuthenticated) {
+        _logger.w('AuthNotifier: checkAuth failed but token exists - keeping authenticated state (network error)');
+        return;
+      }
       state = const AuthState.unauthenticated();
     }
   }
@@ -141,9 +158,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return true;
     } catch (e) {
       _logger.e('AuthNotifier: Login error: $e');
+      // Extract user-friendly error message
+      String errorMessage = 'Login failed';
+      if (e is AuthenticationException) {
+        errorMessage = e.message;
+      } else if (e.toString().contains('Invalid email or password')) {
+        errorMessage = 'Invalid email or password';
+      } else if (e.toString().contains('Invalid credentials')) {
+        errorMessage = 'Invalid credentials';
+      } else if (e.toString().contains('Connection')) {
+        errorMessage = 'Connection error. Please check your internet.';
+      } else {
+        errorMessage = 'Login failed. Please try again.';
+      }
+      
       state = state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error: errorMessage,
       );
       return false;
     }

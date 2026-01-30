@@ -2,9 +2,10 @@
 from fastapi import Request, HTTPException, Depends
 from jose import JWTError, jwt
 from typing import Dict, Any
+import os
 
 # JWT Configuration (should match Node service config)
-JWT_SECRET_KEY = "ppl-meta-secret-key-development-only-change-in-production"
+JWT_SECRET_KEY = os.getenv("SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production")
 JWT_ALGORITHM = "HS256"
 
 

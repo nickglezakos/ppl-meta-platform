@@ -429,9 +429,11 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       }
 
     } catch (e) {
-      setState(() {
-        _workflowError = 'Failed to initialize smart playback: ${e.toString()}';
-      });
+      if (mounted) {
+        setState(() {
+          _workflowError = 'Failed to initialize smart playback: ${e.toString()}';
+        });
+      }
       debugPrint('Smart playback initialization error: $e');
       
       // Fallback to basic playback
@@ -822,9 +824,11 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     }
     
     try {
-      setState(() {
-        _isLoadingFaces = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingFaces = true;
+        });
+      }
       
       debugPrint('[LOAD FACES] Calling Enhanced Logic V2 for ${widget.mediaItem.uuid}');
       
@@ -936,24 +940,30 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         globalManager.storeFaceData(widget.mediaItem.uuid, memoryCache, storedFacesByFrame);
         debugPrint('[LOAD FACES] 📦 Stored ${memoryCache.keys.length} frames in global cache');
         
-        setState(() {
-          _storedFaceData = faces;
-          _faceDataSource = 'enhanced_logic_v2_api';
-          _isLoadingFaces = false;
-        });
+        if (mounted) {
+          setState(() {
+            _storedFaceData = faces;
+            _faceDataSource = 'enhanced_logic_v2_api';
+            _isLoadingFaces = false;
+          });
+        }
         
         debugPrint('[LOAD FACES] ✅ Loaded ${faces.length} faces from Enhanced Logic V2');
       } else {
         debugPrint('[LOAD FACES] ⚠️ No faces returned from Enhanced Logic V2');
+        if (mounted) {
+          setState(() {
+            _isLoadingFaces = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[LOAD FACES] ❌ Error loading faces: $e');
+      if (mounted) {
         setState(() {
           _isLoadingFaces = false;
         });
       }
-    } catch (e) {
-      debugPrint('[LOAD FACES] ❌ Error loading faces: $e');
-      setState(() {
-        _isLoadingFaces = false;
-      });
     }
   }
 
@@ -1189,10 +1199,12 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     // This prevents faces from showing during initial load/pause at frame 0
     if (!_hasPlaybackStarted) {
       if (_currentFrameFaces.isNotEmpty || _faceFirstSeenFrame.isNotEmpty) {
-        setState(() {
-          _currentFrameFaces = [];
-          _faceFirstSeenFrame.clear();
-        });
+        if (mounted) {
+          setState(() {
+            _currentFrameFaces = [];
+            _faceFirstSeenFrame.clear();
+          });
+        }
         debugPrint('🚫 Playback not started - clearing faces');
       }
       return;

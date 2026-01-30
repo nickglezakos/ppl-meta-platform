@@ -30,10 +30,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authNotifierProvider);
     final authNotifier = ref.read(authNotifierProvider.notifier);
 
+    // Debug: Log current auth state
+    print('🔐 LoginScreen build - authState.error: ${authState.error}');
+    print('🔐 LoginScreen build - authState.isLoading: ${authState.isLoading}');
+    print('🔐 LoginScreen build - authState.isAuthenticated: ${authState.isAuthenticated}');
+
     // Navigate to home if authenticated
     ref.listen(authNotifierProvider, (previous, current) {
       if (current.isAuthenticated && !current.isLoading) {
         context.go('/home');
+      }
+      
+      // Show error notification if login failed
+      if (previous != null && 
+          previous.isLoading && 
+          !current.isLoading && 
+          current.error != null && 
+          mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text(current.error!)),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     });
 

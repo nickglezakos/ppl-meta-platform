@@ -5,8 +5,8 @@ import '../../../utils/offline_fonts.dart';
 class AppColors {
   // Primary colors (Material 3 compatible)
   static const Color primary = Color(0xFF1976D2);
-  static const Color secondary = Color(0xFF2196F3);
-  static const Color accent = Color(0xFF2196F3);
+  static const Color secondary = Color(0xFF22d3ee);
+  static const Color accent = Color(0xFF22d3ee);
   static const Color surface = Color(0xFF0A0A0F);
   static const Color surfaceVariant = Color(0xFF0F0F14);
   static const Color background = Color(0xFF0A0A0F);

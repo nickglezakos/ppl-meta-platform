@@ -74,6 +74,11 @@ class AuthService {
 
   // Login method
   Future<AuthResponse> login(String email, String password) async {
+    // Clear any existing tokens before attempting new login
+    print('AuthService: Clearing any existing tokens before login attempt');
+    await _clearStoredData();
+    _apiClient.clearAuthToken();
+    
     try {
       // Use URL-encoded format (not FormData which is for multipart/form-data)
       final response = await _apiClient.post(
@@ -96,6 +101,10 @@ class AuthService {
       
       return authResponse;
     } on DioException catch (e) {
+      // Login failed - ensure tokens remain cleared
+      print('AuthService: Login failed, ensuring tokens are cleared');
+      await _clearStoredData();
+      _apiClient.clearAuthToken();
       throw _handleApiError(e);
     }
   }

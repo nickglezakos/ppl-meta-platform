@@ -31,29 +31,11 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
 
     try {
       final authNotifier = ref.read(authNotifierProvider.notifier);
-      final success = await authNotifier.login(
+      await authNotifier.login(
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
-
-      if (success && mounted) {
-        context.go('/home');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Login failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      // Navigation and error handling done by ref.listen above
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -63,6 +45,43 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authNotifierProvider);
+    
+    // Debug: Log current auth state
+    print('🔐 NewLoginScreen build - error: ${authState.error}');
+    print('🔐 NewLoginScreen build - isLoading: ${authState.isLoading}');
+    
+    // Listen for auth state changes to show error notifications
+    ref.listen(authNotifierProvider, (previous, current) {
+      if (previous != null && 
+          previous.isLoading && 
+          !current.isLoading && 
+          current.error != null && 
+          mounted) {
+        print('🔴 NewLoginScreen: Showing error SnackBar: ${current.error}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text(current.error!)),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      
+      // Navigate to home on successful login
+      if (current.isAuthenticated && !current.isLoading && mounted) {
+        print('✅ NewLoginScreen: Login successful, navigating to home');
+        context.go('/home');
+      }
+    });
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sign In'),

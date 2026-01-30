@@ -218,7 +218,8 @@ PPL_META_CONFIG = {
 }
 
 # JWT Configuration (should match Node service and Gateway config)
-JWT_SECRET_KEY = "RA6XfYJZqhz-_MAbGMhGCoQz1KGIKecLTb3RkLVOUr4"
+import os
+JWT_SECRET_KEY = os.getenv("SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production")
 JWT_ALGORITHM = "HS256"
 
 

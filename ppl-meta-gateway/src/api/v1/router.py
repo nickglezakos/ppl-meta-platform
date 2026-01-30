@@ -17,6 +17,10 @@ sys.path.append(parent_dir)
 
 api_router = APIRouter()
 
+# JWT Configuration
+JWT_SECRET_KEY = os.getenv("SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production")
+JWT_ALGORITHM = "HS256"
+
 
 async def _stream_proxy_response(target_url: str, headers: dict, query_params):
     """Stream proxy response for MJPEG video streaming."""
