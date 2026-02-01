@@ -7,9 +7,9 @@ camera:
     height: 720
     width: 1280
 device:
-  id: edge-camera-001
-  location: test-location
-  name: Laptop USB Camera
+  id: null  # Auto-generated from hostname (edge-camera-{hostname})
+  location: unknown
+  name: Edge Camera
   type: edge
 logging:
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

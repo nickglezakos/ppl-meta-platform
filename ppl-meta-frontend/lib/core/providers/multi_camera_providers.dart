@@ -366,6 +366,40 @@ class CameraActions {
       return false;
     }
   }
+
+  /// Archive a camera (hide from default camera list)
+  Future<bool> archiveCamera(String deviceId) async {
+    print('🗃️ [CameraActions] Archiving camera: $deviceId');
+    try {
+      await _cameraService.archiveCamera(deviceId);
+      print('✅ [CameraActions] Archive successful, refreshing cameras');
+      
+      // Refresh all camera providers
+      await refreshAllCameras();
+      
+      return true;
+    } catch (e) {
+      print('❌ [CameraActions] Error archiving camera: $e');
+      return false;
+    }
+  }
+
+  /// Unarchive a camera (restore to default camera list)
+  Future<bool> unarchiveCamera(String deviceId) async {
+    print('🗃️ [CameraActions] Unarchiving camera: $deviceId');
+    try {
+      await _cameraService.unarchiveCamera(deviceId);
+      print('✅ [CameraActions] Unarchive successful, refreshing cameras');
+      
+      // Refresh all camera providers
+      await refreshAllCameras();
+      
+      return true;
+    } catch (e) {
+      print('❌ [CameraActions] Error unarchiving camera: $e');
+      return false;
+    }
+  }
 }
 
 /// Active cameras filter provider

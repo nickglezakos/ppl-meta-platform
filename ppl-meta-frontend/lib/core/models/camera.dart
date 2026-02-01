@@ -31,6 +31,9 @@ class Camera {
   final bool showPerformanceIndicators;
   final String defaultPlaybackMode;
   final double mvrQualityThreshold;
+  
+  // Archive status
+  final bool archived;
 
   const Camera({
     required this.id,
@@ -58,6 +61,7 @@ class Camera {
     this.showPerformanceIndicators = true,
     this.defaultPlaybackMode = 'auto',
     this.mvrQualityThreshold = 0.20,
+    this.archived = false,
   });
 
   factory Camera.fromJson(Map<String, dynamic> json) {
@@ -118,6 +122,7 @@ class Camera {
       showPerformanceIndicators: json['show_performance_indicators'] as bool? ?? true,
       defaultPlaybackMode: json['default_playback_mode'] as String? ?? 'auto',
       mvrQualityThreshold: (json['mvr_quality_threshold'] as num?)?.toDouble() ?? 0.20,
+      archived: json['archived'] as bool? ?? false,
     );
   }
 
@@ -148,6 +153,7 @@ class Camera {
       'show_performance_indicators': showPerformanceIndicators,
       'default_playback_mode': defaultPlaybackMode,
       'mvr_quality_threshold': mvrQualityThreshold,
+      'archived': archived,
     };
   }
 
@@ -176,6 +182,7 @@ class Camera {
     bool? showPerformanceIndicators,
     String? defaultPlaybackMode,
     double? mvrQualityThreshold,
+    bool? archived,
   }) {
     return Camera(
       id: id ?? this.id,
@@ -202,6 +209,7 @@ class Camera {
       showPerformanceIndicators: showPerformanceIndicators ?? this.showPerformanceIndicators,
       defaultPlaybackMode: defaultPlaybackMode ?? this.defaultPlaybackMode,
       mvrQualityThreshold: mvrQualityThreshold ?? this.mvrQualityThreshold,
+      archived: archived ?? this.archived,
     );
   }
 

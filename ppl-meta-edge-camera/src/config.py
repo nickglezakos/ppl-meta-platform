@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings
 
 class DeviceConfig(BaseModel):
     """Device configuration."""
-    id: str
+    id: Optional[str] = None  # Allow None, will be auto-generated from MAC address if not set
     name: str
     location: str
     type: str = "usb"

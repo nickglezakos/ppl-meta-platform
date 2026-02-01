@@ -1238,6 +1238,23 @@ async def get_rtsp_camera(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+# Camera Archive Routes
+@api_router.post("/cameras/{device_id}/archive")
+async def archive_camera(request: Request):
+    """Proxy archive camera to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/{device_id}/unarchive")
+async def unarchive_camera(request: Request):
+    """Proxy unarchive camera to Cameras service."""
+    # Validate authentication first
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
 # Camera Pipeline Settings Routes
 @api_router.get("/cameras/{device_id}/pipeline-settings")
 async def get_camera_pipeline_settings(request: Request):

@@ -85,6 +85,7 @@ class Camera(Base):
     last_seen = Column(DateTime, default=func.now())
     last_error = Column(Text)
     is_active = Column(Boolean, default=True)
+    archived = Column(Boolean, default=False, index=True)  # Archive status for hiding cameras
 
     # Pipeline Configuration (Instant Detection + Recording Decoupling)
     instant_detection_enabled = Column(Boolean, default=True)

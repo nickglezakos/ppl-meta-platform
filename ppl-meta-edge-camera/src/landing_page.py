@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 import socket
+import uuid
 from pathlib import Path
 
 from .config_manager import ConfigManager
@@ -27,14 +28,16 @@ def get_local_ip() -> str:
 
 
 def get_device_id() -> str:
-    """Get device ID from config or hostname."""
+    """Get device ID from config or generate from MAC address."""
     config = ConfigManager.get_config()
     device_id = config.get("device_id")
     
     if not device_id:
-        # Fallback to hostname
-        hostname = socket.gethostname()
-        device_id = f"edge-camera-{hostname}"
+        # Generate unique ID from MAC address
+        mac = uuid.getnode()
+        mac_hex = f"{mac:012x}"  # Convert to 12-char hex string
+        # Use last 8 characters of MAC for shorter ID
+        device_id = f"edge-camera-{mac_hex[-8:]}"
     
     return device_id
 

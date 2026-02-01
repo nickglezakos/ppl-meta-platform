@@ -6,11 +6,13 @@ import sys
 import time
 import threading
 import socket
+import uuid
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, Response, Depends, Query
 from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 
@@ -404,6 +406,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Mount static files
+import os
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 
 @app.get("/health")
 async def health_check():
@@ -458,13 +466,16 @@ def get_local_ip() -> str:
 
 
 def get_device_id() -> str:
-    """Get device ID from config or hostname."""
+    """Get device ID from config or generate from MAC address."""
     config = get_config()
     device_id = config.device.id if config.device else None
     
     if not device_id:
-        hostname = socket.gethostname()
-        device_id = f"edge-camera-{hostname}"
+        # Generate unique ID from MAC address
+        mac = uuid.getnode()
+        mac_hex = f"{mac:012x}"  # Convert to 12-char hex string
+        # Use last 8 characters of MAC for shorter ID
+        device_id = f"edge-camera-{mac_hex[-8:]}"
     
     return device_id
 
@@ -476,179 +487,299 @@ async def root():
     device_id = get_device_id()
     config = get_config()
     
-    is_configured = bool(config.platform.discovery_url)
-    status_text = "✅ Connected to Platform" if is_configured else "⚫ Waiting for Configuration"
-    
     html_content = f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>PPL Meta Edge Camera - Setup</title>
+        <title>Eyenet Vision Edge Camera</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: #121212;
                 min-height: 100vh;
+                color: #E0E0E0;
+            }}
+            .header {{
+                background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+                padding: 24px 32px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            }}
+            .header-content {{
+                max-width: 1200px;
+                margin: 0 auto;
                 display: flex;
                 align-items: center;
-                justify-content: center;
-                padding: 20px;
+                gap: 16px;
+            }}
+            .logo {{
+                height: 40px;
+                width: auto;
+            }}
+            .logo img {{
+                height: 100%;
+                width: auto;
+            }}
+            .header-title {{
+                flex: 1;
+            }}
+            .header-title h1 {{
+                color: white;
+                font-size: 22px;
+                font-weight: 600;
+                margin-bottom: 4px;
+            }}
+            .header-title p {{
+                color: rgba(255,255,255,0.9);
+                font-size: 14px;
             }}
             .container {{
-                background: white;
-                border-radius: 20px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                max-width: 600px;
-                width: 100%;
-                padding: 40px;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 32px;
             }}
-            .header {{ text-align: center; margin-bottom: 30px; }}
-            .camera-icon {{ font-size: 64px; margin-bottom: 10px; }}
-            h1 {{ color: #333; font-size: 28px; margin-bottom: 10px; }}
-            .status {{
-                display: inline-block;
-                padding: 8px 16px;
-                border-radius: 20px;
-                font-size: 14px;
-                font-weight: 600;
-                background: {'#d4edda' if is_configured else '#f0f0f0'};
-                color: {'#155724' if is_configured else '#666'};
-                margin-top: 10px;
-            }}
-            .info-section {{
-                background: #f8f9fa;
+            .card {{
+                background: #1E1E1E;
                 border-radius: 12px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
                 padding: 24px;
-                margin: 20px 0;
+                margin-bottom: 24px;
+                border: 1px solid #2A2A2A;
             }}
-            .info-row {{
+            .card-title {{
+                font-size: 18px;
+                font-weight: 600;
+                color: #E0E0E0;
+                margin-bottom: 16px;
                 display: flex;
-                justify-content: space-between;
-                padding: 12px 0;
-                border-bottom: 1px solid #e0e0e0;
+                align-items: center;
+                gap: 8px;
             }}
-            .info-row:last-child {{ border-bottom: none; }}
-            .info-label {{ font-weight: 600; color: #666; }}
+            .card-icon {{
+                font-size: 24px;
+            }}
+            .info-grid {{
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 16px;
+            }}
+            .info-item {{
+                padding: 16px;
+                background: #2A2A2A;
+                border-radius: 8px;
+                border-left: 4px solid #2196F3;
+            }}
+            .info-label {{
+                font-size: 12px;
+                color: #9E9E9E;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 8px;
+            }}
             .info-value {{
                 font-family: 'Courier New', monospace;
-                color: #333;
+                font-size: 16px;
+                color: #E0E0E0;
                 font-weight: 500;
+                display: flex;
+                align-items: center;
+                gap: 8px;
             }}
             .copy-btn {{
-                background: #667eea;
+                background: #2196F3;
                 color: white;
                 border: none;
-                padding: 4px 12px;
+                padding: 6px 12px;
                 border-radius: 6px;
                 cursor: pointer;
                 font-size: 12px;
-                margin-left: 8px;
+                font-weight: 600;
+                transition: background 0.2s;
             }}
-            .copy-btn:hover {{ background: #5568d3; }}
+            .copy-btn:hover {{
+                background: #1976D2;
+            }}
+            .copy-btn:active {{
+                transform: scale(0.95);
+            }}
             .instructions {{
-                background: #fff3cd;
-                border-left: 4px solid #ffc107;
+                background: #2A2012;
+                border-left: 4px solid #FF9800;
                 padding: 20px;
-                margin: 20px 0;
                 border-radius: 8px;
-                {'display: none;' if is_configured else ''}
             }}
-            .instructions h2 {{ color: #856404; font-size: 18px; margin-bottom: 12px; }}
-            .instructions ol {{ margin-left: 20px; color: #856404; }}
-            .instructions li {{ margin: 8px 0; line-height: 1.6; }}
-            .api-endpoints {{ margin: 20px 0; }}
-            .api-endpoints h3 {{ color: #333; font-size: 16px; margin-bottom: 12px; }}
-            .endpoint {{
-                background: #e9ecef;
-                padding: 10px;
-                border-radius: 6px;
+            .instructions-title {{
+                color: #FFB74D;
+                font-size: 18px;
+                font-weight: 600;
+                margin-bottom: 12px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }}
+            .instructions ol {{
+                margin-left: 20px;
+                color: #FFCC80;
+                line-height: 1.8;
+            }}
+            .instructions li {{
                 margin: 8px 0;
-                font-family: 'Courier New', monospace;
-                font-size: 13px;
             }}
-            .endpoint-label {{ color: #667eea; font-weight: bold; margin-right: 8px; }}
-            .footer {{ text-align: center; margin-top: 30px; color: #999; font-size: 14px; }}
+            .instructions code {{
+                background: rgba(255,255,255,0.1);
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-family: 'Courier New', monospace;
+                color: #E0E0E0;
+            }}
+            .endpoint-grid {{
+                display: grid;
+                gap: 12px;
+            }}
+            .endpoint {{
+                background: #2A2A2A;
+                padding: 16px;
+                border-radius: 8px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }}
+            .endpoint-label {{
+                color: #64B5F6;
+                font-weight: 600;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+            .endpoint-url {{
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                color: #E0E0E0;
+                word-break: break-all;
+            }}
+            .footer {{
+                text-align: center;
+                padding: 32px;
+                color: #757575;
+                font-size: 14px;
+            }}
+            .success-badge {{
+                background: #1B5E20;
+                color: #81C784;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: 600;
+            }}
         </style>
     </head>
     <body>
-        <div class="container">
-            <div class="header">
-                <div class="camera-icon">🎥</div>
-                <h1>PPL Meta Edge Camera</h1>
-                <div class="status">{status_text}</div>
+        <div class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <img src="/static/images/eyenet-logo.png" alt="Eyenet Logo">
+                </div>
+                <div class="header-title">
+                    <h1>Eyenet Vision Edge Camera</h1>
+                    <p>Device Management & Configuration</p>
+                </div>
             </div>
-            
-            <div class="info-section">
-                <div class="info-row">
-                    <span class="info-label">Device ID:</span>
-                    <span class="info-value">
-                        {device_id}
-                        <button class="copy-btn" onclick="copyToClipboard('{device_id}')">Copy</button>
-                    </span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">IP Address:</span>
-                    <span class="info-value">
-                        {ip_address}
-                        <button class="copy-btn" onclick="copyToClipboard('{ip_address}')">Copy</button>
-                    </span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Management Port:</span>
-                    <span class="info-value">9001</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Streaming Port:</span>
-                    <span class="info-value">8554 (RTSP)</span>
+        </div>
+        
+        <div class="container">
+            <div class="card">
+                <h2 class="card-title">
+                    <span class="card-icon">📱</span>
+                    Device Information
+                </h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Device ID</div>
+                        <div class="info-value">
+                            {device_id}
+                            <button class="copy-btn" onclick="copyToClipboard('{device_id}')">Copy</button>
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">IP Address</div>
+                        <div class="info-value">
+                            {ip_address}
+                            <button class="copy-btn" onclick="copyToClipboard('{ip_address}')">Copy</button>
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Management Port</div>
+                        <div class="info-value">9001</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Camera Type</div>
+                        <div class="info-value">Edge Camera (RPi)</div>
+                    </div>
                 </div>
             </div>
             
             <div class="instructions">
-                <h2>📝 Setup Instructions</h2>
+                <h2 class="instructions-title">
+                    <span>📝</span>
+                    Quick Setup Guide
+                </h2>
                 <ol>
-                    <li>Note the <strong>IP Address</strong> above: <code>{ip_address}</code></li>
-                    <li>Open your PPL Meta Platform web interface</li>
+                    <li>Note the <strong>IP Address</strong>: <code>{ip_address}</code></li>
+                    <li>Open your <strong>PPL Meta Platform</strong> web interface</li>
                     <li>Navigate to <strong>Cameras → Add Edge Camera</strong></li>
-                    <li>Enter the IP address and click <strong>Test Connection</strong></li>
-                    <li>Click <strong>Add Camera</strong> to register</li>
-                    <li>Configure platform connection in the management screen</li>
+                    <li>Enter <code>{ip_address}</code> and click <strong>Test Connection</strong></li>
+                    <li>Click <strong>Add Camera</strong> to register this device</li>
+                    <li>Configure streaming settings in the platform</li>
                 </ol>
             </div>
             
-            <div class="api-endpoints">
-                <h3>🔌 Available Endpoints</h3>
-                <div class="endpoint">
-                    <span class="endpoint-label">Management API:</span>
-                    http://{ip_address}:9001/api
-                </div>
-                <div class="endpoint">
-                    <span class="endpoint-label">Stream URL:</span>
-                    rtsp://{ip_address}:8554/stream
-                </div>
-                <div class="endpoint">
-                    <span class="endpoint-label">Health Check:</span>
-                    http://{ip_address}:9001/health
-                </div>
-                <div class="endpoint">
-                    <span class="endpoint-label">Identify:</span>
-                    http://{ip_address}:9001/api/identify
+            <div class="card">
+                <h2 class="card-title">
+                    <span class="card-icon">🔌</span>
+                    API Endpoints
+                </h2>
+                <div class="endpoint-grid">
+                    <div class="endpoint">
+                        <div class="endpoint-label">Management API</div>
+                        <div class="endpoint-url">http://{ip_address}:9001/api</div>
+                    </div>
+                    <div class="endpoint">
+                        <div class="endpoint-label">Health Check</div>
+                        <div class="endpoint-url">http://{ip_address}:9001/health</div>
+                    </div>
+                    <div class="endpoint">
+                        <div class="endpoint-label">Device Status</div>
+                        <div class="endpoint-url">http://{ip_address}:9001/status</div>
+                    </div>
+                    <div class="endpoint">
+                        <div class="endpoint-label">Device Identification</div>
+                        <div class="endpoint-url">http://{ip_address}:9001/api/identify</div>
+                    </div>
                 </div>
             </div>
-            
-            <div class="footer">
-                <p>PPL Meta Edge Camera v1.0.0</p>
-            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Eyenet Vision Platform • Edge Camera v1.0.0</p>
+            <p style="margin-top: 8px;">Device managed by Eyenet Cameras Service</p>
         </div>
         
         <script>
             function copyToClipboard(text) {{
                 navigator.clipboard.writeText(text).then(() => {{
-                    alert('Copied to clipboard: ' + text);
+                    const btn = event.target;
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Copied!';
+                    btn.style.background = '#4CAF50';
+                    setTimeout(() => {{
+                        btn.textContent = originalText;
+                        btn.style.background = '#2196F3';
+                    }}, 2000);
                 }}).catch(err => {{
-                    console.error('Failed to copy:', err);
+                    alert('Failed to copy: ' + err);
                 }});
             }}
         </script>

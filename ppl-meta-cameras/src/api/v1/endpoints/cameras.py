@@ -80,12 +80,19 @@ class MobileCameraUpdate(BaseModel):
 
 @router.get("/", dependencies=[Depends(require_view_cameras)])
 async def list_cameras(
-    db: Session = Depends(get_db), current_user: Dict = Depends(get_current_user)
+    include_archived: bool = False,
+    db: Session = Depends(get_db), 
+    current_user: Dict = Depends(get_current_user)
 ) -> List[Dict]:
-    """List all cameras in the database."""
+    """List all cameras in the database. By default excludes archived cameras."""
 
     try:
-        cameras = db.query(Camera).all()
+        # Filter out archived cameras by default
+        query = db.query(Camera)
+        if not include_archived:
+            query = query.filter(Camera.archived == False)
+        
+        cameras = query.all()
         
         # Get real-time worker status
         queue_service = get_camera_service()
@@ -117,6 +124,7 @@ async def list_cameras(
                 "created_at": (
                     camera.created_at.isoformat() if camera.created_at else None
                 ),
+                "archived": camera.archived if hasattr(camera, 'archived') else False,  # Include archived status
             }
             camera_list.append(camera_dict)
 
@@ -739,6 +747,102 @@ async def remove_rtsp_camera(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to remove RTSP camera",
+        )
+
+
+@router.post("/{device_id}/archive", dependencies=[Depends(require_admin_cameras)])
+async def archive_camera(
+    device_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Archive a camera (hide from main list)."""
+    
+    try:
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+        
+        if camera.archived:
+            return {
+                "message": "Camera is already archived",
+                "device_id": device_id,
+                "archived": True,
+            }
+        
+        # Archive the camera
+        camera.archived = True
+        db.commit()
+        db.refresh(camera)
+        
+        logger.info(f"User {current_user.get('sub')} archived camera: {camera.name}")
+        
+        return {
+            "message": "Camera archived successfully",
+            "device_id": device_id,
+            "archived": True,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error archiving camera: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to archive camera: {str(e)}",
+        )
+
+
+@router.post("/{device_id}/unarchive", dependencies=[Depends(require_admin_cameras)])
+async def unarchive_camera(
+    device_id: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Unarchive a camera (show in main list)."""
+    
+    try:
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+        
+        if not camera.archived:
+            return {
+                "message": "Camera is not archived",
+                "device_id": device_id,
+                "archived": False,
+            }
+        
+        # Unarchive the camera
+        camera.archived = False
+        db.commit()
+        db.refresh(camera)
+        
+        logger.info(f"User {current_user.get('sub')} unarchived camera: {camera.name}")
+        
+        return {
+            "message": "Camera unarchived successfully",
+            "device_id": device_id,
+            "archived": False,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unarchiving camera: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unarchive camera: {str(e)}",
         )
 
 

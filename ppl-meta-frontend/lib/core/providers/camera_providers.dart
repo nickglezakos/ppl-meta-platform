@@ -73,11 +73,11 @@ class CameraListNotifier extends StateNotifier<CameraListState> {
   }
 
   /// Load cameras from the backend
-  Future<void> loadCameras() async {
+  Future<void> loadCameras({bool includeArchived = false}) async {
     state = state.copyWith(isLoading: true, error: null);
     
     try {
-      final cameras = await _cameraService.getCameras();
+      final cameras = await _cameraService.getCameras(includeArchived: includeArchived);
       
       state = state.copyWith(
         cameras: cameras,

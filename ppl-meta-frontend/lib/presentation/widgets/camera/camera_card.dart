@@ -292,6 +292,83 @@ class CameraCard extends ConsumerWidget {
                     const SizedBox(width: 8),
                   ],
                   
+                  // Archive/Unarchive button
+                  IconButton(
+                    onPressed: () async {
+                      print('🗃️ [CameraCard] Archive button pressed for camera: ${updatedCamera.deviceId}');
+                      print('🗃️ [CameraCard] Current archived state: ${updatedCamera.archived}');
+                      
+                      final cameraActions = ref.read(cameraActionsProvider);
+                      final scaffoldMessenger = ScaffoldMessenger.of(context);
+                      
+                      try {
+                        if (updatedCamera.archived) {
+                          // Unarchive camera
+                          print('🗃️ [CameraCard] Calling unarchiveCamera for ${updatedCamera.deviceId}');
+                          final success = await cameraActions.unarchiveCamera(updatedCamera.deviceId);
+                          print('🗃️ [CameraCard] Unarchive result: $success');
+                          
+                          if (success) {
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('${updatedCamera.name} restored from archive'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          } else {
+                            print('❌ [CameraCard] Unarchive failed for ${updatedCamera.deviceId}');
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to unarchive ${updatedCamera.name}'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        } else {
+                          // Archive camera
+                          print('🗃️ [CameraCard] Calling archiveCamera for ${updatedCamera.deviceId}');
+                          final success = await cameraActions.archiveCamera(updatedCamera.deviceId);
+                          print('🗃️ [CameraCard] Archive result: $success');
+                          
+                          if (success) {
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('${updatedCamera.name} archived'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          } else {
+                            print('❌ [CameraCard] Archive failed for ${updatedCamera.deviceId}');
+                            scaffoldMessenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to archive ${updatedCamera.name}'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } catch (e, stackTrace) {
+                        print('❌ [CameraCard] Archive/unarchive error: $e');
+                        print('❌ [CameraCard] Stack trace: $stackTrace');
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to ${updatedCamera.archived ? "unarchive" : "archive"} camera: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    icon: Icon(
+                      Icons.archive,
+                      color: updatedCamera.archived ? Colors.orange : Colors.grey,
+                    ),
+                    iconSize: 28,
+                    padding: const EdgeInsets.all(8),
+                    constraints: const BoxConstraints(),
+                    tooltip: updatedCamera.archived ? 'Unarchive camera' : 'Archive camera',
+                  ),
+                  const SizedBox(width: 8),
+                  
                   // Connection toggle button
                   _ConnectionButton(camera: updatedCamera),
                   const SizedBox(width: 12),

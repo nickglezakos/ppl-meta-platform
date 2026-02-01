@@ -93,9 +93,12 @@ class CameraService {
   }
 
   /// Get list of all cameras
-  Future<List<Camera>> getCameras() async {
+  Future<List<Camera>> getCameras({bool includeArchived = false}) async {
     try {
-      final response = await _cameraApiClient.get('/api/v1/cameras/');
+      final response = await _cameraApiClient.get(
+        '/api/v1/cameras/',
+        queryParameters: {'include_archived': includeArchived},
+      );
 
       if (response.data == null) {
         throw const CameraException('Invalid response from camera service');
@@ -650,6 +653,38 @@ class CameraService {
       throw _handleDioError(e);
     } catch (e) {
       throw CameraException('Failed to delete RTSP camera: $e');
+    }
+  }
+
+  /// Archive a camera (hide from default camera list)
+  Future<void> archiveCamera(String deviceId) async {
+    print('🗃️ [CameraService] Archiving camera: $deviceId');
+    try {
+      final response = await _cameraApiClient.post('/api/v1/cameras/$deviceId/archive');
+      print('✅ [CameraService] Archive successful: ${response.statusCode}');
+    } on DioException catch (e) {
+      print('❌ [CameraService] Archive failed (DioException): ${e.message}');
+      print('❌ [CameraService] Response: ${e.response?.data}');
+      throw _handleDioError(e);
+    } catch (e) {
+      print('❌ [CameraService] Archive failed: $e');
+      throw CameraException('Failed to archive camera: $e');
+    }
+  }
+
+  /// Unarchive a camera (restore to default camera list)
+  Future<void> unarchiveCamera(String deviceId) async {
+    print('🗃️ [CameraService] Unarchiving camera: $deviceId');
+    try {
+      final response = await _cameraApiClient.post('/api/v1/cameras/$deviceId/unarchive');
+      print('✅ [CameraService] Unarchive successful: ${response.statusCode}');
+    } on DioException catch (e) {
+      print('❌ [CameraService] Unarchive failed (DioException): ${e.message}');
+      print('❌ [CameraService] Response: ${e.response?.data}');
+      throw _handleDioError(e);
+    } catch (e) {
+      print('❌ [CameraService] Unarchive failed: $e');
+      throw CameraException('Failed to unarchive camera: $e');
     }
   }
 

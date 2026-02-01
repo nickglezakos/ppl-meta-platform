@@ -24,13 +24,14 @@ class CamerasScreen extends ConsumerStatefulWidget {
 class _CamerasScreenState extends ConsumerState<CamerasScreen> {
   // REMOVED: bool _showMonitoringDashboard = false; // Complex monitoring dashboard removed
   bool _showLiveStreams = false; // Disable streaming by default to prevent auto-connection
+  bool _showArchivedCameras = false; // Toggle to show/hide archived cameras
 
   @override
   void initState() {
     super.initState();
     // Load cameras when screen opens
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(cameraListProvider.notifier).loadCameras();
+      ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
     });
   }
 
@@ -86,6 +87,22 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             tooltip: _showLiveStreams ? 'Hide Live Streams' : 'Show Live Streams',
           ),
           
+          // Toggle archived cameras visibility
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _showArchivedCameras = !_showArchivedCameras;
+              });
+              // Reload cameras with updated filter
+              ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
+            },
+            icon: Icon(
+              Icons.archive,
+              color: _showArchivedCameras ? Colors.orange : AppColors.textSecondary,
+            ),
+            tooltip: _showArchivedCameras ? 'Hide Archived Cameras' : 'Show Archived Cameras',
+          ),
+          
           // Toggle monitoring dashboard - DISABLED (complex monitoring removed)
           /* IconButton(
             onPressed: () {
@@ -122,7 +139,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           // Refresh cameras
           IconButton(
             onPressed: () {
-              ref.read(cameraListProvider.notifier).loadCameras();
+              ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
             },
             icon: Icon(
               Icons.refresh,
@@ -142,7 +159,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
               ).then((result) {
                 if (result == true) {
                   // Reload cameras after adding
-                  ref.read(cameraListProvider.notifier).loadCameras();
+                  ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
                 }
               });
             },
@@ -218,7 +235,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
 
     return RefreshIndicator(
       onRefresh: () async {
-        ref.read(cameraListProvider.notifier).loadCameras();
+        ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
       },
       child: ListView(
         padding: const EdgeInsets.all(16),
@@ -341,7 +358,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () {
-              ref.read(cameraListProvider.notifier).loadCameras();
+              ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
             },
             icon: const Icon(Icons.refresh),
             label: const Text('Retry'),
