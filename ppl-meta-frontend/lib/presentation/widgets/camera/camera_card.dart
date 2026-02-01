@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'dart:async';
 import '../../../core/models/camera.dart';
 import '../../../core/providers/camera_providers.dart';
@@ -272,6 +273,21 @@ class CameraCard extends ConsumerWidget {
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
                       tooltip: 'Delete camera',
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  
+                  // Edge Camera Settings button (only for Edge cameras)
+                  if (updatedCamera.type == CameraType.edge) ...[
+                    IconButton(
+                      onPressed: () {
+                        context.go('/edge-cameras/${updatedCamera.deviceId}?name=${Uri.encodeComponent(updatedCamera.name)}');
+                      },
+                      icon: const Icon(Icons.settings),
+                      iconSize: 28,
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Edge Camera Settings',
                     ),
                     const SizedBox(width: 8),
                   ],

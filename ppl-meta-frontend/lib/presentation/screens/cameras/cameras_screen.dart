@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../utils/offline_fonts.dart';
-import '../../../core/models/camera.dart'; // ADDED: Import Camera model
+import '../../../core/models/camera.dart';
 import '../../../core/providers/camera_providers.dart';
 import '../../../core/providers/camera_status_providers.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../widgets/camera/camera_card.dart'; // FIXED: Now using presentation/widgets version
-import '../../widgets/camera/rtsp_camera_dialog.dart'; // ADDED: Import RTSP dialog
-// ARCHIVED: // REMOVED: import '../../../widgets/camera/camera_monitoring_dashboard.dart'; // Complex monitoring widget removed
+import '../../widgets/camera/camera_card.dart';
+import '../../widgets/camera/rtsp_camera_dialog.dart';
+import '../../widgets/camera/add_edge_camera_dialog.dart';
 import '../../../widgets/custom_app_bar.dart';
-import '../../../widgets/automatic_face_detection_status.dart'; // NEW: Import automatic face detection status
-import 'multi_stream_page.dart'; // NEW: Multi-stream viewer
+import '../../../widgets/automatic_face_detection_status.dart';
+import 'multi_stream_page.dart';
 
 /// Enhanced cameras screen with real-time status monitoring
 class CamerasScreen extends ConsumerStatefulWidget {
@@ -151,6 +152,26 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
             ),
             tooltip: 'Add RTSP Camera',
           ),
+          
+          // Add Edge Camera
+          IconButton(
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => const AddEdgeCameraDialog(),
+              ).then((result) {
+                if (result == true) {
+                  // Reload cameras after adding
+                  ref.read(cameraListProvider.notifier).loadCameras();
+                }
+              });
+            },
+            icon: Icon(
+              Icons.camera_outdoor,
+              color: AppColors.accent,
+            ),
+            tooltip: 'Add Edge Camera',
+          ),
         ],
       ),
       body: Column(
@@ -199,23 +220,46 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
       onRefresh: () async {
         ref.read(cameraListProvider.notifier).loadCameras();
       },
-      child: ListView.builder(
+      child: ListView(
         padding: const EdgeInsets.all(16),
-        itemCount: cameras.length,
-        itemBuilder: (context, index) {
-          final camera = cameras[index];
-          return Padding(
+        children: [
+          Text(
+            'Cameras',
+            style: OfflineFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...cameras.map((camera) => Padding(
             padding: const EdgeInsets.only(bottom: 16),
             child: CameraCard(
               camera: camera,
               onTap: () {
-                // Navigate to camera detail or show stream
-                // TODO: Implement camera detail view
+                context.go('/cameras/${camera.deviceId}');
               },
             ),
-          );
-        },
+          )),
+        ],
       ),
+    );
+  }
+
+  Widget _buildInfoChip({required IconData icon, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: OfflineFonts.inter(
+            fontSize: 12,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
     );
   }
 

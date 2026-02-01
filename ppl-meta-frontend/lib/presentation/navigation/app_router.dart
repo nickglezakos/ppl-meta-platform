@@ -9,6 +9,7 @@ import '../screens/home/home_screen.dart';
 import '../screens/users/users_screen.dart';
 import '../screens/cameras/cameras_screen.dart';
 import '../screens/cameras/camera_detail_screen.dart';
+import '../screens/cameras/edge_camera_management_screen.dart';
 import '../screens/camera/snapshot_gallery_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../../screens/upload_screen.dart';
@@ -176,6 +177,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: SnapshotGalleryScreen(
               cameraId: cameraId,
               title: 'Camera Snapshots',
+            ),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/edge-cameras/:deviceId',
+        name: 'edge-camera-management',
+        builder: (context, state) {
+          final deviceId = state.pathParameters['deviceId']!;
+          final cameraName = state.uri.queryParameters['name'] ?? 'Edge Camera';
+          return ProviderScreenWrapper(
+            child: EdgeCameraManagementScreen(
+              deviceId: deviceId,
+              cameraName: cameraName,
             ),
           );
         },

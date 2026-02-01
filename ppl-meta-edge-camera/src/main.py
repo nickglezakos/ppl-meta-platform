@@ -5,10 +5,13 @@ import signal
 import sys
 import time
 import threading
+import socket
 from contextlib import asynccontextmanager
+from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, Response
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Response, Depends, Query
+from fastapi.responses import JSONResponse, HTMLResponse
+from pydantic import BaseModel
 import uvicorn
 
 from config import get_config
@@ -16,6 +19,7 @@ from camera import CameraCapture, FrameEncoder
 from streaming import StreamingClient, FrameBuffer
 from platform import HealthMonitor, RegistrationClient
 from platform.websocket_client import PlatformWebSocketClient
+import management_api
 
 # Global instances
 camera: CameraCapture = None
@@ -27,6 +31,29 @@ health_monitor: HealthMonitor = None
 ws_client: PlatformWebSocketClient = None
 capture_thread: threading.Thread = None
 is_running = False
+logger = None
+
+
+# Pydantic models for request/response
+class ConfigUpdate(BaseModel):
+    """Configuration update request."""
+    updates: Dict[str, Any]
+
+
+class PlatformConfigRequest(BaseModel):
+    """Platform configuration request."""
+    discovery_ip: str
+    discovery_port: int = 8006
+    cameras_port: int = 8005
+    use_nginx: bool = False
+    api_key: Optional[str] = None
+
+
+class ControlRequest(BaseModel):
+    """Control operation request."""
+    action: Optional[str] = None
+    scope: Optional[str] = "application"
+    service: Optional[str] = None
 
 
 def handle_connect_command(params):
@@ -100,6 +127,89 @@ def handle_stop_stream_command(params):
         return True
 
 
+async def handle_set_config_command(params):
+    """Handle set-config command from platform."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("📡 Received SET-CONFIG command from platform")
+    
+    try:
+        # Update configuration using management API
+        updated_config = await management_api.update_configuration(params)
+        logger.info("✅ Configuration updated via platform command")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to update configuration: {e}")
+        return False
+
+
+async def handle_get_logs_command(params):
+    """Handle get-logs command from platform."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("📡 Received GET-LOGS command from platform")
+    
+    try:
+        lines = params.get("lines", 100)
+        logs = await management_api.get_logs(lines=lines)
+        
+        # Send logs back to platform via WebSocket
+        if ws_client:
+            await ws_client.send_message("logs", logs)
+        
+        logger.info(f"✅ Sent {len(logs.get('logs', []))} log lines to platform")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to get logs: {e}")
+        return False
+
+
+async def handle_restart_command(params):
+    """Handle restart command from platform."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("📡 Received RESTART command from platform")
+    
+    try:
+        scope = params.get("scope", "application")
+        logger.info(f"🔄 Restarting {scope}...")
+        
+        # Send acknowledgment before restarting
+        if ws_client:
+            await ws_client.send_ack("restart", True, f"Restarting {scope}")
+        
+        # Delay restart to allow acknowledgment to be sent
+        await asyncio.sleep(1)
+        
+        # Restart
+        await management_api.restart_application(scope=scope)
+        
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to restart: {e}")
+        return False
+
+
+async def handle_network_test_command(params):
+    """Handle network-test command from platform."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("📡 Received NETWORK-TEST command from platform")
+    
+    try:
+        diagnostics = await management_api.network_diagnostics()
+        
+        # Send diagnostics back to platform
+        if ws_client:
+            await ws_client.send_message("network_test_results", diagnostics)
+        
+        logger.info("✅ Network test completed and sent to platform")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to run network test: {e}")
+        return False
+
+
 def setup_logging(level: str = "INFO", log_format: str = None):
     """Setup application logging."""
     if log_format is None:
@@ -167,6 +277,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     global camera, encoder, buffer, streaming_client, registration_client, health_monitor, ws_client, capture_thread, is_running
     
+    # Set application start time for uptime tracking
+    management_api.set_app_start_time()
+    
     logger = logging.getLogger(__name__)
     config = get_config()
     
@@ -219,6 +332,11 @@ async def lifespan(app: FastAPI):
     ws_client.register_command_handler("disconnect", handle_disconnect_command)
     ws_client.register_command_handler("start-stream", handle_start_stream_command)
     ws_client.register_command_handler("stop-stream", handle_stop_stream_command)
+    # New command handlers for remote management
+    ws_client.register_command_handler("set-config", handle_set_config_command)
+    ws_client.register_command_handler("get-logs", handle_get_logs_command)
+    ws_client.register_command_handler("restart", handle_restart_command)
+    ws_client.register_command_handler("network-test", handle_network_test_command)
     
     # Start camera
     if camera.start():
@@ -327,10 +445,241 @@ async def get_configuration():
     config = get_config()
     return JSONResponse(content=config.model_dump())
 
+def get_local_ip() -> str:
+    """Get local IP address of the edge camera."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "localhost"
 
-@app.get("/")
+
+def get_device_id() -> str:
+    """Get device ID from config or hostname."""
+    config = get_config()
+    device_id = config.device.id if config.device else None
+    
+    if not device_id:
+        hostname = socket.gethostname()
+        device_id = f"edge-camera-{hostname}"
+    
+    return device_id
+
+
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint."""
+    """Landing page with connection information."""
+    ip_address = get_local_ip()
+    device_id = get_device_id()
+    config = get_config()
+    
+    is_configured = bool(config.platform.discovery_url)
+    status_text = "✅ Connected to Platform" if is_configured else "⚫ Waiting for Configuration"
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>PPL Meta Edge Camera - Setup</title>
+        <style>
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }}
+            .container {{
+                background: white;
+                border-radius: 20px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                max-width: 600px;
+                width: 100%;
+                padding: 40px;
+            }}
+            .header {{ text-align: center; margin-bottom: 30px; }}
+            .camera-icon {{ font-size: 64px; margin-bottom: 10px; }}
+            h1 {{ color: #333; font-size: 28px; margin-bottom: 10px; }}
+            .status {{
+                display: inline-block;
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-size: 14px;
+                font-weight: 600;
+                background: {'#d4edda' if is_configured else '#f0f0f0'};
+                color: {'#155724' if is_configured else '#666'};
+                margin-top: 10px;
+            }}
+            .info-section {{
+                background: #f8f9fa;
+                border-radius: 12px;
+                padding: 24px;
+                margin: 20px 0;
+            }}
+            .info-row {{
+                display: flex;
+                justify-content: space-between;
+                padding: 12px 0;
+                border-bottom: 1px solid #e0e0e0;
+            }}
+            .info-row:last-child {{ border-bottom: none; }}
+            .info-label {{ font-weight: 600; color: #666; }}
+            .info-value {{
+                font-family: 'Courier New', monospace;
+                color: #333;
+                font-weight: 500;
+            }}
+            .copy-btn {{
+                background: #667eea;
+                color: white;
+                border: none;
+                padding: 4px 12px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 12px;
+                margin-left: 8px;
+            }}
+            .copy-btn:hover {{ background: #5568d3; }}
+            .instructions {{
+                background: #fff3cd;
+                border-left: 4px solid #ffc107;
+                padding: 20px;
+                margin: 20px 0;
+                border-radius: 8px;
+                {'display: none;' if is_configured else ''}
+            }}
+            .instructions h2 {{ color: #856404; font-size: 18px; margin-bottom: 12px; }}
+            .instructions ol {{ margin-left: 20px; color: #856404; }}
+            .instructions li {{ margin: 8px 0; line-height: 1.6; }}
+            .api-endpoints {{ margin: 20px 0; }}
+            .api-endpoints h3 {{ color: #333; font-size: 16px; margin-bottom: 12px; }}
+            .endpoint {{
+                background: #e9ecef;
+                padding: 10px;
+                border-radius: 6px;
+                margin: 8px 0;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+            }}
+            .endpoint-label {{ color: #667eea; font-weight: bold; margin-right: 8px; }}
+            .footer {{ text-align: center; margin-top: 30px; color: #999; font-size: 14px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="camera-icon">🎥</div>
+                <h1>PPL Meta Edge Camera</h1>
+                <div class="status">{status_text}</div>
+            </div>
+            
+            <div class="info-section">
+                <div class="info-row">
+                    <span class="info-label">Device ID:</span>
+                    <span class="info-value">
+                        {device_id}
+                        <button class="copy-btn" onclick="copyToClipboard('{device_id}')">Copy</button>
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">IP Address:</span>
+                    <span class="info-value">
+                        {ip_address}
+                        <button class="copy-btn" onclick="copyToClipboard('{ip_address}')">Copy</button>
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Management Port:</span>
+                    <span class="info-value">9001</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Streaming Port:</span>
+                    <span class="info-value">8554 (RTSP)</span>
+                </div>
+            </div>
+            
+            <div class="instructions">
+                <h2>📝 Setup Instructions</h2>
+                <ol>
+                    <li>Note the <strong>IP Address</strong> above: <code>{ip_address}</code></li>
+                    <li>Open your PPL Meta Platform web interface</li>
+                    <li>Navigate to <strong>Cameras → Add Edge Camera</strong></li>
+                    <li>Enter the IP address and click <strong>Test Connection</strong></li>
+                    <li>Click <strong>Add Camera</strong> to register</li>
+                    <li>Configure platform connection in the management screen</li>
+                </ol>
+            </div>
+            
+            <div class="api-endpoints">
+                <h3>🔌 Available Endpoints</h3>
+                <div class="endpoint">
+                    <span class="endpoint-label">Management API:</span>
+                    http://{ip_address}:9001/api
+                </div>
+                <div class="endpoint">
+                    <span class="endpoint-label">Stream URL:</span>
+                    rtsp://{ip_address}:8554/stream
+                </div>
+                <div class="endpoint">
+                    <span class="endpoint-label">Health Check:</span>
+                    http://{ip_address}:9001/health
+                </div>
+                <div class="endpoint">
+                    <span class="endpoint-label">Identify:</span>
+                    http://{ip_address}:9001/api/identify
+                </div>
+            </div>
+            
+            <div class="footer">
+                <p>PPL Meta Edge Camera v1.0.0</p>
+            </div>
+        </div>
+        
+        <script>
+            function copyToClipboard(text) {{
+                navigator.clipboard.writeText(text).then(() => {{
+                    alert('Copied to clipboard: ' + text);
+                }}).catch(err => {{
+                    console.error('Failed to copy:', err);
+                }});
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    
+    return HTMLResponse(content=html_content)
+
+
+@app.get("/api/identify")
+async def identify():
+    """Identify endpoint for edge camera discovery."""
+    ip_address = get_local_ip()
+    device_id = get_device_id()
+    config = get_config()
+    
+    return {
+        "service": "ppl-edge-camera",
+        "device_id": device_id,
+        "ip": ip_address,
+        "management_port": 9001,
+        "stream_port": 8554,
+        "status": "configured" if config.platform.discovery_url else "unconfigured",
+        "version": "1.0.0"
+    }
+
+
+@app.get("/old_root")
+async def old_root():
+    """Legacy root endpoint."""
     return {
         "service": "edge-camera",
         "version": "1.0.0",
@@ -367,19 +716,23 @@ async def disconnect():
 @app.post("/start-stream")
 async def start_stream():
     """Start streaming frames to platform."""
-    global streaming_client
+    global streaming_client, health_monitor
+    logger = logging.getLogger(__name__)
     
     if streaming_client is None:
+        logger.error("Streaming client not initialized")
         return JSONResponse(
             status_code=503,
             content={"status": "error", "message": "Streaming client not initialized"}
         )
     
     if streaming_client.is_streaming:
+        logger.info("Streaming already active")
         return {"status": "already_streaming", "message": "Streaming already active"}
     
     streaming_client.start()
-    health_monitor.set_streaming_status("active")
+    if health_monitor:
+        health_monitor.set_streaming_status("active")
     logger.info("✅ Edge camera streaming started")
     
     return {"status": "streaming", "message": "Streaming started successfully"}
@@ -388,16 +741,128 @@ async def start_stream():
 @app.post("/stop-stream")
 async def stop_stream():
     """Stop streaming frames to platform."""
-    global streaming_client
+    global streaming_client, health_monitor
+    logger = logging.getLogger(__name__)
     
     if streaming_client is None or not streaming_client.is_streaming:
+        logger.warning("Streaming not active")
         return {"status": "not_streaming", "message": "Streaming not active"}
     
     streaming_client.stop()
-    health_monitor.set_streaming_status("stopped")
+    if health_monitor:
+        health_monitor.set_streaming_status("stopped")
     logger.info("Edge camera streaming stopped")
     
     return {"status": "stopped", "message": "Streaming stopped successfully"}
+
+
+# ========================================
+# Management API Endpoints
+# ========================================
+
+@app.get("/api/config")
+async def get_config_api(token: str = Depends(management_api.verify_token)):
+    """Get current configuration (Management API)."""
+    config = await management_api.get_configuration()
+    return JSONResponse(content=config)
+
+
+@app.put("/api/config")
+async def update_config_api(
+    config_update: ConfigUpdate,
+    token: str = Depends(management_api.verify_token)
+):
+    """Update configuration (Management API)."""
+    updated_config = await management_api.update_configuration(config_update.updates)
+    return JSONResponse(content=updated_config)
+
+
+@app.post("/api/config/platform")
+async def configure_platform_api(
+    platform_config: PlatformConfigRequest,
+    token: str = Depends(management_api.verify_token)
+):
+    """
+    Configure platform connection (Management API).
+    Similar to mobile camera configureFromUserInput().
+    """
+    updated_config = await management_api.configure_platform(
+        discovery_ip=platform_config.discovery_ip,
+        discovery_port=platform_config.discovery_port,
+        cameras_port=platform_config.cameras_port,
+        use_nginx=platform_config.use_nginx,
+        api_key=platform_config.api_key
+    )
+    return JSONResponse(content={
+        "status": "configured",
+        "message": "Platform configuration updated",
+        "config": updated_config
+    })
+
+
+@app.post("/api/control/start")
+async def control_start_api(token: str = Depends(management_api.verify_token)):
+    """Start streaming (Management API)."""
+    return await start_stream()
+
+
+@app.post("/api/control/stop")
+async def control_stop_api(token: str = Depends(management_api.verify_token)):
+    """Stop streaming (Management API)."""
+    return await stop_stream()
+
+
+@app.post("/api/control/restart")
+async def control_restart_api(
+    control_req: ControlRequest,
+    token: str = Depends(management_api.verify_token)
+):
+    """Restart application or system (Management API)."""
+    await management_api.restart_application(scope=control_req.scope)
+    return JSONResponse(content={
+        "status": "restarting",
+        "scope": control_req.scope,
+        "message": f"Restarting {control_req.scope}..."
+    })
+
+
+@app.post("/api/control/reconnect")
+async def control_reconnect_api(
+    control_req: ControlRequest,
+    token: str = Depends(management_api.verify_token)
+):
+    """Reconnect to platform services (Management API)."""
+    result = await management_api.reconnect_service(control_req.service)
+    return JSONResponse(content=result)
+
+
+@app.get("/api/logs")
+async def get_logs_api(
+    lines: int = Query(100, ge=1, le=1000),
+    follow: bool = Query(False),
+    token: str = Depends(management_api.verify_token)
+):
+    """Get application logs (Management API)."""
+    logs = await management_api.get_logs(lines=lines, follow=follow)
+    return JSONResponse(content=logs)
+
+
+@app.get("/api/status")
+async def get_status_api(token: str = Depends(management_api.verify_token)):
+    """Get detailed status (Management API)."""
+    status = await management_api.get_status(
+        camera_instance=camera,
+        streaming_client_instance=streaming_client,
+        health_monitor_instance=health_monitor
+    )
+    return JSONResponse(content=status)
+
+
+@app.get("/api/diagnostics/network")
+async def network_diagnostics_api(token: str = Depends(management_api.verify_token)):
+    """Run network diagnostics (Management API)."""
+    diagnostics = await management_api.network_diagnostics()
+    return JSONResponse(content=diagnostics)
 
 
 def signal_handler(signum, frame):
@@ -407,8 +872,46 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
+def print_startup_banner():
+    """Print startup banner with connection information."""
+    ip_address = get_local_ip()
+    device_id = get_device_id()
+    config = get_config()
+    
+    print("\n" + "="*70)
+    print("🎥  PPL Meta Edge Camera - Started Successfully")
+    print("="*70)
+    print(f"\n📡  Connection Information:")
+    print(f"    Device ID:       {device_id}")
+    print(f"    IP Address:      {ip_address}")
+    print(f"    Management Port: 9001")
+    print(f"    Streaming Port:  8554")
+    print(f"\n🌐  Access Points:")
+    print(f"    Setup Page:      http://{ip_address}:9001")
+    print(f"    Management API:  http://{ip_address}:9001/api")
+    print(f"    Stream URL:      rtsp://{ip_address}:8554/stream")
+    print(f"    Health Check:    http://{ip_address}:9001/health")
+    print(f"\n📝  Quick Setup:")
+    print(f"    1. Note the IP address above: {ip_address}")
+    print(f"    2. Open PPL Meta Platform web interface")
+    print(f"    3. Navigate to Cameras → Add Edge Camera")
+    print(f"    4. Enter IP address and click 'Test Connection'")
+    print(f"    5. Click 'Add Camera' to register")
+    
+    if config.platform.discovery_url:
+        print(f"\n✅  Platform Status: CONFIGURED")
+        print(f"    Discovery Service: {config.platform.discovery_url}")
+    else:
+        print(f"\n⚫  Platform Status: WAITING FOR CONFIGURATION")
+        print(f"    Please configure platform connection via Management API")
+    
+    print("\n" + "="*70 + "\n")
+
+
 def main():
     """Main entry point."""
+    global logger
+    
     # Setup logging
     config = get_config()
     setup_logging(
@@ -417,6 +920,10 @@ def main():
     )
     
     logger = logging.getLogger(__name__)
+    
+    # Print startup banner
+    print_startup_banner()
+    
     logger.info("Starting Edge Camera Application")
     
     # Setup signal handlers
