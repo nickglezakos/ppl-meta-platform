@@ -133,6 +133,10 @@ class CameraWorker:
         self.frames_dropped = 0
         self.last_frame_time = 0.0
         
+        # Edge camera frame tracking (prevent re-processing same frame)
+        self.last_processed_frame_number: int = -1  # Track last frame number processed
+        self.edge_processor = None  # Will be set by EdgeCameraFrameProcessor
+        
         # FPS tracking for accurate recording
         self.frame_timestamps: List[float] = []  # Track recent frame timestamps
         self.max_fps_samples = 30  # Use last 30 frames to calculate FPS
@@ -438,8 +442,8 @@ class CameraWorker:
                 
                 # ✅ CRITICAL FIX: Always read frames when connected, regardless of command processing
                 # This ensures continuous frame reading even during recording/detection operations
-                # Mobile cameras don't have self.cap, but still need frame reading!
-                if self.status == CameraStatus.CONNECTED and (self.cap or self.camera_type == CameraType.MOBILE):
+                # Mobile and Edge cameras don't have self.cap, but still need frame reading!
+                if self.status == CameraStatus.CONNECTED and (self.cap or self.camera_type == CameraType.MOBILE or self.camera_type == CameraType.EDGE):
                     self._read_and_buffer_frame()
                 
             except Exception as e:
@@ -718,11 +722,36 @@ class CameraWorker:
         
         For RTSP cameras, uses frame grabbing to minimize latency.
         For MOBILE cameras, fetches from MobileStreamingService and applies rotation.
+        For EDGE cameras, frames are pushed via process_frame() - just wait for them in buffer.
         ⚠️ CRITICAL: For recording, we need to read ALL frames, not skip them!
         """
         try:
+            # Handle edge cameras - frames are pushed via process_frame(), not pulled
+            if self.camera_type == CameraType.EDGE:
+                # Edge cameras: frames already in buffer from external process_frame() calls
+                # ✅ FIXED: Check frame_number to prevent re-processing same frame
+                if len(self.frame_buffer) > 0:
+                    frame = self.frame_buffer[-1]  # Get latest frame
+                    
+                    # Check if this frame was already processed
+                    # Get frame_number from EdgeCameraFrameProcessor
+                    if self.edge_processor and self.device_id in self.edge_processor.frame_numbers:
+                        frame_number = self.edge_processor.frame_numbers[self.device_id]
+                        if frame_number == self.last_processed_frame_number:
+                            # Same frame as last iteration - skip to avoid re-processing
+                            time.sleep(0.01)
+                            return
+                        # New frame - update tracking
+                        self.last_processed_frame_number = frame_number
+                    
+                    ret = True
+                    # ✅ Frame is ready - will be processed by unified code below
+                else:
+                    # No frames yet, wait and skip this iteration
+                    time.sleep(0.01)
+                    return  # Only return if no frames available
             # Handle mobile cameras - fetch from mobile streaming service with rotation
-            if self.camera_type == CameraType.MOBILE:
+            elif self.camera_type == CameraType.MOBILE:
                 frame_data = self.mobile_streaming_service.get_latest_mobile_frame_data(self.device_id)
                 if frame_data and frame_data.get("frame") is not None:
                     frame = frame_data["frame"]
@@ -758,10 +787,16 @@ class CameraWorker:
                 ret, frame = self.cap.read()
             
             if ret and frame is not None:
-                self.frame_buffer.append(frame)
-                self.frames_read += 1
-                current_time = time.time()
-                self.last_frame_time = current_time
+                # For edge cameras, frame is already in buffer and stats already updated
+                # by EdgeCameraFrameProcessor, so skip buffer append and stat updates
+                if self.camera_type != CameraType.EDGE:
+                    self.frame_buffer.append(frame)
+                    self.frames_read += 1
+                    current_time = time.time()
+                    self.last_frame_time = current_time
+                else:
+                    # Edge camera: stats already updated, just get current time
+                    current_time = time.time()
                 
                 # 📊 Track frame timestamps for FPS measurement
                 self.frame_timestamps.append(current_time)

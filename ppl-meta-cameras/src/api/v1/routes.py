@@ -7,6 +7,8 @@ from src.api.v1.endpoints.auth import router as auth_router
 from src.api.v1.endpoints.cameras import router as cameras_router
 from src.api.v1.endpoints.instant_detection import router as instant_detection_router
 from src.api.v1.endpoints.mobile_streaming import router as mobile_streaming_router
+from src.api.v1.endpoints.edge_streaming import router as edge_streaming_router
+from src.api.v1.endpoints.edge_stream_control import router as edge_stream_control_router
 from src.api.v1.endpoints.recording_sessions import router as recording_sessions_router
 from src.api.v1.endpoints.streaming import router as streaming_router
 from src.api.v1.endpoints.status_websocket import router as status_websocket_router
@@ -19,6 +21,12 @@ v1_router.include_router(cameras_router, prefix="/cameras", tags=["Cameras"])
 v1_router.include_router(streaming_router, prefix="/streaming", tags=["Streaming"])
 v1_router.include_router(
     mobile_streaming_router, prefix="/streaming", tags=["Mobile Streaming"]
+)
+v1_router.include_router(
+    edge_streaming_router, prefix="/cameras", tags=["Edge Streaming"]
+)
+v1_router.include_router(
+    edge_stream_control_router, prefix="/cameras", tags=["Edge Stream Control"]
 )
 v1_router.include_router(status_websocket_router, prefix="/cameras", tags=["Status WebSocket"])
 v1_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])

@@ -31,6 +31,9 @@ final analyticsApiClientProvider = Provider<AnalyticsApiClient>((ref) {
   return AnalyticsApiClient(apiClient);
 });
 
+/// Provider for edge camera streaming state (device_id -> is_streaming)
+final edgeCameraStreamingProvider = StateProvider.family<bool, String>((ref, deviceId) => false);
+
 /// State for camera list
 class CameraListState {
   final List<Camera> cameras;

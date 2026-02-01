@@ -77,10 +77,12 @@ class Camera {
       metadata['port'] = json['port'];
     }
     
-    // Determine camera type with mobile detection
+    // Determine camera type with mobile and edge detection
     CameraType cameraType;
     if (cameraTypeStr?.toLowerCase() == 'mobile' || connectionString?.startsWith('mobile://') == true) {
       cameraType = CameraType.mobile;
+    } else if (cameraTypeStr?.toLowerCase() == 'edge' || connectionString?.startsWith('edge://') == true) {
+      cameraType = CameraType.edge;
     } else {
       cameraType = CameraType.values.firstWhere(
         (t) => t.name.toLowerCase() == cameraTypeStr?.toLowerCase(),
@@ -517,6 +519,7 @@ enum CameraType {
   webRtc('WebRTC Camera'),
   mjpeg('MJPEG Camera'),
   mobile('Mobile Camera'),
+  edge('Edge Camera'),
   virtual('Virtual Camera');
 
   const CameraType(this.displayName);

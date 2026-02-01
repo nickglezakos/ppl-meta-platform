@@ -92,11 +92,11 @@ async def list_cameras(
 
         camera_list = []
         for camera in cameras:
-            # For mobile cameras, use database status (they don't have workers)
+            # For mobile and edge cameras, use database status (they don't have workers)
             # For USB/RTSP cameras, check real-time worker status
-            if camera.camera_type == CameraType.MOBILE:
-                # Mobile cameras don't use workers - check database status
-                realtime_status = camera.status.value
+            if camera.camera_type in [CameraType.MOBILE, CameraType.EDGE]:
+                # Mobile and edge cameras don't use workers - check database status
+                realtime_status = camera.status.value if hasattr(camera, 'status') and camera.status else "available"
             else:
                 # Check if camera has an active worker
                 worker = await queue_service.get_camera_stream(camera.device_id)
@@ -290,6 +290,27 @@ async def connect_camera(
                 "device_id": device_id,
                 "status": "connected",
                 "camera_type": "mobile",
+                "connection_string": camera.connection_string,
+                "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
+            }
+        
+        # Handle edge cameras - they don't need backend connection setup either
+        if camera.camera_type == CameraType.EDGE:
+            # Edge cameras connect like mobile cameras - mark as connected
+            camera.status = CameraStatus.CONNECTED
+            camera.last_seen = datetime.utcnow()
+            db.commit()
+            db.refresh(camera)
+
+            logger.info(
+                f"User {current_user.get('sub')} connected edge camera {device_id}"
+            )
+
+            return {
+                "message": f"Edge camera {device_id} marked as connected",
+                "device_id": device_id,
+                "status": "connected",
+                "camera_type": "edge",
                 "connection_string": camera.connection_string,
                 "last_seen": camera.last_seen.isoformat() if camera.last_seen else None,
             }

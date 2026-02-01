@@ -24,6 +24,23 @@ class CameraCard extends ConsumerWidget {
     this.onTap,
   });
 
+  static IconData _getCameraIcon(CameraType type) {
+    switch (type) {
+      case CameraType.mobile:
+        return Icons.smartphone;
+      case CameraType.edge:
+        return Icons.router; // RPi5 edge device icon
+      case CameraType.rtsp:
+        return Icons.videocam_outlined;
+      case CameraType.usb:
+      case CameraType.webRtc:
+      case CameraType.mjpeg:
+      case CameraType.virtual:
+      default:
+        return Icons.videocam;
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -41,9 +58,9 @@ class CameraCard extends ConsumerWidget {
     // Watch WebSocket status for this camera
     final cameraStatus = ref.watch(cameraStatusProvider(updatedCamera.deviceId));
     
-    // For mobile cameras, use the camera's own status field since they don't use WebSocket
+    // For mobile and edge cameras, use the camera's own status field since they don't use backend WebSocket
     // For USB/RTSP cameras, use WebSocket status if available, otherwise use camera status
-    final bool isConnected = updatedCamera.type == CameraType.mobile 
+    final bool isConnected = (updatedCamera.type == CameraType.mobile || updatedCamera.type == CameraType.edge)
         ? updatedCamera.status.toLowerCase() == 'connected'
         : (cameraStatus?.isConnected ?? updatedCamera.status.toLowerCase() == 'connected');
     
@@ -73,7 +90,7 @@ class CameraCard extends ConsumerWidget {
               Row(
                 children: [
                   Icon(
-                    Icons.videocam,
+                    _getCameraIcon(updatedCamera.type),
                     color: isConnected ? Colors.green : Colors.grey,
                     size: 24,
                   ),
@@ -265,8 +282,11 @@ class CameraCard extends ConsumerWidget {
                   
                   // Recording and stream controls
                   if (isConnected) ...[
-                    _RecordingControls(cameraId: updatedCamera.deviceId),
-                    const SizedBox(width: 12),
+                    // For USB/RTSP/edge cameras, show recording controls
+                    if (updatedCamera.type != CameraType.edge) ...[
+                      _RecordingControls(cameraId: updatedCamera.deviceId),
+                      const SizedBox(width: 12),
+                    ],
                     IconButton(
                       onPressed: () {
                         // 🔍 DEBUG: Log navigation attempt
@@ -722,9 +742,9 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
       final cameraService = ref.read(cameraServiceProvider);
       final status = ref.read(cameraStatusProvider(widget.camera.deviceId));
       
-      // For mobile cameras, use camera.status since they don't use WebSocket
+      // For mobile and edge cameras, use camera.status since they don't use backend WebSocket
       // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
-      final isConnected = widget.camera.type == CameraType.mobile
+      final isConnected = (widget.camera.type == CameraType.mobile || widget.camera.type == CameraType.edge)
           ? widget.camera.status.toLowerCase() == 'connected'
           : (status?.isConnected ?? widget.camera.status.toLowerCase() == 'connected');
       
@@ -781,9 +801,9 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
   Widget build(BuildContext context) {
     final status = ref.watch(cameraStatusProvider(widget.camera.deviceId));
     
-    // For mobile cameras, use camera.status since they don't use WebSocket
+    // For mobile and edge cameras, use camera.status since they don't use backend WebSocket
     // For USB/RTSP cameras, use WebSocket status if available, otherwise camera.status
-    final isConnected = widget.camera.type == CameraType.mobile
+    final isConnected = (widget.camera.type == CameraType.mobile || widget.camera.type == CameraType.edge)
         ? widget.camera.status.toLowerCase() == 'connected'
         : (status?.isConnected ?? widget.camera.status.toLowerCase() == 'connected');
     
@@ -906,6 +926,102 @@ class _StreamThumbnail extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Edge camera stream controls widget
+class _EdgeStreamControls extends ConsumerStatefulWidget {
+  final Camera camera;
+
+  const _EdgeStreamControls({required this.camera});
+
+  @override
+  ConsumerState<_EdgeStreamControls> createState() => _EdgeStreamControlsState();
+}
+
+class _EdgeStreamControlsState extends ConsumerState<_EdgeStreamControls> {
+  bool _isLoading = false;
+  bool _isStreaming = false; // Track streaming state locally for now
+
+  Future<void> _toggleStreaming() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final cameraService = ref.read(cameraServiceProvider);
+
+      if (_isStreaming) {
+        // Stop streaming
+        debugPrint('🛑 [EdgeStreamControls] Stopping stream for ${widget.camera.deviceId}');
+        final success = await cameraService.stopEdgeCameraStream(widget.camera.deviceId);
+        
+        if (success) {
+          setState(() => _isStreaming = false);
+          debugPrint('✅ [EdgeStreamControls] Stream stopped successfully');
+        }
+      } else {
+        // Start streaming
+        debugPrint('🚀 [EdgeStreamControls] Starting stream for ${widget.camera.deviceId}');
+        final success = await cameraService.startEdgeCameraStream(widget.camera.deviceId);
+        
+        if (success) {
+          setState(() => _isStreaming = true);
+          debugPrint('✅ [EdgeStreamControls] Stream started successfully');
+          
+          // Navigate to full-screen stream page after starting
+          if (mounted) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => CameraStreamPage(camera: widget.camera),
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Stream control failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Container(
+        padding: const EdgeInsets.all(8),
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.5,
+            valueColor: AlwaysStoppedAnimation(Colors.blue),
+          ),
+        ),
+      );
+    }
+
+    return IconButton(
+      onPressed: _toggleStreaming,
+      icon: Icon(
+        _isStreaming ? Icons.stop : Icons.play_arrow,
+        color: _isStreaming ? Colors.red : Colors.green,
+      ),
+      iconSize: 28,
+      padding: const EdgeInsets.all(8),
+      constraints: const BoxConstraints(),
+      tooltip: _isStreaming ? 'Stop streaming' : 'Start streaming',
     );
   }
 }

@@ -1,0 +1,37 @@
+device:
+  id: "edge-camera-001"
+  name: "Laptop USB Camera"
+  location: "test-location"
+  type: edge
+
+camera:
+  device_id: 0  # USB camera index (0 for default camera)
+  resolution:
+    width: 1280
+    height: 720
+  fps: 15
+  format: "mjpeg"
+  buffer_size: 10
+
+platform:
+  cameras_url: "http://localhost:8005"
+  discovery_url: "http://localhost:8006"
+  health_check_interval: 30
+  reconnect_interval: 5
+  max_reconnect_attempts: 10
+  # Get JWT token: 1) Login: curl -X POST http://localhost:8001/api/v1/auth/login -H "Content-Type: application/json" -d '{"email":"fresh.user@example.com","password":"NewPassword234!"}'  2) Copy access_token
+  # Then set: export PLATFORM_API_KEY="your-jwt-token-here" before running edge camera
+  api_key: null  # JWT Bearer token for authentication (set via env PLATFORM_API_KEY or here)
+
+stream:
+  encoding: "mjpeg"
+  quality: 80
+  chunk_size: 4096
+  
+server:
+  host: "0.0.0.0"
+  port: 9001
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

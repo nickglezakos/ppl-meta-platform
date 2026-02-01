@@ -552,6 +552,14 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
                 tooltip: 'Stop stream',
               ),
             ),
+            // Edge camera stream control overlays
+            if (camera.type == CameraType.edge) ...[
+              // Combined start/stop control using a single stateful widget with stable key
+              _EdgeStreamControls(
+                key: ValueKey('edge_controls_${widget.cameraId}'),
+                cameraId: widget.cameraId,
+              ),
+            ],
           ],
         );
           },
@@ -639,5 +647,214 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         print('📱 [ORIENTATION_DEBUG] Error in orientation detection: $e');
       }
     }); // Wait 1 second for the image to fully load
+  }
+}
+
+/// Edge camera start stream button
+class _EdgeStreamStartButton extends ConsumerStatefulWidget {
+  final String cameraId;
+
+  const _EdgeStreamStartButton({required this.cameraId});
+
+  @override
+  ConsumerState<_EdgeStreamStartButton> createState() => _EdgeStreamStartButtonState();
+}
+
+class _EdgeStreamStartButtonState extends ConsumerState<_EdgeStreamStartButton> {
+  bool _isLoading = false;
+
+  Future<void> _startStreaming() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final cameraService = ref.read(cameraServiceProvider);
+      final success = await cameraService.startEdgeCameraStream(widget.cameraId);
+
+      if (success && mounted) {
+        // Update provider state
+        ref.read(edgeCameraStreamingProvider(widget.cameraId).notifier).state = true;
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Edge camera streaming started'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start stream: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _isLoading ? null : _startStreaming,
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.play_arrow, size: 32),
+            label: Text(
+              _isLoading ? 'Starting...' : 'Start Camera Stream',
+              style: const TextStyle(fontSize: 16),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Edge camera is connected.\nStart streaming to view video.',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Edge camera stop stream button
+class _EdgeStreamStopButton extends ConsumerStatefulWidget {
+  final String cameraId;
+
+  const _EdgeStreamStopButton({required this.cameraId});
+
+  @override
+  ConsumerState<_EdgeStreamStopButton> createState() => _EdgeStreamStopButtonState();
+}
+
+class _EdgeStreamStopButtonState extends ConsumerState<_EdgeStreamStopButton> {
+  bool _isLoading = false;
+
+  Future<void> _stopStreaming() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final cameraService = ref.read(cameraServiceProvider);
+      final success = await cameraService.stopEdgeCameraStream(widget.cameraId);
+
+      if (success && mounted) {
+        // Update provider state
+        ref.read(edgeCameraStreamingProvider(widget.cameraId).notifier).state = false;
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Edge camera streaming stopped'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to stop stream: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: _isLoading ? null : _stopStreaming,
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.red.withOpacity(0.9),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.all(12),
+      ),
+      icon: _isLoading
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(Colors.white),
+              ),
+            )
+          : const Icon(Icons.stop_circle, size: 24),
+      tooltip: 'Stop edge camera stream',
+    );
+  }
+}
+
+/// Edge camera stream controls (combined start/stop buttons)
+class _EdgeStreamControls extends ConsumerWidget {
+  final String cameraId;
+
+  const _EdgeStreamControls({
+    super.key,
+    required this.cameraId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isStreaming = ref.watch(edgeCameraStreamingProvider(cameraId));
+    
+    return Stack(
+      children: [
+        // Start stream button (center overlay) - only show when NOT streaming
+        if (!isStreaming)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Center(
+              child: _EdgeStreamStartButton(cameraId: cameraId),
+            ),
+          ),
+        // Stop stream button (bottom right) - only show when streaming
+        if (isStreaming)
+          Positioned(
+            bottom: 50, // Above the video player's stop button
+            right: 8,
+            child: _EdgeStreamStopButton(cameraId: cameraId),
+          ),
+      ],
+    );
   }
 }

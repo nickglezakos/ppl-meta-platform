@@ -593,6 +593,30 @@
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "📷 Start Edge Camera (Local Python)",
+			"type": "shell",
+			"command": "cd ppl-meta-edge-camera && source venv/bin/activate && cd src && python main.py",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop Edge Camera (Local Python)",
+			"type": "shell",
+			"command": "echo '🛑 Stopping Edge Camera...' && pkill -f 'ppl-meta-edge-camera.*python.*main.py' 2>/dev/null || true && lsof -ti:9001 | xargs kill -9 2>/dev/null || true && echo 'Edge camera stopped.'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Edge Camera Health Check",
+			"type": "shell",
+			"command": "echo '🏥 Edge Camera Health Check' && echo '=========================' && curl -s http://localhost:9001/health | python -m json.tool || echo '❌ Edge camera not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

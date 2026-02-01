@@ -34,6 +34,7 @@ class CameraType(str, Enum):
     WEBCAM = "WEBCAM"
     VIRTUAL = "VIRTUAL"
     MOBILE = "MOBILE"
+    EDGE = "EDGE"
 
 
 class StreamQuality(str, Enum):

@@ -302,8 +302,8 @@ class CameraService {
 
   /// Connect to a camera following the proper workflow:
   /// 1. Connect to the specific camera
-  /// 2. Auto-start streaming (USB/RTSP only)
-  /// 3. Auto-create collection (USB/RTSP only)
+  /// 2. Auto-start streaming (USB/RTSP only, not mobile/edge)
+  /// 3. Auto-create collection (USB/RTSP only, not mobile/edge)
   Future<bool> connectCamera(String deviceId) async {
     try {
       print('🔌🔌🔌 [CONNECT_CAMERA] START - Connecting to camera $deviceId...');
@@ -321,11 +321,19 @@ class CameraService {
         // Check camera type from response
         final cameraType = response.data?['camera_type']?.toString().toLowerCase();
         final isMobileCamera = cameraType == 'mobile';
+        final isEdgeCamera = cameraType == 'edge';
         
         if (isMobileCamera) {
           // Mobile cameras don't use backend streaming - they stream directly from mobile app
           print('📱 [CONNECT_CAMERA] Mobile camera connected - skipping backend streaming setup');
           print('📱 [CONNECT_CAMERA] Mobile camera uses direct streaming from device');
+          return true;
+        }
+        
+        if (isEdgeCamera) {
+          // Edge cameras use WebSocket command protocol - no auto-streaming
+          print('🔷 [CONNECT_CAMERA] Edge camera connected - streaming controlled via WebSocket commands');
+          print('🔷 [CONNECT_CAMERA] Edge camera waits for explicit start-stream command from UI');
           return true;
         }
         
@@ -397,6 +405,56 @@ class CameraService {
         throw _handleDioError(e);
       }
       throw CameraException('Failed to disconnect camera: ${e.toString()}');
+    }
+  }
+
+  /// Start streaming for an edge camera (via WebSocket command)
+  Future<bool> startEdgeCameraStream(String deviceId) async {
+    try {
+      print('🚀 [START_EDGE_STREAM] Starting stream for edge camera $deviceId...');
+      
+      final response = await _cameraApiClient.post<Map<String, dynamic>>(
+        '/api/v1/cameras/edge/$deviceId/start-stream',
+      );
+      
+      if (response.statusCode == 200) {
+        print('✅ Started streaming for edge camera $deviceId');
+        return true;
+      } else {
+        print('❌ Failed to start edge camera stream: ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      print('❌ Error starting edge camera stream: $e');
+      if (e is DioException) {
+        throw _handleDioError(e);
+      }
+      throw CameraException('Failed to start edge camera stream: ${e.toString()}');
+    }
+  }
+
+  /// Stop streaming for an edge camera (via WebSocket command)
+  Future<bool> stopEdgeCameraStream(String deviceId) async {
+    try {
+      print('🛑 [STOP_EDGE_STREAM] Stopping stream for edge camera $deviceId...');
+      
+      final response = await _cameraApiClient.post<Map<String, dynamic>>(
+        '/api/v1/cameras/edge/$deviceId/stop-stream',
+      );
+      
+      if (response.statusCode == 200) {
+        print('✅ Stopped streaming for edge camera $deviceId');
+        return true;
+      } else {
+        print('❌ Failed to stop edge camera stream: ${response.statusCode}');
+        return false;
+      }
+    } catch (e) {
+      print('❌ Error stopping edge camera stream: $e');
+      if (e is DioException) {
+        throw _handleDioError(e);
+      }
+      throw CameraException('Failed to stop edge camera stream: ${e.toString()}');
     }
   }
 

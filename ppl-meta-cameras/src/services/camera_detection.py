@@ -976,8 +976,11 @@ class CameraDetectionService:
             finally:
                 db.close()
 
-            # 🎯 UNIFIED QUEUE ARCHITECTURE: All cameras (USB, RTSP, MOBILE) use queue workers
+            # 🎯 UNIFIED QUEUE ARCHITECTURE: All cameras (USB, RTSP, MOBILE, EDGE) use workers
             logger.info(f"🎯 [RECORDING_START] Using queue-based worker for {device_id} (mobile: {is_mobile})")
+            
+            # Determine if this is an edge camera
+            is_edge = device_id.startswith('edge-camera-')
             
             # For mobile cameras, ensure queue worker is connected first
             if is_mobile:
@@ -1005,20 +1008,39 @@ class CameraDetectionService:
                 
                 logger.info(f"✅ [MOBILE] Queue worker ready for {device_id}")
             
-            # 🔧 INTEGRATED DETECTION: Enable detection in worker for ALL camera types (USB/RTSP/MOBILE)
+            # 🔧 INTEGRATED DETECTION: Enable detection in worker for ALL camera types (USB/RTSP/MOBILE/EDGE)
             from src.services.camera_service_queue import get_camera_service as get_queue_service
-            queue_service = get_queue_service()
-            worker = await queue_service.get_camera_stream(device_id)
+            
+            if is_edge:
+                # Edge cameras use EdgeCameraFrameProcessor
+                logger.info(f"📹 [EDGE] Getting worker from EdgeCameraFrameProcessor for {device_id}")
+                from src.services.edge_camera_processor import get_edge_processor
+                edge_processor = get_edge_processor()
+                worker = edge_processor.get_worker(device_id)
+                
+                if not worker:
+                    logger.error(f"❌ [EDGE] No worker found for edge camera {device_id}")
+                    return None
+                
+                logger.info(f"✅ [EDGE] Worker found for {device_id}")
+            else:
+                # USB/RTSP/Mobile cameras use queue service
+                queue_service = get_queue_service()
+                worker = await queue_service.get_camera_stream(device_id)
             
             if worker and instant_detection_enabled:
                 logger.info(f"🔍 [INSTANT-DETECT] Enabling integrated detection in worker {device_id} (interval: {instant_detection_interval}s)")
                 try:
-                    worker.start_detection()
+                    detection_config = {
+                        "interval_seconds": instant_detection_interval
+                    }
+                    worker.start_detection(detection_config)
                     logger.info(f"✅ Integrated detection enabled for worker {device_id}")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to enable worker detection for {device_id}: {e}")
             
-            # Use unified recording path for ALL camera types (USB/RTSP/MOBILE)
+            # Use unified recording path for ALL camera types (USB/RTSP/MOBILE/EDGE)
+            logger.info(f"🎬 [SESSION] Starting recording for {device_id}, session: {session_uuid}")
             result = await self._start_regular_recording_with_session(
                 device_id,
                 user_id,
@@ -1026,6 +1048,7 @@ class CameraDetectionService:
                 auth_token,
                 session_uuid,
                 segment_duration,
+                is_edge=is_edge,  # Pass flag to recording function
             )
             
             # 🔧 PIPELINE STATUS: Log final pipeline state
@@ -1049,23 +1072,29 @@ class CameraDetectionService:
         auth_token: Optional[str] = None,
         session_uuid: str = "",
         segment_duration: int = 30,
+        is_edge: bool = False,
     ) -> Optional[Dict]:
         """
-        Start recording for USB/RTSP cameras with session and segment support.
+        Start recording for USB/RTSP/EDGE cameras with session and segment support.
         
         ✅ CRITICAL ARCHITECTURE: ALL blocking operations now happen in worker thread
         """
         logger.info(
-            f"🎬 [SESSION] Starting USB/RTSP recording for {device_id}, session: {session_uuid}"
+            f"🎬 [SESSION] Starting recording for {device_id} (edge: {is_edge}), session: {session_uuid}"
         )
 
-        # Get queue worker
-        from src.services.camera_service_queue import get_camera_service as get_queue_service
-        queue_service = get_queue_service()
+        # Get worker (from queue service or edge processor)
+        if is_edge:
+            from src.services.edge_camera_processor import get_edge_processor
+            edge_processor = get_edge_processor()
+            worker = edge_processor.get_worker(device_id)
+        else:
+            from src.services.camera_service_queue import get_camera_service as get_queue_service
+            queue_service = get_queue_service()
+            worker = await queue_service.get_camera_stream(device_id)
         
-        worker = await queue_service.get_camera_stream(device_id)
         if not worker:
-            logger.error(f"❌ No queue worker found for {device_id}")
+            logger.error(f"❌ No worker found for {device_id}")
             return None
         
         # 🎯 IN-MEMORY COLLECTION: Find or create collection UUID ONCE at recording start
@@ -1073,11 +1102,15 @@ class CameraDetectionService:
         collection_uuid = None
         try:
             import aiohttp
-            headers = {}
+            
+            # Use user's auth token (maintains platform pattern)
+            headers = {
+                'Content-Type': 'application/json'
+            }
             if auth_token:
                 headers['Authorization'] = f'Bearer {auth_token}'
             
-            # Get user GUID first (media service requires UUID format)
+            # Get user GUID (media service requires UUID format)
             user_guid = None
             if user_id:
                 async with aiohttp.ClientSession() as session:
@@ -1086,10 +1119,10 @@ class CameraDetectionService:
                         if response.status == 200:
                             user_data = await response.json()
                             user_guid = user_data.get('guid')
-                            logger.info(f"📦 [COLLECTION] Got user GUID: {user_guid}")
+                            logger.info(f"📦 [COLLECTION] Got user GUID: {user_guid} for user {user_id}")
             
-            if user_guid:
-                # Try to find existing collection
+            # Try to find existing collection by camera_device_id
+            if user_guid:  # Only proceed if we have user authentication
                 async with aiohttp.ClientSession() as session:
                     lookup_url = f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}"
                     async with session.get(lookup_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
@@ -1098,28 +1131,33 @@ class CameraDetectionService:
                             if collection_data:
                                 collection_uuid = collection_data.get('uuid')
                                 logger.info(f"📦 [COLLECTION] Found existing: {collection_uuid}")
-                
-                # Create collection if not found
-                if not collection_uuid:
-                    logger.info(f"📦 [COLLECTION] Creating new collection for {device_id}")
-                    async with aiohttp.ClientSession() as session:
-                        create_data = {
-                            "name": f"Camera {device_id}",
-                            "description": f"Recordings from camera {device_id}",
-                            "is_public": False,
-                            "user_id": user_guid,
-                            "camera_device_id": device_id
-                        }
+                    
+                    # Create collection if not found (reuse same session)
+                    if not collection_uuid:
+                        logger.info(f"📦 [COLLECTION] Creating new collection for {device_id}")
+                        # Media service expects form data, not JSON
+                        form_data = aiohttp.FormData()
+                        form_data.add_field('name', f'Camera {device_id}')
+                        form_data.add_field('description', f'Recordings from camera {device_id}')
+                        form_data.add_field('user_id', user_guid)
+                        form_data.add_field('is_public', 'false')
+                        form_data.add_field('camera_device_id', device_id)
+                        
+                        logger.info(f"🔍 [COLLECTION-DEBUG] Sending form data for {device_id} with user_id {user_guid}")
+                        
                         async with session.post(
                             "http://localhost:8000/api/v1/media/collections",
-                            json=create_data,
-                            headers=headers,
+                            data=form_data,
+                            headers={'Authorization': headers.get('Authorization')},  # Only send auth header
                             timeout=aiohttp.ClientTimeout(total=10)
                         ) as response:
                             if response.status == 200:
                                 collection_data = await response.json()
                                 collection_uuid = collection_data.get('uuid')
                                 logger.info(f"✅ [COLLECTION] Created new: {collection_uuid}")
+                            else:
+                                response_text = await response.text()
+                                logger.error(f"❌ [COLLECTION] Failed to create collection: {response.status} - {response_text}")
             
             if collection_uuid:
                 logger.info(f"🎯 [IN-MEMORY] Collection UUID will be passed in session_info: {collection_uuid}")

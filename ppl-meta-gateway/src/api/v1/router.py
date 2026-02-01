@@ -1271,6 +1271,21 @@ async def update_camera_workflow_settings(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+# Edge Camera Routes
+@api_router.post("/cameras/edge/{device_id}/start-stream")
+async def start_edge_camera_stream(request: Request):
+    """Proxy start edge camera stream to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/edge/{device_id}/stop-stream")
+async def stop_edge_camera_stream(request: Request):
+    """Proxy stop edge camera stream to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
 # Streaming Service Routes
 @api_router.post("/streaming/{device_id}/start")
 async def start_streaming(request: Request):
