@@ -1023,6 +1023,7 @@ async def update_rtsp_camera(
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
     """Update an existing RTSP camera configuration."""
+    from datetime import datetime, timedelta
 
     try:
         # Find the camera
@@ -1043,6 +1044,8 @@ async def update_rtsp_camera(
         # Validate camera name uniqueness (if name is changing)
         from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
         new_name = sanitize_camera_name(camera_update.name)
+        old_name = camera.name  # Save old name for collection sync
+        
         if new_name != camera.name:
             is_valid, error_msg = validate_camera_name_unique(db, new_name, exclude_device_id=device_id)
             if not is_valid:
@@ -1054,10 +1057,7 @@ async def update_rtsp_camera(
         # Update camera fields
         camera.name = new_name
 
-        # Build new device_id and RTSP URL
-        new_device_id = f"rtsp_{camera_update.host}_{camera_update.port}"
-
-        # Build RTSP URL with credentials
+        # Build RTSP URL with credentials (keep UUID device_id intact)
         credentials = ""
         if camera_update.username:
             if camera_update.password:
@@ -1067,9 +1067,9 @@ async def update_rtsp_camera(
 
         rtsp_url = f"rtsp://{credentials}{camera_update.host}:{camera_update.port}{camera_update.path}"
 
-        # Update camera fields
-        camera.device_id = new_device_id
+        # Update camera fields (keep device_id as UUID - don't change it!)
         camera.connection_string = rtsp_url
+        camera.port = camera_update.port
         camera.username = camera_update.username
         camera.password = camera_update.password
         camera.supports_recording = True  # Enable RTSP camera recording
@@ -1082,6 +1082,61 @@ async def update_rtsp_camera(
         logger.info(
             f"User {current_user.get('sub')} updated RTSP camera: " f"{camera.name}"
         )
+
+        # Update associated collection name if camera name changed
+        if new_name != old_name:
+            try:
+                import httpx
+                import os
+                import jwt
+                
+                # Create a JWT token for service-to-service auth
+                node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+                user_id = current_user.get('sub')
+                
+                service_token_payload = {
+                    'sub': str(user_id),
+                    'exp': datetime.utcnow() + timedelta(minutes=5)
+                }
+                service_token = jwt.encode(service_token_payload, node_secret, algorithm='HS256')
+                
+                headers = {
+                    'Authorization': f'Bearer {service_token}',
+                    'Content-Type': 'application/json'
+                }
+                
+                async with httpx.AsyncClient() as client:
+                    # Find collection by camera_device_id
+                    response = await client.get(
+                        f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
+                        headers=headers,
+                        timeout=10.0
+                    )
+                    
+                    if response.status_code == 200:
+                        collection = response.json()
+                        collection_uuid = collection.get("uuid")
+                        
+                        # Update collection name
+                        update_response = await client.patch(
+                            f"http://localhost:8000/api/v1/media/collections/{collection_uuid}/name",
+                            params={"name": new_name},
+                            headers=headers,
+                            timeout=10.0
+                        )
+                        
+                        if update_response.status_code == 200:
+                            logger.info(f"✅ Updated collection name for RTSP camera {device_id}: {new_name}")
+                        else:
+                            logger.warning(
+                                f"⚠️ Failed to update collection name for RTSP camera {device_id}: "
+                                f"{update_response.status_code}"
+                            )
+                    else:
+                        logger.info(f"ℹ️ No collection found for RTSP camera {device_id}, skipping collection update")
+                        
+            except Exception as e:
+                logger.error(f"❌ Error updating collection name for RTSP camera {device_id}: {e}")
 
         return {
             "message": "RTSP camera updated successfully",

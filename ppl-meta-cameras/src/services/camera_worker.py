@@ -1322,7 +1322,7 @@ class CameraWorker:
         try:
             # Check if face detection on save is enabled
             NODE_SERVICE_URL = "http://localhost:8001"
-            VISION_SERVICE_URL = "http://localhost:8002"
+            VISION_SERVICE_URL = "http://localhost:8003"  # Correct port for Vision Service
             
             setting_url = f"{NODE_SERVICE_URL}/api/v1/settings/face_detection_on_save"
             logger.info(f"🎯 [FACE-DETECTION] Checking setting for media {media_uuid}")
@@ -1358,6 +1358,7 @@ class CameraWorker:
             
             detection_payload = {
                 "media_id": media_uuid,
+                "media_type": "video",  # Add required field
                 "media_url": media_url,
                 "processing_options": {
                     "detection_methods": ["opencv", "dlib"],
