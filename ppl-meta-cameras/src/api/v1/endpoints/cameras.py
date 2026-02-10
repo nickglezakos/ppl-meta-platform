@@ -217,21 +217,34 @@ async def detect_cameras(
         }
 
         if save_to_db:
-            # Save detected cameras to database
+            # Save detected cameras to database with auto-naming
+            from src.services.auto_naming_service import generate_auto_camera_name
+            from src.services.device_id_service import ensure_valid_uuid
+            
             saved_count = 0
             for cam_info in detected_cameras:
                 device_id = cam_info.get('device_id')
                 camera_type_str = cam_info.get('camera_type', 'USB')
                 camera_type = CameraType[camera_type_str] if camera_type_str in CameraType.__members__ else CameraType.USB
                 
+                # Ensure device_id is valid UUID (converts legacy formats)
+                device_id = ensure_valid_uuid(device_id)
+                
                 existing = db.query(Camera).filter(Camera.device_id == device_id).first()
                 if not existing:
+                    # Generate unique auto-numbered name
+                    index = cam_info.get('index')  # For USB cameras, use detection index
+                    auto_name = generate_auto_camera_name(db, camera_type, index=index)
+                    
                     new_camera = Camera(
                         device_id=device_id,
                         camera_type=camera_type,
-                        name=cam_info.get('name', device_id),
-                        location=cam_info.get('location', ''),
+                        name=auto_name,  # Use auto-generated unique name
                         status=CameraStatus.DISCONNECTED,
+                        resolution_width=cam_info.get('resolution_width'),
+                        resolution_height=cam_info.get('resolution_height'),
+                        max_fps=cam_info.get('max_fps'),
+                        connection_string=cam_info.get('connection_string'),
                     )
                     db.add(new_camera)
                     saved_count += 1
@@ -603,6 +616,142 @@ async def disconnect_all_cameras(
         ) from e
 
 
+class CameraNameUpdate(BaseModel):
+    """Model for camera name update"""
+    name: str
+
+
+@router.patch("/{device_id}/name", dependencies=[Depends(require_admin_cameras)])
+async def update_camera_name(
+    device_id: str,
+    camera_update: CameraNameUpdate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Update camera name. 
+    
+    This will also automatically update the associated collection name.
+    Camera names must be unique across the platform.
+    """
+    try:
+        # Find the camera
+        camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+        
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Camera {device_id} not found",
+            )
+        
+        # Validate camera name uniqueness
+        from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
+        new_name = sanitize_camera_name(camera_update.name)
+        
+        # Check if name is actually changing
+        if new_name == camera.name:
+            return {
+                "message": "Camera name unchanged",
+                "camera": {
+                    "device_id": camera.device_id,
+                    "name": camera.name,
+                }
+            }
+        
+        is_valid, error_msg = validate_camera_name_unique(db, new_name, exclude_device_id=device_id)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        
+        old_name = camera.name
+        camera.name = new_name
+        db.commit()
+        db.refresh(camera)
+        
+        logger.info(
+            f"User {current_user.get('sub')} updated camera name: "
+            f"{old_name} -> {new_name} (device_id: {device_id})"
+        )
+        
+        # Update associated collection name (async call to media service)
+        try:
+            import httpx
+            import os
+            import jwt
+            from datetime import datetime, timedelta
+            
+            # Create a JWT token signed with NODE_SERVICE_SECRET for service-to-service auth
+            node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+            user_id = current_user.get('sub')
+            
+            # Create service token with user ID
+            service_token_payload = {
+                'sub': str(user_id),
+                'exp': datetime.utcnow() + timedelta(minutes=5)
+            }
+            service_token = jwt.encode(service_token_payload, node_secret, algorithm='HS256')
+            
+            headers = {
+                'Authorization': f'Bearer {service_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            async with httpx.AsyncClient() as client:
+                # Find collection by camera_device_id
+                response = await client.get(
+                    f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
+                    headers=headers,
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    collection = response.json()
+                    collection_uuid = collection.get("uuid")
+                    
+                    # Update collection name (send name as query parameter)
+                    update_response = await client.patch(
+                        f"http://localhost:8000/api/v1/media/collections/{collection_uuid}/name",
+                        params={"name": new_name},
+                        headers=headers,
+                        timeout=10.0
+                    )
+                    
+                    if update_response.status_code == 200:
+                        logger.info(f"✅ Updated collection name for camera {device_id}: {new_name}")
+                    else:
+                        logger.warning(
+                            f"⚠️ Failed to update collection name for camera {device_id}: "
+                            f"{update_response.status_code}"
+                        )
+                else:
+                    logger.info(f"ℹ️ No collection found for camera {device_id}, skipping collection update")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error updating collection name for camera {device_id}: {e}")
+            # Don't fail the camera name update if collection update fails
+        
+        return {
+            "message": "Camera name updated successfully",
+            "camera": {
+                "device_id": camera.device_id,
+                "name": camera.name,
+                "old_name": old_name,
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating camera name: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update camera name: {str(e)}",
+        )
+
+
 @router.post("/rtsp", dependencies=[Depends(require_admin_cameras)])
 async def add_rtsp_camera(
     camera_data: Dict,
@@ -612,8 +761,8 @@ async def add_rtsp_camera(
     """Add a new RTSP camera to the system."""
 
     try:
-        # Validate required fields
-        required_fields = ["name", "host", "port", "path"]
+        # Validate required fields (name is now optional - will be auto-generated)
+        required_fields = ["host", "port", "path"]
         for field in required_fields:
             if field not in camera_data:
                 raise HTTPException(
@@ -622,12 +771,33 @@ async def add_rtsp_camera(
                 )
 
         # Extract camera data
-        name = camera_data["name"]
+        name = camera_data.get("name")  # Optional now
         host = camera_data["host"]
         port = int(camera_data["port"])
         path = camera_data["path"]
         username = camera_data.get("username")
         password = camera_data.get("password")
+        
+        # Validate camera name - if provided use it, otherwise auto-generate
+        from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
+        from src.services.auto_naming_service import generate_auto_camera_name
+        from src.services.device_id_service import generate_uuid
+        
+        # Generate proper UUID for device_id
+        device_id = generate_uuid()
+        
+        # Handle camera name
+        if name:
+            name = sanitize_camera_name(name)
+            is_valid, error_msg = validate_camera_name_unique(db, name)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg,
+                )
+        else:
+            # Auto-generate unique name if not provided
+            name = generate_auto_camera_name(db, CameraType.RTSP)
 
         # Build RTSP URL
         credentials = ""
@@ -638,7 +808,6 @@ async def add_rtsp_camera(
                 credentials = f"{username}@"
 
         rtsp_url = f"rtsp://{credentials}{host}:{port}{path}"
-        device_id = f"rtsp_{host}_{port}"
 
         # Check if camera already exists
         existing_camera = db.query(Camera).filter(Camera.device_id == device_id).first()
@@ -871,8 +1040,19 @@ async def update_rtsp_camera(
                 detail="RTSP camera not found",
             )
 
+        # Validate camera name uniqueness (if name is changing)
+        from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
+        new_name = sanitize_camera_name(camera_update.name)
+        if new_name != camera.name:
+            is_valid, error_msg = validate_camera_name_unique(db, new_name, exclude_device_id=device_id)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg,
+                )
+
         # Update camera fields
-        camera.name = camera_update.name
+        camera.name = new_name
 
         # Build new device_id and RTSP URL
         new_device_id = f"rtsp_{camera_update.host}_{camera_update.port}"
@@ -945,10 +1125,31 @@ async def register_mobile_camera(
         logger.info(
             f"Mobile camera registration: client_ip={client_ip}, provided_ip={mobile_data.ip_address}, using_ip={actual_ip}"
         )
+        
+        # Validate and ensure proper UUID format
+        from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
+        from src.services.auto_naming_service import generate_auto_camera_name
+        from src.services.device_id_service import ensure_valid_uuid
+        
+        # Convert device_id to proper UUID (handles Android ID format)
+        device_id = ensure_valid_uuid(mobile_data.device_id, legacy_metadata={'ip': actual_ip})
+        
+        # Handle camera name
+        if mobile_data.name:
+            camera_name = sanitize_camera_name(mobile_data.name)
+            is_valid, error_msg = validate_camera_name_unique(db, camera_name)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg,
+                )
+        else:
+            # Auto-generate unique name
+            camera_name = generate_auto_camera_name(db, CameraType.MOBILE)
 
         # Check if mobile camera already exists
         existing_camera = (
-            db.query(Camera).filter(Camera.device_id == mobile_data.device_id).first()
+            db.query(Camera).filter(Camera.device_id == device_id).first()
         )
         if existing_camera:
             # Update existing camera with new IP address and connection string
@@ -995,7 +1196,7 @@ async def register_mobile_camera(
 
         # Create new mobile camera
         new_camera = Camera(
-            name=mobile_data.name,
+            name=camera_name,  # Use sanitized and validated name
             device_id=mobile_data.device_id,
             camera_type=CameraType.MOBILE,
             status=CameraStatus.AVAILABLE,
@@ -1685,6 +1886,7 @@ async def get_camera_settings(
                 "user_id": target_user_id,
                 "auto_face_detection": False,
                 "detection_methods": ["mtcnn"],
+                "tolerance_percent": 20,
                 "processing_options": {},
                 "auto_recording": False,
                 "recording_duration": 30,
@@ -1935,6 +2137,19 @@ async def get_workflow_settings(
                 detail=f"Camera {device_id} not found",
             )
         
+        # Get tolerance_percent from camera_settings table
+        from src.models.camera_settings import CameraSettings
+        
+        settings = (
+            db.query(CameraSettings)
+            .filter(
+                CameraSettings.camera_device_id == device_id,
+                CameraSettings.user_id == current_user.get("sub"),
+            )
+            .first()
+        )
+        tolerance_percent = settings.tolerance_percent if settings else 20
+        
         return {
             "device_id": camera.device_id,
             "camera_name": camera.name,
@@ -1942,6 +2157,7 @@ async def get_workflow_settings(
             "detection_methods": camera.detection_methods if hasattr(camera, 'detection_methods') else ["opencv", "dlib"],
             "processing_options": camera.processing_options if hasattr(camera, 'processing_options') else {},
             "confidence_threshold": camera.confidence_threshold if hasattr(camera, 'confidence_threshold') else 0.7,
+            "tolerance_percent": tolerance_percent,
             "enable_performance_optimization": camera.enable_performance_optimization if hasattr(camera, 'enable_performance_optimization') else True,
             "show_performance_indicators": camera.show_performance_indicators if hasattr(camera, 'show_performance_indicators') else True,
             "default_playback_mode": camera.default_playback_mode if hasattr(camera, 'default_playback_mode') else "auto",
@@ -1983,6 +2199,7 @@ async def update_workflow_settings(
         detection_methods = body.get('detection_methods')
         processing_options = body.get('processing_options')
         confidence_threshold = body.get('confidence_threshold')
+        tolerance_percent = body.get('tolerance_percent')
         enable_performance_optimization = body.get('enable_performance_optimization')
         show_performance_indicators = body.get('show_performance_indicators')
         default_playback_mode = body.get('default_playback_mode')
@@ -1993,6 +2210,13 @@ async def update_workflow_settings(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Confidence threshold must be between 0.0 and 1.0",
+            )
+        
+        # Validate tolerance_percent
+        if tolerance_percent is not None and (tolerance_percent < 10 or tolerance_percent > 50):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tolerance percent must be between 10 and 50",
             )
         
         # Validate mvr_quality_threshold
@@ -2038,13 +2262,49 @@ async def update_workflow_settings(
         if mvr_quality_threshold is not None:
             camera.mvr_quality_threshold = mvr_quality_threshold
         
+        # Update tolerance_percent in camera_settings table
+        if tolerance_percent is not None:
+            from src.models.camera_settings import CameraSettings
+            
+            # Get or create camera settings for the current user
+            settings = (
+                db.query(CameraSettings)
+                .filter(
+                    CameraSettings.camera_device_id == device_id,
+                    CameraSettings.user_id == current_user.get("sub"),
+                )
+                .first()
+            )
+            
+            if not settings:
+                settings = CameraSettings(
+                    camera_device_id=device_id,
+                    user_id=current_user.get("sub"),
+                    tolerance_percent=tolerance_percent,
+                )
+                db.add(settings)
+            else:
+                settings.tolerance_percent = tolerance_percent
+        
         db.commit()
         db.refresh(camera)
+        
+        # Get tolerance_percent for response
+        settings = (
+            db.query(CameraSettings)
+            .filter(
+                CameraSettings.camera_device_id == device_id,
+                CameraSettings.user_id == current_user.get("sub"),
+            )
+            .first()
+        )
+        tolerance_percent_value = settings.tolerance_percent if settings else 20
         
         logger.info(
             f"📹 Updated workflow settings for {device_id}: "
             f"auto_face_detection={camera.auto_face_detection}, "
-            f"detection_methods={camera.detection_methods}"
+            f"detection_methods={camera.detection_methods}, "
+            f"tolerance_percent={tolerance_percent_value}"
         )
         
         return {
@@ -2054,6 +2314,7 @@ async def update_workflow_settings(
             "detection_methods": camera.detection_methods,
             "processing_options": camera.processing_options,
             "confidence_threshold": camera.confidence_threshold,
+            "tolerance_percent": tolerance_percent_value,
             "enable_performance_optimization": camera.enable_performance_optimization,
             "show_performance_indicators": camera.show_performance_indicators,
             "default_playback_mode": camera.default_playback_mode,

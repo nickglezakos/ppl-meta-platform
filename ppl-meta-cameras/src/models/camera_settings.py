@@ -23,6 +23,7 @@ class CameraSettings(Base):
     # Face detection settings
     auto_face_detection = Column(Boolean, default=False, nullable=False)
     detection_methods = Column(JSON, default=lambda: ["two_stage"], nullable=False)
+    tolerance_percent = Column(Integer, default=20, nullable=False)  # IoU threshold for person grouping (10-50%)
 
     # Processing options
     processing_options = Column(JSON, default=dict, nullable=False)
@@ -51,6 +52,7 @@ class CameraSettings(Base):
             "user_id": self.user_id,
             "auto_face_detection": self.auto_face_detection,
             "detection_methods": self.detection_methods,
+            "tolerance_percent": self.tolerance_percent,
             "processing_options": self.processing_options,
             "auto_recording": self.auto_recording,
             "recording_duration": self.recording_duration,

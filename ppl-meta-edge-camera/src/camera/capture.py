@@ -44,13 +44,26 @@ class CameraCapture:
         try:
             logger.info(f"Starting camera capture on device {self.device_id}")
             
-            self.cap = cv2.VideoCapture(self.device_id)
+            # Try CSI camera first with libcamera GStreamer pipeline (Raspberry Pi)
+            gst_pipeline = (
+                f"libcamerasrc ! "
+                f"video/x-raw,width={self.width},height={self.height},framerate={self.fps}/1 ! "
+                f"videoconvert ! appsink"
+            )
+            
+            logger.info(f"Trying CSI camera with GStreamer pipeline: {gst_pipeline}")
+            self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
+            
+            if not self.cap.isOpened():
+                logger.warning("CSI camera not available, trying USB/V4L2 device")
+                self.cap = cv2.VideoCapture(self.device_id)
             
             if not self.cap.isOpened():
                 logger.error("Failed to open camera")
                 return False
             
-            # Set camera properties
+            # Set camera properties - MJPEG format first for better FPS support
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
             self.cap.set(cv2.CAP_PROP_FPS, self.fps)

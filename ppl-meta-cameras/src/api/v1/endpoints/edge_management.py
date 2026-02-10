@@ -52,9 +52,30 @@ async def register_edge_camera(
 ):
     """Register a new edge camera in the database."""
     try:
+        # Validate and ensure proper UUID format
+        from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
+        from src.services.auto_naming_service import generate_auto_camera_name
+        from src.services.device_id_service import ensure_valid_uuid
+        
+        # Convert device_id to proper UUID (handles legacy edge-camera-XXX format)
+        device_id = ensure_valid_uuid(request.device_id, legacy_metadata={'ip': request.ip_address})
+        
+        # Handle camera name
+        if request.name:
+            camera_name = sanitize_camera_name(request.name)
+            is_valid, error_msg = validate_camera_name_unique(db, camera_name)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=error_msg
+                )
+        else:
+            # Auto-generate unique name
+            camera_name = generate_auto_camera_name(db, CameraType.EDGE)
+        
         # Check if camera already exists
         existing = db.query(Camera).filter(
-            Camera.device_id == request.device_id
+            Camera.device_id == device_id
         ).first()
         
         if existing:
@@ -68,8 +89,8 @@ async def register_edge_camera(
         
         # Create new camera record
         new_camera = Camera(
-            name=request.name,
-            device_id=request.device_id,
+            name=camera_name,  # Use sanitized and validated name
+            device_id=device_id,  # Use validated UUID
             camera_type=CameraType.EDGE,
             connection_string=connection_string,
             status="active",

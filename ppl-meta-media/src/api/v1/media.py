@@ -582,6 +582,97 @@ async def search_collections(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.patch(
+    "/collections/{collection_uuid}/name",
+    summary="Update collection name",
+)
+async def update_collection_name(
+    collection_uuid: str,
+    name: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Update collection name.
+    
+    Collection names must be unique across the platform.
+    This endpoint is typically called when a camera name is updated.
+    """
+    try:
+        from src.models.media import MediaCollection
+        from src.services.collection_name_validation import (
+            validate_collection_name_unique,
+            sanitize_collection_name
+        )
+        from uuid import UUID
+
+        # Find the collection
+        collection = (
+            db.query(MediaCollection)
+            .filter(MediaCollection.uuid == UUID(collection_uuid))
+            .first()
+        )
+
+        if not collection:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection {collection_uuid} not found"
+            )
+
+        # Sanitize and validate the new name
+        new_name = sanitize_collection_name(name)
+        
+        # Check if name is actually changing
+        if new_name == collection.name:
+            return {
+                "message": "Collection name unchanged",
+                "collection": {
+                    "uuid": str(collection.uuid),
+                    "name": collection.name,
+                }
+            }
+
+        is_valid, error_msg = validate_collection_name_unique(
+            db, new_name, exclude_uuid=collection_uuid
+        )
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=error_msg
+            )
+
+        old_name = collection.name
+        collection.name = new_name
+        db.commit()
+        db.refresh(collection)
+
+        logger.info(
+            f"Collection name updated: {old_name} -> {new_name} "
+            f"(UUID: {collection_uuid}, camera: {collection.camera_device_id})"
+        )
+
+        return {
+            "message": "Collection name updated successfully",
+            "collection": {
+                "uuid": str(collection.uuid),
+                "name": collection.name,
+                "old_name": old_name,
+                "camera_device_id": collection.camera_device_id,
+            }
+        }
+
+    except HTTPException:
+        raise
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid collection UUID")
+    except Exception as e:
+        logger.error(f"Error updating collection name: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update collection name: {str(e)}"
+        )
+
+
 @router.get(
     "/collections/by-camera/{camera_device_id}",
     response_model=Optional[MediaCollectionResponse],

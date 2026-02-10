@@ -1180,6 +1180,10 @@ class CameraWorker:
                     # Assign to camera collection (so vmeta can find it via database polling)
                     self._assign_to_collection_sync(media_uuid, user_guid, headers)
                     
+                    # ✅ TRIGGER CONTINUOUS PIPELINE: Trigger face detection for this segment
+                    # This enables the continuous pipeline (face detection → individuals → MVR)
+                    self._trigger_face_detection_sync(media_uuid, headers)
+                    
                 else:
                     logger.error(f"❌ [UPLOAD] Failed: HTTP {response.status_code} - {response.text[:200]}")
                     
@@ -1256,18 +1260,39 @@ class CameraWorker:
             # Collection not found, create new one
             logger.info(f"📦 [COLLECTION] Creating new collection for {self.device_id}")
             
+            # Get camera name from database to use for collection
+            from src.models.camera import Camera
+            from src.database import get_db
+            
+            camera_name = None
+            try:
+                db = next(get_db())
+                camera = db.query(Camera).filter(Camera.device_id == self.device_id).first()
+                if camera:
+                    camera_name = camera.name
+                    logger.info(f"📦 [COLLECTION] Using camera name from database: {camera_name}")
+                else:
+                    camera_name = f"Camera {self.device_id}"
+            except Exception as e:
+                logger.warning(f"Could not get camera name from database: {e}")
+                camera_name = f"Camera {self.device_id}"
+            
+            # Media service expects form data, not JSON
             create_data = {
-                "name": f"Camera {self.device_id}",
-                "description": f"Recordings from camera {self.device_id}",
-                "is_public": False,
+                "name": camera_name,  # Use camera name instead of device_id
+                "description": f"Recordings from {camera_name}",
+                "is_public": "false",  # String, not boolean for form data
                 "user_id": user_guid,
                 "camera_device_id": self.device_id
             }
             
+            # Remove Content-Type header to let requests set it for form data
+            form_headers = {k: v for k, v in headers.items() if k.lower() != 'content-type'}
+            
             response = requests.post(
                 "http://localhost:8000/api/v1/media/collections",
-                json=create_data,
-                headers=headers,
+                data=create_data,  # Use data= for form data instead of json=
+                headers=form_headers,
                 timeout=10
             )
             
@@ -1284,6 +1309,90 @@ class CameraWorker:
         except Exception as e:
             logger.error(f"❌ [COLLECTION] Exception: {e}")
             return None
+    
+    def _trigger_face_detection_sync(self, media_uuid: str, headers: Dict):
+        """
+        Trigger face detection workflow for uploaded segment.
+        Synchronous version for use in upload thread.
+        
+        This triggers the continuous pipeline: face detection → individuals → MVR
+        """
+        import requests
+        
+        try:
+            # Check if face detection on save is enabled
+            NODE_SERVICE_URL = "http://localhost:8001"
+            VISION_SERVICE_URL = "http://localhost:8002"
+            
+            setting_url = f"{NODE_SERVICE_URL}/api/v1/settings/face_detection_on_save"
+            logger.info(f"🎯 [FACE-DETECTION] Checking setting for media {media_uuid}")
+            
+            try:
+                response = requests.get(setting_url, headers=headers, timeout=5)
+                
+                if response.status_code == 200:
+                    setting_data = response.json()
+                    is_enabled = setting_data.get("value") == "true"
+                    
+                    if not is_enabled:
+                        logger.info(f"🎯 [FACE-DETECTION] Face detection on save is DISABLED, skipping for media {media_uuid}")
+                        return
+                    
+                elif response.status_code != 404:
+                    # If not 404, log the unexpected status but continue (default to enabled)
+                    logger.warning(f"🎯 [FACE-DETECTION] Setting check returned {response.status_code}, defaulting to ENABLED")
+                
+                # If 404 or enabled, proceed with face detection
+                logger.info(f"🎯 [FACE-DETECTION] Triggering Enhanced Logic V2 for media {media_uuid}")
+                
+            except Exception as setting_error:
+                # Log but continue - default to enabled if setting check fails
+                logger.warning(f"🎯 [FACE-DETECTION] Setting check failed: {setting_error}, defaulting to ENABLED")
+            
+            # Trigger Enhanced Logic V2 face detection workflow
+            detection_url = f"{VISION_SERVICE_URL}/process/media/enhanced"
+            
+            # Construct media URL for vision service to fetch the video
+            MEDIA_SERVICE_URL = "http://localhost:8000"
+            media_url = f"{MEDIA_SERVICE_URL}/api/v1/media/{media_uuid}/file"
+            
+            detection_payload = {
+                "media_id": media_uuid,
+                "media_url": media_url,
+                "processing_options": {
+                    "detection_methods": ["opencv", "dlib"],
+                    "enable_embeddings": True,
+                    "enable_age_gender": True,
+                    "confidence_threshold": 0.7,
+                    "enable_performance_optimization": True
+                },
+                "source": "camera_upload",
+                "trigger": "automatic"
+            }
+            
+            logger.info(f"🎯 [FACE-DETECTION] Sending request to Vision Service: {detection_url}")
+            
+            response = requests.post(
+                detection_url,
+                json=detection_payload,
+                headers=headers,
+                timeout=120  # Face detection can take time
+            )
+            
+            if response.status_code in [200, 202]:
+                result = response.json()
+                logger.info(
+                    f"✅ [FACE-DETECTION] Face detection triggered successfully for media {media_uuid}: "
+                    f"{result.get('message', 'Accepted')}"
+                )
+            else:
+                logger.error(
+                    f"❌ [FACE-DETECTION] Failed to trigger face detection: "
+                    f"HTTP {response.status_code} - {response.text[:200]}"
+                )
+                
+        except Exception as e:
+            logger.error(f"❌ [FACE-DETECTION] Exception triggering face detection: {e}")
     
     def _handle_start_recording(self, cmd: Dict[str, Any]):
         """

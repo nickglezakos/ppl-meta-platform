@@ -618,11 +618,29 @@ async def notify_vmeta_recording_start(
         
         logger.info(f"📹 [VMETA-NOTIFY] Starting background VMeta notification for {session_uuid}")
         
+        # Get collection UUID for this camera
+        collection_uuid = None
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(
+                    f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
+                    headers={"Authorization": f"Bearer {auth_token}"}
+                )
+                if response.status_code == 200:
+                    collection_data = response.json()
+                    collection_uuid = collection_data.get("uuid")
+                    logger.info(f"📦 [VMETA-NOTIFY] Found collection UUID: {collection_uuid}")
+        except Exception as e:
+            logger.warning(f"⚠️ [VMETA-NOTIFY] Could not fetch collection UUID: {e}")
+        
+        # Use collection UUID if available, otherwise fallback to device_id
+        collection_id = collection_uuid or device_id
+        
         async with httpx.AsyncClient(timeout=2.0) as client:
             response = await client.post(
                 "http://localhost:8008/api/v1/recording/started",
                 json={
-                    "collection_id": device_id,
+                    "collection_id": collection_id,  # Use UUID when available
                     "session_uuid": session_uuid,
                     "device_id": device_id,
                     "user_id": user_id or "",
@@ -633,7 +651,7 @@ async def notify_vmeta_recording_start(
             )
             logger.info(
                 f"✅ [VMETA-NOTIFY] VMeta notified successfully: {session_uuid}, "
-                f"status: {response.status_code}"
+                f"collection: {collection_id}, status: {response.status_code}"
             )
     except Exception as e:
         # Log but don't fail - recording already started successfully
@@ -645,6 +663,7 @@ async def stop_recording(
     device_id: str,
     auto_stop_instant_detection: bool = True,
     current_user: Dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ) -> Dict:
     """Stop recording from a specific camera and save to collection.
@@ -708,11 +727,30 @@ async def stop_recording(
         try:
             import httpx
             from datetime import datetime
+            
+            # Get collection UUID for this camera
+            collection_uuid = None
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(
+                        f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
+                        headers={"Authorization": f"Bearer {credentials.credentials}"}
+                    )
+                    if response.status_code == 200:
+                        collection_data = response.json()
+                        collection_uuid = collection_data.get("uuid")
+                        logger.info(f"📦 Found collection UUID for stop notification: {collection_uuid}")
+            except Exception as e:
+                logger.warning(f"Could not fetch collection UUID for stop notification: {e}")
+            
+            # Use collection UUID if available, otherwise fallback to device_id
+            collection_id = collection_uuid or device_id
+            
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.post(
                     "http://localhost:8008/api/v1/recording/stopped",
                     json={
-                        "collection_id": device_id,
+                        "collection_id": collection_id,  # Use UUID when available
                         "session_uuid": recording_result.get("session_uuid", ""),
                         "device_id": device_id,
                         "user_id": current_user.get("sub") or "",
@@ -726,7 +764,7 @@ async def stop_recording(
                 )
                 logger.info(
                     f"🛑 Notified VMeta of recording stop: {recording_result.get('session_uuid')} "
-                    f"({recording_result.get('segment_count', 0)} videos)"
+                    f"(collection: {collection_id}, {recording_result.get('segment_count', 0)} videos)"
                 )
         except Exception as e:
             logger.warning(f"Failed to notify VMeta of recording stop: {e}")

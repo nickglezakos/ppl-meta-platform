@@ -120,6 +120,7 @@ class CameraService:
         
         # Get list of already connected cameras to skip
         from src.services.worker_manager import get_worker_manager
+        from src.services.device_id_service import generate_uuid
         manager = get_worker_manager()
         connected_workers = manager.get_all_workers()
         
@@ -127,7 +128,8 @@ class CameraService:
         
         # Try indices 0-9
         for index in range(10):
-            device_id = f"usb_camera_{index}"
+            # Generate proper UUID for new cameras (legacy workers keep their IDs)
+            device_id = f"usb_camera_{index}"  # Check if legacy worker exists
             
             # ⚠️ CRITICAL: Skip if camera worker exists (ANY status)
             # Opening cv2.VideoCapture() for a camera that has an active worker
@@ -139,9 +141,10 @@ class CameraService:
                 width = int(worker.camera_info.get('resolution_width', 0))
                 height = int(worker.camera_info.get('resolution_height', 0))
                 fps = worker.camera_info.get('max_fps', 30)
+                # For existing workers, use their device_id (supports migration)
                 camera_info = {
-                    "device_id": device_id,
-                    "name": f"USB Camera {index}",
+                    "device_id": device_id,  # Keep legacy ID for existing workers
+                    "name": f"USB Camera {index + 1}",  # Name suggestion (will be auto-numbered on save)
                     "camera_type": CameraType.USB,
                     "connection_string": f"/dev/video{index}",
                     "index": index,
@@ -173,9 +176,12 @@ class CameraService:
                     
                     width, height, fps = await loop.run_in_executor(None, get_properties)
                     
+                    # For new detected cameras, generate proper UUID
+                    new_device_id = generate_uuid()
+                    
                     camera_info = {
-                        "device_id": device_id,
-                        "name": f"USB Camera {index}",
+                        "device_id": new_device_id,  # Proper UUID for new cameras
+                        "name": f"USB Camera {index + 1}",  # Name suggestion
                         "camera_type": CameraType.USB,
                         "connection_string": f"/dev/video{index}",
                         "index": index,
@@ -233,6 +239,12 @@ class CameraService:
             # If not in cache and mobile camera, load from database
             elif not camera_info and device_id.startswith("mobile_"):
                 camera_info = await self._load_mobile_from_database(device_id)
+                if camera_info:
+                    self.detected_cameras[device_id] = camera_info
+            
+            # If still not found, try generic database lookup (for UUID-based cameras)
+            if not camera_info:
+                camera_info = await self._load_camera_from_database(device_id)
                 if camera_info:
                     self.detected_cameras[device_id] = camera_info
             
@@ -452,6 +464,68 @@ class CameraService:
             
         except Exception as e:
             logger.error(f"❌ Error loading mobile camera {device_id}: {e}")
+            return None
+    
+    async def _load_camera_from_database(self, device_id: str) -> Optional[Dict]:
+        """Load any camera info from database by device_id (generic loader for UUID-based cameras)."""
+        try:
+            def load_from_db():
+                from src.database import get_db
+                from src.models.camera import Camera
+                
+                db = next(get_db())
+                try:
+                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                    if camera:
+                        # Determine connection string and index based on camera type
+                        connection_string = camera.connection_string
+                        index = None
+                        
+                        # For USB cameras without connection_string, derive from device_id or use index 0
+                        if camera.camera_type == CameraType.USB and not connection_string:
+                            # Try to parse index from old-style device_id
+                            if device_id.startswith("usb_camera_"):
+                                try:
+                                    index = int(device_id.split("_")[-1])
+                                    connection_string = f"/dev/video{index}"
+                                except ValueError:
+                                    index = 0
+                                    connection_string = "/dev/video0"
+                            else:
+                                # UUID-based USB camera, default to index 0
+                                index = 0
+                                connection_string = "/dev/video0"
+                        
+                        camera_info = {
+                            "device_id": camera.device_id,
+                            "name": camera.name,
+                            "camera_type": camera.camera_type,
+                            "connection_string": connection_string,
+                            "resolution_width": camera.resolution_width or 1280,
+                            "resolution_height": camera.resolution_height or 720,
+                            "max_fps": camera.max_fps or 30,
+                        }
+                        
+                        if index is not None:
+                            camera_info["index"] = index
+                        
+                        return camera_info
+                    return None
+                finally:
+                    db.close()
+            
+            loop = asyncio.get_event_loop()
+            camera_info = await loop.run_in_executor(None, load_from_db)
+            
+            if camera_info:
+                logger.info(f"✅ Camera {device_id} loaded from database (type: {camera_info.get('camera_type')})")
+            else:
+                logger.warning(f"⚠️ Camera {device_id} not found in database")
+            
+            return camera_info
+            
+        except Exception as e:
+            logger.error(f"❌ Error loading camera from database: {e}")
             return None
     
     async def _load_rtsp_from_database(self, device_id: str) -> Optional[Dict]:

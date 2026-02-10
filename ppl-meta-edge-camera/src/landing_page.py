@@ -1,5 +1,6 @@
 """Landing page for edge camera setup and information."""
 import logging
+import os
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 import socket
@@ -28,16 +29,36 @@ def get_local_ip() -> str:
 
 
 def get_device_id() -> str:
-    """Get device ID from config or generate from MAC address."""
+    """
+    Get device ID from config or generate proper UUID.
+    
+    Priority:
+    1. Stored UUID from runtime config
+    2. Environment variable DEVICE_ID
+    3. Generate new UUID v4 and persist it
+    """
     config = ConfigManager.get_config()
     device_id = config.get("device_id")
     
+    # Check environment variable override
+    env_device_id = os.getenv("DEVICE_ID")
+    if env_device_id:
+        logger.info(f"Using device_id from environment: {env_device_id}")
+        # Store it for consistency
+        if device_id != env_device_id:
+            ConfigManager.set_value("device_id", env_device_id)
+        return env_device_id
+    
     if not device_id:
-        # Generate unique ID from MAC address
-        mac = uuid.getnode()
-        mac_hex = f"{mac:012x}"  # Convert to 12-char hex string
-        # Use last 8 characters of MAC for shorter ID
-        device_id = f"edge-camera-{mac_hex[-8:]}"
+        # Generate proper UUID v4 for new installations
+        device_id = str(uuid.uuid4())
+        logger.info(f"✅ Generated new UUID for edge camera: {device_id}")
+        
+        # Persist to runtime config file
+        config["device_id"] = device_id
+        ConfigManager.save_config(config)
+    else:
+        logger.info(f"Using persisted device_id: {device_id}")
     
     return device_id
 

@@ -2,14 +2,14 @@ camera:
   buffer_size: 10
   device_id: 0
   format: mjpeg
-  fps: 15
+  fps: 30
   resolution:
     height: 720
     width: 1280
 device:
-  id: null  # Auto-generated from hostname (edge-camera-{hostname})
+  id: edge-camera-rpi5-001
   location: unknown
-  name: Edge Camera
+  name: Edge Camera RPi5
   type: edge
 logging:
   format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

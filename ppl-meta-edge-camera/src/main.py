@@ -19,8 +19,8 @@ import uvicorn
 from config import get_config
 from camera import CameraCapture, FrameEncoder
 from streaming import StreamingClient, FrameBuffer
-from platform import HealthMonitor, RegistrationClient
-from platform.websocket_client import PlatformWebSocketClient
+from platform_client import HealthMonitor, RegistrationClient
+from platform_client.websocket_client import PlatformWebSocketClient
 import management_api
 
 # Global instances

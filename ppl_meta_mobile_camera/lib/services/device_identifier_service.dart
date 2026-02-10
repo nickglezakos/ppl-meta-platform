@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:crypto/crypto.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 /// Service for generating unique device identifiers and camera names
 class DeviceIdentifierService {
@@ -10,7 +12,12 @@ class DeviceIdentifierService {
   DeviceIdentifierService._internal();
 
   final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
+  final Uuid _uuid = const Uuid();
   String? _cachedCameraName;
+  String? _cachedDeviceId;
+  
+  /// Key for storing device UUID in shared preferences
+  static const String _deviceIdKey = 'ppl_device_uuid';
 
   /// Generates a unique camera name in the format: mcam-<device-model>-<unique-id>
   /// Example: mcam-xiaomi-redminote11-2d7ee4 (consistent, no timestamps)
@@ -89,23 +96,74 @@ class DeviceIdentifierService {
     return idString.substring(startIndex);
   }
 
+  /// Gets device UUID - generates and persists if not exists
+  /// 
+  /// This ensures each device has a stable UUID that persists across app restarts.
+  /// Priority:
+  /// 1. Cached value (in-memory)
+  /// 2. Stored value (SharedPreferences)
+  /// 3. Generate new UUID v4 and persist
+  Future<String> getDeviceId() async {
+    // Return cached value if available
+    if (_cachedDeviceId != null) {
+      return _cachedDeviceId!;
+    }
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? deviceId = prefs.getString(_deviceIdKey);
+      
+      if (deviceId == null || deviceId.isEmpty) {
+        // Generate proper UUID v4 for new installations
+        deviceId = _uuid.v4();
+        await prefs.setString(_deviceIdKey, deviceId);
+        print('✅ Generated new UUID for mobile camera: $deviceId');
+      } else {
+        print('📱 Using persisted device UUID: $deviceId');
+      }
+      
+      // Cache for fast access
+      _cachedDeviceId = deviceId;
+      return deviceId;
+    } catch (e) {
+      print('⚠️ Error getting/generating device ID: $e');
+      // Fallback to generated UUID (won't persist if SharedPreferences failed)
+      final fallbackId = _uuid.v4();
+      _cachedDeviceId = fallbackId;
+      return fallbackId;
+    }
+  }
+
   /// Gets detailed device information for registration
   Future<Map<String, dynamic>> getDeviceRegistrationInfo() async {
+    // Get proper UUID for device_id
+    final deviceId = await getDeviceId();
+    
     try {
-      if (Platform.isAndroid) {
-        final androidInfo = await _deviceInfo.androidInfo;
-        
-        // Use the Android ID as the device_id for consistent identification
-        // This ensures the same device always gets the same ID
-        final deviceId = androidInfo.id ?? androidInfo.fingerprint ?? 'unknown-device';
-        
+      if (Platform.isAndroid) {and device ID (for testing or reset)
+  void clearCache() {
+    _cachedCameraName = null;
+    _cachedDeviceId = null;
+  }
+  
+  /// Resets device UUID (generates new one) - USE WITH CAUTION
+  /// This will cause the device to register as a new camera
+  Future<void> resetDeviceId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_deviceIdKey);
+      _cachedDeviceId = null;
+      print('⚠️ Device UUID reset - will generate new UUID on next access');
+    } catch (e) {
+      print('❌ Error resetting device ID: $e');
+    }
         return {
           'manufacturer': androidInfo.manufacturer,
           'model': androidInfo.model,
           'brand': androidInfo.brand,
           'os_version': androidInfo.version.release,
           'sdk_version': androidInfo.version.sdkInt,
-          'device_id': deviceId, // Consistent device ID without timestamps
+          'device_id': deviceId, // Use proper UUID
           'fingerprint': androidInfo.fingerprint,
           'platform': Platform.operatingSystem,
         };
@@ -117,7 +175,7 @@ class DeviceIdentifierService {
           'brand': 'Generic',
           'os_version': Platform.operatingSystemVersion,
           'platform': Platform.operatingSystem,
-          'device_id': 'unknown-device', // Consistent fallback
+          'device_id': deviceId, // Use proper UUID
         };
       }
     } catch (e) {
@@ -127,7 +185,7 @@ class DeviceIdentifierService {
         'model': 'Unknown Device',
         'brand': 'Generic',
         'os_version': 'Unknown',
-        'device_id': 'unknown-device', // Consistent fallback
+        'device_id': deviceId, // Use proper UUID
         'error': e.toString(),
       };
     }

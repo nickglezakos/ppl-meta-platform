@@ -187,7 +187,7 @@ class MediaCollection(BaseModel):
     __tablename__ = "media_collections"
 
     uuid = Column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, index=True)
-    name = Column(String(255), nullable=False)
+    name = Column(String(255), unique=True, nullable=False)  # Unique collection name (synced with camera name)
     description = Column(Text, nullable=True)
 
     # Ownership

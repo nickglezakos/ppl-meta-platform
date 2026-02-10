@@ -36,11 +36,46 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 
 /Users/nickgklezakos/Documents/ppl-meta-code/docs/guides/developer/ppl-meta-logging.md
 
- 
+
 +++++++++++
 
 2026-02-01 12:53:03,159 - platform.websocket_client - INFO - Connecting to platform WebSocket: ws://localhost:8005/api/v1/cameras/edge/edge-camera-001/ws
 ++++++++++
+ssh pi@192.168.1.77
+
+sudo shutdown -h now
+
+cd ~/ppl-meta-deploy
+
+docker compose up -d
+docker compose logs -f edge-camera
+
+docker compose restart edge-camera
+
+docker compose ps
+docker compose logs --tail 50 edge-camera
+
+cd /Users/nickgklezakos/Documents/ppl-meta-code
+./tune-edge-camera.sh
+
+ssh pi@192.168.1.77 "v4l2-ctl --device=/dev/video0 --set-ctrl=brightness=145,contrast=55,saturation=75,sharpness=5"
+
+++++++++++++
+
+
+# High Quality Settings (balanced)
+brightness=135          # Keep current (good for indoor)
+contrast=55             # Increase slightly for more definition
+saturation=85           # Increase significantly for vibrant colors
+sharpness=4             # Increase from 2 to 4 (middle ground - not too soft, no artifacts)
+focus_automatic_continuous=0  # Disable auto-focus to avoid lag
+focus_absolute=205      # Keep manual focus at current setting
+white_balance_automatic=1  # Keep auto white balance
+
+
+
+
+
 
 
  TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | jq -r '.access_token') && curl -s "http://localhost:8008/api/v1/mvr/quality-metrics?session_uuid=ea34327a-d595-4cb3-bd29-e079e2c70e2f&start_time=2026-01-12T00:00:00&end_time=2026-01-12T23:59:59" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool

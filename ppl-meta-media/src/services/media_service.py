@@ -605,7 +605,15 @@ class MediaService:
         is_public: bool = False,
         camera_device_id: Optional[str] = None,
     ) -> MediaCollection:
-        """Create a new media collection."""
+        """Create a new media collection with name uniqueness validation."""
+        
+        # Validate collection name uniqueness
+        from .collection_name_validation import validate_collection_name_unique, sanitize_collection_name
+        
+        name = sanitize_collection_name(name)
+        is_valid, error_msg = validate_collection_name_unique(self.db, name)
+        if not is_valid:
+            raise ValueError(error_msg)
 
         collection = MediaCollection(
             name=name,

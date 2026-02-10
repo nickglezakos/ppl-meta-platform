@@ -1135,10 +1135,29 @@ class CameraDetectionService:
                     # Create collection if not found (reuse same session)
                     if not collection_uuid:
                         logger.info(f"📦 [COLLECTION] Creating new collection for {device_id}")
+                        
+                        # Get camera name from database to use for collection
+                        from src.models.camera import Camera
+                        from src.database import get_db
+                        
+                        camera_name = None
+                        try:
+                            db = next(get_db())
+                            camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                            if camera:
+                                camera_name = camera.name
+                                logger.info(f"📦 [COLLECTION] Using camera name from database: {camera_name}")
+                            else:
+                                camera_name = f"Camera {device_id}"
+                                logger.warning(f"⚠️ [COLLECTION] Camera not found in database, using fallback name")
+                        except Exception as e:
+                            logger.warning(f"Could not get camera name from database: {e}")
+                            camera_name = f"Camera {device_id}"
+                        
                         # Media service expects form data, not JSON
                         form_data = aiohttp.FormData()
-                        form_data.add_field('name', f'Camera {device_id}')
-                        form_data.add_field('description', f'Recordings from camera {device_id}')
+                        form_data.add_field('name', camera_name)  # Use camera name from DB
+                        form_data.add_field('description', f'Recordings from {camera_name}')
                         form_data.add_field('user_id', user_guid)
                         form_data.add_field('is_public', 'false')
                         form_data.add_field('camera_device_id', device_id)
@@ -3074,17 +3093,19 @@ class CameraDetectionService:
                     logger.info(f"🎬 [DEBUG] Query result: {camera}")
 
                     if camera:
-                        camera_name = camera.name
+                        # CRITICAL FIX: Use device_id, not name, for collection matching
+                        # Collections are linked by camera_device_id, not camera name
+                        camera_name = camera.device_id
                         logger.info(
-                            f"🎬 [DEBUG] ✅ Camera found! Name: '{camera_name}'"
+                            f"🎬 [DEBUG] ✅ Camera found! Using device_id for collection: '{camera_name}'"
                         )
                     else:
                         logger.warning(
                             f"🎬 [DEBUG] ❌ Camera not found in database for "
                             f"device_id: '{device_id}'"
                         )
-                        camera_name = f"Camera {device_id}"  # Fallback name
-                        logger.info(f"🎬 [DEBUG] Using fallback name: '{camera_name}'")
+                        camera_name = device_id  # Use device_id as fallback
+                        logger.info(f"🎬 [DEBUG] Using device_id as fallback: '{camera_name}'")
                 finally:
                     db.close()
                     logger.info("🎬 [DEBUG] Database session closed")

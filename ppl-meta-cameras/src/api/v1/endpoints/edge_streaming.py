@@ -120,10 +120,15 @@ async def receive_edge_camera_frame(
         # Auto-create camera from discovery service if not exists
         if not camera:
             logger.info(f"Edge camera {device_id} not in DB, auto-creating from first frame...")
+            
+            # Generate unique camera name
+            from src.services.name_validation import generate_unique_camera_name
+            camera_name = generate_unique_camera_name(db, f"Edge Camera - {device_id}")
+            
             camera = Camera(
                 device_id=device_id,
                 camera_type=CameraType.EDGE,
-                name=f"Edge Camera - {device_id}",
+                name=camera_name,  # Use generated unique name
                 connection_string=f"edge://{device_id}",
                 is_active=True,
                 status=CameraStatus.AVAILABLE,
@@ -136,7 +141,7 @@ async def receive_edge_camera_frame(
             db.add(camera)
             db.commit()
             db.refresh(camera)
-            logger.info(f"✅ Auto-created edge camera: {device_id}")
+            logger.info(f"✅ Auto-created edge camera: {device_id} with name: {camera_name}")
             
             # Create collection for edge camera
             try:
@@ -150,10 +155,10 @@ async def receive_edge_camera_frame(
                     'Content-Type': 'application/json'
                 }
                 
-                # Create collection via media service
+                # Create collection via media service using camera name
                 collection_data = {
-                    "name": f"Edge Camera - {device_id}",
-                    "description": f"Recordings from edge camera {device_id}",
+                    "name": camera_name,  # Use same name as camera
+                    "description": f"Recordings from {camera_name}",
                     "is_public": False,
                     "camera_device_id": device_id
                 }

@@ -14,6 +14,7 @@ import '../../screens/cameras/camera_pipeline_settings_screen.dart';
 import '../../../widgets/camera/camera_counter_widget.dart';
 import '../../../widgets/camera/instant_detection_widget.dart';
 import 'rtsp_camera_dialog.dart';
+import 'edit_camera_name_dialog.dart';
 
 class CameraCard extends ConsumerWidget {
   final Camera camera;
@@ -97,12 +98,29 @@ class CameraCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      updatedCamera.name,
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            updatedCamera.name,
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // Edit name button
+                        IconButton(
+                          onPressed: () => _showEditNameDialog(context, ref, updatedCamera),
+                          icon: const Icon(Icons.edit, size: 16),
+                          iconSize: 16,
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Rename camera',
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
                     ),
                   ),
                   // Pipeline status indicators
@@ -427,6 +445,18 @@ class CameraCard extends ConsumerWidget {
     ).then((result) {
       if (result == true) {
         // Reload cameras after settings change
+        ref.read(cameraListProvider.notifier).loadCameras();
+      }
+    });
+  }
+  
+  static void _showEditNameDialog(BuildContext context, WidgetRef ref, Camera camera) {
+    showDialog(
+      context: context,
+      builder: (context) => EditCameraNameDialog(camera: camera),
+    ).then((result) {
+      if (result == true) {
+        // Reload cameras after name change
         ref.read(cameraListProvider.notifier).loadCameras();
       }
     });

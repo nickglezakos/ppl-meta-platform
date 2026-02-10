@@ -887,6 +887,7 @@ class CameraService {
     List<String>? detectionMethods,
     Map<String, dynamic>? processingOptions,
     double? confidenceThreshold,
+    int? tolerancePercent,
     bool? enablePerformanceOptimization,
     bool? showPerformanceIndicators,
     String? defaultPlaybackMode,
@@ -906,6 +907,9 @@ class CameraService {
       }
       if (confidenceThreshold != null) {
         body['confidence_threshold'] = confidenceThreshold;
+      }
+      if (tolerancePercent != null) {
+        body['tolerance_percent'] = tolerancePercent;
       }
       if (enablePerformanceOptimization != null) {
         body['enable_performance_optimization'] = enablePerformanceOptimization;

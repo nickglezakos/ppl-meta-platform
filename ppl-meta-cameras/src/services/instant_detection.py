@@ -439,7 +439,8 @@ class InstantDetectionSampler:
         # This uses the existing spatial/IoU grouping from Vision Service
         person_objects = await self._create_person_objects_via_vision_service(
             session_uuid,
-            all_face_detections
+            all_face_detections,
+            camera_id
         )
         
         # Step 3: Age/gender detection via VMeta Service
@@ -737,7 +738,8 @@ class InstantDetectionSampler:
     async def _create_person_objects_via_vision_service(
         self,
         session_uuid: str,
-        face_detections: List[Dict]
+        face_detections: List[Dict],
+        camera_id: str = None
     ) -> List[Dict]:
         """
         Group faces into person objects using Orchestrator's spatial/IoU grouping.
@@ -747,6 +749,9 @@ class InstantDetectionSampler:
         """
         if not face_detections:
             return []
+        
+        # Get camera-specific tolerance setting
+        tolerance_percent = await self._get_camera_tolerance(camera_id) if camera_id else 20.0
         
         try:
             # Use Orchestrator Service (same as Enhanced Logic V2)
@@ -758,7 +763,7 @@ class InstantDetectionSampler:
                 payload = {
                     "session_uuid": session_uuid,
                     "face_detections": face_detections,
-                    "tolerance_percent": 20.0,  # Same as Enhanced Logic V2
+                    "tolerance_percent": tolerance_percent,
                     "enable_quality_analysis": True,
                     "storage_mode": "memory_only"  # Don't persist instant detection results
                 }
@@ -889,6 +894,32 @@ class InstantDetectionSampler:
         iou = intersection_area / union_area if union_area > 0 else 0
         
         return iou >= tolerance
+    
+    async def _get_camera_tolerance(self, camera_id: str) -> float:
+        """Get camera-specific tolerance_percent setting from database."""
+        try:
+            from src.database import SessionLocal
+            from src.models.camera_settings import CameraSettings
+            
+            db = SessionLocal()
+            try:
+                # Get camera settings for this camera (use first user's settings as default)
+                settings = db.query(CameraSettings).filter(
+                    CameraSettings.camera_device_id == camera_id
+                ).first()
+                
+                if settings and hasattr(settings, 'tolerance_percent'):
+                    tolerance = float(settings.tolerance_percent)
+                    logger.debug(f"Using camera {camera_id} tolerance: {tolerance}%")
+                    return tolerance
+                else:
+                    logger.debug(f"No settings found for camera {camera_id}, using default 20%")
+                    return 20.0
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"Error fetching camera tolerance for {camera_id}: {e}, using default 20%")
+            return 20.0
     
     def _create_fallback_person_objects(
         self,

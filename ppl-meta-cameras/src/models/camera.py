@@ -52,8 +52,8 @@ class Camera(Base):
     __tablename__ = "cameras"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False, index=True)
-    device_id = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255), unique=True, nullable=False, index=True)  # User-defined unique name
+    device_id = Column(String(255), unique=True, nullable=False, index=True)  # System UUID identifier
     camera_type = Column(SQLEnum(CameraType), nullable=False)
     status = Column(SQLEnum(CameraStatus), default=CameraStatus.AVAILABLE)
 
