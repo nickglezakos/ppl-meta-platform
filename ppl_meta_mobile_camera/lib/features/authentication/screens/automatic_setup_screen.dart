@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../core/core.dart';
 import '../../../services/discovery_based_authentication_service.dart';
 import '../../../services/auto_camera_registration_service.dart';
+import 'manual_connection_screen.dart';
 
 /// Automatic setup screen for zero-configuration camera setup
 class AutomaticSetupScreen extends StatefulWidget {
@@ -142,7 +143,12 @@ class _AutomaticSetupScreenState extends State<AutomaticSetupScreen> {
             // Manual Setup Option
             Center(
               child: TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ManualConnectionScreen()),
+                  );
+                },
                 child: const Text('Use Manual Setup Instead'),
               ),
             ),
@@ -309,8 +315,11 @@ class _AutomaticSetupScreenState extends State<AutomaticSetupScreen> {
               ),
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context);
+                  Navigator.pop(context); // Close dialog
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ManualConnectionScreen()),
+                  );
                 },
                 child: const Text('Manual Setup'),
               ),

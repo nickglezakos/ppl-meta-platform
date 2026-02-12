@@ -70,67 +70,55 @@ class AutoCameraRegistrationService {
     }
   }
   
-  /// Check if camera with device ID already exists
+  /// Check if camera is already registered (has stored UUID)
   Future<Map<String, dynamic>?> checkExistingCamera(String jwtToken) async {
     try {
-      // Get cameras service URL from discovery service first (no platform dependencies)
+      // Check if we have a stored camera UUID from previous registration
+      final storedUuid = await _deviceService.getStoredCameraUuid();
+      
+      if (storedUuid == null) {
+        AutoRegistrationLogger.debug('No stored camera UUID - camera not yet registered');
+        return null;
+      }
+      
+      AutoRegistrationLogger.step('CHECK', 'Found stored camera UUID: $storedUuid');
+      
+      // Get cameras service URL
       final baseUrl = await _getCamerasServiceUrl();
       if (baseUrl == null) {
         AutoRegistrationLogger.warning('Cameras service URL not available - skipping existing camera check');
-        return null; // Don't throw exception, just return null to continue with registration
+        return null;
       }
       
-      // Try to get device info, but handle platform binding errors gracefully
-      Map<String, dynamic> deviceInfo;
-      try {
-        deviceInfo = await _deviceService.getDeviceRegistrationInfo();
-      } catch (e) {
-        if (e.toString().contains('Binding has not yet been initialized') || 
-            e.toString().contains('ServicesBinding')) {
-          AutoRegistrationLogger.warning('Platform services not yet available for existing camera check');
-          return null; // Skip check and proceed with registration
-        }
-        rethrow; // Re-throw other errors
-      }
-      
-      final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
-      final deviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix for consistency
-      
-      AutoRegistrationLogger.step('CHECK', 'Looking for existing camera with device ID: $deviceId');
-      
+      // Verify camera still exists on server
       final response = await http.get(
-        Uri.parse('$baseUrl/api/v1/cameras/mobile'),
+        Uri.parse('$baseUrl/api/v1/cameras/$storedUuid'),
         headers: {
           'Authorization': 'Bearer $jwtToken',
-          'Accept': 'application/json',
         },
       );
       
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        final mobileCameras = responseData as List;
-        
-        // Find camera with matching device ID
-        for (final camera in mobileCameras) {
-          if (camera['device_id'] == deviceId) {
-            AutoRegistrationLogger.success('Found existing camera: ${camera['name']} (ID: ${camera['id']})');
-            return camera;
-          }
-        }
-        
-        AutoRegistrationLogger.debug('No existing camera found for device ID: $deviceId');
+        final cameraData = json.decode(response.body);
+        AutoRegistrationLogger.success('Camera exists on server with UUID: $storedUuid');
+        return cameraData;
+      } else if (response.statusCode == 404) {
+        AutoRegistrationLogger.warning('Camera UUID not found on server - will re-register');
+        // DO NOT clear UUID here - it may be needed for troubleshooting
+        // The new registration will overwrite it with a new UUID if needed
+        AutoRegistrationLogger.debug('UUID preserved for diagnostic purposes');
         return null;
       } else {
-        AutoRegistrationLogger.warning('Failed to check existing cameras: ${response.statusCode}');
+        AutoRegistrationLogger.warning('Failed to verify camera: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      AutoRegistrationLogger.warning('Error checking existing camera - will proceed with registration: $e');
-      return null; // Don't fail the whole registration process
+      AutoRegistrationLogger.error('Error checking existing camera: $e');
+      return null;
     }
   }
   
-    /// Create streaming session URL for the registered camera
+  /// Create streaming session URL for the registered camera
   Future<String?> createStreamingSessionUrl(String cameraId) async {
     try {
       final camerasUrl = await _getCamerasServiceUrl();
@@ -244,26 +232,37 @@ class AutoCameraRegistrationService {
         rethrow;
       }
       
-      // Step 4: Prepare registration data
-      AutoRegistrationLogger.step('4', 'Preparing registration payload');
+      // Step 4: Get device serial for hardware identification
+      AutoRegistrationLogger.step('4', 'Getting device serial number');
+      String deviceSerial;
+      try {
+        deviceSerial = await _deviceService.getDeviceSerial();
+        AutoRegistrationLogger.success('Device serial obtained');
+      } catch (e) {
+        AutoRegistrationLogger.error('Failed to get device serial: $e');
+        return CameraRegistrationResult.failure(
+          error: 'Failed to identify device hardware',
+        );
+      }
       
-      final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
-      final deviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix for consistency
+      // Step 5: Prepare registration data (NO device_id - server generates UUID)
+      AutoRegistrationLogger.step('5', 'Preparing registration payload');
       
       final requestBody = {
-        'name': cameraName,
-        'device_id': deviceId,
+        // Name is optional - server will auto-generate if not provided
+        if (cameraName.isNotEmpty) 'name': cameraName,
         'ip_address': deviceIP,
         'port': 8554, // Default RTSP port for mobile cameras
         'device_model': deviceInfo['model'] ?? 'Mobile Camera',
-        'device_manufacturer': deviceInfo['manufacturer'] ?? 'PPL Meta Mobile',
+        'device_manufacturer': deviceInfo['manufacturer'] ?? 'Unknown',
+        'device_serial': deviceSerial, // Hardware identifier component
         'app_version': '1.0.0',
       };
-      AutoRegistrationLogger.success('Mobile camera registration payload prepared');
-      AutoRegistrationLogger.debug('Payload keys: ${requestBody.keys.toList()}');
+      AutoRegistrationLogger.success('Mobile camera registration payload prepared (UUID v4 system)');
+      AutoRegistrationLogger.debug('Payload: manufacturer=${requestBody['device_manufacturer']}, model=${requestBody['device_model']}');
       
-      // Step 5: Send registration request
-      AutoRegistrationLogger.step('5', 'Sending registration request');
+      // Step 6: Send registration request
+      AutoRegistrationLogger.step('6', 'Sending registration request');
       
       // Get cameras service URL from discovery service
       final baseUrl = await _getCamerasServiceUrl();
@@ -300,17 +299,29 @@ class AutoCameraRegistrationService {
         
         AutoRegistrationLogger.debug('Camera data: $cameraData');
         
-        // Extract camera information - these should always be present
+        // Extract camera information
         final cameraId = cameraData['id'];
-        final deviceId = cameraData['device_id'];
+        final deviceUuid = cameraData['device_id']; // Server-generated UUID
         final cameraNameFromResponse = cameraData['name'];
         
-        AutoRegistrationLogger.debug('Raw values - ID: $cameraId, DeviceID: $deviceId, Name: $cameraNameFromResponse');
+        AutoRegistrationLogger.debug('Raw values - ID: $cameraId, UUID: $deviceUuid, Name: $cameraNameFromResponse');
         
-        if (cameraId != null && deviceId != null) {
-          AutoRegistrationLogger.success('Mobile camera operation successful!');
+        if (cameraId != null && deviceUuid != null) {
+          // Step 7: Store server-generated UUID
+          AutoRegistrationLogger.step('7', 'Storing server-generated UUID');
+          try {
+            await _deviceService.storeCameraUuid(deviceUuid.toString());
+            AutoRegistrationLogger.success('UUID stored in SharedPreferences');
+          } catch (e) {
+            AutoRegistrationLogger.error('Failed to store UUID: $e');
+            return CameraRegistrationResult.failure(
+              error: 'Registration succeeded but failed to store UUID: $e',
+            );
+          }
+          
+          AutoRegistrationLogger.success('Mobile camera registration complete!');
           AutoRegistrationLogger.deviceInfo('Camera ID', cameraId.toString());
-          AutoRegistrationLogger.deviceInfo('Device ID', deviceId.toString());
+          AutoRegistrationLogger.deviceInfo('Device UUID', deviceUuid.toString());
           AutoRegistrationLogger.deviceInfo('Camera Name', cameraNameFromResponse?.toString() ?? cameraName);
           AutoRegistrationLogger.deviceInfo('Camera Type', cameraData['camera_type']);
           AutoRegistrationLogger.deviceInfo('Status', cameraData['status']);
@@ -320,7 +331,7 @@ class AutoCameraRegistrationService {
             final successResult = CameraRegistrationResult.success(
               cameraId: cameraId is int ? cameraId : int.tryParse(cameraId.toString()) ?? 0,
               cameraName: cameraNameFromResponse?.toString() ?? cameraName,
-              deviceId: deviceId.toString(),
+              deviceId: deviceUuid.toString(), // Server UUID, not legacy device_id
             );
             
             AutoRegistrationLogger.debug('Created success result: ${successResult.toString()}');
@@ -335,11 +346,11 @@ class AutoCameraRegistrationService {
           }
         } else {
           AutoRegistrationLogger.error('Missing required camera data in response');
-          AutoRegistrationLogger.error('Camera ID: $cameraId, Device ID: $deviceId');
+          AutoRegistrationLogger.error('Camera ID: $cameraId, Device UUID: $deviceUuid');
           AutoRegistrationLogger.error('Full camera data: $cameraData');
           
           return CameraRegistrationResult.failure(
-            error: 'Invalid camera data in response - missing ID or device_id',
+            error: 'Invalid camera data in response - missing ID or device_id (UUID)',
           );
         }
       } else if (response.statusCode == 400) {
@@ -352,12 +363,14 @@ class AutoCameraRegistrationService {
           if (errorDetail.contains('already registered')) {
             AutoRegistrationLogger.success('Camera already registered - continuing with existing registration');
             
-            // Return success since camera is already registered
-            // The device ID from the request is what we'll use
+            // Try to get stored UUID, fall back to device serial if not available
+            final storedUuid = await _deviceService.getStoredCameraUuid();
+            final fallbackId = storedUuid ?? deviceSerial;
+            
             return CameraRegistrationResult.success(
               cameraId: 0, // We don't have the actual ID, but that's okay for existing cameras
               cameraName: cameraName,
-              deviceId: deviceId, // Use the consistent device ID with mobile_ prefix
+              deviceId: fallbackId,
             );
           }
         } catch (e) {

@@ -53,12 +53,12 @@ class RTSPCameraCreate(BaseModel):
 class MobileCameraCreate(BaseModel):
     """Model for mobile camera registration"""
 
-    name: str
-    device_id: str
+    name: Optional[str] = None  # Optional - will be auto-generated if not provided
     ip_address: Optional[str] = None  # Will be auto-detected from client IP
     port: int = 8554
-    device_model: Optional[str] = None
-    device_manufacturer: Optional[str] = None
+    device_model: str  # Required for hardware_identifier
+    device_manufacturer: str  # Required for hardware_identifier
+    device_serial: str  # Required for hardware_identifier (stable across reinstalls)
     app_version: Optional[str] = None
     resolution_width: int = 1920
     resolution_height: int = 1080
@@ -1178,19 +1178,73 @@ async def register_mobile_camera(
         actual_ip = mobile_data.ip_address or client_ip
 
         logger.info(
-            f"Mobile camera registration: client_ip={client_ip}, provided_ip={mobile_data.ip_address}, using_ip={actual_ip}"
+            f"Mobile camera registration: client_ip={client_ip}, "
+            f"provided_ip={mobile_data.ip_address}, using_ip={actual_ip}"
         )
         
-        # Validate and ensure proper UUID format
+        # Import required services
         from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
         from src.services.auto_naming_service import generate_auto_camera_name
-        from src.services.device_id_service import ensure_valid_uuid
+        from src.services.device_id_service import generate_uuid
         
-        # Convert device_id to proper UUID (handles Android ID format)
-        device_id = ensure_valid_uuid(mobile_data.device_id, legacy_metadata={'ip': actual_ip})
+        # Generate server-side UUID for device_id
+        device_uuid = generate_uuid()
         
-        # Handle camera name
+        # Create stable hardware identifier from device info
+        hardware_id = f"{mobile_data.device_manufacturer}_{mobile_data.device_model}_{mobile_data.device_serial}"
+        
+        # Check for existing camera by hardware_identifier
+        existing_camera = (
+            db.query(Camera)
+            .filter(
+                Camera.hardware_identifier == hardware_id,
+                Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+        
+        if existing_camera:
+            # Camera exists - update connection details
+            logger.info(
+                f"User {current_user.get('sub')} updating existing mobile camera: "
+                f"{existing_camera.name} (hardware_id: {hardware_id}) with new IP {actual_ip}"
+            )
+
+            # Update connection details
+            existing_camera.connection_string = f"mobile://{actual_ip}:{mobile_data.port}"
+            existing_camera.port = mobile_data.port
+            existing_camera.last_seen = datetime.utcnow()
+            existing_camera.status = CameraStatus.AVAILABLE
+
+            # Update technical specs if changed
+            if mobile_data.resolution_width:
+                existing_camera.resolution_width = mobile_data.resolution_width
+            if mobile_data.resolution_height:
+                existing_camera.resolution_height = mobile_data.resolution_height
+            if mobile_data.app_version:
+                existing_camera.firmware_version = mobile_data.app_version
+
+            db.commit()
+            db.refresh(existing_camera)
+
+            return {
+                "message": "Mobile camera reconnected",
+                "camera": {
+                    "id": existing_camera.id,
+                    "name": existing_camera.name,
+                    "device_id": existing_camera.device_id,  # Return existing UUID
+                    "camera_type": existing_camera.camera_type.value,
+                    "status": existing_camera.status.value,
+                    "connection_string": existing_camera.connection_string,
+                    "ip_address": actual_ip,
+                    "port": existing_camera.port,
+                    "resolution": f"{existing_camera.resolution_width}x{existing_camera.resolution_height}",
+                },
+            }
+        
+        # Handle camera name with auto-naming logic
         if mobile_data.name:
+            # User provided a name - validate and sanitize
             camera_name = sanitize_camera_name(mobile_data.name)
             is_valid, error_msg = validate_camera_name_unique(db, camera_name)
             if not is_valid:
@@ -1202,57 +1256,14 @@ async def register_mobile_camera(
             # Auto-generate unique name
             camera_name = generate_auto_camera_name(db, CameraType.MOBILE)
 
-        # Check if mobile camera already exists
-        existing_camera = (
-            db.query(Camera).filter(Camera.device_id == device_id).first()
-        )
-        if existing_camera:
-            # Update existing camera with new IP address and connection string
-            logger.info(
-                f"User {current_user.get('sub')} updating existing mobile camera: "
-                f"{mobile_data.device_id} with new IP {actual_ip}"
-            )
-
-            # Update IP address and rebuild connection string
-            existing_camera.connection_string = (
-                f"mobile://{actual_ip}:{mobile_data.port}"
-            )
-            existing_camera.port = mobile_data.port
-            existing_camera.last_seen = datetime.utcnow()
-
-            # Update other fields that might have changed
-            if mobile_data.name != existing_camera.name:
-                existing_camera.name = mobile_data.name
-            if mobile_data.resolution_width != existing_camera.resolution_width:
-                existing_camera.resolution_width = mobile_data.resolution_width
-            if mobile_data.resolution_height != existing_camera.resolution_height:
-                existing_camera.resolution_height = mobile_data.resolution_height
-
-            db.commit()
-            db.refresh(existing_camera)
-
-            return {
-                "message": "Mobile camera updated with new IP address",
-                "camera": {
-                    "id": existing_camera.id,
-                    "name": existing_camera.name,
-                    "device_id": existing_camera.device_id,
-                    "camera_type": existing_camera.camera_type.value,
-                    "status": existing_camera.status.value,
-                    "connection_string": existing_camera.connection_string,
-                    "ip_address": actual_ip,
-                    "port": existing_camera.port,
-                    "resolution": f"{existing_camera.resolution_width}x{existing_camera.resolution_height}",
-                },
-            }
-
         # Build mobile streaming URL/connection string
         connection_string = f"mobile://{actual_ip}:{mobile_data.port}"
 
-        # Create new mobile camera
+        # Create new mobile camera with server-generated UUID
         new_camera = Camera(
-            name=camera_name,  # Use sanitized and validated name
-            device_id=mobile_data.device_id,
+            name=camera_name,
+            device_id=device_uuid,  # Server-generated UUID
+            hardware_identifier=hardware_id,  # Stable hardware identifier
             camera_type=CameraType.MOBILE,
             status=CameraStatus.AVAILABLE,
             connection_string=connection_string,
@@ -1262,9 +1273,10 @@ async def register_mobile_camera(
             max_fps=mobile_data.max_fps,
             manufacturer=mobile_data.device_manufacturer,
             model=mobile_data.device_model,
+            serial_number=mobile_data.device_serial,
             firmware_version=mobile_data.app_version,
             supports_streaming=True,
-            supports_recording=True,  # Enable mobile camera recording
+            supports_recording=True,
             supports_audio=mobile_data.supports_audio,
             supports_ptz=False,
         )
@@ -1274,8 +1286,8 @@ async def register_mobile_camera(
         db.refresh(new_camera)
 
         logger.info(
-            f"User {current_user.get('sub')} registered mobile camera: "
-            f"{mobile_data.name} ({mobile_data.device_id})"
+            f"User {current_user.get('sub')} registered new mobile camera: "
+            f"{camera_name} (UUID: {device_uuid}, hardware_id: {hardware_id})"
         )
 
         return {
@@ -1389,6 +1401,162 @@ async def update_mobile_camera(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update mobile camera",
+        )
+
+
+@router.patch("/mobile/{device_id}/name", dependencies=[Depends(require_connect_camera)])
+async def rename_mobile_camera(
+    device_id: str,
+    camera_update: CameraNameUpdate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Rename a mobile camera via UUID.
+    
+    - Updates camera name in database
+    - Synchronizes collection name with Media Service
+    - Queues settings if camera is offline (applied on next heartbeat)
+    """
+    try:
+        # Find the mobile camera by UUID
+        camera = (
+            db.query(Camera)
+            .filter(
+                Camera.device_id == device_id,
+                Camera.camera_type == CameraType.MOBILE
+            )
+            .first()
+        )
+        
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera {device_id} not found",
+            )
+        
+        # Validate camera name uniqueness
+        from src.services.name_validation import validate_camera_name_unique, sanitize_camera_name
+        new_name = sanitize_camera_name(camera_update.name)
+        
+        # Check if name is actually changing
+        if new_name == camera.name:
+            return {
+                "message": "Camera name unchanged",
+                "camera": {
+                    "device_id": camera.device_id,
+                    "name": camera.name,
+                }
+            }
+        
+        is_valid, error_msg = validate_camera_name_unique(db, new_name, exclude_device_id=device_id)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg,
+            )
+        
+        old_name = camera.name
+        camera.name = new_name
+        
+        # Check if camera is online
+        is_online = camera.status in [CameraStatus.CONNECTED, CameraStatus.IN_USE]
+        
+        # If camera is offline, queue the name update
+        if not is_online:
+            from src.models.pending_settings import PendingCameraSettings
+            
+            pending = PendingCameraSettings(
+                camera_device_id=device_id,
+                setting_type='name_update',
+                setting_value={'new_name': new_name, 'old_name': old_name},
+                user_id=current_user.get('sub'),
+                created_at=datetime.utcnow()
+            )
+            db.add(pending)
+        
+        db.commit()
+        db.refresh(camera)
+        
+        logger.info(
+            f"User {current_user.get('sub')} renamed mobile camera: "
+            f"{old_name} -> {new_name} (device_id: {device_id}, "
+            f"{'queued for next connection' if not is_online else 'applied immediately'})"
+        )
+        
+        # Update associated collection name (async call to media service)
+        try:
+            import httpx
+            import os
+            import jwt
+            from datetime import timedelta
+            
+            # Create service token for camera->media service auth
+            node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+            service_token_payload = {
+                'sub': str(current_user.get('sub')),
+                'exp': datetime.utcnow() + timedelta(minutes=5)
+            }
+            service_token = jwt.encode(service_token_payload, node_secret, algorithm='HS256')
+            
+            headers = {
+                'Authorization': f'Bearer {service_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            async with httpx.AsyncClient() as client:
+                # Find collection by camera_device_id (UUID)
+                response = await client.get(
+                    f"http://localhost:8000/api/v1/media/collections/by-camera/{device_id}",
+                    headers=headers,
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    collection = response.json()
+                    collection_uuid = collection.get("uuid")
+                    
+                    # Update collection name
+                    update_response = await client.patch(
+                        f"http://localhost:8000/api/v1/media/collections/{collection_uuid}/name",
+                        params={"name": new_name},
+                        headers=headers,
+                        timeout=10.0
+                    )
+                    
+                    if update_response.status_code == 200:
+                        logger.info(f"✅ Collection renamed for mobile camera {device_id}: {new_name}")
+                    else:
+                        logger.warning(
+                            f"⚠️ Failed to rename collection for mobile camera {device_id}: "
+                            f"{update_response.status_code}"
+                        )
+                else:
+                    logger.info(f"ℹ️ No collection found for mobile camera {device_id}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Error renaming collection for mobile camera {device_id}: {e}")
+            # Don't fail the camera rename if collection update fails
+        
+        return {
+            "message": f"Camera name updated successfully ({'queued' if not is_online else 'applied'})",
+            "camera": {
+                "device_id": camera.device_id,
+                "name": camera.name,
+                "old_name": old_name,
+                "status": camera.status.value,
+                "update_queued": not is_online,
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error renaming mobile camera: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to rename mobile camera: {str(e)}",
         )
 
 
@@ -1581,7 +1749,17 @@ async def mobile_camera_heartbeat(
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
-    """Receive heartbeat from mobile camera to update last_seen timestamp."""
+    """
+    Receive heartbeat from mobile camera to update last_seen timestamp.
+    
+    Enhanced for Phase 3B hybrid approach:
+    - Updates last_seen timestamp
+    - Returns pending settings for mobile app to apply
+    - Applies settings to camera.settings if specified
+    - Supports admin_override flag for enterprise policies
+    """
+
+    from src.models.pending_settings import PendingCameraSettings
 
     try:
         # Find the mobile camera
@@ -1603,17 +1781,107 @@ async def mobile_camera_heartbeat(
         camera.last_seen = datetime.utcnow()
 
         # Update status to CONNECTED if it was AVAILABLE
+        was_offline = camera.status in [CameraStatus.AVAILABLE, CameraStatus.DISCONNECTED]
         if camera.status == CameraStatus.AVAILABLE:
             camera.status = CameraStatus.CONNECTED
 
+        # Get pending settings (ordered by priority then created_at)
+        pending_settings = (
+            db.query(PendingCameraSettings)
+            .filter(
+                PendingCameraSettings.camera_device_id == device_id,
+                PendingCameraSettings.is_applied == 'pending'
+            )
+            .order_by(
+                PendingCameraSettings.priority.desc(),
+                PendingCameraSettings.created_at.asc()
+            )
+            .all()
+        )
+
+        # Prepare pending settings for mobile app response
+        pending_settings_list = []
+        settings_to_apply = {}
+        conflicts = []
+
+        for setting in pending_settings:
+            # Extract setting key and value
+            if isinstance(setting.setting_value, dict):
+                setting_key = setting.setting_value.get('key')
+                setting_value = setting.setting_value.get('value')
+            else:
+                setting_key = setting.setting_type.replace('setting_', '')
+                setting_value = setting.setting_value
+
+            pending_settings_list.append({
+                "id": setting.id,
+                "setting_type": setting.setting_type,
+                "setting_key": setting_key,
+                "setting_value": setting_value,
+                "source": setting.source,
+                "admin_override": setting.admin_override,
+                "priority": setting.priority,
+                "created_at": setting.created_at.isoformat() if setting.created_at else None,
+            })
+
+            # Accumulate settings to apply to camera.settings JSON
+            if setting_key:
+                # Check for conflicts with existing settings
+                if camera.settings and setting_key in camera.settings:
+                    current_value = camera.settings[setting_key]
+                    if current_value != setting_value:
+                        resolution = "backend_wins" if setting.admin_override else "backend_wins"
+                        conflicts.append({
+                            "setting": setting_key,
+                            "mobile_value": current_value,
+                            "backend_value": setting_value,
+                            "resolution": resolution,
+                            "reason": "admin_override" if setting.admin_override else "pending_setting",
+                        })
+                
+                settings_to_apply[setting_key] = setting_value
+
+            # Mark setting as applied
+            setting.is_applied = 'applied'
+            setting.applied_at = datetime.utcnow()
+
+        # Apply settings to camera.settings JSON
+        if settings_to_apply:
+            if camera.settings:
+                camera.settings = {**camera.settings, **settings_to_apply}
+            else:
+                camera.settings = settings_to_apply
+            
+            camera.last_modified_by = 'admin'  # Settings from backend
+            camera.last_modified_at = datetime.utcnow()
+            
+            logger.info(
+                f"✅ Applied {len(settings_to_apply)} pending settings to camera {device_id}"
+            )
+
         db.commit()
 
-        return {
+        response = {
             "message": "Heartbeat received",
             "device_id": device_id,
             "status": camera.status.value,
             "timestamp": camera.last_seen.isoformat(),
+            "pending_settings_count": len(pending_settings_list),
         }
+
+        if pending_settings_list:
+            response["pending_settings"] = pending_settings_list
+            logger.info(
+                f"📝 Returned {len(pending_settings_list)} pending settings for mobile camera {device_id}"
+            )
+
+        if conflicts:
+            response["conflict_warnings"] = conflicts
+            logger.info(
+                f"⚠️ Detected {len(conflicts)} setting conflicts for mobile camera {device_id}"
+            )
+
+        return response
 
     except HTTPException:
         raise
@@ -1652,6 +1920,258 @@ async def cleanup_stale_mobile_cameras(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cleanup stale mobile cameras",
+        )
+
+
+# ============================================================================
+# MOBILE CAMERA SETTINGS ENDPOINTS (Phase 3B - Hybrid Approach)
+# ============================================================================
+
+
+class CameraSettingsUpdate(BaseModel):
+    """Model for camera settings update (mobile or admin source)"""
+
+    settings: Dict[str, Any]
+    source: str = "mobile"  # 'mobile' or 'admin'
+    admin_override: bool = False  # Enterprise policy flag
+    timestamp: Optional[str] = None
+
+
+@router.patch("/mobile/{uuid}/settings", dependencies=[Depends(require_view_cameras)])
+async def update_mobile_camera_settings(
+    uuid: str,
+    settings_update: CameraSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """
+    Update mobile camera settings (supports both mobile and admin sources).
+    
+    Hybrid approach:
+    - Mobile app can update settings directly (mobile-first)
+    - Admins can update settings remotely (admin-driven)
+    - If camera offline, settings queued in pending_settings
+    - Admin override flag enforces enterprise policies
+    """
+
+    from src.models.pending_settings import PendingCameraSettings
+
+    try:
+        # Find camera by UUID
+        camera = db.query(Camera).filter(
+            Camera.device_id == uuid,
+            Camera.camera_type == CameraType.MOBILE
+        ).first()
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera with UUID {uuid} not found"
+            )
+
+        # Check if camera is online (last_seen within 2 minutes)
+        is_online = False
+        if camera.last_seen:
+            time_diff = (datetime.utcnow() - camera.last_seen).total_seconds()
+            is_online = time_diff < 120  # 2 minutes threshold
+
+        # Update timestamp if provided
+        if settings_update.timestamp:
+            try:
+                update_time = datetime.fromisoformat(settings_update.timestamp.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                update_time = datetime.utcnow()
+        else:
+            update_time = datetime.utcnow()
+
+        # If camera is online, apply settings immediately
+        if is_online:
+            # Merge new settings with existing settings
+            if camera.settings:
+                merged_settings = {**camera.settings, **settings_update.settings}
+            else:
+                merged_settings = settings_update.settings
+
+            camera.settings = merged_settings
+            camera.last_modified_by = settings_update.source
+            camera.last_modified_at = update_time
+
+            db.commit()
+            db.refresh(camera)
+
+            logger.info(
+                f"Settings updated for online mobile camera {uuid} "
+                f"by {settings_update.source}"
+            )
+
+            return {
+                "message": "Settings updated successfully",
+                "camera_uuid": uuid,
+                "camera_name": camera.name,
+                "applied": "immediately",
+                "source": settings_update.source,
+                "settings": merged_settings,
+            }
+
+        else:
+            # Camera offline - queue settings in pending_settings
+            for setting_key, setting_value in settings_update.settings.items():
+                pending_setting = PendingCameraSettings(
+                    camera_device_id=uuid,
+                    setting_type=f"setting_{setting_key}",
+                    setting_value={"key": setting_key, "value": setting_value},
+                    source=settings_update.source,
+                    admin_override=settings_update.admin_override,
+                    priority=10 if settings_update.admin_override else 0,
+                    user_id=current_user.get("sub", "unknown"),
+                    is_applied="pending",
+                )
+                db.add(pending_setting)
+
+            db.commit()
+
+            logger.info(
+                f"Settings queued for offline mobile camera {uuid} "
+                f"by {settings_update.source}, admin_override={settings_update.admin_override}"
+            )
+
+            return {
+                "message": "Settings queued (camera offline)",
+                "camera_uuid": uuid,
+                "camera_name": camera.name,
+                "applied": "queued",
+                "source": settings_update.source,
+                "admin_override": settings_update.admin_override,
+                "settings_queued": len(settings_update.settings),
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating mobile camera settings for {uuid}: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update camera settings",
+        )
+
+
+@router.get("/mobile/{uuid}/settings", dependencies=[Depends(require_view_cameras)])
+async def get_mobile_camera_settings(
+    uuid: str,
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Get current settings for a mobile camera."""
+
+    try:
+        camera = db.query(Camera).filter(
+            Camera.device_id == uuid,
+            Camera.camera_type == CameraType.MOBILE
+        ).first()
+
+        if not camera:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Mobile camera with UUID {uuid} not found"
+            )
+
+        return {
+            "camera_uuid": uuid,
+            "camera_name": camera.name,
+            "settings": camera.settings or {},
+            "last_modified_by": camera.last_modified_by,
+            "last_modified_at": camera.last_modified_at.isoformat() if camera.last_modified_at else None,
+            "status": camera.status.value if camera.status else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching mobile camera settings for {uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch camera settings",
+        )
+
+
+@router.get("/mobile/{uuid}/pending-settings", dependencies=[Depends(require_view_cameras)])
+async def get_pending_settings(
+    uuid: str,
+    db: Session = Depends(get_db),
+) -> Dict:
+    """Get all pending settings for a mobile camera."""
+
+    from src.models.pending_settings import PendingCameraSettings
+
+    try:
+        pending_settings = db.query(PendingCameraSettings).filter(
+            PendingCameraSettings.camera_device_id == uuid,
+            PendingCameraSettings.is_applied == "pending"
+        ).order_by(
+            PendingCameraSettings.priority.desc(),
+            PendingCameraSettings.created_at
+        ).all()
+
+        return {
+            "camera_uuid": uuid,
+            "pending_count": len(pending_settings),
+            "pending_settings": [
+                {
+                    "id": ps.id,
+                    "setting_type": ps.setting_type,
+                    "setting_value": ps.setting_value,
+                    "source": ps.source,
+                    "admin_override": ps.admin_override,
+                    "priority": ps.priority,
+                    "created_at": ps.created_at.isoformat() if ps.created_at else None,
+                }
+                for ps in pending_settings
+            ],
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching pending settings for {uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch pending settings",
+        )
+
+
+@router.delete("/mobile/{uuid}/pending-settings", dependencies=[Depends(require_admin_cameras)])
+async def clear_pending_settings(
+    uuid: str,
+    db: Session = Depends(get_db),
+    current_user: Dict = Depends(get_current_user),
+) -> Dict:
+    """Clear all pending settings for a mobile camera (admin only)."""
+
+    from src.models.pending_settings import PendingCameraSettings
+
+    try:
+        deleted_count = db.query(PendingCameraSettings).filter(
+            PendingCameraSettings.camera_device_id == uuid,
+            PendingCameraSettings.is_applied == "pending"
+        ).delete()
+
+        db.commit()
+
+        logger.info(
+            f"Admin {current_user.get('sub')} cleared {deleted_count} "
+            f"pending settings for camera {uuid}"
+        )
+
+        return {
+            "message": "Pending settings cleared",
+            "camera_uuid": uuid,
+            "deleted_count": deleted_count,
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing pending settings for {uuid}: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear pending settings",
         )
 
 

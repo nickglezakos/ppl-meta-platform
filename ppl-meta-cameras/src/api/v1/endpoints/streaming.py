@@ -127,8 +127,20 @@ async def video_stream(
             last_frame_time = time.time()
             stream_timeout = 30.0  # 30 seconds without frames = timeout
             
-            # Determine camera type
-            is_mobile = device_id.startswith('mobile_')
+            # Determine camera type from database (mobile cameras use UUID, not prefix)
+            from src.database import get_db
+            from src.models.camera import Camera, CameraType
+            
+            camera_type = None
+            db = next(get_db())
+            try:
+                camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+                if camera:
+                    camera_type = camera.camera_type
+            finally:
+                db.close()
+            
+            is_mobile = camera_type == CameraType.MOBILE
             is_edge = device_id.startswith('edge-camera-')
             
             # 🎯 UNIFIED QUEUE ARCHITECTURE: All cameras use queue workers now
@@ -254,8 +266,20 @@ async def video_stream(
     logger.info(f"🎥 [VIDEO_STREAM] Request for device_id={device_id}, user={current_user.get('sub')}")
     
     try:
-        # Check camera type
-        is_mobile = device_id.startswith('mobile_')
+        # Check camera type from database
+        from src.database import get_db
+        from src.models.camera import Camera, CameraType
+        
+        camera_type = None
+        db = next(get_db())
+        try:
+            camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+            if camera:
+                camera_type = camera.camera_type
+        finally:
+            db.close()
+        
+        is_mobile = camera_type == CameraType.MOBILE
         is_edge = device_id.startswith('edge-camera-')
         
         if is_mobile:

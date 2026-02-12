@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import '../services/authentication_service.dart';
 import '../services/streaming_service.dart';
+import '../../services/device_identifier_service.dart';
 
 /// Authentication provider for managing authentication state
 class AuthenticationProvider extends ChangeNotifier {
   final AuthenticationService _authService = AuthenticationService.instance;
   final StreamingService _streamingService = StreamingService.instance;
+  final DeviceIdentifierService _deviceService = DeviceIdentifierService();
 
   // Authentication state
   bool _isAuthenticated = false;
@@ -46,9 +48,11 @@ class AuthenticationProvider extends ChangeNotifier {
   /// Get access token for API requests
   String? get accessToken => _authService.authToken;
   String? get authToken => _authService.authToken;  // Alias
+  String? get token => _authService.authToken;      // Alias for common usage
   
   /// Get camera service endpoint URL
   String? get camerasServiceUrl => _authService.cameraServiceEndpoint;
+  String? get baseUrl => _authService.cameraServiceEndpoint ?? _serverUrl;  // Alias for common usage
 
   /// Initialize authentication provider
   Future<void> initializeAuth() async {
@@ -71,6 +75,17 @@ class AuthenticationProvider extends ChangeNotifier {
         // Initialize streaming service if authenticated
         if (_isAuthenticated && _serverUrl != null) {
           await _initializeStreamingService();
+          
+          // Check if camera is already registered (has stored UUID)
+          final storedUuid = await _deviceService.getStoredCameraUuid();
+          if (storedUuid != null && storedUuid.isNotEmpty) {
+            print('✅ [CAMERA_RESTORATION] Found stored camera UUID: $storedUuid');
+            _isCameraRegistered = true;
+            print('✅ [CAMERA_RESTORATION] Camera registration status set to true - skipping registration');
+          } else {
+            print('ℹ️  [CAMERA_REGISTRATION] No stored camera UUID - registration required');
+            _isCameraRegistered = false;
+          }
         }
 
         // Check server connection with delay to allow services to start
@@ -128,6 +143,17 @@ class AuthenticationProvider extends ChangeNotifier {
 
         // Initialize streaming service
         await _initializeStreamingService();
+
+        // Check if camera is already registered (has stored UUID)
+        final storedUuid = await _deviceService.getStoredCameraUuid();
+        if (storedUuid != null && storedUuid.isNotEmpty) {
+          print('✅ [CAMERA_RESTORATION] Found stored camera UUID: $storedUuid');
+          _isCameraRegistered = true;
+          print('✅ [CAMERA_RESTORATION] Camera registration status set to true - skipping registration');
+        } else {
+          print('ℹ️  [CAMERA_REGISTRATION] No stored camera UUID - registration required');
+          _isCameraRegistered = false;
+        }
 
         print('🔑 [AUTH_DEBUG] Before server connection check - isAuthenticated: $_isAuthenticated');
         

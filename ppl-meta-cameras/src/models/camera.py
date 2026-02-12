@@ -54,6 +54,7 @@ class Camera(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), unique=True, nullable=False, index=True)  # User-defined unique name
     device_id = Column(String(255), unique=True, nullable=False, index=True)  # System UUID identifier
+    hardware_identifier = Column(String(500), index=True)  # Stable hardware ID (manufacturer_model_serial)
     camera_type = Column(SQLEnum(CameraType), nullable=False)
     status = Column(SQLEnum(CameraStatus), default=CameraStatus.AVAILABLE)
 
@@ -102,6 +103,11 @@ class Camera(Base):
     show_performance_indicators = Column(Boolean, default=True)
     default_playback_mode = Column(String(50), default='auto')
     mvr_quality_threshold = Column(Float, default=0.20)
+
+    # Hybrid Settings Support (Phase 3B)
+    settings = Column(JSON)  # All camera settings in one JSON object
+    last_modified_by = Column(String(20))  # 'mobile' or 'admin'
+    last_modified_at = Column(DateTime)  # When settings were last changed
 
     # Recording profile assignment - TODO: Add when Phase 2 is implemented
     # recording_profile_id = Column(

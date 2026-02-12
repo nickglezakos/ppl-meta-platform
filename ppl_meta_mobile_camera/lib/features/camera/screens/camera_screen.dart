@@ -15,6 +15,7 @@ import '../widgets/camera_settings_panel.dart';
 // import '../widgets/streaming_panel.dart'; // Unused import removed
 import 'gallery_screen.dart';
 import 'platform_connection_screen.dart';
+import 'camera_settings_screen.dart';
 import '../../authentication/screens/simple_setup_screen_new.dart';
 
 /// Main camera screen with preview, controls, and settings
@@ -79,10 +80,22 @@ class _CameraScreenState extends State<CameraScreen>
         print('🔧 Setting up mobile streaming service connection...');
         CameraLogger.info('🔧 Setting up mobile streaming service connection...');
         
-        // Get device ID for frame transmission
-        final deviceInfo = await DeviceIdentifierService().getDeviceRegistrationInfo();
-        final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
-        final mobileDeviceId = 'mobile_$baseDeviceId'; // Add mobile_ prefix to match registration
+        // CRITICAL FIX: Use backend's UUID, not client-generated device_id
+        // The backend stores the camera with a UUID that we must use for frame transmission
+        final deviceService = DeviceIdentifierService();
+        final backendUuid = await deviceService.getStoredCameraUuid();
+        
+        String mobileDeviceId;
+        if (backendUuid != null && backendUuid.isNotEmpty) {
+          mobileDeviceId = backendUuid; // Use backend's UUID
+          print('✅ Using backend camera UUID: $mobileDeviceId');
+        } else {
+          // Fallback to client-generated ID (should not happen after registration)
+          final deviceInfo = await deviceService.getDeviceRegistrationInfo();
+          final baseDeviceId = deviceInfo['device_id'] ?? 'unknown';
+          mobileDeviceId = 'mobile_$baseDeviceId';
+          print('⚠️ No backend UUID found, using fallback: $mobileDeviceId');
+        }
         
         // Configure the mobile streaming service with backend info
         final streamingService = MobileStreamingService();
@@ -245,6 +258,16 @@ class _CameraScreenState extends State<CameraScreen>
                       const Icon(Icons.person),
                       const SizedBox(width: 8),
                       Text(authProvider.getUserDisplayName()),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'camera_settings',
+                  child: Row(
+                    children: [
+                      Icon(Icons.tune),
+                      SizedBox(width: 8),
+                      Text('Camera Settings'),
                     ],
                   ),
                 ),
@@ -647,9 +670,20 @@ class _CameraScreenState extends State<CameraScreen>
       if (backendUrl != null && authProvider.accessToken != null) {
         CameraLogger.info('🔧 Setting up mobile streaming service connection...');
         
-        // Get device ID for frame transmission (should match deviceId parameter)
-        final baseDeviceId = deviceId.startsWith('mobile_') ? deviceId.substring(7) : deviceId;
-        final mobileDeviceId = 'mobile_$baseDeviceId'; // Ensure mobile_ prefix
+        // CRITICAL FIX: Use backend's UUID, not client-generated device_id
+        final deviceService = DeviceIdentifierService();
+        final backendUuid = await deviceService.getStoredCameraUuid();
+        
+        String mobileDeviceId;
+        if (backendUuid != null && backendUuid.isNotEmpty) {
+          mobileDeviceId = backendUuid; // Use backend's UUID
+          CameraLogger.info('✅ Using backend camera UUID: $mobileDeviceId');
+        } else {
+          // Fallback to client-generated ID
+          final baseDeviceId = deviceId.startsWith('mobile_') ? deviceId.substring(7) : deviceId;
+          mobileDeviceId = 'mobile_$baseDeviceId';
+          CameraLogger.warning('⚠️ No backend UUID found, using fallback: $mobileDeviceId');
+        }
         
         // Configure the mobile streaming service with backend info
         final streamingService = MobileStreamingService();
@@ -704,10 +738,21 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  void _openCameraSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const CameraSettingsScreen(),
+      ),
+    );
+  }
+
   void _handleUserMenuAction(String action, AuthenticationProvider authProvider) {
     switch (action) {
       case 'profile':
         _showUserProfile(authProvider);
+        break;
+      case 'camera_settings':
+        _openCameraSettings();
         break;
       case 'gallery':
         _openGallery();

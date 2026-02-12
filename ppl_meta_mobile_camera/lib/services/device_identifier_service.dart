@@ -15,8 +15,12 @@ class DeviceIdentifierService {
   final Uuid _uuid = const Uuid();
   String? _cachedCameraName;
   String? _cachedDeviceId;
+  String? _cachedCameraUuid; // Cache for camera UUID to prevent repeated lookups
   
-  /// Key for storing device UUID in shared preferences
+  /// Key for storing server-generated camera UUID in shared preferences
+  static const String _cameraUuidKey = 'ppl_camera_uuid';
+  
+  /// Key for storing legacy device UUID (deprecated, kept for migration)
   static const String _deviceIdKey = 'ppl_device_uuid';
 
   /// Generates a unique camera name in the format: mcam-<device-model>-<unique-id>
@@ -140,23 +144,9 @@ class DeviceIdentifierService {
     final deviceId = await getDeviceId();
     
     try {
-      if (Platform.isAndroid) {and device ID (for testing or reset)
-  void clearCache() {
-    _cachedCameraName = null;
-    _cachedDeviceId = null;
-  }
-  
-  /// Resets device UUID (generates new one) - USE WITH CAUTION
-  /// This will cause the device to register as a new camera
-  Future<void> resetDeviceId() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_deviceIdKey);
-      _cachedDeviceId = null;
-      print('⚠️ Device UUID reset - will generate new UUID on next access');
-    } catch (e) {
-      print('❌ Error resetting device ID: $e');
-    }
+      if (Platform.isAndroid) {
+        final deviceInfo = DeviceInfoPlugin();
+        final androidInfo = await deviceInfo.androidInfo;
         return {
           'manufacturer': androidInfo.manufacturer,
           'model': androidInfo.model,
@@ -191,9 +181,90 @@ class DeviceIdentifierService {
     }
   }
 
-  /// Clears cached camera name (for testing or reset)
+  /// Clears cached camera name, device ID, and camera UUID (for testing or reset)
   void clearCache() {
     _cachedCameraName = null;
+    _cachedDeviceId = null;
+    _cachedCameraUuid = null;
+    print('🔄 All device identifier caches cleared');
+  }
+  
+  /// Stores server-generated camera UUID
+  /// This UUID is returned by the backend during registration and must be used for all API calls
+  Future<void> storeCameraUuid(String uuid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cameraUuidKey, uuid);
+      
+      // Cache the UUID in memory for fast access
+      if (uuid.isNotEmpty) {
+        _cachedCameraUuid = uuid;
+        print('✅ Stored server-generated camera UUID: $uuid (cached in memory)');
+      } else {
+        // Allow clearing UUID only if explicitly empty
+        _cachedCameraUuid = null;
+        print('⚠️  Camera UUID cleared from storage and cache');
+      }
+    } catch (e) {
+      print('❌ Error storing camera UUID: $e');
+      // Still cache it even if storage fails
+      if (uuid.isNotEmpty) {
+        _cachedCameraUuid = uuid;
+        print('⚠️  UUID cached in memory despite storage error');
+      }
+      throw Exception('Failed to store camera UUID');
+    }
+  }
+  
+  /// Retrieves stored camera UUID from server
+  /// Returns null if camera has not been registered yet
+  /// Uses in-memory cache for performance and reliability
+  Future<String?> getStoredCameraUuid() async {
+    // Return cached value if available (fast path)
+    if (_cachedCameraUuid != null && _cachedCameraUuid!.isNotEmpty) {
+      print('📱 Retrieved camera UUID from cache: $_cachedCameraUuid');
+      return _cachedCameraUuid;
+    }
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uuid = prefs.getString(_cameraUuidKey);
+      
+      if (uuid != null && uuid.isNotEmpty) {
+        // Cache for future access
+        _cachedCameraUuid = uuid;
+        print('📱 Retrieved stored camera UUID: $uuid (now cached)');
+        return uuid;
+      } else {
+        print('⚠️  No camera UUID stored - camera not registered');
+        return null;
+      }
+    } catch (e) {
+      print('❌ Error retrieving camera UUID from storage: $e');
+      // Return cached value as fallback if storage fails
+      if (_cachedCameraUuid != null && _cachedCameraUuid!.isNotEmpty) {
+        print('💡 Using cached camera UUID despite storage error: $_cachedCameraUuid');
+        return _cachedCameraUuid;
+      }
+      return null;
+    }
+  }
+  
+  /// Gets device serial number for hardware identification
+  Future<String> getDeviceSerial() async {
+    try {
+      if (Platform.isAndroid) {
+        final androidInfo = await _deviceInfo.androidInfo;
+        // Use fingerprint as serial since actual serial may not be accessible
+        return androidInfo.fingerprint ?? androidInfo.id;
+      } else {
+        // Fallback for other platforms
+        return _uuid.v4();
+      }
+    } catch (e) {
+      print('⚠️ Error getting device serial: $e');
+      return _uuid.v4();
+    }
   }
 
   /// Gets a human-readable device description
@@ -207,6 +278,19 @@ class DeviceIdentifierService {
       }
     } catch (e) {
       return 'Unknown Mobile Device';
+    }
+  }
+
+  /// Resets device UUID (generates new one) - USE WITH CAUTION
+  /// This will cause the device to register as a new camera
+  Future<void> resetDeviceId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_deviceIdKey);
+      _cachedDeviceId = null;
+      print('⚠️ Device UUID reset - will generate new UUID on next access');
+    } catch (e) {
+      print('❌ Error resetting device ID: $e');
     }
   }
 }

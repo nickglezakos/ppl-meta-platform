@@ -206,6 +206,7 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
       final deviceInfo = await _deviceService.getDeviceRegistrationInfo();
       final deviceIP = await _getDeviceIP();
       final deviceId = await _generateDeviceId();
+      final deviceSerial = await _deviceService.getDeviceSerial();
       
       // Prepare camera registration data in CORRECT format (MobileCameraCreate schema)
       final registrationData = {
@@ -215,6 +216,7 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
         'port': 8554,
         'device_model': deviceInfo['model'] ?? 'Mobile Camera',
         'device_manufacturer': deviceInfo['manufacturer'] ?? 'PPL Meta Mobile',
+        'device_serial': deviceSerial,  // Required for hardware_identifier
         'app_version': '1.0.0',
         'resolution_width': 1920,
         'resolution_height': 1080,
@@ -237,8 +239,10 @@ class _CameraRegistrationScreenState extends State<CameraRegistrationScreen> {
       print('📥 Camera registration response: $response');
 
       final isSuccess = response != null && 
-             (response['message']?.contains('successfully') == true || 
-              response['message']?.contains('updated') == true ||
+             (response['message']?.toLowerCase().contains('successfully') == true || 
+              response['message']?.toLowerCase().contains('updated') == true ||
+              response['message']?.toLowerCase().contains('reconnected') == true ||
+              response['message']?.toLowerCase().contains('registered') == true ||
               response['success'] == true || 
               response['status'] == 'success');
               
