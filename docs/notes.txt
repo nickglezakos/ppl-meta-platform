@@ -41,7 +41,7 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 
 2026-02-01 12:53:03,159 - platform.websocket_client - INFO - Connecting to platform WebSocket: ws://localhost:8005/api/v1/cameras/edge/edge-camera-001/ws
 ++++++++++
-ssh pi@192.168.1.77
+ 
 
 sudo shutdown -h now
 

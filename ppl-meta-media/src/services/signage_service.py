@@ -909,6 +909,10 @@ class SignageSyncService:
                 # Use fresh endpoint from discovery service
                 host = discovery_device['host']
                 port = discovery_device['port']
+                
+                # Apply IP translation for Tailscale scenarios
+                host = self._translate_ip_for_tailscale(host)
+                
                 logger.info(f"Using discovery endpoint for {device.device_name}: http://{host}:{port}")
                 url = f"http://{host}:{port}/api/v1/sync"
 
@@ -948,6 +952,67 @@ class SignageSyncService:
             logger.error(f"❌ Failed to send to device {device.device_name}: {str(e)}")
             logger.exception("Full traceback:")
             return False
+    
+    def _translate_ip_for_tailscale(self, host: str) -> str:
+        """
+        Translate local network IPs to Tailscale IP if running in Tailscale environment.
+        
+        If the device registered with a local IP but we need to reach it via Tailscale,
+        use the server's Tailscale IP to connect.
+        
+        Args:
+            host: Original host IP from discovery
+            
+        Returns:
+            Translated host IP if needed, otherwise original host
+        """
+        # If IP is already in Tailscale range (10.x or 100.x), don't translate
+        # These are already endpoint IPs from the mesh network
+        if host.startswith('10.') or host.startswith('100.'):
+            logger.debug(f"IP {host} is already in Tailscale range, using as-is")
+            return host
+        
+        # Check if host is a local network IP (but not Tailscale)
+        if not self._is_local_ip(host):
+            # Already a public IP, no translation needed
+            return host
+            
+        # Check if we have a Tailscale IP configured
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["ip", "addr", "show", "tailscale0"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                lines = result.stdout.split("\n")
+                for line in lines:
+                    if "inet " in line and "100." in line:
+                        tailscale_ip = line.split()[1].split("/")[0]
+                        logger.info(f"🔄 Translating local IP {host} → Tailscale IP {tailscale_ip}")
+                        return tailscale_ip
+        except Exception as e:
+            logger.debug(f"No Tailscale interface detected: {e}")
+            
+        # No translation needed, return original
+        return host
+    
+    def _is_local_ip(self, ip: str) -> bool:
+        """Check if an IP is a local network address."""
+        return (
+            ip.startswith('192.168.') or
+            ip.startswith('10.') or
+            ip.startswith('172.16.') or ip.startswith('172.17.') or ip.startswith('172.18.') or
+            ip.startswith('172.19.') or ip.startswith('172.20.') or ip.startswith('172.21.') or
+            ip.startswith('172.22.') or ip.startswith('172.23.') or ip.startswith('172.24.') or
+            ip.startswith('172.25.') or ip.startswith('172.26.') or ip.startswith('172.27.') or
+            ip.startswith('172.28.') or ip.startswith('172.29.') or ip.startswith('172.30.') or
+            ip.startswith('172.31.') or
+            ip.startswith('127.') or
+            ip == 'localhost'
+        )
 
     async def _get_device_from_discovery(self, service_id: UUID) -> dict | None:
         """
@@ -1034,9 +1099,12 @@ class SignagePlaybackService:
                 continue
 
             try:
-                logger.info(f"Sending {request.command.value} command to device {device_info['name']} ({device_info['host']}:{device_info['port']})")
+                # Apply IP translation for Tailscale scenarios
+                translated_host = self._translate_ip_for_tailscale(device_info['host'])
+                
+                logger.info(f"Sending {request.command.value} command to device {device_info['name']} ({translated_host}:{device_info['port']})")
                 success = await self._send_control_command_to_endpoint(
-                    host=device_info['host'],
+                    host=translated_host,
                     port=device_info['port'],
                     device_name=device_info['name'],
                     request=request
@@ -1110,6 +1178,67 @@ class SignagePlaybackService:
         except Exception as e:
             logger.error(f"Failed to query discovery service for device {service_id}: {e}")
             return None
+    
+    def _translate_ip_for_tailscale(self, host: str) -> str:
+        """
+        Translate local network IPs to Tailscale IP if running in Tailscale environment.
+        
+        If the device registered with a local IP but we need to reach it via Tailscale,
+        use the server's Tailscale IP to connect.
+        
+        Args:
+            host: Original host IP from discovery
+            
+        Returns:
+            Translated host IP if needed, otherwise original host
+        """
+        # If IP is already in Tailscale range (10.x or 100.x), don't translate
+        # These are already endpoint IPs from the mesh network
+        if host.startswith('10.') or host.startswith('100.'):
+            logger.debug(f"IP {host} is already in Tailscale range, using as-is")
+            return host
+        
+        # Check if host is a local network IP (but not Tailscale)
+        if not self._is_local_ip(host):
+            # Already a public IP, no translation needed
+            return host
+            
+        # Check if we have a Tailscale IP configured
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["ip", "addr", "show", "tailscale0"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                lines = result.stdout.split("\n")
+                for line in lines:
+                    if "inet " in line and "100." in line:
+                        tailscale_ip = line.split()[1].split("/")[0]
+                        logger.info(f"🔄 Translating local IP {host} → Tailscale IP {tailscale_ip}")
+                        return tailscale_ip
+        except Exception as e:
+            logger.debug(f"No Tailscale interface detected: {e}")
+            
+        # No translation needed, return original
+        return host
+    
+    def _is_local_ip(self, ip: str) -> bool:
+        """Check if an IP is a local network address."""
+        return (
+            ip.startswith('192.168.') or
+            ip.startswith('10.') or
+            ip.startswith('172.16.') or ip.startswith('172.17.') or ip.startswith('172.18.') or
+            ip.startswith('172.19.') or ip.startswith('172.20.') or ip.startswith('172.21.') or
+            ip.startswith('172.22.') or ip.startswith('172.23.') or ip.startswith('172.24.') or
+            ip.startswith('172.25.') or ip.startswith('172.26.') or ip.startswith('172.27.') or
+            ip.startswith('172.28.') or ip.startswith('172.29.') or ip.startswith('172.30.') or
+            ip.startswith('172.31.') or
+            ip.startswith('127.') or
+            ip == 'localhost'
+        )
 
     async def _send_control_command_to_endpoint(
         self, host: str, port: int, device_name: str, request: PlaybackControlRequest
