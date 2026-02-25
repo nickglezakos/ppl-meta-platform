@@ -77,9 +77,10 @@ class Settings(BaseSettings):
             return {"error": "Failed to parse database URL"}
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         case_sensitive=False,
         env_prefix="",
+        extra="ignore",
     )
 
     # Basic Configuration
@@ -159,6 +160,15 @@ class Settings(BaseSettings):
     # Mesh VPN
     mesh_vpn_enabled: bool = False
     mesh_vpn_interface: str = "wg0"
+
+    # VPN Provider (Headscale integration)
+    vpn_provider: str = "none"  # none|headscale
+    vpn_admin_emails: str = ""  # comma-separated allowlist; empty = any authed user (dev)
+    headscale_url: str = "http://localhost:8081"
+    headscale_api_key: str = ""
+    headscale_verify_tls: bool = True
+    headscale_user_name: str = "ppl-meta"
+    headscale_preauth_expire_minutes: int = 60 * 24
 
     # Service Registry Configuration
     service_registry: Dict[str, Dict[str, Any]] = {

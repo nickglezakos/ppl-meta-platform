@@ -72,8 +72,8 @@ class Camera(Base):
 
     # Metadata
     manufacturer = Column(String(100))
-    model = Column(String(100))
-    serial_number = Column(String(100))
+    model = Column(String(500))  # Extended for long Android model strings
+    serial_number = Column(String(500))  # Extended for long Android serial numbers
     firmware_version = Column(String(50))
 
     # Capabilities

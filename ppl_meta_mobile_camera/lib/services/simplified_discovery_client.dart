@@ -11,10 +11,12 @@ class SimplifiedDiscoveryClient {
   static const Duration _timeout = Duration(seconds: 8);
   
   String? _cachedDiscoveryUrl;
+  String? _discoveryHost; // Store the host IP used to access Discovery Service
   
   /// Clear cached discovery URL
   void clearCache() {
     _cachedDiscoveryUrl = null;
+    _discoveryHost = null;
     print('🗑️ SimplifiedDiscoveryClient cache cleared');
   }
   
@@ -110,8 +112,39 @@ class SimplifiedDiscoveryClient {
       final data = json.decode(response.body);
       final services = <ServiceInfo>[];
       
+      // Extract the host IP from ipPort for IP translation
+      final discoveryHost = ipPort.split(':')[0];
+      _discoveryHost = discoveryHost;
+      
+      print('🌐 Discovery Service accessed at: $discoveryHost');
+      
+      // Check if we're using Tailscale (100.x.x.x)
+      final isTailscale = discoveryHost.startsWith('100.');
+      if (isTailscale) {
+        print('🔒 Tailscale network detected - will translate local IPs to Tailscale IP');
+      }
+      
       for (final serviceData in data['services']) {
-        services.add(ServiceInfo.fromJson(serviceData));
+        var serviceInfo = ServiceInfo.fromJson(serviceData);
+        
+        // Translate local IPs to Tailscale IP if needed
+        if (isTailscale && _isLocalIP(serviceInfo.host)) {
+          print('🔄 Translating ${serviceInfo.name} IP: ${serviceInfo.host} -> $discoveryHost');
+          serviceInfo = ServiceInfo(
+            serviceId: serviceInfo.serviceId,
+            name: serviceInfo.name,
+            serviceType: serviceInfo.serviceType,
+            version: serviceInfo.version,
+            host: discoveryHost, // Replace with Tailscale IP
+            port: serviceInfo.port,
+            healthEndpoint: serviceInfo.healthEndpoint,
+            status: serviceInfo.status,
+            capabilities: serviceInfo.capabilities,
+            metadata: serviceInfo.metadata,
+          );
+        }
+        
+        services.add(serviceInfo);
       }
       
       print('✅ Retrieved ${services.length} services from Discovery Service at $ipPort');
@@ -125,6 +158,30 @@ class SimplifiedDiscoveryClient {
       print('❌ Error connecting to Discovery Service at $ipPort: $e');
       throw DiscoveryException('Failed to connect to Discovery Service at $ipPort: $e');
     }
+  }
+  
+  /// Check if an IP is a local network IP (not accessible from outside)
+  bool _isLocalIP(String ip) {
+    return ip.startsWith('192.168.') ||
+           ip.startsWith('10.') ||
+           ip.startsWith('172.16.') ||
+           ip.startsWith('172.17.') ||
+           ip.startsWith('172.18.') ||
+           ip.startsWith('172.19.') ||
+           ip.startsWith('172.20.') ||
+           ip.startsWith('172.21.') ||
+           ip.startsWith('172.22.') ||
+           ip.startsWith('172.23.') ||
+           ip.startsWith('172.24.') ||
+           ip.startsWith('172.25.') ||
+           ip.startsWith('172.26.') ||
+           ip.startsWith('172.27.') ||
+           ip.startsWith('172.28.') ||
+           ip.startsWith('172.29.') ||
+           ip.startsWith('172.30.') ||
+           ip.startsWith('172.31.') ||
+           ip.startsWith('127.') ||
+           ip == 'localhost';
   }
 
   /// Get all services from Discovery Service
@@ -162,8 +219,37 @@ class SimplifiedDiscoveryClient {
       final data = json.decode(response.body);
       final services = <ServiceInfo>[];
       
+      // Extract discovery host for IP translation
+      final uri = Uri.parse(discoveryBaseUrl);
+      final discoveryHost = uri.host;
+      
+      // Check if we're using Tailscale
+      final isTailscale = discoveryHost.startsWith('100.');
+      if (isTailscale) {
+        print('🔒 Tailscale network detected - will translate local IPs to Tailscale IP');
+      }
+      
       for (final serviceData in data['services']) {
-        services.add(ServiceInfo.fromJson(serviceData));
+        var serviceInfo = ServiceInfo.fromJson(serviceData);
+        
+        // Translate local IPs to Tailscale IP if needed
+        if (isTailscale && _isLocalIP(serviceInfo.host)) {
+          print('🔄 Translating ${serviceInfo.name} IP: ${serviceInfo.host} -> $discoveryHost');
+          serviceInfo = ServiceInfo(
+            serviceId: serviceInfo.serviceId,
+            name: serviceInfo.name,
+            serviceType: serviceInfo.serviceType,
+            version: serviceInfo.version,
+            host: discoveryHost, // Replace with Tailscale IP
+            port: serviceInfo.port,
+            healthEndpoint: serviceInfo.healthEndpoint,
+            status: serviceInfo.status,
+            capabilities: serviceInfo.capabilities,
+            metadata: serviceInfo.metadata,
+          );
+        }
+        
+        services.add(serviceInfo);
       }
       
       print('✅ Retrieved ${services.length} services from Discovery Service');

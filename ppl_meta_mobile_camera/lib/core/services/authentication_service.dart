@@ -470,6 +470,16 @@ class AuthenticationService {
         print('✅ [PLATFORM_SERVICES] Platform services data fetched successfully');
         print('📊 [PLATFORM_SERVICES] Data keys: ${platformData.keys.toList()}');
         
+        // Detect if we're using Tailscale and need IP translation
+        final serverUri = Uri.parse(_serverUrl);
+        final serverHost = serverUri.host;
+        final isTailscale = serverHost.startsWith('100.');
+        
+        if (isTailscale) {
+          print('🔒 [PLATFORM_SERVICES] Tailscale detected - translating local IPs to $serverHost');
+          _translateLocalIPsToTailscale(platformData, serverHost);
+        }
+        
         // Store platform services data
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('ppl_meta_platform_services', json.encode(platformData));
@@ -859,5 +869,85 @@ class AuthenticationService {
       print('❌ Error getting mobile device IP: $e');
       return null;
     }
+  }
+  
+  /// Translate local IPs in platform services data to Tailscale IP
+  void _translateLocalIPsToTailscale(Map<String, dynamic> platformData, String tailscaleIP) {
+    print('🔄 [IP_TRANSLATION] Starting IP translation to Tailscale IP: $tailscaleIP');
+    
+    // Helper function to check if an IP is local
+    bool isLocalIP(String ip) {
+      return ip.startsWith('192.168.') ||
+             ip.startsWith('10.') ||
+             ip.startsWith('172.16.') ||
+             ip.startsWith('172.17.') ||
+             ip.startsWith('172.18.') ||
+             ip.startsWith('172.19.') ||
+             ip.startsWith('172.20.') ||
+             ip.startsWith('172.21.') ||
+             ip.startsWith('172.22.') ||
+             ip.startsWith('172.23.') ||
+             ip.startsWith('172.24.') ||
+             ip.startsWith('172.25.') ||
+             ip.startsWith('172.26.') ||
+             ip.startsWith('172.27.') ||
+             ip.startsWith('172.28.') ||
+             ip.startsWith('172.29.') ||
+             ip.startsWith('172.30.') ||
+             ip.startsWith('172.31.') ||
+             ip.startsWith('127.') ||
+             ip == 'localhost';
+    }
+    
+    // Helper function to replace local IPs in URLs
+    String translateURL(String url) {
+      try {
+        final uri = Uri.parse(url);
+        if (isLocalIP(uri.host)) {
+          final translatedURL = url.replaceFirst(
+            RegExp('${uri.host}'),
+            tailscaleIP,
+          );
+          print('  🔄 Translated: $url -> $translatedURL');
+          return translatedURL;
+        }
+      } catch (e) {
+        // Not a valid URL, return as-is
+      }
+      return url;
+    }
+    
+    // Translate microservices endpoints
+    if (platformData.containsKey('microservices')) {
+      final microservices = platformData['microservices'] as Map<String, dynamic>;
+      microservices.forEach((serviceName, serviceData) {
+        if (serviceData is Map<String, dynamic>) {
+          // Translate main endpoint
+          if (serviceData.containsKey('endpoint')) {
+            serviceData['endpoint'] = translateURL(serviceData['endpoint'] as String);
+          }
+          
+          // Translate nested endpoints (local, tailscale, etc.)
+          if (serviceData.containsKey('endpoints')) {
+            final endpoints = serviceData['endpoints'] as Map<String, dynamic>;
+            endpoints.forEach((key, value) {
+              if (value is String) {
+                endpoints[key] = translateURL(value);
+              }
+            });
+          }
+        }
+      });
+    }
+    
+    // Translate mobile camera config
+    if (platformData.containsKey('mobile_camera_config')) {
+      final config = platformData['mobile_camera_config'] as Map<String, dynamic>;
+      if (config.containsKey('recommended_endpoint')) {
+        config['recommended_endpoint'] = translateURL(config['recommended_endpoint'] as String);
+      }
+    }
+    
+    print('✅ [IP_TRANSLATION] IP translation complete');
   }
 }

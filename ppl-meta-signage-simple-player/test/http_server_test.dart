@@ -7,17 +7,19 @@ import 'package:logger/logger.dart';
 import 'package:signage_simple_player/database/playlist_database.dart';
 import 'package:signage_simple_player/services/player_engine.dart';
 import 'package:signage_simple_player/services/http_server.dart';
+import 'package:signage_simple_player/services/config_service.dart';
 import 'package:signage_simple_player/models/playback_models.dart';
 import 'package:signage_simple_player/models/playback_history.dart';
 import 'package:signage_simple_player/models/video_list.dart' show VideoItem, LoopMode;
 
-@GenerateMocks([PlaylistDatabase, SignagePlayerEngine])
+@GenerateMocks([PlaylistDatabase, SignagePlayerEngine, ConfigService])
 import 'http_server_test.mocks.dart';
 
 void main() {
   late SignageHttpServer server;
   late MockPlaylistDatabase mockDatabase;
   late MockSignagePlayerEngine mockPlayerEngine;
+  late MockConfigService mockConfigService;
   late Logger logger;
 
   const testDeviceId = 'test-device-123';
@@ -26,11 +28,13 @@ void main() {
   setUp(() {
     mockDatabase = MockPlaylistDatabase();
     mockPlayerEngine = MockSignagePlayerEngine();
+    mockConfigService = MockConfigService();
     logger = Logger(level: Level.off);
 
     server = SignageHttpServer(
       database: mockDatabase,
       playerEngine: mockPlayerEngine,
+      configService: mockConfigService,
       logger: logger,
       deviceId: testDeviceId,
       port: testPort,
@@ -467,6 +471,117 @@ void main() {
 
       final body = jsonDecode(response.body);
       expect(body['error'], isNotNull);
+    });
+  });
+
+  group('Configuration Endpoints', () {
+    test('GET /api/v1/config returns current configuration', () async {
+      when(mockConfigService.backendIP).thenReturn('192.168.1.50');
+      when(mockConfigService.discoveryPort).thenReturn(8006);
+      when(mockConfigService.isConfigured).thenReturn(true);
+      when(mockConfigService.discoveryServiceUrl).thenReturn('http://192.168.1.50:8006');
+      when(mockConfigService.mediaServiceUrl).thenReturn('http://192.168.1.50:8000');
+      when(mockConfigService.gatewayUrl).thenReturn('http://192.168.1.50:8080');
+
+      await server.start();
+
+      final response = await _makeHttpRequest('GET', '/api/v1/config');
+      expect(response.statusCode, 200);
+
+      final body = jsonDecode(response.body);
+      expect(body['status'], 'success');
+      expect(body['device_id'], testDeviceId);
+      expect(body['configuration']['backend_ip'], '192.168.1.50');
+      expect(body['configuration']['discovery_port'], 8006);
+      expect(body['configuration']['is_configured'], true);
+      expect(body['configuration']['discovery_service_url'], 'http://192.168.1.50:8006');
+      expect(body['timestamp'], isNotNull);
+    });
+
+    test('POST /api/v1/config updates configuration successfully', () async {
+      when(mockConfigService.saveConfiguration(
+        backendIP: '192.168.1.75',
+        discoveryPort: 8006,
+      )).thenAnswer((_) async => true);
+
+      await server.start();
+
+      final response = await _makeHttpRequest(
+        'POST',
+        '/api/v1/config',
+        body: {
+          'backend_ip': '192.168.1.75',
+          'discovery_port': 8006,
+        },
+      );
+      expect(response.statusCode, 200);
+
+      final body = jsonDecode(response.body);
+      expect(body['status'], 'success');
+      expect(body['message'], contains('Configuration updated successfully'));
+      expect(body['restart_required'], true);
+      expect(body['configuration']['backend_ip'], '192.168.1.75');
+      expect(body['configuration']['discovery_port'], 8006);
+
+      verify(mockConfigService.saveConfiguration(
+        backendIP: '192.168.1.75',
+        discoveryPort: 8006,
+      )).called(1);
+    });
+
+    test('POST /api/v1/config rejects missing backend_ip', () async {
+      await server.start();
+
+      final response = await _makeHttpRequest(
+        'POST',
+        '/api/v1/config',
+        body: {
+          'discovery_port': 8006,
+        },
+      );
+      expect(response.statusCode, 400);
+
+      final body = jsonDecode(response.body);
+      expect(body['error'], contains('Missing required field: backend_ip'));
+    });
+
+    test('POST /api/v1/config rejects invalid discovery_port', () async {
+      await server.start();
+
+      final response = await _makeHttpRequest(
+        'POST',
+        '/api/v1/config',
+        body: {
+          'backend_ip': '192.168.1.50',
+          'discovery_port': 99999, // Invalid port
+        },
+      );
+      expect(response.statusCode, 400);
+
+      final body = jsonDecode(response.body);
+      expect(body['error'], contains('Invalid or missing field: discovery_port'));
+    });
+
+    test('POST /api/v1/config handles config service failure', () async {
+      when(mockConfigService.saveConfiguration(
+        backendIP: anyNamed('backendIP'),
+        discoveryPort: anyNamed('discoveryPort'),
+      )).thenAnswer((_) async => false);
+
+      await server.start();
+
+      final response = await _makeHttpRequest(
+        'POST',
+        '/api/v1/config',
+        body: {
+          'backend_ip': '192.168.1.50',
+          'discovery_port': 8006,
+        },
+      );
+      expect(response.statusCode, 500);
+
+      final body = jsonDecode(response.body);
+      expect(body['error'], contains('Failed to save configuration'));
     });
   });
 

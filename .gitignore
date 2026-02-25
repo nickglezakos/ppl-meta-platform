@@ -333,3 +333,6 @@ autonomous/ppl-meta-mini/docs/
 # Legacy directories that shouldn't be tracked
 ppl-meta-legacy/
 ppl_meta_new.bfg-report/
+
+# Local Netlify folder
+.netlify

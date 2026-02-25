@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y \
     xdotool \
     wmctrl \
     x11-utils \
+    xvfb \
     clang \
     cmake \
     ninja-build \
@@ -31,6 +32,7 @@ RUN apt-get update && apt-get install -y \
     libgtk-3-dev \
     liblzma-dev \
     libstdc++-12-dev \
+    libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Flutter
@@ -57,21 +59,20 @@ COPY . .
 # Build Flutter application for Linux
 RUN flutter build linux --release
 
+# Create configuration directory
+RUN mkdir -p /root/.local/share/signage_simple_player && \
+    chmod 700 /root/.local/share/signage_simple_player
+
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Expose port
 EXPOSE 8009
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8009/health || exit 1
-
-# Create entrypoint script that detects architecture
-RUN echo '#!/bin/bash\n\
-ARCH=$(uname -m)\n\
-if [ "$ARCH" = "aarch64" ]; then\n\
-  exec /app/build/linux/arm64/release/bundle/signage_simple_player "$@"\n\
-else\n\
-  exec /app/build/linux/x64/release/bundle/signage_simple_player "$@"\n\
-fi' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Run application via entrypoint
 ENTRYPOINT ["/entrypoint.sh"]

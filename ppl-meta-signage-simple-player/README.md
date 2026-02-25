@@ -130,13 +130,149 @@ flutter build apk --release
 
 ### First-Time Setup
 
+#### Production/Raspberry Pi Deployment (Recommended for Admin Users)
+
+For production deployments on Raspberry Pi, use the **console-based setup tool**:
+
+1. **Deploy to Device**: Use the automated deployment script or manual transfer
+2. **SSH to Device**: `ssh pi@<RPI_IP>`
+3. **Run Console Setup**: `./setup_console.py`
+4. **Start Application**: `./start_signage.sh`
+
+The console tool will:
+- Check for existing configuration
+- Prompt for backend IP and discovery port
+- Test the connection
+- Save configuration persistently
+- Auto-connect on subsequent startups
+
+**For complete production deployment guide**, see [Production Deployment Documentation](../docs/signage-production-deployment.md).
+
+Quick deployment:
+```bash
+# From your dev machine
+./ppl-meta-signage-simple-player/deploy-to-rpi.sh
+
+# SSH to device
+ssh pi@<RPI_IP>
+cd ppl-meta-signage
+./setup_console.py      # Configure backend settings
+./start_signage.sh      # Start application
+```
+
+#### GUI Setup (Development)
+
+For development with connected display:
+
 1. **Start Backend Services**: Ensure ppl-meta-discovery and ppl-meta-media are running
-2. **Launch Application**: The app will auto-register with discovery service
-3. **Assign Playlist**: Use backend API to assign a playlist to this device
-4. **Manual Sync**: Trigger sync from the UI or via HTTP endpoint
-5. **Playback**: Playlist will automatically start playing
+2. **Launch Application**: The app will show setup screen if not configured
+3. **Enter Settings**: Provide backend IP and port via GUI form
+4. **Save**: Configuration is stored persistently
+5. **Auto-connect**: Subsequent launches connect automatically
+
+## Console-Based Configuration
+
+The application includes a powerful **console setup tool** for SSH-based configuration, ideal for:
+- Headless Raspberry Pi deployments
+- Remote device management
+- Automated deployments
+- Admin users without developer tools
+
+### Console Setup Usage
+
+```bash
+# Interactive setup
+./setup_console.py
+
+# Non-interactive setup
+./setup_console.py --backend-ip 192.168.1.50 --discovery-port 8006
+
+# Show current configuration
+./setup_console.py --show
+
+# Test connection
+./setup_console.py --test
+```
+
+### Startup Script
+
+Use the startup script for automatic configuration checks:
+
+```bash
+./start_signage.sh
+```
+
+The script will:
+- Check for existing configuration
+- Test backend connection
+- Prompt for setup if needed
+- Start the Flutter application
+
+For production deployment details, see [Production Deployment Guide](../docs/signage-production-deployment.md).
+
+## Remote Configuration
+
+The signage application supports **remote configuration** without physical access to the device. This is particularly useful for configuring devices like Raspberry Pi from your development laptop.
+
+### Quick Start
+
+Configure a device remotely using the provided CLI tool:
+
+```bash
+# From your development laptop
+./tools/configure_signage_remote.py \
+  --device-ip 192.168.1.100 \
+  --backend-ip 192.168.1.50 \
+  --discovery-port 8006
+```
+
+### Features
+
+- **Check device health** - Verify the device is online and responsive
+- **Get current configuration** - View the device's current backend settings
+- **Update configuration** - Change backend IP and port settings remotely
+- **No physical access needed** - Configure devices over the network
+
+### Usage Examples
+
+**Check if device is reachable:**
+```bash
+./tools/configure_signage_remote.py --device-ip 192.168.1.100 --check
+```
+
+**View current configuration:**
+```bash
+./tools/configure_signage_remote.py --device-ip 192.168.1.100 --get
+```
+
+**Update backend settings:**
+```bash
+./tools/configure_signage_remote.py \
+  --device-ip 192.168.1.100 \
+  --backend-ip 192.168.1.50
+```
+
+### API Endpoints for Configuration
+
+- `GET /api/v1/config` - Retrieve current configuration
+- `POST /api/v1/config` - Update configuration remotely
+
+**Example: Update configuration via curl:**
+```bash
+curl -X POST http://192.168.1.100:8009/api/v1/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backend_ip": "192.168.1.50",
+    "discovery_port": 8006
+  }'
+```
+
+> **Note:** After updating configuration remotely, restart the signage application for changes to take effect.
+
+For complete documentation, see [Remote Configuration Guide](../docs/signage-remote-configuration.md).
 
 ## API Endpoints
+
 
 The embedded HTTP server runs on **port 8009** and provides the following endpoints:
 

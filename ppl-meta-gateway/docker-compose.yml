@@ -1,0 +1,13 @@
+services:
+  headscale:
+    image: ghcr.io/juanfont/headscale:0.28.0
+    container_name: ppl-meta-headscale
+    command: ["serve", "-c", "/etc/headscale/config.yaml"]
+    volumes:
+      - ./config/headscale:/etc/headscale
+      - ./data/headscale:/var/lib/headscale
+    ports:
+      - "8081:8080"   # Headscale HTTP (REST API + Swagger)
+      - "50443:50443" # Headscale gRPC (optional)
+      - "9091:9090"   # Metrics/debug
+    restart: unless-stopped

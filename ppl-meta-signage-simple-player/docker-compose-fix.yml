@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  edge-camera:
+    image: ppl-meta-edge-camera:latest
+    container_name: edge-camera
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    devices:
+      - /dev/video0:/dev/video0
+    privileged: true
+    volumes:
+      - ./logs:/app/logs
+    network_mode: host
+
+  signage-player:
+    image: ppl-meta-signage-player:arm64
+    container_name: signage-player
+    restart: unless-stopped
+    ports:
+      - "8009:8009"
+    environment:
+      - DISPLAY=:0
+      - GATEWAY_URL=http://192.168.1.75:8080
+      - DISCOVERY_URL=http://192.168.1.75:8003
+    volumes:
+      - ./logs:/app/logs
+      - /home/pi/.local/share/signage_simple_player:/root/.local/share/signage_simple_player
+    network_mode: host

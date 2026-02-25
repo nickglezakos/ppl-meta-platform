@@ -235,3 +235,4 @@ Underage Detector
 ********************
 
 
+The issue with the ppl-meta-signage-simple-player is that when the app does not sych with the platform to connect it pops the expected dialogue for the user to enter the correct ip and port details and when the user submits those the app correctly stores the details but then it shuts off. When it is executede on egain it gets the stored connection details and connects witn no problems. The shut off is an issue that needs to be resolved.
