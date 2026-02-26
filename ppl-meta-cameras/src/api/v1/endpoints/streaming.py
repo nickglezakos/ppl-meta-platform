@@ -383,22 +383,47 @@ async def capture_snapshot(request: Request, device_id: str) -> Dict:
         # Get current user from request
         current_user = await get_current_user_flexible(request)
 
-        # Capture frame
-        result = await camera_service.capture_frame(device_id)
-        if not result:
+        # Use the same unified worker architecture as /video stream endpoint
+        from src.models.camera import CameraType
+
+        camera_type = None
+        db = next(get_db())
+        try:
+            camera = db.query(Camera).filter(Camera.device_id == device_id).first()
+            if camera:
+                camera_type = camera.camera_type
+        finally:
+            db.close()
+
+        is_mobile = camera_type == CameraType.MOBILE
+        is_edge = device_id.startswith('edge-camera-')
+
+        frame = None
+
+        if is_edge:
+            from src.services.edge_camera_processor import get_edge_processor
+
+            edge_processor = get_edge_processor()
+            worker = edge_processor.get_worker(device_id)
+            if not worker:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Edge camera {device_id} not streaming",
+                )
+            frame = worker.get_latest_frame()
+        else:
+            queue_service = get_camera_service()
+            frame = await queue_service.get_latest_frame(device_id)
+
+        if frame is None:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=(
-                    f"Camera {device_id} not connected or " "failed to capture frame"
-                ),
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Camera {device_id} has no frames available yet",
             )
 
-        ret, frame = result
-        if not ret or frame is None:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to capture frame from camera",
-            )
+        # Mobile camera frames are typically RGB from JPEG decoding; convert for OpenCV JPEG encoding
+        if is_mobile and len(frame.shape) == 3 and frame.shape[2] == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         # Encode frame as base64 JPEG
         _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
