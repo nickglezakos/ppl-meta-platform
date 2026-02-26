@@ -11,7 +11,7 @@ import 'package:flutter/foundation.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:js' as js if (dart.library.html) 'dart:js';
+import '../core/config.dart';
 import '../models/person_objects_models.dart';
 import '../models/cross_video_analysis_models.dart';
 import '../providers/person_objects_provider.dart';
@@ -27,6 +27,7 @@ import '../services/individual_groups_api_client.dart';
 import '../services/mvr_image_service.dart';
 import '../providers/mvr_image_service_provider.dart';
 import '../models/mvr_best_image.dart';
+import '../utils/platform_file_download.dart';
 
 /// Detailed screen for viewing person objects results and analysis
 /// 
@@ -2699,7 +2700,7 @@ class _PersonObjectsDetailScreenState
       if (bbox == null || bbox.length < 4) {
         if (shouldDebug) print('Warning: bbox is null or invalid, falling back to full frame image');
         // Fallback to showing the full frame image
-        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
+        final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
         final apiClient = ref.read(apiClientProvider);
         return Image.network(
           frameUrl,
@@ -2750,7 +2751,7 @@ class _PersonObjectsDetailScreenState
       // Validate expanded bounding box dimensions
       if (expandedWidth <= 0 || expandedHeight <= 0) {
         print('Warning: Invalid expanded bbox dimensions (width: $expandedWidth, height: $expandedHeight), using fallback');
-        final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
+        final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
         final apiClient = ref.read(apiClientProvider);
         return Image.network(
           frameUrl,
@@ -2769,7 +2770,7 @@ class _PersonObjectsDetailScreenState
       }
       
       // Get the full frame image first
-      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
+      final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
       
       // For now, return the full frame and crop it in Flutter since backend doesn't support cropping
       // TODO: When backend supports crop parameters, use: frameUrl + '&crop=$x,$y,$width,$height'
@@ -2865,7 +2866,7 @@ class _PersonObjectsDetailScreenState
   /// Build frame image widget using the frame extraction API
   Future<Widget> _buildFrameImage(int frameNumber) async {
     try {
-      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
+      final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
       final apiClient = ref.read(apiClientProvider);
       
       return Image.network(
@@ -3422,7 +3423,7 @@ class _PersonObjectsDetailScreenState
       print('🖼️ Frame Dimensions DEBUG: Getting dimensions for media: ${widget.mediaItem!.uuid}');
       
       // Try method 1: Load frame using HTTP image provider
-      final frameUrl = 'http://localhost:8080/api/v1/media/${widget.mediaItem!.uuid}/frame/0?format=jpeg';
+      final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/0?format=jpeg';
       final apiClient = ref.read(apiClientProvider);
       
       // Create headers for authenticated request
@@ -3656,7 +3657,7 @@ class _PersonObjectsDetailScreenState
       final bbox = faceData['bbox'] as List<dynamic>?;
       
       if (bbox == null || bbox.length < 4) {
-        final frameUrl = 'http://localhost:8080/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
+        final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
         final apiClient = ref.read(apiClientProvider);
         return Image.network(
           frameUrl,
@@ -3694,7 +3695,7 @@ class _PersonObjectsDetailScreenState
       final expandedY = y - (heightExpansion / 2);
       
       if (expandedWidth <= 0 || expandedHeight <= 0) {
-        final frameUrl = 'http://localhost:8080/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
+        final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
         final apiClient = ref.read(apiClientProvider);
         return Image.network(
           frameUrl,
@@ -3711,7 +3712,7 @@ class _PersonObjectsDetailScreenState
         );
       }
       
-      final frameUrl = 'http://localhost:8080/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
+      final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
       
       return FutureBuilder<ui.Image>(
         future: _loadNetworkImage(frameUrl),
@@ -6737,27 +6738,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       final fileName = 'attendance_${sanitizedCameraName}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
       
       if (kIsWeb) {
-        // For web, trigger browser download using JavaScript
-        final base64 = base64Encode(fileBytes);
-        js.context.callMethod('eval', ['''
-          (function() {
-            var byteCharacters = atob('$base64');
-            var byteNumbers = new Array(byteCharacters.length);
-            for (var i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            var byteArray = new Uint8Array(byteNumbers);
-            var blob = new Blob([byteArray], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = '$fileName';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          })();
-        ''']);
+        await downloadFileBytes(
+          bytes: fileBytes,
+          filename: fileName,
+          mimeType:
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

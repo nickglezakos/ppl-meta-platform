@@ -234,6 +234,7 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
       // Use Enhanced Logic V2 endpoint which is already working 
       print('🔍 PROVIDER: Starting Enhanced Logic V2 call for media $mediaId...');
       final response = await orchestratorClient.getEnhancedLogicV2Response(mediaId);
+      print('🔍 PROVIDER: Enhanced Logic V2 isSuccess=${response.isSuccess}, hasData=${response.data != null}, error=${response.error?.message}');
 
       _loadingTimeout?.cancel();
 
@@ -253,6 +254,7 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
         int totalFaces = 0;
         
         if (enhancedV2Data != null) {
+          print('🔍 ENHANCED V2 RAW: totalFaces=${enhancedV2Data.totalFaces}, topLevelFrames=${enhancedV2Data.facesByFrame.keys.length}, source=${enhancedV2Data.source}');
           // Enhanced Logic V2 response structure
           totalFaces = enhancedV2Data.totalFaces;
           

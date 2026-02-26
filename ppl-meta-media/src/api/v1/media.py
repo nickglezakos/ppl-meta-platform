@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -81,6 +82,187 @@ from src.services.thumbnail_service import ThumbnailService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/media", tags=["media"])
+
+
+def _is_android_client(user_agent: str) -> bool:
+    """
+    Detect if request is from an Android client.
+    
+    Returns True if the User-Agent indicates Android/Flutter app.
+    """
+    if not user_agent:
+        return False
+    
+    user_agent_lower = user_agent.lower()
+    
+    # Check for Android in User-Agent
+    is_android = "android" in user_agent_lower
+    
+    # Check for Flutter (our app would have this)
+    is_flutter = "flutter" in user_agent_lower or "ppl" in user_agent_lower
+    
+    # Check common Android browser/app patterns
+    is_mobile_app = any(pattern in user_agent_lower for pattern in [
+        "dalvik",  # Dalvik VM (Android runtime)
+        "okhttp",  # OkHttp (common Android HTTP client)
+        "exoplayer",  # ExoPlayer
+        "mobile",
+    ])
+    
+    result = is_android and (is_flutter or is_mobile_app)
+    
+    if result:
+        logger.debug(f"🤖 Detected Android client: {user_agent[:100]}")
+    
+    return result
+
+
+def _has_codec_issues(user_agent: str) -> bool:
+    """
+    Check if the Android device is known to have H.264 codec issues.
+    
+    Returns True for devices where we should force baseline profile transcoding.
+    """
+    if not user_agent:
+        return False
+    
+    user_agent_lower = user_agent.lower()
+    
+    # Patterns of devices with known H.264 High Profile issues
+    problematic_patterns = [
+        # Samsung Galaxy J series - weak hardware
+        "samsung.*galaxy.*j",
+        "sgh-j",
+        # Samsung Galaxy A1-A6 - basic models
+        "galaxy.*a[0-6]",
+        "sm-a[0-6]0",
+        # Xiaomi Redmi 4 - older budget device
+        "redmi.*4",
+        "mido",
+        # Generic low-end patterns
+        "lenovo",
+        "honor.*5",
+        "honor.*6",
+        # MediaTek MT6735 processor (known issues)
+        "mt6735",
+        # Qualcomm Snapdragon 400/410 (older, limited codec support)
+        "snapdragon.*40[01]",
+    ]
+    
+    import re
+    for pattern in problematic_patterns:
+        if re.search(pattern, user_agent_lower):
+            logger.info(f"🚨 Detected problematic device pattern '{pattern}' in {user_agent[:80]}")
+            return True
+    
+    return False
+
+
+def _get_android_compatible_file(original_path: Path, media_id: str) -> Path:
+    """
+    Generate (or reuse) an Android-compatible MP4 variant.
+
+    Uses H.264 Baseline + yuv420p for broader MediaCodec compatibility
+    on Android devices/ROMs with stricter decoders.
+    """
+    print(f"[PRINT] 🎬 TRANSCODE FUNCTION CALLED for {media_id}")
+    logger.info(f"🎬 ANDROID TRANSCODE: Starting transcode for media_id={media_id}, original_path={original_path}")
+    cache_dir = Path("/tmp/ppl-meta-media-android-compat")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = cache_dir / f"{media_id}_android_compat_v4.mp4"
+
+    try:
+        # Reuse cached file if newer than source
+        if output_path.exists() and output_path.stat().st_mtime >= original_path.stat().st_mtime:
+            logger.info(f"🎬 ANDROID TRANSCODE: Using cached file {output_path}")
+            return output_path
+        
+        logger.info(f"🎬 ANDROID TRANSCODE: Cache miss or source newer, starting ffmpeg transcode...")
+
+        cmd = [
+            "/opt/homebrew/bin/ffmpeg",
+            "-y",
+            "-i",
+            str(original_path),
+            "-c:v",
+            "libx264",
+            "-profile:v",
+            "baseline",
+            "-level",
+            "3.0",
+            "-pix_fmt",
+            "yuv420p",
+            "-r",
+            "24",
+            "-fps_mode",
+            "cfr",
+            "-x264-params",
+            "cabac=0:ref=1:bframes=0:weightp=0",
+            "-vf",
+            "scale=854:480:force_original_aspect_ratio=decrease,pad=854:480:(ow-iw)/2:(oh-ih)/2",
+            "-b:v",
+            "900k",
+            "-maxrate",
+            "1200k",
+            "-bufsize",
+            "1800k",
+            "-g",
+            "48",
+            "-keyint_min",
+            "48",
+            "-movflags",
+            "+faststart",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            str(output_path),
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+        logger.info(f"🎬 ANDROID TRANSCODE: ffmpeg completed with return code {result.returncode}")
+        
+        # Log full output for debugging
+        if result.stdout:
+            logger.debug(f"🎬 ANDROID TRANSCODE: ffmpeg stdout={result.stdout[-300:]}")
+        
+        if result.returncode != 0:
+            logger.error(f"🎬 ANDROID TRANSCODE: ffmpeg FAILED with code {result.returncode}")
+            logger.error(f"🎬 ANDROID TRANSCODE: ffmpeg stderr={result.stderr if result.stderr else 'NO STDERR OUTPUT'}")
+            logger.error(f"🎬 ANDROID TRANSCODE: ffmpeg stdout={result.stdout if result.stdout else 'NO STDOUT OUTPUT'}")
+            logger.error(f"🎬 ANDROID TRANSCODE: Command was: {' '.join(cmd)}")
+        
+        if result.returncode != 0 or not output_path.exists():
+            logger.error(
+                f"Android-compatible transcode failed for media {media_id}. "
+                f"Return code: {result.returncode}, file exists: {output_path.exists()}"
+            )
+            logger.error(f"Full stderr: {result.stderr or 'EMPTY'}")
+            return original_path
+        
+        logger.info(f"🎬 ANDROID TRANSCODE: Successfully created {output_path}, size={output_path.stat().st_size} bytes")
+
+        logger.info(
+            "Generated Android-compatible stream variant for media %s at %s",
+            media_id,
+            output_path,
+        )
+        return output_path
+    except Exception as e:
+        logger.warning(
+            "Android-compatible transcode exception for media %s. "
+            "Falling back to original stream: %s",
+            media_id,
+            e,
+        )
+        return original_path
 
 
 async def _trigger_enhanced_logic_v2_for_media(
@@ -1332,6 +1514,7 @@ async def stream_media(
     request: Request,
     current_user: AuthUser = Depends(get_current_user),
     share_token: Optional[str] = None,
+    android_compatible: bool = False,
     db: Session = Depends(get_db),
 ):
     """
@@ -1342,6 +1525,7 @@ async def stream_media(
         request: FastAPI request object for range headers
         current_user: Authenticated user
         share_token: Optional share token for public access
+        android_compatible: If True, transcode video to H.264 Baseline Profile for Android compatibility
 
     Returns:
         StreamingResponse with range request support
@@ -1368,6 +1552,42 @@ async def stream_media(
             )
 
     file_path = Path(access_info["file_path"])
+
+    # 🤖 AUTO-DETECT Android clients and problematic devices
+    user_agent = request.headers.get("user-agent", "")
+    is_android_client = _is_android_client(user_agent)
+    has_codec_issues = _has_codec_issues(user_agent) if is_android_client else False
+    
+    # Auto-enable transcode for:
+    # 1. Android clients explicitly requesting it (android_compatible=true)
+    # 2. Known problematic Android devices (auto-detected)
+    should_transcode = android_compatible or (is_android_client and has_codec_issues)
+    
+    if is_android_client:
+        status = "✅ NORMAL" if not has_codec_issues else "⚠️ PROBLEMATIC"
+        logger.info(f"🤖 Android client detected {status}: User-Agent={user_agent[:80]}")
+
+    # Transcode to Android-compatible codec if requested or needed
+    logger.info(f"📽️ /stream endpoint: media_id={media_id}, media_type={media.media_type}, android_compatible={android_compatible}, auto_transcode={should_transcode}")
+    logger.info(f"🔍 TRANSCODE CHECK: media_type_value={media.media_type}, media_type_type={type(media.media_type)}, MediaType.VIDEO={MediaType.VIDEO}")
+    
+    is_video = (media.media_type == MediaType.VIDEO or 
+                str(media.media_type).upper() == "VIDEO" or
+                (hasattr(media.media_type, 'value') and media.media_type.value == "video"))
+    logger.info(f"🔍 IS_VIDEO: {is_video}, should_transcode={should_transcode}")
+    
+    if is_video and should_transcode:
+        logger.info(f"🎬 ENTERING TRANSCODE BLOCK for {media_id}")
+        try:
+            logger.info(f"🛠️ Calling _get_android_compatible_file with path={file_path}")
+            file_path = _get_android_compatible_file(file_path, media_id)
+            logger.info(f"✅ Transcode returned path={file_path}")
+        except Exception as transcode_error:
+            logger.error(f"❌ Transcode exception for {media_id}: {transcode_error}", exc_info=True)
+            # Fall back to original path
+            file_path = Path(access_info["file_path"])
+    else:
+        logger.info(f"⏭️  SKIPPING transcode: is_video={is_video}, should_transcode={should_transcode}")
 
     # Verify file exists on disk
     if not file_path.exists():
@@ -1476,6 +1696,13 @@ async def stream_media_with_token(
             )
 
     file_path = Path(access_info["file_path"])
+
+    # 🚀 Force transcode for ALL videos to ensure Android compatibility
+    logger.info(f"📽️ /stream-token endpoint: media_id={media_id}, media_type={media.media_type}")
+    if media.media_type == MediaType.VIDEO:
+        logger.info(f"📽️ /stream-token: Forcing Android-compatible transcode for {media_id}")
+        file_path = _get_android_compatible_file(file_path, media_id)
+        logger.info(f"📽️ /stream-token: Transcode returned path={file_path}")
 
     # Verify file exists on disk
     if not file_path.exists():

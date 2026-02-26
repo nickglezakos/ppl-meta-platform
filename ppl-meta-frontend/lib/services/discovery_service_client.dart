@@ -91,6 +91,7 @@ class DiscoveryResponse {
 class DiscoveryServiceClient {
   final Dio _dio;
   final String _discoveryServiceUrl;
+  static String _defaultDiscoveryServiceUrl = 'http://localhost:8006';
   
   // Cache for discovered services
   final Map<String, ServiceInfo> _serviceCache = {};
@@ -101,9 +102,9 @@ class DiscoveryServiceClient {
       StreamController<Map<String, ServiceInfo>>.broadcast();
   
   DiscoveryServiceClient({
-    String discoveryServiceUrl = 'http://localhost:8006',
+    String? discoveryServiceUrl,
     Dio? dio,
-  }) : _discoveryServiceUrl = discoveryServiceUrl,
+  }) : _discoveryServiceUrl = discoveryServiceUrl ?? _defaultDiscoveryServiceUrl,
        _dio = dio ?? Dio() {
     _dio.options.connectTimeout = const Duration(seconds: 5);
     _dio.options.receiveTimeout = const Duration(seconds: 10);
@@ -227,6 +228,10 @@ class DiscoveryServiceClient {
 /// Singleton instance for global access
 class DiscoveryService {
   static DiscoveryServiceClient? _instance;
+
+  static void setDefaultDiscoveryServiceUrl(String discoveryServiceUrl) {
+    DiscoveryServiceClient._defaultDiscoveryServiceUrl = discoveryServiceUrl;
+  }
   
   static DiscoveryServiceClient get instance {
     _instance ??= DiscoveryServiceClient();

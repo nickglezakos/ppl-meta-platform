@@ -36,7 +36,7 @@ import 'face_data_providers.dart';
 final workflowApiClientProvider = Provider<WorkflowApiClient>((ref) {
   final apiClient = ref.watch(apiClientProvider);
   return WorkflowApiClient(
-    baseUrl: 'http://localhost:8080', // Use Gateway - it proxies to correct services
+    baseUrl: apiClient.baseUrl,
     apiClient: apiClient,
   );
 });
@@ -107,8 +107,9 @@ final activeWorkflowsProvider = FutureProvider<List<WorkflowExecution>>((ref) as
   final apiClient = ref.watch(apiClientProvider);
   
   try {
+    final baseUrl = apiClient.baseUrl;
     final response = await apiClient.dio.get(
-      'http://localhost:8080/api/v1/orchestrator/workflows/user/7/workflows',
+      '$baseUrl/api/v1/orchestrator/workflows/user/7/workflows',
       options: Options(
         headers: {
           'Authorization': 'Bearer ${apiClient.authToken}',
@@ -190,8 +191,11 @@ final processingStatusProvider = FutureProvider.family<ProcessingStatus?, String
   
   if (response.success) {
     return response.data!;
-  } else if (response.error?.contains('not found') == true || response.error?.contains('Workflow resource not found') == true) {
-    // Gracefully handle missing workflow - return null instead of throwing
+  } else if (response.error?.contains('not found') == true || 
+             response.error?.contains('Workflow resource not found') == true ||
+             response.error?.contains('Unknown workflow service error') == true ||
+             response.error?.contains('workflow service') == true) {
+    // Gracefully handle missing/unavailable workflow service - return null instead of throwing
     return null;
   } else {
     throw Exception('Failed to load processing status: ${response.error}');

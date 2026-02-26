@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
@@ -550,7 +551,7 @@ class _MediaGridItem extends ConsumerWidget {
     String? imageUrl = item.thumbnailUrl ?? item.url;
     if (imageUrl != null && imageUrl.startsWith('/')) {
       // Convert relative URL to absolute URL using the backend base URL
-      imageUrl = 'http://localhost:8080$imageUrl';
+      imageUrl = '${Config.gatewayServiceUrl}$imageUrl';
     }
 
     // Debug logging (can be removed in production)

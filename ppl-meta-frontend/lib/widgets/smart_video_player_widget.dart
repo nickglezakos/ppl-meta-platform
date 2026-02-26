@@ -45,6 +45,10 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   List<FaceDetection>? _storedFaceData;
   bool _isLoadingWorkflowData = true;
   bool _isLoadingFaces = false; // Track face loading state
+  int _faceLoadAttempts = 0;
+  DateTime? _lastFaceLoadAttemptAt;
+  static const int _maxFaceLoadAttempts = 4;
+  static const Duration _faceLoadRetryCooldown = Duration(seconds: 3);
   String? _workflowError;
   String _faceDataSource = 'none'; // Track data source for color coding
   
@@ -101,6 +105,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   /// Setup frame synchronization for face rectangles
   void _setupFaceFrameSync(List<FaceDetection> facesToDisplay, String dataSource) {
     debugPrint('🎬 FRAME SYNC: Setting up frame synchronization for ${facesToDisplay.length} faces');
+    debugPrint('🧪 OVERLAY DEBUG: media=${widget.mediaItem.uuid}, source=$dataSource, incoming_faces=${facesToDisplay.length}');
     _allStoredFaces = facesToDisplay;
     _currentDataSource = dataSource;
     
@@ -108,14 +113,25 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     final globalManager = FaceDataMemoryManager.instance;
     _facesByFrame = globalManager.getMemoryCache(widget.mediaItem.uuid);
     
+    // Fallback: build frame map directly from FaceDetection metadata when global cache isn't hydrated
+    if (_facesByFrame == null || _facesByFrame!.isEmpty) {
+      final generatedFrameMap = _buildFrameMapFromFaces(facesToDisplay);
+      if (generatedFrameMap.isNotEmpty) {
+        _facesByFrame = generatedFrameMap;
+        debugPrint('🧩 FRAME MAP GENERATED: Built ${generatedFrameMap.keys.length} frames from FaceDetection metadata');
+      }
+    }
+    
     if (_facesByFrame != null && _facesByFrame!.isNotEmpty) {
       final sortedFrames = _facesByFrame!.keys.toList()..sort();
       final minFrame = sortedFrames.first;
       final maxFrame = sortedFrames.last;
       final totalFacesInCache = _facesByFrame!.values.fold(0, (sum, faces) => sum + faces.length);
+      final sampleFrames = sortedFrames.take(8).toList();
       
       debugPrint('✅ FRAME DATA LOADED for sync: ${_facesByFrame!.keys.length} frames with face data');
       debugPrint('📊 Frame range: $minFrame to $maxFrame (total $totalFacesInCache faces)');
+      debugPrint('🧪 OVERLAY DEBUG: media=${widget.mediaItem.uuid}, frame_count=${_facesByFrame!.keys.length}, sample_frames=$sampleFrames');
       
       // Debug: Show ALL frames with faces
       debugPrint('📋 COMPLETE FRAME LIST:');
@@ -139,6 +155,36 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       _faceFirstSeenFrame.clear();
       _hasPlaybackStarted = false;
     });
+  }
+
+  Map<int, List<FaceDetection>> _buildFrameMapFromFaces(List<FaceDetection> faces) {
+    final frameMap = <int, List<FaceDetection>>{};
+
+    for (final face in faces) {
+      final metadata = face.metadata;
+      if (metadata == null) {
+        continue;
+      }
+
+      final dynamic rawFrame = metadata['frame_number'] ?? metadata['frame'] ?? metadata['frameNumber'];
+      int? frameNumber;
+
+      if (rawFrame is int) {
+        frameNumber = rawFrame;
+      } else if (rawFrame is String) {
+        frameNumber = int.tryParse(rawFrame);
+      } else if (rawFrame is num) {
+        frameNumber = rawFrame.toInt();
+      }
+
+      if (frameNumber == null || frameNumber < 0) {
+        continue;
+      }
+
+      frameMap.putIfAbsent(frameNumber, () => <FaceDetection>[]).add(face);
+    }
+
+    return frameMap;
   }
 
   /// Handle video position changes to sync face rectangles
@@ -429,15 +475,17 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       }
 
     } catch (e) {
+      debugPrint('⚠️ Smart playback initialization error (workflow APIs unavailable): $e');
+      debugPrint('🔄 Falling back to smart realtime mode (overlay stays enabled)');
+
+      // Keep smart player active even if workflow APIs are down
+      _setFallbackPlaybackMode();
+
       if (mounted) {
         setState(() {
-          _workflowError = 'Failed to initialize smart playback: ${e.toString()}';
+          _workflowError = null;
         });
       }
-      debugPrint('Smart playback initialization error: $e');
-      
-      // Fallback to basic playback
-      _setFallbackPlaybackMode();
     } finally {
       if (mounted) {
         setState(() {
@@ -501,6 +549,15 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
           // Successfully loaded face data
           _storedFaceData = faceDataState.faces;
           _faceDataSource = 'MediaFaceDataProvider_Cache';
+          
+          // Ensure frame-based sync data is available even when data came from provider cache path
+          final generatedFrameMap = _buildFrameMapFromFaces(faceDataState.faces);
+          if (generatedFrameMap.isNotEmpty) {
+            _facesByFrame = generatedFrameMap;
+            debugPrint('📦 FRAME CACHE READY: Generated ${generatedFrameMap.keys.length} frames from provider face metadata');
+            debugPrint('🧪 OVERLAY DEBUG: media=${widget.mediaItem.uuid}, provider_faces=${faceDataState.faces.length}, generated_frames=${generatedFrameMap.keys.length}');
+          }
+          
           debugPrint('✅ LOADING SUCCESS: Loaded ${_storedFaceData?.length ?? 0} faces from MediaFaceDataProvider after $attempts attempts');
           return;
         }
@@ -822,6 +879,17 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       debugPrint('[LOAD FACES] Already loading, skipping duplicate call');
       return;
     }
+
+    if (_faceLoadAttempts >= _maxFaceLoadAttempts) {
+      debugPrint('[LOAD FACES] Retry limit reached ($_faceLoadAttempts/$_maxFaceLoadAttempts) for ${widget.mediaItem.uuid}');
+      return;
+    }
+
+    if (_lastFaceLoadAttemptAt != null &&
+        DateTime.now().difference(_lastFaceLoadAttemptAt!) < _faceLoadRetryCooldown) {
+      debugPrint('[LOAD FACES] Cooldown active, skipping immediate retry');
+      return;
+    }
     
     try {
       if (mounted) {
@@ -829,14 +897,19 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
           _isLoadingFaces = true;
         });
       }
+      _lastFaceLoadAttemptAt = DateTime.now();
+      _faceLoadAttempts++;
       
       debugPrint('[LOAD FACES] Calling Enhanced Logic V2 for ${widget.mediaItem.uuid}');
-      
+
       final orchestratorClient = ref.read(orchestratorApiClientProvider);
       final response = await orchestratorClient.getEnhancedLogicV2Response(widget.mediaItem.uuid);
-      
-      if (response.isSuccess && response.data != null && response.data!.faces.isNotEmpty) {
+
+      if (response.isSuccess && response.data != null) {
         final enhancedData = response.data!;
+        if (enhancedData.faces.isEmpty) {
+          debugPrint('[LOAD FACES] ⚠️ Enhanced Logic V2 returned success but faces list is empty for ${widget.mediaItem.uuid}');
+        }
         
         debugPrint('[LOAD FACES] 📊 Enhanced Logic V2 Response:');
         debugPrint('[LOAD FACES]    Total faces: ${enhancedData.totalFaces}');
@@ -895,6 +968,10 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         }
         
         debugPrint('[LOAD FACES] ✅ Converted ${faces.length} faces from faces_by_frame (ALL detections)');
+
+        if (faces.isEmpty) {
+          debugPrint('[LOAD FACES] ⚠️ Enhanced payload has no usable faces_by_frame detections');
+        }
         
         // Store in global cache
         // Convert to frame-based structure for memory cache using ALL faces_by_frame data
@@ -948,9 +1025,13 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
           });
         }
         
+        if (faces.isNotEmpty) {
+          _faceLoadAttempts = 0;
+        }
+
         debugPrint('[LOAD FACES] ✅ Loaded ${faces.length} faces from Enhanced Logic V2');
       } else {
-        debugPrint('[LOAD FACES] ⚠️ No faces returned from Enhanced Logic V2');
+        debugPrint('[LOAD FACES] ❌ Enhanced Logic V2 request failed: ${response.error?.message}');
         if (mounted) {
           setState(() {
             _isLoadingFaces = false;
@@ -958,7 +1039,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         }
       }
     } catch (e) {
-      debugPrint('[LOAD FACES] ❌ Error loading faces: $e');
+      debugPrint('[LOAD FACES] ❌ Error loading faces for ${widget.mediaItem.uuid}: $e');
       if (mounted) {
         setState(() {
           _isLoadingFaces = false;

@@ -25,25 +25,45 @@ JWT_ALGORITHM = "HS256"
 async def _stream_proxy_response(target_url: str, headers: dict, query_params):
     """Stream proxy response for MJPEG video streaming."""
     try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async with client.stream(
-                "GET", target_url, headers=headers, params=dict(query_params)
-            ) as response:
-                # Forward the response headers
-                response_headers = dict(response.headers)
+        client = httpx.AsyncClient(timeout=300.0)
+        request = client.build_request(
+            "GET", target_url, headers=headers, params=dict(query_params)
+        )
+        response = await client.send(request, stream=True)
 
-                async def generate():
-                    async for chunk in response.aiter_bytes(chunk_size=8192):
-                        yield chunk
+        # Forward response headers except hop-by-hop headers that should not be proxied
+        hop_by_hop_headers = {
+            "connection",
+            "keep-alive",
+            "proxy-authenticate",
+            "proxy-authorization",
+            "te",
+            "trailers",
+            "transfer-encoding",
+            "upgrade",
+        }
+        response_headers = {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower() not in hop_by_hop_headers
+        }
 
-                return StreamingResponse(
-                    generate(),
-                    status_code=response.status_code,
-                    headers=response_headers,
-                    media_type=response.headers.get(
-                        "content-type", "application/octet-stream"
-                    ),
-                )
+        async def generate():
+            try:
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    yield chunk
+            finally:
+                await response.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            generate(),
+            status_code=response.status_code,
+            headers=response_headers,
+            media_type=response.headers.get(
+                "content-type", "application/octet-stream"
+            ),
+        )
     except httpx.RequestError as e:
         raise HTTPException(
             status_code=503, detail=f"Media streaming service unavailable: {str(e)}"
@@ -364,7 +384,11 @@ async def _proxy_to_media_service(request: Request) -> Response:
         logger.info(f"🔐 [MEDIA-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Check if this is a streaming endpoint
-        is_streaming = "/stream/video/" in path
+        is_streaming = (
+            "/stream/video/" in path
+            or "/media/stream/" in path
+            or "/media/stream-token/" in path
+        )
 
         if is_streaming:
             # Handle streaming responses with proper streaming proxy

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
@@ -1976,7 +1977,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     try {
       final apiClient = ref.read(apiClientProvider);
       final mediaUrls = _selectedItems
-          .map((item) => 'http://localhost:8080${item.url}')
+          .map((item) => '${Config.gatewayServiceUrl}${item.url}')
           .toList();
       
       // TODO: Implement actual sharing functionality

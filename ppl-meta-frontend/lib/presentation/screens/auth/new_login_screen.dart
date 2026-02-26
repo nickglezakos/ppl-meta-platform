@@ -46,6 +46,7 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authNotifierProvider);
+    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
     
     // Debug: Log current auth state
     print('🔐 NewLoginScreen build - error: ${authState.error}');
@@ -83,176 +84,196 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
     });
     
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('Sign In'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Logo and title
-              Image.asset(
-                'assets/images/eyenet-logo.png',
-                height: 100,
-                errorBuilder: (context, error, stackTrace) {
-                  return const Icon(
-                    Icons.security,
-                    size: 80,
-                    color: Colors.blue,
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              
-              Text(
-                'Welcome to Eyenet Vision',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              
-              Text(
-                'Sign in to your account',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).textTheme.bodySmall?.color,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 48),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(
+              24,
+              24,
+              24,
+              MediaQuery.of(context).viewInsets.bottom + 24,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Column(
+                mainAxisAlignment:
+                    keyboardVisible ? MainAxisAlignment.start : MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Logo and title
+                  Image.asset(
+                    'assets/images/eyenet-logo.png',
+                    height: keyboardVisible ? 72 : 100,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(
+                        Icons.security,
+                        size: keyboardVisible ? 60 : 80,
+                        color: Colors.blue,
+                      );
+                    },
+                  ),
+                  SizedBox(height: keyboardVisible ? 12 : 24),
 
-              // Login form
-              Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    // Email field
-                    TextFormField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      enabled: !_isLoading,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      textInputAction: TextInputAction.next,
-                      decoration: InputDecoration(
-                        labelText: 'Email Address',
-                        hintText: 'Enter your email',
-                        prefixIcon: const Icon(Icons.email_outlined),
-                        border: const OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter your email';
-                        }
-                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
-                          return 'Please enter a valid email';
-                        }
-                        return null;
-                      },
+                  Text(
+                    'Welcome to Eyenet Vision',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
                     ),
-                    const SizedBox(height: 20),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: keyboardVisible ? 6 : 8),
 
-                    // Password field
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      enabled: !_isLoading,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _handleLogin(),
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        hintText: 'Enter your password',
-                        prefixIcon: const Icon(Icons.lock_outlined),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                  Text(
+                    'Sign in to your account',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  SizedBox(height: keyboardVisible ? 20 : 48),
+
+                  // Login form
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      children: [
+                        // Email field
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          enabled: !_isLoading,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          textInputAction: TextInputAction.next,
+                          decoration: InputDecoration(
+                            labelText: 'Email Address',
+                            hintText: 'Enter your email',
+                            prefixIcon: const Icon(Icons.email_outlined),
+                            border: const OutlineInputBorder(),
                           ),
-                          onPressed: () {
-                            setState(() {
-                              _obscurePassword = !_obscurePassword;
-                            });
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter your email';
+                            }
+                            if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                                .hasMatch(value.trim())) {
+                              return 'Please enter a valid email';
+                            }
+                            return null;
                           },
                         ),
-                        border: const OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter your password';
-                        }
-                        if (value.trim().length < 6) {
-                          return 'Password must be at least 6 characters';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 32),
+                        const SizedBox(height: 20),
 
-                    // Login button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue[600],
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: 2,
-                        ),
-                        child: _isLoading
-                            ? const SizedBox(
-                                height: 24,
-                                width: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                ),
-                              )
-                            : const Text(
-                                'Sign In',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                        // Password field
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          enabled: !_isLoading,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _handleLogin(),
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            hintText: 'Enter your password',
+                            prefixIcon: const Icon(Icons.lock_outlined),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
                               ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 24),
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
+                            border: const OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter your password';
+                            }
+                            if (value.trim().length < 6) {
+                              return 'Password must be at least 6 characters';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 32),
 
-              // Register link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Don't have an account? ",
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  TextButton(
-                    onPressed: () => context.push('/register'),
-                    child: const Text(
-                      'Sign Up',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                      ),
+                        // Login button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue[600],
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : const Text(
+                                    'Sign In',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Register link
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Don't have an account? ",
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => context.push('/register'),
+                        child: const Text(
+                          'Sign Up',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),

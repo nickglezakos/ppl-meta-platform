@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/config/app_config.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/navigation/app_router.dart';
+import 'presentation/screens/setup/platform_connection_setup_screen.dart';
 import 'services/dynamic_service_provider.dart';
+import 'services/platform_connectivity_service.dart';
 import 'widgets/global_screenshot_overlay.dart';
 import 'widgets/alert_overlay.dart';
 
@@ -17,14 +19,118 @@ void main() async {
     SharedPreferences.setMockInitialValues({});
   }
   
-  // Initialize app configuration
-  await AppConfig.initialize();
-  
   runApp(
     const ProviderScope(
-      child: PPLMetaApp(),
+      child: PPLMetaBootstrapApp(),
     ),
   );
+}
+
+class PPLMetaBootstrapApp extends StatefulWidget {
+  const PPLMetaBootstrapApp({super.key});
+
+  @override
+  State<PPLMetaBootstrapApp> createState() => _PPLMetaBootstrapAppState();
+}
+
+class _PPLMetaBootstrapAppState extends State<PPLMetaBootstrapApp> {
+  bool _isLoading = true;
+  bool _needsSetup = false;
+
+  bool get _requiresAndroidSetup => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    if (!_requiresAndroidSetup) {
+      await AppConfig.initialize();
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _needsSetup = false;
+        });
+      }
+      return;
+    }
+
+    final connectivityService = await PlatformConnectivityService.getInstance();
+    if (connectivityService.isConfigured) {
+      final isStoredConnectionValid = await connectivityService.testDiscoveryConnection(
+        backendInput: connectivityService.backendHost,
+        discoveryPort: connectivityService.discoveryPort,
+      );
+
+      if (!isStoredConnectionValid) {
+        await AppConfig.initialize();
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _needsSetup = true;
+          });
+        }
+        return;
+      }
+
+      await connectivityService.applyRuntimeConfiguration();
+      await AppConfig.initialize(backendHostOverride: connectivityService.backendHost);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _needsSetup = false;
+        });
+      }
+      return;
+    }
+
+    await AppConfig.initialize();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _needsSetup = true;
+      });
+    }
+  }
+
+  Future<void> _handleSetupComplete() async {
+    final connectivityService = await PlatformConnectivityService.getInstance();
+    await connectivityService.applyRuntimeConfiguration();
+    await AppConfig.initialize(backendHostOverride: connectivityService.backendHost);
+
+    if (mounted) {
+      setState(() {
+        _needsSetup = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      );
+    }
+
+    if (_needsSetup) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        home: PlatformConnectionSetupScreen(
+          onSetupComplete: _handleSetupComplete,
+        ),
+      );
+    }
+
+    return const PPLMetaApp();
+  }
 }
 
 class PPLMetaApp extends ConsumerWidget {

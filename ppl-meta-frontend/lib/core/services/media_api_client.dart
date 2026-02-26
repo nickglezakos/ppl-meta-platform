@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:logger/logger.dart';
+import '../config.dart';
 import '../models/media_models.dart';
 import '../models/device_info.dart';
 import '../models/api_response.dart';
@@ -387,7 +388,7 @@ class MediaApiClient {
     try {
       // Call Gateway service for user profile (not media service)
       final gatewayDio = Dio(BaseOptions(
-        baseUrl: 'http://localhost:8080',
+        baseUrl: Config.gatewayServiceUrl,
         connectTimeout: _connectTimeout,
         receiveTimeout: _receiveTimeout,
         headers: _dio.options.headers,

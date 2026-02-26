@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
+import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 
 /// Video player widget with controls for displaying video content
@@ -96,67 +99,128 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       debugPrint('🎥 Input URL: ${widget.videoUrl}');
       debugPrint('🎥 Input Headers: ${widget.headers}');
       
-      // Check if this is an embedded streaming URL (no token conversion needed)
-      if (widget.videoUrl.contains('/stream/video/')) {
-        // Embedded streaming - ensure correct v1 API path to Gateway with authorization header
-        final correctedPath = widget.videoUrl.startsWith('/api/v1/') 
-            ? widget.videoUrl 
-            : '/api/v1${widget.videoUrl.startsWith('/') ? widget.videoUrl : '/' + widget.videoUrl}';
-        videoUrl = 'http://localhost:8080${correctedPath}';
-        debugPrint('🎥 Detected GATEWAY embedded streaming URL: $videoUrl');
-      } else {
-        // All other media streaming - use token-based URL for web compatibility
-        final authHeader = widget.headers?['Authorization'];
-        if (authHeader != null && authHeader.startsWith('Bearer ')) {
-          final token = authHeader.substring(7); // Remove 'Bearer ' prefix
-          
-          // Extract media ID from the URL path - handle both UUID and numeric formats
-          // Match pattern: /stream/{uuid} or /stream/{uuid}?params
-          final mediaIdMatch = RegExp(r'/stream/([a-f0-9\-]+)(?:\?|$)').firstMatch(widget.videoUrl);
-          if (mediaIdMatch != null) {
-            final mediaId = mediaIdMatch.group(1);
-            // Preserve query parameters if present
-            final queryStart = widget.videoUrl.indexOf('?');
-            final existingParams = queryStart != -1 ? widget.videoUrl.substring(queryStart + 1) : '';
-            
-            if (existingParams.isNotEmpty) {
-              videoUrl = 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token&$existingParams';
+      final gatewayBaseUrl = Config.gatewayServiceUrl;
+      Map<String, String> httpHeaders = <String, String>{};
+
+      if (!kIsWeb) {
+        // Mobile/Desktop defaults to direct authenticated stream URLs.
+        final normalizedPath = widget.videoUrl.startsWith('/')
+            ? widget.videoUrl
+            : '/${widget.videoUrl}';
+
+        final isAndroid = defaultTargetPlatform == TargetPlatform.android;
+        final sourcePath = widget.videoUrl.startsWith('http')
+            ? Uri.parse(widget.videoUrl).path +
+                (Uri.parse(widget.videoUrl).hasQuery ? '?${Uri.parse(widget.videoUrl).query}' : '')
+            : normalizedPath;
+
+        if (isAndroid) {
+          final authHeader = widget.headers?['Authorization'];
+          if (authHeader != null && authHeader.startsWith('Bearer ')) {
+            final token = authHeader.substring(7);
+            final mediaIdMatch = RegExp(r'/stream/([a-f0-9\-]+)(?:\?|$)').firstMatch(sourcePath);
+
+            if (mediaIdMatch != null) {
+              final mediaId = mediaIdMatch.group(1);
+              final queryStart = sourcePath.indexOf('?');
+              final existingParams = queryStart != -1 ? sourcePath.substring(queryStart + 1) : '';
+
+              final mergedParams = <String, String>{
+                if (existingParams.isNotEmpty)
+                  ...Uri.splitQueryString(existingParams),
+                'android_compatible': 'true',
+                'token': token,
+              };
+
+              final androidTokenUri = Uri.parse(
+                '$gatewayBaseUrl/api/v1/media/stream-token/$mediaId',
+              ).replace(queryParameters: mergedParams);
+
+              videoUrl = androidTokenUri.toString();
+              httpHeaders = <String, String>{};
+              debugPrint('🎥 Using Android tokenized stream URL: $videoUrl');
             } else {
-              videoUrl = 'http://localhost:8080/api/v1/media/stream-token/$mediaId?token=$token';
+              throw Exception('Could not extract media ID from URL for Android: ${widget.videoUrl}');
             }
-            debugPrint('🎥 Constructed token-based streaming URL: $videoUrl');
           } else {
-            throw Exception('Could not extract media ID from URL: ${widget.videoUrl}');
+            final pathUri = Uri.parse(sourcePath);
+            final query = Map<String, String>.from(pathUri.queryParameters);
+            query['android_compatible'] = 'true';
+            final effectivePath = pathUri.replace(queryParameters: query).toString();
+
+            videoUrl = '$gatewayBaseUrl$effectivePath';
+            httpHeaders = widget.headers ?? {};
+            debugPrint('🎥 Using Android direct stream URL fallback: $videoUrl');
           }
         } else {
-          // Fall back to original URL construction
-          videoUrl = widget.videoUrl.startsWith('/') 
-              ? 'http://localhost:8080${widget.videoUrl}' 
-              : widget.videoUrl;
-          debugPrint('🎥 Detected FALLBACK URL: $videoUrl');
+          if (widget.videoUrl.startsWith('http')) {
+            videoUrl = widget.videoUrl;
+          } else {
+            videoUrl = '$gatewayBaseUrl$sourcePath';
+          }
+          httpHeaders = widget.headers ?? {};
+          debugPrint('🎥 Using direct authenticated stream URL (non-web): $videoUrl');
+        }
+      } else {
+        // Web: keep tokenized URL mode for browser compatibility.
+        if (widget.videoUrl.contains('/stream/video/')) {
+          final correctedPath = widget.videoUrl.startsWith('/api/v1/')
+              ? widget.videoUrl
+              : '/api/v1${widget.videoUrl.startsWith('/') ? widget.videoUrl : '/${widget.videoUrl}'}';
+          videoUrl = '$gatewayBaseUrl$correctedPath';
+          httpHeaders = widget.headers ?? {};
+          debugPrint('🎥 Detected GATEWAY embedded streaming URL: $videoUrl');
+        } else {
+          final authHeader = widget.headers?['Authorization'];
+          if (authHeader != null && authHeader.startsWith('Bearer ')) {
+            final token = authHeader.substring(7);
+            final mediaIdMatch = RegExp(r'/stream/([a-f0-9\-]+)(?:\?|$)').firstMatch(widget.videoUrl);
+            if (mediaIdMatch != null) {
+              final mediaId = mediaIdMatch.group(1);
+              final queryStart = widget.videoUrl.indexOf('?');
+              final existingParams = queryStart != -1 ? widget.videoUrl.substring(queryStart + 1) : '';
+
+              if (existingParams.isNotEmpty) {
+                videoUrl = '$gatewayBaseUrl/api/v1/media/stream-token/$mediaId?token=$token&$existingParams';
+              } else {
+                videoUrl = '$gatewayBaseUrl/api/v1/media/stream-token/$mediaId?token=$token';
+              }
+              httpHeaders = <String, String>{};
+              debugPrint('🎥 Constructed token-based streaming URL: $videoUrl');
+            } else {
+              throw Exception('Could not extract media ID from URL: ${widget.videoUrl}');
+            }
+          } else {
+            videoUrl = widget.videoUrl.startsWith('/')
+                ? '$gatewayBaseUrl${widget.videoUrl}'
+                : widget.videoUrl;
+            httpHeaders = widget.headers ?? {};
+            debugPrint('🎥 Detected FALLBACK URL: $videoUrl');
+          }
         }
       }
-      
-      // Use appropriate headers based on streaming type
-      final httpHeaders = widget.videoUrl.contains('/stream/video/')
-          ? widget.headers ?? {} // Embedded streaming uses Authorization header
-          : <String, String>{}; // Token-based streaming doesn't need headers
-      
+
       debugPrint('🎥 Final Video URL: $videoUrl');
       debugPrint('🎥 Final Headers: $httpHeaders');
+
+      await _logStreamDiagnostics(
+        url: videoUrl,
+        headers: httpHeaders,
+      );
       
       print('🎥 Initializing video player with URL: $videoUrl');
       print('🔑 Headers: ${widget.headers}');
-      
+
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(videoUrl),
         httpHeaders: httpHeaders,
       );
+      await _controller!.initialize();
 
       // Create and store the listener
       _controllerListener = () {
-        if (_isDisposed || !mounted) return;
-        
+        if (_isDisposed || !mounted || _controller == null) return;
+
         if (_controller!.value.hasError) {
           debugPrint('❌ VideoPlayerWidget ERROR DETECTED:');
           debugPrint('❌ Error Description: ${_controller!.value.errorDescription}');
@@ -172,10 +236,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           }
         }
       };
-      
-      _controller!.addListener(_controllerListener!);
 
-      await _controller!.initialize();
+      _controller!.addListener(_controllerListener!);
       
       debugPrint('✅ VideoPlayerWidget INITIALIZATION SUCCESS:');
       debugPrint('✅ Video URL: $videoUrl');
@@ -218,6 +280,65 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           _errorMessage = 'Video loading failed: ${e.toString()}';
         });
       }
+    }
+  }
+
+  Future<void> _logStreamDiagnostics({
+    required String url,
+    required Map<String, String> headers,
+  }) async {
+    if (kIsWeb) {
+      return;
+    }
+
+    try {
+      final parsed = Uri.parse(url);
+      debugPrint('🧪 StreamDiag URI: scheme=${parsed.scheme}, host=${parsed.host}, port=${parsed.port}, path=${parsed.path}');
+
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 10),
+          responseType: ResponseType.bytes,
+          validateStatus: (_) => true,
+          followRedirects: false,
+        ),
+      );
+
+      final probeHeaders = <String, String>{
+        ...headers,
+        'Range': 'bytes=0-1023',
+      };
+
+      final response = await dio.get<List<int>>(
+        url,
+        options: Options(headers: probeHeaders),
+      );
+
+      final statusCode = response.statusCode;
+      final contentType = response.headers.value('content-type');
+      final contentLength = response.headers.value('content-length');
+      final contentRange = response.headers.value('content-range');
+      final acceptRanges = response.headers.value('accept-ranges');
+      final location = response.headers.value('location');
+      final bytesRead = response.data?.length ?? 0;
+
+      debugPrint('🧪 StreamDiag status=$statusCode');
+      debugPrint('🧪 StreamDiag content-type=$contentType');
+      debugPrint('🧪 StreamDiag content-length=$contentLength');
+      debugPrint('🧪 StreamDiag content-range=$contentRange');
+      debugPrint('🧪 StreamDiag accept-ranges=$acceptRanges');
+      debugPrint('🧪 StreamDiag location=$location');
+      debugPrint('🧪 StreamDiag bytes-read=$bytesRead');
+
+      if (statusCode != 200 && statusCode != 206) {
+        final bodyPreview = response.data == null
+            ? ''
+            : String.fromCharCodes(response.data!.take(200));
+        debugPrint('🧪 StreamDiag non-success body preview: $bodyPreview');
+      }
+    } catch (e) {
+      debugPrint('🧪 StreamDiag failed: $e');
     }
   }
 

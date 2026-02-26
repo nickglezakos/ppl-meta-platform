@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'discovery_service_client.dart';
-import '../core/config/app_config.dart';
+import '../core/config.dart';
 
 /// Dynamic service configuration that uses discovery service
 class DynamicServiceConfig {
@@ -14,13 +14,12 @@ class DynamicServiceConfig {
   }
   
   void _initializeStaticUrls() {
-    // These are fallback URLs when discovery service is not available
-    _staticUrls['gateway'] = 'http://localhost:8080';
-    _staticUrls['node'] = 'http://localhost/api/node';
-    _staticUrls['media'] = 'http://localhost/api/media';
-    _staticUrls['orchestrator'] = 'http://localhost:8002';
-    _staticUrls['vision'] = 'http://localhost:8003';
-    _staticUrls['cameras'] = 'http://localhost:8005';
+    _staticUrls['gateway'] = Config.gatewayServiceUrl;
+    _staticUrls['node'] = Config.nodeServiceUrl;
+    _staticUrls['media'] = Config.mediaServiceUrl;
+    _staticUrls['orchestrator'] = Config.orchestratorServiceUrl;
+    _staticUrls['vision'] = Config.visionServiceUrl;
+    _staticUrls['cameras'] = Config.camerasServiceUrl;
   }
   
   /// Update discovered URLs from discovery service
@@ -66,7 +65,7 @@ class DynamicServiceConfig {
     }
     
     // Fallback to static URL
-    return _staticUrls[serviceKey] ?? 'http://localhost:8080';
+    return _staticUrls[serviceKey] ?? Config.gatewayServiceUrl;
   }
   
   /// Enable or disable discovery service usage

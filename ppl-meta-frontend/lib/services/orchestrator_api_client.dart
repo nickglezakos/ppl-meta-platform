@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/api_models.dart';
 import '../core/services/auth_service.dart';
+import '../core/api/api_client.dart';
 
 /// HTTP client provider with timeout configuration
 final httpClientProvider = Provider<http.Client>((ref) {
@@ -12,8 +13,11 @@ final httpClientProvider = Provider<http.Client>((ref) {
 
 /// Base API configuration provider
 final apiConfigProvider = Provider<ApiConfig>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  final gatewayUri = Uri.parse(apiClient.baseUrl);
+  final orchestratorBaseUrl = '${gatewayUri.scheme}://${gatewayUri.host}:8002';
   return ApiConfig(
-    baseUrl: 'http://localhost:8002', // Direct Orchestrator service - Gateway routes not available for sessions
+    baseUrl: orchestratorBaseUrl,
     timeout: const Duration(seconds: 30),
     retryAttempts: 3,
     retryDelay: const Duration(seconds: 2),
@@ -264,10 +268,10 @@ class OrchestratorApiClient {
   /// ENHANCED LOGIC V2: Get person objects and face count using new session-based workflow  
   /// This uses the Enhanced Logic V2 endpoint with session-based processing directly on Orchestrator
   Future<ApiResponse<PersonObjectsResponse>> getPersonObjects(String mediaId) async {
-    return _makeRequestWithCustomBaseUrl<PersonObjectsResponse>(
+    print('🌐 ENHANCED_V2 REQUEST: base=${config.baseUrl}, path=/api/v1/media/$mediaId/faces/enhanced-v2');
+    return _makeRequest<PersonObjectsResponse>(
       'GET',
       '/api/v1/media/$mediaId/faces/enhanced-v2',
-      baseUrl: 'http://localhost:8002', // Call Orchestrator directly for Enhanced Logic V2
       fromJson: (json) => PersonObjectsResponse.fromEnhancedV2Json(json),
     );
   }
@@ -275,10 +279,10 @@ class OrchestratorApiClient {
   /// ENHANCED LOGIC V2: Get detailed face data using Enhanced Logic V2 endpoint
   /// This returns the full Enhanced Logic V2 response with individual face data
   Future<ApiResponse<EnhancedLogicV2Response>> getEnhancedLogicV2Response(String mediaId) async {
-    return _makeRequestWithCustomBaseUrl<EnhancedLogicV2Response>(
+    print('🌐 ENHANCED_V2 REQUEST: base=${config.baseUrl}, path=/api/v1/media/$mediaId/faces/enhanced-v2');
+    return _makeRequest<EnhancedLogicV2Response>(
       'GET',
       '/api/v1/media/$mediaId/faces/enhanced-v2',
-      baseUrl: 'http://localhost:8002', // Call Orchestrator directly for Enhanced Logic V2
       fromJson: (json) => EnhancedLogicV2Response.fromJson(json),
     );
   }
@@ -484,6 +488,9 @@ class OrchestratorApiClient {
     required T Function(dynamic) fromJson,
   }) async {
     final uri = _buildUri(endpoint, queryParams);
+    if (endpoint.contains('/faces/enhanced-v2')) {
+      print('🌐 ENHANCED_V2 URI: $uri');
+    }
     final defaultHeaders = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',

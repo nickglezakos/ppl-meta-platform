@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
@@ -675,7 +676,7 @@ class _MediaDetailsDialog extends ConsumerWidget {
     if (relativeUrl.startsWith('http')) {
       return relativeUrl; // Already absolute
     }
-    return 'http://localhost:8080$relativeUrl'; // Use Gateway service directly
+    return '${Config.gatewayServiceUrl}$relativeUrl';
   }
 
   /// Get media type icon

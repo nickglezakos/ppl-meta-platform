@@ -22,14 +22,24 @@ class AppConfig {
     required this.analyticsEnabled,
   });
   
-  static Future<void> initialize() async {
+  static Future<void> initialize({
+    String? backendHostOverride,
+  }) async {
     try {
       final configString = await rootBundle.loadString('assets/config/env.development.json');
       final config = json.decode(configString);
+
+      final host = backendHostOverride?.trim();
+      final apiBaseUrl = host != null && host.isNotEmpty
+          ? 'http://$host:8080'
+          : (config['API_BASE_URL'] ?? 'http://localhost:8080');
+      final cameraServiceUrl = host != null && host.isNotEmpty
+          ? 'http://$host:8005'
+          : (config['CAMERA_SERVICE_URL'] ?? 'http://localhost:8005');
       
       _instance = AppConfig._(
-        apiBaseUrl: config['API_BASE_URL'] ?? 'http://localhost:8080',
-        cameraServiceUrl: config['CAMERA_SERVICE_URL'] ?? 'http://localhost:8005',
+        apiBaseUrl: apiBaseUrl,
+        cameraServiceUrl: cameraServiceUrl,
         environment: config['ENVIRONMENT'] ?? 'development',
         logLevel: config['LOG_LEVEL'] ?? 'debug',
         cacheEnabled: config['CACHE_ENABLED'] ?? true,
@@ -38,9 +48,14 @@ class AppConfig {
     } catch (e) {
       // Fallback configuration if asset loading fails
       print('⚠️ Warning: Could not load config file, using defaults: $e');
+      final host = backendHostOverride?.trim();
       _instance = AppConfig._(
-        apiBaseUrl: 'http://localhost:8080',  // Gateway service - routes to all backend services
-        cameraServiceUrl: 'http://localhost:8005',
+        apiBaseUrl: host != null && host.isNotEmpty
+            ? 'http://$host:8080'
+            : 'http://localhost:8080',  // Gateway service - routes to all backend services
+        cameraServiceUrl: host != null && host.isNotEmpty
+            ? 'http://$host:8005'
+            : 'http://localhost:8005',
         environment: 'development',
         logLevel: 'debug',
         cacheEnabled: true,

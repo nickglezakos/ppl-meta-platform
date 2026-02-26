@@ -31,11 +31,14 @@ class PersonObjectsApiClient {
   PersonObjectsApiClient([ApiClient? apiClient]) {
     // Use provided ApiClient (which has auth token) or create new one
     _apiClient = apiClient ?? ApiClient(AppConfig.instance);
+    final gatewayUri = Uri.parse(_apiClient.baseUrl);
+    final orchestratorBaseUrl = '${gatewayUri.scheme}://${gatewayUri.host}:8002';
+    final visionBaseUrl = '${gatewayUri.scheme}://${gatewayUri.host}:8003';
     
     // Create dedicated Dio instances for different services
     // This prevents race conditions from concurrent requests to different services
     _orchestratorDio = Dio(BaseOptions(
-      baseUrl: 'http://localhost:8002',
+      baseUrl: orchestratorBaseUrl,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 60),
       headers: {
@@ -45,7 +48,7 @@ class PersonObjectsApiClient {
     ));
     
     _visionDio = Dio(BaseOptions(
-      baseUrl: 'http://localhost:8003',
+      baseUrl: visionBaseUrl,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 60),
       headers: {
@@ -111,15 +114,13 @@ class PersonObjectsApiClient {
         name: _logName,
       );
 
-      // 🚀 PERSON OBJECTS API: Call Orchestrator service directly (port 8002)
-      // This uses the actual person objects endpoint with grouping and tracking
+      // Use the exact same endpoint path used by web flow through the shared ApiClient base URL.
       developer.log(
-        'Getting person objects from Orchestrator for media: $mediaUuid',
+        'Getting person objects via gateway orchestrator route for media: $mediaUuid',
         name: _logName,
       );
 
-      // Use dedicated Orchestrator Dio instance (no baseUrl modification needed)
-      final response = await _orchestratorDio.get('/person-objects/$mediaUuid');
+      final response = await _apiClient.get('/api/v1/orchestrator/person-objects/$mediaUuid');
 
       developer.log(
         'Orchestrator response: status=${response.statusCode}, data=${response.data}',

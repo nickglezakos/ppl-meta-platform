@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
+import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
 import '../models/face_detection_models.dart';
@@ -253,7 +254,9 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         minScale: 0.5,
         maxScale: 3.0,
         child: Image.network(
-          imageUrl.startsWith('/') ? 'http://localhost:8080$imageUrl' : imageUrl,
+          imageUrl.startsWith('/')
+              ? '${Config.gatewayServiceUrl}$imageUrl'
+              : imageUrl,
           fit: BoxFit.contain,
           width: double.infinity,
           height: double.infinity,

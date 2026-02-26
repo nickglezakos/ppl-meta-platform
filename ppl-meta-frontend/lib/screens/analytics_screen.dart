@@ -8,7 +8,6 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart' as excel;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:js' as js if (dart.library.html) 'dart:js';
 import 'package:fl_chart/fl_chart.dart';
 import '../core/theme/app_theme.dart';
 import '../widgets/custom_app_bar.dart';
@@ -16,6 +15,7 @@ import '../models/analytics_models.dart';
 import '../services/media_api_client.dart';
 import '../services/analytics_api_client.dart';
 import '../core/providers/camera_providers.dart';
+import '../utils/platform_file_download.dart';
 
 /// MVR Analytics Dashboard - showing people detection insights from camera collections
 /// Based on MVRsearch cached results from camera cards endpoint
@@ -2045,28 +2045,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       final fileName = 'analytics_${sanitizedFilter}_$timestamp.xlsx';
 
       if (kIsWeb) {
-        final base64 = base64Encode(fileBytes);
-        js.context.callMethod('eval', [
-          '''
-          (function() {
-            var byteCharacters = atob('$base64');
-            var byteNumbers = new Array(byteCharacters.length);
-            for (var i = 0; i < byteCharacters.length; i++) {
-              byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            var byteArray = new Uint8Array(byteNumbers);
-            var blob = new Blob([byteArray], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = '$fileName';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          })();
-        '''
-        ]);
+        await downloadFileBytes(
+          bytes: fileBytes,
+          filename: fileName,
+          mimeType:
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

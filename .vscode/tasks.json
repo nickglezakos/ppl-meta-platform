@@ -4,7 +4,7 @@
 		{
 			"label": "🐍 Start Node Service (Local Python)",
 			"type": "shell",
-			"command": "cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py",
+			"command": "cd ppl-meta-node && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload",
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []
@@ -12,7 +12,7 @@
 		{
 			"label": "🎨 Start Media Service (Local Python)",
 			"type": "shell",
-			"command": "cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py",
+			"command": "cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload",
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []
@@ -50,7 +50,7 @@
 		{
 			"label": "🚀 Start All Local Python Services",
 			"type": "shell",
-			"command": "echo '🚀 Starting all PPL Meta services in local Python mode...' && echo 'Starting Discovery Service...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & echo 'Starting Node Service...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && source venv/bin/activate && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Starting Bootcore Service...' && (cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload) & echo 'Starting vmeta Service...' && (cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload) & echo 'Starting Communications Service...' && (cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload) & echo '✅ All services started! Use separate nginx task if needed.' && wait",
+			"command": "echo '🚀 Starting all PPL Meta services in local Python mode...' && echo 'Starting Discovery Service...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & echo 'Starting Node Service...' && (cd ppl-meta-node && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && source venv/bin/activate && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Starting Bootcore Service...' && (cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload) & echo 'Starting vmeta Service...' && (cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload) & echo 'Starting Communications Service...' && (cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload) & echo '✅ All services started! Use separate nginx task if needed.' && wait",
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []
