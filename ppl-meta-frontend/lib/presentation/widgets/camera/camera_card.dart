@@ -47,6 +47,11 @@ class CameraCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final isMobileView = MediaQuery.sizeOf(context).width < 600;
+    final actionIconSize = isMobileView ? 22.0 : 28.0;
+    final actionPadding = EdgeInsets.all(isMobileView ? 4.0 : 8.0);
+    final actionSpacingSmall = isMobileView ? 4.0 : 8.0;
+    final actionSpacingMedium = isMobileView ? 6.0 : 12.0;
     
     // Watch camera list to rebuild when camera status changes
     final cameraListState = ref.watch(cameraListProvider);
@@ -80,14 +85,11 @@ class CameraCard extends ConsumerWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
       ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
               // Header with status indicator
               Row(
                 children: [
@@ -278,21 +280,21 @@ class CameraCard extends ConsumerWidget {
                     IconButton(
                       onPressed: () => _showEditRTSPDialog(context, ref, updatedCamera),
                       icon: const Icon(Icons.edit),
-                      iconSize: 28,
-                      padding: const EdgeInsets.all(8),
+                      iconSize: actionIconSize,
+                      padding: actionPadding,
                       constraints: const BoxConstraints(),
                       tooltip: 'Edit camera',
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: actionSpacingMedium),
                     IconButton(
                       onPressed: () => _showDeleteRTSPDialog(context, ref, updatedCamera),
                       icon: const Icon(Icons.delete, color: Colors.red),
-                      iconSize: 28,
-                      padding: const EdgeInsets.all(8),
+                      iconSize: actionIconSize,
+                      padding: actionPadding,
                       constraints: const BoxConstraints(),
                       tooltip: 'Delete camera',
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: actionSpacingSmall),
                   ],
                   
                   // Edge Camera Settings button (only for Edge cameras)
@@ -302,12 +304,12 @@ class CameraCard extends ConsumerWidget {
                         context.go('/edge-cameras/${updatedCamera.deviceId}?name=${Uri.encodeComponent(updatedCamera.name)}');
                       },
                       icon: const Icon(Icons.settings),
-                      iconSize: 28,
-                      padding: const EdgeInsets.all(8),
+                      iconSize: actionIconSize,
+                      padding: actionPadding,
                       constraints: const BoxConstraints(),
                       tooltip: 'Edge Camera Settings',
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: actionSpacingSmall),
                   ],
                   
                   // Archive/Unarchive button
@@ -380,23 +382,23 @@ class CameraCard extends ConsumerWidget {
                       Icons.archive,
                       color: updatedCamera.archived ? Colors.orange : Colors.grey,
                     ),
-                    iconSize: 28,
-                    padding: const EdgeInsets.all(8),
+                    iconSize: actionIconSize,
+                    padding: actionPadding,
                     constraints: const BoxConstraints(),
                     tooltip: updatedCamera.archived ? 'Unarchive camera' : 'Archive camera',
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: actionSpacingSmall),
                   
                   // Connection toggle button
                   _ConnectionButton(camera: updatedCamera),
-                  const SizedBox(width: 12),
+                  SizedBox(width: actionSpacingMedium),
                   
                   // Recording and stream controls
                   if (isConnected) ...[
                     // For USB/RTSP/edge cameras, show recording controls
                     if (updatedCamera.type != CameraType.edge) ...[
                       _RecordingControls(cameraId: updatedCamera.deviceId),
-                      const SizedBox(width: 12),
+                      SizedBox(width: actionSpacingMedium),
                     ],
                     IconButton(
                       onPressed: () {
@@ -412,8 +414,8 @@ class CameraCard extends ConsumerWidget {
                         );
                       },
                       icon: const Icon(Icons.play_circle_outline),
-                      iconSize: 28,
-                      padding: const EdgeInsets.all(8),
+                      iconSize: actionIconSize,
+                      padding: actionPadding,
                       constraints: const BoxConstraints(),
                       tooltip: 'View stream',
                     ),
@@ -433,7 +435,6 @@ class CameraCard extends ConsumerWidget {
             ],
           ),
         ),
-      ),
     );
   }
   
@@ -625,6 +626,10 @@ class _RecordingControls extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    final iconSize = isCompact ? 22.0 : 28.0;
+    final iconPadding = EdgeInsets.all(isCompact ? 4.0 : 8.0);
+
     final recordingState = ref.watch(cameraRecordingProvider(cameraId));
     final recordingNotifier = ref.read(cameraRecordingProvider(cameraId).notifier);
 
@@ -635,7 +640,7 @@ class _RecordingControls extends ConsumerWidget {
         children: [
           // Recording indicator with pulsing animation
           _PulsingRecordingDot(),
-          const SizedBox(width: 8),
+          SizedBox(width: isCompact ? 4 : 8),
           // Stop recording button
           IconButton(
             onPressed: recordingState.isLoading 
@@ -648,8 +653,8 @@ class _RecordingControls extends ConsumerWidget {
                     child: CircularProgressIndicator(strokeWidth: 2.5),
                   )
                 : const Icon(Icons.stop_circle, color: Colors.red),
-            iconSize: 28,
-            padding: const EdgeInsets.all(8),
+            iconSize: iconSize,
+            padding: iconPadding,
             constraints: const BoxConstraints(),
             tooltip: recordingState.isLoading ? 'Stopping...' : 'Stop recording',
           ),
@@ -668,8 +673,8 @@ class _RecordingControls extends ConsumerWidget {
                 child: CircularProgressIndicator(strokeWidth: 2.5),
               )
             : const Icon(Icons.fiber_manual_record, color: Colors.red),
-        iconSize: 28,
-        padding: const EdgeInsets.all(8),
+        iconSize: iconSize,
+        padding: iconPadding,
         constraints: const BoxConstraints(),
         tooltip: recordingState.isLoading ? 'Starting...' : 'Start recording',
       );
@@ -922,6 +927,10 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
   
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.sizeOf(context).width < 600;
+    final iconSize = isCompact ? 22.0 : 28.0;
+    final iconPadding = EdgeInsets.all(isCompact ? 4.0 : 8.0);
+
     final status = ref.watch(cameraStatusProvider(widget.camera.deviceId));
     
     // For mobile and edge cameras, use camera.status since they don't use backend WebSocket
@@ -950,8 +959,8 @@ class _ConnectionButtonState extends ConsumerState<_ConnectionButton> {
         isConnected ? Icons.link_off : Icons.link,
         color: isConnected ? Colors.red : Colors.green,
       ),
-      iconSize: 28,
-      padding: const EdgeInsets.all(8),
+      iconSize: iconSize,
+      padding: iconPadding,
       constraints: const BoxConstraints(),
       tooltip: isConnected ? 'Disconnect' : 'Connect',
     );
