@@ -610,12 +610,21 @@ async def detect_faces_single_frame(
             else:
                 confidence = float(confidence)
             
-            # Don't include embedding in response (not used by instant detection and may cause serialization issues)
+            embedding = detection.get("embedding")
+            if hasattr(embedding, 'tolist'):
+                embedding = embedding.tolist()
+            elif isinstance(embedding, (list, tuple)):
+                embedding = [
+                    float(x.item()) if hasattr(x, 'item') else float(x)
+                    for x in embedding
+                ]
+
             faces.append({
                 "face_id": str(uuid.uuid4()),
                 "bbox": bbox,
                 "confidence": confidence,
-                "method": "two_stage_haar_dlib"
+                "method": "two_stage_haar_dlib",
+                "embedding": embedding,
             })
         
         return {

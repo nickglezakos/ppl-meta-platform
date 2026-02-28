@@ -36,6 +36,7 @@ from .trigger import (
     Trigger,
     TriggerAction,
 )
+from .trigger_execution_log import TriggerExecutionLog
 from .user_trigger_action import UserTriggerAction
 from .workflow import MediaWorkflow
 
@@ -64,6 +65,7 @@ __all__ = [
     "VideoListItem",
     "VideoListSyncHistory",
     "Trigger",
+    "TriggerExecutionLog",
     "TriggerAction",
     "PersonCountOperator",
     "AgeRangeOperator",

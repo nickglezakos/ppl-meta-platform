@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DemographicCondition(BaseModel):
@@ -50,9 +50,8 @@ class TriggerBase(BaseModel):
     """Base trigger schema with common fields."""
     
     demographic_conditions: List[DemographicCondition] = Field(
-        ...,
-        description="List of demographic conditions (all must match)",
-        min_length=1
+        default_factory=list,
+        description="List of demographic conditions (all must match in demographic mode)"
     )
     time_span: str = Field(
         ...,
@@ -99,6 +98,42 @@ class TriggerBase(BaseModel):
         description="Optional description",
         max_length=500
     )
+    trigger_mode: str = Field(
+        default="demographic",
+        description="Trigger mode: demographic | ppl_match"
+    )
+    ppl_match_group_id: Optional[str] = Field(
+        None,
+        description="Individual group ID used for ppl_match mode",
+        max_length=255
+    )
+    ppl_match_similarity_threshold: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="Similarity threshold for ppl_match mode"
+    )
+    ppl_match_top_k: int = Field(
+        default=1,
+        ge=1,
+        description="Maximum number of top candidates to keep in ppl_match mode"
+    )
+
+    @field_validator('trigger_mode')
+    @classmethod
+    def validate_trigger_mode(cls, v: str) -> str:
+        valid = ['demographic', 'ppl_match']
+        if v not in valid:
+            raise ValueError(f'trigger_mode must be one of {valid}')
+        return v
+
+    @model_validator(mode='after')
+    def validate_ppl_match_config(self):
+        if self.trigger_mode == 'demographic' and len(self.demographic_conditions) == 0:
+            raise ValueError('demographic_conditions must contain at least one condition in demographic mode')
+        if self.trigger_mode == 'ppl_match' and not self.ppl_match_group_id:
+            raise ValueError('ppl_match_group_id is required when trigger_mode is ppl_match')
+        return self
 
 
 class TriggerCreate(TriggerBase):
@@ -119,6 +154,26 @@ class TriggerUpdate(BaseModel):
     cooldown_seconds: Optional[int] = None
     name: Optional[str] = None
     description: Optional[str] = None
+    trigger_mode: Optional[str] = None
+    ppl_match_group_id: Optional[str] = None
+    ppl_match_similarity_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    ppl_match_top_k: Optional[int] = Field(default=None, ge=1)
+
+    @field_validator('trigger_mode')
+    @classmethod
+    def validate_trigger_mode(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        valid = ['demographic', 'ppl_match']
+        if v not in valid:
+            raise ValueError(f'trigger_mode must be one of {valid}')
+        return v
+
+    @model_validator(mode='after')
+    def validate_ppl_match_config(self):
+        if self.trigger_mode == 'ppl_match' and not self.ppl_match_group_id:
+            raise ValueError('ppl_match_group_id is required when trigger_mode is ppl_match')
+        return self
 
 
 class TriggerResponse(BaseModel):
@@ -136,6 +191,12 @@ class TriggerResponse(BaseModel):
     is_active: bool
     cooldown_seconds: int
     last_fired_at: Optional[datetime]
+    trigger_mode: str
+    ppl_match_group_id: Optional[str]
+    ppl_match_similarity_threshold: float
+    ppl_match_top_k: int
+    last_match_info: Optional[Dict[str, Any]] = None
+    last_matched_at: Optional[datetime] = None
     name: Optional[str]
     description: Optional[str]
     created_at: datetime
@@ -149,6 +210,14 @@ class TriggerResponse(BaseModel):
             import json
             parsed = json.loads(v)
             return [DemographicCondition(**item) for item in parsed]
+        return v
+
+    @field_validator('last_match_info', mode='before')
+    @classmethod
+    def parse_last_match_info(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
         return v
 
     class Config:
@@ -191,6 +260,10 @@ class TriggerEvaluationResult(BaseModel):
     trigger_name: Optional[str]
     passed: bool = Field(..., description="Whether trigger conditions were met")
     reason: str = Field(..., description="Explanation of the result")
+    match: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Optional ppl_match metadata when trigger_mode is ppl_match"
+    )
     person_count: int = Field(..., description="Actual person count evaluated")
     timestamp: datetime = Field(..., description="When the evaluation occurred")
 

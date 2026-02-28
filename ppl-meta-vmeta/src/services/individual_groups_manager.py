@@ -8,6 +8,7 @@ import logging
 import httpx
 import os
 import numpy as np
+from uuid import UUID
 from datetime import datetime
 from typing import List, Optional
 
@@ -1719,17 +1720,93 @@ class IndividualGroupsManager:
         
         # Get candidate's face embedding
         async with self.db.pool.acquire() as conn:
+            try:
+                candidate_uuid_obj = UUID(candidate_mvr_uuid)
+            except ValueError:
+                raise ValueError(f"Candidate MVR person {candidate_mvr_uuid} not found")
+
+            resolved_candidate_uuid = candidate_mvr_uuid
+            resolution_type = "direct_mvr"
+
             candidate_row = await conn.fetchrow(
                 """
-                SELECT mvr_people_uuid, face_embedding, name
+                SELECT mvr_people_uuid, face_embedding, name, is_orphaned
                 FROM mvr_people
-                WHERE mvr_people_uuid = $1 AND is_orphaned = FALSE
+                WHERE mvr_people_uuid = $1
                 """,
-                candidate_mvr_uuid
+                candidate_uuid_obj
             )
-            
+
+            if candidate_row and candidate_row['is_orphaned']:
+                super_row = await conn.fetchrow(
+                    """
+                    SELECT super_individual_uuid
+                    FROM mvr_merge_hierarchy
+                    WHERE merged_mvr_uuid = $1
+                    ORDER BY merged_at DESC
+                    LIMIT 1
+                    """,
+                    candidate_uuid_obj
+                )
+                if super_row and super_row['super_individual_uuid']:
+                    candidate_row = await conn.fetchrow(
+                        """
+                        SELECT mvr_people_uuid, face_embedding, name, is_orphaned
+                        FROM mvr_people
+                        WHERE mvr_people_uuid = $1 AND is_orphaned = FALSE
+                        """,
+                        super_row['super_individual_uuid']
+                    )
+                    if candidate_row:
+                        resolved_candidate_uuid = str(candidate_row['mvr_people_uuid'])
+                        resolution_type = "orphaned_mvr_to_super"
+
+            if not candidate_row:
+                candidate_row = await conn.fetchrow(
+                    """
+                    SELECT m.mvr_people_uuid, m.face_embedding, m.name, m.is_orphaned
+                    FROM individual_mvr_mapping imm
+                    JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
+                    WHERE imm.individual_uuid = $1
+                      AND m.is_orphaned = FALSE
+                    ORDER BY imm.is_representative DESC, imm.linked_at DESC
+                    LIMIT 1
+                    """,
+                    candidate_uuid_obj
+                )
+                if candidate_row:
+                    resolved_candidate_uuid = str(candidate_row['mvr_people_uuid'])
+                    resolution_type = "individual_to_mvr"
+
+            if not candidate_row:
+                candidate_row = await conn.fetchrow(
+                    """
+                    SELECT m.mvr_people_uuid, m.face_embedding, m.name, m.is_orphaned
+                    FROM individual_video_appearances iva
+                    JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
+                    JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
+                    WHERE iva.person_object_uuid = $1
+                      AND m.is_orphaned = FALSE
+                    ORDER BY imm.is_representative DESC, iva.start_timestamp DESC, imm.linked_at DESC
+                    LIMIT 1
+                    """,
+                    candidate_uuid_obj
+                )
+                if candidate_row:
+                    resolved_candidate_uuid = str(candidate_row['mvr_people_uuid'])
+                    resolution_type = "person_object_to_mvr"
+
             if not candidate_row:
                 raise ValueError(f"Candidate MVR person {candidate_mvr_uuid} not found")
+
+            if not candidate_row['face_embedding']:
+                raise ValueError(f"Candidate MVR person {resolved_candidate_uuid} has no face embedding")
+
+            if resolved_candidate_uuid != candidate_mvr_uuid:
+                logger.info(
+                    f"Resolved candidate {candidate_mvr_uuid} to active MVR {resolved_candidate_uuid} "
+                    f"via {resolution_type}"
+                )
             
             candidate_embedding = self._parse_pgvector(candidate_row['face_embedding'])
             
@@ -1747,7 +1824,7 @@ class IndividualGroupsManager:
             matches = []
             for member in member_rows:
                 # Skip self-comparison
-                if str(member['mvr_people_uuid']) == candidate_mvr_uuid:
+                if str(member['mvr_people_uuid']) == resolved_candidate_uuid:
                     continue
                 
                 member_embedding = self._parse_pgvector(member['face_embedding'])
@@ -1775,7 +1852,7 @@ class IndividualGroupsManager:
             return CheckDuplicatesResponse(
                 has_duplicates=len(matches) > 0,
                 matches=matches,
-                candidate_mvr_uuid=candidate_mvr_uuid,
+                candidate_mvr_uuid=resolved_candidate_uuid,
                 group_id=group_id,
                 group_name=group.name,
             )

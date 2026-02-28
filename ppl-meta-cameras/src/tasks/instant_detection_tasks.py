@@ -7,7 +7,8 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Dict, List
+from typing import Any, Dict, List
+from uuid import UUID
 
 import redis
 import sys
@@ -19,6 +20,39 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from shared.queue_config import celery_app, redis_client
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_source_identity_uuids(person_objects: List[Dict[str, Any]]) -> List[str]:
+    """Extract resolvable identity UUIDs from detection person objects."""
+    source_ids: List[str] = []
+
+    def _append_if_uuid(raw_value: Any) -> None:
+        if not raw_value:
+            return
+        try:
+            normalized = str(UUID(str(raw_value)))
+            if normalized not in source_ids:
+                source_ids.append(normalized)
+        except Exception:
+            return
+
+    for person in person_objects or []:
+        if not isinstance(person, dict):
+            continue
+        _append_if_uuid(person.get("mvr_person_uuid"))
+        _append_if_uuid(person.get("person_object_uuid"))
+        _append_if_uuid(person.get("individual_uuid"))
+        _append_if_uuid(person.get("source_mvr_uuid"))
+
+        for face in person.get("faces", []) or []:
+            if not isinstance(face, dict):
+                continue
+            _append_if_uuid(face.get("mvr_person_uuid"))
+            _append_if_uuid(face.get("person_object_uuid"))
+            _append_if_uuid(face.get("individual_uuid"))
+            _append_if_uuid(face.get("source_mvr_uuid"))
+
+    return source_ids
 
 
 class InstantDetectionTask(Task):
@@ -117,13 +151,16 @@ def _publish_to_redis(camera_id: str, result: Dict):
     try:
         demographics = result.get("demographics", {})
         people_count = result.get("people_count", 0)
+        source_mvr_uuids = _extract_source_identity_uuids(result.get("person_objects") or [])
         
         payload = json.dumps({
             "camera_id": camera_id,
             "timestamp": datetime.utcnow().isoformat(),
             "people_count": people_count,
             "demographics": demographics,
+            "source_mvr_uuids": source_mvr_uuids,
             "metadata": {
+                "source_mvr_uuids": source_mvr_uuids,
                 "processing_time": result.get("processing_time_seconds", 0),
                 "total_faces": result.get("total_faces_detected", 0)
             }
@@ -151,13 +188,16 @@ def _push_to_webhook(camera_id: str, result: Dict):
         
         demographics = result.get("demographics", {})
         people_count = result.get("people_count", 0)
+        source_mvr_uuids = _extract_source_identity_uuids(result.get("person_objects") or [])
         
         payload = {
             "camera_id": camera_id,
             "timestamp": datetime.utcnow().isoformat(),
             "people_count": people_count,
             "demographics": demographics,
+            "source_mvr_uuids": source_mvr_uuids,
             "metadata": {
+                "source_mvr_uuids": source_mvr_uuids,
                 "processing_time": result.get("processing_time_seconds", 0),
                 "total_faces": result.get("total_faces_detected", 0)
             }

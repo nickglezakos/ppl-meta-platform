@@ -5,7 +5,7 @@ Trigger model for event-based notifications and alerts.
 import enum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -97,6 +97,33 @@ class Trigger(BaseModel):
     
     # Relationship to user action
     user_action = relationship("UserTriggerAction", foreign_keys=[action_uuid])
+
+    # Trigger mode configuration
+    trigger_mode = Column(
+        String(30),
+        nullable=False,
+        default="demographic",
+        index=True,
+        comment="Trigger mode: demographic | ppl_match"
+    )
+    ppl_match_group_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="Target individual group ID for ppl_match mode"
+    )
+    ppl_match_similarity_threshold = Column(
+        Float,
+        nullable=False,
+        default=0.75,
+        comment="Minimum similarity threshold for ppl_match mode"
+    )
+    ppl_match_top_k = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        comment="Maximum number of top matches to keep for ppl_match mode"
+    )
     
     # Tracking configuration
     tracking_duration = Column(
@@ -128,6 +155,17 @@ class Trigger(BaseModel):
         nullable=True,
         index=True,
         comment="Timestamp of last trigger firing"
+    )
+    last_match_info = Column(
+        Text,
+        nullable=True,
+        comment="JSON payload containing latest ppl_match metadata"
+    )
+    last_matched_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp of latest successful ppl_match evaluation"
     )
     
     # Metadata

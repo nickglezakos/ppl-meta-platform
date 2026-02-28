@@ -117,132 +117,19 @@ async def handle_instant_detection(
         Status and any triggered actions
     """
     try:
-        logger.info(f"\n{'='*80}")
-        logger.info(f"🔔 INSTANT DETECTION WEBHOOK RECEIVED")
-        logger.info(f"{'='*80}")
-        logger.info(f"📷 Camera ID: {payload.camera_id}")
-        logger.info(f"👥 People Count: {payload.people_count}")
-        logger.info(f"📊 Demographics: {json.dumps(payload.demographics, indent=2)}")
-        logger.info(f"⏰ Timestamp: {payload.timestamp}")
-        logger.info(f"{'='*80}\n")
-        
-        # Get all active triggers with demographic conditions enabled
-        triggers = (
-            db.query(Trigger)
-            .filter(
-                Trigger.is_active == True,
-                Trigger.enable_demographic_conditions == True,
-                Trigger.camera_device_id == payload.camera_id
-            )
-            .all()
+        from ...schemas.trigger import InstantDetectionPayload
+        from ...routes.triggers import process_instant_detection_webhook
+
+        adapted_payload = InstantDetectionPayload(
+            camera_id=payload.camera_id,
+            timestamp=payload.timestamp,
+            people_count=payload.people_count,
+            demographics=payload.demographics,
+            metadata=payload.metadata or {},
         )
-        
-        logger.info(f"🔍 Database query found {len(triggers)} active demographic triggers for camera {payload.camera_id}")
-        
-        if not triggers:
-            logger.debug(f"No active demographic triggers found for camera {payload.camera_id}")
-            return {
-                "success": True,
-                "message": "No active demographic triggers to evaluate",
-                "triggers_evaluated": 0,
-                "triggers_fired": 0
-            }
-        
-        logger.info(f"Evaluating {len(triggers)} demographic triggers for camera {payload.camera_id}")
-        
-        triggers_fired = 0
-        fired_trigger_ids = []
-        
-        for trigger in triggers:
-            logger.info(f"\n--- Evaluating Trigger #{trigger.id}: '{trigger.name}' ---")
-            logger.info(f"  Trigger UUID: {trigger.uuid}")
-            logger.info(f"  Is Active: {trigger.is_active}")
-            logger.info(f"  Cooldown: {trigger.cooldown_seconds}s")
-            logger.info(f"  Last Fired: {trigger.last_fired_at}")
-            
-            # Check cooldown
-            if trigger.last_fired_at:
-                cooldown_end = trigger.last_fired_at + timedelta(seconds=trigger.cooldown_seconds)
-                now = datetime.now(trigger.last_fired_at.tzinfo)
-                if now < cooldown_end:
-                    remaining = (cooldown_end - now).total_seconds()
-                    logger.info(f"  ⏸️  SKIP: In cooldown ({remaining:.1f}s remaining)")
-                    continue
-                else:
-                    logger.info(f"  ✅ Cooldown passed")
-            else:
-                logger.info(f"  ✅ Never fired before (no cooldown)")
-            
-            # Evaluate demographic conditions
-            if trigger.demographic_conditions:
-                try:
-                    conditions = json.loads(trigger.demographic_conditions)
-                    logger.info(f"  📋 Conditions to evaluate: {json.dumps(conditions, indent=4)}")
-                    
-                    if not evaluate_demographic_conditions(conditions, payload.demographics, payload.people_count):
-                        logger.info(f"  ❌ SKIP: Conditions NOT met")
-                        continue
-                    else:
-                        logger.info(f"  ✅ Conditions MET!")
-                except json.JSONDecodeError as e:
-                    logger.error(f"  ❌ ERROR: Failed to parse demographic_conditions: {e}")
-                    continue
-            
-            # Trigger matches! Execute action
-            logger.info(f"\n🔥🔥🔥 TRIGGER FIRED! 🔥🔥🔥")
-            logger.info(f"  Trigger #{trigger.id}: '{trigger.name}'")
-            triggers_fired += 1
-            fired_trigger_ids.append(trigger.id)
-            
-            # Update last_fired_at
-            trigger.last_fired_at = datetime.now(trigger.last_fired_at.tzinfo) if trigger.last_fired_at else datetime.now()
-            logger.info(f"  Updated last_fired_at to {trigger.last_fired_at}")
-            
-            # Execute signage action if configured (NON-BLOCKING)
-            if trigger.signage_device_ids and trigger.signage_playlist_id:
-                logger.info(f"  🎬 Scheduling signage action in background...")
-                logger.info(f"     Target Playlist UUID: {trigger.signage_playlist_id}")
-                logger.info(f"     Transition Mode: {trigger.signage_transition_mode}")
-                logger.info(f"     Fade Duration: {trigger.signage_fade_duration_ms}ms")
-                
-                try:
-                    device_ids = json.loads(trigger.signage_device_ids)
-                    logger.info(f"     Target Device IDs: {device_ids}")
-                    
-                    # 🚀 CRITICAL FIX: Execute in background task to prevent blocking
-                    import asyncio
-                    asyncio.create_task(
-                        _execute_signage_action(
-                            trigger_id=trigger.id,
-                            device_ids=device_ids,
-                            playlist_id=trigger.signage_playlist_id
-                        )
-                    )
-                    logger.info(f"     ✅ Signage action scheduled in background (non-blocking)")
-                
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse signage_device_ids for trigger {trigger.id}: {e}")
-        
-        # Commit all updates
-        db.commit()
-        
-        result = {
-            "success": True,
-            "message": f"Evaluated {len(triggers)} triggers, {triggers_fired} fired",
-            "triggers_evaluated": len(triggers),
-            "triggers_fired": triggers_fired,
-            "fired_trigger_ids": fired_trigger_ids
-        }
-        
-        logger.info(f"\n{'='*80}")
-        logger.info(f"✅ EVALUATION COMPLETE")
-        logger.info(f"{'='*80}")
-        logger.info(f"   Triggers Evaluated: {len(triggers)}")
-        logger.info(f"   Triggers Fired: {triggers_fired}")
-        logger.info(f"   Fired IDs: {fired_trigger_ids}")
-        logger.info(f"{'='*80}\n")
-        return result
-    
+
+        return await process_instant_detection_webhook(payload=adapted_payload, db=db)
+
     except Exception as e:
         logger.error(f"Error handling instant detection webhook: {e}", exc_info=True)
         raise HTTPException(

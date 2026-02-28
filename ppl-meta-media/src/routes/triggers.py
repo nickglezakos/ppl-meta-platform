@@ -5,6 +5,7 @@ API routes for Trigger management.
 import json
 import logging
 import math
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
 from ..models.trigger import Trigger
+from ..models.trigger_execution_log import TriggerExecutionLog
 from ..models.user_trigger_action import UserTriggerAction
 from ..schemas.trigger import (
     CounterDataRequest,
@@ -391,12 +393,11 @@ async def process_instant_detection_webhook(
     logger.info("="*80)
     
     try:
-        # Find active demographic-enabled triggers for this camera
+        # Find active triggers for this camera
         logger.info(f"🔍 Querying database for active triggers...")
         triggers = db.query(Trigger).filter(
             Trigger.camera_device_id == payload.camera_id,
-            Trigger.is_active == True,
-            Trigger.enable_demographic_conditions == True
+            Trigger.is_active == True
         ).all()
         
         if not triggers:
@@ -424,6 +425,15 @@ async def process_instant_detection_webhook(
                             f"Trigger '{trigger.name}' in cooldown: "
                             f"{remaining:.1f}s remaining"
                         )
+                        _persist_trigger_execution_log(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=f"Cooldown active ({remaining:.1f}s remaining)",
+                            payload=payload,
+                            match_info=None,
+                            action_executed=False,
+                        )
                         evaluation_results.append({
                             "trigger_uuid": str(trigger.uuid),
                             "trigger_name": trigger.name,
@@ -432,17 +442,52 @@ async def process_instant_detection_webhook(
                         })
                         continue
                 
-                # Parse and evaluate demographic conditions
-                if not trigger.demographic_conditions:
-                    logger.warning(f"Trigger '{trigger.name}' has no demographic conditions")
-                    continue
-                
-                conditions = json.loads(trigger.demographic_conditions)
-                passed = await _evaluate_demographic_conditions(
-                    conditions=conditions,
-                    people_count=payload.people_count,
-                    demographics=payload.demographics
-                )
+                trigger_mode = (getattr(trigger, "trigger_mode", None) or "demographic").lower()
+                match_info = None
+
+                if trigger_mode == "ppl_match":
+                    passed, reason, match_info = await _evaluate_ppl_match(
+                        trigger=trigger,
+                        payload=payload,
+                    )
+                    if not passed:
+                        logger.debug(f"Trigger '{trigger.name}' FAILED - {reason}")
+                        _persist_trigger_execution_log(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=reason,
+                            payload=payload,
+                            match_info=match_info,
+                            action_executed=False,
+                        )
+                        evaluation_results.append({
+                            "trigger_uuid": str(trigger.uuid),
+                            "trigger_name": trigger.name,
+                            "passed": False,
+                            "reason": reason
+                        })
+                        continue
+                else:
+                    if not trigger.demographic_conditions:
+                        logger.warning(f"Trigger '{trigger.name}' has no demographic conditions")
+                        _persist_trigger_execution_log(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason="No demographic conditions configured",
+                            payload=payload,
+                            match_info=None,
+                            action_executed=False,
+                        )
+                        continue
+
+                    conditions = json.loads(trigger.demographic_conditions)
+                    passed = await _evaluate_demographic_conditions(
+                        conditions=conditions,
+                        people_count=payload.people_count,
+                        demographics=payload.demographics
+                    )
                 
                 if passed:
                     logger.info("="*80)
@@ -457,16 +502,31 @@ async def process_instant_detection_webhook(
                     logger.info("="*80)
                     
                     # Execute signage action
+                    action_executed = False
                     logger.info(f"▶️ Calling signage action execution...")
                     await _execute_signage_action(
                         trigger=trigger,
                         camera_id=payload.camera_id
                     )
+                    action_executed = True
                     logger.info(f"✅ Signage action execution completed")
                     
                     # Update last_fired_at
                     old_last_fired = trigger.last_fired_at
                     trigger.last_fired_at = datetime.now(timezone.utc)
+                    if match_info is not None:
+                        trigger.last_match_info = json.dumps(match_info)
+                        trigger.last_matched_at = datetime.now(timezone.utc)
+
+                    _persist_trigger_execution_log(
+                        db=db,
+                        trigger=trigger,
+                        passed=True,
+                        reason="ppl_match conditions met" if trigger_mode == "ppl_match" else "All demographic conditions met",
+                        payload=payload,
+                        match_info=match_info,
+                        action_executed=action_executed,
+                    )
                     db.commit()
                     logger.info(
                         f"📝 Updated trigger last_fired_at: "
@@ -478,10 +538,20 @@ async def process_instant_detection_webhook(
                         "trigger_uuid": str(trigger.uuid),
                         "trigger_name": trigger.name,
                         "passed": True,
-                        "reason": "All demographic conditions met"
+                        "reason": "ppl_match conditions met" if trigger_mode == "ppl_match" else "All demographic conditions met",
+                        "match": match_info
                     })
                 else:
                     logger.debug(f"Trigger '{trigger.name}' FAILED - Conditions not met")
+                    _persist_trigger_execution_log(
+                        db=db,
+                        trigger=trigger,
+                        passed=False,
+                        reason="Demographic conditions not met",
+                        payload=payload,
+                        match_info=None,
+                        action_executed=False,
+                    )
                     evaluation_results.append({
                         "trigger_uuid": str(trigger.uuid),
                         "trigger_name": trigger.name,
@@ -502,6 +572,8 @@ async def process_instant_detection_webhook(
             f"Webhook processing complete: {len(triggers)} evaluated, "
             f"{triggered_count} fired"
         )
+
+        db.commit()
         
         return {
             "status": "ok",
@@ -516,6 +588,134 @@ async def process_instant_detection_webhook(
     except Exception as e:
         logger.error(f"Error processing instant detection webhook: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _persist_trigger_execution_log(
+    db: Session,
+    trigger: Trigger,
+    passed: bool,
+    reason: str,
+    payload: InstantDetectionPayload,
+    match_info: Optional[Dict[str, Any]],
+    action_executed: bool,
+):
+    source_mvr_uuids = payload.metadata.get("source_mvr_uuids", []) if payload.metadata else []
+    source_mvr_uuid = None
+    matched_group_id = None
+    matched_member_uuid = None
+    similarity_score = None
+    threshold = None
+    match_details_json = None
+
+    if match_info:
+        best_match = match_info.get("best_match") or {}
+        source_mvr_uuid = best_match.get("source_mvr_uuid") or (source_mvr_uuids[0] if source_mvr_uuids else None)
+        matched_group_id = match_info.get("group_id")
+        matched_member_uuid = best_match.get("matched_member_uuid")
+        similarity_score = best_match.get("similarity_score")
+        threshold = match_info.get("threshold")
+        match_details_json = json.dumps(match_info)
+    elif source_mvr_uuids:
+        source_mvr_uuid = source_mvr_uuids[0]
+
+    db.add(TriggerExecutionLog(
+        trigger_uuid=trigger.uuid,
+        trigger_id=trigger.id,
+        trigger_name=trigger.name,
+        trigger_mode=(getattr(trigger, "trigger_mode", None) or "demographic"),
+        camera_device_id=payload.camera_id,
+        source_mvr_uuid=source_mvr_uuid,
+        matched_group_id=matched_group_id,
+        matched_member_uuid=matched_member_uuid,
+        similarity_score=similarity_score,
+        threshold=threshold,
+        match_details_json=match_details_json,
+        passed=passed,
+        reason=reason,
+        action_executed=action_executed,
+        evaluated_at=datetime.now(timezone.utc),
+    ))
+
+
+async def _evaluate_ppl_match(
+    trigger: Trigger,
+    payload: InstantDetectionPayload,
+) -> tuple[bool, str, Optional[Dict[str, Any]]]:
+    """
+    Evaluate ppl-match mode by checking source MVR UUIDs against target group via vmeta duplicate-check endpoint.
+    """
+    group_id = getattr(trigger, "ppl_match_group_id", None)
+    threshold = float(getattr(trigger, "ppl_match_similarity_threshold", 0.75) or 0.75)
+    top_k = int(getattr(trigger, "ppl_match_top_k", 1) or 1)
+
+    if not group_id:
+        return False, "Missing ppl_match_group_id", None
+
+    source_mvr_uuids = (
+        payload.metadata.get("source_mvr_uuids", [])
+        if payload.metadata else []
+    )
+    if not source_mvr_uuids:
+        return False, "No source MVR UUIDs in evaluation context", None
+
+    vmeta_service_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+    endpoint = f"{vmeta_service_url}/api/v1/individual-groups/{group_id}/check-duplicates"
+    all_candidates: List[Dict[str, Any]] = []
+
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            for source_mvr_uuid in source_mvr_uuids:
+                response = await client.post(
+                    endpoint,
+                    json={
+                        "candidate_mvr_uuid": source_mvr_uuid,
+                        "similarity_threshold": threshold,
+                    },
+                )
+                if response.status_code != 200:
+                    logger.warning(
+                        f"ppl_match duplicate-check failed for source {source_mvr_uuid}: "
+                        f"{response.status_code} {response.text[:200]}"
+                    )
+                    continue
+
+                data = response.json()
+                if data.get("has_duplicates"):
+                    for item in data.get("matches", []):
+                        all_candidates.append({
+                            "source_mvr_uuid": source_mvr_uuid,
+                            "matched_member_uuid": item.get("existing_member_id"),
+                            "similarity_score": item.get("similarity_score", 0.0),
+                            "confidence": item.get("confidence"),
+                            "existing_member_name": item.get("existing_member_name"),
+                        })
+    except Exception as e:
+        logger.error(f"Error evaluating ppl_match trigger '{trigger.name}': {e}", exc_info=True)
+        return False, f"ppl_match evaluation error: {str(e)}", None
+
+    if not all_candidates:
+        return False, "No group matches above threshold", None
+
+    all_candidates = sorted(
+        all_candidates,
+        key=lambda x: x.get("similarity_score", 0.0),
+        reverse=True,
+    )
+    top_candidates = all_candidates[:top_k]
+    best = top_candidates[0]
+
+    match_info = {
+        "mode": "ppl_match",
+        "group_id": group_id,
+        "threshold": threshold,
+        "top_k": top_k,
+        "matched": True,
+        "best_match": best,
+        "top_candidates": top_candidates,
+        "evaluated_source_count": len(source_mvr_uuids),
+        "matched_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return True, f"Matched member {best.get('matched_member_uuid')} score={best.get('similarity_score')}", match_info
 
 
 async def _evaluate_demographic_conditions(

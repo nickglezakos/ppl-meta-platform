@@ -19,7 +19,7 @@ import asyncio
 import time
 import uuid
 import os
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from datetime import datetime
 import logging
 
@@ -479,6 +479,21 @@ class InstantDetectionSampler:
                         best_face["bbox"]
                     )
                     person["age_gender"] = age_gender
+
+                    # Resolve person identity against vmeta MVR store
+                    identity_match = await self._identify_face_via_vmeta_service(
+                        session,
+                        frames[array_position]["frame"],
+                        best_face["bbox"]
+                    )
+                    if identity_match.get("matched") and identity_match.get("mvr_people_uuid"):
+                        mvr_uuid = identity_match["mvr_people_uuid"]
+                        person["mvr_person_uuid"] = mvr_uuid
+                        best_face["mvr_person_uuid"] = mvr_uuid
+                        logger.info(
+                            f"✅ Instant identity resolved: camera={camera_id}, mvr={mvr_uuid}, "
+                            f"similarity={identity_match.get('similarity_score', 0.0):.3f}"
+                        )
                 else:
                     logger.error(f"❌ SKIP VMeta: array_position {array_position} >= len(frames) {len(frames)}")
                     person["age_gender"] = self._default_age_gender()
@@ -646,6 +661,73 @@ class InstantDetectionSampler:
         except Exception as e:
             logger.error(f"Error getting age/gender from VMeta: {e}")
             return self._default_age_gender()
+
+    async def _identify_face_via_vmeta_service(
+        self,
+        session: aiohttp.ClientSession,
+        frame: np.ndarray,
+        bbox: List[int]
+    ) -> Dict[str, Any]:
+        """
+        Resolve a face crop to an MVR identity using vmeta similarity lookup.
+
+        Returns:
+            {"matched": bool, "mvr_people_uuid": str|None, "similarity_score": float}
+        """
+        try:
+            x1, y1, x2, y2 = [int(v) for v in bbox]
+            height, width = frame.shape[:2]
+
+            x1 = max(0, min(x1, width - 1))
+            y1 = max(0, min(y1, height - 1))
+            x2 = max(x1 + 1, min(x2, width))
+            y2 = max(y1 + 1, min(y2, height))
+
+            face_roi = frame[y1:y2, x1:x2]
+            if face_roi.size == 0:
+                return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+
+            ok, buffer = cv2.imencode('.jpg', face_roi)
+            if not ok:
+                return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+
+            data = aiohttp.FormData()
+            data.add_field(
+                'file',
+                buffer.tobytes(),
+                filename='face.jpg',
+                content_type='image/jpeg'
+            )
+
+            similarity_threshold = float(os.getenv("INSTANT_IDENTITY_SIMILARITY_THRESHOLD", "0.70"))
+            max_results = int(os.getenv("INSTANT_IDENTITY_MAX_RESULTS", "1"))
+            url = (
+                f"{self.vmeta_service_url}/api/v1/ml/identify-face"
+                f"?similarity_threshold={similarity_threshold}&max_results={max_results}"
+            )
+
+            timeout = aiohttp.ClientTimeout(total=2.0)
+            async with session.post(url, data=data, timeout=timeout) as response:
+                if response.status != 200:
+                    response_text = await response.text()
+                    logger.debug(
+                        f"Identity lookup failed ({response.status}): {response_text[:200]}"
+                    )
+                    return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+
+                result = await response.json()
+                return {
+                    "matched": bool(result.get("matched")),
+                    "mvr_people_uuid": result.get("mvr_people_uuid"),
+                    "similarity_score": float(result.get("similarity_score", 0.0) or 0.0),
+                }
+
+        except asyncio.TimeoutError:
+            logger.debug("Identity lookup timeout (>2s)")
+            return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+        except Exception as e:
+            logger.debug(f"Identity lookup error: {e}")
+            return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
     
     def _calculate_demographics(self, person_objects: List[Dict]) -> Dict:
         """
@@ -734,6 +816,32 @@ class InstantDetectionSampler:
             "percent_adult": percent_adult,
             "percent_unknown_age": percent_unknown_age
         }
+
+    def _extract_source_identity_uuids(self, person_objects: List[Dict]) -> List[str]:
+        """Extract resolvable identity UUIDs for downstream ppl-match checks."""
+        source_ids: List[str] = []
+
+        def _append_if_uuid(raw_value: Any) -> None:
+            if not raw_value:
+                return
+            try:
+                normalized = str(uuid.UUID(str(raw_value)))
+                if normalized not in source_ids:
+                    source_ids.append(normalized)
+            except Exception:
+                return
+
+        for person in person_objects:
+            _append_if_uuid(person.get("mvr_person_uuid"))
+            _append_if_uuid(person.get("person_object_uuid"))
+            _append_if_uuid(person.get("individual_uuid"))
+
+            for face in person.get("faces", []):
+                _append_if_uuid(face.get("mvr_person_uuid"))
+                _append_if_uuid(face.get("person_object_uuid"))
+                _append_if_uuid(face.get("individual_uuid"))
+
+        return source_ids
     
     async def _create_person_objects_via_vision_service(
         self,
@@ -1109,13 +1217,17 @@ class InstantDetectionSampler:
             # Extract demographic summary
             demographics = result.get("demographics", {})
             people_count = result.get("people_count", 0)
+            person_objects = result.get("person_objects", [])
+            source_mvr_uuids = self._extract_source_identity_uuids(person_objects)
             
             payload = {
                 "camera_id": camera_id,
                 "timestamp": datetime.utcnow().isoformat(),
                 "people_count": people_count,
                 "demographics": demographics,
+                "source_mvr_uuids": source_mvr_uuids,
                 "metadata": {
+                    "source_mvr_uuids": source_mvr_uuids,
                     "processing_time": result.get("processing_time_seconds", 0),
                     "total_faces": result.get("total_faces_detected", 0)
                 }
@@ -1175,6 +1287,8 @@ class InstantDetectionSampler:
             # Extract demographic summary
             demographics = result.get("demographics", {})
             people_count = result.get("people_count", 0)
+            person_objects = result.get("person_objects", [])
+            source_mvr_uuids = self._extract_source_identity_uuids(person_objects)
             
             # Prepare payload
             import json
@@ -1183,7 +1297,9 @@ class InstantDetectionSampler:
                 "timestamp": datetime.utcnow().isoformat(),
                 "people_count": people_count,
                 "demographics": demographics,
+                "source_mvr_uuids": source_mvr_uuids,
                 "metadata": {
+                    "source_mvr_uuids": source_mvr_uuids,
                     "processing_time": result.get("processing_time_seconds", 0),
                     "total_faces": result.get("total_faces_detected", 0)
                 }
@@ -1345,13 +1461,17 @@ class InstantDetectionSampler:
             # Extract demographic summary
             demographics = result.get("demographics", {})
             people_count = result.get("people_count", 0)
+            person_objects = result.get("person_objects", [])
+            source_mvr_uuids = self._extract_source_identity_uuids(person_objects)
             
             payload = {
                 "camera_id": camera_id,
                 "timestamp": datetime.utcnow().isoformat(),
                 "people_count": people_count,
                 "demographics": demographics,
+                "source_mvr_uuids": source_mvr_uuids,
                 "metadata": {
+                    "source_mvr_uuids": source_mvr_uuids,
                     "processing_time": result.get("processing_time_seconds", 0),
                     "total_faces": result.get("total_faces_detected", 0)
                 }

@@ -8,14 +8,16 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+import httpx
 import redis.asyncio as aioredis
 from sqlalchemy.orm import Session
 
 from src.database import SessionLocal
 from src.models.trigger import Trigger
+from src.models.trigger_execution_log import TriggerExecutionLog
 from src.models.signage import SignageDevice
 from src.services.signage_service import SignageService, SignagePlaybackService
 from src.schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
@@ -64,6 +66,7 @@ class InstantDetectionSubscriber:
         self._processed_messages = set()
         self._max_processed_cache = 1000
         self._current_detection_data = {}  # Store current detection data for actions  # Keep last 1000 processed messages
+        self.vmeta_service_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
         
     async def start(self):
         """Start subscribing to instant-detection channel"""
@@ -188,12 +191,26 @@ class InstantDetectionSubscriber:
         logger.info(f"📊 Demographics: {demographics}")
         logger.info(f"⏰ Timestamp: {timestamp}")
         
+        source_mvr_uuids = self._extract_source_mvr_uuids(data)
+        if not source_mvr_uuids:
+            metadata_keys = []
+            if isinstance(data.get("metadata"), dict):
+                metadata_keys = list(data.get("metadata", {}).keys())
+            logger.warning(
+                "⚠️ No source IDs in instant-detection payload. data_keys=%s metadata_keys=%s",
+                list(data.keys()),
+                metadata_keys,
+            )
+        else:
+            data["source_mvr_uuids"] = source_mvr_uuids
+
         # Store demographics data for action execution
         self._current_detection_data = {
             "people_count": people_count,
             "demographics": demographics,
             "timestamp": timestamp,
             "camera_id": camera_id,
+            "source_mvr_uuids": source_mvr_uuids,
         }
         
         db: Session = SessionLocal()
@@ -218,6 +235,8 @@ class InstantDetectionSubscriber:
             # Evaluate each trigger
             for trigger in triggers:
                 logger.info(f"\n--- Evaluating Trigger #{trigger.id}: '{trigger.name}' ---")
+                trigger_mode = (getattr(trigger, "trigger_mode", None) or "demographic").lower()
+                match_info = None
                 
                 # Check cooldown
                 if trigger.last_fired_at:
@@ -225,27 +244,76 @@ class InstantDetectionSubscriber:
                     if now < cooldown_end:
                         remaining = (cooldown_end - now).total_seconds()
                         logger.info(f"  ⏸️  SKIP: In cooldown ({remaining:.1f}s remaining)")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=f"Cooldown active ({remaining:.1f}s remaining)",
+                            match_info=None,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
                         continue
-                
-                # Evaluate conditions
-                conditions = json.loads(trigger.demographic_conditions)
-                logger.info(f"  📋 Conditions to evaluate: {json.dumps(conditions, indent=4)}")
-                
-                if not self._evaluate_conditions(conditions, demographics, people_count):
-                    logger.info(f"  ❌ SKIP: Conditions NOT met")
-                    continue
-                
-                logger.info(f"  ✅ Conditions MET!")
+
+                if trigger_mode == "ppl_match":
+                    logger.info("  🔎 Evaluating ppl_match mode")
+                    passed, reason, match_info = await self._evaluate_ppl_match(trigger, data)
+                    if not passed:
+                        logger.info(f"  ❌ SKIP: {reason}")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason=reason,
+                            match_info=match_info,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+                    logger.info(f"  ✅ ppl_match MET: {reason}")
+                else:
+                    conditions = json.loads(trigger.demographic_conditions)
+                    logger.info(f"  📋 Conditions to evaluate: {json.dumps(conditions, indent=4)}")
+
+                    if not self._evaluate_conditions(conditions, demographics, people_count):
+                        logger.info(f"  ❌ SKIP: Conditions NOT met")
+                        self._log_execution(
+                            db=db,
+                            trigger=trigger,
+                            passed=False,
+                            reason="Demographic conditions not met",
+                            match_info=None,
+                            detection_data=self._current_detection_data,
+                            action_executed=False,
+                        )
+                        continue
+
+                    logger.info(f"  ✅ Conditions MET!")
                 
                 # FIRE!
                 logger.info(f"\n🔥🔥🔥 TRIGGER FIRED! 🔥🔥🔥")
                 triggers_fired += 1
                 fired_trigger_ids.append(trigger.id)
                 trigger.last_fired_at = datetime.now(timezone.utc)
+                if match_info is not None:
+                    trigger.last_match_info = json.dumps(match_info)
+                    trigger.last_matched_at = datetime.now(timezone.utc)
                 
                 # Execute action if configured
+                action_executed = False
                 if trigger.action_uuid:
                     await self._execute_trigger_action(trigger, db)
+                    action_executed = True
+
+                self._log_execution(
+                    db=db,
+                    trigger=trigger,
+                    passed=True,
+                    reason="ppl_match conditions met" if trigger_mode == "ppl_match" else "Demographic conditions met",
+                    match_info=match_info,
+                    detection_data=self._current_detection_data,
+                    action_executed=action_executed,
+                )
             
             # Commit all updates
             db.commit()
@@ -260,6 +328,174 @@ class InstantDetectionSubscriber:
             db.rollback()
         finally:
             db.close()
+
+    def _log_execution(
+        self,
+        db: Session,
+        trigger: Trigger,
+        passed: bool,
+        reason: str,
+        match_info: Optional[Dict[str, Any]],
+        detection_data: Dict[str, Any],
+        action_executed: bool,
+    ):
+        """Persist a trigger evaluation row for auditability."""
+        source_mvr_uuids = detection_data.get("source_mvr_uuids") or []
+        source_mvr_uuid = None
+        matched_group_id = None
+        matched_member_uuid = None
+        similarity_score = None
+        threshold = None
+        match_details_json = None
+
+        if match_info:
+            best_match = match_info.get("best_match") or {}
+            source_mvr_uuid = best_match.get("source_mvr_uuid") or (source_mvr_uuids[0] if source_mvr_uuids else None)
+            matched_group_id = match_info.get("group_id")
+            matched_member_uuid = best_match.get("matched_member_uuid")
+            similarity_score = best_match.get("similarity_score")
+            threshold = match_info.get("threshold")
+            match_details_json = json.dumps(match_info)
+        elif source_mvr_uuids:
+            source_mvr_uuid = source_mvr_uuids[0]
+
+        log_row = TriggerExecutionLog(
+            trigger_uuid=trigger.uuid,
+            trigger_id=trigger.id,
+            trigger_name=trigger.name,
+            trigger_mode=(getattr(trigger, "trigger_mode", None) or "demographic"),
+            camera_device_id=trigger.camera_device_id,
+            source_mvr_uuid=source_mvr_uuid,
+            matched_group_id=matched_group_id,
+            matched_member_uuid=matched_member_uuid,
+            similarity_score=similarity_score,
+            threshold=threshold,
+            match_details_json=match_details_json,
+            passed=passed,
+            reason=reason,
+            action_executed=action_executed,
+            evaluated_at=datetime.now(timezone.utc),
+        )
+        db.add(log_row)
+
+    async def _evaluate_ppl_match(self, trigger: Trigger, detection_data: Dict):
+        """
+        Evaluate ppl-match mode by checking source MVR UUIDs against target group via vmeta duplicate-check endpoint.
+
+        Returns:
+            tuple[passed: bool, reason: str, match_info: Optional[dict]]
+        """
+        group_id = getattr(trigger, "ppl_match_group_id", None)
+        threshold = float(getattr(trigger, "ppl_match_similarity_threshold", 0.75) or 0.75)
+        top_k = int(getattr(trigger, "ppl_match_top_k", 1) or 1)
+
+        if not group_id:
+            return False, "Missing ppl_match_group_id", None
+
+        source_mvr_uuids = self._extract_source_mvr_uuids(detection_data)
+        if not source_mvr_uuids:
+            return False, "No source MVR UUIDs in evaluation context", None
+
+        endpoint_base = f"{self.vmeta_service_url}/api/v1/individual-groups/{group_id}/check-duplicates"
+        all_candidates = []
+
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                for source_mvr_uuid in source_mvr_uuids:
+                    payload = {
+                        "candidate_mvr_uuid": source_mvr_uuid,
+                        "similarity_threshold": threshold,
+                    }
+                    response = await client.post(endpoint_base, json=payload)
+                    if response.status_code != 200:
+                        logger.warning(
+                            f"  ⚠️ ppl_match check failed for source {source_mvr_uuid}: "
+                            f"{response.status_code} {response.text[:200]}"
+                        )
+                        continue
+
+                    data = response.json()
+                    if data.get("has_duplicates"):
+                        for item in data.get("matches", []):
+                            all_candidates.append({
+                                "source_mvr_uuid": source_mvr_uuid,
+                                "matched_member_uuid": item.get("existing_member_id"),
+                                "similarity_score": item.get("similarity_score", 0.0),
+                                "confidence": item.get("confidence"),
+                                "existing_member_name": item.get("existing_member_name"),
+                            })
+        except Exception as e:
+            logger.error(f"  ❌ ppl_match evaluation error: {e}", exc_info=True)
+            return False, f"ppl_match evaluation error: {str(e)}", None
+
+        if not all_candidates:
+            return False, "No group matches above threshold", None
+
+        all_candidates = sorted(
+            all_candidates,
+            key=lambda x: x.get("similarity_score", 0.0),
+            reverse=True,
+        )
+        top_candidates = all_candidates[:top_k]
+        best = top_candidates[0]
+
+        match_info = {
+            "mode": "ppl_match",
+            "group_id": group_id,
+            "threshold": threshold,
+            "top_k": top_k,
+            "matched": True,
+            "best_match": best,
+            "top_candidates": top_candidates,
+            "evaluated_source_count": len(source_mvr_uuids),
+            "matched_at": datetime.now(timezone.utc).isoformat(),
+        }
+        return True, f"Matched member {best.get('matched_member_uuid')} score={best.get('similarity_score')}", match_info
+
+    def _extract_source_mvr_uuids(self, detection_data: Dict[str, Any]) -> List[str]:
+        """Extract source identity UUIDs from known payload shapes."""
+        candidates: List[str] = []
+
+        def _add_uuid(raw_value: Any) -> None:
+            if not raw_value:
+                return
+            try:
+                normalized = str(UUID(str(raw_value)))
+                if normalized not in candidates:
+                    candidates.append(normalized)
+            except Exception:
+                return
+
+        def _collect_from_person(person_obj: Dict[str, Any]) -> None:
+            _add_uuid(person_obj.get("mvr_person_uuid"))
+            _add_uuid(person_obj.get("source_mvr_uuid"))
+            _add_uuid(person_obj.get("person_object_uuid"))
+            _add_uuid(person_obj.get("individual_uuid"))
+            for face in person_obj.get("faces", []) or []:
+                if not isinstance(face, dict):
+                    continue
+                _add_uuid(face.get("mvr_person_uuid"))
+                _add_uuid(face.get("source_mvr_uuid"))
+                _add_uuid(face.get("person_object_uuid"))
+                _add_uuid(face.get("individual_uuid"))
+
+        for direct in detection_data.get("source_mvr_uuids") or []:
+            _add_uuid(direct)
+
+        metadata = detection_data.get("metadata") or {}
+        if isinstance(metadata, dict):
+            for nested in metadata.get("source_mvr_uuids") or []:
+                _add_uuid(nested)
+
+        person_objects = detection_data.get("person_objects") or []
+        if isinstance(metadata, dict):
+            person_objects = person_objects or (metadata.get("person_objects") or [])
+
+        for person in person_objects:
+            if isinstance(person, dict):
+                _collect_from_person(person)
+
+        return candidates
     
     def _evaluate_conditions(self, conditions, demographics, people_count):
         """Evaluate demographic conditions (same logic as webhook endpoint)"""
