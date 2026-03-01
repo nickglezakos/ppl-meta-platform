@@ -67,6 +67,8 @@ class FaceIdentityResponse(BaseModel):
     mvr_people_uuid: Optional[str] = None
     similarity_score: float = 0.0
     total_candidates: int = 0
+    created_new: bool = False
+    dedupe_reused_existing: bool = False
 
 
 @router.post("/detect-age-gender", response_model=AgeGenderResponse)
@@ -161,6 +163,20 @@ async def identify_face(
     file: UploadFile = File(..., description="Face region image (JPEG/PNG)"),
     similarity_threshold: float = Query(0.7, ge=0.0, le=1.0),
     max_results: int = Query(1, ge=1, le=10),
+    create_if_missing: bool = Query(
+        True,
+        description="Create isolated MVR identity if no match is found",
+    ),
+    dedupe_similarity_threshold: float = Query(
+        0.55,
+        ge=0.0,
+        le=1.0,
+        description="Lower threshold used for dedupe reuse before creating new MVR",
+    ),
+    enable_dedupe_reuse: bool = Query(
+        True,
+        description="Reuse near-existing MVR below strict threshold before creating new",
+    ),
     mvr_service: MVRService = Depends(get_mvr_service),
 ):
     """
@@ -190,6 +206,8 @@ async def identify_face(
                 mvr_people_uuid=None,
                 similarity_score=0.0,
                 total_candidates=0,
+                created_new=False,
+                dedupe_reused_existing=False,
             )
 
         embedding_data = ml_result.get("face_embedding")
@@ -200,6 +218,8 @@ async def identify_face(
                 mvr_people_uuid=None,
                 similarity_score=0.0,
                 total_candidates=0,
+                created_new=False,
+                dedupe_reused_existing=False,
             )
 
         face_embedding = np.array(embedding_data, dtype=np.float32)
@@ -210,6 +230,8 @@ async def identify_face(
                 mvr_people_uuid=None,
                 similarity_score=0.0,
                 total_candidates=0,
+                created_new=False,
+                dedupe_reused_existing=False,
             )
 
         candidates = await mvr_service.find_similar_people(
@@ -219,12 +241,75 @@ async def identify_face(
         )
 
         if not candidates:
+            if (
+                create_if_missing
+                and enable_dedupe_reuse
+                and dedupe_similarity_threshold < similarity_threshold
+            ):
+                reuse_candidates = await mvr_service.find_similar_people(
+                    face_embedding=face_embedding,
+                    similarity_threshold=dedupe_similarity_threshold,
+                    max_results=1,
+                )
+
+                if reuse_candidates:
+                    reused = reuse_candidates[0]
+                    reused_uuid = reused.get("mvr_people_uuid")
+                    reused_similarity = float(
+                        reused.get("similarity_score", 0.0) or 0.0
+                    )
+
+                    return FaceIdentityResponse(
+                        success=True,
+                        matched=bool(reused_uuid),
+                        mvr_people_uuid=str(reused_uuid) if reused_uuid else None,
+                        similarity_score=reused_similarity,
+                        total_candidates=1,
+                        created_new=False,
+                        dedupe_reused_existing=bool(reused_uuid),
+                    )
+
+            if create_if_missing:
+                created = await mvr_service.repository.create_mvr_people(
+                    face_embedding=face_embedding,
+                    featured_individual_uuid=None,
+                    age_min=ml_result.get("age_min"),
+                    age_max=ml_result.get("age_max"),
+                    age_confidence=ml_result.get("age_confidence"),
+                    gender=ml_result.get("gender"),
+                    gender_confidence=ml_result.get("gender_confidence"),
+                    quality_score=float(
+                        ml_result.get("face_quality", 0.5) or 0.5
+                    ),
+                    confidence_score=float(
+                        ml_result.get("detection_confidence", 0.5) or 0.5
+                    ),
+                    face_quality=float(
+                        ml_result.get("face_quality", 0.5) or 0.5
+                    ),
+                    auto_created=True,
+                    is_isolated=True,
+                )
+
+                created_uuid = created.get("mvr_people_uuid")
+                return FaceIdentityResponse(
+                    success=True,
+                    matched=bool(created_uuid),
+                    mvr_people_uuid=str(created_uuid) if created_uuid else None,
+                    similarity_score=1.0 if created_uuid else 0.0,
+                    total_candidates=0,
+                    created_new=bool(created_uuid),
+                    dedupe_reused_existing=False,
+                )
+
             return FaceIdentityResponse(
                 success=True,
                 matched=False,
                 mvr_people_uuid=None,
                 similarity_score=0.0,
                 total_candidates=0,
+                created_new=False,
+                dedupe_reused_existing=False,
             )
 
         best = candidates[0]
@@ -237,6 +322,8 @@ async def identify_face(
             mvr_people_uuid=str(best_uuid) if best_uuid else None,
             similarity_score=best_similarity,
             total_candidates=len(candidates),
+            created_new=False,
+            dedupe_reused_existing=False,
         )
 
     except HTTPException:

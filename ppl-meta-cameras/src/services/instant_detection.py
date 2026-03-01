@@ -700,10 +700,15 @@ class InstantDetectionSampler:
             )
 
             similarity_threshold = float(os.getenv("INSTANT_IDENTITY_SIMILARITY_THRESHOLD", "0.70"))
+            dedupe_similarity_threshold = float(os.getenv("INSTANT_IDENTITY_DEDUPE_SIMILARITY_THRESHOLD", "0.55"))
             max_results = int(os.getenv("INSTANT_IDENTITY_MAX_RESULTS", "1"))
             url = (
                 f"{self.vmeta_service_url}/api/v1/ml/identify-face"
-                f"?similarity_threshold={similarity_threshold}&max_results={max_results}"
+                f"?similarity_threshold={similarity_threshold}"
+                f"&dedupe_similarity_threshold={dedupe_similarity_threshold}"
+                f"&enable_dedupe_reuse=true"
+                f"&max_results={max_results}"
+                f"&create_if_missing=true"
             )
 
             timeout = aiohttp.ClientTimeout(total=2.0)
@@ -833,11 +838,13 @@ class InstantDetectionSampler:
 
         for person in person_objects:
             _append_if_uuid(person.get("mvr_person_uuid"))
+            _append_if_uuid(person.get("person_id"))
             _append_if_uuid(person.get("person_object_uuid"))
             _append_if_uuid(person.get("individual_uuid"))
 
             for face in person.get("faces", []):
                 _append_if_uuid(face.get("mvr_person_uuid"))
+                _append_if_uuid(face.get("face_id"))
                 _append_if_uuid(face.get("person_object_uuid"))
                 _append_if_uuid(face.get("individual_uuid"))
 
@@ -891,8 +898,10 @@ class InstantDetectionSampler:
                                 person_faces.append(face_obj.get("face_data", {}))
                             
                             if person_faces:
+                                person_uuid = group.get("person_uuid", str(uuid.uuid4()))
                                 person_objects.append({
-                                    "person_id": group.get("person_uuid", str(uuid.uuid4())),
+                                    "person_id": person_uuid,
+                                    "person_object_uuid": person_uuid,
                                     "faces": person_faces,
                                     "face_count": len(person_faces),
                                     "avg_confidence": sum(f.get("confidence", 0) for f in person_faces) / len(person_faces),
@@ -962,8 +971,10 @@ class InstantDetectionSampler:
                     used_faces.add(j)
             
             # Create person object
+            person_uuid = str(uuid.uuid4())
             person_objects.append({
-                "person_id": str(uuid.uuid4()),
+                "person_id": person_uuid,
+                "person_object_uuid": person_uuid,
                 "faces": group_faces,
                 "face_count": len(group_faces),
                 "avg_confidence": sum(f.get("confidence", 0) for f in group_faces) / len(group_faces),
@@ -1036,16 +1047,18 @@ class InstantDetectionSampler:
         """
         Fallback: Create one person object per face if Vision Service unavailable.
         """
-        return [
-            {
-                "person_id": str(uuid.uuid4()),
+        person_objects = []
+        for face in face_detections:
+            person_uuid = str(uuid.uuid4())
+            person_objects.append({
+                "person_id": person_uuid,
+                "person_object_uuid": person_uuid,
                 "faces": [face],
                 "face_count": 1,
                 "avg_confidence": face.get("confidence", 0.0),
                 "best_bbox": face.get("bbox", [0, 0, 0, 0])
-            }
-            for face in face_detections
-        ]
+            })
+        return person_objects
     
     def _default_age_gender(self) -> Dict:
         """Return default age/gender when detection fails"""
