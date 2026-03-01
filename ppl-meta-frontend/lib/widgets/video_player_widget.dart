@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import '../core/config.dart';
 import '../core/theme/app_theme.dart';
+import '../core/services/secure_storage_service.dart';
 
 /// Video player widget with controls for displaying video content
 class VideoPlayerWidget extends StatefulWidget {
@@ -102,6 +103,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       final gatewayBaseUrl = Config.gatewayServiceUrl;
       Map<String, String> httpHeaders = <String, String>{};
 
+      final incomingAuthHeader = widget.headers?['Authorization'];
+      String? effectiveAuthHeader = incomingAuthHeader;
+      if (effectiveAuthHeader == null || effectiveAuthHeader.isEmpty) {
+        final storedToken = await SecureStorageService.getString('auth_token');
+        if (storedToken != null && storedToken.isNotEmpty) {
+          effectiveAuthHeader = 'Bearer $storedToken';
+        }
+      }
+
       if (!kIsWeb) {
         // Mobile/Desktop defaults to direct authenticated stream URLs.
         final normalizedPath = widget.videoUrl.startsWith('/')
@@ -115,7 +125,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             : normalizedPath;
 
         if (isAndroid) {
-          final authHeader = widget.headers?['Authorization'];
+          final authHeader = effectiveAuthHeader;
           if (authHeader != null && authHeader.startsWith('Bearer ')) {
             final token = authHeader.substring(7);
             final mediaIdMatch = RegExp(r'/stream/([a-f0-9\-]+)(?:\?|$)').firstMatch(sourcePath);
@@ -158,7 +168,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           } else {
             videoUrl = '$gatewayBaseUrl$sourcePath';
           }
-          httpHeaders = widget.headers ?? {};
+          httpHeaders = {
+            ...?widget.headers,
+            if (effectiveAuthHeader != null && effectiveAuthHeader.isNotEmpty)
+              'Authorization': effectiveAuthHeader,
+          };
           debugPrint('🎥 Using direct authenticated stream URL (non-web): $videoUrl');
         }
       } else {
@@ -171,7 +185,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           httpHeaders = widget.headers ?? {};
           debugPrint('🎥 Detected GATEWAY embedded streaming URL: $videoUrl');
         } else {
-          final authHeader = widget.headers?['Authorization'];
+          final authHeader = effectiveAuthHeader;
           if (authHeader != null && authHeader.startsWith('Bearer ')) {
             final token = authHeader.substring(7);
             final mediaIdMatch = RegExp(r'/stream/([a-f0-9\-]+)(?:\?|$)').firstMatch(widget.videoUrl);
@@ -194,7 +208,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             videoUrl = widget.videoUrl.startsWith('/')
                 ? '$gatewayBaseUrl${widget.videoUrl}'
                 : widget.videoUrl;
-            httpHeaders = widget.headers ?? {};
+            httpHeaders = {
+              ...?widget.headers,
+              if (effectiveAuthHeader != null && effectiveAuthHeader.isNotEmpty)
+                'Authorization': effectiveAuthHeader,
+            };
             debugPrint('🎥 Detected FALLBACK URL: $videoUrl');
           }
         }

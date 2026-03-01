@@ -416,9 +416,109 @@ class MediaService:
         # Soft delete
         media.is_archived = True
         media.processing_status = ProcessingStatus.ARCHIVED
+        media.archived_at = datetime.utcnow()
+        media.archived_by_user_id = user_id
+        media.archive_source = "api_delete_media"
+        media.archive_reason = "soft_delete"
 
         self.db.commit()
+        logger.info(
+            "Media archived via soft delete",
+            media_uuid=str(media.uuid),
+            archived_by_user_id=str(user_id),
+            archive_source=media.archive_source,
+            archive_reason=media.archive_reason,
+        )
         return True
+
+    async def archive_media(
+        self, media_id: str, user_id: UUID, archive_reason: Optional[str] = None
+    ) -> Optional[Media]:
+        """Archive media with explicit audit metadata."""
+
+        media = await self.get_media(media_id, user_id)
+
+        if not media or media.uploaded_by != user_id:
+            return None
+
+        media.is_archived = True
+        media.processing_status = ProcessingStatus.ARCHIVED
+        media.archived_at = datetime.utcnow()
+        media.archived_by_user_id = user_id
+        media.archive_source = "api_archive_media"
+        media.archive_reason = archive_reason or "manual_archive"
+
+        self.db.commit()
+        self.db.refresh(media)
+
+        logger.info(
+            "Media archived",
+            media_uuid=str(media.uuid),
+            archived_by_user_id=str(user_id),
+            archive_source=media.archive_source,
+            archive_reason=media.archive_reason,
+        )
+
+        return media
+
+    async def restore_archived_media(self, media_id: str, user_id: UUID) -> Optional[Media]:
+        """Restore archived media back to live state."""
+
+        media = await self.get_media(media_id, user_id)
+
+        if not media or media.uploaded_by != user_id:
+            return None
+
+        media.is_archived = False
+        if media.processing_status == ProcessingStatus.ARCHIVED:
+            media.processing_status = ProcessingStatus.COMPLETED
+        media.archived_at = None
+        media.archived_by_user_id = None
+        media.archive_source = None
+        media.archive_reason = None
+
+        self.db.commit()
+        self.db.refresh(media)
+
+        logger.info(
+            "Media restored from archive",
+            media_uuid=str(media.uuid),
+            restored_by_user_id=str(user_id),
+        )
+
+        return media
+
+    async def bulk_delete_media(self, media_ids: List[str], user_id: UUID) -> dict:
+        """Bulk soft delete media items with per-item result tracking."""
+
+        deleted_ids = []
+        failed_ids = []
+
+        for media_id in media_ids:
+            try:
+                success = await self.delete_media(media_id, user_id)
+                if success:
+                    deleted_ids.append(media_id)
+                else:
+                    failed_ids.append(media_id)
+            except Exception:
+                failed_ids.append(media_id)
+
+        logger.info(
+            "Bulk media soft delete completed",
+            requested_count=len(media_ids),
+            deleted_count=len(deleted_ids),
+            failed_count=len(failed_ids),
+            user_id=str(user_id),
+        )
+
+        return {
+            "success": len(failed_ids) == 0,
+            "deleted": len(deleted_ids),
+            "failed": len(failed_ids),
+            "deleted_ids": deleted_ids,
+            "failed_ids": failed_ids,
+        }
 
     async def get_media_grouped(
         self, user_id: UUID, group_by: str = "device_name"

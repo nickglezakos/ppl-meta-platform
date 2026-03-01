@@ -644,22 +644,112 @@ class IndividualGroupsManager:
         Returns:
             Tuple of (members list, total count)
         """
+        logger.info(
+            "[IG-DEBUG] get_group_members start group_id=%s skip=%s limit=%s sort=%s",
+            group_id,
+            skip,
+            limit,
+            sort,
+        )
+
         # First, clean up any orphaned members in this group
         await self._cleanup_orphaned_members(group_id)
         
         # Now fetch the cleaned members list
         query = """
         SELECT 
-            gm.individual_id, 
+            gm.individual_id,
             gm.added_at,
-            m.name,
-            m.name_updated_at,
-            m.name_updated_by
-        FROM group_memberships gm
-        LEFT JOIN mvr_people m ON gm.individual_id::uuid = m.mvr_people_uuid
-        WHERE gm.group_id = $1
+            COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid)::text AS mvr_person_uuid,
+            COALESCE(
+                NULLIF(m_direct.name, ''),
+                NULLIF(m_mapped.name, ''),
+                NULLIF(m_related.name, ''),
+                NULLIF(m_history.new_name, '')
+            ) AS name,
+            COALESCE(
+                m_direct.name_updated_at,
+                m_mapped.name_updated_at,
+                m_related.name_updated_at,
+                m_history.changed_at
+            ) AS name_updated_at,
+            COALESCE(
+                m_direct.name_updated_by,
+                m_mapped.name_updated_by,
+                m_related.name_updated_by,
+                m_history.changed_by
+            ) AS name_updated_by
+        FROM (
+            SELECT 
+                gm.group_id,
+                gm.individual_id,
+                gm.added_at,
+                CASE 
+                    WHEN gm.individual_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+                    THEN gm.individual_id::uuid
+                    ELSE NULL
+                END AS individual_uuid
+            FROM group_memberships gm
+            WHERE gm.group_id = $1
+            ORDER BY gm.added_at DESC
+            LIMIT $2 OFFSET $3
+        ) gm
+        LEFT JOIN LATERAL (
+            SELECT 
+                m.mvr_people_uuid,
+                m.name,
+                m.name_updated_at,
+                m.name_updated_by
+            FROM mvr_people m
+            WHERE m.mvr_people_uuid = gm.individual_uuid
+            LIMIT 1
+        ) m_direct ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT 
+                m.mvr_people_uuid,
+                m.name,
+                m.name_updated_at,
+                m.name_updated_by
+            FROM individual_mvr_mapping imm
+            JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
+            WHERE imm.individual_uuid = gm.individual_uuid
+            ORDER BY imm.is_representative DESC, imm.linked_at DESC
+            LIMIT 1
+        ) m_mapped ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                m.name,
+                m.name_updated_at,
+                m.name_updated_by
+            FROM (
+                SELECT mh.super_individual_uuid AS related_uuid
+                FROM mvr_merge_hierarchy mh
+                WHERE mh.merged_mvr_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+
+                UNION
+
+                SELECT mh2.merged_mvr_uuid AS related_uuid
+                FROM mvr_merge_hierarchy mh2
+                WHERE mh2.super_individual_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+            ) rel
+            JOIN mvr_people m ON m.mvr_people_uuid = rel.related_uuid
+            WHERE m.name IS NOT NULL AND btrim(m.name) <> ''
+            ORDER BY m.name_updated_at DESC NULLS LAST
+            LIMIT 1
+        ) m_related ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT
+                nh.new_name,
+                nh.changed_at,
+                nh.changed_by
+            FROM mvr_people_name_history nh
+            WHERE nh.new_name IS NOT NULL
+              AND btrim(nh.new_name) <> ''
+              AND nh.mvr_people_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+            ORDER BY nh.changed_at DESC
+            LIMIT 1
+        ) m_history ON TRUE
         ORDER BY gm.added_at DESC
-        LIMIT $2 OFFSET $3
         """
         
         count_query = """
@@ -669,20 +759,41 @@ class IndividualGroupsManager:
         async with self.db.pool.acquire() as conn:
             total = await conn.fetchval(count_query, group_id)
             rows = await conn.fetch(query, group_id, limit, skip)
+
+        logger.info(
+            "[IG-DEBUG] get_group_members fetched group_id=%s total=%s page_rows=%s",
+            group_id,
+            total,
+            len(rows),
+        )
+
+        for index, row in enumerate(rows):
+            logger.info(
+                "[IG-DEBUG] member_row idx=%s group_id=%s individual_id=%s resolved_mvr=%s name=%s name_updated_at=%s name_updated_by=%s",
+                skip + index + 1,
+                group_id,
+                row.get("individual_id"),
+                row.get("mvr_person_uuid"),
+                row.get("name"),
+                row.get("name_updated_at"),
+                row.get("name_updated_by"),
+            )
         
         # TODO: Join with actual persons table to get full individual data
         members = [
             IndividualSummary(
                 id=row["individual_id"],
+                mvr_person_uuid=row.get("mvr_person_uuid"),
                 thumbnail_url=None,
                 total_appearances=0,
                 last_seen=None,
                 group_count=1,
+                group_member_number=skip + index + 1,
                 name=row.get("name"),
                 name_updated_at=row.get("name_updated_at"),
                 name_updated_by=row.get("name_updated_by"),
             )
-            for row in rows
+            for index, row in enumerate(rows)
         ]
         
         return members, total
@@ -1813,10 +1924,80 @@ class IndividualGroupsManager:
             # Get all group members' embeddings
             member_rows = await conn.fetch(
                 """
-                SELECT m.mvr_people_uuid, m.face_embedding, m.name, gm.individual_id
-                FROM group_memberships gm
-                JOIN mvr_people m ON gm.individual_id::uuid = m.mvr_people_uuid
-                WHERE gm.group_id = $1 AND m.is_orphaned = FALSE
+                WITH group_members AS (
+                    SELECT
+                        gm.individual_id,
+                        gm.added_at,
+                        CASE
+                            WHEN gm.individual_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+                            THEN gm.individual_id::uuid
+                            ELSE NULL
+                        END AS individual_uuid
+                    FROM group_memberships gm
+                    WHERE gm.group_id = $1
+                )
+                SELECT
+                    COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid)::text AS resolved_mvr_uuid,
+                    COALESCE(m_direct.face_embedding, m_mapped.face_embedding) AS face_embedding,
+                    COALESCE(
+                        NULLIF(BTRIM(m_direct.name), ''),
+                        NULLIF(BTRIM(m_mapped.name), ''),
+                        NULLIF(BTRIM(m_related.name), ''),
+                        NULLIF(BTRIM(m_history.new_name), '')
+                    ) AS effective_name,
+                    gm.individual_id,
+                    ROW_NUMBER() OVER (ORDER BY gm.added_at DESC, gm.individual_id DESC) AS group_member_number
+                FROM group_members gm
+                LEFT JOIN LATERAL (
+                    SELECT
+                        m.mvr_people_uuid,
+                        m.face_embedding,
+                        m.name
+                    FROM mvr_people m
+                    WHERE m.mvr_people_uuid = gm.individual_uuid
+                      AND m.is_orphaned = FALSE
+                    LIMIT 1
+                ) m_direct ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT
+                        m.mvr_people_uuid,
+                        m.face_embedding,
+                        m.name
+                    FROM individual_mvr_mapping imm
+                    JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
+                    WHERE imm.individual_uuid = gm.individual_uuid
+                      AND m.is_orphaned = FALSE
+                    ORDER BY imm.is_representative DESC, imm.linked_at DESC
+                    LIMIT 1
+                ) m_mapped ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT rel_m.name
+                    FROM (
+                        SELECT mh.super_individual_uuid AS related_uuid
+                        FROM mvr_merge_hierarchy mh
+                        WHERE mh.merged_mvr_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+
+                        UNION
+
+                        SELECT mh2.merged_mvr_uuid AS related_uuid
+                        FROM mvr_merge_hierarchy mh2
+                        WHERE mh2.super_individual_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+                    ) rel
+                    JOIN mvr_people rel_m ON rel_m.mvr_people_uuid = rel.related_uuid
+                    WHERE rel_m.name IS NOT NULL AND BTRIM(rel_m.name) <> ''
+                    ORDER BY rel_m.name_updated_at DESC NULLS LAST
+                    LIMIT 1
+                ) m_related ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT nh.new_name
+                    FROM mvr_people_name_history nh
+                    WHERE nh.mvr_people_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+                      AND nh.new_name IS NOT NULL
+                      AND BTRIM(nh.new_name) <> ''
+                    ORDER BY nh.changed_at DESC
+                    LIMIT 1
+                ) m_history ON TRUE
+                WHERE COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid) IS NOT NULL
                 """,
                 group_id
             )
@@ -1824,7 +2005,7 @@ class IndividualGroupsManager:
             matches = []
             for member in member_rows:
                 # Skip self-comparison
-                if str(member['mvr_people_uuid']) == resolved_candidate_uuid:
+                if str(member['resolved_mvr_uuid']) == resolved_candidate_uuid:
                     continue
                 
                 member_embedding = self._parse_pgvector(member['face_embedding'])
@@ -1840,8 +2021,9 @@ class IndividualGroupsManager:
                         confidence = "low"
                     
                     matches.append(DuplicateMatch(
-                        existing_member_id=str(member['mvr_people_uuid']),
-                        existing_member_name=member['name'],
+                        existing_member_id=str(member['resolved_mvr_uuid']),
+                        existing_member_name=member['effective_name'],
+                        group_member_number=int(member['group_member_number']) if member.get('group_member_number') is not None else None,
                         similarity_score=round(similarity, 4),
                         confidence=confidence,
                     ))

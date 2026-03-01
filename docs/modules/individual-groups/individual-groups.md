@@ -6,11 +6,13 @@
 - The page at /#/individual-groups is a dedicated management UI for group collections of known individuals, wired from [ppl-meta-frontend/lib/presentation/navigation/app_router.dart](ppl-meta-frontend/lib/presentation/navigation/app_router.dart#L263-L271) and implemented in [ppl-meta-frontend/lib/screens/individual_groups_screen.dart](ppl-meta-frontend/lib/screens/individual_groups_screen.dart#L20-L30).
 - The list screen supports search, visibility filtering, grid/list view toggle, pull-to-refresh, and group creation; it fetches groups from `/api/v1/individual-groups` and creates groups via the same resource, see [ppl-meta-frontend/lib/screens/individual_groups_screen.dart](ppl-meta-frontend/lib/screens/individual_groups_screen.dart#L45-L93) and [ppl-meta-frontend/lib/services/individual_groups_api_client.dart](ppl-meta-frontend/lib/services/individual_groups_api_client.dart#L29-L94).
 - Group detail is accessed via `/individual-groups/:groupId` and focuses on member management and analysis workflows (edit group, add/remove members, naming, selection, cross-video analysis launch), see [ppl-meta-frontend/lib/presentation/navigation/app_router.dart](ppl-meta-frontend/lib/presentation/navigation/app_router.dart#L268-L276) and [ppl-meta-frontend/lib/screens/individual_group_detail_screen.dart](ppl-meta-frontend/lib/screens/individual_group_detail_screen.dart#L27-L76).
+- In group detail, each member card shows a numbered label (`Group Member NN`) sourced from `group_member_number` (with UI fallback to index order), and also shows any user-defined member name when available (otherwise short ID fallback), see [ppl-meta-frontend/lib/models/individual_group_models.dart](ppl-meta-frontend/lib/models/individual_group_models.dart) and [ppl-meta-frontend/lib/screens/individual_group_detail_screen.dart](ppl-meta-frontend/lib/screens/individual_group_detail_screen.dart).
 
 ### Runtime Flow
 - Frontend calls vmeta endpoints through `IndividualGroupsApiClient` for CRUD, membership operations, camera search, duplicate detection, and member merge (`/api/v1/individual-groups/*`), see [ppl-meta-frontend/lib/services/individual_groups_api_client.dart](ppl-meta-frontend/lib/services/individual_groups_api_client.dart#L29-L477).
 - Vmeta exposes REST routes for group lifecycle, membership, individual-to-group lookup, bulk operations, camera search, duplicate checks, and merge flow, see [ppl-meta-vmeta/src/api/routes/individual_groups.py](ppl-meta-vmeta/src/api/routes/individual_groups.py#L35-L646).
 - `IndividualGroupsManager` is the orchestration layer: it persists groups/memberships in vmeta DB, executes camera/member search, and performs duplicate + merge workflows against person/MVR data, see [ppl-meta-vmeta/src/services/individual_groups_manager.py](ppl-meta-vmeta/src/services/individual_groups_manager.py#L33-L1882).
+- Member naming and numbering are resolved as part of member listing: backend returns `group_member_number` plus latest resolved person `name` metadata (`name_updated_at`, `name_updated_by`), and frontend renders these values in the member grid and detail dialogs.
 
 ## Current implementation (concise)
 
@@ -23,10 +25,66 @@
 ### Data model summary
 - Group core fields: `id`, `name`, `description`, `created_by`, `visibility`, `tags`, `member_ids`, `member_count`, `cover_individual_id`, `metadata`.
 - Membership is represented as a junction entity (`group_id` <-> `individual_id`) with audit fields (`added_by`, `added_at`, optional `notes`).
+- Member presentation fields include `group_member_number` (display numbering in group context) and user-defined naming fields `name`, `name_updated_at`, `name_updated_by`.
 - API contracts include camera search (`camera_id`/`camera_ids`, time window, confidence threshold) and merge/duplicate models for de-duplication.
+
+### API example (member numbering + user-defined name)
+- Endpoint: `GET /api/v1/individual-groups/{groupId}/members?skip=0&limit=50`
+- Relevant response fields used by UI:
+
+```json
+{
+	"members": [
+		{
+			"id": "7a7b5e90-5e53-4d59-9bca-2c66cb9ac4f1",
+			"mvr_person_uuid": "7a7b5e90-5e53-4d59-9bca-2c66cb9ac4f1",
+			"group_member_number": 3,
+			"name": "John Doe",
+			"name_updated_at": "2026-02-27T10:14:33Z",
+			"name_updated_by": "admin@ppl-meta.local",
+			"total_appearances": 0,
+			"last_seen": null,
+			"group_count": 1,
+			"confidence_score": 0.0
+		}
+	],
+	"total": 1,
+	"skip": 0,
+	"limit": 50
+}
+```
+
+- UI mapping behavior: show `Group Member 03` from `group_member_number`; show `name` when present; otherwise show short member ID fallback.
+
+- Example variant when no user-defined name exists:
+
+```json
+{
+	"members": [
+		{
+			"id": "a9ff51fe-4d3a-45c7-b8f9-8e886ea0f26a",
+			"mvr_person_uuid": "a9ff51fe-4d3a-45c7-b8f9-8e886ea0f26a",
+			"group_member_number": 4,
+			"name": null,
+			"name_updated_at": null,
+			"name_updated_by": null,
+			"total_appearances": 0,
+			"last_seen": null,
+			"group_count": 1,
+			"confidence_score": 0.0
+		}
+	],
+	"total": 1,
+	"skip": 0,
+	"limit": 50
+}
+```
+
+- UI fallback in this case: show `Group Member 04` and render `ID: a9ff51fe...` in the member subtitle.
 
 ### Execution paths
 - Primary management path: list/create group -> open detail -> add/remove/update members -> run analysis from selected members.
+- Member identity path: list members -> display `Group Member NN` numbering -> display user-defined member name if set -> fallback to short member ID when no name exists.
 - Search path: group + camera/time window -> vmeta camera-search endpoint -> matched group members + appearance summary.
 - Hygiene path: duplicate check -> explicit merge request -> super-individual membership update.
 

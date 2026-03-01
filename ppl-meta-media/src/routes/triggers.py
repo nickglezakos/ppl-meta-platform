@@ -35,6 +35,34 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/triggers", tags=["triggers"])
 
 
+def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
+    similarity_score = best_match.get("similarity_score")
+    matched_member_uuid = best_match.get("matched_member_uuid")
+    existing_member_name = (best_match.get("existing_member_name") or "").strip()
+    group_member_number_raw = best_match.get("group_member_number")
+
+    group_member_number: Optional[int] = None
+    if isinstance(group_member_number_raw, int):
+        group_member_number = group_member_number_raw
+    elif isinstance(group_member_number_raw, str) and group_member_number_raw.isdigit():
+        group_member_number = int(group_member_number_raw)
+
+    descriptor: Optional[str] = None
+    if group_member_number is not None:
+        descriptor = f"Group Member {group_member_number:02d}"
+
+    if existing_member_name:
+        descriptor = f"{descriptor} ({existing_member_name})" if descriptor else existing_member_name
+
+    if not descriptor and matched_member_uuid:
+        descriptor = f"member {matched_member_uuid}"
+
+    if not descriptor:
+        descriptor = "member"
+
+    return f"Matched {descriptor} score={similarity_score}"
+
+
 @router.post("", response_model=TriggerResponse, status_code=201)
 async def create_trigger(
     trigger: TriggerCreate,
@@ -518,11 +546,13 @@ async def process_instant_detection_webhook(
                         trigger.last_match_info = json.dumps(match_info)
                         trigger.last_matched_at = datetime.now(timezone.utc)
 
+                    success_reason = reason if trigger_mode == "ppl_match" else "All demographic conditions met"
+
                     _persist_trigger_execution_log(
                         db=db,
                         trigger=trigger,
                         passed=True,
-                        reason="ppl_match conditions met" if trigger_mode == "ppl_match" else "All demographic conditions met",
+                        reason=success_reason,
                         payload=payload,
                         match_info=match_info,
                         action_executed=action_executed,
@@ -538,7 +568,7 @@ async def process_instant_detection_webhook(
                         "trigger_uuid": str(trigger.uuid),
                         "trigger_name": trigger.name,
                         "passed": True,
-                        "reason": "ppl_match conditions met" if trigger_mode == "ppl_match" else "All demographic conditions met",
+                        "reason": success_reason,
                         "match": match_info
                     })
                 else:
@@ -688,6 +718,7 @@ async def _evaluate_ppl_match(
                             "similarity_score": item.get("similarity_score", 0.0),
                             "confidence": item.get("confidence"),
                             "existing_member_name": item.get("existing_member_name"),
+                            "group_member_number": item.get("group_member_number"),
                         })
     except Exception as e:
         logger.error(f"Error evaluating ppl_match trigger '{trigger.name}': {e}", exc_info=True)
@@ -715,7 +746,7 @@ async def _evaluate_ppl_match(
         "evaluated_source_count": len(source_mvr_uuids),
         "matched_at": datetime.now(timezone.utc).isoformat(),
     }
-    return True, f"Matched member {best.get('matched_member_uuid')} score={best.get('similarity_score')}", match_info
+    return True, _build_ppl_match_reason(best), match_info
 
 
 async def _evaluate_demographic_conditions(

@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import '../services/secure_storage_service.dart';
@@ -11,7 +10,10 @@ class ApiClient {
   String? _authToken;
   final AppConfig _config;
   static const String _tokenKey = 'auth_token';
+  static const String _lastLoginEmailKey = 'last_login_email';
+  static const String _lastLoginPasswordKey = 'last_login_password';
   bool _tokenJustCleared = false; // Prevent immediate restore after clearing
+  Future<bool>? _silentReauthFuture;
 
   ApiClient(this._config) {
     _dio = Dio(BaseOptions(
@@ -28,8 +30,10 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          final skipAuthHeader = options.extra['skipAuthHeader'] == true;
+
           // If no token, try to restore from storage
-          if (_authToken == null) {
+          if (_authToken == null && !skipAuthHeader) {
             try {
               // Try secure storage first
               String? storedToken = await SecureStorageService.getString(_tokenKey);
@@ -40,27 +44,16 @@ class ApiClient {
                 storedToken = prefs.getString(_tokenKey);
               }
               
-              if (storedToken != null && !JwtDecoder.isExpired(storedToken)) {
+              if (storedToken != null) {
                 _authToken = storedToken;
-                // Debug: Check token expiration
-                try {
-                  final decoded = JwtDecoder.decode(storedToken);
-                  final exp = decoded['exp'];
-                  final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-                  final now = DateTime.now();
-                  final timeUntilExpiry = expiryDate.difference(now);
-                  print('🔄 ApiClient: Restored token from storage');
-                  print('⏰ Token expires: $expiryDate (in ${timeUntilExpiry.inMinutes} minutes)');
-                } catch (e) {
-                  print('🔄 ApiClient: Restored token from storage (could not decode expiry)');
-                }
+                print('🔄 ApiClient: Restored token from storage');
               }
             } catch (e) {
               print('⚠️ ApiClient: Failed to restore token from storage: $e');
             }
           }
           
-          if (_authToken != null) {
+          if (!skipAuthHeader && _authToken != null) {
             options.headers['Authorization'] = 'Bearer $_authToken';
             print('🔑 ApiClient: Adding auth header to ${options.method} ${options.path}');
           } else {
@@ -69,50 +62,42 @@ class ApiClient {
           handler.next(options);
         },
         onError: (error, handler) async {
-          // Handle token expiration and retry logic for 401 and 403 errors
+          // Handle authentication failures for 401 and 403 errors
           final statusCode = error.response?.statusCode;
           if (statusCode == 401 || statusCode == 403) {
             final path = error.requestOptions.path;
+            final alreadyRetried = error.requestOptions.extra['authRetried'] == true;
+            final skipAuthRecovery = error.requestOptions.extra['skipAuthRecovery'] == true;
+            final isLoginEndpoint = path.contains('/users/login');
             
-            // Check if token is expired or invalid
+            // Server response is the source of truth for token validity.
             bool shouldClearToken = false;
-            
+
             if (_authToken != null) {
-              try {
-                // Check if JWT is expired
-                if (JwtDecoder.isExpired(_authToken!)) {
-                  shouldClearToken = true;
-                  print('🔓 ApiClient: Token is expired, clearing it');
-                } else {
-                  // Debug: Show time until expiry
-                  try {
-                    final decoded = JwtDecoder.decode(_authToken!);
-                    final exp = decoded['exp'];
-                    final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-                    final now = DateTime.now();
-                    final timeUntilExpiry = expiryDate.difference(now);
-                    print('⚠️ ApiClient: Token NOT expired but server rejected it. Time until expiry: ${timeUntilExpiry.inMinutes} minutes');
-                    print('🔧 This likely indicates a server-side issue:');
-                    print('   - JWT secret mismatch between when token was issued and now');
-                    print('   - Server restarted with different configuration');
-                    print('   - Multiple servers with different secrets');
-                  } catch (e) {
-                    print('⚠️ ApiClient: Token NOT expired but server rejected it');
-                  }
-                  shouldClearToken = true; // Clear it anyway since server rejected it
-                }
-              } catch (e) {
-                // Token is malformed or invalid
-                shouldClearToken = true;
-                print('🔓 ApiClient: Token is malformed/invalid, clearing it');
-              }
+              print('⚠️ ApiClient: Server rejected token ($statusCode) on $path');
             }
             
-            // Also clear token for auth endpoints regardless of expiration check
+            // Also clear token for auth endpoints
             final isAuthEndpoint = path.contains('/users/me') || 
                                    path.contains('/users/login') || 
                                    path.contains('/users/current') ||
                                    path.contains('/users/profile');
+
+            if (!isLoginEndpoint && !alreadyRetried && !skipAuthRecovery) {
+              final recovered = await _trySilentReauthentication();
+              if (recovered && _authToken != null) {
+                try {
+                  final retryRequest = error.requestOptions;
+                  retryRequest.headers['Authorization'] = 'Bearer $_authToken';
+                  retryRequest.extra['authRetried'] = true;
+                  retryRequest.extra['skipAuthRecovery'] = true;
+
+                  final retryResponse = await _dio.fetch(retryRequest);
+                  return handler.resolve(retryResponse);
+                } catch (_) {
+                }
+              }
+            }
             
             if (isAuthEndpoint) {
               shouldClearToken = true;
@@ -179,6 +164,7 @@ class ApiClient {
   void setAuthToken(String token) {
     _tokenJustCleared = false; // Reset flag when new token is set
     _authToken = token;
+    _persistToken(token);
   }
 
   /// Get current authentication token
@@ -193,6 +179,89 @@ class ApiClient {
   /// Clear authentication token
   void clearAuthToken() {
     _authToken = null;
+  }
+
+  Future<bool> _trySilentReauthentication() async {
+    if (_silentReauthFuture != null) {
+      return _silentReauthFuture!;
+    }
+
+    _silentReauthFuture = _performSilentReauthentication();
+    try {
+      return await _silentReauthFuture!;
+    } finally {
+      _silentReauthFuture = null;
+    }
+  }
+
+  Future<bool> _performSilentReauthentication() async {
+    try {
+      final credentials = await _getStoredLoginCredentials();
+      if (credentials == null) {
+        return false;
+      }
+
+      final email = credentials['email'];
+      final password = credentials['password'];
+      if (email == null || password == null || email.isEmpty || password.isEmpty) {
+        return false;
+      }
+
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/v1/users/login',
+        data: 'username=${Uri.encodeComponent(email)}&password=${Uri.encodeComponent(password)}',
+        options: Options(
+          contentType: 'application/x-www-form-urlencoded',
+          extra: {
+            'skipAuthHeader': true,
+            'skipAuthRecovery': true,
+          },
+        ),
+      );
+
+      final accessToken = response.data?['access_token']?.toString();
+      if (accessToken == null || accessToken.isEmpty) {
+        return false;
+      }
+
+      setAuthToken(accessToken);
+      await _persistToken(accessToken);
+      return true;
+    } catch (e) {
+      print('⚠️ ApiClient: Silent re-authentication failed: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, String>?> _getStoredLoginCredentials() async {
+    try {
+      String? email = await SecureStorageService.getString(_lastLoginEmailKey);
+      String? password = await SecureStorageService.getString(_lastLoginPasswordKey);
+
+      final prefs = await SharedPreferences.getInstance();
+      email ??= prefs.getString(_lastLoginEmailKey);
+      password ??= prefs.getString(_lastLoginPasswordKey);
+
+      if (email == null || password == null || email.isEmpty || password.isEmpty) {
+        return null;
+      }
+
+      return {
+        'email': email,
+        'password': password,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _persistToken(String token) async {
+    try {
+      await SecureStorageService.setString(_tokenKey, token);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenKey, token);
+    } catch (_) {
+    }
   }
 
   /// GET request

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/provider_bridge.dart';
+import '../../core/services/secure_storage_service.dart';
 import '../screens/auth/new_login_screen.dart';
 import '../screens/auth/register_screen.dart';
 import '../screens/home/home_screen.dart';
@@ -36,26 +37,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   
   return GoRouter(
     initialLocation: '/home', // Set a default, let redirect handle authentication
-    redirect: (context, state) {
-      final isAuthenticated = authState.isAuthenticated;
+    redirect: (context, state) async {
+      final storedToken = await SecureStorageService.getString('auth_token');
+      final isAuthenticated = authState.isAuthenticated &&
+          storedToken != null &&
+          storedToken.isNotEmpty;
       final isLoginRoute = state.fullPath == '/login';
       final isRegisterRoute = state.fullPath == '/register';
       
-      print('Router redirect - path: ${state.fullPath}, isAuthenticated: $isAuthenticated');
-      
       // If not authenticated and trying to access protected routes, redirect to login
       if (!isAuthenticated && !isLoginRoute && !isRegisterRoute) {
-        print('Redirecting to login - not authenticated');
         return '/login';
       }
       
       // If authenticated and trying to access auth routes, redirect to home
       if (isAuthenticated && (isLoginRoute || isRegisterRoute)) {
-        print('Redirecting to home - already authenticated');
         return '/home';
       }
-      
-      print('No redirect needed - staying on: ${state.fullPath}');
+
       return null; // No redirect needed
     },
     routes: [

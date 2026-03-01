@@ -210,6 +210,10 @@ class MediaResponse(MediaBase):
     technical_metadata: Optional[Dict[str, Any]] = None
     access_permissions: Optional[Dict[str, Any]] = None
     is_archived: bool
+    archived_at: Optional[datetime] = None
+    archived_by_user_id: Optional[UUID] = None
+    archive_source: Optional[str] = None
+    archive_reason: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     start_timestamp: Optional[datetime] = None  # Recording start time

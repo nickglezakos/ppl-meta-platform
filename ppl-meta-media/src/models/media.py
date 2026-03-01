@@ -101,6 +101,10 @@ class Media(BaseModel):
     # Access control
     is_public = Column(Boolean, default=False)
     is_archived = Column(Boolean, default=False)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+    archived_by_user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    archive_source = Column(String(100), nullable=True)
+    archive_reason = Column(Text, nullable=True)
     access_permissions = Column(JSON, nullable=True)  # Complex permissions
 
     # Relationships

@@ -4200,6 +4200,17 @@ async def get_best_images_for_mvr(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"MVRpeople {mvr_uuid} not found"
             )
+
+        logger.info(
+            "[IG-DEBUG] best-image request mvr_uuid=%s include_merged=%s use_cache=%s is_orphaned=%s merged_count=%s name=%s name_updated_at=%s",
+            mvr_uuid,
+            include_merged,
+            use_cache,
+            mvr_exists.get("is_orphaned") if isinstance(mvr_exists, dict) else None,
+            mvr_exists.get("merged_count") if isinstance(mvr_exists, dict) else None,
+            mvr_exists.get("name") if isinstance(mvr_exists, dict) else None,
+            mvr_exists.get("name_updated_at") if isinstance(mvr_exists, dict) else None,
+        )
         
         # Initialize image manager with auth token
         orchestrator_url = os.getenv("ORCHESTRATOR_SERVICE_URL", "http://localhost:8002")
@@ -4216,12 +4227,26 @@ async def get_best_images_for_mvr(
             include_merged=include_merged,
             use_cache=use_cache
         )
+
+        logger.info(
+            "[IG-DEBUG] best-image result mvr_uuid=%s has_best_face=%s has_frame_image=%s metadata=%s",
+            mvr_uuid,
+            result.best_face is not None,
+            result.frame_image is not None,
+            result.metadata,
+        )
         
         # Convert to dict for response
         response_dict = result.to_dict()
         
         if not result.best_face:
             logger.warning(f"No images found for MVR {mvr_uuid}")
+            logger.warning(
+                "[IG-DEBUG] best-image empty mvr_uuid=%s include_merged=%s metadata=%s",
+                mvr_uuid,
+                include_merged,
+                result.metadata,
+            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No appearances or images found for MVRpeople {mvr_uuid}"

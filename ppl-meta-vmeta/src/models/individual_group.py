@@ -172,11 +172,13 @@ class IndividualSummary(BaseModel):
     """Lightweight individual data for list views"""
     
     id: str
+    mvr_person_uuid: Optional[str] = None
     thumbnail_url: Optional[str] = None
     total_appearances: int = 0
     last_seen: Optional[datetime] = None
     group_count: int = 0
     confidence_score: float = 0.0
+    group_member_number: Optional[int] = None
     
     # Individual naming (v2.21.0)
     name: Optional[str] = None
@@ -342,6 +344,10 @@ class DuplicateMatch(BaseModel):
     
     existing_member_id: str = Field(description="UUID of existing group member")
     existing_member_name: Optional[str] = Field(description="Name of existing member if set")
+    group_member_number: Optional[int] = Field(
+        default=None,
+        description="Display member number inside the group (Group Member NN)",
+    )
     similarity_score: float = Field(description="Face similarity score (0-1)")
     confidence: str = Field(description="Match confidence level: high, medium, low")
 

@@ -168,12 +168,13 @@ class MVRImageManager:
                     'total_appearances_checked': 0,
                     'total_mvr_checked': len(mvr_uuids),
                     'cache_hit': False,
-                    'processing_time_ms': int((datetime.utcnow() - start_time).total_seconds() * 1000)
+                    'processing_time_ms': int((datetime.utcnow() - start_time).total_seconds() * 1000),
+                    'fallback_image_urls': []
                 }
             )
         
         # Find best face across all videos
-        best_face = await self._find_best_face(video_appearances)
+        best_face, fallback_image_urls = await self._find_best_face(video_appearances)
         
         if not best_face:
             logger.warning(f"No face data found for MVR {mvr_uuid}")
@@ -186,7 +187,7 @@ class MVRImageManager:
         frame_image = None
         if best_face:
             frame_image = FrameImageData(
-                image_url=f"/api/v1/media/{best_face.video_uuid}/thumbnail",
+                image_url=f"/api/v1/media/thumbnail/{best_face.video_uuid}",
                 person_object_uuid=best_face.person_object_uuid,
                 video_uuid=best_face.video_uuid,
                 timestamp=best_face.timestamp
@@ -204,7 +205,8 @@ class MVRImageManager:
                 'total_appearances_checked': len(video_appearances),
                 'total_mvr_checked': len(mvr_uuids),
                 'cache_hit': False,
-                'processing_time_ms': processing_time_ms
+                'processing_time_ms': processing_time_ms,
+                'fallback_image_urls': fallback_image_urls
             }
         )
     
@@ -266,7 +268,7 @@ class MVRImageManager:
     async def _find_best_face(
         self,
         video_appearances: List[Dict]
-    ) -> Optional[BestFaceData]:
+    ) -> tuple[Optional[BestFaceData], List[str]]:
         """
         Fetch faces from Orchestrator for each video and find best quality.
         
@@ -278,7 +280,7 @@ class MVRImageManager:
         """
         if not video_appearances:
             logger.warning("No video appearances to process")
-            return None
+            return None, []
         
         # Group appearances by video_uuid
         videos_by_uuid = {}
@@ -309,12 +311,36 @@ class MVRImageManager:
         
         if not all_faces:
             logger.warning("No face data found across all videos")
-            return None
+            return None, []
         
         logger.info(f"Collected {len(all_faces)} total faces from {len(videos_by_uuid)} videos")
         
-        # Find highest quality face (quality_score is 0-100 from Orchestrator)
-        best_face_data = max(all_faces, key=lambda f: f['quality_score'])
+        # Sort by quality score descending and build prioritized fallback candidates
+        sorted_faces = sorted(all_faces, key=lambda f: f.get('quality_score', 0), reverse=True)
+        fallback_image_urls: List[str] = []
+        fallback_seen = set()
+
+        max_fallback_candidates = 6
+        for candidate in sorted_faces[:10]:
+            candidate_video_uuid = candidate.get('video_uuid')
+            if candidate_video_uuid:
+                thumbnail_url = f"/api/v1/media/thumbnail/{candidate_video_uuid}"
+                if thumbnail_url not in fallback_seen:
+                    fallback_seen.add(thumbnail_url)
+                    fallback_image_urls.append(thumbnail_url)
+                    if len(fallback_image_urls) >= max_fallback_candidates:
+                        break
+
+        best_face_data = None
+        for candidate in sorted_faces:
+            candidate_frame = self._extract_frame_number(candidate)
+            if candidate_frame is None:
+                continue
+            best_face_data = candidate
+            break
+
+        if best_face_data is None:
+            best_face_data = sorted_faces[0]
         
         logger.info(
             f"Best face: quality={best_face_data['quality_score']:.2f}/100, "
@@ -322,12 +348,10 @@ class MVRImageManager:
             f"frame={best_face_data.get('frame_number')}"
         )
         
-        # Get frame number for frame extraction URL
-        frame_number = best_face_data.get('face_data', {}).get('frame_number', 0)
-        
-        # Convert to BestFaceData with frame extraction URL (not video stream!)
-        return BestFaceData(
-            image_url=f"/api/v1/media/{best_face_data['video_uuid']}/frame/{frame_number}?format=jpeg",
+        # Convert to BestFaceData using stable video thumbnail URL.
+        # Keep bbox/face_data for consumers that still want face metadata.
+        best_face = BestFaceData(
+            image_url=f"/api/v1/media/thumbnail/{best_face_data['video_uuid']}",
             quality_score=best_face_data['quality_score'] / 100.0,  # Convert 0-100 to 0-1
             person_object_uuid=best_face_data.get('person_uuid', ''),
             video_uuid=best_face_data['video_uuid'],
@@ -336,6 +360,30 @@ class MVRImageManager:
             bbox=best_face_data.get('bbox', []),
             face_data=best_face_data.get('face_data', {})
         )
+
+        return best_face, fallback_image_urls
+
+    def _extract_frame_number(self, face_candidate: Dict[str, Any]) -> Optional[int]:
+        direct_frame = face_candidate.get('frame_number')
+        if isinstance(direct_frame, str):
+            try:
+                direct_frame = int(direct_frame)
+            except ValueError:
+                direct_frame = None
+        if isinstance(direct_frame, int) and direct_frame >= 0:
+            return direct_frame
+
+        face_data = face_candidate.get('face_data') or {}
+        nested_frame = face_data.get('frame_number')
+        if isinstance(nested_frame, str):
+            try:
+                nested_frame = int(nested_frame)
+            except ValueError:
+                nested_frame = None
+        if isinstance(nested_frame, int) and nested_frame >= 0:
+            return nested_frame
+
+        return None
     
     async def _fetch_faces_from_orchestrator(
         self,
@@ -393,31 +441,31 @@ class MVRImageManager:
                     representative_faces = group.get('representative_faces', [])
                     if not representative_faces:
                         continue
-                    
-                    # First face is highest quality (pre-ranked by Orchestrator)
-                    best_face = representative_faces[0]
-                    face_data = best_face.get('face_data', {})
-                    quality_score = best_face.get('quality_score', 0)
-                    
-                    logger.debug(
-                        f"  Person {group.get('person_uuid', 'unknown')[:8]}: "
-                        f"quality={quality_score:.2f}, "
-                        f"frame={face_data.get('frame_number')}, "
-                        f"bbox={face_data.get('bbox')}"
-                    )
-                    
-                    faces.append({
-                        'quality_score': quality_score,  # 0-100 scale from Orchestrator
-                        'bbox': face_data.get('bbox', []),
-                        'face_data': face_data,
-                        'video_uuid': video_uuid,
-                        'frame_number': face_data.get('frame_number'),
-                        'timestamp': face_data.get('timestamp'),
-                        'person_uuid': group.get('person_uuid'),
-                        'confidence': face_data.get('confidence'),
-                        'distance_from_camera': face_data.get('distance_from_camera'),
-                        'selection_rank': best_face.get('selection_rank', 1)
-                    })
+
+                    # Keep top ranked faces per person for robust fallback strategy
+                    for face in representative_faces[:3]:
+                        face_data = face.get('face_data', {})
+                        quality_score = face.get('quality_score', 0)
+
+                        logger.debug(
+                            f"  Person {group.get('person_uuid', 'unknown')[:8]}: "
+                            f"quality={quality_score:.2f}, "
+                            f"frame={face_data.get('frame_number')}, "
+                            f"bbox={face_data.get('bbox')}"
+                        )
+
+                        faces.append({
+                            'quality_score': quality_score,  # 0-100 scale from Orchestrator
+                            'bbox': face_data.get('bbox', []),
+                            'face_data': face_data,
+                            'video_uuid': video_uuid,
+                            'frame_number': face_data.get('frame_number'),
+                            'timestamp': face_data.get('timestamp'),
+                            'person_uuid': group.get('person_uuid'),
+                            'confidence': face_data.get('confidence'),
+                            'distance_from_camera': face_data.get('distance_from_camera'),
+                            'selection_rank': face.get('selection_rank', 1)
+                        })
                 
                 logger.info(f"Extracted {len(faces)} faces from video {video_uuid[:8]}")
                 return faces
@@ -440,4 +488,4 @@ class MVRImageManager:
         Get frame thumbnail URL for a video.
         Returns media service thumbnail endpoint.
         """
-        return f"/api/v1/media/{video_uuid}/thumbnail"
+        return f"/api/v1/media/thumbnail/{video_uuid}"

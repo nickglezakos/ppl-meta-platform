@@ -1492,6 +1492,18 @@ async def download_media(
 
     # Verify file exists on disk
     if not file_path.exists():
+        default_thumbnail = thumbnail_service.get_default_video_thumbnail(size)
+        if default_thumbnail:
+            return Response(
+                content=default_thumbnail,
+                media_type="image/jpeg",
+                headers={
+                    "Content-Disposition": (
+                        f"inline; filename=default_thumbnail_{size}.jpg"
+                    ),
+                    "Cache-Control": "public, max-age=86400",
+                },
+            )
         raise HTTPException(status_code=404, detail="Media file not found")
 
     # Return file with proper headers

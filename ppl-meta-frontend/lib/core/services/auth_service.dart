@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
@@ -22,6 +21,8 @@ class AuthService {
   final ApiClient _apiClient;
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'user_data';
+  static const String _lastLoginEmailKey = 'last_login_email';
+  static const String _lastLoginPasswordKey = 'last_login_password';
   
   // Callbacks for authentication events
   final List<Function()> _onAuthenticationSuccessCallbacks = [];
@@ -55,17 +56,13 @@ class AuthService {
     final token = await _getStoredToken();
     print('AuthService: Retrieved stored token: ${token != null ? 'EXISTS (${token.length} chars)' : 'NULL'}');
     
-    if (token != null && !JwtDecoder.isExpired(token)) {
-      print('AuthService: Token is valid, setting in ApiClient');
+    if (token != null) {
+      print('AuthService: Stored token found, setting in ApiClient');
       _apiClient.setAuthToken(token);
       
       // Notify success callbacks
       print('AuthService: Authentication success callbacks notified');
       _notifyAuthenticationSuccess();
-    } else if (token != null) {
-      // Token exists but is expired, clear it
-      print('AuthService: Token expired, clearing stored data');
-      await _clearStoredData();
     } else {
       print('AuthService: No stored token found');
     }
@@ -97,6 +94,7 @@ class AuthService {
       
       // Store the token and set it in the API client
       await _storeToken(authResponse.accessToken);
+      await _storeLastLoginCredentials(email, password);
       _apiClient.setAuthToken(authResponse.accessToken);
       
       return authResponse;
@@ -150,7 +148,7 @@ class AuthService {
   Future<User?> getCurrentUser() async {
     try {
       final token = await _getStoredToken();
-      if (token == null || JwtDecoder.isExpired(token)) {
+      if (token == null) {
         await _clearStoredData();
         _apiClient.clearAuthToken();
         return null;
@@ -184,7 +182,7 @@ class AuthService {
   // Check if user is authenticated
   Future<bool> isAuthenticated() async {
     final token = await _getStoredToken();
-    if (token != null && !JwtDecoder.isExpired(token)) {
+    if (token != null) {
       // Set the token in the API client if it's not already set
       if (_apiClient.authToken != token) {
         _apiClient.setAuthToken(token);
@@ -257,14 +255,30 @@ class AuthService {
       // Clear from both storage systems
       await SecureStorageService.remove(_tokenKey);
       await SecureStorageService.remove(_userKey);
+      await SecureStorageService.remove(_lastLoginEmailKey);
+      await SecureStorageService.remove(_lastLoginPasswordKey);
       
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_tokenKey);
       await prefs.remove(_userKey);
+      await prefs.remove(_lastLoginEmailKey);
+      await prefs.remove(_lastLoginPasswordKey);
       
       print('AuthService: Stored data cleared from both secure storage and SharedPreferences');
     } catch (e) {
       print('AuthService: Error clearing stored data: $e');
+    }
+  }
+
+  Future<void> _storeLastLoginCredentials(String email, String password) async {
+    try {
+      await SecureStorageService.setString(_lastLoginEmailKey, email);
+      await SecureStorageService.setString(_lastLoginPasswordKey, password);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastLoginEmailKey, email);
+      await prefs.remove(_lastLoginPasswordKey);
+    } catch (e) {
+      print('AuthService: Error storing last login credentials: $e');
     }
   }
 

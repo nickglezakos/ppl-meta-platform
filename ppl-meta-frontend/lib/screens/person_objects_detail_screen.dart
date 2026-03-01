@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:dio/dio.dart' as dio;
 import 'dart:ui' as ui;
 import 'dart:io';
 import 'dart:async';
@@ -22,6 +23,7 @@ import '../widgets/editable_mvr_gender.dart';
 import '../widgets/individual_groups/add_to_group_dialog.dart';
 import '../models/media_models.dart';
 import '../core/api/api_client.dart';
+import '../core/providers/camera_providers.dart';
 import '../services/media_api_client.dart';
 import '../services/individual_groups_api_client.dart';
 import '../services/mvr_image_service.dart';
@@ -59,6 +61,10 @@ class PersonObjectsDetailScreen extends ConsumerStatefulWidget {
 class _PersonObjectsDetailScreenState 
     extends ConsumerState<PersonObjectsDetailScreen> 
     with TickerProviderStateMixin {
+
+  void print(Object? message) {}
+
+  void debugPrint(String? message, {int? wrapWidth}) {}
   
   late TabController _tabController;
   // late TabController _visionTabController; // Nested tab controller for Vision tab - COMMENTED OUT
@@ -3193,7 +3199,6 @@ class _PersonObjectsDetailScreenState
                     }
 
                     if (dimensionsSnapshot.hasError) {
-                      print('🖼️ Frame Dimensions ERROR: ${dimensionsSnapshot.error}');
                       return Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -3208,7 +3213,6 @@ class _PersonObjectsDetailScreenState
 
                     final frameDimensions = dimensionsSnapshot.data;
                     if (frameDimensions == null) {
-                      print('🖼️ Frame Dimensions ERROR: Null dimensions returned');
                       return const Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -3220,8 +3224,6 @@ class _PersonObjectsDetailScreenState
                         ),
                       );
                     }
-
-                    print('🖼️ Frame Dimensions SUCCESS: ${frameDimensions.width}x${frameDimensions.height}');
 
                     return Column(
                       children: [
@@ -3360,13 +3362,11 @@ class _PersonObjectsDetailScreenState
   Future<Map<String, dynamic>?> _fetchRoutesData() async {
     // Return cached data if available
     if (_cachedRoutesData != null) {
-      print('📦 Routes DEBUG: Returning cached routes data');
       return _cachedRoutesData;
     }
     
     // Prevent multiple concurrent requests
     if (_isLoadingRoutes) {
-      print('⏳ Routes DEBUG: Already loading routes data, waiting...');
       // Wait a bit and return cached data if it becomes available
       await Future.delayed(const Duration(milliseconds: 100));
       return _cachedRoutesData;
@@ -3377,8 +3377,6 @@ class _PersonObjectsDetailScreenState
     try {
       // Get authenticated API client
       final apiClient = ref.read(apiClientProvider);
-      
-      print('🔍 Routes DEBUG: Fetching person objects data for media: ${widget.mediaItem!.uuid}');
       
       // Use the Orchestrator endpoint via Gateway (add /api/v1 prefix manually)
       final personObjectsResponse = await apiClient.get(
@@ -3393,25 +3391,17 @@ class _PersonObjectsDetailScreenState
         final status = data['status'] as String? ?? '';
         
         if (success && status == 'completed') {
-          print('✅ Routes DEBUG: Person objects found with route data!');
-          
           // The Orchestrator response already contains all the data we need
           // including person_groups with movement_tracking and route_points
-          print('✅ Routes DEBUG: Successfully fetched person objects data from Orchestrator');
-          
           // Cache the response
           _cachedRoutesData = data;
           
           return data;
-        } else {
-          print('ℹ️ Routes DEBUG: Person objects not processed yet - status: $status');
         }
       }
-      
-      print('❌ Routes DEBUG: Could not find person objects data');
+
       return null;
     } catch (e) {
-      print('❌ Routes DEBUG: Error fetching routes data: $e');
       return null; // Return null instead of throwing to prevent UI crashes
     } finally {
       _isLoadingRoutes = false;
@@ -3420,8 +3410,6 @@ class _PersonObjectsDetailScreenState
 
   Future<Size?> _getFrameDimensions() async {
     try {
-      print('🖼️ Frame Dimensions DEBUG: Getting dimensions for media: ${widget.mediaItem!.uuid}');
-      
       // Try method 1: Load frame using HTTP image provider
       final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/0?format=jpeg';
       final apiClient = ref.read(apiClientProvider);
@@ -3446,12 +3434,9 @@ class _PersonObjectsDetailScreenState
           imageInfo.image.width.toDouble(), 
           imageInfo.image.height.toDouble()
         );
-        
-        print('🖼️ Frame Dimensions DEBUG: Successfully got dimensions: ${size.width}x${size.height}');
+
         return size;
-      } catch (e) {
-        print('🖼️ Frame Dimensions DEBUG: NetworkImage method failed: $e');
-      }
+      } catch (e) {}
       
       // Method 2: Fallback to media metadata if available
       if (widget.mediaItem!.metadata != null) {
@@ -3461,17 +3446,14 @@ class _PersonObjectsDetailScreenState
             (metadata['width'] as num).toDouble(),
             (metadata['height'] as num).toDouble(),
           );
-          print('🖼️ Frame Dimensions DEBUG: Using metadata dimensions: ${size.width}x${size.height}');
           return size;
         }
       }
       
       // Method 3: Final fallback to common video resolution
-      print('🖼️ Frame Dimensions DEBUG: Using fallback dimensions: 1280x720');
       return const Size(1280, 720);
       
     } catch (e) {
-      print('❌ Frame Dimensions DEBUG: Error getting frame dimensions: $e');
       return const Size(1280, 720); // Fallback
     }
   }
@@ -3767,24 +3749,12 @@ class _PersonObjectsDetailScreenState
 class CroppedImagePainter extends CustomPainter {
   final ui.Image image;
   final Rect cropRect;
-  static String? _lastDebugInfo; // Static variable to reduce debug spam
-  static Size? _lastSignificantSize; // Track significant canvas size changes
 
   CroppedImagePainter({required this.image, required this.cropRect});
 
   @override
   void paint(Canvas canvas, Size size) {
     final Paint paint = Paint();
-    
-    // Much more aggressive debug reduction - only print for significant canvas size changes
-    final isSignificantChange = _lastSignificantSize == null || 
-        (size.width - _lastSignificantSize!.width).abs() > 20 ||
-        (size.height - _lastSignificantSize!.height).abs() > 20;
-        
-    if (isSignificantChange) {
-      print('DEBUG PAINTER: Canvas ${size.width.toInt()}x${size.height.toInt()} for crop ${cropRect.width.toInt()}x${cropRect.height.toInt()}');
-      _lastSignificantSize = size;
-    }
     
     // MAINTAIN ASPECT RATIO: Don't stretch the square crop into different canvas proportions
     final cropAspectRatio = cropRect.width / cropRect.height;
@@ -3856,29 +3826,20 @@ class RoutesPainter extends CustomPainter {
   }
 
   void _paintWithFrameDimensions(Canvas canvas, Size size) {
-    print('🎨 RoutesPainter DEBUG: _paintWithFrameDimensions called');
-    print('🎨 RoutesPainter DEBUG: Canvas size: ${size.width}x${size.height}');
-    print('🎨 RoutesPainter DEBUG: Frame dimensions: ${frameDimensions!.width}x${frameDimensions!.height}');
-    print('🎨 RoutesPainter DEBUG: Person groups count: ${personGroups.length}');
-    
+
     // Check if we have true 1:1 mapping (canvas matches frame exactly)
     final isOneToOneMapping = (size.width == frameDimensions!.width && size.height == frameDimensions!.height);
-    print('🎨 RoutesPainter DEBUG: One-to-one mapping: $isOneToOneMapping');
 
     // Helper function for coordinate conversion
     Offset convertPoint(double x, double y) {
       if (isOneToOneMapping) {
         // True 1:1 mapping - use coordinates directly
-        final converted = Offset(x, y);
-        print('🎨 RoutesPainter DEBUG: 1:1 direct mapping ($x, $y) -> (${converted.dx}, ${converted.dy})');
-        return converted;
+        return Offset(x, y);
       } else {
         // Scale to fit canvas
         final scaleX = size.width / frameDimensions!.width;
         final scaleY = size.height / frameDimensions!.height;
-        final converted = Offset(x * scaleX, y * scaleY);
-        print('🎨 RoutesPainter DEBUG: Scaled mapping ($x, $y) -> (${converted.dx}, ${converted.dy}) [scale: ${scaleX}x${scaleY}]');
-        return converted;
+        return Offset(x * scaleX, y * scaleY);
       }
     }
 
@@ -3886,8 +3847,6 @@ class RoutesPainter extends CustomPainter {
     for (int personIndex = 0; personIndex < personGroups.length; personIndex++) {
       final group = personGroups[personIndex];
       final routePoints = group['movement_tracking']?['route_points'] ?? [];
-      
-      print('🎨 RoutesPainter DEBUG: Person $personIndex has ${routePoints.length} route points');
       
       if (routePoints.isEmpty) continue;
 
@@ -3956,7 +3915,6 @@ class RoutesPainter extends CustomPainter {
         for (final point in routePoints) {
           final x = (point['center_x'] ?? 0).toDouble();
           final y = (point['center_y'] ?? 0).toDouble();
-          print('🎨 RoutesPainter DEBUG: Route point: x=$x, y=$y');
           final pos = convertPoint(x, y);
           
           if (isFirst) {
@@ -4276,9 +4234,6 @@ class TopViewRoutesPainter extends CustomPainter {
       return;
     }
 
-    print('🗺️ TopView DEBUG: Canvas size: ${size.width}x${size.height}');
-    print('🗺️ TopView DEBUG: Person groups count: ${personGroups.length}');
-
     // Find bounds of all routes to create a top-down view
     double minX = double.infinity, minY = double.infinity;
     double maxX = double.negativeInfinity, maxY = double.negativeInfinity;
@@ -4295,8 +4250,6 @@ class TopViewRoutesPainter extends CustomPainter {
       }
     }
 
-    print('🗺️ TopView DEBUG: Route bounds: ($minX, $minY) to ($maxX, $maxY)');
-
     // Add padding around the movement area
     const padding = 40.0;
     final dataWidth = maxX - minX;
@@ -4308,8 +4261,6 @@ class TopViewRoutesPainter extends CustomPainter {
     final availableWidth = size.width - 2 * padding;
     final availableHeight = size.height - 2 * padding;
     final scale = math.min(availableWidth / dataWidth, availableHeight / dataHeight);
-
-    print('🗺️ TopView DEBUG: Scale factor: $scale');
 
     // Calculate offset to center the movement area
     final scaledWidth = dataWidth * scale;
@@ -4335,8 +4286,6 @@ class TopViewRoutesPainter extends CustomPainter {
       if (routePoints.isEmpty) continue;
 
       final color = _getPersonColor(personIndex);
-      
-      print('🗺️ TopView DEBUG: Person $personIndex has ${routePoints.length} route points');
       
       // Draw based on display mode
       if (displayMode == 'scatter') {
@@ -5057,9 +5006,10 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   /// Build a single appearance card (same UX as individual card)
   Widget _buildAppearanceCard(IndividualAppearance appearance, int index) {
     return GestureDetector(
-      onTap: () {
-        print('🎬 Navigating to media preview for video: ${appearance.videoUuid}');
-        // Navigate to media preview screen with the video UUID using GoRouter
+      onTap: () async {
+        if (!mounted) {
+          return;
+        }
         context.go('/media-preview/${appearance.videoUuid}');
       },
       child: Card(
@@ -5245,16 +5195,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           );
         }
 
-        print('🚦 CROSS-VIDEO ROUTES: Successfully loaded ${personGroups.length} person groups with route data');
-
         // Group person groups by camera for separate visualization
         final groupsByCamera = <String, List<Map<String, dynamic>>>{};
         for (final group in personGroups) {
           final cameraName = group['camera_name'] as String? ?? 'Unknown Camera';
           groupsByCamera.putIfAbsent(cameraName, () => []).add(group);
         }
-
-        print('🚦 CROSS-VIDEO ROUTES: Routes grouped into ${groupsByCamera.length} camera(s)');
 
         // Now use the SAME visualization as single-video mode, but grouped by camera
         return SingleChildScrollView(
@@ -5517,8 +5463,6 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return [];
     }
 
-    print('🚦 CROSS-VIDEO ROUTES: Starting fetch for ${_aggregatedAnalyses!.length} individuals');
-
     final apiClient = ref.read(apiClientProvider);
     final personGroups = <Map<String, dynamic>>[];
 
@@ -5536,22 +5480,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           if (appearance.cameraName != null || appearance.cameraId != null) {
             videoToCameraMap[appearance.videoUuid] = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
           }
-        } else {
-          print('⚠️ Skipping invalid video UUID: "${appearance.videoUuid}"');
         }
       }
     }
-
-    print('🚦 CROSS-VIDEO ROUTES: Found ${allVideoUuids.length} unique videos');
-    print('🚦 CROSS-VIDEO ROUTES: Camera mapping for ${videoToCameraMap.length} videos');
 
     // Fetch person objects data for each video
     final videoRoutesMap = <String, Map<String, dynamic>>{};
     
     for (final videoUuid in allVideoUuids) {
       try {
-        print('🚦 CROSS-VIDEO ROUTES: Fetching routes from video $videoUuid');
-        
         final response = await apiClient.get(
           '/api/v1/orchestrator/person-objects/$videoUuid',
         );
@@ -5563,25 +5500,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
 
           if (success && status == 'completed') {
             videoRoutesMap[videoUuid] = data;
-            print('🚦 CROSS-VIDEO ROUTES: ✅ Got routes for video $videoUuid');
-          } else {
-            print('🚦 CROSS-VIDEO ROUTES: ⚠️ Video $videoUuid not processed (status: $status)');
           }
         }
-      } catch (e) {
-        print('🚦 CROSS-VIDEO ROUTES: ❌ Error fetching routes for video $videoUuid: $e');
-      }
+      } catch (e) {}
     }
-
-    print('🚦 CROSS-VIDEO ROUTES: Successfully loaded routes from ${videoRoutesMap.length}/${allVideoUuids.length} videos');
 
     // Now combine route data for each individual across all videos
     for (int i = 0; i < _aggregatedAnalyses!.length; i++) {
       final analysis = _aggregatedAnalyses![i];
       final individualId = analysis.individualId;
-      
-      print('🚦 CROSS-VIDEO ROUTES: Processing individual $i ($individualId)');
-      print('🚦   Individual has ${analysis.appearances.length} appearances');
 
       // Group route points by camera/collection
       final routePointsByCamera = <String, List<Map<String, dynamic>>>{};
@@ -5595,33 +5522,25 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         
         // Skip invalid UUIDs
         if (videoUuid.isEmpty || videoUuid.length < 8) {
-          print('🚦   ⚠️ Appearance $ai: skipping invalid video UUID: "$videoUuid"');
           continue;
         }
         if (personObjectUuid.isEmpty || personObjectUuid.length < 8) {
-          print('🚦   ⚠️ Appearance $ai: skipping invalid person object UUID: "$personObjectUuid"');
           continue;
         }
-        
-        print('🚦   Appearance $ai: video=${videoUuid.substring(0, 8)}, camera=$cameraName');
 
         // Get the routes data for this video
         final videoData = videoRoutesMap[videoUuid];
         if (videoData == null) {
-          print('🚦   ⚠️ No route data for video $videoUuid');
           continue;
         }
 
         // Find the person group that matches this person_object_uuid
         final personGroupsData = videoData['group_tracking'] ?? videoData['person_groups'];
         if (personGroupsData == null) {
-          print('🚦   ⚠️ No person_groups in video data');
           continue;
         }
 
         final personGroupsList = personGroupsData as List<dynamic>;
-        
-        print('🚦   Video has ${personGroupsList.length} person group(s)');
         
         // IMPORTANT: Since the person_object_uuid in cross-video tracking is mock/fake,
         // we'll use ALL person groups from this video appearance.
@@ -5631,14 +5550,10 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         for (int gi = 0; gi < personGroupsList.length; gi++) {
           final group = personGroupsList[gi] as Map<String, dynamic>;
           
-          print('🚦     Processing group $gi (${group['person_id']})');
-          
           // Extract route points from this group
           final movementTracking = group['movement_tracking'] as Map<String, dynamic>?;
           if (movementTracking != null) {
             final routePoints = movementTracking['route_points'] as List<dynamic>? ?? [];
-            
-            print('🚦       ✅ Found ${routePoints.length} route points from ${group['person_id']}');
             
             // Add route points to the appropriate camera group
             routePointsByCamera.putIfAbsent(cameraName, () => []);
@@ -5648,18 +5563,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
               pointMap['camera_name'] = cameraName;
               routePointsByCamera[cameraName]!.add(pointMap);
             }
-          } else {
-            print('🚦       ⚠️ No movement_tracking in group');
           }
         }
       }
 
       if (routePointsByCamera.isEmpty) {
-        print('🚦 Individual $i: ⚠️ No route points found');
         continue;
       }
-
-      print('🚦 Individual $i: Found routes in ${routePointsByCamera.length} camera(s)');
 
       // Create one person group per camera with sorted and sampled routes
       for (final cameraName in routePointsByCamera.keys) {
@@ -5689,15 +5599,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             final frameB = b['frame_number'] as num? ?? 0;
             return frameA.compareTo(frameB);
           } catch (e) {
-            print('🚦 Warning: Could not compare timestamps: $e');
             // Fallback to frame number
             final frameA = a['frame_number'] as num? ?? 0;
             final frameB = b['frame_number'] as num? ?? 0;
             return frameA.compareTo(frameB);
           }
         });
-
-        print('🚦 Individual $i, Camera "$cameraName": ${cameraRoutePoints.length} route points');
 
         // Sample route points if there are too many (threshold: 100 points)
         const maxRoutePoints = 100;
@@ -5721,7 +5628,6 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             sampledRoutePoints.add(cameraRoutePoints.last);
           }
           
-          print('🚦 Individual $i, Camera "$cameraName": Sampled ${cameraRoutePoints.length} → ${sampledRoutePoints.length} points');
         }
 
         // Create person group for this camera
@@ -5739,7 +5645,6 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       }
     }
 
-    print('🚦 CROSS-VIDEO ROUTES: ✅ Final result: ${personGroups.length} person groups with route data');
     return personGroups;
   }
 

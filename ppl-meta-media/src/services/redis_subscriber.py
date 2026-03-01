@@ -30,6 +30,95 @@ logger = logging.getLogger(__name__)
 _communications_client = None
 
 
+def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
+    similarity_score = best_match.get("similarity_score")
+    matched_member_uuid = best_match.get("matched_member_uuid")
+    existing_member_name = (best_match.get("existing_member_name") or "").strip()
+    group_member_number_raw = best_match.get("group_member_number")
+
+    group_member_number: Optional[int] = None
+    if isinstance(group_member_number_raw, int):
+        group_member_number = group_member_number_raw
+    elif isinstance(group_member_number_raw, str) and group_member_number_raw.isdigit():
+        group_member_number = int(group_member_number_raw)
+
+    descriptor: Optional[str] = None
+    if group_member_number is not None:
+        descriptor = f"Group Member {group_member_number:02d}"
+
+    if existing_member_name:
+        descriptor = f"{descriptor} ({existing_member_name})" if descriptor else existing_member_name
+
+    if not descriptor and matched_member_uuid:
+        descriptor = f"member {matched_member_uuid}"
+
+    if not descriptor:
+        descriptor = "member"
+
+    return f"Matched {descriptor} score={similarity_score}"
+
+
+def _extract_ppl_match_context(match_info: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not match_info:
+        return {}
+
+    best_match = match_info.get("best_match") or {}
+    match_reason = _build_ppl_match_reason(best_match)
+
+    return {
+        "match_reason": match_reason,
+        "matched_member_uuid": best_match.get("matched_member_uuid") or "",
+        "matched_member_name": (best_match.get("existing_member_name") or "").strip(),
+        "group_member_number": best_match.get("group_member_number") or "",
+        "similarity_score": best_match.get("similarity_score") if best_match.get("similarity_score") is not None else "",
+    }
+
+
+def _interpolate_action_message(
+    base_message: str,
+    trigger: Trigger,
+    evaluation_reason: Optional[str],
+    match_info: Optional[Dict[str, Any]],
+) -> str:
+    message = base_message or ""
+    original_message = message
+
+    match_context = _extract_ppl_match_context(match_info)
+    replacements = {
+        "trigger_name": trigger.name,
+        "trigger_id": str(trigger.uuid),
+        "reason": evaluation_reason or "",
+        "match_reason": match_context.get("match_reason", ""),
+        "matched_member_uuid": match_context.get("matched_member_uuid", ""),
+        "matched_member_name": match_context.get("matched_member_name", ""),
+        "group_member_number": match_context.get("group_member_number", ""),
+        "similarity_score": match_context.get("similarity_score", ""),
+    }
+
+    used_template_variable = False
+    for key, value in replacements.items():
+        token = "{" + key + "}"
+        if token in message:
+            used_template_variable = True
+            message = message.replace(token, str(value))
+
+    if (
+        not used_template_variable
+        and match_context.get("match_reason")
+        and match_info
+        and (match_info.get("mode") == "ppl_match" or match_info.get("matched"))
+    ):
+        if message:
+            message = f"{message} - {match_context['match_reason']}"
+        else:
+            message = match_context["match_reason"]
+
+    if not message and original_message:
+        return original_message
+
+    return message
+
+
 def get_communications_client() -> CommunicationsClient:
     """Get or create communications client singleton."""
     global _communications_client
@@ -298,18 +387,25 @@ class InstantDetectionSubscriber:
                 if match_info is not None:
                     trigger.last_match_info = json.dumps(match_info)
                     trigger.last_matched_at = datetime.now(timezone.utc)
+
+                success_reason = reason if trigger_mode == "ppl_match" else "Demographic conditions met"
                 
                 # Execute action if configured
                 action_executed = False
                 if trigger.action_uuid:
-                    await self._execute_trigger_action(trigger, db)
+                    await self._execute_trigger_action(
+                        trigger,
+                        db,
+                        evaluation_reason=success_reason,
+                        match_info=match_info,
+                    )
                     action_executed = True
 
                 self._log_execution(
                     db=db,
                     trigger=trigger,
                     passed=True,
-                    reason="ppl_match conditions met" if trigger_mode == "ppl_match" else "Demographic conditions met",
+                    reason=success_reason,
                     match_info=match_info,
                     detection_data=self._current_detection_data,
                     action_executed=action_executed,
@@ -423,6 +519,7 @@ class InstantDetectionSubscriber:
                                 "similarity_score": item.get("similarity_score", 0.0),
                                 "confidence": item.get("confidence"),
                                 "existing_member_name": item.get("existing_member_name"),
+                                "group_member_number": item.get("group_member_number"),
                             })
         except Exception as e:
             logger.error(f"  ❌ ppl_match evaluation error: {e}", exc_info=True)
@@ -450,7 +547,7 @@ class InstantDetectionSubscriber:
             "evaluated_source_count": len(source_mvr_uuids),
             "matched_at": datetime.now(timezone.utc).isoformat(),
         }
-        return True, f"Matched member {best.get('matched_member_uuid')} score={best.get('similarity_score')}", match_info
+        return True, _build_ppl_match_reason(best), match_info
 
     def _extract_source_mvr_uuids(self, detection_data: Dict[str, Any]) -> List[str]:
         """Extract source identity UUIDs from known payload shapes."""
@@ -547,7 +644,13 @@ class InstantDetectionSubscriber:
         logger.info(f"  ✅ ALL CONDITIONS PASSED")
         return True
     
-    async def _execute_trigger_action(self, trigger: Trigger, db: Session):
+    async def _execute_trigger_action(
+        self,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
         """Execute the action associated with this trigger"""
         from src.models.user_trigger_action import UserTriggerAction
         
@@ -570,13 +673,13 @@ class InstantDetectionSubscriber:
         if action.action_type == "digital_signage":
             await self._execute_signage_action(action, db)
         elif action.action_type == "email":
-            await self._execute_email_action(action, trigger, db)
+            await self._execute_email_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "webhook":
-            await self._execute_webhook_action(action, trigger, db)
+            await self._execute_webhook_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "log":
-            await self._execute_log_action(action, trigger, db)
+            await self._execute_log_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "alert":
-            await self._execute_alert_action(action, trigger, db)
+            await self._execute_alert_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         else:
             logger.warning(f"     ⚠️ Unsupported action type: {action.action_type}")
     
@@ -638,7 +741,14 @@ class InstantDetectionSubscriber:
         except Exception as e:
             logger.error(f"Error executing signage action: {e}", exc_info=True)
     
-    async def _execute_email_action(self, action, trigger: Trigger, db: Session):
+    async def _execute_email_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
         """Execute email action via Communications Service."""
         logger.info(f"  📧 Executing email action...")
         
@@ -667,9 +777,11 @@ class InstantDetectionSubscriber:
             body_template = config.get("body", "Trigger '{trigger_name}' was fired.")
             
             # Substitute variables in template
-            body = body_template.format(
-                trigger_name=trigger.name,
-                trigger_id=str(trigger.uuid),
+            body = _interpolate_action_message(
+                base_message=body_template,
+                trigger=trigger,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
             )
             
             logger.info(f"     Recipients: {recipients}")
@@ -717,7 +829,14 @@ class InstantDetectionSubscriber:
         except Exception as e:
             logger.error(f"     ❌ Error executing email action: {e}", exc_info=True)
     
-    async def _execute_webhook_action(self, action, trigger: Trigger, db: Session):
+    async def _execute_webhook_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
         """Execute webhook action via Communications Service."""
         logger.info(f"  🔗 Executing webhook action...")
         
@@ -735,6 +854,8 @@ class InstantDetectionSubscriber:
                 "trigger_name": trigger.name,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "data": config.get("payload_data", {}),
+                "reason": evaluation_reason,
+                "match": match_info,
             }
             
             logger.info(f"     Webhook URL: {webhook_url}")
@@ -761,7 +882,14 @@ class InstantDetectionSubscriber:
         except Exception as e:
             logger.error(f"     ❌ Error executing webhook action: {e}", exc_info=True)
     
-    async def _execute_log_action(self, action, trigger: Trigger, db: Session):
+    async def _execute_log_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
         """Execute audit log action via Communications Service."""
         logger.info(f"  📋 Executing audit log action...")
         
@@ -771,6 +899,12 @@ class InstantDetectionSubscriber:
             
             # Extract message/body from config
             message = config.get("message") or config.get("body") or config.get("content", "")
+            message = _interpolate_action_message(
+                base_message=message,
+                trigger=trigger,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
             
             # Get detection data if available
             detection_data = getattr(self, '_current_detection_data', {})
@@ -785,6 +919,8 @@ class InstantDetectionSubscriber:
                 "camera_id": detection_data.get("camera_id"),
                 "detection_timestamp": detection_data.get("timestamp"),
                 "custom_data": config.get("data", {}),
+                "reason": evaluation_reason,
+                "match": match_info,
             }
             
             # Call Communications Service
@@ -805,7 +941,14 @@ class InstantDetectionSubscriber:
         except Exception as e:
             logger.error(f"     ❌ Error executing log action: {e}", exc_info=True)
     
-    async def _execute_alert_action(self, action, trigger: Trigger, db: Session):
+    async def _execute_alert_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
         """Execute alert action via Communications Service."""
         logger.info(f"  🔔 Executing alert action...")
         
@@ -815,6 +958,12 @@ class InstantDetectionSubscriber:
             
             # Extract alert settings
             message = config.get("message", "Alert triggered")
+            message = _interpolate_action_message(
+                base_message=message,
+                trigger=trigger,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
             severity = config.get("severity", "warning")
             duration_seconds = config.get("duration_seconds", 30)
             
@@ -834,6 +983,8 @@ class InstantDetectionSubscriber:
                 "camera_id": detection_data.get("camera_id"),
                 "detection_timestamp": detection_data.get("timestamp"),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "reason": evaluation_reason,
+                "match": match_info,
             }
             
             logger.info(f"     Message: {message}")

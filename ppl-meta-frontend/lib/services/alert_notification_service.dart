@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../core/services/secure_storage_service.dart';
 import 'communications_api_client.dart';
 import 'auth_service.dart';
 
@@ -12,8 +14,40 @@ class AlertNotificationService {
   final StreamController<AlertNotification> _alertController = StreamController.broadcast();
   final Set<String> _processedAlertIds = {};
   final Set<String> _shownAlertIds = {}; // Track alerts already shown to user
+  final DateTime _serviceStartedAt = DateTime.now().toUtc();
   bool _isInitialized = false;
   bool _isFirstPoll = true; // Flag to skip showing old alerts on first load
+  static const String _tokenKey = 'auth_token';
+
+  DateTime? _parseServerTimestampUtc(String? raw) {
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) {
+      return null;
+    }
+
+    final hasExplicitTimezone =
+        raw.toUpperCase().endsWith('Z') || RegExp(r'[+-]\d{2}:\d{2}$').hasMatch(raw);
+
+    if (hasExplicitTimezone) {
+      return parsed.toUtc();
+    }
+
+    return DateTime.utc(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      parsed.hour,
+      parsed.minute,
+      parsed.second,
+      parsed.millisecond,
+      parsed.microsecond,
+    );
+  }
+
   
   AlertNotificationService(this._client, this._authService);
   
@@ -21,20 +55,33 @@ class AlertNotificationService {
   Stream<AlertNotification> get alertStream => _alertController.stream;
   
   /// Initialize with auth token
-  Future<void> _initialize() async {
-    if (_isInitialized) return;
+  Future<bool> _initialize() async {
+    if (_isInitialized) return true;
     
     try {
-      final token = await _authService.getStoredToken();
-      if (token != null) {
-        _client.setAuthToken(token);
-        _isInitialized = true;
-        print('✅ AlertNotificationService: Auth token set');
-      } else {
-        print('⚠️ AlertNotificationService: No auth token available');
+      String? token = await SecureStorageService.getString(_tokenKey);
+
+      if (token == null || token.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        token = prefs.getString(_tokenKey);
       }
+
+      if (token == null || token.isEmpty) {
+        token = await _authService.getStoredToken();
+      }
+
+      if (token == null || token.isEmpty) {
+        print('⚠️ AlertNotificationService: No auth token available');
+        return false;
+      }
+
+      _client.setAuthToken(token);
+      _isInitialized = true;
+      print('✅ AlertNotificationService: Auth token set');
+      return true;
     } catch (e) {
       print('❌ AlertNotificationService: Failed to get auth token: $e');
+      return false;
     }
   }
   
@@ -59,11 +106,19 @@ class AlertNotificationService {
   /// Check for new alerts from the Communications Service
   Future<void> _checkForNewAlerts() async {
     try {
+      if (!_isInitialized) {
+        final initialized = await _initialize();
+        if (!initialized) {
+          print('⚠️ AlertNotificationService: Skipping poll until auth token is available');
+          return;
+        }
+      }
+
       print('🔍 AlertNotificationService: Polling for alerts...');
       // Fetch recent audit logs - use 'audit_log' as the type
       final response = await _client.fetchLogs(
         type: 'audit_log',
-        pageSize: 10, // Last 10 events
+        pageSize: 50, // Fetch enough records to avoid missing new alerts
       );
       
       print('📋 AlertNotificationService: Fetched ${response.logs.length} audit logs');
@@ -72,12 +127,16 @@ class AlertNotificationService {
       if (_isFirstPoll) {
         for (final log in response.logs) {
           if (log.payload != null && log.payload!['message'] != null) {
+            final createdAt = _parseServerTimestampUtc(log.createdAt);
+            final isHistorical = createdAt == null || createdAt.isBefore(_serviceStartedAt.subtract(const Duration(seconds: 2)));
+            if (!isHistorical) {
+              continue;
+            }
             _shownAlertIds.add(log.uuid);
           }
         }
-        print('🔕 AlertNotificationService: First poll - marked ${_shownAlertIds.length} existing alerts as seen');
+        print('🔕 AlertNotificationService: First poll - marked only historical alerts as seen (${_shownAlertIds.length})');
         _isFirstPoll = false;
-        return; // Don't show any alerts on first poll
       }
       
       // Filter for alert events that haven't been processed
@@ -113,7 +172,7 @@ class AlertNotificationService {
                 durationSeconds: eventData['duration_seconds'] as int? ?? 30,
                 triggerName: eventData['trigger_name'] as String?,
                 actionName: eventData['action_name'] as String?,
-                timestamp: DateTime.tryParse(log.createdAt),
+                timestamp: _parseServerTimestampUtc(log.createdAt),
               );
               
               print('🔔 AlertNotificationService: Emitting alert: ${alert.message}');
@@ -138,6 +197,8 @@ class AlertNotificationService {
       }
       
     } catch (e) {
+      // Re-attempt auth init on next poll after transient auth/network issues
+      _isInitialized = false;
       print('Error checking for alerts: $e');
     }
   }
