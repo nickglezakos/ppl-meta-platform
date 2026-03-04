@@ -695,13 +695,32 @@ class IndividualGroupsManager:
             LIMIT $2 OFFSET $3
         ) gm
         LEFT JOIN LATERAL (
+            SELECT
+                COALESCE(
+                    (
+                        WITH RECURSIVE merge_chain AS (
+                            SELECT gm.individual_uuid AS current_uuid, 0 AS depth
+                            UNION ALL
+                            SELECT mh.super_individual_uuid AS current_uuid, mc.depth + 1 AS depth
+                            FROM mvr_merge_hierarchy mh
+                            JOIN merge_chain mc ON mh.merged_mvr_uuid = mc.current_uuid
+                        )
+                        SELECT current_uuid
+                        FROM merge_chain
+                        ORDER BY depth DESC
+                        LIMIT 1
+                    ),
+                    gm.individual_uuid
+                ) AS canonical_uuid
+        ) canonical ON TRUE
+        LEFT JOIN LATERAL (
             SELECT 
                 m.mvr_people_uuid,
                 m.name,
                 m.name_updated_at,
                 m.name_updated_by
             FROM mvr_people m
-            WHERE m.mvr_people_uuid = gm.individual_uuid
+            WHERE m.mvr_people_uuid = canonical.canonical_uuid
             LIMIT 1
         ) m_direct ON TRUE
         LEFT JOIN LATERAL (
@@ -712,7 +731,7 @@ class IndividualGroupsManager:
                 m.name_updated_by
             FROM individual_mvr_mapping imm
             JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
-            WHERE imm.individual_uuid = gm.individual_uuid
+            WHERE imm.individual_uuid = canonical.canonical_uuid
             ORDER BY imm.is_representative DESC, imm.linked_at DESC
             LIMIT 1
         ) m_mapped ON TRUE
@@ -724,13 +743,13 @@ class IndividualGroupsManager:
             FROM (
                 SELECT mh.super_individual_uuid AS related_uuid
                 FROM mvr_merge_hierarchy mh
-                WHERE mh.merged_mvr_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+                WHERE mh.merged_mvr_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, canonical.canonical_uuid)
 
                 UNION
 
                 SELECT mh2.merged_mvr_uuid AS related_uuid
                 FROM mvr_merge_hierarchy mh2
-                WHERE mh2.super_individual_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+                WHERE mh2.super_individual_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, canonical.canonical_uuid)
             ) rel
             JOIN mvr_people m ON m.mvr_people_uuid = rel.related_uuid
             WHERE m.name IS NOT NULL AND btrim(m.name) <> ''
@@ -745,7 +764,7 @@ class IndividualGroupsManager:
             FROM mvr_people_name_history nh
             WHERE nh.new_name IS NOT NULL
               AND btrim(nh.new_name) <> ''
-              AND nh.mvr_people_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, gm.individual_uuid)
+                            AND nh.mvr_people_uuid = COALESCE(m_direct.mvr_people_uuid, m_mapped.mvr_people_uuid, canonical.canonical_uuid)
             ORDER BY nh.changed_at DESC
             LIMIT 1
         ) m_history ON TRUE
@@ -833,6 +852,25 @@ class IndividualGroupsManager:
             for member in orphaned_members:
                 orphaned_id = str(member['individual_id'])
                 super_id = str(member['super_individual_uuid'])
+
+                canonical_super_row = await conn.fetchrow(
+                    """
+                    WITH RECURSIVE merge_chain AS (
+                        SELECT $1::uuid AS current_uuid, 0 AS depth
+                        UNION ALL
+                        SELECT mh.super_individual_uuid AS current_uuid, mc.depth + 1 AS depth
+                        FROM mvr_merge_hierarchy mh
+                        JOIN merge_chain mc ON mh.merged_mvr_uuid = mc.current_uuid
+                    )
+                    SELECT current_uuid
+                    FROM merge_chain
+                    ORDER BY depth DESC
+                    LIMIT 1
+                    """,
+                    super_id,
+                )
+                if canonical_super_row and canonical_super_row.get('current_uuid'):
+                    super_id = str(canonical_super_row['current_uuid'])
                 
                 # Check if super-individual is already in the group
                 existing = await conn.fetchval("""
