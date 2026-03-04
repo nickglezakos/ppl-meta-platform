@@ -257,6 +257,24 @@ class MediaService:
                             )
                             .first()
                         )
+
+                        # UUID parsed but no collection with this UUID for user.
+                        # This can happen when camera_device_id is also UUID-like.
+                        if not collection_exists:
+                            print(
+                                "🔍 DEBUG: UUID not found as collection UUID, "
+                                "trying as camera_device_id"
+                            )
+                            collection_exists = (
+                                self.db.query(MediaCollection)
+                                .filter(
+                                    MediaCollection.created_by
+                                    == search_request.uploaded_by,
+                                    MediaCollection.camera_device_id
+                                    == collection_filter,
+                                )
+                                .first()
+                            )
                     except ValueError:
                         # Not a valid UUID, try as integer ID
                         print(f"🔍 DEBUG: Not a valid UUID, trying as integer")
@@ -273,23 +291,48 @@ class MediaService:
                                 .first()
                             )
                         except (ValueError, TypeError):
-                            # Not an integer either, try as collection name
-                            print(f"🔍 DEBUG: Not an integer, trying as collection name")
-                            # Support partial name matching (e.g., 'usb_camera_0' matches 'usb_camera_0 Collection')
+                            # Not an integer either, try as camera_device_id first
+                            # (camera identifiers may now be UUID-like values).
+                            print(
+                                "🔍 DEBUG: Not an integer, trying as camera_device_id"
+                            )
                             collection_exists = (
                                 self.db.query(MediaCollection)
                                 .filter(
                                     MediaCollection.created_by == search_request.uploaded_by,
-                                    or_(
-                                        MediaCollection.name == collection_filter,
-                                        MediaCollection.name.ilike(f"{collection_filter}%"),
-                                        MediaCollection.name.ilike(f"%{collection_filter}%")
-                                    )
+                                    MediaCollection.camera_device_id == collection_filter,
                                 )
                                 .first()
                             )
-                            if collection_exists:
-                                print(f"🔍 DEBUG: Found by name match: {collection_exists.name}")
+
+                            # If no camera_device_id match, fall back to collection name
+                            if not collection_exists:
+                                print(
+                                    "🔍 DEBUG: camera_device_id miss, trying as collection name"
+                                )
+                            # Support partial name matching (e.g., 'usb_camera_0' matches 'usb_camera_0 Collection')
+                                collection_exists = (
+                                    self.db.query(MediaCollection)
+                                    .filter(
+                                        MediaCollection.created_by
+                                        == search_request.uploaded_by,
+                                        or_(
+                                            MediaCollection.name == collection_filter,
+                                            MediaCollection.name.ilike(
+                                                f"{collection_filter}%"
+                                            ),
+                                            MediaCollection.name.ilike(
+                                                f"%{collection_filter}%"
+                                            ),
+                                        ),
+                                    )
+                                    .first()
+                                )
+                                if collection_exists:
+                                    print(
+                                        "🔍 DEBUG: Found by name match: "
+                                        f"{collection_exists.name}"
+                                    )
 
                     if collection_exists:
                         print(

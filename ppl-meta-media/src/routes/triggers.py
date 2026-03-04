@@ -3,6 +3,7 @@ API routes for Trigger management.
 """
 
 import json
+import asyncio
 import logging
 import math
 import os
@@ -15,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from ..config import get_config
 from ..database import get_db
 from ..models.trigger import Trigger
 from ..models.trigger_execution_log import TriggerExecutionLog
@@ -30,9 +32,22 @@ from ..schemas.trigger import (
     TriggerUpdate,
 )
 from ..services.trigger_evaluation import DemographicData, TriggerEvaluationService
+from ..services.communications_client import CommunicationsClient
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/triggers", tags=["triggers"])
+
+_communications_client: Optional[CommunicationsClient] = None
+
+
+def _get_communications_client() -> CommunicationsClient:
+    global _communications_client
+    if _communications_client is None:
+        settings = get_config()
+        _communications_client = CommunicationsClient(
+            base_url=settings.COMMUNICATIONS_SERVICE_URL
+        )
+    return _communications_client
 
 
 def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
@@ -187,6 +202,14 @@ async def update_trigger(
     
     # Update only provided fields
     update_data = trigger_update.model_dump(exclude_unset=True)
+
+    # Keep DB NOT NULL ppl_match numeric fields stable when client sends null.
+    # Frontend can switch to demographic mode and send nulls for ppl-match fields,
+    # but these columns are NOT NULL at the DB level.
+    if update_data.get('ppl_match_similarity_threshold') is None:
+        update_data.pop('ppl_match_similarity_threshold', None)
+    if update_data.get('ppl_match_top_k') is None:
+        update_data.pop('ppl_match_top_k', None)
     
     # Convert demographic_conditions list to JSON string for storage
     if 'demographic_conditions' in update_data and update_data['demographic_conditions'] is not None:
@@ -534,7 +557,10 @@ async def process_instant_detection_webhook(
                     logger.info(f"▶️ Calling signage action execution...")
                     await _execute_signage_action(
                         trigger=trigger,
-                        camera_id=payload.camera_id
+                        camera_id=payload.camera_id,
+                        detection_payload=payload,
+                        evaluation_reason=reason if trigger_mode == "ppl_match" else "All demographic conditions met",
+                        match_info=match_info,
                     )
                     action_executed = True
                     logger.info(f"✅ Signage action execution completed")
@@ -694,32 +720,49 @@ async def _evaluate_ppl_match(
 
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            for source_mvr_uuid in source_mvr_uuids:
-                response = await client.post(
-                    endpoint,
-                    json={
-                        "candidate_mvr_uuid": source_mvr_uuid,
-                        "similarity_threshold": threshold,
-                    },
-                )
+            async def _check_single_source(source_mvr_uuid: str) -> List[Dict[str, Any]]:
+                try:
+                    response = await client.post(
+                        endpoint,
+                        json={
+                            "candidate_mvr_uuid": source_mvr_uuid,
+                            "similarity_threshold": threshold,
+                        },
+                    )
+                except Exception as source_error:
+                    logger.warning(
+                        f"ppl_match duplicate-check error for source {source_mvr_uuid}: {source_error}"
+                    )
+                    return []
+
                 if response.status_code != 200:
                     logger.warning(
                         f"ppl_match duplicate-check failed for source {source_mvr_uuid}: "
                         f"{response.status_code} {response.text[:200]}"
                     )
-                    continue
+                    return []
 
                 data = response.json()
-                if data.get("has_duplicates"):
-                    for item in data.get("matches", []):
-                        all_candidates.append({
-                            "source_mvr_uuid": source_mvr_uuid,
-                            "matched_member_uuid": item.get("existing_member_id"),
-                            "similarity_score": item.get("similarity_score", 0.0),
-                            "confidence": item.get("confidence"),
-                            "existing_member_name": item.get("existing_member_name"),
-                            "group_member_number": item.get("group_member_number"),
-                        })
+                if not data.get("has_duplicates"):
+                    return []
+
+                candidates: List[Dict[str, Any]] = []
+                for item in data.get("matches", []):
+                    candidates.append({
+                        "source_mvr_uuid": source_mvr_uuid,
+                        "matched_member_uuid": item.get("existing_member_id"),
+                        "similarity_score": item.get("similarity_score", 0.0),
+                        "confidence": item.get("confidence"),
+                        "existing_member_name": item.get("existing_member_name"),
+                        "group_member_number": item.get("group_member_number"),
+                    })
+                return candidates
+
+            candidate_lists = await asyncio.gather(
+                *[_check_single_source(source_mvr_uuid) for source_mvr_uuid in source_mvr_uuids]
+            )
+            for candidates in candidate_lists:
+                all_candidates.extend(candidates)
     except Exception as e:
         logger.error(f"Error evaluating ppl_match trigger '{trigger.name}': {e}", exc_info=True)
         return False, f"ppl_match evaluation error: {str(e)}", None
@@ -821,7 +864,10 @@ async def _evaluate_demographic_conditions(
 
 async def _execute_signage_action(
     trigger: Trigger,
-    camera_id: str
+    camera_id: str,
+    detection_payload: Optional[InstantDetectionPayload] = None,
+    evaluation_reason: Optional[str] = None,
+    match_info: Optional[Dict[str, Any]] = None,
 ):
     """
     Execute signage action using EXISTING playback control API.
@@ -910,6 +956,38 @@ async def _execute_signage_action(
                 logger.info(f"   Status: {result.get('status')}")
                 logger.info(f"   Message: {result.get('message')}")
                 logger.info(f"   Full response: {json.dumps(result, indent=2)}")
+
+                try:
+                    comms_client = _get_communications_client()
+                    audit_event_data = {
+                        "trigger_id": str(trigger.uuid),
+                        "trigger_name": trigger.name,
+                        "action_type": "digital_signage",
+                        "camera_id": camera_id,
+                        "detection_timestamp": detection_payload.timestamp if detection_payload else None,
+                        "people_count": detection_payload.people_count if detection_payload else None,
+                        "demographics": detection_payload.demographics if detection_payload else None,
+                        "reason": evaluation_reason,
+                        "match": match_info,
+                        "signage": {
+                            "playlist_id": trigger.signage_playlist_id,
+                            "device_ids": device_ids,
+                            "transition_mode": trigger.signage_transition_mode,
+                            "response": result,
+                        },
+                    }
+                    audit_result = await comms_client.log_audit_event(
+                        event_type="trigger_fired",
+                        event_source="media_service",
+                        event_data=audit_event_data,
+                        severity="info",
+                    )
+                    if audit_result.get("success"):
+                        logger.info(f"📋 Trigger audit log created: {audit_result.get('log_uuid')}")
+                    else:
+                        logger.warning(f"⚠️ Trigger audit log failed: {audit_result.get('message')}")
+                except Exception as audit_err:
+                    logger.warning(f"⚠️ Failed to create trigger audit log: {audit_err}")
             else:
                 logger.error(
                     f"❌ Signage API returned error {response.status_code}"

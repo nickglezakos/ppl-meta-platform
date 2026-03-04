@@ -86,7 +86,7 @@ class AlertNotificationService {
   }
   
   /// Start polling for new alerts
-  void startPolling({Duration interval = const Duration(seconds: 5)}) {
+  void startPolling({Duration interval = const Duration(seconds: 2)}) {
     stopPolling();
     print('✅ AlertNotificationService: Starting polling every ${interval.inSeconds}s');
     

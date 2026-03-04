@@ -244,6 +244,24 @@ class InstantDetectionSubscriber:
             logger.info("🛑 Listen loop cancelled")
         except Exception as e:
             logger.error(f"❌ Listen loop error: {e}")
+
+    def _parse_event_timestamp_utc(self, timestamp: Optional[str]) -> Optional[datetime]:
+        """Parse event timestamp and normalize to timezone-aware UTC datetime."""
+        if not timestamp or not isinstance(timestamp, str):
+            return None
+
+        raw_value = timestamp.strip()
+        if not raw_value:
+            return None
+
+        try:
+            normalized = raw_value.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            return None
     
     async def _handle_instant_detection(self, data: Dict):
         """
@@ -257,20 +275,20 @@ class InstantDetectionSubscriber:
         timestamp = data.get("timestamp")
         
         # Validate message freshness - ignore messages older than 10 seconds
-        try:
-            message_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        message_time = self._parse_event_timestamp_utc(timestamp)
+        if message_time is None:
+            logger.warning(f"⚠️ Could not parse timestamp '{timestamp}'")
+            # Continue processing even if timestamp parsing fails
+        else:
             now = datetime.now(timezone.utc)
             age_seconds = (now - message_time).total_seconds()
-            
+
             if age_seconds > 10:
                 logger.warning(
                     f"⏰ Skipping stale message: {camera_id} "
                     f"(age: {age_seconds:.1f}s, threshold: 10s)"
                 )
                 return
-        except (ValueError, TypeError, AttributeError) as e:
-            logger.warning(f"⚠️ Could not parse timestamp '{timestamp}': {e}")
-            # Continue processing even if timestamp parsing fails
         
         logger.info(f"\n{'='*80}")
         logger.info(f"🔔 INSTANT DETECTION EVENT (Redis Pub/Sub)")
@@ -671,7 +689,13 @@ class InstantDetectionSubscriber:
         
         # Route to appropriate handler
         if action.action_type == "digital_signage":
-            await self._execute_signage_action(action, db)
+            await self._execute_signage_action(
+                action,
+                trigger,
+                db,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
         elif action.action_type == "email":
             await self._execute_email_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "webhook":
@@ -683,7 +707,14 @@ class InstantDetectionSubscriber:
         else:
             logger.warning(f"     ⚠️ Unsupported action type: {action.action_type}")
     
-    async def _execute_signage_action(self, action, db: Session):
+    async def _execute_signage_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
         """Execute signage playlist switch action from action config"""
         logger.info(f"  📺 Executing digital signage action...")
         
@@ -730,6 +761,51 @@ class InstantDetectionSubscriber:
                     # Send the command (SignagePlaybackService will query discovery service)
                     result = await playback_service.control_playback(control_request)
                     logger.info(f"        ✅ Command result: {json.dumps(result, indent=10)}")
+
+                    command_success = True
+                    if isinstance(result, dict):
+                        if isinstance(result.get("results"), list):
+                            command_success = all(
+                                bool(item.get("success", True))
+                                for item in result.get("results", [])
+                                if isinstance(item, dict)
+                            )
+                        elif "success" in result:
+                            command_success = bool(result.get("success"))
+
+                    detection_data = getattr(self, '_current_detection_data', {})
+                    audit_event_data = {
+                        "trigger_id": str(trigger.uuid),
+                        "trigger_name": trigger.name,
+                        "action_name": action.name,
+                        "action_type": action.action_type,
+                        "camera_id": detection_data.get("camera_id"),
+                        "detection_timestamp": detection_data.get("timestamp"),
+                        "people_count": detection_data.get("people_count", 0),
+                        "demographics": detection_data.get("demographics", {}),
+                        "reason": evaluation_reason,
+                        "match": match_info,
+                        "signage": {
+                            "device_id": str(device_uuid),
+                            "playlist_id": playlist_id,
+                            "transition_mode": transition_mode,
+                            "command": "start",
+                            "success": command_success,
+                        },
+                    }
+
+                    comms_client = get_communications_client()
+                    audit_result = await comms_client.log_audit_event(
+                        event_type="trigger_fired",
+                        event_source="media_service",
+                        event_data=audit_event_data,
+                        severity="info" if command_success else "warning",
+                    )
+
+                    if audit_result.get("success"):
+                        logger.info(f"        📋 Audit log created. Log UUID: {audit_result.get('log_uuid')}")
+                    else:
+                        logger.warning(f"        ⚠️ Audit log failed: {audit_result.get('message')}")
                 
                 except ValueError as e:
                     logger.error(f"Invalid device UUID {device_uuid_str}: {e}")

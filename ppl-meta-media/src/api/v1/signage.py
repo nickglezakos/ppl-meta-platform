@@ -449,7 +449,7 @@ async def control_playback(
         
         service = SignagePlaybackService(db)
 
-        result = await service.control_playback(data)
+        result = await service.control_playback(data, current_user.user_id)
 
         return PlaybackControlResponse(
             command_id=UUID("00000000-0000-0000-0000-000000000001"),  # TODO: Generate proper ID

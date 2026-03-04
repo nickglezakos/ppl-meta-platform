@@ -7,7 +7,7 @@ Business logic for video list management, synchronization, and playback control.
 import logging
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import httpx
@@ -1067,7 +1067,7 @@ class SignagePlaybackService:
         self.signage_service = SignageService(db)
 
     async def control_playback(
-        self, request: PlaybackControlRequest
+        self, request: PlaybackControlRequest, user_id: Optional[str] = None
     ) -> dict:
         """
         Send playback control command to device(s) via discovery service.
@@ -1080,6 +1080,13 @@ class SignagePlaybackService:
         """
         results = []
         success_count = 0
+
+        request_user_uuid: Optional[UUID] = None
+        if user_id:
+            try:
+                request_user_uuid = UUID(str(user_id))
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid user_id for playback fallback sync: {user_id}")
 
         for device_id in request.device_ids:
             logger.info(f"Processing control command '{request.command.value}' for device: {device_id}")
@@ -1103,12 +1110,49 @@ class SignagePlaybackService:
                 translated_host = self._translate_ip_for_tailscale(device_info['host'])
                 
                 logger.info(f"Sending {request.command.value} command to device {device_info['name']} ({translated_host}:{device_info['port']})")
-                success = await self._send_control_command_to_endpoint(
+                control_result = await self._send_control_command_to_endpoint(
                     host=translated_host,
                     port=device_info['port'],
                     device_name=device_info['name'],
                     request=request
                 )
+                success = control_result.get("success", False)
+
+                if (
+                    not success
+                    and request.command == PlaybackCommand.START
+                    and request.video_list_id
+                    and request_user_uuid
+                ):
+                    failure_message = (control_result.get("message") or "").lower()
+                    should_retry_after_sync = (
+                        "not be synced" in failure_message
+                        or "failed to load playlist" in failure_message
+                        or "playlist not found" in failure_message
+                    )
+
+                    if should_retry_after_sync:
+                        logger.info(
+                            f"Playlist may not be synced on {device_info['name']}; attempting sync and retry"
+                        )
+                        sync_success = await self._sync_playlist_for_start_retry(
+                            video_list_uuid=request.video_list_id,
+                            device_id=device_id,
+                            user_id=request_user_uuid,
+                        )
+
+                        if sync_success:
+                            retry_result = await self._send_control_command_to_endpoint(
+                                host=translated_host,
+                                port=device_info['port'],
+                                device_name=device_info['name'],
+                                request=request,
+                            )
+                            success = retry_result.get("success", False)
+                            if success:
+                                logger.info(
+                                    f"✅ Playback start succeeded on retry after sync for {device_info['name']}"
+                                )
 
                 if success:
                     success_count += 1
@@ -1240,9 +1284,32 @@ class SignagePlaybackService:
             ip == 'localhost'
         )
 
+    async def _sync_playlist_for_start_retry(
+        self,
+        video_list_uuid: UUID,
+        device_id: UUID,
+        user_id: UUID,
+    ) -> bool:
+        """Sync requested playlist to device before retrying START command."""
+        try:
+            sync_service = SignageSyncService(self.db)
+            await sync_service.sync_video_list_to_device(
+                video_list_uuid=video_list_uuid,
+                device_id=device_id,
+                sync_mode=SyncMode.INCREMENTAL,
+                user_id=user_id,
+                force_update=False,
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                f"Fallback sync before START retry failed for device {device_id}: {e}"
+            )
+            return False
+
     async def _send_control_command_to_endpoint(
         self, host: str, port: int, device_name: str, request: PlaybackControlRequest
-    ) -> bool:
+    ) -> Dict[str, Any]:
         """
         Send control command to device via HTTP endpoint.
 
@@ -1253,7 +1320,7 @@ class SignagePlaybackService:
             request: Playback control request
 
         Returns:
-            True if successful, False otherwise
+            Parsed result containing success flag and device response fields
         """
         try:
             url = f"http://{host}:{port}/api/v1/control"
@@ -1277,14 +1344,20 @@ class SignagePlaybackService:
 
                 result = response.json()
                 logger.info(f"Device response: {result}")
-                return result.get("status") == "success"
+
+                success = bool(result.get("success")) or result.get("status") == "success"
+                return {
+                    "success": success,
+                    "message": result.get("message"),
+                    "raw": result,
+                }
 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error from device {device_name}: {e.response.status_code} - {e.response.text}")
-            return False
+            return {"success": False, "message": str(e), "raw": None}
         except httpx.ConnectError as e:
             logger.error(f"Cannot connect to device {device_name} at {host}:{port}: {e}")
-            return False
+            return {"success": False, "message": str(e), "raw": None}
         except Exception as e:
             logger.error(f"Failed to send control command to {device_name}: {str(e)}")
-            return False
+            return {"success": False, "message": str(e), "raw": None}

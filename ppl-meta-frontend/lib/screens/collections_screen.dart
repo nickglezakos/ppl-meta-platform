@@ -1040,11 +1040,13 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       final apiClient = ref.read(apiClientProvider);
       final mediaApiClient = MediaApiClient(apiClient);
 
-      // Use cameraDeviceId if available (for camera-linked collections),
-      // otherwise use UUID, then fallback to id
-      final collectionIdentifier = _selectedCollection!.cameraDeviceId ?? 
-                                   _selectedCollection!.uuid ?? 
-                                   _selectedCollection!.id;
+      // Use collection UUID as primary identifier for media search filtering.
+      // cameraDeviceId is not a collection identifier and may not resolve in
+      // backend collection filtering after camera ID format changes.
+      // Keep cameraDeviceId as fallback for legacy compatibility only.
+      final collectionIdentifier = _selectedCollection!.uuid ??
+                   _selectedCollection!.id ??
+                   _selectedCollection!.cameraDeviceId;
       
       print('🔍 Searching existing MVR people for collection: $collectionIdentifier');
       print('   Date range: ${_startDate!.toIso8601String()} to ${_endDate!.toIso8601String()}');
