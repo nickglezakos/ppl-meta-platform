@@ -716,7 +716,7 @@ class MediaApiClient {
       };
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
-        queryParams['collection_ids'] = cameraIds.join(',');
+        queryParams['camera_ids'] = cameraIds.join(',');
       }
       
       final response = await _apiClient.get(

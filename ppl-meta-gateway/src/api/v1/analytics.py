@@ -6,7 +6,7 @@ Aggregates camera MVR count data to provide analytics dashboard metrics.
 
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 import httpx
 
 from fastapi import APIRouter, Depends, Query, Request, HTTPException
@@ -62,6 +62,53 @@ def _parse_time_filter(time_filter: str) -> Tuple[datetime, datetime]:
     return start_time, end_time
 
 
+def _get_collection_identifier(collection: Dict) -> Optional[str]:
+    """Return stable collection identifier (UUID-first)."""
+    for key in ("uuid", "collection_uuid", "camera_uuid", "id", "collection_name", "name"):
+        value = collection.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _get_collection_display_name(collection: Dict) -> str:
+    """Return collection display name for UI/debug output."""
+    return (
+        str(collection.get("name") or "").strip()
+        or str(collection.get("collection_name") or "").strip()
+        or _get_collection_identifier(collection)
+        or "Unknown Collection"
+    )
+
+
+def _get_collection_filter_keys(collection: Dict) -> Set[str]:
+    """Return all acceptable identifiers for matching incoming filter values."""
+    keys: Set[str] = set()
+    for key in (
+        "uuid",
+        "collection_uuid",
+        "camera_uuid",
+        "id",
+        "collection_name",
+        "name",
+        "camera_device_id",
+        "device_id",
+    ):
+        value = collection.get(key)
+        if value is not None and str(value).strip():
+            keys.add(str(value).strip())
+    return keys
+
+
+def _collection_matches_selected_ids(collection: Dict, selected_ids: List[str]) -> bool:
+    if not selected_ids:
+        return True
+    selected = {str(value).strip() for value in selected_ids if str(value).strip()}
+    if not selected:
+        return True
+    return bool(_get_collection_filter_keys(collection).intersection(selected))
+
+
 @router.get(
     "/analytics/summary",
     summary="Get aggregated analytics summary",
@@ -102,6 +149,7 @@ async def get_analytics_summary(
         # already caches individual collection results with 10-minute TTL
         
         # Get list of collections to query
+        collection_display_lookup: Dict[str, str] = {}
         if collection_ids:
             target_collection_ids = [cid.strip() for cid in collection_ids.split(",")]
         else:
@@ -115,10 +163,14 @@ async def get_analytics_summary(
                     )
                     if response.status_code == 200:
                         collections = response.json()
+                        for col in collections:
+                            collection_id = _get_collection_identifier(col)
+                            if collection_id:
+                                collection_display_lookup[collection_id] = _get_collection_display_name(col)
                         target_collection_ids = [
-                            col.get("collection_name") or col.get("name")
+                            _get_collection_identifier(col)
                             for col in collections
-                            if col.get("collection_name") or col.get("name")
+                            if _get_collection_identifier(col)
                         ]
                         logger.info(f"📊 Found {len(target_collection_ids)} collections from Media service")
                     else:
@@ -185,7 +237,7 @@ async def get_analytics_summary(
                         # Include with zero counts
                         collection_breakdown.append({
                             "collection_id": collection_id,
-                            "collection_name": collection_id,
+                            "collection_name": collection_display_lookup.get(collection_id, collection_id),
                             "count": 0,
                             "video_count": 0,
                             "demographics": None,
@@ -228,7 +280,7 @@ async def get_analytics_summary(
                     # Always add to collection breakdown
                     collection_breakdown.append({
                         "camera_id": collection_id,  # Frontend expects 'camera_id'
-                        "camera_name": collection_id,
+                        "camera_name": collection_display_lookup.get(collection_id, collection_id),
                         "count": count,
                         "video_count": video_count,
                         "demographics": collection_demographics if collection_demographics else None,
@@ -241,7 +293,7 @@ async def get_analytics_summary(
                 # Include with zero counts on error
                 collection_breakdown.append({
                     "camera_id": collection_id,  # Frontend expects 'camera_id'
-                    "camera_name": collection_id,
+                    "camera_name": collection_display_lookup.get(collection_id, collection_id),
                     "count": 0,
                     "video_count": 0,
                     "demographics": None,
@@ -353,12 +405,14 @@ async def get_cameras_list(
                 # Transform to match frontend expectations
                 result = []
                 for collection in collections:
-                    collection_name = collection.get("collection_name") or collection.get("name")
-                    if collection_name:
+                    collection_id = _get_collection_identifier(collection)
+                    collection_name = _get_collection_display_name(collection)
+                    if collection_id:
                         result.append({
-                            "id": collection_name,
+                            "id": collection_id,
+                            "uuid": str(collection.get("uuid")) if collection.get("uuid") is not None else collection_id,
                             "name": collection_name,
-                            "collection_name": collection_name,
+                            "collection_name": collection.get("collection_name") or collection_name,
                             "video_count": collection.get("video_count", 0),
                         })
                 
@@ -448,9 +502,9 @@ async def get_time_series_analytics(
                     if response.status_code == 200:
                         collections = response.json()
                         target_collection_ids = [
-                            col.get("collection_name") or col.get("name")
+                            _get_collection_identifier(col)
                             for col in collections
-                            if col.get("collection_name") or col.get("name")
+                            if _get_collection_identifier(col)
                         ]
                     else:
                         target_collection_ids = []
@@ -641,12 +695,18 @@ async def get_demographics_breakdown(
         # Filter cameras if specific ones requested
         if selected_collection_ids:
             before_filter = len(all_cameras)
-            all_cameras = [cam for cam in all_cameras if cam.get("collection_name") in selected_collection_ids or cam.get("name") in selected_collection_ids]
+            all_cameras = [
+                cam for cam in all_cameras
+                if _collection_matches_selected_ids(cam, selected_collection_ids)
+            ]
             logger.info(f"🔍 Filtered {before_filter} collections down to {len(all_cameras)} matching filter")
             if len(all_cameras) > 0:
-                logger.info(f"✅ Matched collections: {[cam.get('collection_name') or cam.get('name') for cam in all_cameras]}")
+                logger.info(f"✅ Matched collections: [{', '.join(_get_collection_identifier(cam) or 'unknown' for cam in all_cameras)}]")
             else:
-                logger.warning(f"⚠️  NO collections matched filter! Available collections: {[cam.get('collection_name') or cam.get('name') for cam in response.json()[:5]]}")
+                logger.warning(
+                    f"⚠️  NO collections matched filter! Available collections: "
+                    f"{[_get_collection_identifier(cam) or _get_collection_display_name(cam) for cam in response.json()[:5]]}"
+                )
         else:
             logger.info(f"📊 Processing all {len(all_cameras)} collections (no filter)")
         
@@ -675,7 +735,7 @@ async def get_demographics_breakdown(
         
         # Aggregate demographics from each camera
         for idx, camera in enumerate(all_cameras, 1):
-            camera_id = camera.get("collection_name") or camera.get("name")
+            camera_id = _get_collection_identifier(camera)
             if not camera_id:
                 logger.warning(f"⚠️  Skipping camera #{idx} - no collection_name or name field")
                 continue
@@ -892,10 +952,13 @@ async def get_behavioral_analytics(
         # Filter cameras if specific ones requested
         if selected_collection_ids:
             before_filter = len(all_cameras)
-            all_cameras = [cam for cam in all_cameras if cam.get("collection_name") in selected_collection_ids or cam.get("name") in selected_collection_ids]
+            all_cameras = [
+                cam for cam in all_cameras
+                if _collection_matches_selected_ids(cam, selected_collection_ids)
+            ]
             logger.info(f"🔍 Filtered {before_filter} collections down to {len(all_cameras)} matching filter")
             if len(all_cameras) > 0:
-                logger.info(f"✅ Matched collections: {[cam.get('collection_name') or cam.get('name') for cam in all_cameras]}")
+                logger.info(f"✅ Matched collections: [{', '.join(_get_collection_identifier(cam) or 'unknown' for cam in all_cameras)}]")
             else:
                 logger.warning(f"⚠️  NO collections matched filter!")
         else:
@@ -1164,12 +1227,18 @@ async def get_quality_metrics(
         # Filter cameras if specific ones requested
         if selected_collection_ids:
             before_filter = len(all_cameras)
-            all_cameras = [cam for cam in all_cameras if cam.get("collection_name") in selected_collection_ids or cam.get("name") in selected_collection_ids]
+            all_cameras = [
+                cam for cam in all_cameras
+                if _collection_matches_selected_ids(cam, selected_collection_ids)
+            ]
             logger.info(f"🔍 Filtered {before_filter} collections down to {len(all_cameras)} matching filter")
             if len(all_cameras) > 0:
-                logger.info(f"✅ Matched collections: {[cam.get('collection_name') or cam.get('name') for cam in all_cameras]}")
+                logger.info(f"✅ Matched collections: [{', '.join(_get_collection_identifier(cam) or 'unknown' for cam in all_cameras)}]")
             else:
-                logger.warning(f"⚠️  NO collections matched filter! Available collections: {[cam.get('collection_name') or cam.get('name') for cam in response.json()[:5]]}")
+                logger.warning(
+                    f"⚠️  NO collections matched filter! Available collections: "
+                    f"{[_get_collection_identifier(cam) or _get_collection_display_name(cam) for cam in response.json()[:5]]}"
+                )
         else:
             logger.info(f"📊 Processing all {len(all_cameras)} collections (no filter)")
         
@@ -1287,6 +1356,7 @@ async def get_mvr_quality_metrics(
     request: Request,
     time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month"),
     collection_name: Optional[str] = Query(None, description="Collection name filter (null = aggregate all)"),
+    collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs", alias="camera_ids"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -1334,25 +1404,132 @@ async def get_mvr_quality_metrics(
         else:
             start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
         
-        logger.info(f"📊 MVR Quality Metrics (time_filter: {time_filter}, collection: {collection_name or 'ALL'})")
+        logger.info(
+            f"📊 MVR Quality Metrics (time_filter: {time_filter}, collection: {collection_name or 'ALL'}, camera_ids: {collection_ids or 'none'})"
+        )
         
         VMETA_SERVICE_URL = "http://localhost:8008"
         
-        # Query vmeta MVR quality metrics endpoint
-        # For now, query with a default collection name (will aggregate all if not filtering by collection)
         vmeta_url = f"{VMETA_SERVICE_URL}/api/v1/mvr/quality-metrics"
-        params = {
-            "collection_name": collection_name or "all",  # Use "all" as placeholder
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat()
-        }
-        
         headers = {"Authorization": request.headers.get("Authorization")}
-        
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(vmeta_url, params=params, headers=headers)
-            response.raise_for_status()
-            metrics = response.json()
+
+        async def _fetch_vmeta_quality(target_collection_name: Optional[str]) -> Dict:
+            params = {
+                "collection_name": target_collection_name or "all",
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+            }
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.get(vmeta_url, params=params, headers=headers)
+                response.raise_for_status()
+                return response.json()
+
+        metrics: Dict
+        if collection_ids:
+            selected_ids = [cid.strip() for cid in collection_ids.split(",") if cid.strip()]
+
+            async with httpx.AsyncClient() as client:
+                collections_response = await client.get(
+                    f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
+                    headers={"Authorization": request.headers.get("Authorization")},
+                    params={"limit": 1000},
+                )
+
+            if collections_response.status_code != 200:
+                raise HTTPException(status_code=500, detail="Failed to fetch collections for MVR quality filtering")
+
+            all_collections = collections_response.json()
+            matched_collections = [
+                cam for cam in all_collections
+                if _collection_matches_selected_ids(cam, selected_ids)
+            ]
+
+            matched_collection_names = list({
+                str(cam.get("collection_name") or cam.get("name"))
+                for cam in matched_collections
+                if cam.get("collection_name") or cam.get("name")
+            })
+
+            if not matched_collection_names:
+                metrics = {
+                    "time_filter": time_filter,
+                    "collection_name": None,
+                    "tracking_sessions_count": 0,
+                    "total_individuals": 0,
+                    "total_mvr_people": 0,
+                    "total_videos_processed": 0,
+                    "mvr_with_quality": 0,
+                    "mvr_without_quality": 0,
+                    "average_quality": None,
+                    "min_quality": None,
+                    "max_quality": None,
+                    "quality_std_dev": None,
+                    "data_completeness": {
+                        "total": 0,
+                        "with_data": 0,
+                        "without_data": 0,
+                        "percentage": 0.0,
+                    },
+                    "start_time": start_time.isoformat(),
+                    "end_time": end_time.isoformat(),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                per_collection_metrics = [
+                    await _fetch_vmeta_quality(name)
+                    for name in matched_collection_names
+                ]
+
+                total_tracking_sessions = sum(int(m.get("tracking_sessions_count", 0) or 0) for m in per_collection_metrics)
+                total_individuals = sum(int(m.get("total_individuals", 0) or 0) for m in per_collection_metrics)
+                total_mvr_people = sum(int(m.get("total_mvr_people", 0) or 0) for m in per_collection_metrics)
+                total_videos_processed = sum(int(m.get("total_videos_processed", 0) or 0) for m in per_collection_metrics)
+                mvr_with_quality = sum(int(m.get("mvr_with_quality", 0) or 0) for m in per_collection_metrics)
+                mvr_without_quality = sum(int(m.get("mvr_without_quality", 0) or 0) for m in per_collection_metrics)
+
+                quality_weight = mvr_with_quality
+                weighted_quality_sum = sum(
+                    (float(m.get("average_quality", 0.0) or 0.0) * int(m.get("mvr_with_quality", 0) or 0))
+                    for m in per_collection_metrics
+                )
+                average_quality = (weighted_quality_sum / quality_weight) if quality_weight > 0 else None
+
+                min_quality_values = [m.get("min_quality") for m in per_collection_metrics if m.get("min_quality") is not None]
+                max_quality_values = [m.get("max_quality") for m in per_collection_metrics if m.get("max_quality") is not None]
+                std_weighted_sum = sum(
+                    (float(m.get("quality_std_dev", 0.0) or 0.0) * int(m.get("mvr_with_quality", 0) or 0))
+                    for m in per_collection_metrics
+                )
+                quality_std_dev = (std_weighted_sum / quality_weight) if quality_weight > 0 else None
+
+                completeness_total = mvr_with_quality + mvr_without_quality
+                completeness_percentage = round((mvr_with_quality / completeness_total) * 100, 2) if completeness_total > 0 else 0.0
+
+                metrics = {
+                    "time_filter": time_filter,
+                    "collection_name": None,
+                    "tracking_sessions_count": total_tracking_sessions,
+                    "total_individuals": total_individuals,
+                    "total_mvr_people": total_mvr_people,
+                    "total_videos_processed": total_videos_processed,
+                    "mvr_with_quality": mvr_with_quality,
+                    "mvr_without_quality": mvr_without_quality,
+                    "average_quality": average_quality,
+                    "min_quality": min(min_quality_values) if min_quality_values else None,
+                    "max_quality": max(max_quality_values) if max_quality_values else None,
+                    "quality_std_dev": quality_std_dev,
+                    "data_completeness": {
+                        "total": completeness_total,
+                        "with_data": mvr_with_quality,
+                        "without_data": mvr_without_quality,
+                        "percentage": completeness_percentage,
+                    },
+                    "start_time": start_time.isoformat(),
+                    "end_time": end_time.isoformat(),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                }
+        else:
+            metrics = await _fetch_vmeta_quality(collection_name)
         
         logger.info(f"✅ MVR Quality Metrics: {metrics.get('total_individuals')} individuals, "
                    f"{metrics.get('total_mvr_people')} MVR people, "

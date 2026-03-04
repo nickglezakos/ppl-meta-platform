@@ -97,6 +97,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         final qualityResponse = await analyticsApiClient.getMvrQualityMetrics(
           timeFilter: _timeFilter,
           collectionName: null, // null = all collections
+          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
         );
         
         debugPrint('🔍 Analytics: Quality response success: ${qualityResponse.success}');
@@ -2637,8 +2638,8 @@ class _FilterDialogState extends State<_FilterDialog> {
                 child: ListView(
                   shrinkWrap: true,
                   children: widget.cameras.map((camera) {
-                    final id = camera['device_id'] as String? ?? camera['id'] as String;
-                    final name = camera['name'] as String? ?? camera['device_id'] as String? ?? id;
+                    final id = (camera['uuid'] ?? camera['id'] ?? camera['device_id'] ?? camera['collection_name'] ?? camera['name'])?.toString() ?? '';
+                    final name = (camera['name'] ?? camera['collection_name'] ?? camera['device_id'] ?? id).toString();
                     final isSelected = _selectedCollectionIds.contains(id);
                     
                     return CheckboxListTile(
