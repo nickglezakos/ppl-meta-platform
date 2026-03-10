@@ -5390,9 +5390,74 @@
             
             // Keep chart canvas transparent
             canvas.style.backgroundColor = 'transparent';
+
+            const marketOpportunityCallouts = {
+                id: 'marketOpportunityCallouts',
+                afterDatasetsDraw(chart) {
+                    const dataset = chart.data.datasets[0];
+                    const meta = chart.getDatasetMeta(0);
+                    if (!dataset || !meta || !meta.data || !meta.data.length) return;
+
+                    const total = dataset.data.reduce((sum, val) => sum + Number(val || 0), 0);
+                    const ctx = chart.ctx;
+                    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+                    const lineLength = isMobile ? 14 : 18;
+                    const elbowLength = isMobile ? 16 : 24;
+                    const titleFontSize = isMobile ? 9 : 11;
+                    const valueFontSize = isMobile ? 8 : 10;
+
+                    ctx.save();
+
+                    meta.data.forEach((arc, index) => {
+                        const value = Number(dataset.data[index] || 0);
+                        if (!value) return;
+
+                        const { x, y, startAngle, endAngle, outerRadius } = arc.getProps([
+                            'x',
+                            'y',
+                            'startAngle',
+                            'endAngle',
+                            'outerRadius'
+                        ], true);
+
+                        const angle = (startAngle + endAngle) / 2;
+                        const x1 = x + Math.cos(angle) * outerRadius;
+                        const y1 = y + Math.sin(angle) * outerRadius;
+                        const x2 = x + Math.cos(angle) * (outerRadius + lineLength);
+                        const y2 = y + Math.sin(angle) * (outerRadius + lineLength);
+                        const rightSide = Math.cos(angle) >= 0;
+                        const x3 = x2 + (rightSide ? elbowLength : -elbowLength);
+                        const percentage = ((value / total) * 100).toFixed(1);
+
+                        ctx.strokeStyle = '#333333';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+                        ctx.lineTo(x3, y2);
+                        ctx.stroke();
+
+                        ctx.textAlign = rightSide ? 'left' : 'right';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = '#000000';
+
+                        const textX = x3 + (rightSide ? 4 : -4);
+                        const label = chart.data.labels[index] || '';
+
+                        ctx.font = `600 ${titleFontSize}px Georgia`;
+                        ctx.fillText(label, textX, y2 - (isMobile ? 5 : 7));
+
+                        ctx.font = `400 ${valueFontSize}px Georgia`;
+                        ctx.fillText(`${percentage}% | $${value}M`, textX, y2 + (isMobile ? 6 : 7));
+                    });
+
+                    ctx.restore();
+                }
+            };
             
             window.marketOpportunityChartInstance = new Chart(ctx, {
                 type: 'doughnut',
+                plugins: [marketOpportunityCallouts],
                 data: {
                     labels: [
                         'Retail & E-Commerce',
@@ -5422,6 +5487,12 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
+                    layout: {
+                        padding: {
+                            left: 70,
+                            right: 70
+                        }
+                    },
                     plugins: {
                         title: {
                             display: true,
@@ -5434,32 +5505,7 @@
                             padding: 20
                         },
                         legend: {
-                            display: true,
-                            position: 'right',
-                            labels: {
-                                color: '#000000',
-                                padding: 15,
-                                font: {
-                                    size: 13
-                                },
-                                generateLabels: function(chart) {
-                                    const data = chart.data;
-                                    if (data.labels.length && data.datasets.length) {
-                                        return data.labels.map((label, i) => {
-                                            const value = data.datasets[0].data[i];
-                                            const percentage = ((value / 3250) * 100).toFixed(1);
-                                            return {
-                                                text: `${label}: $${value}M (${percentage}%)`,
-                                                fillStyle: data.datasets[0].backgroundColor[i],
-                                                fontColor: '#000000',
-                                                hidden: false,
-                                                index: i
-                                            };
-                                        });
-                                    }
-                                    return [];
-                                }
-                            }
+                            display: false
                         },
                         tooltip: {
                             backgroundColor: 'rgba(255, 255, 255, 0.98)',
