@@ -5402,9 +5402,9 @@
                     const ctx = chart.ctx;
                     const isMobile = window.matchMedia('(max-width: 768px)').matches;
                     const lineLength = isMobile ? 14 : 18;
-                    const elbowLength = isMobile ? 16 : 24;
-                    const titleFontSize = isMobile ? 9 : 11;
-                    const valueFontSize = isMobile ? 8 : 10;
+                    const elbowLength = isMobile ? 16 : 30;
+                    const titleFontSize = isMobile ? 9 : 13;
+                    const valueFontSize = isMobile ? 8 : 12;
 
                     ctx.save();
 
@@ -5487,6 +5487,7 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
+                    radius: window.matchMedia('(max-width: 768px)').matches ? '90%' : '72%',
                     layout: {
                         padding: {
                             left: 70,
@@ -9438,6 +9439,7 @@
                         legendLabels.generateLabels = function() {
                             return [];
                         };
+                        opts.radius = '90%';
                     }
 
                     if (radialChart) {
@@ -9487,6 +9489,7 @@
                         legendLabels.generateLabels = function() {
                             return [];
                         };
+                        opts.radius = '72%';
                     }
 
                     opts.aspectRatio = originals.aspectRatio;
