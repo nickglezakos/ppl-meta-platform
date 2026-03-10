@@ -9381,7 +9381,15 @@
                 if (isMobile) {
                     const radialChart = chart.config && ['pie', 'doughnut', 'polarArea', 'radar'].includes(chart.config.type);
 
-                    opts.aspectRatio = radialChart ? 1.35 : 1.9;
+                    if (radialChart) {
+                        opts.aspectRatio = 1.35;
+                    } else {
+                        const baseAspectRatio = typeof originals.aspectRatio === 'number' && originals.aspectRatio > 0
+                            ? originals.aspectRatio
+                            : 2;
+                        // For mobile readability, make non-radial charts roughly 3x taller.
+                        opts.aspectRatio = Math.max(0.55, baseAspectRatio / 3);
+                    }
 
                     legendLabels.font = Object.assign({}, legendLabels.font, { size: 9 });
                     legendLabels.boxWidth = 10;
