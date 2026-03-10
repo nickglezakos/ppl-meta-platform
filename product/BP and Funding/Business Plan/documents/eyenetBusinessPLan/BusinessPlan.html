@@ -5489,10 +5489,9 @@
                     maintainAspectRatio: true,
                     radius: window.matchMedia('(max-width: 768px)').matches ? '90%' : '72%',
                     layout: {
-                        padding: {
-                            left: 70,
-                            right: 70
-                        }
+                        padding: window.matchMedia('(max-width: 768px)').matches
+                            ? { left: 70, right: 70, top: 20, bottom: 20 }
+                            : { left: 150, right: 150, top: 50, bottom: 50 }
                     },
                     plugins: {
                         title: {
@@ -9440,6 +9439,8 @@
                             return [];
                         };
                         opts.radius = '90%';
+                        opts.layout = opts.layout || {};
+                        opts.layout.padding = { left: 70, right: 70, top: 20, bottom: 20 };
                     }
 
                     if (radialChart) {
@@ -9490,6 +9491,8 @@
                             return [];
                         };
                         opts.radius = '72%';
+                        opts.layout = opts.layout || {};
+                        opts.layout.padding = { left: 150, right: 150, top: 50, bottom: 50 };
                     }
 
                     opts.aspectRatio = originals.aspectRatio;
