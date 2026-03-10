@@ -5505,7 +5505,12 @@
                             padding: 20
                         },
                         legend: {
-                            display: false
+                            display: false,
+                            labels: {
+                                generateLabels: function() {
+                                    return [];
+                                }
+                            }
                         },
                         tooltip: {
                             backgroundColor: 'rgba(255, 255, 255, 0.98)',
@@ -9400,6 +9405,7 @@
                 const title = plugins.title || (plugins.title = {});
                 const tooltip = plugins.tooltip || (plugins.tooltip = {});
                 const scales = opts.scales || {};
+                const isMarketOpportunityChart = canvas.id === 'marketOpportunityChart';
 
                 if (!chart.$mobileUxOriginals) {
                     chart.$mobileUxOriginals = {
@@ -9426,6 +9432,13 @@
 
                 if (isMobile) {
                     const radialChart = chart.config && ['pie', 'doughnut', 'polarArea', 'radar'].includes(chart.config.type);
+
+                    if (isMarketOpportunityChart) {
+                        legend.display = false;
+                        legendLabels.generateLabels = function() {
+                            return [];
+                        };
+                    }
 
                     if (radialChart) {
                         opts.aspectRatio = 1.35;
@@ -9469,6 +9482,13 @@
                         scales.y.title.font = Object.assign({}, scales.y.title.font, { size: 10 });
                     }
                 } else {
+                    if (isMarketOpportunityChart) {
+                        legend.display = false;
+                        legendLabels.generateLabels = function() {
+                            return [];
+                        };
+                    }
+
                     opts.aspectRatio = originals.aspectRatio;
 
                     if (legendLabels.font) {
