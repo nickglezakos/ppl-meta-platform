@@ -5297,6 +5297,9 @@
                 setTimeout(initializeExitValuationChart, 100);
                 setTimeout(initializeComparableCompaniesChart, 100);
             }
+
+            // Re-apply mobile chart sizing after section changes and chart initialization.
+            setTimeout(enableMobileChartScrolling, 180);
         }
 
         // Print functionality
@@ -9266,12 +9269,19 @@
                     if (!parent.classList.contains('chart-scroll-wrapper')) {
                         parent.classList.add('chart-scroll-wrapper');
                     }
+                    if (canvas.dataset.originalMaxHeight === undefined) {
+                        canvas.dataset.originalMaxHeight = canvas.style.maxHeight || '';
+                    }
                     canvas.style.minWidth = '680px';
                     canvas.style.maxWidth = 'none';
+                    canvas.style.maxHeight = 'none';
+                    canvas.style.height = 'auto';
                 } else {
                     parent.classList.remove('chart-scroll-wrapper');
                     canvas.style.minWidth = '';
                     canvas.style.maxWidth = '';
+                    canvas.style.maxHeight = canvas.dataset.originalMaxHeight || '';
+                    canvas.style.height = '';
                 }
 
                 // Reflow chart after CSS sizing changes to avoid stretched rendering.
@@ -9325,6 +9335,7 @@
                 setTimeout(initializeExitValuationChart, 100);
                 setTimeout(initializeComparableCompaniesChart, 100);
             }
+            setTimeout(enableMobileChartScrolling, 200);
             // Initialize footer navigation
             updateFooterNavigation();
         });
