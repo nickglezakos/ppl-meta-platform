@@ -9260,15 +9260,23 @@
             chartCanvases.forEach((canvas) => {
                 const parent = canvas.parentElement;
                 if (!parent) return;
+                const chart = Chart.getChart(canvas);
 
                 if (isMobile) {
                     if (!parent.classList.contains('chart-scroll-wrapper')) {
                         parent.classList.add('chart-scroll-wrapper');
                     }
                     canvas.style.minWidth = '680px';
+                    canvas.style.maxWidth = 'none';
                 } else {
                     parent.classList.remove('chart-scroll-wrapper');
                     canvas.style.minWidth = '';
+                    canvas.style.maxWidth = '';
+                }
+
+                // Reflow chart after CSS sizing changes to avoid stretched rendering.
+                if (chart) {
+                    chart.resize();
                 }
             });
         }
