@@ -9,19 +9,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --primary-cyan: #22d3ee;
-            --primary-teal: #0891b2;
-            --light-cyan: #67e8f9;
-            --dark-slate: #1e293b;
-            --darker-slate: #0f172a;
-            --medium-slate: #334155;
-            --light-slate: #475569;
-            --text-primary: #f1f5f9;
-            --text-secondary: #cbd5e1;
-            --card-bg: #1e293b;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
+            --primary-cyan: #000000;
+            --primary-teal: #1a1a1a;
+            --light-cyan: #333333;
+            --dark-slate: #f5f5f5;
+            --darker-slate: #ffffff;
+            --medium-slate: #666666;
+            --light-slate: #999999;
+            --text-primary: #1a1a1a;
+            --text-secondary: #333333;
+            --card-bg: #ffffff;
+            --success: #2a2a2a;
+            --warning: #666666;
+            --danger: #404040;
+            --border-color: #dddddd;
             --header-height: 120px;
         }
 
@@ -32,8 +33,8 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, var(--darker-slate) 0%, var(--dark-slate) 100%);
+            font-family: 'Georgia', 'Times New Roman', serif;
+            background: var(--dark-slate);
             color: var(--text-primary);
             line-height: 1.6;
             min-height: 100vh;
@@ -41,10 +42,11 @@
 
         /* Header */
         header {
-            background: linear-gradient(135deg, #003F5C 0%, #374C80 50%, #7A5195 100%);
-            color: white;
+            background: var(--darker-slate);
+            color: var(--text-primary);
             padding: 0;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+            border-bottom: 2px solid var(--primary-cyan);
             height: var(--header-height);
             display: flex;
             align-items: center;
@@ -77,10 +79,7 @@
         header h1 {
             font-size: 1.8rem;
             font-weight: 700;
-            background: linear-gradient(135deg, var(--primary-cyan) 0%, var(--light-cyan) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: var(--primary-cyan);
             margin: 0;
             padding: 0;
             line-height: 1.2;
@@ -88,7 +87,7 @@
 
         header p {
             font-size: 0.9rem;
-            opacity: 0.9;
+            opacity: 1;
             margin: 0;
             padding: 0;
             color: var(--text-secondary);
@@ -114,7 +113,7 @@
         }
 
         header .header-link {
-            color: var(--primary-cyan);
+            color: var(--primary-teal);
             text-decoration: none;
             font-weight: 600;
             transition: all 0.3s ease;
@@ -127,7 +126,7 @@
         }
 
         header .header-link:hover {
-            color: var(--light-cyan);
+            color: var(--primary-cyan);
             transform: translateX(2px);
         }
 
@@ -139,17 +138,16 @@
 
         /* Navigation */
         nav {
-            background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(10px);
+            background: #f0f0f0;
             position: fixed;
             top: 0;
             left: 0;
             width: 280px;
             height: 100vh;
             overflow-y: auto;
-            box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+            box-shadow: 3px 0 12px rgba(0,0,0,0.08);
             z-index: 999;
-            border-right: 1px solid rgba(34, 211, 238, 0.1);
+            border-right: 1px solid var(--border-color);
         }
 
         nav ul {
@@ -166,7 +164,7 @@
             align-items: center;
             gap: 0.75rem;
             padding: 1rem 1.5rem;
-            color: var(--text-secondary);
+            color: #2a2a2a;
             text-decoration: none;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             border-left: 3px solid transparent;
@@ -174,14 +172,14 @@
         }
 
         nav a:hover {
-            background: rgba(34, 211, 238, 0.1);
+            background: #e8e8e8;
             color: var(--primary-cyan);
             border-left-color: var(--primary-cyan);
             transform: translateX(2px);
         }
 
         nav a.active {
-            background: linear-gradient(90deg, rgba(34, 211, 238, 0.2) 0%, transparent 100%);
+            background: #dedede;
             color: var(--primary-cyan);
             border-left-color: var(--primary-cyan);
             font-weight: 600;
@@ -218,12 +216,11 @@
         .content-wrapper {
             max-width: 1200px;
             margin: 0 auto;
-            background: rgba(30, 41, 59, 0.6);
-            backdrop-filter: blur(20px);
+            background: var(--darker-slate);
             padding: 3rem;
-            border-radius: 16px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-            border: 1px solid rgba(34, 211, 238, 0.1);
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+            border: 1px solid var(--border-color);
         }
 
         /* Typography */
@@ -234,10 +231,6 @@
             margin-bottom: 1rem;
             border-bottom: 3px solid var(--primary-cyan);
             padding-bottom: 0.5rem;
-            background: linear-gradient(135deg, var(--primary-cyan) 0%, var(--light-cyan) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
 
         h2 {
@@ -246,10 +239,12 @@
             font-weight: 700;
             margin-top: 2rem;
             margin-bottom: 1rem;
+            border-bottom: 2px solid #666666;
+            padding-bottom: 0.3rem;
         }
 
         h3 {
-            color: var(--light-cyan);
+            color: #333333;
             font-size: 1.5rem;
             font-weight: 600;
             margin-top: 1.5rem;
@@ -257,7 +252,7 @@
         }
 
         h4 {
-            color: var(--text-secondary);
+            color: #333333;
             font-size: 1.2rem;
             font-weight: 600;
             margin-top: 1rem;
@@ -265,7 +260,7 @@
         }
 
         h5 {
-            color: var(--text-secondary);
+            color: #333333;
             font-size: 1.1rem;
             font-weight: 600;
             margin-top: 1rem;
@@ -294,25 +289,23 @@
             width: 100%;
             border-collapse: collapse;
             margin: 1.5rem 0;
-            background: rgba(15, 23, 42, 0.6);
-            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-            border-radius: 12px;
-            overflow: hidden;
+            background: var(--darker-slate);
+            border: 1px solid var(--border-color);
         }
 
         th, td {
-            padding: 1rem;
+            padding: 0.75rem;
             text-align: left;
-            border-bottom: 1px solid rgba(34, 211, 238, 0.1);
+            border: 1px solid var(--border-color);
         }
 
         th {
-            background: linear-gradient(135deg, var(--primary-teal) 0%, var(--primary-cyan) 100%);
-            color: white;
+            background: #333333;
+            color: #ffffff;
             font-weight: 600;
             font-size: 0.95rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            text-transform: none;
+            letter-spacing: 0;
         }
 
         td {
@@ -320,7 +313,7 @@
         }
 
         tr:hover {
-            background: rgba(34, 211, 238, 0.05);
+            background: #eeeeee;
         }
 
         tbody tr:last-child td {
@@ -350,43 +343,39 @@
 
         /* Info Boxes */
         .info-box {
-            background: linear-gradient(135deg, rgba(34, 211, 238, 0.15) 0%, rgba(8, 145, 178, 0.15) 100%);
-            border-left: 4px solid var(--primary-cyan);
+            background: #f5f5f5;
+            border-left: 4px solid #333333;
             padding: 1.5rem;
             margin: 1.5rem 0;
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(34, 211, 238, 0.2);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
         }
 
         .warning-box {
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.15) 100%);
-            border-left: 4px solid var(--warning);
+            background: #f5f5f5;
+            border-left: 4px solid #666666;
             padding: 1.5rem;
             margin: 1.5rem 0;
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(245, 158, 11, 0.2);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
         }
 
         .success-box {
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%);
-            border-left: 4px solid var(--success);
+            background: #f5f5f5;
+            border-left: 4px solid #000000;
             padding: 1.5rem;
             margin: 1.5rem 0;
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
         }
 
         .danger-box {
-            background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.15) 100%);
-            border-left: 4px solid var(--danger);
+            background: #f5f5f5;
+            border-left: 4px solid #404040;
             padding: 1.5rem;
             margin: 1.5rem 0;
-            border-radius: 12px;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
         }
 
         /* Code blocks */
@@ -472,37 +461,36 @@
         }
 
         .badge-primary {
-            background: linear-gradient(135deg, var(--primary-cyan) 0%, var(--primary-teal) 100%);
-            color: white;
+            background: #0d6efd;
+            color: #ffffff;
         }
 
         .badge-success {
-            background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
-            color: white;
+            background: #198754;
+            color: #ffffff;
         }
 
         .badge-warning {
-            background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
-            color: white;
+            background: #ffc107;
+            color: #212529;
         }
 
         .badge-info {
-            background: linear-gradient(135deg, var(--primary-cyan) 0%, var(--light-cyan) 100%);
-            color: white;
+            background: #0dcaf0;
+            color: #ffffff;
         }
 
         .badge-danger {
-            background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);
-            color: white;
+            background: #dc3545;
+            color: #ffffff;
         }
 
         /* Badge Navigation for Mobile */
         .badge-nav-container {
             display: none;
-            background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(10px);
+            background: #f0f0f0;
             padding: 0.75rem;
-            border-bottom: 1px solid rgba(34, 211, 238, 0.1);
+            border-bottom: 1px solid var(--border-color);
             overflow-x: auto;
             white-space: nowrap;
             z-index: 50;
@@ -513,11 +501,11 @@
         }
 
         .badge-nav-container::-webkit-scrollbar-track {
-            background: rgba(34, 211, 238, 0.1);
+            background: #d9d9d9;
         }
 
         .badge-nav-container::-webkit-scrollbar-thumb {
-            background: rgba(34, 211, 238, 0.3);
+            background: #999999;
             border-radius: 2px;
         }
 
@@ -531,53 +519,53 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
             cursor: pointer;
-            background: rgba(34, 211, 238, 0.1);
+            background: #e8e8e8;
             color: var(--text-secondary);
-            border: 1px solid rgba(34, 211, 238, 0.15);
+            border: 1px solid var(--border-color);
             transition: all 0.3s ease;
         }
 
         .badge-nav:hover {
-            background: rgba(34, 211, 238, 0.2);
-            border-color: rgba(34, 211, 238, 0.3);
+            background: #dcdcdc;
+            border-color: #cfcfcf;
             color: var(--primary-cyan);
         }
 
         .badge-nav.active {
-            background: linear-gradient(135deg, var(--primary-cyan) 0%, var(--primary-teal) 100%);
-            color: white;
-            border: 1px solid var(--primary-cyan);
-            box-shadow: 0 2px 8px rgba(34, 211, 238, 0.3);
+            background: #333333;
+            color: #ffffff;
+            border: 1px solid #333333;
+            box-shadow: none;
         }
 
         /* Dividers */
         hr {
             border: none;
-            border-top: 2px solid rgba(34, 211, 238, 0.2);
+            border-top: 2px solid var(--border-color);
             margin: 2rem 0;
         }
 
         /* Strong emphasis */
         strong {
-            color: var(--primary-cyan);
+            color: #000000;
             font-weight: 700;
         }
 
         em {
             font-style: italic;
-            color: var(--light-cyan);
+            color: #404040;
         }
 
         /* Blockquote */
         blockquote {
-            border-left: 4px solid var(--primary-cyan);
+            border-left: 4px solid #333333;
             padding-left: 1.5rem;
             margin: 1.5rem 0;
             font-style: italic;
             color: var(--text-secondary);
-            background: rgba(34, 211, 238, 0.05);
+            background: #f5f5f5;
             padding: 1rem 1.5rem;
-            border-radius: 12px;
+            border-radius: 4px;
         }
 
         /* Back to Top Button */
@@ -586,8 +574,8 @@
             position: fixed;
             bottom: 2rem;
             right: 2rem;
-            background: linear-gradient(135deg, var(--primary-cyan) 0%, var(--primary-teal) 100%);
-            color: white;
+            background: #333333;
+            color: #ffffff;
             border: none;
             border-radius: 50%;
             width: 50px;
@@ -595,7 +583,7 @@
             font-size: 1.5rem;
             cursor: pointer;
             z-index: 1000;
-            box-shadow: 0 4px 12px rgba(34, 211, 238, 0.4);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
             transition: all 0.3s ease;
             align-items: center;
             justify-content: center;
@@ -603,7 +591,7 @@
 
         #backToTop:hover {
             transform: translateY(-3px);
-            box-shadow: 0 6px 16px rgba(34, 211, 238, 0.6);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.3);
         }
 
         #backToTop.show {
@@ -830,9 +818,8 @@
 
         /* Footer Navigation */
         footer {
-            background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid rgba(34, 211, 238, 0.1);
+            background: #f0f0f0;
+            border-top: 1px solid var(--border-color);
             padding: 1rem 2rem;
             display: flex;
             align-items: center;
@@ -842,9 +829,9 @@
         }
 
         .footer-arrow {
-            background: linear-gradient(135deg, var(--primary-cyan) 0%, var(--primary-teal) 100%);
+            background: #333333;
             border: none;
-            color: white;
+            color: #ffffff;
             width: 40px;
             height: 40px;
             border-radius: 8px;
@@ -859,7 +846,7 @@
 
         .footer-arrow:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(34, 211, 238, 0.4);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
         }
 
         .footer-arrow:disabled {
@@ -1482,30 +1469,35 @@
 
                 <h2>Key Milestones & Timeline</h2>
 
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; border-radius: 10px; margin: 2rem 0;">
-                    <h3 style="color: white; margin-top: 0;">Growth Trajectory</h3>
+                <div style="background: #f5f5f5; color: #1a1a1a; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <h3 style="color: #1a1a1a; margin-top: 0;">Growth Trajectory</h3>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2rem; margin-top: 1.5rem;">
-                        <div style="background: rgba(255,255,255,0.2); padding: 1.5rem; border-radius: 12px; text-align: center;">
-                            <div style="font-size: 2.5rem; font-weight: bold;">Q2 2026</div>
+                        <div style="background: #ffffff; border: 1px solid #dddddd; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                            <div style="font-size: 2.5rem; font-weight: bold; color: #0d6efd;">Q2 2026</div>
                             <div style="margin-top: 0.5rem;">Launch 5 Products</div>
-                            <div style="margin-top: 0.5rem; opacity: 0.9;">50 Customers | $1M ARR</div>
+                            <div style="margin-top: 0.5rem; color: #666666;">50 Customers | $1M ARR</div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.2); padding: 1.5rem; border-radius: 12px; text-align: center;">
-                            <div style="font-size: 2.5rem; font-weight: bold;">Q4 2027</div>
+                        <div style="background: #ffffff; border: 1px solid #dddddd; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                            <div style="font-size: 2.5rem; font-weight: bold; color: #198754;">Q4 2027</div>
                             <div style="margin-top: 0.5rem;">EBITDA Breakeven</div>
-                            <div style="margin-top: 0.5rem; opacity: 0.9;">200 Customers | $8M ARR</div>
+                            <div style="margin-top: 0.5rem; color: #666666;">200 Customers | $8M ARR</div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.2); padding: 1.5rem; border-radius: 12px; text-align: center;">
-                            <div style="font-size: 2.5rem; font-weight: bold;">2028</div>
+                        <div style="background: #ffffff; border: 1px solid #dddddd; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                            <div style="font-size: 2.5rem; font-weight: bold; color: #fd7e14;">2028</div>
                             <div style="margin-top: 0.5rem;">Profitability</div>
-                            <div style="margin-top: 0.5rem; opacity: 0.9;">500 Customers | $26M ARR</div>
+                            <div style="margin-top: 0.5rem; color: #666666;">500 Customers | $26M ARR</div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.2); padding: 1.5rem; border-radius: 12px; text-align: center;">
-                            <div style="font-size: 2.5rem; font-weight: bold;">2029-30</div>
+                        <div style="background: #ffffff; border: 1px solid #dddddd; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                            <div style="font-size: 2.5rem; font-weight: bold; color: #0dcaf0;">2029-30</div>
                             <div style="margin-top: 0.5rem;">Exit Event</div>
-                            <div style="margin-top: 0.5rem; opacity: 0.9;">IPO or Acquisition | $500M-$1B</div>
+                            <div style="margin-top: 0.5rem; color: #666666;">IPO or Acquisition | $500M-$1B</div>
                         </div>
                     </div>
+                </div>
+
+                <div style="background: #f5f5f5; border: 1px solid #dddddd; padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                    <h3 style="margin-top: 0; text-align: center;">Growth Trajectory Chart</h3>
+                    <canvas id="growthTrajectoryChart" style="max-height: 420px;"></canvas>
                 </div>
 
                 <h2>Risk Mitigation</h2>
@@ -1602,7 +1594,7 @@
                     <p><em>This modest hardware requirement means most businesses can deploy Eyenet-vision without specialized server infrastructure.</em></p>
                 </div>
 
-                <div style="max-width: 700px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 700px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Customer Persona Distribution Chart</h3>
                     <canvas id="personaDistributionChart"></canvas>
                 </div>
@@ -1662,7 +1654,7 @@
                     <li>Webhook integration with access control systems</li>
                 </ul>
 
-                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Warehouse Efficiency Metrics</h3>
                     <canvas id="warehouseEfficiencyChart"></canvas>
                 </div>
@@ -1717,7 +1709,7 @@
                     <li>Automatic notifications for abnormal attendance patterns</li>
                 </ul>
 
-                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Attendance Tracking Analytics</h3>
                     <canvas id="attendanceTrackingChart"></canvas>
                 </div>
@@ -1800,7 +1792,7 @@
                     </ul>
                 </div>
 
-                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Safety Compliance Dashboard</h3>
                     <canvas id="safetyComplianceChart"></canvas>
                 </div>
@@ -1866,7 +1858,7 @@
                     <li>A/B testing for merchandising changes</li>
                 </ul>
 
-                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Customer Analytics Dashboard</h3>
                     <canvas id="customerAnalyticsChart"></canvas>
                 </div>
@@ -1940,7 +1932,7 @@
                     <li>Language selection based on demographic indicators (if applicable)</li>
                 </ul>
 
-                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Digital Signage Effectiveness</h3>
                     <canvas id="digitalSignageChart"></canvas>
                 </div>
@@ -2021,7 +2013,7 @@
                     <li>Perimeter breach detection</li>
                 </ul>
 
-                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Security Response Time Analysis</h3>
                     <canvas id="securityResponseChart"></canvas>
                 </div>
@@ -2094,7 +2086,7 @@
                     </div>
                 </div>
 
-                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">ROI Timeline Comparison</h3>
                     <canvas id="roiTimelineChart"></canvas>
                 </div>
@@ -2157,7 +2149,7 @@
                     five deployment modes (Spot, Gate, Area, Goggles, Drone) that can be customized for diverse operational environments.
                 </p>
 
-                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Platform Architecture Overview</h3>
                     <canvas id="platformArchitectureChart"></canvas>
                 </div>
@@ -2180,7 +2172,7 @@
                     <li>Automated reporting and compliance documentation</li>
                 </ul>
 
-                <div style="max-width: 700px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 700px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Stakeholder Value Map</h3>
                     <canvas id="stakeholderValueChart"></canvas>
                 </div>
@@ -2275,7 +2267,7 @@
                     <p>Premium positioning in the digital signage market with ROI focus on improved customer engagement, conversion rate optimization, and campaign effectiveness measurement.</p>
                 </div>
 
-                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 800px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Intelligent Signage ROI Metrics</h3>
                     <canvas id="intelligentSignageROIChart"></canvas>
                 </div>
@@ -2484,7 +2476,7 @@
 
                 <h2>Deployment Modes Analysis</h2>
 
-                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Deployment Modes Matrix</h3>
                     <canvas id="deploymentModesChart"></canvas>
                 </div>
@@ -2553,7 +2545,7 @@
                     <li><strong>Video Analytics:</strong> Detection analytics, event analytics, performance metrics, trend analysis</li>
                 </ul>
 
-                <div style="max-width: 850px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 850px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Technical Architecture Diagram</h3>
                     <canvas id="technicalArchitectureChart"></canvas>
                 </div>
@@ -2591,7 +2583,7 @@
                     <li><strong>Regulatory/POS:</strong> Underage Detector</li>
                 </ul>
 
-                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: rgba(15, 23, 42, 0.6); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(34, 211, 238, 0.2);">
+                <div style="max-width: 900px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Market Segmentation</h3>
                     <canvas id="marketSegmentationChart"></canvas>
                 </div>
@@ -2616,7 +2608,7 @@
 
                 <h2>Competitive Comparison Framework</h2>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="featureComparisonChart" style="max-height: 500px;"></canvas>
                 </div>
 
@@ -2723,7 +2715,7 @@
                     </ol>
                 </div>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="marketGrowthTrendsChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -2810,7 +2802,7 @@
                     <li>Commercial support, compliance documentation, and industry certifications provide guarantees</li>
                 </ul>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="competitiveMoatChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -2860,7 +2852,7 @@
                     </ol>
                 </div>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="differentiationStrategyChart" style="max-height: 500px;"></canvas>
                 </div>
 
@@ -3779,7 +3771,7 @@
                     </tbody>
                 </table>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="revenueGrowthChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -3917,7 +3909,7 @@
 
                 <h2>Revenue Mix by Product (2028 Projection)</h2>
                 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="productRevenueChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -3966,7 +3958,7 @@
                 <h2>Geographic Market Analysis</h2>
                 <p>Revenue projections by target geography (2026-2028):</p>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="geographicRevenueChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -4024,7 +4016,7 @@
 
                 <h2>Scenario Analysis & Cash Requirements</h2>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="scenarioComparisonChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -4375,7 +4367,7 @@
                     </tbody>
                 </table>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="opexBreakdownChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -4485,7 +4477,7 @@
                     </tbody>
                 </table>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="investmentRoundsChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -4828,7 +4820,7 @@
                     <p>All investment rounds exceed standard venture capital benchmark of 25% IRR. Seed and Series A investors achieve exceptional returns (85-110% IRR), while later-stage investors still realize strong returns with lower risk.</p>
                 </div>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="returnMultiplesChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -4937,7 +4929,7 @@
                     <li>Regulatory compliance expertise (GDPR, CCPA, SOC2)</li>
                 </ul>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="exitValuationChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -4979,7 +4971,7 @@
                     </tbody>
                 </table>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
                     <canvas id="comparableCompaniesChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -5366,8 +5358,8 @@
                 window.marketOpportunityChartInstance.destroy();
             }
             
-            // Set dark background
-            canvas.style.backgroundColor = '#0f172a';
+            // Keep chart canvas transparent
+            canvas.style.backgroundColor = 'transparent';
             
             window.marketOpportunityChartInstance = new Chart(ctx, {
                 type: 'doughnut',
@@ -5408,14 +5400,14 @@
                                 size: 18,
                                 weight: 'bold'
                             },
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 20
                         },
                         legend: {
                             display: true,
                             position: 'right',
                             labels: {
-                                color: '#ffffff',
+                                color: '#000000',
                                 padding: 15,
                                 font: {
                                     size: 13
@@ -5429,7 +5421,7 @@
                                             return {
                                                 text: `${label}: $${value}M (${percentage}%)`,
                                                 fillStyle: data.datasets[0].backgroundColor[i],
-                                                fontColor: '#ffffff',
+                                                fontColor: '#000000',
                                                 hidden: false,
                                                 index: i
                                             };
@@ -5440,10 +5432,10 @@
                             }
                         },
                         tooltip: {
-                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                            titleColor: '#ffffff',
-                            bodyColor: '#ffffff',
-                            borderColor: '#22d3ee',
+                            backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                            titleColor: '#000000',
+                            bodyColor: '#000000',
+                            borderColor: '#000000',
                             borderWidth: 1,
                             padding: 12,
                             callbacks: {
@@ -5809,6 +5801,117 @@
                     }
                 });
             }
+
+            // Growth Trajectory Mixed Chart
+            const growthTrajectoryCtx = document.getElementById('growthTrajectoryChart');
+            if (growthTrajectoryCtx) {
+                new Chart(growthTrajectoryCtx, {
+                    data: {
+                        labels: ['Q2 2026', 'Q4 2027', '2028', '2029-30'],
+                        datasets: [
+                            {
+                                type: 'bar',
+                                label: 'ARR / Exit Value (USD Millions)',
+                                data: [1, 8, 26, 750],
+                                backgroundColor: ['#0d6efd', '#198754', '#fd7e14', '#0dcaf0'],
+                                borderColor: ['#0a58ca', '#146c43', '#ca6510', '#0aa2c0'],
+                                borderWidth: 2,
+                                yAxisID: 'y'
+                            },
+                            {
+                                type: 'line',
+                                label: 'Customers (trend)',
+                                data: [50, 200, 500, null],
+                                borderColor: '#dc3545',
+                                backgroundColor: 'rgba(220, 53, 69, 0.15)',
+                                borderWidth: 3,
+                                pointBackgroundColor: '#dc3545',
+                                pointBorderColor: '#dc3545',
+                                pointRadius: 5,
+                                tension: 0.35,
+                                spanGaps: false,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Growth Trajectory: ARR/Exit Value + Customer Trend',
+                                font: { size: 16, weight: 'bold' },
+                                color: '#000000'
+                            },
+                            legend: {
+                                position: 'top',
+                                labels: {
+                                    color: '#000000'
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        if (context.dataset.label === 'ARR / Exit Value (USD Millions)') {
+                                            return context.dataset.label + ': $' + context.parsed.y + 'M';
+                                        }
+                                        if (context.parsed.y === null) {
+                                            return 'Customers (trend): N/A at Exit Event';
+                                        }
+                                        return context.dataset.label + ': ' + context.parsed.y;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Value (USD Millions)',
+                                    color: '#000000'
+                                },
+                                ticks: {
+                                    color: '#000000',
+                                    callback: function(value) {
+                                        return '$' + value + 'M';
+                                    }
+                                },
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.12)'
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Customers',
+                                    color: '#000000'
+                                },
+                                ticks: {
+                                    color: '#000000'
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    color: '#000000'
+                                },
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.06)'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         // Initialize persona distribution chart
@@ -5818,8 +5921,32 @@
 
             const personaCtx = document.getElementById('personaDistributionChart');
             if (personaCtx) {
+                const personaSegmentLabelPlugin = {
+                    id: 'personaSegmentLabelPlugin',
+                    afterDatasetsDraw(chart) {
+                        const dataset = chart.data.datasets[0];
+                        const meta = chart.getDatasetMeta(0);
+                        const ctx = chart.ctx;
+
+                        ctx.save();
+                        ctx.font = 'bold 12px Georgia';
+                        ctx.fillStyle = '#000000';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+
+                        meta.data.forEach((arc, index) => {
+                            const value = dataset.data[index];
+                            const position = arc.tooltipPosition();
+                            ctx.fillText(value + '%', position.x, position.y);
+                        });
+
+                        ctx.restore();
+                    }
+                };
+
                 new Chart(personaCtx, {
                     type: 'doughnut',
+                    plugins: [personaSegmentLabelPlugin],
                     data: {
                         labels: [
                             'Warehouse Manager',
@@ -5832,20 +5959,20 @@
                         datasets: [{
                             data: [25, 15, 10, 20, 15, 15],
                             backgroundColor: [
-                                '#22d3ee', // cyan
-                                '#0891b2', // teal
-                                '#06b6d4', // cyan-500
-                                '#14b8a6', // teal-500
-                                '#0d9488', // teal-600
-                                '#0e7490'  // cyan-700
+                                '#0d6efd',
+                                '#198754',
+                                '#0dcaf0',
+                                '#ffc107',
+                                '#dc3545',
+                                '#6c757d'
                             ],
                             borderColor: [
-                                '#06b6d4',
-                                '#0e7490',
-                                '#0891b2',
-                                '#0d9488',
-                                '#0f766e',
-                                '#164e63'
+                                '#0a58ca',
+                                '#146c43',
+                                '#0aa2c0',
+                                '#cc9a06',
+                                '#b02a37',
+                                '#565e64'
                             ],
                             borderWidth: 2
                         }]
@@ -5858,18 +5985,38 @@
                                 display: true,
                                 text: 'Target Market Segmentation',
                                 font: { size: 18, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 position: 'right',
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 12 },
                                     padding: 15,
-                                    boxWidth: 15
+                                    boxWidth: 15,
+                                    generateLabels: function(chart) {
+                                        const data = chart.data;
+                                        if (data.labels.length && data.datasets.length) {
+                                            const dataset = data.datasets[0];
+                                            return data.labels.map((label, i) => ({
+                                                text: label + ' (' + dataset.data[i] + '%)',
+                                                fillStyle: dataset.backgroundColor[i],
+                                                strokeStyle: dataset.borderColor[i],
+                                                lineWidth: dataset.borderWidth,
+                                                hidden: false,
+                                                index: i
+                                            }));
+                                        }
+                                        return [];
+                                    }
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         const label = context.label || '';
@@ -5899,15 +6046,15 @@
                             {
                                 label: 'Before Eyenet',
                                 data: [45, 15, 65, 120],
-                                backgroundColor: 'rgba(239, 68, 68, 0.7)',
-                                borderColor: 'rgba(239, 68, 68, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                                borderColor: '#dc3545',
                                 borderWidth: 2
                             },
                             {
                                 label: 'After Eyenet',
                                 data: [5, 2, 95, 10],
-                                backgroundColor: 'rgba(34, 211, 238, 0.7)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.7)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2
                             }
                         ]
@@ -5920,15 +6067,20 @@
                                 display: true,
                                 text: 'Before/After Implementation Comparison',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 12 }
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         let label = context.dataset.label || '';
@@ -5952,15 +6104,15 @@
                             y: {
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 },
                                 grid: {
@@ -5988,15 +6140,15 @@
                             {
                                 label: 'Manual Tracking',
                                 data: [8, 75, 60, 45],
-                                backgroundColor: 'rgba(239, 68, 68, 0.7)',
-                                borderColor: 'rgba(239, 68, 68, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                                borderColor: '#dc3545',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Automated with Eyenet',
                                 data: [0.5, 99, 5, 0],
-                                backgroundColor: 'rgba(34, 211, 238, 0.7)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.7)',
+                                borderColor: '#198754',
                                 borderWidth: 2
                             }
                         ]
@@ -6009,15 +6161,20 @@
                                 display: true,
                                 text: 'Educational Institute Attendance Tracking Efficiency',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 12 }
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         let label = context.dataset.label || '';
@@ -6041,15 +6198,15 @@
                             y: {
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 },
                                 grid: {
@@ -6077,8 +6234,8 @@
                             {
                                 label: 'Safety Compliance Rate (%)',
                                 data: [68, 75, 82, 88, 93, 97],
-                                borderColor: 'rgba(34, 211, 238, 1)',
-                                backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                                borderColor: '#198754',
+                                backgroundColor: 'rgba(25, 135, 84, 0.12)',
                                 borderWidth: 3,
                                 tension: 0.4,
                                 fill: true,
@@ -6087,8 +6244,8 @@
                             {
                                 label: 'Safety Incidents (count)',
                                 data: [12, 10, 7, 5, 3, 2],
-                                borderColor: 'rgba(239, 68, 68, 1)',
-                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                borderColor: '#dc3545',
+                                backgroundColor: 'rgba(220, 53, 69, 0.12)',
                                 borderWidth: 3,
                                 tension: 0.4,
                                 fill: true,
@@ -6108,15 +6265,20 @@
                                 display: true,
                                 text: 'Industrial Safety Metrics Over 6 Months',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 12 }
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         let label = context.dataset.label || '';
@@ -6137,18 +6299,18 @@
                                 beginAtZero: true,
                                 max: 100,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     callback: function(value) {
                                         return value + '%';
                                     }
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 },
                                 title: {
                                     display: true,
                                     text: 'Compliance Rate',
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 }
                             },
                             y1: {
@@ -6157,7 +6319,7 @@
                                 position: 'right',
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 },
                                 grid: {
                                     drawOnChartArea: false
@@ -6165,15 +6327,15 @@
                                 title: {
                                     display: true,
                                     text: 'Incidents',
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 }
                             }
                         }
@@ -6197,24 +6359,24 @@
                             {
                                 label: 'Foot Traffic (visitors)',
                                 data: [120, 145, 160, 155, 180, 320, 280],
-                                backgroundColor: 'rgba(34, 211, 238, 0.7)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 110, 253, 0.7)',
+                                borderColor: '#0d6efd',
                                 borderWidth: 2,
                                 yAxisID: 'y'
                             },
                             {
                                 label: 'Avg Dwell Time (minutes)',
                                 data: [12, 14, 15, 13, 16, 22, 20],
-                                backgroundColor: 'rgba(20, 184, 166, 0.7)',
-                                borderColor: 'rgba(20, 184, 166, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.7)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2,
                                 yAxisID: 'y1'
                             },
                             {
                                 label: 'Product Engagement Rate (%)',
                                 data: [35, 38, 42, 40, 45, 52, 48],
-                                backgroundColor: 'rgba(8, 145, 178, 0.7)',
-                                borderColor: 'rgba(8, 145, 178, 1)',
+                                backgroundColor: 'rgba(255, 193, 7, 0.7)',
+                                borderColor: '#ffc107',
                                 borderWidth: 2,
                                 yAxisID: 'y2'
                             }
@@ -6232,17 +6394,22 @@
                                 display: true,
                                 text: 'Weekly Retail Customer Analytics',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 },
                                     padding: 12,
                                     boxWidth: 15
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         let label = context.dataset.label || '';
@@ -6265,16 +6432,16 @@
                                 position: 'left',
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 }
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 },
                                 title: {
                                     display: true,
                                     text: 'Visitors',
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 }
                             },
@@ -6284,7 +6451,7 @@
                                 position: 'right',
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 }
                                 },
                                 grid: {
@@ -6293,7 +6460,7 @@
                                 title: {
                                     display: true,
                                     text: 'Dwell Time (min)',
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 }
                             },
@@ -6306,10 +6473,10 @@
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 }
                             }
                         }
@@ -6333,22 +6500,22 @@
                             {
                                 label: 'Engagement Rate (%)',
                                 data: [15, 28, 42, 65],
-                                backgroundColor: 'rgba(34, 211, 238, 0.7)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 110, 253, 0.7)',
+                                borderColor: '#0d6efd',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Avg Viewing Duration (sec)',
                                 data: [3, 6, 9, 15],
-                                backgroundColor: 'rgba(20, 184, 166, 0.7)',
-                                borderColor: 'rgba(20, 184, 166, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.7)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Conversion Impact (%)',
                                 data: [8, 15, 25, 38],
-                                backgroundColor: 'rgba(8, 145, 178, 0.7)',
-                                borderColor: 'rgba(8, 145, 178, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.7)',
+                                borderColor: '#198754',
                                 borderWidth: 2
                             }
                         ]
@@ -6361,15 +6528,20 @@
                                 display: true,
                                 text: 'Content Type Effectiveness Comparison',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 12 }
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         let label = context.dataset.label || '';
@@ -6389,15 +6561,15 @@
                             y: {
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 }
                                 },
                                 grid: {
@@ -6425,15 +6597,15 @@
                             {
                                 label: 'Traditional Security (minutes)',
                                 data: [15, 8, 30, 45],
-                                backgroundColor: 'rgba(239, 68, 68, 0.7)',
-                                borderColor: 'rgba(239, 68, 68, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                                borderColor: '#dc3545',
                                 borderWidth: 2
                             },
                             {
                                 label: 'With Eyenet AI (minutes)',
                                 data: [0.5, 1, 2, 5],
-                                backgroundColor: 'rgba(34, 211, 238, 0.7)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.7)',
+                                borderColor: '#198754',
                                 borderWidth: 2
                             }
                         ]
@@ -6446,15 +6618,20 @@
                                 display: true,
                                 text: 'Security Response Time Improvement',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 12 }
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         let label = context.dataset.label || '';
@@ -6472,18 +6649,18 @@
                             y: {
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     callback: function(value) {
                                         return value + ' min';
                                     }
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 }
                                 },
                                 grid: {
@@ -6519,20 +6696,20 @@
                                 label: 'Payback Period (months)',
                                 data: [3, 4, 5, 6, 8, 9],
                                 backgroundColor: [
-                                    'rgba(34, 211, 238, 0.8)',
-                                    'rgba(20, 184, 166, 0.8)',
-                                    'rgba(6, 182, 212, 0.8)',
-                                    'rgba(8, 145, 178, 0.8)',
-                                    'rgba(13, 148, 136, 0.8)',
-                                    'rgba(14, 116, 144, 0.8)'
+                                    'rgba(13, 110, 253, 0.8)',
+                                    'rgba(25, 135, 84, 0.8)',
+                                    'rgba(220, 53, 69, 0.8)',
+                                    'rgba(13, 202, 240, 0.8)',
+                                    'rgba(255, 193, 7, 0.8)',
+                                    'rgba(108, 117, 125, 0.8)'
                                 ],
                                 borderColor: [
-                                    'rgba(34, 211, 238, 1)',
-                                    'rgba(20, 184, 166, 1)',
-                                    'rgba(6, 182, 212, 1)',
-                                    'rgba(8, 145, 178, 1)',
-                                    'rgba(13, 148, 136, 1)',
-                                    'rgba(14, 116, 144, 1)'
+                                    '#0d6efd',
+                                    '#198754',
+                                    '#dc3545',
+                                    '#0dcaf0',
+                                    '#ffc107',
+                                    '#6c757d'
                                 ],
                                 borderWidth: 2
                             }
@@ -6547,12 +6724,17 @@
                                 display: true,
                                 text: 'Average ROI Payback Period by Customer Type',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 display: false
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         return 'Payback: ' + context.parsed.x + ' months (ROI: ' + Math.round(12/context.parsed.x * 100) + '% annually)';
@@ -6565,23 +6747,23 @@
                                 beginAtZero: true,
                                 max: 12,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     callback: function(value) {
                                         return value + ' mo';
                                     }
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 },
                                 title: {
                                     display: true,
                                     text: 'Months to Break Even',
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 }
                             },
                             y: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 },
                                 grid: {
@@ -6609,36 +6791,36 @@
                             {
                                 label: 'Spot Deployment',
                                 data: [8, 10, 7, 7, 8, 5],
-                                backgroundColor: 'rgba(34, 211, 238, 0.7)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 110, 253, 0.7)',
+                                borderColor: '#0d6efd',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Gate Deployment',
                                 data: [6, 7, 10, 9, 8, 4],
-                                backgroundColor: 'rgba(20, 184, 166, 0.7)',
-                                borderColor: 'rgba(20, 184, 166, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.7)',
+                                borderColor: '#198754',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Area Deployment',
                                 data: [9, 5, 8, 9, 9, 6],
-                                backgroundColor: 'rgba(6, 182, 212, 0.7)',
-                                borderColor: 'rgba(6, 182, 212, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.7)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Goggles (Wearable)',
                                 data: [4, 6, 7, 8, 10, 10],
-                                backgroundColor: 'rgba(8, 145, 178, 0.7)',
-                                borderColor: 'rgba(8, 145, 178, 1)',
+                                backgroundColor: 'rgba(255, 193, 7, 0.7)',
+                                borderColor: '#ffc107',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Drone Deployment',
                                 data: [5, 4, 6, 7, 9, 8],
-                                backgroundColor: 'rgba(13, 148, 136, 0.7)',
-                                borderColor: 'rgba(13, 148, 136, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                                borderColor: '#dc3545',
                                 borderWidth: 2
                             }
                         ]
@@ -6651,11 +6833,11 @@
                                 display: true,
                                 text: '6 Applications × 5 Deployment Modes (Suitability Rating)',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 },
                                     padding: 10,
                                     boxWidth: 15
@@ -6674,23 +6856,23 @@
                                 beginAtZero: true,
                                 max: 10,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     callback: function(value) {
                                         return value + '/10';
                                     }
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 },
                                 title: {
                                     display: true,
                                     text: 'Suitability Rating',
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 }
                                 },
                                 grid: {
@@ -6718,46 +6900,46 @@
                             {
                                 label: 'Business Owners & Executives',
                                 data: [9, 8, 10, 9, 9, 8],
-                                backgroundColor: 'rgba(34, 211, 238, 0.2)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                                borderColor: '#0d6efd',
                                 borderWidth: 2,
-                                pointBackgroundColor: 'rgba(34, 211, 238, 1)',
+                                pointBackgroundColor: '#0d6efd',
                                 pointBorderColor: '#fff',
                                 pointHoverBackgroundColor: '#fff',
-                                pointHoverBorderColor: 'rgba(34, 211, 238, 1)'
+                                pointHoverBorderColor: '#0d6efd'
                             },
                             {
                                 label: 'Security Managers',
                                 data: [7, 10, 8, 8, 9, 5],
-                                backgroundColor: 'rgba(20, 184, 166, 0.2)',
-                                borderColor: 'rgba(20, 184, 166, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.2)',
+                                borderColor: '#198754',
                                 borderWidth: 2,
-                                pointBackgroundColor: 'rgba(20, 184, 166, 1)',
+                                pointBackgroundColor: '#198754',
                                 pointBorderColor: '#fff',
                                 pointHoverBackgroundColor: '#fff',
-                                pointHoverBorderColor: 'rgba(20, 184, 166, 1)'
+                                pointHoverBorderColor: '#198754'
                             },
                             {
                                 label: 'Marketing & Sales Teams',
                                 data: [6, 4, 10, 7, 5, 10],
-                                backgroundColor: 'rgba(6, 182, 212, 0.2)',
-                                borderColor: 'rgba(6, 182, 212, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.2)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2,
-                                pointBackgroundColor: 'rgba(6, 182, 212, 1)',
+                                pointBackgroundColor: '#0dcaf0',
                                 pointBorderColor: '#fff',
                                 pointHoverBackgroundColor: '#fff',
-                                pointHoverBorderColor: 'rgba(6, 182, 212, 1)'
+                                pointHoverBorderColor: '#0dcaf0'
                             },
                             {
                                 label: 'Operations & Facilities',
                                 data: [8, 9, 7, 10, 10, 6],
-                                backgroundColor: 'rgba(8, 145, 178, 0.2)',
-                                borderColor: 'rgba(8, 145, 178, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.2)',
+                                borderColor: '#dc3545',
                                 borderWidth: 2,
-                                pointBackgroundColor: 'rgba(8, 145, 178, 1)',
+                                pointBackgroundColor: '#dc3545',
                                 pointBorderColor: '#fff',
                                 pointHoverBackgroundColor: '#fff',
-                                pointHoverBorderColor: 'rgba(8, 145, 178, 1)'
+                                pointHoverBorderColor: '#dc3545'
                             }
                         ]
                     },
@@ -6769,11 +6951,11 @@
                                 display: true,
                                 text: 'Value Delivery by Stakeholder Group',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 },
                                     padding: 12,
                                     boxWidth: 15
@@ -6793,14 +6975,14 @@
                                 max: 10,
                                 ticks: {
                                     stepSize: 2,
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     backdropColor: 'transparent'
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.2)'
+                                    color: 'rgba(0, 0, 0, 0.2)'
                                 },
                                 pointLabels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 }
                             }
@@ -6825,22 +7007,22 @@
                             {
                                 label: 'Static Signage (Baseline)',
                                 data: [18, 4, 2.5, 12, 25],
-                                backgroundColor: 'rgba(239, 68, 68, 0.7)',
-                                borderColor: 'rgba(239, 68, 68, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.7)',
+                                borderColor: '#dc3545',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Dynamic Signage (No AI)',
                                 data: [32, 7, 4.2, 22, 38],
-                                backgroundColor: 'rgba(251, 146, 60, 0.7)',
-                                borderColor: 'rgba(251, 146, 60, 1)',
+                                backgroundColor: 'rgba(255, 193, 7, 0.7)',
+                                borderColor: '#ffc107',
                                 borderWidth: 2
                             },
                             {
                                 label: 'EyeNet Intelligent Signage',
                                 data: [68, 16, 8.5, 45, 62],
-                                backgroundColor: 'rgba(34, 211, 238, 0.7)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.7)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2
                             }
                         ]
@@ -6853,11 +7035,11 @@
                                 display: true,
                                 text: 'Intelligent Signage Performance Comparison',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 },
                                     padding: 12,
                                     boxWidth: 15
@@ -6888,15 +7070,15 @@
                             y: {
                                 beginAtZero: true,
                                 ticks: {
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 }
                                 },
                                 grid: {
@@ -6924,43 +7106,43 @@
                             {
                                 label: 'Intelligent Signage',
                                 data: [1, 1, 1, 0, 0],
-                                backgroundColor: 'rgba(34, 211, 238, 0.8)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 110, 253, 0.8)',
+                                borderColor: '#0d6efd',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Underage Detector',
                                 data: [1, 0, 0, 0, 0],
-                                backgroundColor: 'rgba(20, 184, 166, 0.8)',
-                                borderColor: 'rgba(20, 184, 166, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.8)',
+                                borderColor: '#198754',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Gate Activity',
                                 data: [0, 1, 0, 0, 0],
-                                backgroundColor: 'rgba(6, 182, 212, 0.8)',
-                                borderColor: 'rgba(6, 182, 212, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.8)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Room & Gate Protection',
                                 data: [0, 1, 1, 0, 0],
-                                backgroundColor: 'rgba(8, 145, 178, 0.8)',
-                                borderColor: 'rgba(8, 145, 178, 1)',
+                                backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                                borderColor: '#ffc107',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Sentinel',
                                 data: [0, 0, 1, 0, 0],
-                                backgroundColor: 'rgba(13, 148, 136, 0.8)',
-                                borderColor: 'rgba(13, 148, 136, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                                borderColor: '#dc3545',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Security Officer Agent',
                                 data: [0, 0, 0, 1, 1],
-                                backgroundColor: 'rgba(14, 116, 144, 0.8)',
-                                borderColor: 'rgba(14, 116, 144, 1)',
+                                backgroundColor: 'rgba(108, 117, 125, 0.8)',
+                                borderColor: '#6c757d',
                                 borderWidth: 2
                             }
                         ]
@@ -6973,11 +7155,11 @@
                                 display: true,
                                 text: 'Application Support by Deployment Mode',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 },
                                     padding: 10,
                                     boxWidth: 15
@@ -7000,22 +7182,22 @@
                                 stacked: true,
                                 max: 6,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     stepSize: 1
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 },
                                 title: {
                                     display: true,
                                     text: 'Number of Applications Supported',
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 }
                             },
                             x: {
                                 stacked: true,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 },
                                 grid: {
@@ -7043,22 +7225,22 @@
                             {
                                 label: 'Core Features',
                                 data: [95, 92, 88, 90, 85],
-                                backgroundColor: 'rgba(34, 211, 238, 0.8)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 110, 253, 0.8)',
+                                borderColor: '#0d6efd',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Advanced Features',
                                 data: [85, 88, 90, 85, 80],
-                                backgroundColor: 'rgba(20, 184, 166, 0.8)',
-                                borderColor: 'rgba(20, 184, 166, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.8)',
+                                borderColor: '#198754',
                                 borderWidth: 2
                             },
                             {
                                 label: 'Enterprise Features',
                                 data: [75, 82, 85, 90, 75],
-                                backgroundColor: 'rgba(6, 182, 212, 0.8)',
-                                borderColor: 'rgba(6, 182, 212, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.8)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 2
                             }
                         ]
@@ -7072,11 +7254,11 @@
                                 display: true,
                                 text: 'Platform Architecture Maturity & Completeness',
                                 font: { size: 16, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 },
                                     padding: 10,
                                     boxWidth: 15
@@ -7105,23 +7287,23 @@
                                 beginAtZero: true,
                                 max: 100,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     callback: function(value) {
                                         return value + '%';
                                     }
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 },
                                 title: {
                                     display: true,
                                     text: 'Feature Completeness',
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 }
                             },
                             y: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 11 }
                                 },
                                 grid: {
@@ -7149,43 +7331,43 @@
                             {
                                 label: 'Intelligent Signage',
                                 data: [95, 40, 60, 55, 70, 45, 30, 60, 85],
-                                backgroundColor: 'rgba(34, 211, 238, 0.8)',
-                                borderColor: 'rgba(34, 211, 238, 1)',
+                                backgroundColor: 'rgba(13, 110, 253, 0.8)',
+                                borderColor: '#0d6efd',
                                 borderWidth: 1
                             },
                             {
                                 label: 'Gate Activity',
                                 data: [60, 85, 90, 70, 85, 80, 90, 95, 75],
-                                backgroundColor: 'rgba(20, 184, 166, 0.8)',
-                                borderColor: 'rgba(20, 184, 166, 1)',
+                                backgroundColor: 'rgba(25, 135, 84, 0.8)',
+                                borderColor: '#198754',
                                 borderWidth: 1
                             },
                             {
                                 label: 'Room & Gate Protection',
                                 data: [50, 90, 85, 80, 80, 85, 88, 70, 65],
-                                backgroundColor: 'rgba(6, 182, 212, 0.8)',
-                                borderColor: 'rgba(6, 182, 212, 1)',
+                                backgroundColor: 'rgba(13, 202, 240, 0.8)',
+                                borderColor: '#0dcaf0',
                                 borderWidth: 1
                             },
                             {
                                 label: 'Sentinel',
                                 data: [45, 88, 75, 78, 82, 90, 85, 65, 70],
-                                backgroundColor: 'rgba(8, 145, 178, 0.8)',
-                                borderColor: 'rgba(8, 145, 178, 1)',
+                                backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                                borderColor: '#dc3545',
                                 borderWidth: 1
                             },
                             {
                                 label: 'Underage Detector',
                                 data: [98, 30, 25, 40, 35, 30, 40, 50, 80],
-                                backgroundColor: 'rgba(13, 148, 136, 0.8)',
-                                borderColor: 'rgba(13, 148, 136, 1)',
+                                backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                                borderColor: '#ffc107',
                                 borderWidth: 1
                             },
                             {
                                 label: 'Security Officer Agent',
                                 data: [50, 95, 60, 65, 70, 75, 92, 80, 85],
-                                backgroundColor: 'rgba(14, 116, 144, 0.8)',
-                                borderColor: 'rgba(14, 116, 144, 1)',
+                                backgroundColor: 'rgba(108, 117, 125, 0.8)',
+                                borderColor: '#6c757d',
                                 borderWidth: 1
                             }
                         ]
@@ -7198,17 +7380,22 @@
                                 display: true,
                                 text: 'Market Coverage Heatmap: Application Fit by Vertical (0-100 score)',
                                 font: { size: 15, weight: 'bold' },
-                                color: '#e2e8f0'
+                                color: '#000000'
                             },
                             legend: {
                                 labels: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 },
                                     padding: 8,
                                     boxWidth: 12
                                 }
                             },
                             tooltip: {
+                                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                                titleColor: '#000000',
+                                bodyColor: '#000000',
+                                borderColor: '#000000',
+                                borderWidth: 1,
                                 callbacks: {
                                     label: function(context) {
                                         let score = context.parsed.y;
@@ -7223,23 +7410,23 @@
                                 beginAtZero: true,
                                 max: 100,
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     callback: function(value) {
                                         return value;
                                     }
                                 },
                                 grid: {
-                                    color: 'rgba(148, 163, 184, 0.1)'
+                                    color: 'rgba(0, 0, 0, 0.1)'
                                 },
                                 title: {
                                     display: true,
                                     text: 'Market Fit Score',
-                                    color: '#e2e8f0'
+                                    color: '#000000'
                                 }
                             },
                             x: {
                                 ticks: {
-                                    color: '#e2e8f0',
+                                    color: '#000000',
                                     font: { size: 10 }
                                 },
                                 grid: {
@@ -7279,68 +7466,68 @@
                     {
                         label: 'Intelligent Signage',
                         data: [100, 40, 0, 40, 100, 30],
-                        backgroundColor: 'rgba(34, 211, 238, 0.2)',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                        borderColor: '#0d6efd',
                         borderWidth: 2,
-                        pointBackgroundColor: '#22d3ee',
+                        pointBackgroundColor: '#0d6efd',
                         pointBorderColor: '#fff',
                         pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#22d3ee'
+                        pointHoverBorderColor: '#0d6efd'
                     },
                     {
                         label: 'Gate Activity',
                         data: [100, 100, 100, 100, 50, 100],
-                        backgroundColor: 'rgba(8, 145, 178, 0.2)',
-                        borderColor: '#0891b2',
+                        backgroundColor: 'rgba(25, 135, 84, 0.2)',
+                        borderColor: '#198754',
                         borderWidth: 2,
-                        pointBackgroundColor: '#0891b2',
+                        pointBackgroundColor: '#198754',
                         pointBorderColor: '#fff',
                         pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#0891b2'
+                        pointHoverBorderColor: '#198754'
                     },
                     {
                         label: 'Room & Gate Protection',
                         data: [50, 100, 0, 100, 20, 100],
-                        backgroundColor: 'rgba(6, 182, 212, 0.2)',
-                        borderColor: '#06b6d4',
+                        backgroundColor: 'rgba(13, 202, 240, 0.2)',
+                        borderColor: '#0dcaf0',
                         borderWidth: 2,
-                        pointBackgroundColor: '#06b6d4',
+                        pointBackgroundColor: '#0dcaf0',
                         pointBorderColor: '#fff',
                         pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#06b6d4'
+                        pointHoverBorderColor: '#0dcaf0'
                     },
                     {
                         label: 'Sentinel',
                         data: [30, 100, 0, 40, 50, 60],
-                        backgroundColor: 'rgba(14, 165, 233, 0.2)',
-                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(255, 193, 7, 0.2)',
+                        borderColor: '#ffc107',
                         borderWidth: 2,
-                        pointBackgroundColor: '#0ea5e9',
+                        pointBackgroundColor: '#ffc107',
                         pointBorderColor: '#fff',
                         pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#0ea5e9'
+                        pointHoverBorderColor: '#ffc107'
                     },
                     {
                         label: 'Security Officer Agent',
                         data: [100, 100, 100, 100, 20, 100],
-                        backgroundColor: 'rgba(2, 132, 199, 0.2)',
-                        borderColor: '#0284c7',
+                        backgroundColor: 'rgba(220, 53, 69, 0.2)',
+                        borderColor: '#dc3545',
                         borderWidth: 2,
-                        pointBackgroundColor: '#0284c7',
+                        pointBackgroundColor: '#dc3545',
                         pointBorderColor: '#fff',
                         pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#0284c7'
+                        pointHoverBorderColor: '#dc3545'
                     },
                     {
                         label: 'Underage Detector',
                         data: [100, 40, 0, 40, 100, 30],
-                        backgroundColor: 'rgba(3, 105, 161, 0.2)',
-                        borderColor: '#0369a1',
+                        backgroundColor: 'rgba(108, 117, 125, 0.2)',
+                        borderColor: '#6c757d',
                         borderWidth: 2,
-                        pointBackgroundColor: '#0369a1',
+                        pointBackgroundColor: '#6c757d',
                         pointBorderColor: '#fff',
                         pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#0369a1'
+                        pointHoverBorderColor: '#6c757d'
                     }
                 ]
             },
@@ -7355,14 +7542,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -7371,10 +7558,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         displayColors: true,
@@ -7400,17 +7587,17 @@
                             stepSize: 25
                         },
                         pointLabels: {
-                            color: '#94a3b8',
+                            color: '#666666',
                             font: {
                                 size: 13,
                                 weight: '500'
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.2)'
+                            color: 'rgba(0, 0, 0, 0.2)'
                         },
                         angleLines: {
-                            color: 'rgba(148, 163, 184, 0.2)'
+                            color: 'rgba(0, 0, 0, 0.2)'
                         }
                     }
                 },
@@ -7442,70 +7629,70 @@
                     {
                         label: 'Post-Pandemic Security Focus',
                         data: [850, 1150, 1500, 1950, 2500],
-                        borderColor: '#22d3ee',
-                        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 5,
                         pointHoverRadius: 7,
-                        pointBackgroundColor: '#22d3ee',
+                        pointBackgroundColor: '#0d6efd',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2
                     },
                     {
                         label: 'Retail Transformation',
                         data: [720, 980, 1350, 1850, 2400],
-                        borderColor: '#0891b2',
-                        backgroundColor: 'rgba(8, 145, 178, 0.1)',
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 5,
                         pointHoverRadius: 7,
-                        pointBackgroundColor: '#0891b2',
+                        pointBackgroundColor: '#198754',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2
                     },
                     {
                         label: 'Compliance Automation',
                         data: [650, 900, 1250, 1700, 2200],
-                        borderColor: '#06b6d4',
-                        backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                        borderColor: '#0dcaf0',
+                        backgroundColor: 'rgba(13, 202, 240, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 5,
                         pointHoverRadius: 7,
-                        pointBackgroundColor: '#06b6d4',
+                        pointBackgroundColor: '#0dcaf0',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2
                     },
                     {
                         label: 'Remote Operations',
                         data: [580, 820, 1150, 1600, 2100],
-                        borderColor: '#0ea5e9',
-                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 5,
                         pointHoverRadius: 7,
-                        pointBackgroundColor: '#0ea5e9',
+                        pointBackgroundColor: '#ffc107',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2
                     },
                     {
                         label: 'Data-Driven Decision Making',
                         data: [900, 1200, 1600, 2150, 2800],
-                        borderColor: '#0284c7',
-                        backgroundColor: 'rgba(2, 132, 199, 0.1)',
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 5,
                         pointHoverRadius: 7,
-                        pointBackgroundColor: '#0284c7',
+                        pointBackgroundColor: '#dc3545',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2
                     }
@@ -7522,14 +7709,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -7538,10 +7725,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         displayColors: true,
@@ -7568,18 +7755,18 @@
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'M';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Market Size (Millions USD)',
-                            color: '#e2e8f0',
+                            color: '#000000',
                             font: {
                                 size: 13,
                                 weight: '500'
@@ -7588,18 +7775,18 @@
                     },
                     x: {
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             font: {
                                 size: 12
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Year',
-                            color: '#e2e8f0',
+                            color: '#000000',
                             font: {
                                 size: 13,
                                 weight: '500'
@@ -7641,16 +7828,16 @@
                     {
                         label: 'EyeNet Defensibility Strength',
                         data: [85, 90, 82, 92, 75],
-                        backgroundColor: 'rgba(34, 211, 238, 0.25)',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(13, 110, 253, 0.25)',
+                        borderColor: '#0d6efd',
                         borderWidth: 3,
                         pointRadius: 6,
                         pointHoverRadius: 8,
-                        pointBackgroundColor: '#22d3ee',
+                        pointBackgroundColor: '#0d6efd',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2,
                         pointHoverBackgroundColor: '#fff',
-                        pointHoverBorderColor: '#22d3ee'
+                        pointHoverBorderColor: '#0d6efd'
                     },
                     {
                         label: 'Industry Average',
@@ -7680,7 +7867,7 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     subtitle: {
@@ -7689,7 +7876,7 @@
                         font: {
                             size: 13
                         },
-                        color: '#94a3b8',
+                        color: '#666666',
                         padding: {
                             bottom: 15
                         }
@@ -7698,7 +7885,7 @@
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -7707,10 +7894,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         displayColors: true,
@@ -7746,14 +7933,14 @@
                         min: 0,
                         ticks: {
                             stepSize: 20,
-                            color: '#94a3b8',
+                            color: '#666666',
                             backdropColor: 'transparent',
                             font: {
                                 size: 11
                             }
                         },
                         pointLabels: {
-                            color: '#94a3b8',
+                            color: '#666666',
                             font: {
                                 size: 12,
                                 weight: '500'
@@ -7761,10 +7948,10 @@
                             padding: 15
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.2)'
+                            color: 'rgba(0, 0, 0, 0.2)'
                         },
                         angleLines: {
-                            color: 'rgba(148, 163, 184, 0.2)'
+                            color: 'rgba(0, 0, 0, 0.2)'
                         }
                     }
                 },
@@ -7795,36 +7982,36 @@
                     {
                         label: 'Privacy-First Architecture',
                         data: [{ x: 65, y: 90, r: 20 }],
-                        backgroundColor: 'rgba(34, 211, 238, 0.6)',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(13, 110, 253, 0.6)',
+                        borderColor: '#0d6efd',
                         borderWidth: 2
                     },
                     {
                         label: 'Edge Computing',
                         data: [{ x: 70, y: 85, r: 18 }],
-                        backgroundColor: 'rgba(8, 145, 178, 0.6)',
-                        borderColor: '#0891b2',
+                        backgroundColor: 'rgba(25, 135, 84, 0.6)',
+                        borderColor: '#198754',
                         borderWidth: 2
                     },
                     {
                         label: 'Open API Ecosystem',
                         data: [{ x: 40, y: 75, r: 22 }],
-                        backgroundColor: 'rgba(6, 182, 212, 0.6)',
-                        borderColor: '#06b6d4',
+                        backgroundColor: 'rgba(13, 202, 240, 0.6)',
+                        borderColor: '#0dcaf0',
                         borderWidth: 2
                     },
                     {
                         label: 'Industry-Specific Workflows',
                         data: [{ x: 55, y: 80, r: 19 }],
-                        backgroundColor: 'rgba(14, 165, 233, 0.6)',
-                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(255, 193, 7, 0.6)',
+                        borderColor: '#ffc107',
                         borderWidth: 2
                     },
                     {
                         label: 'Custom Integration Services',
                         data: [{ x: 35, y: 70, r: 16 }],
-                        backgroundColor: 'rgba(2, 132, 199, 0.6)',
-                        borderColor: '#0284c7',
+                        backgroundColor: 'rgba(220, 53, 69, 0.6)',
+                        borderColor: '#dc3545',
                         borderWidth: 2
                     }
                 ]
@@ -7840,7 +8027,7 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     subtitle: {
@@ -7849,7 +8036,7 @@
                         font: {
                             size: 13
                         },
-                        color: '#94a3b8',
+                        color: '#666666',
                         padding: {
                             bottom: 15
                         }
@@ -7858,7 +8045,7 @@
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 12,
                             font: {
                                 size: 11
@@ -7869,10 +8056,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         displayColors: true,
@@ -7909,7 +8096,7 @@
                                 xValue: 75,
                                 yValue: 92,
                                 content: ['High Difficulty', 'High Advantage'],
-                                color: '#94a3b8',
+                                color: '#666666',
                                 font: {
                                     size: 10,
                                     style: 'italic'
@@ -7920,7 +8107,7 @@
                                 xValue: 32,
                                 yValue: 92,
                                 content: ['Low Difficulty', 'High Advantage'],
-                                color: '#94a3b8',
+                                color: '#666666',
                                 font: {
                                     size: 10,
                                     style: 'italic'
@@ -7935,19 +8122,19 @@
                         min: 60,
                         max: 100,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             stepSize: 10,
                             callback: function(value) {
                                 return value;
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Competitive Advantage →',
-                            color: '#e2e8f0',
+                            color: '#000000',
                             font: {
                                 size: 13,
                                 weight: '600'
@@ -7966,12 +8153,12 @@
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Implementation Difficulty →',
-                            color: '#e2e8f0',
+                            color: '#000000',
                             font: {
                                 size: 13,
                                 weight: '600'
@@ -8007,15 +8194,15 @@
                     {
                         label: 'B2B Enterprise',
                         data: [0.6, 4.5, 14.5],
-                        backgroundColor: '#22d3ee',
-                        borderColor: '#22d3ee',
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0d6efd',
                         borderWidth: 1
                     },
                     {
                         label: 'B2C Light',
                         data: [0.44, 3.59, 11.65],
-                        backgroundColor: '#0891b2',
-                        borderColor: '#0891b2',
+                        backgroundColor: '#198754',
+                        borderColor: '#198754',
                         borderWidth: 1
                     }
                 ]
@@ -8031,14 +8218,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -8046,10 +8233,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8073,24 +8260,24 @@
                         stacked: true,
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'M';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Revenue (Millions USD)',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     x: {
                         stacked: true,
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
                             display: false
@@ -8127,14 +8314,14 @@
                 datasets: [{
                     data: [7.5, 5.0, 5.0, 7.0, 4.0, 2.5],
                     backgroundColor: [
-                        '#22d3ee',
-                        '#0891b2',
-                        '#06b6d4',
-                        '#0ea5e9',
-                        '#0284c7',
-                        '#0369a1'
+                        '#0d6efd',
+                        '#198754',
+                        '#0dcaf0',
+                        '#ffc107',
+                        '#dc3545',
+                        '#6c757d'
                     ],
-                    borderColor: '#0f172a',
+                    borderColor: '#ffffff',
                     borderWidth: 2
                 }]
             },
@@ -8149,14 +8336,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 12,
                             font: {
                                 size: 11
@@ -8164,10 +8351,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8204,22 +8391,22 @@
                     {
                         label: '2026',
                         data: [0.6, 0.1, 0.05, 0.03],
-                        backgroundColor: '#22d3ee',
-                        borderColor: '#22d3ee',
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0d6efd',
                         borderWidth: 1
                     },
                     {
                         label: '2027',
                         data: [3.2, 0.6, 0.3, 0.2],
-                        backgroundColor: '#0891b2',
-                        borderColor: '#0891b2',
+                        backgroundColor: '#0dcaf0',
+                        borderColor: '#0dcaf0',
                         borderWidth: 1
                     },
                     {
                         label: '2028',
                         data: [14.0, 3.0, 1.2, 0.9],
-                        backgroundColor: '#06b6d4',
-                        borderColor: '#06b6d4',
+                        backgroundColor: '#198754',
+                        borderColor: '#198754',
                         borderWidth: 1
                     }
                 ]
@@ -8235,14 +8422,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -8250,10 +8437,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8267,23 +8454,23 @@
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'M';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Revenue (Millions USD)',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     x: {
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
                             display: false
@@ -8314,36 +8501,36 @@
                     {
                         label: 'Pessimistic',
                         data: [0.39, 2.35, 8.7],
-                        borderColor: '#ef4444',
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 5,
-                        pointBackgroundColor: '#ef4444',
+                        pointBackgroundColor: '#dc3545',
                         borderDash: [5, 5]
                     },
                     {
                         label: 'Baseline',
                         data: [1.04, 8.09, 26.15],
-                        borderColor: '#22d3ee',
-                        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 6,
-                        pointBackgroundColor: '#22d3ee'
+                        pointBackgroundColor: '#0d6efd'
                     },
                     {
                         label: 'Optimistic',
                         data: [1.125, 9.4, 32.2],
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true,
                         pointRadius: 5,
-                        pointBackgroundColor: '#10b981',
+                        pointBackgroundColor: '#198754',
                         borderDash: [5, 5]
                     }
                 ]
@@ -8359,14 +8546,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -8375,10 +8562,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8401,26 +8588,26 @@
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'M';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Revenue (Millions USD)',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     x: {
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         }
                     }
                 },
@@ -8452,43 +8639,43 @@
                     {
                         label: 'Personnel & Payroll',
                         data: [1.464, 3.068, 5.788],
-                        backgroundColor: '#22d3ee',
-                        borderColor: '#22d3ee',
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0d6efd',
                         borderWidth: 1
                     },
                     {
                         label: 'Marketing & CAC',
                         data: [0.180, 0.350, 0.720],
-                        backgroundColor: '#0891b2',
-                        borderColor: '#0891b2',
+                        backgroundColor: '#198754',
+                        borderColor: '#198754',
                         borderWidth: 1
                     },
                     {
                         label: 'Technology & Infrastructure',
                         data: [0.121, 0.220, 0.400],
-                        backgroundColor: '#06b6d4',
-                        borderColor: '#06b6d4',
+                        backgroundColor: '#0dcaf0',
+                        borderColor: '#0dcaf0',
                         borderWidth: 1
                     },
                     {
                         label: 'Operations & Facilities',
                         data: [0.093, 0.177, 0.335],
-                        backgroundColor: '#0ea5e9',
-                        borderColor: '#0ea5e9',
+                        backgroundColor: '#ffc107',
+                        borderColor: '#ffc107',
                         borderWidth: 1
                     },
                     {
                         label: 'R&D',
                         data: [0.195, 0.390, 0.395],
-                        backgroundColor: '#0284c7',
-                        borderColor: '#0284c7',
+                        backgroundColor: '#dc3545',
+                        borderColor: '#dc3545',
                         borderWidth: 1
                     },
                     {
                         label: 'Contingency',
                         data: [0.103, 0.270, 0.422],
-                        backgroundColor: '#0369a1',
-                        borderColor: '#0369a1',
+                        backgroundColor: '#6c757d',
+                        borderColor: '#6c757d',
                         borderWidth: 1
                     }
                 ]
@@ -8504,14 +8691,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 12,
                             font: {
                                 size: 11
@@ -8520,10 +8707,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8547,24 +8734,24 @@
                         stacked: true,
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'M';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Operating Expenses (Millions USD)',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     x: {
                         stacked: true,
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
                             display: false
@@ -8589,8 +8776,8 @@
             window.investmentRoundsChartInstance.destroy();
         }
         
-        // Set dark background
-        canvas.style.backgroundColor = '#0f172a';
+        // Keep chart canvas transparent
+        canvas.style.backgroundColor = 'transparent';
         
         window.investmentRoundsChartInstance = new Chart(ctx, {
             type: 'bar',
@@ -8599,8 +8786,8 @@
                 datasets: [{
                     label: 'Capital Raised',
                     data: [1.0, 2.5, 6.5, 20],
-                    backgroundColor: ['#22d3ee', '#0891b2', '#0e7490', '#155e75'],
-                    borderColor: ['#22d3ee', '#0891b2', '#0e7490', '#155e75'],
+                    backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#0dcaf0'],
+                    borderColor: ['#0d6efd', '#198754', '#ffc107', '#0dcaf0'],
                     borderWidth: 2
                 }]
             },
@@ -8615,17 +8802,17 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: false
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8645,23 +8832,23 @@
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'M';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Capital Raised (Millions USD)',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     x: {
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
                             display: false
@@ -8684,8 +8871,8 @@
             window.returnMultiplesChartInstance.destroy();
         }
         
-        // Set dark background
-        canvas.style.backgroundColor = '#0f172a';
+        // Keep chart canvas transparent
+        canvas.style.backgroundColor = 'transparent';
         
         window.returnMultiplesChartInstance = new Chart(ctx, {
             type: 'bar',
@@ -8695,15 +8882,15 @@
                     {
                         label: 'Return Multiple (IPO @ $750M)',
                         data: [45, 30, 15, 4.9],
-                        backgroundColor: '#22d3ee',
-                        borderColor: '#22d3ee',
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0d6efd',
                         borderWidth: 2
                     },
                     {
                         label: 'Return Multiple (Acquisition @ $400M)',
                         data: [24, 16, 8, null],
-                        backgroundColor: '#0891b2',
-                        borderColor: '#0891b2',
+                        backgroundColor: '#dc3545',
+                        borderColor: '#dc3545',
                         borderWidth: 2
                     }
                 ]
@@ -8720,14 +8907,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -8736,10 +8923,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8765,23 +8952,23 @@
                     x: {
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return value + 'x';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Cash-on-Cash Return Multiple',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     y: {
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
                             display: false
@@ -8804,8 +8991,8 @@
             window.exitValuationChartInstance.destroy();
         }
         
-        // Set dark background
-        canvas.style.backgroundColor = '#0f172a';
+        // Keep chart canvas transparent
+        canvas.style.backgroundColor = 'transparent';
         
         window.exitValuationChartInstance = new Chart(ctx, {
             type: 'line',
@@ -8815,8 +9002,8 @@
                     {
                         label: 'Low-End Valuation',
                         data: [50, 150, 300, 500],
-                        borderColor: '#0e7490',
-                        backgroundColor: 'rgba(14, 116, 144, 0.1)',
+                        borderColor: '#6c757d',
+                        backgroundColor: 'rgba(108, 117, 125, 0.1)',
                         borderWidth: 2,
                         tension: 0.4,
                         fill: true
@@ -8824,8 +9011,8 @@
                     {
                         label: 'Mid-Point Valuation',
                         data: [75, 225, 450, 650],
-                        borderColor: '#22d3ee',
-                        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
                         borderWidth: 3,
                         tension: 0.4,
                         fill: true
@@ -8833,8 +9020,8 @@
                     {
                         label: 'High-End Valuation',
                         data: [100, 300, 600, 800],
-                        borderColor: '#0891b2',
-                        backgroundColor: 'rgba(8, 145, 178, 0.1)',
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)',
                         borderWidth: 2,
                         tension: 0.4,
                         fill: true
@@ -8852,14 +9039,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -8868,10 +9055,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -8894,23 +9081,23 @@
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'M';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Company Valuation (Millions USD)',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     x: {
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
                             display: false
@@ -8933,8 +9120,8 @@
             window.comparableCompaniesChartInstance.destroy();
         }
         
-        // Set dark background
-        canvas.style.backgroundColor = '#0f172a';
+        // Keep chart canvas transparent
+        canvas.style.backgroundColor = 'transparent';
         
         window.comparableCompaniesChartInstance = new Chart(ctx, {
             type: 'bar',
@@ -8944,15 +9131,15 @@
                     {
                         label: 'IPO Valuation',
                         data: [3.2, 3.0, 1.0, 1.6],
-                        backgroundColor: '#0e7490',
-                        borderColor: '#0e7490',
+                        backgroundColor: '#6c757d',
+                        borderColor: '#6c757d',
                         borderWidth: 2
                     },
                     {
                         label: 'Current Market Cap',
                         data: [8, 70, 30, 2],
-                        backgroundColor: '#22d3ee',
-                        borderColor: '#22d3ee',
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0d6efd',
                         borderWidth: 2
                     }
                 ]
@@ -8968,14 +9155,14 @@
                             size: 18,
                             weight: 'bold'
                         },
-                        color: '#e2e8f0',
+                        color: '#000000',
                         padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             padding: 15,
                             font: {
                                 size: 12
@@ -8984,10 +9171,10 @@
                         }
                     },
                     tooltip: {
-                        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                        titleColor: '#22d3ee',
-                        bodyColor: '#e2e8f0',
-                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
                         borderWidth: 1,
                         padding: 12,
                         callbacks: {
@@ -9020,23 +9207,23 @@
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            color: '#e2e8f0',
+                            color: '#000000',
                             callback: function(value) {
                                 return '$' + value + 'B';
                             }
                         },
                         grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
+                            color: 'rgba(0, 0, 0, 0.1)'
                         },
                         title: {
                             display: true,
                             text: 'Company Valuation (Billions USD)',
-                            color: '#e2e8f0'
+                            color: '#000000'
                         }
                     },
                     x: {
                         ticks: {
-                            color: '#e2e8f0'
+                            color: '#000000'
                         },
                         grid: {
                             display: false
