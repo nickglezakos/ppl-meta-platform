@@ -422,14 +422,62 @@
         }
 
         /* Print Styles */
+        .print-toc {
+            display: none;
+        }
+
         @media print {
+            @page {
+                size: A4;
+                margin: 14mm;
+            }
+
             header, nav {
                 display: none;
+            }
+
+            .badge-nav-container,
+            footer,
+            #backToTop {
+                display: none !important;
+            }
+
+            body {
+                background: #ffffff;
             }
 
             main {
                 margin: 0;
                 padding: 0;
+            }
+
+            .print-toc {
+                display: block;
+                page-break-after: always;
+                background: #ffffff;
+                border: 1px solid #d9d9d9;
+                padding: 1.2rem 1.4rem;
+            }
+
+            .print-toc h1 {
+                font-size: 1.8rem;
+                margin-bottom: 0.6rem;
+                border-bottom: 2px solid #333333;
+            }
+
+            .print-toc p {
+                margin-bottom: 0.8rem;
+                color: #444444;
+            }
+
+            .print-toc ol {
+                margin: 0;
+                padding-left: 1.2rem;
+            }
+
+            .print-toc li {
+                margin: 0.35rem 0;
+                color: #222222;
             }
 
             .page {
@@ -443,6 +491,8 @@
 
             .content-wrapper {
                 box-shadow: none;
+                border: 1px solid #d9d9d9;
+                border-radius: 0;
                 padding: 1rem;
             }
         }
@@ -1054,6 +1104,22 @@
     </nav>
 
     <main>
+        <section class="print-toc" aria-label="Print Table of Contents">
+            <h1>Table of Contents</h1>
+            <p>EyeNet Vision Business Plan 2026</p>
+            <ol>
+                <li>Overview</li>
+                <li>Executive Summary</li>
+                <li>Personas</li>
+                <li>Competitive Analysis</li>
+                <li>Platform Functionalities</li>
+                <li>Make Business Better</li>
+                <li>Financial Model</li>
+                <li>Investor Strategy</li>
+                <li>Roadmap</li>
+            </ol>
+        </section>
+
         <!-- Home Page -->
         <div id="home" class="page active">
             <div class="content-wrapper">
