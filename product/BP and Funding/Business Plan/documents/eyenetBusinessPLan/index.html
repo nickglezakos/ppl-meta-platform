@@ -816,6 +816,24 @@
             }
         }
 
+        /* Mobile chart readability */
+        .chart-scroll-wrapper {
+            width: 100%;
+        }
+
+        @media (max-width: 768px) {
+            .chart-scroll-wrapper {
+                overflow-x: auto;
+                overflow-y: hidden;
+                -webkit-overflow-scrolling: touch;
+                padding-bottom: 0.25rem;
+            }
+
+            .chart-scroll-wrapper canvas[id$="Chart"] {
+                min-width: 680px;
+            }
+        }
+
         /* Footer Navigation */
         footer {
             background: #f0f0f0;
@@ -9235,7 +9253,28 @@
     }
 
         // Initialize charts on page load if executive page is default
+        function enableMobileChartScrolling() {
+            const isMobile = window.matchMedia('(max-width: 768px)').matches;
+            const chartCanvases = document.querySelectorAll('canvas[id$="Chart"]');
+
+            chartCanvases.forEach((canvas) => {
+                const parent = canvas.parentElement;
+                if (!parent) return;
+
+                if (isMobile) {
+                    if (!parent.classList.contains('chart-scroll-wrapper')) {
+                        parent.classList.add('chart-scroll-wrapper');
+                    }
+                    canvas.style.minWidth = '680px';
+                } else {
+                    parent.classList.remove('chart-scroll-wrapper');
+                    canvas.style.minWidth = '';
+                }
+            });
+        }
+
         window.addEventListener('load', function() {
+            enableMobileChartScrolling();
             const currentPage = document.querySelector('.page.active');
             if (currentPage && currentPage.id === 'home') {
                 setTimeout(initializeMarketOpportunityChart, 100);
@@ -9281,6 +9320,8 @@
             // Initialize footer navigation
             updateFooterNavigation();
         });
+
+        window.addEventListener('resize', enableMobileChartScrolling);
 
         // Back to Top Button Functionality
         const backToTopBtn = document.getElementById('backToTop');
