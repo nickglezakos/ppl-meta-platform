@@ -9335,6 +9335,128 @@
                     });
                 }
             });
+
+            applyMobileChartUX();
+        }
+
+        function applyMobileChartUX() {
+            const isMobile = window.matchMedia('(max-width: 768px)').matches;
+            const chartCanvases = document.querySelectorAll('canvas[id$="Chart"]');
+
+            chartCanvases.forEach((canvas) => {
+                const chart = Chart.getChart(canvas);
+                if (!chart || !chart.options) return;
+
+                const opts = chart.options;
+                const plugins = opts.plugins || (opts.plugins = {});
+                const legend = plugins.legend || (plugins.legend = {});
+                const legendLabels = legend.labels || (legend.labels = {});
+                const title = plugins.title || (plugins.title = {});
+                const tooltip = plugins.tooltip || (plugins.tooltip = {});
+                const scales = opts.scales || {};
+
+                if (!chart.$mobileUxOriginals) {
+                    chart.$mobileUxOriginals = {
+                        aspectRatio: opts.aspectRatio,
+                        legendFontSize: legendLabels.font && legendLabels.font.size,
+                        legendBoxWidth: legendLabels.boxWidth,
+                        legendPadding: legendLabels.padding,
+                        titleFontSize: title.font && title.font.size,
+                        tooltipTitleFontSize: tooltip.titleFont && tooltip.titleFont.size,
+                        tooltipBodyFontSize: tooltip.bodyFont && tooltip.bodyFont.size,
+                        xTickFontSize: scales.x && scales.x.ticks && scales.x.ticks.font && scales.x.ticks.font.size,
+                        yTickFontSize: scales.y && scales.y.ticks && scales.y.ticks.font && scales.y.ticks.font.size,
+                        xTitleFontSize: scales.x && scales.x.title && scales.x.title.font && scales.x.title.font.size,
+                        yTitleFontSize: scales.y && scales.y.title && scales.y.title.font && scales.y.title.font.size,
+                        xTickMaxRotation: scales.x && scales.x.ticks && scales.x.ticks.maxRotation,
+                        xTickMinRotation: scales.x && scales.x.ticks && scales.x.ticks.minRotation,
+                        xTickAutoSkip: scales.x && scales.x.ticks && scales.x.ticks.autoSkip,
+                        xTickMaxTicksLimit: scales.x && scales.x.ticks && scales.x.ticks.maxTicksLimit,
+                        yTickMaxTicksLimit: scales.y && scales.y.ticks && scales.y.ticks.maxTicksLimit
+                    };
+                }
+
+                const originals = chart.$mobileUxOriginals;
+
+                if (isMobile) {
+                    const radialChart = chart.config && ['pie', 'doughnut', 'polarArea', 'radar'].includes(chart.config.type);
+
+                    opts.aspectRatio = radialChart ? 1.35 : 1.9;
+
+                    legendLabels.font = Object.assign({}, legendLabels.font, { size: 9 });
+                    legendLabels.boxWidth = 10;
+                    legendLabels.padding = 8;
+
+                    if (title.display) {
+                        title.font = Object.assign({}, title.font, { size: 11 });
+                    }
+
+                    tooltip.titleFont = Object.assign({}, tooltip.titleFont, { size: 10 });
+                    tooltip.bodyFont = Object.assign({}, tooltip.bodyFont, { size: 9 });
+
+                    if (scales.x && scales.x.ticks) {
+                        scales.x.ticks.font = Object.assign({}, scales.x.ticks.font, { size: 9 });
+                        scales.x.ticks.maxRotation = 0;
+                        scales.x.ticks.minRotation = 0;
+                        scales.x.ticks.autoSkip = true;
+                        scales.x.ticks.maxTicksLimit = 6;
+                    }
+
+                    if (scales.y && scales.y.ticks) {
+                        scales.y.ticks.font = Object.assign({}, scales.y.ticks.font, { size: 9 });
+                        scales.y.ticks.maxTicksLimit = 6;
+                    }
+
+                    if (scales.x && scales.x.title && scales.x.title.display) {
+                        scales.x.title.font = Object.assign({}, scales.x.title.font, { size: 10 });
+                    }
+
+                    if (scales.y && scales.y.title && scales.y.title.display) {
+                        scales.y.title.font = Object.assign({}, scales.y.title.font, { size: 10 });
+                    }
+                } else {
+                    opts.aspectRatio = originals.aspectRatio;
+
+                    if (legendLabels.font) {
+                        legendLabels.font.size = originals.legendFontSize;
+                    }
+                    legendLabels.boxWidth = originals.legendBoxWidth;
+                    legendLabels.padding = originals.legendPadding;
+
+                    if (title.font) {
+                        title.font.size = originals.titleFontSize;
+                    }
+                    if (tooltip.titleFont) {
+                        tooltip.titleFont.size = originals.tooltipTitleFontSize;
+                    }
+                    if (tooltip.bodyFont) {
+                        tooltip.bodyFont.size = originals.tooltipBodyFontSize;
+                    }
+
+                    if (scales.x && scales.x.ticks) {
+                        if (scales.x.ticks.font) scales.x.ticks.font.size = originals.xTickFontSize;
+                        scales.x.ticks.maxRotation = originals.xTickMaxRotation;
+                        scales.x.ticks.minRotation = originals.xTickMinRotation;
+                        scales.x.ticks.autoSkip = originals.xTickAutoSkip;
+                        scales.x.ticks.maxTicksLimit = originals.xTickMaxTicksLimit;
+                    }
+
+                    if (scales.y && scales.y.ticks) {
+                        if (scales.y.ticks.font) scales.y.ticks.font.size = originals.yTickFontSize;
+                        scales.y.ticks.maxTicksLimit = originals.yTickMaxTicksLimit;
+                    }
+
+                    if (scales.x && scales.x.title && scales.x.title.font) {
+                        scales.x.title.font.size = originals.xTitleFontSize;
+                    }
+
+                    if (scales.y && scales.y.title && scales.y.title.font) {
+                        scales.y.title.font.size = originals.yTitleFontSize;
+                    }
+                }
+
+                chart.update('none');
+            });
         }
 
         window.addEventListener('load', function() {
