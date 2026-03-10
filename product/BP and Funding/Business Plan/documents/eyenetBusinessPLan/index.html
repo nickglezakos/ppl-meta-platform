@@ -830,10 +830,14 @@
                 width: 100%;
             }
 
+            .chart-scroll-wrapper .chart-scroll-content {
+                min-width: 680px;
+                width: 680px;
+            }
+
             .chart-scroll-wrapper canvas[id$="Chart"] {
                 display: block;
-                width: 680px !important;
-                min-width: 680px;
+                width: 100% !important;
                 max-width: none !important;
                 height: auto !important;
             }
@@ -9270,20 +9274,48 @@
                 if (!parent) return;
                 const chart = Chart.getChart(canvas);
 
+                let scrollWrapper = parent;
+                let contentWrapper = parent.classList.contains('chart-scroll-content') ? parent : null;
+
+                if (!contentWrapper) {
+                    const existingContent = parent.querySelector(':scope > .chart-scroll-content');
+                    if (existingContent && existingContent.contains(canvas)) {
+                        contentWrapper = existingContent;
+                    }
+                }
+
+                if (!contentWrapper) {
+                    contentWrapper = document.createElement('div');
+                    contentWrapper.className = 'chart-scroll-content';
+                    parent.insertBefore(contentWrapper, canvas);
+                    contentWrapper.appendChild(canvas);
+                }
+
+                scrollWrapper = contentWrapper.parentElement;
+                if (!scrollWrapper) return;
+
                 if (isMobile) {
-                    if (!parent.classList.contains('chart-scroll-wrapper')) {
-                        parent.classList.add('chart-scroll-wrapper');
+                    if (!scrollWrapper.classList.contains('chart-scroll-wrapper')) {
+                        scrollWrapper.classList.add('chart-scroll-wrapper');
                     }
                     if (canvas.dataset.originalMaxHeight === undefined) {
                         canvas.dataset.originalMaxHeight = canvas.style.maxHeight || '';
                     }
-                    canvas.style.setProperty('width', '680px', 'important');
-                    canvas.style.minWidth = '680px';
+
+                    contentWrapper.style.minWidth = '680px';
+                    contentWrapper.style.width = '680px';
+
+                    canvas.style.setProperty('width', '100%', 'important');
+                    canvas.style.minWidth = '';
                     canvas.style.setProperty('max-width', 'none', 'important');
                     canvas.style.setProperty('max-height', 'none', 'important');
                     canvas.style.setProperty('height', 'auto', 'important');
                 } else {
-                    parent.classList.remove('chart-scroll-wrapper');
+                    scrollWrapper.classList.remove('chart-scroll-wrapper');
+
+                    contentWrapper.style.minWidth = '';
+                    contentWrapper.style.width = '';
+
                     canvas.style.removeProperty('width');
                     canvas.style.minWidth = '';
                     canvas.style.removeProperty('max-width');
