@@ -827,10 +827,15 @@
                 overflow-y: hidden;
                 -webkit-overflow-scrolling: touch;
                 padding-bottom: 0.25rem;
+                width: 100%;
             }
 
             .chart-scroll-wrapper canvas[id$="Chart"] {
+                display: block;
+                width: 680px !important;
                 min-width: 680px;
+                max-width: none !important;
+                height: auto !important;
             }
         }
 
@@ -9272,21 +9277,30 @@
                     if (canvas.dataset.originalMaxHeight === undefined) {
                         canvas.dataset.originalMaxHeight = canvas.style.maxHeight || '';
                     }
+                    canvas.style.setProperty('width', '680px', 'important');
                     canvas.style.minWidth = '680px';
-                    canvas.style.maxWidth = 'none';
-                    canvas.style.maxHeight = 'none';
-                    canvas.style.height = 'auto';
+                    canvas.style.setProperty('max-width', 'none', 'important');
+                    canvas.style.setProperty('max-height', 'none', 'important');
+                    canvas.style.setProperty('height', 'auto', 'important');
                 } else {
                     parent.classList.remove('chart-scroll-wrapper');
+                    canvas.style.removeProperty('width');
                     canvas.style.minWidth = '';
-                    canvas.style.maxWidth = '';
-                    canvas.style.maxHeight = canvas.dataset.originalMaxHeight || '';
-                    canvas.style.height = '';
+                    canvas.style.removeProperty('max-width');
+                    canvas.style.removeProperty('max-height');
+                    canvas.style.removeProperty('height');
+
+                    if (canvas.dataset.originalMaxHeight) {
+                        canvas.style.maxHeight = canvas.dataset.originalMaxHeight;
+                    }
                 }
 
                 // Reflow chart after CSS sizing changes to avoid stretched rendering.
                 if (chart) {
                     chart.resize();
+                    requestAnimationFrame(() => {
+                        chart.resize();
+                    });
                 }
             });
         }
@@ -9341,6 +9355,9 @@
         });
 
         window.addEventListener('resize', enableMobileChartScrolling);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(enableMobileChartScrolling, 120);
+        });
 
         // Back to Top Button Functionality
         const backToTopBtn = document.getElementById('backToTop');
