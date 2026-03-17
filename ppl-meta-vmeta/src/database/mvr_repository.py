@@ -45,7 +45,7 @@ class MVRRepository:
     async def create_mvr_people(
         self,
         face_embedding: np.ndarray,
-        featured_individual_uuid: UUID,
+        featured_individual_uuid: Optional[UUID] = None,
         age_min: Optional[int] = None,
         age_max: Optional[int] = None,
         age_confidence: Optional[float] = None,

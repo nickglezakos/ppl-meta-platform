@@ -393,10 +393,11 @@ class MobileStreamingService {
       final rotationAngle = _getRotationAngle(currentOrientation, isFrontCamera: isFrontCamera);
       
       // Debug logging for orientation - using print() to ensure it shows in flutter logs
-      print('📱 [FRAME_SEND_DEBUG] Sending frame with orientation data:');
+      print('📱 [FRAME_SEND_DEBUG] Sending frame with metadata:');
       print('📱 [FRAME_SEND_DEBUG] - Orientation: $currentOrientation');
       print('📱 [FRAME_SEND_DEBUG] - Rotation angle: $rotationAngle°');
       print('📱 [FRAME_SEND_DEBUG] - Frame size: ${image.width}x${image.height}');
+      print('📱 [FRAME_SEND_DEBUG] - FPS: ${_currentConfig.fps}');
       
       final frameData = {
         'device_id': deviceId,
@@ -408,6 +409,8 @@ class MobileStreamingService {
         // Add orientation information
         'orientation': currentOrientation.toString(),
         'rotation_angle': rotationAngle,
+        // CRITICAL: Include the actual FPS being sent (prevents duplicate frames in recordings)
+        'fps': _currentConfig.fps,
       };
       
       final response = await http.post(

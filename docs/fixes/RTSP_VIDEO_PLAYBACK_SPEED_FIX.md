@@ -5,7 +5,7 @@
 RTSP camera videos were playing back 20-30% faster than they should, making the footage unusable for review and analysis.
 
 ## Root Cause Analysis
-
+ 
 ### Backend Recording Issue
 
 The problem occurred in the video recording loop in `ppl-meta-cameras/src/services/camera_detection.py`:

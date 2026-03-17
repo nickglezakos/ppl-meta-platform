@@ -30,6 +30,7 @@ class SimpleFaceDetectionOverlay extends ConsumerStatefulWidget {
   final String? videoUrl;
   final bool enabled;
   final bool useEmbeddedFaceDetection;
+  final double? actualFps;
 
   const SimpleFaceDetectionOverlay({
     super.key,
@@ -38,6 +39,7 @@ class SimpleFaceDetectionOverlay extends ConsumerStatefulWidget {
     this.videoUrl,
     this.enabled = true,
     this.useEmbeddedFaceDetection = false,
+    this.actualFps,
   });
 
   @override
@@ -89,6 +91,9 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
   
   // Playback timer for synchronized face display
   Timer? _playbackTimer;
+
+  /// Get actual FPS from widget parameter, fallback to 30.0
+  double get _fps => widget.actualFps ?? 30.0;
 
   @override
   void initState() {
@@ -300,10 +305,18 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     try {
       final uri = Uri.parse(url);
       final pathSegments = uri.pathSegments;
-      
-      // Extract media ID from URL like /api/v1/media/stream/{media_id}
-      if (pathSegments.length >= 4 && pathSegments[3] == 'stream') {
-        return pathSegments[4];
+
+      // Support both:
+      // - /api/v1/media/stream/{media_id}
+      // - /api/v1/media/stream-token/{media_id}
+      for (int i = 0; i < pathSegments.length - 1; i++) {
+        final segment = pathSegments[i];
+        if (segment == 'stream' || segment == 'stream-token') {
+          final mediaId = pathSegments[i + 1];
+          if (mediaId.isNotEmpty) {
+            return mediaId;
+          }
+        }
       }
     } catch (e) {
     }
@@ -495,11 +508,10 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
         } else if (face.metadata != null && face.metadata!.containsKey('frame')) {
           frameNumber = (face.metadata!['frame'] as num?)?.toInt() ?? 0;
         } else {
-          // Fallback: estimate frame number from timestamp (if available)
-          // Assume 30 FPS: frame = timestamp * 30
+          // Fallback: estimate frame number from timestamp using actual FPS
           final timestamp = face.timestamp;
           if (timestamp != null) {
-            frameNumber = (timestamp.millisecondsSinceEpoch ~/ 1000 * 30);
+            frameNumber = (timestamp.millisecondsSinceEpoch ~/ 1000 * _fps).round();
           }
         }
         
@@ -577,8 +589,8 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       final frameInterval = features?.frameInterval ?? 15;
       
       // ✅ PRIORITY 2 FIX: Use optimized Media Service workflow instead of direct Vision Service
-      // Convert frameInterval to framesPerSecond (30 FPS base / frameInterval)
-      final framesPerSecond = frameInterval > 0 ? (30.0 / frameInterval) : 3.0;
+      // Convert frameInterval to framesPerSecond (actual FPS base / frameInterval)
+      final framesPerSecond = frameInterval > 0 ? (_fps / frameInterval) : 3.0;
       
       debugPrint('[TARGET] Using optimized workflow with $framesPerSecond FPS (frame interval: $frameInterval)');
       
@@ -767,8 +779,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
       // Update if video is playing - regardless of cache status to allow clearing
       if (widget.videoController!.value.isPlaying) {
         final position = widget.videoController!.value.position;
-        final fps = 30.0;
-        final currentFrameNumber = (position.inMilliseconds / 1000.0 * fps).round();
+        final currentFrameNumber = (position.inMilliseconds / 1000.0 * _fps).round();
         
         // Use the same update logic as position changed handler
         if (_memoryCache.isNotEmpty) {
@@ -791,8 +802,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     
     try {
       final position = widget.videoController!.value.position;
-      final fps = 30.0;
-      final currentFrameNumber = (position.inMilliseconds / 1000.0 * fps).round();
+      final currentFrameNumber = (position.inMilliseconds / 1000.0 * _fps).round();
       
       // [TARGET] ENHANCED DEBUG: Only log when playing and show current face count
       if (widget.videoController!.value.isPlaying) {
@@ -886,9 +896,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     final videoInfo = widget.videoController?.value;
     if (videoInfo == null || !videoInfo.isInitialized) return;
     
-    // Use 30 FPS as baseline (this should ideally come from video metadata)
-    final fps = 30.0;
-    final currentFrameNumber = (position.inMilliseconds / 1000.0 * fps).round();
+    final currentFrameNumber = (position.inMilliseconds / 1000.0 * _fps).round();
     
     // Find the closest frame in our stored data
     String? closestFrameKey;
@@ -961,8 +969,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
     final videoInfo = widget.videoController?.value;
     if (videoInfo == null || !videoInfo.isInitialized) return;
     
-    final fps = 30.0;
-    final currentFrameNumber = (position.inMilliseconds / 1000.0 * fps).round();
+    final currentFrameNumber = (position.inMilliseconds / 1000.0 * _fps).round();
     
     // Find closest cached frame
     int? closestFrame;
@@ -1033,7 +1040,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
           ],
           'confidence': face.confidence,
           'method': face.method,
-          'timestamp': (frameNumber / 30.0 * 1000).round(), // Convert to milliseconds
+          'timestamp': (frameNumber / _fps * 1000).round(), // Convert to milliseconds
         }).toList();
       });
 
@@ -1042,7 +1049,7 @@ class _SimpleFaceDetectionOverlayState extends ConsumerState<SimpleFaceDetection
         'faces_by_frame': facesByFrame,
         'total_frames': _memoryCache.length,
         'duration': widget.videoController?.value.duration?.inMilliseconds?.toDouble() ?? 0.0,
-        'fps': 30.0,
+        'fps': _fps,
         'metadata': {
           'processing_method': selectedMethod,
           'timestamp': DateTime.now().toIso8601String(),

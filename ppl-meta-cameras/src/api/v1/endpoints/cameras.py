@@ -2248,20 +2248,37 @@ async def mobile_camera_stream_websocket(websocket: WebSocket, device_id: str):
                     await websocket.send_text(json.dumps(response))
 
                 elif message.get("type") == "stop_stream":
-                    # Stop the mobile camera stream and reject future frames
+                    # If recording is active, ignore transport stop to avoid
+                    # starving the recording/instant-detection pipeline.
+                    from src.services.camera_detection import camera_service
                     from src.services.mobile_streaming import mobile_streaming_service
-                    
-                    success = await mobile_streaming_service.stop_mobile_camera_stream(device_id)
-                    
-                    response = {
-                        "type": "stream_stopped",
-                        "device_id": device_id,
-                        "success": success,
-                        "message": "Camera stream stopped" if success else "Failed to stop stream",
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
-                    
-                    logger.info(f"🛑 Stopped mobile camera stream for {device_id}, success={success}")
+
+                    is_recording = device_id in camera_service.active_recordings
+                    if is_recording:
+                        response = {
+                            "type": "stream_stop_deferred",
+                            "device_id": device_id,
+                            "success": True,
+                            "message": "Stop deferred because recording is active",
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+                        logger.warning(
+                            f"⚠️ Ignored stop_stream for {device_id} because recording is active"
+                        )
+                    else:
+                        success = await mobile_streaming_service.stop_mobile_camera_stream(device_id)
+
+                        response = {
+                            "type": "stream_stopped",
+                            "device_id": device_id,
+                            "success": success,
+                            "message": "Camera stream stopped" if success else "Failed to stop stream",
+                            "timestamp": datetime.utcnow().isoformat(),
+                        }
+
+                        logger.info(
+                            f"🛑 Stopped mobile camera stream for {device_id}, success={success}"
+                        )
                     await websocket.send_text(json.dumps(response))
 
                 elif message.get("type") == "frame_data":

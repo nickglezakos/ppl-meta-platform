@@ -518,6 +518,15 @@ class PollingFallbackManager:
         
         # Now remove from active recordings and trigger final batch
         recording_info = self._active_recordings.pop(collection_id, None)
+
+        if not recording_info:
+            logger.warning(
+                f"Recording {collection_id} already processed by concurrent call, skipping final batch"
+            )
+            return {
+                'videos_processed': 0,
+                'message': 'Already processed by concurrent stop'
+            }
         
         # Trigger final batch for all remaining pending videos in THIS collection
         videos_processed = 0

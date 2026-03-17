@@ -275,6 +275,8 @@ class MobileFrameData(BaseModel):
     # Orientation metadata
     orientation: str = "portraitUp"  # portraitUp, landscapeLeft, etc.
     rotation_angle: int = 0  # 0, 90, 180, 270 degrees
+    # Frame rate metadata (CRITICAL for accurate video recording)
+    fps: int = 30  # Frames per second the mobile app is sending at (default 30)
 
 
 @router.post("/mobile/{device_id}/frame")
@@ -325,13 +327,14 @@ async def receive_mobile_camera_frame(
                 detail=f"Invalid frame data: {e}",
             )
 
-        # Store the frame in the mobile streaming service with orientation
+        # Store the frame in the mobile streaming service with orientation and FPS
         success = await mobile_streaming_service.receive_mobile_frame(
             device_id,
             frame,
             frame_data.timestamp,
             frame_data.orientation,
             frame_data.rotation_angle,
+            frame_data.fps,  # Pass the actual FPS from mobile device
         )
 
         if success:

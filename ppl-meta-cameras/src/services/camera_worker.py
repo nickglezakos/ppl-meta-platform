@@ -1322,7 +1322,11 @@ class CameraWorker:
         try:
             # Check if face detection on save is enabled
             NODE_SERVICE_URL = "http://localhost:8001"
-            VISION_SERVICE_URL = "http://localhost:8003"  # Correct port for Vision Service
+            VISION_SERVICE_URL = "http://localhost:8003"  # Legacy fallback path
+            ORCHESTRATOR_SERVICE_URL = os.getenv(
+                "ORCHESTRATOR_SERVICE_URL",
+                "http://localhost:8002",
+            )
             
             setting_url = f"{NODE_SERVICE_URL}/api/v1/settings/face_detection_on_save"
             logger.info(f"🎯 [FACE-DETECTION] Checking setting for media {media_uuid}")
@@ -1349,46 +1353,85 @@ class CameraWorker:
                 # Log but continue - default to enabled if setting check fails
                 logger.warning(f"🎯 [FACE-DETECTION] Setting check failed: {setting_error}, defaulting to ENABLED")
             
-            # Trigger Enhanced Logic V2 face detection workflow
+            # Preferred path: Orchestrator Enhanced Logic V2 (uses Vision bulk-process).
+            # This keeps continuous pipeline behavior aligned with the latest frame-sampling fixes.
+            frame_interval = int(os.getenv("CONTINUOUS_PIPELINE_FRAME_INTERVAL", "10"))
+            orchestrator_url = (
+                f"{ORCHESTRATOR_SERVICE_URL}/api/v1/media/{media_uuid}/faces/enhanced-v2"
+                f"?frame_interval={frame_interval}"
+            )
+
+            logger.info(
+                f"🎯 [FACE-DETECTION] Calling Orchestrator Enhanced V2: {orchestrator_url}"
+            )
+            response = None
+            for attempt in range(1, 4):
+                response = requests.get(orchestrator_url, headers=headers, timeout=120)
+
+                if response.status_code in [200, 202]:
+                    result = response.json()
+                    logger.info(
+                        f"✅ [FACE-DETECTION] Enhanced V2 triggered for media {media_uuid}: "
+                        f"{result.get('message', 'Accepted')}"
+                    )
+                    return
+
+                if response.status_code == 404 and attempt < 3:
+                    logger.warning(
+                        f"⚠️ [FACE-DETECTION] Enhanced V2 returned 404 for media {media_uuid} "
+                        f"(attempt {attempt}/3); retrying after upload propagation delay"
+                    )
+                    time.sleep(1)
+                    continue
+
+                break
+
+            logger.warning(
+                f"⚠️ [FACE-DETECTION] Enhanced V2 failed (HTTP {response.status_code}), "
+                f"falling back to legacy Vision endpoint"
+            )
+
+            # Fallback path: legacy Vision media processing endpoint
             detection_url = f"{VISION_SERVICE_URL}/process/media/enhanced"
-            
-            # Construct media URL for vision service to fetch the video
+
             MEDIA_SERVICE_URL = "http://localhost:8000"
             media_url = f"{MEDIA_SERVICE_URL}/api/v1/media/{media_uuid}/file"
-            
+
             detection_payload = {
                 "media_id": media_uuid,
-                "media_type": "video",  # Add required field
+                "media_type": "video",
                 "media_url": media_url,
                 "processing_options": {
                     "detection_methods": ["opencv", "dlib"],
                     "enable_embeddings": True,
                     "enable_age_gender": True,
                     "confidence_threshold": 0.7,
-                    "enable_performance_optimization": True
+                    "enable_performance_optimization": True,
                 },
                 "source": "camera_upload",
-                "trigger": "automatic"
+                "trigger": "automatic",
             }
-            
-            logger.info(f"🎯 [FACE-DETECTION] Sending request to Vision Service: {detection_url}")
-            
+
+            logger.info(
+                f"🎯 [FACE-DETECTION] Sending fallback request to Vision Service: {detection_url}"
+            )
+
             response = requests.post(
                 detection_url,
                 json=detection_payload,
                 headers=headers,
-                timeout=120  # Face detection can take time
+                timeout=120,
             )
-            
+
             if response.status_code in [200, 202]:
                 result = response.json()
                 logger.info(
-                    f"✅ [FACE-DETECTION] Face detection triggered successfully for media {media_uuid}: "
+                    f"✅ [FACE-DETECTION] Fallback trigger succeeded for media {media_uuid}: "
                     f"{result.get('message', 'Accepted')}"
                 )
             else:
                 logger.error(
-                    f"❌ [FACE-DETECTION] Failed to trigger face detection: "
+                    f"❌ [FACE-DETECTION] Both enhanced-v2 and fallback failed for media {media_uuid}: "
                     f"HTTP {response.status_code} - {response.text[:200]}"
                 )
                 

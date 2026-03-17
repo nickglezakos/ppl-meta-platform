@@ -258,6 +258,11 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     // Use frame-based cache if available for proper synchronization
     List<FaceDetection> visibleFaces = [];
     
+    // Scale display window and tolerance to actual FPS (~0.5s, matching USB camera timers)
+    final actualFps = _getActualFps();
+    final displayWindowFrames = (0.5 * actualFps).ceil().clamp(1, 30); // ~0.5s visibility
+    final frameRange = (0.1 * actualFps).round().clamp(1, 3); // ~0.1s tolerance
+    
     if (_facesByFrame != null && _facesByFrame!.isNotEmpty) {
       // Debug: Log current frame and what data exists (every 30 frames to avoid spam)
       if (currentFrameNumber % 30 == 0) {
@@ -266,9 +271,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         debugPrint('🎯 Frame $currentFrameNumber: hasData=$hasDataForFrame, nearbyFrames=$nearbyFramesWithData');
       }
       
-      // Check for faces in nearby frames (±2 frame tolerance for frame timing variations)
-      // This ensures we don't miss faces due to frame number rounding
-      final frameRange = 2;
+      // Check for faces in nearby frames (scaled tolerance for frame timing variations)
       for (int checkFrame = currentFrameNumber - frameRange; checkFrame <= currentFrameNumber + frameRange; checkFrame++) {
         if (_facesByFrame!.containsKey(checkFrame)) {
           final facesAtFrame = _facesByFrame![checkFrame]!;
@@ -282,14 +285,14 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         }
       }
       
-      // Collect all faces that should still be visible (within 10-frame window)
+      // Collect all faces that should still be visible (within ~0.5s window)
       final facesToRemove = <FaceDetection>[];
       _faceFirstSeenFrame.forEach((face, firstSeenFrame) {
         final framesSinceFirstSeen = currentFrameNumber - firstSeenFrame;
-        if (framesSinceFirstSeen >= 0 && framesSinceFirstSeen < 10) {
-          // Face is within display window (0-9 frames after first detection)
+        if (framesSinceFirstSeen >= 0 && framesSinceFirstSeen < displayWindowFrames) {
+          // Face is within display window
           visibleFaces.add(face);
-        } else if (framesSinceFirstSeen >= 10) {
+        } else if (framesSinceFirstSeen >= displayWindowFrames) {
           // Face has exceeded display window, mark for removal
           facesToRemove.add(face);
           debugPrint('⏱️ Frame $currentFrameNumber: Removing face (shown for $framesSinceFirstSeen frames)');
@@ -322,16 +325,17 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   
   /// Smooth transition face updates with instant appearance and smooth fade-out
   void _updateFacesWithTransitions(int currentFrameNumber, int totalFaces) {
+    final actualFps = _getActualFps().round();
     const int preShowFrames = 0; // No fade in - instant appearance
-    const int postShowFrames = 18; // Extended fade out - 18 frames (~600ms at 30fps)
+    final int postShowFrames = (actualFps * 0.6).round(); // ~600ms fade out scaled to actual FPS
     
     List<FaceDetection> visibleFaces = [];
     Map<FaceDetection, double> newOpacities = {};
     Map<FaceDetection, int> newCounters = Map.from(_faceFrameCounters);
     
     // Calculate which faces should be visible with transitions
-    final facesPerFrame = (totalFaces / 30).ceil();
-    final baseStartIndex = (currentFrameNumber % 30) * facesPerFrame;
+    final facesPerFrame = (totalFaces / actualFps).ceil();
+    final baseStartIndex = (currentFrameNumber % actualFps) * facesPerFrame;
     final baseEndIndex = (baseStartIndex + facesPerFrame).clamp(0, totalFaces);
     
     for (int i = 0; i < totalFaces; i++) {
@@ -392,9 +396,34 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     }
   }
 
-  /// Convert video position to frame number (assuming 30fps)
+  /// Compute actual FPS from video metadata (same approach as VideoPlayerWidget)
+  double _getActualFps() {
+    final metadata = widget.mediaItem.technicalMetadata;
+    if (metadata == null) return 30.0;
+
+    final nested = metadata['video'];
+    final videoMeta = nested is Map<String, dynamic> ? nested : metadata;
+
+    final totalFrames = (videoMeta['total_frames'] as num?)?.toInt() ??
+        (metadata['total_frames'] as num?)?.toInt();
+    final durationSec = (videoMeta['duration_seconds'] as num?)?.toDouble() ??
+        (metadata['duration_seconds'] as num?)?.toDouble() ??
+        widget.mediaItem.duration?.toDouble();
+
+    if (totalFrames != null && totalFrames > 0 && durationSec != null && durationSec > 0) {
+      return totalFrames / durationSec;
+    }
+
+    final frameRate = (videoMeta['frame_rate'] as num?)?.toDouble() ??
+        (videoMeta['fps'] as num?)?.toDouble() ??
+        (metadata['frame_rate'] as num?)?.toDouble() ??
+        (metadata['fps'] as num?)?.toDouble();
+    return frameRate ?? 30.0;
+  }
+
+  /// Convert video position to frame number using actual FPS from metadata
   int _positionToFrameNumber(Duration position) {
-    return (position.inMilliseconds / 1000 * 30).floor();
+    return (position.inMilliseconds / 1000 * _getActualFps()).floor();
   }
 
   /// Check if two face lists are equal
@@ -781,6 +810,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
           videoUrl: videoUrl,
           headers: widget.headers,
           collectionId: widget.collectionId,
+          technicalMetadata: widget.mediaItem.technicalMetadata,
+          videoDuration: widget.mediaItem.duration,
           onControllerReady: (controller) {
             _videoController = controller;
             if (controller != null) {
@@ -818,6 +849,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       videoUrl: videoUrl,
       enabled: enableOverlay,
       useEmbeddedFaceDetection: false, // Use overlay system, not embedded
+      actualFps: _getActualFps(),
       child: VideoPlayerWidget(
         videoUrl: videoUrl,
         headers: widget.headers,
@@ -864,6 +896,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       videoUrl: videoUrl,
       headers: widget.headers,
       collectionId: widget.collectionId,
+      technicalMetadata: widget.mediaItem.technicalMetadata,
+      videoDuration: widget.mediaItem.duration,
       onControllerReady: (controller) {
         _videoController = controller;
         if (controller != null) {
@@ -1226,6 +1260,31 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
   int _lastFrameNumber = -1; // Track last processed frame to prevent showing faces before video starts
   bool _hasPlaybackStarted = false; // Track if playback has ever started
 
+  /// Compute actual FPS from video metadata
+  double _getActualFpsForOverlay() {
+    final metadata = widget.mediaItem.technicalMetadata;
+    if (metadata == null) return 30.0;
+
+    final nested = metadata['video'];
+    final videoMeta = nested is Map<String, dynamic> ? nested : metadata;
+
+    final totalFrames = (videoMeta['total_frames'] as num?)?.toInt() ??
+        (metadata['total_frames'] as num?)?.toInt();
+    final durationSec = (videoMeta['duration_seconds'] as num?)?.toDouble() ??
+        (metadata['duration_seconds'] as num?)?.toDouble() ??
+        widget.mediaItem.duration?.toDouble();
+
+    if (totalFrames != null && totalFrames > 0 && durationSec != null && durationSec > 0) {
+      return totalFrames / durationSec;
+    }
+
+    final frameRate = (videoMeta['frame_rate'] as num?)?.toDouble() ??
+        (videoMeta['fps'] as num?)?.toDouble() ??
+        (metadata['frame_rate'] as num?)?.toDouble() ??
+        (metadata['fps'] as num?)?.toDouble();
+    return frameRate ?? 30.0;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1293,7 +1352,7 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
 
     final currentPosition = controller.value.position;
     final duration = controller.value.duration;
-    final fps = 30.0; // Default FPS, could be extracted from video metadata
+    final fps = _getActualFpsForOverlay();
     
     // Calculate current frame number
     final currentFrameNumber = duration.inMilliseconds > 0
@@ -1304,8 +1363,12 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     
     // Collect faces that should be visible:
     // 1. Faces detected in current frame (add to tracking)
-    // 2. Faces from previous frames that are still within 10-frame display window
+    // 2. Faces from previous frames still within ~0.5s display window
     List<FaceDetection> visibleFaces = [];
+    
+    // Scale display window to actual FPS (~0.5s, matching USB camera timers)
+    final actualFps = _getActualFpsForOverlay();
+    final displayWindowFrames = (0.5 * actualFps).ceil().clamp(1, 30);
     
     if (_facesByFrame != null) {
       // Check if new faces detected in current frame
@@ -1320,14 +1383,14 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
         }
       }
       
-      // Collect all faces that should still be visible (within 10-frame window)
+      // Collect all faces that should still be visible (within ~0.5s window)
       final facesToRemove = <FaceDetection>[];
       _faceFirstSeenFrame.forEach((face, firstSeenFrame) {
         final framesSinceFirstSeen = currentFrameNumber - firstSeenFrame;
-        if (framesSinceFirstSeen >= 0 && framesSinceFirstSeen < 10) {
-          // Face is within display window (0-9 frames after first detection)
+        if (framesSinceFirstSeen >= 0 && framesSinceFirstSeen < displayWindowFrames) {
+          // Face is within display window
           visibleFaces.add(face);
-        } else if (framesSinceFirstSeen >= 10) {
+        } else if (framesSinceFirstSeen >= displayWindowFrames) {
           // Face has exceeded display window, mark for removal
           facesToRemove.add(face);
         }
@@ -1348,9 +1411,9 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     }
   }
 
-  /// Convert video position to frame number (assuming 30fps)
+  /// Convert video position to frame number using actual FPS from metadata
   int _positionToFrameNumber(Duration position) {
-    return (position.inMilliseconds / 1000 * 30).floor();
+    return (position.inMilliseconds / 1000 * _getActualFpsForOverlay()).floor();
   }
 
   /// Check if two lists of faces are equal

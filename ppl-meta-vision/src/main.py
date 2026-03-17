@@ -1944,12 +1944,30 @@ async def bulk_process_video_faces(
             fps = cap.get(cv2.CAP_PROP_FPS)
             duration = total_frames / fps if fps > 0 else 0
 
-            # Calculate frame numbers to process
+            # Calculate frame numbers to process.
+            # Keep requested interval for high-FPS videos, but adapt for low-FPS
+            # mobile recordings so we don't skip multiple seconds per sample.
+            requested_frame_interval = max(1, int(frame_interval))
+            if fps and fps > 0:
+                target_sampling_fps = 3.0
+                adaptive_frame_interval = max(1, int(round(float(fps) / target_sampling_fps)))
+                effective_frame_interval = min(requested_frame_interval, adaptive_frame_interval)
+            else:
+                effective_frame_interval = requested_frame_interval
+
+            logger.info(
+                "Bulk-process sampling: media=%s fps=%.2f requested_interval=%d effective_interval=%d",
+                media_id,
+                float(fps) if fps else 0.0,
+                requested_frame_interval,
+                effective_frame_interval,
+            )
+
             frame_numbers = []
             frame_num = 0
             while frame_num < total_frames and len(frame_numbers) < max_frames:
                 frame_numbers.append(frame_num)
-                frame_num += frame_interval
+                frame_num += effective_frame_interval
 
             # Process all frames in memory
             all_detections = {}
@@ -2047,7 +2065,8 @@ async def bulk_process_video_faces(
                                 "frames_processed": processed_frames,
                                 "total_frames": int(total_frames),
                                 "processing_time": processing_time,
-                                "frame_interval": frame_interval,
+                                "frame_interval_requested": requested_frame_interval,
+                                "frame_interval_effective": effective_frame_interval,
                                 "detection_method": "two_stage",
                                 "confidence_threshold": confidence_threshold,
                             }
@@ -2075,7 +2094,8 @@ async def bulk_process_video_faces(
                     "fps": float(fps),  # Convert numpy float to Python float
                     "duration": float(duration),  # Convert to Python float
                     "processed_frames": int(processed_frames),  # Python int
-                    "frame_interval": int(frame_interval),  # Python int
+                    "frame_interval_requested": int(requested_frame_interval),
+                    "frame_interval_effective": int(effective_frame_interval),
                 },
                 "faces_by_frame": all_detections,
                 "total_faces": int(total_faces),  # Python int

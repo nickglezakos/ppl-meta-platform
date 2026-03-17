@@ -34,8 +34,9 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 192.168.1.68
 8006
 
+the actual frames arriving from the mobile device might be at 10, 15, or 24 FPS.
 
-
+ 
 
 +++++++++++
 
@@ -236,3 +237,105 @@ Underage Detector
 
 
 The issue with the ppl-meta-signage-simple-player is that when the app does not sych with the platform to connect it pops the expected dialogue for the user to enter the correct ip and port details and when the user submits those the app correctly stores the details but then it shuts off. When it is executede on egain it gets the stored connection details and connects witn no problems. The shut off is an issue that needs to be resolved.
+
+50621:2026-03-17 12:10:33,126 - face_detection_endpoints - INFO - 🔍 Vision URL: http://localhost:8003/faces/media/77729f23-f016-4475-99ea-dda2fec1b73d
+50623:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 RAW Vision response text (first 200 chars): {"success":true,"media_id":"77729f23-f016-4475-99ea-dda2fec1b73d","has_stored_faces":true,"total_faces":3,"faces_by_frame":{"4":[{"id":"d66a1413-bd6d-482a-a7a1-589682a2ef8c","bbox":[94,200,351,457],"b
+50624:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 IMMEDIATELY after json.loads, media_id: 77729f23-f016-4475-99ea-dda2fec1b73d
+50626:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 Vision response media_id: 77729f23-f016-4475-99ea-dda2fec1b73d
+50627:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 Expected media_id: 77729f23-f016-4475-99ea-dda2fec1b73d
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  grep -n "Real-time detection com
+pleted" ppl-meta-orchestrator/logs/ppl-meta-orchestrator.log | tail -30
+44605:2026-03-16 17:57:20,262 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '1f0df640-7b95-4223-a836-766601092cc5', 'video_info': {'total_frames': 8, 'fps': 30.0, 'duration': 0.26666666666666666, 'processed_frames': 1, 'frame_interval': 10}, 'faces_by_frame': {'0': []}, 'total_faces': 0, 'processing_time': 0.454272985458374, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 1 frames, found 0 faces total'}
+44642:2026-03-16 17:57:20,515 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '1f0df640-7b95-4223-a836-766601092cc5', 'video_info': {'total_frames': 8, 'fps': 30.0, 'duration': 0.26666666666666666, 'processed_frames': 1, 'frame_interval': 10}, 'faces_by_frame': {'0': []}, 'total_faces': 0, 'processing_time': 0.1676321029663086, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 1 frames, found 0 faces total'}
+44682:2026-03-16 17:57:27,347 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '1f0df640-7b95-4223-a836-766601092cc5', 'video_info': {'total_frames': 8, 'fps': 30.0, 'duration': 0.26666666666666666, 'processed_frames': 1, 'frame_interval': 10}, 'faces_by_frame': {'0': []}, 'total_faces': 0, 'processing_time': 0.22639894485473633, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 1 frames, found 0 faces total'}
+44721:2026-03-16 17:57:36,429 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': 'ba8e5ea6-5bd3-4f9a-b15c-e44f2259bfda', 'video_info': {'total_frames': 13, 'fps': 30.0, 'duration': 0.43333333333333335, 'processed_frames': 2, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': []}, 'total_faces': 0, 'processing_time': 0.38042712211608887, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 2 frames, found 0 faces total'}
+44758:2026-03-16 17:57:36,704 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': 'ba8e5ea6-5bd3-4f9a-b15c-e44f2259bfda', 'video_info': {'total_frames': 13, 'fps': 30.0, 'duration': 0.43333333333333335, 'processed_frames': 2, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': []}, 'total_faces': 0, 'processing_time': 0.21088504791259766, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 2 frames, found 0 faces total'}
+44798:2026-03-16 17:57:37,872 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': 'ba8e5ea6-5bd3-4f9a-b15c-e44f2259bfda', 'video_info': {'total_frames': 13, 'fps': 30.0, 'duration': 0.43333333333333335, 'processed_frames': 2, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': []}, 'total_faces': 0, 'processing_time': 0.2710139751434326, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 2 frames, found 0 faces total'}
+45515:2026-03-17 07:16:35,885 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '5e75f5f0-405e-4acc-8bea-3d7e28d5ad4c', 'video_info': {'total_frames': 65, 'fps': 9.64, 'duration': 6.742738589211618, 'processed_frames': 7, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': [], '20': [], '30': [], '40': [], '50': [], '60': []}, 'total_faces': 0, 'processing_time': 2.084796905517578, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 7 frames, found 0 faces total'}
+45552:2026-03-17 07:16:37,672 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '5e75f5f0-405e-4acc-8bea-3d7e28d5ad4c', 'video_info': {'total_frames': 65, 'fps': 9.64, 'duration': 6.742738589211618, 'processed_frames': 7, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': [], '20': [], '30': [], '40': [], '50': [], '60': []}, 'total_faces': 0, 'processing_time': 1.763160228729248, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 7 frames, found 0 faces total'}
+45592:2026-03-17 07:16:39,388 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '5e75f5f0-405e-4acc-8bea-3d7e28d5ad4c', 'video_info': {'total_frames': 65, 'fps': 9.64, 'duration': 6.742738589211618, 'processed_frames': 7, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': [], '20': [], '30': [], '40': [], '50': [], '60': []}, 'total_faces': 0, 'processing_time': 1.6584467887878418, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 7 frames, found 0 faces total'}
+50485:2026-03-17 12:08:30,016 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '64d89c45-7c48-42a8-8a42-07652b76ef56', 'video_info': {'total_frames': 135, 'fps': 5.67, 'duration': 23.80952380952381, 'processed_frames': 68, 'frame_interval_requested': 10, 'frame_interval_effective': 2}, 'faces_by_frame': {'0': [], '2': [], '4': [], '6': [], '8': [], '10': [{'bbox': [130, 162, 356, 388], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '12': [{'bbox': [154, 208, 360, 414], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '14': [], '16': [], '18': [], '20': [], '22': [], '24': [], '26': [], '28': [], '30': [{'bbox': [111, 164, 326, 379], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '32': [{'bbox': [70, 171, 296, 397], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '34': [], '36': [], '38': [], '40': [], '42': [], '44': [], '46': [], '48': [], '50': [], '52': [], '54': [], '56': [], '58': [], '60': [], '62': [], '64': [], '66': [], '68': [], '70': [], '72': [], '74': [], '76': [], '78': [], '80': [], '82': [], '84': [], '86': [], '88': [], '90': [], '92': [], '94': [], '96': [], '98': [], '100': [], '102': [], '104': [], '106': [], '108': [], '110': [], '112': [], '114': [], '116': [], '118': [], '120': [], '122': [], '124': [], '126': [], '128': [], '130': [], '132': [], '134': []}, 'total_faces': 4, 'processing_time': 4.19882607460022, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 68 frames, found 4 faces total'}
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  grep "Real-time detection comple
+ted" ppl-meta-orchestrator/logs/ppl-meta-orchestrator.log | grep -v "total_faces': 0" | 
+tail -20
+2026-03-17 12:08:30,016 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '64d89c45-7c48-42a8-8a42-07652b76ef56', 'video_info': {'total_frames': 135, 'fps': 5.67, 'duration': 23.80952380952381, 'processed_frames': 68, 'frame_interval_requested': 10, 'frame_interval_effective': 2}, 'faces_by_frame': {'0': [], '2': [], '4': [], '6': [], '8': [], '10': [{'bbox': [130, 162, 356, 388], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '12': [{'bbox': [154, 208, 360, 414], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '14': [], '16': [], '18': [], '20': [], '22': [], '24': [], '26': [], '28': [], '30': [{'bbox': [111, 164, 326, 379], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '32': [{'bbox': [70, 171, 296, 397], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '34': [], '36': [], '38': [], '40': [], '42': [], '44': [], '46': [], '48': [], '50': [], '52': [], '54': [], '56': [], '58': [], '60': [], '62': [], '64': [], '66': [], '68': [], '70': [], '72': [], '74': [], '76': [], '78': [], '80': [], '82': [], '84': [], '86': [], '88': [], '90': [], '92': [], '94': [], '96': [], '98': [], '100': [], '102': [], '104': [], '106': [], '108': [], '110': [], '112': [], '114': [], '116': [], '118': [], '120': [], '122': [], '124': [], '126': [], '128': [], '130': [], '132': [], '134': []}, 'total_faces': 4, 'processing_time': 4.19882607460022, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 68 frames, found 4 faces total'}
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % 
+
+
+(.venv) (base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  source /Users/nickgkleza
+kos/Documents/ppl-meta-code/ppl-meta-vision/venv/bin/activate && python3 /Users/nickgkle
+zakos/Documents/ppl-meta-code/tools/analyze_video_frames.py /Users/nickgklezakos/Documen
+ts/ppl-meta-code/ppl-meta-media/media/4cf362b1-3e05-4e85-81c7-c08a98c7e41b/video/2026/03
+/c25db3e914666ee9f9059b3605bc7ab6.mp4
+Video: fps=5.67, total_frames=135, size=480x640, duration=23.8s
+
+Frame   0: mean= 106.7 std= 88.9 diff=N/A   haar=0
+Frame   2: mean= 103.9 std= 88.7 diff=22.27 haar=0
+Frame   4: mean= 102.6 std= 87.9 diff=29.82 haar=1 FACES=1
+Frame   6: mean=  96.8 std= 83.2 diff=32.65 haar=0
+Frame   8: mean= 109.2 std= 87.8 diff=38.43 haar=0
+Frame  10: mean= 113.7 std= 88.7 diff=27.02 haar=1 FACES=1
+Frame  12: mean= 110.1 std= 84.5 diff=37.00 haar=1 FACES=1
+Frame  14: mean= 110.7 std= 82.7 diff=24.19 haar=1 FACES=1
+Frame  16: mean= 108.7 std= 83.5 diff=18.97 haar=1 FACES=1
+Frame  18: mean= 100.4 std= 80.2 diff=36.83 haar=0
+Frame  20: mean= 102.9 std= 82.8 diff=37.64 haar=1 FACES=1
+Frame  22: mean= 111.5 std= 87.0 diff=32.88 haar=1 FACES=1
+Frame  24: mean= 107.9 std= 87.0 diff=26.58 haar=1 FACES=1
+Frame  26: mean= 101.8 std= 86.0 diff=30.39 haar=0
+Frame  28: mean= 118.6 std= 90.5 diff=37.43 haar=1 FACES=1
+Frame  30: mean= 108.7 std= 88.3 diff=23.97 haar=1 FACES=1
+Frame  32: mean= 107.3 std= 86.0 diff=27.45 haar=1 FACES=1
+Frame  34: mean= 109.6 std= 85.8 diff=22.09 haar=0
+Frame  36: mean= 104.8 std= 84.4 diff=36.17 haar=1 FACES=1
+Frame  38: mean= 111.7 std= 87.3 diff=43.20 haar=2 FACES=2
+Frame  40: mean= 115.3 std= 87.3 diff=29.72 haar=1 FACES=1
+Frame  42: mean= 107.2 std= 84.9 diff=43.77 haar=0
+Frame  44: mean= 113.0 std= 82.7 diff=32.37 haar=0
+Frame  46: mean= 106.7 std= 81.4 diff=43.14 haar=0
+Frame  48: mean= 112.6 std= 82.1 diff=38.96 haar=0
+Frame  50: mean= 104.8 std= 82.1 diff=45.53 haar=0
+Frame  52: mean= 101.9 std= 83.7 diff=31.60 haar=0
+Frame  54: mean= 114.0 std= 87.0 diff=37.52 haar=0
+Frame  56: mean= 110.8 std= 87.1 diff=24.94 haar=0
+Frame  58: mean= 114.4 std= 88.7 diff=37.90 haar=0
+Frame  60: mean= 111.1 std= 87.6 diff=31.59 haar=0
+Frame  62: mean= 104.2 std= 85.7 diff=32.54 haar=0
+Frame  64: mean= 101.7 std= 83.1 diff=26.32 haar=0
+Frame  66: mean= 105.4 std= 82.6 diff=27.27 haar=0
+Frame  68: mean= 106.1 std= 83.0 diff=14.51 haar=1 FACES=1
+Frame  70: mean= 106.8 std= 84.0 diff=17.28 haar=0
+Frame  72: mean= 110.9 std= 87.2 diff=31.36 haar=0
+Frame  74: mean= 116.4 std= 88.2 diff=31.83 haar=0
+Frame  76: mean= 118.7 std= 88.6 diff=20.07 haar=0
+Frame  78: mean= 115.6 std= 88.0 diff=24.92 haar=0
+Frame  80: mean= 116.6 std= 88.3 diff=15.40 haar=0
+Frame  82: mean= 104.9 std= 89.3 diff=26.73 haar=0
+Frame  84: mean= 107.1 std= 88.0 diff=10.97 haar=0
+Frame  86: mean= 111.6 std= 86.4 diff=22.73 haar=0
+Frame  88: mean= 111.2 std= 87.1 diff=24.78 haar=0
+Frame  90: mean= 109.6 std= 85.0 diff=24.97 haar=0
+Frame  92: mean= 111.0 std= 85.1 diff=15.10 haar=0
+Frame  94: mean= 100.8 std= 82.0 diff=32.82 haar=0
+Frame  96: mean= 109.6 std= 84.1 diff=33.09 haar=0
+Frame  98: mean= 112.7 std= 88.9 diff=38.57 haar=0
+Frame 100: mean= 112.5 std= 86.1 diff=25.52 haar=0
+Frame 102: mean= 113.7 std= 86.4 diff=18.36 haar=0
+Frame 104: mean= 110.9 std= 85.7 diff=22.65 haar=0
+Frame 106: mean= 101.4 std= 83.4 diff=34.55 haar=1 FACES=1
+Frame 108: mean= 107.8 std= 83.0 diff=26.94 haar=0
+Frame 110: mean= 108.8 std= 85.2 diff=28.82 haar=0
+Frame 112: mean= 105.7 std= 84.9 diff=25.37 haar=0
+Frame 114: mean=  97.8 std= 83.2 diff=35.28 haar=0
+Frame 116: mean= 100.5 std= 83.9 diff=20.20 haar=0
+Frame 118: mean= 103.8 std= 83.6 diff=27.03 haar=1 FACES=1
+Frame 120: mean=  97.3 std= 81.4 diff=31.96 haar=1 FACES=1
+Frame 122: mean= 106.4 std= 84.6 diff=26.53 haar=1 FACES=1
+Frame 124: mean= 109.3 std= 85.9 diff=26.24 haar=0
+Frame 126: mean= 109.7 std= 85.9 diff= 8.22 haar=0
+Frame 128: mean= 112.1 std= 86.1 diff=20.35 haar=0
+Frame 130: mean= 114.0 std= 86.5 diff=19.50 haar=0
+Frame 132: mean= 115.2 std= 86.6 diff=24.39 haar=0
+Frame 134: mean= 120.4 std= 87.6 diff=31.01 haar=0
+(venv) (base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % 
+

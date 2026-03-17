@@ -115,7 +115,18 @@ class RecordingService:
             # Get resolution from worker camera_info
             width = int(worker.camera_info.get('resolution_width', 1920))
             height = int(worker.camera_info.get('resolution_height', 1080))
-            fps = worker.camera_info.get('max_fps', 30)
+            
+            # CRITICAL: Get actual FPS from mobile stream for accurate recording
+            # For mobile cameras, the FPS sent by the device is critical to prevent
+            # recording duplicate frames when the declared FPS doesn't match actual rate
+            if worker.camera_type == 'mobile':
+                from src.services.mobile_streaming import mobile_streaming_service
+                fps = mobile_streaming_service.get_mobile_stream_fps(device_id)
+                logger.info(f"🎥 [RECORDING] Using actual mobile stream FPS: {fps}")
+            else:
+                # For RTSP/USB cameras, use configured max_fps
+                fps = worker.camera_info.get('max_fps', 30)
+                logger.info(f"🎥 [RECORDING] Using configured camera FPS: {fps}")
             
             # Setup video writer
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')

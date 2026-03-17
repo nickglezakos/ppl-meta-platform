@@ -426,6 +426,43 @@
             display: none;
         }
 
+        .print-header,
+        .print-footer {
+            display: none;
+        }
+
+        .figure-caption {
+            margin-top: 0.4rem;
+            font-size: 0.9rem;
+            color: #333333;
+            font-style: italic;
+            text-align: center;
+        }
+
+        .section-number,
+        .subsection-number {
+            color: #000000;
+            font-weight: 700;
+            margin-right: 0.35rem;
+        }
+
+        .chart-print-block {
+            break-inside: avoid;
+            page-break-inside: avoid;
+            margin-bottom: 1.2rem;
+        }
+
+        .print-chart-image {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .print-prep .page {
+            display: block !important;
+            animation: none !important;
+        }
+
         @media print {
             @page {
                 size: A4;
@@ -444,11 +481,45 @@
 
             body {
                 background: #ffffff;
+                counter-reset: page;
             }
 
             main {
                 margin: 0;
-                padding: 0;
+                padding: 18mm 0 14mm 0;
+                min-height: auto;
+            }
+
+            .print-header,
+            .print-footer {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                position: fixed;
+                left: 0;
+                right: 0;
+                padding: 0 14mm;
+                background: #ffffff;
+                color: #111111;
+                z-index: 2000;
+                font-size: 10pt;
+            }
+
+            .print-header {
+                top: 0;
+                height: 14mm;
+                border-bottom: 1px solid #bdbdbd;
+                font-weight: 600;
+            }
+
+            .print-footer {
+                bottom: 0;
+                height: 10mm;
+                border-top: 1px solid #bdbdbd;
+            }
+
+            .print-page-number::after {
+                content: counter(page);
             }
 
             .print-toc {
@@ -482,7 +553,14 @@
 
             .page {
                 display: block !important;
-                page-break-after: always;
+                break-after: auto;
+                page-break-after: auto;
+                animation: none !important;
+            }
+
+            .page + .page {
+                break-before: page;
+                page-break-before: always;
             }
 
             .visual-placeholder {
@@ -494,6 +572,33 @@
                 border: 1px solid #d9d9d9;
                 border-radius: 0;
                 padding: 1rem;
+                break-inside: auto;
+                page-break-inside: auto;
+            }
+
+            .chart-scroll-wrapper,
+            .chart-scroll-content {
+                overflow: visible !important;
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+            }
+
+            canvas[id$="Chart"] {
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: 100% !important;
+                height: auto !important;
+                max-height: none !important;
+            }
+
+            .chart-print-block,
+            table,
+            .info-box,
+            .success-box,
+            .warning-box {
+                break-inside: avoid;
+                page-break-inside: avoid;
             }
         }
 
@@ -975,6 +1080,16 @@
     </style>
 </head>
 <body>
+    <div class="print-header" aria-hidden="true">
+        <span id="printHeaderTitle">EyeNet Vision - Business Plan 2026</span>
+        <span id="printHeaderSection">Full Document</span>
+    </div>
+
+    <div class="print-footer" aria-hidden="true">
+        <span>Confidential - EyeNet Vision</span>
+        <span class="print-page-number">Page </span>
+    </div>
+
     <header>
         <div class="header-content">
             <div class="logo-container">
@@ -5360,6 +5475,190 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script>
+        let isPreparingPrint = false;
+        const printChartState = new Map();
+
+        function assignSectionAndFigureNumbers() {
+            const pagesList = document.querySelectorAll('.page');
+            let sectionIndex = 1;
+            let figureIndex = 1;
+
+            pagesList.forEach((page) => {
+                const wrapper = page.querySelector('.content-wrapper');
+                if (!wrapper) return;
+
+                const h1 = wrapper.querySelector('h1');
+                if (h1) {
+                    if (!h1.dataset.numbered) {
+                        const numberSpan = document.createElement('span');
+                        numberSpan.className = 'section-number';
+                        numberSpan.textContent = sectionIndex + '.';
+                        h1.prepend(numberSpan);
+                        h1.dataset.numbered = 'true';
+                    }
+                    page.dataset.sectionNumber = String(sectionIndex);
+                    sectionIndex += 1;
+                }
+
+                const h2List = wrapper.querySelectorAll('h2');
+                h2List.forEach((h2, idx) => {
+                    if (h2.dataset.numbered) return;
+                    const subsectionNumber = (page.dataset.sectionNumber || '0') + '.' + (idx + 1);
+                    const subSpan = document.createElement('span');
+                    subSpan.className = 'subsection-number';
+                    subSpan.textContent = subsectionNumber;
+                    h2.prepend(subSpan);
+                    h2.dataset.numbered = 'true';
+                });
+            });
+
+            const chartCanvases = document.querySelectorAll('canvas[id$="Chart"]');
+            chartCanvases.forEach((canvas) => {
+                const page = canvas.closest('.page');
+                const sectionNumber = (page && page.dataset.sectionNumber) ? page.dataset.sectionNumber : '?';
+                const figureNumber = 'Figure ' + sectionNumber + '.' + figureIndex;
+                const chartIdName = canvas.id || 'chart';
+                const chartTitle = chartIdName
+                    .replace(/Chart$/, '')
+                    .replace(/([A-Z])/g, ' $1')
+                    .replace(/^./, (c) => c.toUpperCase())
+                    .trim();
+
+                const container = canvas.parentElement;
+                if (!container) return;
+                container.classList.add('chart-print-block');
+
+                let caption = container.querySelector('.figure-caption[data-figure-for="' + chartIdName + '"]');
+                if (!caption) {
+                    caption = document.createElement('div');
+                    caption.className = 'figure-caption';
+                    caption.dataset.figureFor = chartIdName;
+                    container.appendChild(caption);
+                }
+                caption.textContent = figureNumber + ' - ' + chartTitle;
+
+                figureIndex += 1;
+            });
+        }
+
+        function initializeAllChartsForPrint() {
+            const initFunctions = [
+                initializeMarketOpportunityChart,
+                initializeCharts,
+                initializePersonaChart,
+                initializeWarehouseEfficiencyChart,
+                initializeAttendanceTrackingChart,
+                initializeSafetyComplianceChart,
+                initializeCustomerAnalyticsChart,
+                initializeDigitalSignageChart,
+                initializeSecurityResponseChart,
+                initializeROITimelineChart,
+                initializePlatformArchitectureChart,
+                initializeStakeholderValueChart,
+                initializeIntelligentSignageROIChart,
+                initializeDeploymentModesChart,
+                initializeTechnicalArchitectureChart,
+                initializeMarketSegmentationChart,
+                initializeFeatureComparisonChart,
+                initializeMarketGrowthTrendsChart,
+                initializeCompetitiveMoatChart,
+                initializeDifferentiationStrategyChart,
+                initializeRevenueGrowthChart,
+                initializeProductRevenueChart,
+                initializeGeographicRevenueChart,
+                initializeScenarioComparisonChart,
+                initializeOpexBreakdownChart,
+                initializeInvestmentRoundsChart,
+                initializeReturnMultiplesChart,
+                initializeExitValuationChart,
+                initializeComparableCompaniesChart
+            ];
+
+            initFunctions.forEach((fn) => {
+                if (typeof fn === 'function') {
+                    try {
+                        fn();
+                    } catch (e) {
+                        console.warn('Chart initialization failed during print prep:', fn.name, e);
+                    }
+                }
+            });
+
+            assignSectionAndFigureNumbers();
+            enableMobileChartScrolling();
+        }
+
+        function setPrintHeaderSection() {
+            const activePage = document.querySelector('.page.active');
+            const sectionName = activePage ? (activePage.querySelector('h1') || {}).textContent : '';
+            const sectionEl = document.getElementById('printHeaderSection');
+            if (sectionEl) {
+                sectionEl.textContent = (sectionName || 'Full Document').trim();
+            }
+        }
+
+        function waitFrame() {
+            return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        }
+
+        async function buildPrintChartImagesInBatches(batchSize) {
+            const chartCanvases = Array.from(document.querySelectorAll('canvas[id$="Chart"]'));
+            for (let i = 0; i < chartCanvases.length; i += batchSize) {
+                const chunk = chartCanvases.slice(i, i + batchSize);
+                chunk.forEach((canvas) => {
+                    if (printChartState.has(canvas)) return;
+
+                    const chart = Chart.getChart(canvas);
+                    if (chart) {
+                        chart.resize();
+                        chart.update('none');
+                    }
+
+                    const imageSrc = canvas.toDataURL('image/png', 1.0);
+                    const image = document.createElement('img');
+                    image.className = 'print-chart-image';
+                    image.alt = (canvas.id || 'chart') + ' printable image';
+                    image.src = imageSrc;
+
+                    canvas.style.display = 'none';
+                    canvas.insertAdjacentElement('afterend', image);
+                    printChartState.set(canvas, image);
+                });
+
+                await waitFrame();
+            }
+        }
+
+        async function prepareForPrint() {
+            if (isPreparingPrint) return;
+            isPreparingPrint = true;
+
+            document.body.classList.add('print-prep');
+            setPrintHeaderSection();
+            initializeAllChartsForPrint();
+            await waitFrame();
+            await waitFrame();
+            await buildPrintChartImagesInBatches(3);
+            isPreparingPrint = false;
+        }
+
+        function restoreAfterPrint() {
+            printChartState.forEach((image, canvas) => {
+                if (image && image.parentElement) {
+                    image.remove();
+                }
+                canvas.style.display = '';
+                const chart = Chart.getChart(canvas);
+                if (chart) {
+                    chart.resize();
+                    chart.update('none');
+                }
+            });
+            printChartState.clear();
+            document.body.classList.remove('print-prep');
+            setPrintHeaderSection();
+        }
+
         function showPage(pageId) {
             // Hide all pages
             document.querySelectorAll('.page').forEach(page => {
@@ -5451,10 +5750,12 @@
 
             // Re-apply mobile chart sizing after section changes and chart initialization.
             setTimeout(enableMobileChartScrolling, 180);
+            setTimeout(assignSectionAndFigureNumbers, 200);
         }
 
         // Print functionality
-        function printDocument() {
+        async function printDocument() {
+            await prepareForPrint();
             window.print();
         }
 
@@ -5529,77 +5830,9 @@
             if (window.marketOpportunityChartInstance) {
                 window.marketOpportunityChartInstance.destroy();
             }
-            
-            // Keep chart canvas transparent
-            canvas.style.backgroundColor = 'transparent';
 
-            const marketOpportunityCallouts = {
-                id: 'marketOpportunityCallouts',
-                afterDatasetsDraw(chart) {
-                    const dataset = chart.data.datasets[0];
-                    const meta = chart.getDatasetMeta(0);
-                    if (!dataset || !meta || !meta.data || !meta.data.length) return;
-
-                    const total = dataset.data.reduce((sum, val) => sum + Number(val || 0), 0);
-                    const ctx = chart.ctx;
-                    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-                    const lineLength = isMobile ? 14 : 18;
-                    const elbowLength = isMobile ? 16 : 30;
-                    const titleFontSize = isMobile ? 9 : 13;
-                    const valueFontSize = isMobile ? 8 : 12;
-
-                    ctx.save();
-
-                    meta.data.forEach((arc, index) => {
-                        const value = Number(dataset.data[index] || 0);
-                        if (!value) return;
-
-                        const { x, y, startAngle, endAngle, outerRadius } = arc.getProps([
-                            'x',
-                            'y',
-                            'startAngle',
-                            'endAngle',
-                            'outerRadius'
-                        ], true);
-
-                        const angle = (startAngle + endAngle) / 2;
-                        const x1 = x + Math.cos(angle) * outerRadius;
-                        const y1 = y + Math.sin(angle) * outerRadius;
-                        const x2 = x + Math.cos(angle) * (outerRadius + lineLength);
-                        const y2 = y + Math.sin(angle) * (outerRadius + lineLength);
-                        const rightSide = Math.cos(angle) >= 0;
-                        const x3 = x2 + (rightSide ? elbowLength : -elbowLength);
-                        const percentage = ((value / total) * 100).toFixed(1);
-
-                        ctx.strokeStyle = '#333333';
-                        ctx.lineWidth = 1;
-                        ctx.beginPath();
-                        ctx.moveTo(x1, y1);
-                        ctx.lineTo(x2, y2);
-                        ctx.lineTo(x3, y2);
-                        ctx.stroke();
-
-                        ctx.textAlign = rightSide ? 'left' : 'right';
-                        ctx.textBaseline = 'middle';
-                        ctx.fillStyle = '#000000';
-
-                        const textX = x3 + (rightSide ? 4 : -4);
-                        const label = chart.data.labels[index] || '';
-
-                        ctx.font = `600 ${titleFontSize}px Georgia`;
-                        ctx.fillText(label, textX, y2 - (isMobile ? 5 : 7));
-
-                        ctx.font = `400 ${valueFontSize}px Georgia`;
-                        ctx.fillText(`${percentage}% | $${value}M`, textX, y2 + (isMobile ? 6 : 7));
-                    });
-
-                    ctx.restore();
-                }
-            };
-            
             window.marketOpportunityChartInstance = new Chart(ctx, {
                 type: 'doughnut',
-                plugins: [marketOpportunityCallouts],
                 data: {
                     labels: [
                         'Retail & E-Commerce',
@@ -5629,29 +5862,33 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    radius: window.matchMedia('(max-width: 768px)').matches ? '90%' : '72%',
+                    radius: '72%',
                     layout: {
-                        padding: window.matchMedia('(max-width: 768px)').matches
-                            ? { left: 70, right: 70, top: 20, bottom: 20 }
-                            : { left: 150, right: 150, top: 50, bottom: 50 }
+                        padding: { left: 80, right: 80, top: 30, bottom: 30 }
                     },
                     plugins: {
                         title: {
                             display: true,
                             text: 'Total Addressable Market by Vertical ($3.25B)',
                             font: {
-                                size: 18,
+                                size: 16,
                                 weight: 'bold'
                             },
                             color: '#000000',
-                            padding: 20
+                            padding: {
+                                bottom: 16
+                            }
                         },
                         legend: {
-                            display: false,
+                            display: true,
+                            position: 'bottom',
                             labels: {
-                                generateLabels: function() {
-                                    return [];
-                                }
+                                color: '#111111',
+                                font: {
+                                    size: 12
+                                },
+                                padding: 12,
+                                usePointStyle: true
                             }
                         },
                         tooltip: {
@@ -5663,14 +5900,8 @@
                             padding: 12,
                             callbacks: {
                                 label: function(context) {
-                                    const label = context.label || '';
-                                    const value = context.raw;
-                                    const percentage = ((value / 3250) * 100).toFixed(1);
-                                    return [
-                                        label,
-                                        'Market Size: $' + value + 'M',
-                                        'Share: ' + percentage + '%'
-                                    ];
+                                    const percentage = ((context.raw / 3250) * 100).toFixed(1);
+                                    return context.label + ': $' + context.raw + 'M (' + percentage + '%)';
                                 }
                             }
                         }
@@ -5710,12 +5941,16 @@
                     },
                     options: {
                         responsive: true,
-                        maintainAspectRatio: true,
+                        maintainAspectRatio: false,
                         plugins: {
                             title: {
                                 display: true,
                                 text: 'Revenue Growth Projection (2026-2028)',
-                                font: { size: 18, weight: 'bold' }
+                                font: { size: 18, weight: 'bold' },
+                                color: '#000000',
+                                padding: {
+                                    bottom: 16
+                                }
                             },
                             legend: {
                                 display: true,
@@ -5877,12 +6112,16 @@
                     },
                     options: {
                         responsive: true,
-                        maintainAspectRatio: true,
+                        maintainAspectRatio: false,
                         plugins: {
                             title: {
                                 display: true,
                                 text: 'Investor Return Projections (at $750M exit)',
-                                font: { size: 18, weight: 'bold' }
+                                font: { size: 18, weight: 'bold' },
+                                color: '#000000',
+                                padding: {
+                                    bottom: 16
+                                }
                             },
                             legend: {
                                 position: 'top'
@@ -6004,14 +6243,33 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: true,
+                        radius: '72%',
+                        layout: {
+                            padding: {
+                                top: 20,
+                                bottom: 20
+                            }
+                        },
                         plugins: {
                             title: {
                                 display: true,
                                 text: 'Series A Use of Funds ($2.5M)',
-                                font: { size: 16, weight: 'bold' }
+                                font: { size: 16, weight: 'bold' },
+                                color: '#000000',
+                                padding: {
+                                    bottom: 16
+                                }
                             },
                             legend: {
-                                position: 'right'
+                                position: 'bottom',
+                                labels: {
+                                    color: '#111111',
+                                    font: {
+                                        size: 12
+                                    },
+                                    padding: 12,
+                                    usePointStyle: true
+                                }
                             },
                             tooltip: {
                                 callbacks: {
@@ -7762,44 +8020,26 @@
                         display: true,
                         text: 'Feature Comparison Matrix - All Six Applications',
                         font: {
-                            size: 18,
+                            size: 16,
                             weight: 'bold'
                         },
                         color: '#000000',
-                        padding: 20
+                        padding: {
+                            bottom: 16
+                        }
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
                             color: '#000000',
-                            padding: 15,
+                            padding: 14,
                             font: {
                                 size: 12
                             },
                             usePointStyle: true
                         }
                     },
-                    tooltip: {
-                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-                        titleColor: '#000000',
-                        bodyColor: '#000000',
-                        borderColor: '#000000',
-                        borderWidth: 1,
-                        padding: 12,
-                        displayColors: true,
-                        callbacks: {
-                            label: function(context) {
-                                const value = context.raw;
-                                let level;
-                                if (value === 100) level = '✓ Full';
-                                else if (value >= 50) level = '◐ Partial';
-                                else if (value >= 30) level = '◔ Limited';
-                                else level = '✗ None';
-                                return context.dataset.label + ': ' + level;
-                            }
-                        }
-                    }
                 },
                 scales: {
                     r: {
@@ -7810,7 +8050,7 @@
                             stepSize: 25
                         },
                         pointLabels: {
-                            color: '#666666',
+                            color: '#333333',
                             font: {
                                 size: 13,
                                 weight: '500'
@@ -7824,10 +8064,6 @@
                         }
                     }
                 },
-                interaction: {
-                    mode: 'nearest',
-                    intersect: false
-                }
             }
         });
     }
@@ -8087,17 +8323,19 @@
                         display: true,
                         text: 'Competitive Moat Analysis - Defensibility Against Threats',
                         font: {
-                            size: 18,
+                            size: 16,
                             weight: 'bold'
                         },
                         color: '#000000',
-                        padding: 20
+                        padding: {
+                            bottom: 8
+                        }
                     },
                     subtitle: {
                         display: true,
                         text: 'Higher scores indicate stronger defensibility',
                         font: {
-                            size: 13
+                            size: 12
                         },
                         color: '#666666',
                         padding: {
@@ -8109,43 +8347,11 @@
                         position: 'bottom',
                         labels: {
                             color: '#000000',
-                            padding: 15,
+                            padding: 14,
                             font: {
                                 size: 12
                             },
                             usePointStyle: true
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-                        titleColor: '#000000',
-                        bodyColor: '#000000',
-                        borderColor: '#000000',
-                        borderWidth: 1,
-                        padding: 12,
-                        displayColors: true,
-                        callbacks: {
-                            label: function(context) {
-                                const value = context.raw;
-                                let strength;
-                                if (value >= 85) strength = 'Very Strong';
-                                else if (value >= 75) strength = 'Strong';
-                                else if (value >= 60) strength = 'Moderate';
-                                else if (value >= 50) strength = 'Weak';
-                                else strength = 'Very Weak';
-                                return context.dataset.label + ': ' + value + '/100 (' + strength + ')';
-                            },
-                            afterBody: function(tooltipItems) {
-                                const dataIndex = tooltipItems[0].dataIndex;
-                                const descriptions = [
-                                    'Modular design, on-premises options, flexible privacy controls',
-                                    'Specialized verticals, high switching costs, deep expertise',
-                                    'Proprietary algorithms, complex integration, commercial support',
-                                    'Modular deployment, flexible integration, API-first design',
-                                    'Clear use cases, compliance focus, transparent positioning'
-                                ];
-                                return '\n' + descriptions[dataIndex];
-                            }
                         }
                     }
                 },
@@ -8163,7 +8369,7 @@
                             }
                         },
                         pointLabels: {
-                            color: '#666666',
+                            color: '#333333',
                             font: {
                                 size: 12,
                                 weight: '500'
@@ -8178,10 +8384,6 @@
                         }
                     }
                 },
-                interaction: {
-                    mode: 'nearest',
-                    intersect: false
-                }
             }
         });
     }
@@ -9702,6 +9904,7 @@
         }
 
         window.addEventListener('load', function() {
+            assignSectionAndFigureNumbers();
             enableMobileChartScrolling();
             const currentPage = document.querySelector('.page.active');
             if (currentPage && currentPage.id === 'home') {
@@ -9746,8 +9949,17 @@
                 setTimeout(initializeComparableCompaniesChart, 100);
             }
             setTimeout(enableMobileChartScrolling, 200);
+            setTimeout(assignSectionAndFigureNumbers, 250);
             // Initialize footer navigation
             updateFooterNavigation();
+        });
+
+        window.addEventListener('beforeprint', () => {
+            prepareForPrint();
+        });
+
+        window.addEventListener('afterprint', () => {
+            restoreAfterPrint();
         });
 
         window.addEventListener('resize', enableMobileChartScrolling);

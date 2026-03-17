@@ -1510,11 +1510,17 @@ class MediaService:
             not media
             or media.media_type != MediaType.VIDEO
             or not media.technical_metadata
-            or "video_properties" not in media.technical_metadata
         ):
             return None
 
-        video_metadata = media.technical_metadata["video_properties"]
+        # The video metadata extractor stores under "video"; older records may use
+        # "video_properties". Check both so neither path silently returns None.
+        video_metadata = (
+            media.technical_metadata.get("video")
+            or media.technical_metadata.get("video_properties")
+        )
+        if not video_metadata:
+            return None
 
         # Extract key properties
         total_frames = video_metadata.get("total_frames")

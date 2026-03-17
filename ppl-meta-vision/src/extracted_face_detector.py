@@ -261,23 +261,30 @@ class ExtractedFaceDetector:
             for x, y, w, h in faces:
                 face_rects.append([x, y, w, h])
 
-            # Stage 2: Dlib validation (filter false positives)
+            # Stage 2: Dlib validation with padded crop (filter false positives)
+            # Tight crops strip the surrounding context that Dlib's HOG model
+            # needs (forehead, chin, cheeks), causing it to reject valid faces.
+            # Expand each Haar bbox by 100% margin before running Dlib.
+            img_h, img_w = gray.shape[:2]
             filtered_face_rects = []
 
-            for i, face_rect in enumerate(face_rects):
+            for face_rect in face_rects:
                 x, y, w, h = face_rect
 
-                # Crop the face region for Dlib validation
-                face_region = gray[y : y + h, x : x + w]
+                # Pad the crop by 100% of the face size on each side
+                pad = int(max(w, h) * 1.0)
+                px1 = max(0, x - pad)
+                py1 = max(0, y - pad)
+                px2 = min(img_w, x + w + pad)
+                py2 = min(img_h, y + h + pad)
 
-                # Skip if face region is too small
+                face_region = gray[py1:py2, px1:px2]
+
                 if face_region.size == 0:
                     continue
 
-                # Perform Dlib face detection on the cropped face region
                 dlib_faces = self.dlib_detector(face_region, 1)
 
-                # If Dlib detects faces in this region, it's a valid face
                 if len(dlib_faces) > 0:
                     filtered_face_rects.append(face_rect)
 

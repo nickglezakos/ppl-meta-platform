@@ -517,19 +517,45 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     try {
       print('📊 Applying metadata-based playback speed correction...');
       
-      // Try to get metadata from widget parameters
-      final metadata = widget.technicalMetadata;
+      // Try to get metadata from widget parameters.
+      // Some records store video metadata at top level while others nest it under "video".
+      Map<String, dynamic>? metadata = widget.technicalMetadata;
       final duration = widget.videoDuration;
-      
-      if (metadata == null || duration == null || duration == 0) {
-        print('⚠️ No metadata available for correction - using normal speed');
-        await _controller!.setPlaybackSpeed(1.0);
-        return;
+
+      if (metadata == null || metadata.isEmpty) {
+        debugPrint('📊 No in-memory metadata, fetching video properties from API fallback...');
+        final fallback = await _fetchVideoPropertiesMetadata();
+        if (fallback != null && fallback.isNotEmpty) {
+          metadata = fallback;
+          debugPrint('📊 Loaded fallback metadata: $fallback');
+        }
       }
       
-      // Extract total frames from metadata
-      final totalFrames = metadata['total_frames'] as int?;
-      final frameRate = metadata['frame_rate'] as num? ?? metadata['fps'] as num?;
+      if (metadata == null || duration == null || duration == 0) {
+        // Continue below if we have fallback metadata with usable duration_seconds.
+        if (metadata == null || metadata.isEmpty) {
+          print('⚠️ No metadata available for correction - using normal speed');
+          await _controller!.setPlaybackSpeed(1.0);
+          return;
+        }
+      }
+      
+        final nestedVideoMetadata = metadata['video'];
+        final videoMetadata = nestedVideoMetadata is Map<String, dynamic>
+          ? nestedVideoMetadata
+          : metadata;
+
+        // Extract total frames/FPS from either top-level or nested video map.
+        final totalFrames = _asInt(videoMetadata['total_frames']) ??
+          _asInt(metadata['total_frames']);
+        final frameRate = _asDouble(videoMetadata['frame_rate']) ??
+          _asDouble(videoMetadata['fps']) ??
+          _asDouble(videoMetadata['avg_fps']) ??
+          _asDouble(metadata['frame_rate']) ??
+          _asDouble(metadata['fps']);
+
+        final metadataDurationSeconds = _asDouble(videoMetadata['duration_seconds']) ??
+          _asDouble(metadata['duration_seconds']);
       
       if (totalFrames == null || totalFrames == 0) {
         print('⚠️ No frame count in metadata - using normal speed');
@@ -538,7 +564,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       }
       
       // Calculate actual FPS from metadata
-      final durationSeconds = duration.toDouble();
+      final durationSeconds = (metadataDurationSeconds ?? duration?.toDouble() ?? 0.0);
+      if (durationSeconds <= 0) {
+        print('⚠️ No usable duration for correction - using normal speed');
+        await _controller!.setPlaybackSpeed(1.0);
+        return;
+      }
       final actualFps = totalFrames / durationSeconds;
       
       // Get declared FPS (what the video claims)
@@ -571,6 +602,96 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       // Fallback to normal speed if correction fails
       await _controller?.setPlaybackSpeed(1.0);
     }
+  }
+
+  Future<Map<String, dynamic>?> _fetchVideoPropertiesMetadata() async {
+    try {
+      final mediaId = _extractMediaIdFromAnyUrl(widget.videoUrl);
+      if (mediaId == null) {
+        debugPrint('📊 Could not extract media ID for fallback metadata: ${widget.videoUrl}');
+        return null;
+      }
+
+      String? authHeader = widget.headers?['Authorization'];
+      if (authHeader == null || authHeader.isEmpty) {
+        final storedToken = await SecureStorageService.getString('auth_token');
+        if (storedToken != null && storedToken.isNotEmpty) {
+          authHeader = 'Bearer $storedToken';
+        }
+      }
+
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 8),
+          validateStatus: (_) => true,
+        ),
+      );
+
+      final response = await dio.get(
+        '${Config.gatewayServiceUrl}/api/v1/media/$mediaId/video-properties',
+        options: Options(
+          headers: {
+            if (authHeader != null && authHeader.isNotEmpty)
+              'Authorization': authHeader,
+          },
+        ),
+      );
+
+      if (response.statusCode != 200 || response.data is! Map<String, dynamic>) {
+        debugPrint('📊 Fallback video-properties request failed: status=${response.statusCode}');
+        return null;
+      }
+
+      final responseMap = response.data as Map<String, dynamic>;
+      final videoProps = responseMap['video_properties'];
+      if (videoProps is! Map<String, dynamic>) {
+        debugPrint('📊 video_properties payload missing in fallback response');
+        return null;
+      }
+
+      return {
+        'total_frames': _asInt(videoProps['total_frames']),
+        'frame_rate': _asDouble(videoProps['frame_rate']) ?? _asDouble(videoProps['fps']),
+        'fps': _asDouble(videoProps['fps']) ?? _asDouble(videoProps['frame_rate']),
+        'duration_seconds': _asDouble(videoProps['duration_seconds']),
+      };
+    } catch (e) {
+      debugPrint('📊 Error fetching fallback video properties: $e');
+      return null;
+    }
+  }
+
+  String? _extractMediaIdFromAnyUrl(String inputUrl) {
+    try {
+      final uri = Uri.parse(inputUrl);
+      final segments = uri.pathSegments;
+
+      for (int i = 0; i < segments.length - 1; i++) {
+        if (segments[i] == 'stream' || segments[i] == 'stream-token') {
+          final mediaId = segments[i + 1];
+          if (mediaId.isNotEmpty) {
+            return mediaId;
+          }
+        }
+      }
+    } catch (_) {
+      // Ignore parse errors and return null.
+    }
+    return null;
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value) ?? double.tryParse(value)?.round();
+    return null;
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
   
   /// Start monitoring playback speed to detect timing issues

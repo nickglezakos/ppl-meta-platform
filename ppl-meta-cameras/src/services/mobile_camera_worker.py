@@ -95,8 +95,8 @@ class MobileCameraWorker:
         self.frames_dropped = 0
         self.last_frame_time = 0.0
         
-        # Frame rate management
-        self.target_fps = 30
+        # Frame rate management (will be updated from mobile stream FPS)
+        self.target_fps = 30  # Default, will be overridden by actual mobile stream FPS
         self.frame_interval = 1.0 / self.target_fps
         
         logger.info(f"✅ MobileCameraWorker initialized for {device_id}")
@@ -104,7 +104,7 @@ class MobileCameraWorker:
     async def start(self):
         """Start processing mobile camera frames."""
         if self.is_active:
-            logger.warning(f"⚠️ Mobile worker already active for {device_id}")
+            logger.warning(f"⚠️ Mobile worker already active for {self.device_id}")
             return
         
         self.is_active = True
@@ -136,6 +136,9 @@ class MobileCameraWorker:
         Continuously pull frames from mobile storage and push to camera worker.
         
         This is the core processing loop that runs in the background.
+        
+        CRITICAL: Frame rate is dynamically adjusted to match actual mobile device FPS.
+        This prevents duplicate frames when the device sends slower than expected.
         """
         from src.services.mobile_streaming import mobile_streaming_service
         
@@ -146,14 +149,28 @@ class MobileCameraWorker:
         
         while self.is_active:
             try:
-                # Get latest frame data from mobile streaming service
-                frame_data = await mobile_streaming_service.get_latest_mobile_frame_data(self.device_id)
+                # Get latest frame data from mobile streaming service (sync method for worker threads)
+                frame_data = mobile_streaming_service.get_latest_mobile_frame_data(self.device_id)
                 
                 if frame_data:
                     frame = frame_data.get("frame")
                     rotation_angle = frame_data.get("rotation_angle", 0)
                     orientation = frame_data.get("orientation", "portraitUp")
                     timestamp = frame_data.get("timestamp", time.time())
+                    
+                    # CRITICAL: Get CALCULATED FPS from mobile streaming service
+                    # (Calculates from frame timestamps, not app-reported value which may be wrong)
+                    # This handles old Android devices that claim 30 FPS but actually send 10 FPS
+                    calculated_mobile_fps = mobile_streaming_service.get_mobile_stream_fps(self.device_id)
+                    
+                    # Update frame rate if calculated FPS differs from current
+                    if calculated_mobile_fps and calculated_mobile_fps != self.target_fps:
+                        self.target_fps = calculated_mobile_fps
+                        self.frame_interval = 1.0 / self.target_fps
+                        logger.info(
+                            f"📱 UPDATED FPS for {self.device_id}: {self.target_fps} FPS "
+                            f"(interval: {self.frame_interval:.4f}s per frame)"
+                        )
                     
                     if frame is not None:
                         # Apply rotation
@@ -175,7 +192,7 @@ class MobileCameraWorker:
                         self.camera_worker.frames_read = self.frames_processed
                         self.camera_worker.last_frame_time = self.last_frame_time
                         
-                        logger.debug(f"📱 Frame processed and added to buffer for {self.device_id} (total: {self.frames_processed})")
+                        logger.debug(f"📱 Frame processed and added to buffer for {self.device_id} (total: {self.frames_processed}, at {self.target_fps} FPS)")
                     else:
                         consecutive_empty_frames += 1
                 else:
@@ -186,7 +203,7 @@ class MobileCameraWorker:
                     logger.warning(f"⏱️ No frames received for {self.device_id} in 5 seconds, continuing to poll...")
                     consecutive_empty_frames = 0  # Reset and continue
                 
-                # Frame rate control
+                # Frame rate control - dynamically adjusted based on actual mobile FPS
                 await asyncio.sleep(self.frame_interval)
                 
             except asyncio.CancelledError:

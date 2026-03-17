@@ -46,9 +46,15 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   @override
   void initState() {
     super.initState();
-    
-    // Check if we received a minimal MediaItem (from UUID-based navigation)
-    if (widget.mediaItem.mediaId == '0') {
+
+    // Load full media details when we have a minimal/partial MediaItem.
+    // Collection navigation can provide items without technical_metadata,
+    // which is required for playback speed normalization.
+    final needsFullDetails = widget.mediaItem.mediaId == '0' ||
+        widget.mediaItem.technicalMetadata == null ||
+        widget.mediaItem.technicalMetadata!.isEmpty;
+
+    if (needsFullDetails) {
       _loadFullMediaDetails();
     }
     

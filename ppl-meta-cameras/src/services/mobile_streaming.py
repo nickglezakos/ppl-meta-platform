@@ -61,6 +61,11 @@ class MobileCameraStreamingService:
                 "frame_queue": Queue(maxsize=30),  # Buffer 30 frames
                 "last_frame_time": 0,
                 "stream_url": f"{protocol}://{ip_address}:{port}/live/{device_id}",
+                "frame_timestamps": [],  # Short calibration window only
+                "actual_fps": 30,  # App-reported fallback FPS
+                "fps_locked": False,  # Lock once after initial calibration
+                "calibrated_fps": None,  # Final FPS used for worker/recording timing
+                "fps_calibration_start": None,
             }
 
             self.active_mobile_streams[device_id] = stream_info
@@ -294,6 +299,31 @@ class MobileCameraStreamingService:
             ),
         }
 
+    def get_mobile_stream_fps(self, device_id: str) -> int:
+        """
+        Get FPS for mobile camera timing with one-time startup calibration.
+
+        Design goal: keep live pipeline stable by calibrating FPS only during the
+        first few seconds, then lock the result and stop recalculation.
+        
+        Args:
+            device_id: Mobile device identifier
+            
+        Returns:
+            Locked calibrated FPS if available, otherwise app-reported fallback FPS
+        """
+        if device_id not in self.active_mobile_streams:
+            logger.debug(f"No active stream for {device_id}, returning default FPS 30")
+            return 30
+        
+        stream_info = self.active_mobile_streams[device_id]
+
+        if stream_info.get("fps_locked") and stream_info.get("calibrated_fps"):
+            return int(stream_info["calibrated_fps"])
+
+        # During startup calibration, use app-reported FPS as temporary fallback.
+        return int(stream_info.get("actual_fps", 30))
+
     async def receive_mobile_frame(
         self,
         device_id: str,
@@ -301,18 +331,32 @@ class MobileCameraStreamingService:
         timestamp: float,
         orientation: str = "portraitUp",
         rotation_angle: int = 0,
+        fps: int = 30,
     ) -> bool:
-        """Receive and store a frame from a mobile camera."""
+        """Receive and store a frame from a mobile camera.
+        
+        Args:
+            device_id: Mobile device identifier
+            frame: The image frame
+            timestamp: Frame timestamp
+            orientation: Device orientation string
+            rotation_angle: Rotation angle in degrees
+            fps: FPS the mobile app REPORTS (may be incorrect on old Android devices!)
+        """
 
         try:
+            # Treat any incoming frame as an implicit resume signal.
+            # This prevents frame starvation when stop/start control messages flap.
+            if device_id in self.stopped_cameras:
+                stop_time = self.stopped_cameras.pop(device_id)
+                elapsed = time.time() - stop_time
+                logger.info(
+                    f"✅ Auto-resuming stopped camera {device_id} on incoming frame after {elapsed:.1f}s"
+                )
+
             # Check if we have an active stream for this device, if not create it
             if device_id not in self.active_mobile_streams:
                 logger.info(f"Auto-setting up mobile camera stream for {device_id}")
-                
-                # Clear stopped flag when restarting stream
-                if device_id in self.stopped_cameras:
-                    del self.stopped_cameras[device_id]
-                    logger.info(f"✅ Cleared stopped flag for {device_id} - accepting frames again")
 
                 # Auto-setup mobile camera stream with default configuration
                 stream_config = {
@@ -329,18 +373,9 @@ class MobileCameraStreamingService:
                         f"Failed to auto-setup mobile camera stream for {device_id}"
                     )
                     return False
-
-            # Check if camera has been stopped - reject frames (but only after checking for restart)
-            if device_id in self.stopped_cameras:
-                stop_time = self.stopped_cameras[device_id]
-                elapsed = time.time() - stop_time
-                logger.warning(
-                    f"🚫 Rejecting frame from stopped camera {device_id} (stopped {elapsed:.1f}s ago)"
-                )
-                return False
             
             logger.debug(
-                f"📱 [MOBILE_SERVICE_DEBUG] Storing frame with orientation: {orientation}, rotation: {rotation_angle}"
+                f"📱 [MOBILE_SERVICE_DEBUG] Storing frame with orientation: {orientation}, rotation: {rotation_angle}, fps: {fps}"
             )
             logger.debug(
                 f"📱 [MOBILE_SERVICE_DEBUG] Frame shape: {frame.shape}, timestamp: {timestamp}"
@@ -349,8 +384,66 @@ class MobileCameraStreamingService:
             stream_info = self.active_mobile_streams[device_id]
             frame_queue = self.stream_queues[device_id]
 
-            # Update last frame time
-            stream_info["last_frame_time"] = timestamp
+            # Use server-side timing for stream activity and FPS calibration.
+            receive_time = time.time()
+            stream_info["last_frame_time"] = receive_time
+            
+            # Store app-reported FPS as fallback while calibration is in progress.
+            stream_info["actual_fps"] = fps
+
+            # One-time FPS calibration window (first few seconds only) to avoid
+            # continuous runtime recalculation that can destabilize parallel services.
+            if not stream_info.get("fps_locked"):
+                if stream_info.get("fps_calibration_start") is None:
+                    stream_info["fps_calibration_start"] = receive_time
+
+                frame_timestamps = stream_info.setdefault("frame_timestamps", [])
+                frame_timestamps.append(receive_time)
+
+                # Keep a bounded list for low overhead.
+                if len(frame_timestamps) > 45:
+                    frame_timestamps.pop(0)
+
+                calibration_elapsed = receive_time - stream_info["fps_calibration_start"]
+                min_frames_for_lock = 10
+                calibration_window_seconds = 3.0
+
+                if (
+                    calibration_elapsed >= calibration_window_seconds
+                    and len(frame_timestamps) >= min_frames_for_lock
+                ):
+                    time_span = frame_timestamps[-1] - frame_timestamps[0]
+                    intervals = len(frame_timestamps) - 1
+
+                    if time_span > 0 and intervals > 0:
+                        calculated_fps = intervals / time_span
+                        if 5 <= calculated_fps <= 60:
+                            locked_fps = int(round(calculated_fps))
+                            stream_info["calibrated_fps"] = locked_fps
+                            stream_info["fps_locked"] = True
+
+                            if abs(locked_fps - int(fps)) > 2:
+                                logger.warning(
+                                    f"📱 FPS CALIBRATED for {device_id}: app reported {fps}, locked actual {locked_fps}"
+                                )
+                            else:
+                                logger.info(
+                                    f"📱 FPS CALIBRATED for {device_id}: locked at {locked_fps}"
+                                )
+                        else:
+                            # Invalid estimate: lock to fallback to avoid repeated work.
+                            stream_info["calibrated_fps"] = int(fps)
+                            stream_info["fps_locked"] = True
+                            logger.warning(
+                                f"📱 FPS calibration out of range for {device_id} ({calculated_fps:.2f}), locking to fallback {fps}"
+                            )
+                    else:
+                        stream_info["calibrated_fps"] = int(fps)
+                        stream_info["fps_locked"] = True
+
+                # Once locked, drop calibration timestamps to keep runtime lightweight.
+                if stream_info.get("fps_locked"):
+                    stream_info["frame_timestamps"] = []
 
             # Create frame data with metadata
             frame_data = {
@@ -358,6 +451,7 @@ class MobileCameraStreamingService:
                 "timestamp": timestamp,
                 "orientation": orientation,
                 "rotation_angle": rotation_angle,
+                "fps": fps,  # Include reported FPS in frame data (worker uses calculated FPS instead)
             }
 
             # Add frame data to queue (drop oldest if queue is full)
@@ -382,7 +476,7 @@ class MobileCameraStreamingService:
 
     async def get_latest_mobile_frame(self, device_id: str) -> Optional[np.ndarray]:
         """Get the latest frame from a mobile camera (backward compatibility)."""
-        frame_data = await self.get_latest_mobile_frame_data(device_id)
+        frame_data = self.get_latest_mobile_frame_data(device_id)
         return frame_data["frame"] if frame_data else None
 
     def get_latest_mobile_frame_data(self, device_id: str) -> Optional[Dict]:
