@@ -13,7 +13,7 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from src.auth import AuthUser, get_current_user
+from src.auth import AuthUser, get_current_user, require_media_view
 
 from ...database import get_db
 from ...services.face_detection_service import MediaFaceDetectionService
@@ -37,7 +37,7 @@ async def stream_video_with_faces(
     method: str = Query(
         "auto", description="Face detection method: auto, two_stage, haar, dlib, dnn"
     ),
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(require_media_view),
     share_token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):

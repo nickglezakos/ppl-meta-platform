@@ -68,3 +68,8 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str
+
+
+class AdminSetPassword(BaseModel):
+    new_password: str
+    send_email: bool = False

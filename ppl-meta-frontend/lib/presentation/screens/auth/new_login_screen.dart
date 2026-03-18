@@ -248,7 +248,15 @@ class _NewLoginScreenState extends ConsumerState<NewLoginScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+
+                  // Forgot password link
+                  TextButton(
+                    onPressed: () => context.go('/forgot-password'),
+                    child: const Text('Forgot Password?'),
+                  ),
+
+                  const SizedBox(height: 8),
 
                   // Register link
                   Row(

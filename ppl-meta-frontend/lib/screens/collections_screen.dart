@@ -22,6 +22,8 @@ import '../services/vision_processing_service.dart';
 import '../providers/media_organization_providers.dart';
 import '../presentation/widgets/settings/workflow_settings_section.dart';
 import 'person_objects_detail_screen.dart';
+import '../core/providers/features_providers.dart';
+import '../widgets/media_privacy_placeholder.dart';
 
 /// Collections screen with management and media display
 class CollectionsScreen extends ConsumerStatefulWidget {
@@ -101,6 +103,13 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canViewMedia = ref.watch(mediaViewingEnabledProvider);
+    if (!canViewMedia) {
+      return Scaffold(
+        appBar: const CustomAppBar(title: 'Collections'),
+        body: const MediaPrivacyPlaceholder(),
+      );
+    }
     print('🏗️ CollectionsScreen build() - initialCollectionId: ${widget.initialCollectionId}, _selectedCollection: ${_selectedCollection?.id}');
     
     final apiClient = ref.watch(apiClientProvider);

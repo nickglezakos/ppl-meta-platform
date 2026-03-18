@@ -6,6 +6,9 @@ import '../../core/providers/provider_bridge.dart';
 import '../../core/services/secure_storage_service.dart';
 import '../screens/auth/new_login_screen.dart';
 import '../screens/auth/register_screen.dart';
+import '../screens/auth/forgot_password_screen.dart';
+import '../screens/auth/reset_password_screen.dart';
+import '../screens/auth/verify_email_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/users/users_screen.dart';
 import '../screens/cameras/cameras_screen.dart';
@@ -44,9 +47,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           storedToken.isNotEmpty;
       final isLoginRoute = state.fullPath == '/login';
       final isRegisterRoute = state.fullPath == '/register';
+      final isPublicRoute = state.fullPath == '/forgot-password' ||
+          (state.fullPath?.startsWith('/reset-password') ?? false) ||
+          (state.fullPath?.startsWith('/verify-email') ?? false);
       
       // If not authenticated and trying to access protected routes, redirect to login
-      if (!isAuthenticated && !isLoginRoute && !isRegisterRoute) {
+      if (!isAuthenticated && !isLoginRoute && !isRegisterRoute && !isPublicRoute) {
         return '/login';
       }
       
@@ -67,6 +73,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/register',
         name: 'register',
         builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        name: 'forgot-password',
+        builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/reset-password',
+        name: 'reset-password',
+        builder: (context, state) {
+          final token = state.uri.queryParameters['token'] ?? '';
+          return ResetPasswordScreen(token: token);
+        },
+      ),
+      GoRoute(
+        path: '/verify-email',
+        name: 'verify-email',
+        builder: (context, state) {
+          final token = state.uri.queryParameters['token'] ?? '';
+          return VerifyEmailScreen(token: token);
+        },
       ),
       GoRoute(
         path: '/home',
@@ -107,7 +134,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile',
         name: 'profile',
-        builder: (context, state) => const ProfileScreen(),
+        builder: (context, state) {
+          final userIdParam = state.uri.queryParameters['userId'];
+          final targetUserId = userIdParam != null ? int.tryParse(userIdParam) : null;
+          return ProfileScreen(targetUserId: targetUserId);
+        },
       ),
       GoRoute(
         path: '/features',

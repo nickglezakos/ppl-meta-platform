@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 # Add shared modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
-from src.auth import AuthUser, get_current_user, get_user_from_token
+from src.auth import AuthUser, get_current_user, get_user_from_token, require_media_view
 from src.database import get_db
 from src.models.media import Media
 from src.schemas.media import (  # Variant schemas; Issue #016 - Advanced Metadata Management
@@ -1468,7 +1468,7 @@ def get_media_access_check(
 @router.get("/download/{media_id}")
 async def download_media(
     media_id: str,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(require_media_view),
     share_token: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
@@ -1524,7 +1524,7 @@ async def download_media(
 async def stream_media(
     media_id: str,
     request: Request,
-    current_user: AuthUser = Depends(get_current_user),
+    current_user: AuthUser = Depends(require_media_view),
     share_token: Optional[str] = None,
     android_compatible: bool = False,
     db: Session = Depends(get_db),
@@ -1784,7 +1784,7 @@ async def get_thumbnail(
     video_position: str = "start",
     video_timestamp: Optional[str] = None,
     share_token: Optional[str] = None,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_media_view),
     db: Session = Depends(get_db),
     thumbnail_service: ThumbnailService = Depends(get_thumbnail_service),
 ):

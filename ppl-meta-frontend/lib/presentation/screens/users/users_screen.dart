@@ -160,83 +160,107 @@ class _UserCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            // Avatar
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-              child: Text(
-                user.username.substring(0, 1).toUpperCase(),
-                style: TextStyle(
-                  color: Theme.of(context).primaryColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => context.go('/profile?userId=${user.id}'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Avatar
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+                child: Text(
+                  user.username.substring(0, 1).toUpperCase(),
+                  style: TextStyle(
+                    color: Theme.of(context).primaryColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 16),
-            
-            // User info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.username,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+              const SizedBox(width: 16),
+              
+              // User info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.username,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    user.email,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.badge,
-                        size: 14,
+                    const SizedBox(height: 4),
+                    Text(
+                      user.email,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Colors.grey[600],
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'ID: ${user.id}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.badge,
+                          size: 14,
                           color: Colors.grey[600],
                         ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            
-            // Status indicator (based on email verification)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: user.emailVerified 
-                    ? Colors.green.withOpacity(0.2)
-                    : Colors.orange.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                user.emailVerified ? 'Verified' : 'Unverified',
-                style: TextStyle(
-                  color: user.emailVerified ? Colors.green[700] : Colors.orange[700],
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                        const SizedBox(width: 4),
+                        Text(
+                          'ID: ${user.id}',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        if (user.isAdmin) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'Admin',
+                              style: TextStyle(
+                                color: Colors.deepPurple,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ),
-          ],
+              
+              // Status indicator (based on email verification)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: user.emailVerified 
+                      ? Colors.green.withOpacity(0.2)
+                      : Colors.orange.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  user.emailVerified ? 'Verified' : 'Unverified',
+                  style: TextStyle(
+                    color: user.emailVerified ? Colors.green[700] : Colors.orange[700],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
         ),
       ),
     );

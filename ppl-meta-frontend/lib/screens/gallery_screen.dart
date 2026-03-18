@@ -12,6 +12,8 @@ import '../widgets/share_dialog.dart';
 import '../widgets/media_details_dialog.dart';
 import '../widgets/collection_picker_dialog.dart';
 import '../widgets/custom_app_bar.dart';
+import '../core/providers/features_providers.dart';
+import '../widgets/media_privacy_placeholder.dart';
 
 /// Gallery screen with search and responsive media display
 class GalleryScreen extends ConsumerStatefulWidget {
@@ -35,6 +37,13 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canViewMedia = ref.watch(mediaViewingEnabledProvider);
+    if (!canViewMedia) {
+      return Scaffold(
+        appBar: const CustomAppBar(title: 'Gallery'),
+        body: const MediaPrivacyPlaceholder(),
+      );
+    }
     final apiClient = ref.watch(apiClientProvider);
     return Scaffold(
       appBar: _isSelectionMode

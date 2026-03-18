@@ -75,8 +75,8 @@ async def get_current_user(
                     user_id=user_data.get("guid"),  # Use UUID instead of integer ID
                     username=user_data.get("username"),
                     email=user_data.get("email"),
-                    roles=[],  # Default empty roles
-                    permissions=[],  # Default empty permissions
+                    roles=user_data.get("roles", []),
+                    permissions=user_data.get("capabilities", []),
                 )
             else:
                 raise HTTPException(
@@ -109,6 +109,22 @@ async def get_optional_user(
         return await get_current_user(credentials)
     except HTTPException:
         return None
+
+
+async def require_media_view(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> AuthUser:
+    """
+    Dependency that requires the media:view capability.
+    Returns 403 if the user lacks the media:view permission.
+    """
+    user = await get_current_user(credentials)
+    if "media:view" not in user.permissions and "all" not in user.permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Media viewing is disabled for your account",
+        )
+    return user
 
 
 def require_permission(resource: str, action: str):

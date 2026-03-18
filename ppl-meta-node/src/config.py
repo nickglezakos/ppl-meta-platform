@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     MEDIA_SERVICE_URL: str = "http://localhost:8000"
     GATEWAY_SERVICE_URL: str = "http://localhost:8080"
     BOOTCORE_SERVICE_URL: str = "http://localhost:8007"
+    COMMUNICATIONS_SERVICE_URL: str = "http://localhost:8009"
+    FRONTEND_URL: str = "http://localhost:3000"
     SERVICE_SECRET: str = ""
 
     # Redis Configuration

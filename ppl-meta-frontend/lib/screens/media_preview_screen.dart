@@ -18,6 +18,8 @@ import '../widgets/face_and_person_count_widget.dart';
 import '../providers/person_objects_provider.dart';
 import '../widgets/person_objects_components.dart';
 import 'person_objects_detail_screen.dart';
+import '../core/providers/features_providers.dart';
+import '../widgets/media_privacy_placeholder.dart';
 
 
 /// Enhanced Media Preview Screen with integrated Workflows 4 & 5 support
@@ -103,6 +105,13 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
   @override
   Widget build(BuildContext context) {
+    final canViewMedia = ref.watch(mediaViewingEnabledProvider);
+    if (!canViewMedia) {
+      return Scaffold(
+        appBar: const CustomAppBar(title: 'Media Preview'),
+        body: const MediaPrivacyPlaceholder(),
+      );
+    }
     // Show loading indicator while fetching full media details
     if (_isLoadingMedia) {
       return Scaffold(

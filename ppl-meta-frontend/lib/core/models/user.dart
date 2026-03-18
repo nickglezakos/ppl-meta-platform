@@ -14,6 +14,10 @@ class User {
   final DateTime? createdAt;
   @JsonKey(name: 'updated_at')
   final DateTime? updatedAt;
+  @JsonKey(defaultValue: <String>[])
+  final List<String> roles;
+  @JsonKey(defaultValue: <String>[])
+  final List<String> capabilities;
 
   const User({
     required this.id,
@@ -22,7 +26,12 @@ class User {
     this.emailVerified = false,
     this.createdAt,
     this.updatedAt,
+    this.roles = const [],
+    this.capabilities = const [],
   });
+
+  bool get isAdmin => roles.contains('admin');
+  bool get canViewMedia => capabilities.contains('media:view');
 
   factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
   Map<String, dynamic> toJson() => _$UserToJson(this);
@@ -34,6 +43,8 @@ class User {
     bool? emailVerified,
     DateTime? createdAt,
     DateTime? updatedAt,
+    List<String>? roles,
+    List<String>? capabilities,
   }) {
     return User(
       id: id ?? this.id,
@@ -42,6 +53,8 @@ class User {
       emailVerified: emailVerified ?? this.emailVerified,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      roles: roles ?? this.roles,
+      capabilities: capabilities ?? this.capabilities,
     );
   }
 

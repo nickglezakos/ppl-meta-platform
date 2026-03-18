@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'auth_provider.dart';
 
 /// Basic features configuration
 class AppFeatures {
@@ -23,4 +24,10 @@ final featuresProvider = Provider<AppFeatures>((ref) {
     workflowsEnabled: true,
     cameraIntegrationEnabled: true,
   );
+});
+
+/// Provider that checks if the current user has media viewing capability
+final mediaViewingEnabledProvider = Provider<bool>((ref) {
+  final authState = ref.watch(authNotifierProvider);
+  return authState.user?.canViewMedia ?? false;
 });

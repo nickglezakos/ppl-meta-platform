@@ -24,6 +24,7 @@ from src.database import get_db
 from src.mail import send_email
 from src.models.user import User, UserAction
 from src.schemas.user import (
+    AdminSetPassword,
     PasswordResetConfirm,
     PasswordResetRequest,
     UserActionRead,
@@ -179,6 +180,32 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
         logger.info("User created successfully with ID: %s", created_user.id)
 
         log_user_action(db, created_user.username, created_user.email, "register")
+
+        # Send verification email
+        try:
+            verification_token = jwt.encode(
+                {
+                    "sub": created_user.id,
+                    "action": "verify_email",
+                    "exp": datetime.utcnow() + timedelta(hours=24),
+                },
+                settings.SECRET_KEY,
+                algorithm=settings.ALGORITHM,
+            )
+            verify_link = f"{settings.FRONTEND_URL}/#/verify-email?token={verification_token}"
+            await send_email(
+                subject="Verify your EyeNet account",
+                email_to=created_user.email,
+                body=f"""
+                    <h3>Welcome to EyeNet, {created_user.username}!</h3>
+                    <p>Please verify your email by clicking the button below:</p>
+                    <a href="{verify_link}" style="padding:12px 24px;background:#1a73e8;color:white;
+                       text-decoration:none;border-radius:6px;display:inline-block;">Verify Email</a>
+                    <p>This link expires in 24 hours.</p>
+                """,
+            )
+        except Exception as email_err:
+            logger.warning("Failed to send verification email: %s", email_err)
 
         # Manual response construction to avoid any serialization issues
         response_data = {
@@ -462,12 +489,16 @@ async def get_platform_services(
 
 
 @router.get("/profile")
-async def get_profile(current_user: User = Depends(get_current_user)):
+async def get_profile(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get current user profile."""
     try:
+        from src.services.capabilites_service import get_roles_and_capabilities_by_user
+
         updated_at = None
         if hasattr(current_user, "updated_at") and current_user.updated_at:
             updated_at = current_user.updated_at.isoformat()
+
+        rc = get_roles_and_capabilities_by_user(db, current_user.id)
 
         return {
             "id": current_user.id,
@@ -478,6 +509,8 @@ async def get_profile(current_user: User = Depends(get_current_user)):
             "is_active": current_user.is_active,
             "created_at": current_user.created_at.isoformat(),
             "updated_at": updated_at,
+            "roles": rc["roles"],
+            "capabilities": rc["capabilities"],
         }
     except Exception as e:
         logger.error("Profile retrieval error: %s", e)
@@ -632,7 +665,89 @@ async def get_user_permissions_for_service(
     return {"user_id": user.id, "roles": user_roles, "capabilities": user_capabilities}
 
 
-# ===== USER MANAGEMENT ENDPOINTS =====
+@router.get("/user-profile/{user_id}")
+async def get_user_profile_admin(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get a user's profile with roles and capabilities. Admin only."""
+    from src.services.capabilites_service import get_roles_and_capabilities_by_user
+
+    # Check that current user is admin
+    caller_rc = get_roles_and_capabilities_by_user(db, current_user.id)
+    if "admin" not in caller_rc["roles"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    target_user = get_user_by_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target_rc = get_roles_and_capabilities_by_user(db, user_id)
+    return {
+        "id": target_user.id,
+        "username": target_user.username,
+        "email": target_user.email,
+        "email_verified": target_user.email_verified,
+        "created_at": str(target_user.created_at) if target_user.created_at else None,
+        "updated_at": str(target_user.updated_at) if target_user.updated_at else None,
+        "roles": target_rc["roles"],
+        "capabilities": target_rc["capabilities"],
+    }
+
+
+@router.post("/toggle-capability/{user_id}")
+async def toggle_user_capability(
+    user_id: int,
+    body: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Toggle a capability for a user. Admin only."""
+    from src.services.capabilites_service import get_roles_and_capabilities_by_user
+    from src.models.role import Capability, RoleCapability
+
+    # Check that current user is admin
+    caller_rc = get_roles_and_capabilities_by_user(db, current_user.id)
+    if "admin" not in caller_rc["roles"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    capability_name = body.get("capability")
+    enabled = body.get("enabled")
+    if not capability_name or enabled is None:
+        raise HTTPException(status_code=400, detail="'capability' and 'enabled' are required")
+
+    target_user = get_user_by_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get or create the capability row
+    cap = db.query(Capability).filter(Capability.name == capability_name).first()
+    if not cap:
+        cap = Capability(name=capability_name)
+        db.add(cap)
+        db.commit()
+        db.refresh(cap)
+
+    # Iterate over each of the user's roles and add/remove the capability
+    for user_role in target_user.roles:
+        role = user_role.role
+        existing = db.query(RoleCapability).filter_by(
+            role_id=role.id, capability_id=cap.id
+        ).first()
+
+        if enabled and not existing:
+            db.add(RoleCapability(role_id=role.id, capability_id=cap.id))
+        elif not enabled and existing:
+            db.delete(existing)
+
+    db.commit()
+
+    updated_rc = get_roles_and_capabilities_by_user(db, user_id)
+    return {"user_id": user_id, "roles": updated_rc["roles"], "capabilities": updated_rc["capabilities"]}
+
+
+
 
 
 @router.get("/{user_id}", response_model=UserRead)
@@ -729,18 +844,21 @@ async def forgot_password(request: PasswordResetRequest, db: Session = Depends(g
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    token = create_password_reset_token(db, request.email)
-    reset_link = f"http://{settings.HOST}:{settings.PORT}/api/v1/users/reset-password?token={token}"
+    token = create_password_reset_token(user.id, request.email)
+    reset_link = f"{settings.FRONTEND_URL}/#/reset-password?token={token}"
 
     email_body = f"""
         <h3>Password Reset Request</h3>
-        <p>Click the link below to reset your password:</p>
-        <a href="{reset_link}">Reset Password</a>
+        <p>We received a request to reset your password.</p>
+        <p>Click the button below to set a new password:</p>
+        <a href="{reset_link}" style="padding:12px 24px;background:#1a73e8;color:white;
+           text-decoration:none;border-radius:6px;display:inline-block;">Reset Password</a>
         <p>This link will expire in 1 hour.</p>
+        <p style="color:#666;">If you didn't request this, you can safely ignore this email.</p>
     """
 
     await send_email(
-        subject="Password Reset Request", email_to=request.email, body=email_body
+        subject="Reset your EyeNet password", email_to=request.email, body=email_body
     )
 
     return {"detail": "Password reset email sent"}
@@ -749,15 +867,60 @@ async def forgot_password(request: PasswordResetRequest, db: Session = Depends(g
 @router.post("/reset-password")
 async def reset_password(request: PasswordResetConfirm, db: Session = Depends(get_db)):
     """Reset password with token."""
-    email = verify_password_reset_token(db, request.token)
-    if not email:
+    payload = verify_password_reset_token(request.token)
+    if not payload:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
+    email = payload.get("email")
     user = get_user_by_email(db, email)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    set_new_password(db, email, request.new_password)
+    set_new_password(db, user.id, request.new_password)
     log_user_action(db, user.username, user.email, "password_reset")
 
     return {"detail": "Password reset successfully"}
+
+
+@router.post("/admin/set-password/{user_id}")
+async def admin_set_password(
+    user_id: int,
+    body: AdminSetPassword,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Admin sets a new password for a user and optionally emails it."""
+    from src.services.capabilites_service import get_roles_and_capabilities_by_user
+
+    caller_rc = get_roles_and_capabilities_by_user(db, current_user.id)
+    if "admin" not in caller_rc["roles"]:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    target_user = get_user_by_id(db, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    result, error = set_new_password(db, user_id, body.new_password)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    log_user_action(db, target_user.username, target_user.email, "admin_password_set")
+
+    if body.send_email:
+        email_body = f"""
+            <h3>Your password has been updated</h3>
+            <p>Hi {target_user.username},</p>
+            <p>An administrator has set a new password for your EyeNet account.</p>
+            <p>Your new password is: <strong>{body.new_password}</strong></p>
+            <p>Please sign in and change your password as soon as possible.</p>
+        """
+        await send_email(
+            subject="Your EyeNet password has been updated",
+            email_to=target_user.email,
+            body=email_body,
+        )
+
+    return {
+        "detail": "Password updated successfully",
+        "email_sent": body.send_email,
+    }

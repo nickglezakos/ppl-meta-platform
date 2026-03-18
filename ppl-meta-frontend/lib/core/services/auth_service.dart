@@ -287,6 +287,42 @@ class AuthService {
     return await _getStoredToken();
   }
 
+  // Request password reset email
+  Future<void> forgotPassword(String email) async {
+    try {
+      await _apiClient.post(
+        '/api/v1/users/forgot-password',
+        data: {'email': email},
+      );
+    } on DioException catch (e) {
+      throw _handleApiError(e);
+    }
+  }
+
+  // Reset password with token
+  Future<void> resetPassword(String token, String newPassword) async {
+    try {
+      await _apiClient.post(
+        '/api/v1/users/reset-password',
+        data: {'token': token, 'new_password': newPassword},
+      );
+    } on DioException catch (e) {
+      throw _handleApiError(e);
+    }
+  }
+
+  // Verify email with token
+  Future<void> verifyEmail(String token) async {
+    try {
+      await _apiClient.get(
+        '/api/v1/users/verify-email',
+        queryParameters: {'token': token},
+      );
+    } on DioException catch (e) {
+      throw _handleApiError(e);
+    }
+  }
+
   AuthenticationException _handleApiError(DioException error) {
     if (error.response?.data != null) {
       try {

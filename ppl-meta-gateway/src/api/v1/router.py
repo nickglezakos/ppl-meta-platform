@@ -262,9 +262,15 @@ async def delete_current_user(request: Request):
     return await _proxy_to_node_service(request)
 
 
-@api_router.post("/users/verify-email")
+@api_router.get("/users/verify-email")
 async def verify_email(request: Request):
     """Proxy email verification to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/users/forgot-password")
+async def forgot_password(request: Request):
+    """Proxy forgot password to Node service."""
     return await _proxy_to_node_service(request)
 
 
@@ -295,6 +301,24 @@ async def get_user_profile(request: Request):
 @api_router.get("/users/")
 async def list_users(request: Request):
     """Proxy list users to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.get("/users/user-profile/{user_id}")
+async def get_user_profile_by_id(request: Request, user_id: int):
+    """Proxy get user profile (admin) to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/users/toggle-capability/{user_id}")
+async def toggle_user_capability(request: Request, user_id: int):
+    """Proxy toggle user capability (admin) to Node service."""
+    return await _proxy_to_node_service(request)
+
+
+@api_router.post("/users/admin/set-password/{user_id}")
+async def admin_set_password(request: Request, user_id: int):
+    """Proxy admin set password to Node service."""
     return await _proxy_to_node_service(request)
 
 

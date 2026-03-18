@@ -87,7 +87,7 @@ from src.models.role import Capability, Role, RoleCapability, UserRole
 from src.models.user import User, UserAction
 from src.schemas.user import UserCreate
 from src.services.multicast_discovery import MulticastServiceDiscoveryBroadcaster
-from src.services.role_service import ensure_admin_role
+from src.services.role_service import ensure_admin_role, ensure_user_role, ensure_default_capabilities
 
 # Try to import the shared service discovery module
 try:
@@ -277,6 +277,32 @@ async def lifespan(_app: FastAPI):
                 # Ensure admin role exists and is assigned to the admin user
                 ensure_admin_role(db, admin_username)
                 logger.info("Admin role ensured")
+
+                # Seed fresh.user@example.com as admin
+                fresh_email = "fresh.user@example.com"
+                if not get_user_by_email(db, fresh_email):
+                    create_user(db, UserCreate(
+                        username=fresh_email,
+                        email=fresh_email,
+                        password="Kodikos@23",
+                    ))
+                    logger.info("Fresh admin user created.")
+                ensure_admin_role(db, fresh_email)
+
+                # Seed nick.glezakos@outlook.com as regular user
+                outlook_email = "nick.glezakos@outlook.com"
+                if not get_user_by_email(db, outlook_email):
+                    create_user(db, UserCreate(
+                        username=outlook_email,
+                        email=outlook_email,
+                        password="Kodikos@23",
+                    ))
+                    logger.info("Outlook test user created.")
+                ensure_user_role(db, outlook_email)
+
+                # Ensure default capabilities (media:view) assigned to roles
+                ensure_default_capabilities(db)
+                logger.info("Default capabilities ensured")
 
                 db.close()
                 logger.info("Database initialization completed successfully")
