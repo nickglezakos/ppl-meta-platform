@@ -17,22 +17,33 @@ MEDIA_SERVICE_URL = "http://localhost:8000"
 VMETA_SERVICE_URL = "http://localhost:8008"
 
 
-def _parse_time_filter(time_filter: str) -> Tuple[datetime, datetime]:
+def _parse_time_filter(
+    time_filter: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Tuple[datetime, datetime]:
     """
     Parse time filter string into start and end datetime range.
     
+    When time_filter is 'custom', start_date and end_date must be provided as ISO 8601 strings.
+    
     Args:
-        time_filter: One of 'today', 'last_hour', 'last_3_hours', 'last_week', 'last_month'
+        time_filter: One of 'today', 'last_hour', 'last_3_hours', 'last_week', 'last_month', 'custom'
+        start_date: ISO 8601 datetime string (required when time_filter='custom')
+        end_date: ISO 8601 datetime string (required when time_filter='custom')
     
     Returns:
         Tuple of (start_time, end_time)
-    
-    Raises:
-        ValueError: If time_filter is invalid
     """
     now = datetime.now()
     
-    if time_filter == "today":
+    if time_filter == "custom":
+        if not start_date or not end_date:
+            raise ValueError("start_date and end_date are required when time_filter is 'custom'")
+        start_time = datetime.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        end_time = datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        return start_time, end_time
+    elif time_filter == "today":
         start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_time = now
     elif time_filter == "last_hour":
@@ -50,7 +61,7 @@ def _parse_time_filter(time_filter: str) -> Tuple[datetime, datetime]:
     else:
         raise ValueError(
             f"Invalid time_filter: {time_filter}. "
-            f"Must be one of: today, last_hour, last_3_hours, last_week, last_month"
+            f"Must be one of: today, last_hour, last_3_hours, last_week, last_month, custom"
         )
     
     return start_time, end_time
@@ -249,11 +260,19 @@ async def get_camera_mvr_count_cached(
     request: Request,
     time_filter: Optional[str] = Query(
         "today",
-        description="Time filter: 'today', 'last_hour', 'last_3_hours', 'last_week', 'last_month'"
+        description="Time filter: 'today', 'last_hour', 'last_3_hours', 'last_week', 'last_month', 'custom'"
     ),
     force_refresh: bool = Query(
         False,
         description="Force refresh from database (bypass cache)"
+    ),
+    start_date: Optional[str] = Query(
+        None,
+        description="ISO 8601 start datetime (required when time_filter=custom)"
+    ),
+    end_date: Optional[str] = Query(
+        None,
+        description="ISO 8601 end datetime (required when time_filter=custom)"
     ),
     current_user: dict = Depends(get_current_user)
 ):
@@ -300,7 +319,7 @@ async def get_camera_mvr_count_cached(
     try:
         # Validate and parse time filter
         try:
-            start_time, end_time = _parse_time_filter(time_filter)
+            start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
         except ValueError as e:
             raise HTTPException(
                 status_code=400,

@@ -23,22 +23,33 @@ CAMERAS_SERVICE_URL = "http://localhost:8005"
 MEDIA_SERVICE_URL = "http://localhost:8000"
 
 
-def _parse_time_filter(time_filter: str) -> Tuple[datetime, datetime]:
+def _parse_time_filter(
+    time_filter: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Tuple[datetime, datetime]:
     """
     Parse time filter string into start and end datetime range.
     
+    When time_filter is 'custom', start_date and end_date must be provided as ISO 8601 strings.
+    
     Args:
-        time_filter: One of 'today', 'last_hour', 'last_3_hours', 'last_week', 'last_month'
+        time_filter: One of 'today', 'last_hour', 'last_3_hours', 'last_week', 'last_month', 'custom'
+        start_date: ISO 8601 datetime string (required when time_filter='custom')
+        end_date: ISO 8601 datetime string (required when time_filter='custom')
     
     Returns:
         Tuple of (start_time, end_time)
-    
-    Raises:
-        ValueError: If time_filter is invalid
     """
     now = datetime.now()
     
-    if time_filter == "today":
+    if time_filter == "custom":
+        if not start_date or not end_date:
+            raise ValueError("start_date and end_date are required when time_filter is 'custom'")
+        start_time = datetime.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        end_time = datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        return start_time, end_time
+    elif time_filter == "today":
         start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end_time = now
     elif time_filter == "last_hour":
@@ -56,7 +67,7 @@ def _parse_time_filter(time_filter: str) -> Tuple[datetime, datetime]:
     else:
         raise ValueError(
             f"Invalid time_filter: {time_filter}. "
-            f"Must be one of: today, last_hour, last_3_hours, last_week, last_month"
+            f"Must be one of: today, last_hour, last_3_hours, last_week, last_month, custom"
         )
     
     return start_time, end_time
@@ -109,6 +120,63 @@ def _collection_matches_selected_ids(collection: Dict, selected_ids: List[str]) 
     return bool(_get_collection_filter_keys(collection).intersection(selected))
 
 
+def _filter_demographics_count(
+    demographics_data: Dict,
+    total_count: int,
+    selected_genders: Optional[List[str]],
+    selected_age_groups: Optional[List[str]],
+) -> int:
+    """
+    Recompute people count based on selected gender/age filters.
+    
+    When filters are active, returns only the count of people matching ALL active filter criteria.
+    Uses the demographic breakdown from the MVR counter response.
+    
+    Args:
+        demographics_data: Demographics dict with total_male, total_female, total_young, etc.
+        total_count: Original unfiltered count
+        selected_genders: List of genders to include (e.g. ['male']) or None for all
+        selected_age_groups: List of age groups to include (e.g. ['young', 'adult']) or None for all
+        
+    Returns:
+        Filtered count
+    """
+    if not demographics_data:
+        return total_count
+    
+    has_gender_filter = selected_genders and len(selected_genders) > 0
+    has_age_filter = selected_age_groups and len(selected_age_groups) > 0
+    
+    if not has_gender_filter and not has_age_filter:
+        return total_count
+    
+    # Compute gender-filtered count
+    if has_gender_filter:
+        gender_count = 0
+        for g in selected_genders:
+            gender_count += demographics_data.get(f"total_{g}", 0)
+    else:
+        gender_count = total_count
+    
+    # Compute age-filtered count
+    if has_age_filter:
+        age_count = 0
+        for a in selected_age_groups:
+            age_count += demographics_data.get(f"total_{a}", 0)
+    else:
+        age_count = total_count
+    
+    # When both filters are present, estimate intersection using proportions
+    # (assumes independence between gender and age distributions)
+    if has_gender_filter and has_age_filter and total_count > 0:
+        gender_ratio = gender_count / total_count
+        return int(age_count * gender_ratio)
+    elif has_gender_filter:
+        return gender_count
+    else:
+        return age_count
+
+
 @router.get(
     "/analytics/summary",
     summary="Get aggregated analytics summary",
@@ -116,9 +184,13 @@ def _collection_matches_selected_ids(collection: Dict, selected_ids: List[str]) 
 )
 async def get_analytics_summary(
     request: Request,
-    time_filter: str = Query("today", description="Time period filter: today, last_hour, last_3_hours, last_week, last_month"),
+    time_filter: str = Query("today", description="Time period filter: today, last_hour, last_3_hours, last_week, last_month, custom"),
     collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs (null = all collections)", alias="camera_ids"),
     force_refresh: bool = Query(False, description="Bypass cache and get live data"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
+    genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
+    age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -200,6 +272,10 @@ async def get_analytics_summary(
         logger.info(f"📊 Computing analytics summary for {len(target_collection_ids)} collections (timeFilter: {time_filter})")
         logger.info(f"📋 Collections to query: {target_collection_ids}")
         
+        # Parse demographic filters
+        selected_genders = [g.strip() for g in genders.split(",") if g.strip()] if genders else None
+        selected_age_groups = [a.strip() for a in age_groups.split(",") if a.strip()] if age_groups else None
+        
         # Initialize aggregation variables
         total_people = 0
         active_collections = 0
@@ -220,13 +296,17 @@ async def get_analytics_summary(
                 async with httpx.AsyncClient() as client:
                     # Call the cached camera counter endpoint (reuses all caching logic)
                     counter_url = f"http://localhost:8080/api/v1/cameras/{collection_id}/mvr-count"
+                    counter_params = {
+                        "time_filter": time_filter,
+                        "force_refresh": False  # Use cache when available
+                    }
+                    if time_filter == "custom" and start_date and end_date:
+                        counter_params["start_date"] = start_date
+                        counter_params["end_date"] = end_date
                     response = await client.get(
                         counter_url,
                         headers={"Authorization": f"Bearer {auth_token}"},
-                        params={
-                            "time_filter": time_filter,
-                            "force_refresh": False  # Use cache when available
-                        },
+                        params=counter_params,
                         timeout=30.0
                     )
                     
@@ -250,6 +330,13 @@ async def get_analytics_summary(
                     count = collection_data.get("count", 0)
                     video_count = collection_data.get("video_count", 0)
                     
+                    # Apply demographic filter if set
+                    collection_demographics = collection_data.get("demographics", {})
+                    if (selected_genders or selected_age_groups) and collection_demographics:
+                        count = _filter_demographics_count(
+                            collection_demographics, count, selected_genders, selected_age_groups
+                        )
+                    
                     logger.info(
                         f"✅ [{idx}/{len(target_collection_ids)}] Collection {collection_id}: "
                         f"count={count}, videos={video_count}, cached={collection_data.get('cached', False)}"
@@ -269,7 +356,6 @@ async def get_analytics_summary(
                     logger.info(f"   📊 Running totals: people={total_people}, videos={total_videos}, active={active_collections}")
                     
                     # Aggregate demographics (only if present)
-                    collection_demographics = collection_data.get("demographics", {})
                     if collection_demographics:
                         demographics["gender"]["male"] += collection_demographics.get("total_male", 0)
                         demographics["gender"]["female"] += collection_demographics.get("total_female", 0)
@@ -434,9 +520,11 @@ async def get_cameras_list(
 )
 async def get_time_series_analytics(
     request: Request,
-    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month"),
+    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month, custom"),
     collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs", alias="camera_ids"),
     interval: str = Query("hour", description="Data interval: hour, day"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -464,7 +552,13 @@ async def get_time_series_analytics(
         
         # Determine date range based on time_filter
         now = datetime.utcnow()
-        if time_filter == "today":
+        if time_filter == "custom" and start_date and end_date:
+            start_time = datetime.fromisoformat(start_date.replace("Z", "+00:00")).replace(tzinfo=None)
+            end_time = datetime.fromisoformat(end_date.replace("Z", "+00:00")).replace(tzinfo=None)
+            # Auto-select interval based on range
+            range_days = (end_time - start_time).days
+            interval = "hour" if range_days <= 3 else "day"
+        elif time_filter == "today":
             start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_time = now
             interval = "hour"  # Force hourly for today
@@ -564,7 +658,9 @@ async def get_time_series_analytics(
             try:
                 async with httpx.AsyncClient() as client:
                     # Use the appropriate time filter
-                    if time_filter == "today":
+                    if time_filter == "custom":
+                        counter_time_filter = "custom"
+                    elif time_filter == "today":
                         counter_time_filter = "today"
                     elif time_filter == "last_3_days":
                         counter_time_filter = "last_3_hours"  # Approximate
@@ -573,10 +669,14 @@ async def get_time_series_analytics(
                     else:
                         counter_time_filter = "last_month"
                     
+                    counter_params = {"time_filter": counter_time_filter}
+                    if counter_time_filter == "custom" and start_date and end_date:
+                        counter_params["start_date"] = start_date
+                        counter_params["end_date"] = end_date
                     response = await client.get(
                         f"http://localhost:8080/api/v1/cameras/{collection_id}/mvr-count",
                         headers={"Authorization": f"Bearer {auth_token}"},
-                        params={"time_filter": counter_time_filter},
+                        params=counter_params,
                         timeout=30.0
                     )
                     
@@ -651,8 +751,12 @@ async def get_time_series_analytics(
 )
 async def get_demographics_breakdown(
     request: Request,
-    time_filter: str = Query("today", description="Time filter: today, last_3_days, last_week, last_month"),
+    time_filter: str = Query("today", description="Time filter: today, last_3_days, last_week, last_month, custom"),
     collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs", alias="camera_ids"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
+    genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
+    age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -710,6 +814,10 @@ async def get_demographics_breakdown(
         else:
             logger.info(f"📊 Processing all {len(all_cameras)} collections (no filter)")
         
+        # Parse demographic filters
+        selected_genders = [g.strip() for g in genders.split(",") if g.strip()] if genders else None
+        selected_age_groups = [a.strip() for a in age_groups.split(",") if a.strip()] if age_groups else None
+        
         # Initialize aggregated demographics
         total_male = 0
         total_female = 0
@@ -751,7 +859,8 @@ async def get_demographics_breakdown(
                         headers={"Authorization": f"Bearer {auth_token}"},
                         params={
                             "time_filter": time_filter,
-                            "force_refresh": False  # Use cache when available
+                            "force_refresh": False,  # Use cache when available
+                            **({"start_date": start_date, "end_date": end_date} if time_filter == "custom" and start_date and end_date else {})
                         }
                     )
                     
@@ -776,16 +885,42 @@ async def get_demographics_breakdown(
                     female = demographics_data.get("total_female", 0)
                     unknown_gender = demographics_data.get("total_unknown_gender", 0)
                     
-                    total_male += male
-                    total_female += female
-                    total_unknown_gender += unknown_gender
-                    
                     # Age breakdown - MVR count uses total_young, total_adult, etc (not nested)
                     young = demographics_data.get("total_young", 0)
                     adult = demographics_data.get("total_adult", 0)
                     middle_aged = demographics_data.get("total_middle_aged", 0)
                     elderly = demographics_data.get("total_elderly", 0)
                     unknown_age = demographics_data.get("total_unknown_age", 0)
+                    
+                    # Apply gender filter: zero out non-selected genders
+                    if selected_genders:
+                        if "male" not in selected_genders:
+                            male = 0
+                        if "female" not in selected_genders:
+                            female = 0
+                        unknown_gender = 0  # always exclude unknown when filtering
+                    
+                    # Apply age filter: zero out non-selected age groups
+                    if selected_age_groups:
+                        if "young" not in selected_age_groups:
+                            young = 0
+                        if "adult" not in selected_age_groups:
+                            adult = 0
+                        if "middle_aged" not in selected_age_groups:
+                            middle_aged = 0
+                        if "elderly" not in selected_age_groups:
+                            elderly = 0
+                        unknown_age = 0  # always exclude unknown when filtering
+                    
+                    # Recompute total_people when filters are active
+                    if selected_genders or selected_age_groups:
+                        total_people = _filter_demographics_count(
+                            demographics_data, total_people, selected_genders, selected_age_groups
+                        )
+                    
+                    total_male += male
+                    total_female += female
+                    total_unknown_gender += unknown_gender
                     
                     total_young += young
                     total_adult += adult
@@ -901,8 +1036,12 @@ async def get_demographics_breakdown(
 )
 async def get_behavioral_analytics(
     request: Request,
-    time_filter: str = Query("last_week", description="Time period: today, last_3_days, last_week, last_month"),
+    time_filter: str = Query("last_week", description="Time period: today, last_3_days, last_week, last_month, custom"),
     collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs (null = all collections)", alias="camera_ids"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
+    genders: Optional[str] = Query(None, description="Comma-separated gender filter (male,female)"),
+    age_groups: Optional[str] = Query(None, description="Comma-separated age groups (young,adult,middle_aged,elderly)"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -922,6 +1061,14 @@ async def get_behavioral_analytics(
     """
     try:
         logger.info(f"📊 Fetching behavioral analytics (time_filter: {time_filter})")
+        
+        # Parse demographic filters
+        selected_genders = [g.strip().lower() for g in genders.split(",") if g.strip()] if genders else []
+        selected_age_groups = [a.strip().lower() for a in age_groups.split(",") if a.strip()] if age_groups else []
+        if selected_genders:
+            logger.info(f"📋 Behavioral filtering by genders: {selected_genders}")
+        if selected_age_groups:
+            logger.info(f"📋 Behavioral filtering by age_groups: {selected_age_groups}")
         
         # Extract auth token
         auth_header = request.headers.get("authorization", "")
@@ -1001,7 +1148,7 @@ async def get_behavioral_analytics(
                 try:
                     # Step 1: Get ALL videos from collection (no time filter - vmeta will filter)
                     # Need to get collection UUID first since search expects collection_id not name
-                    start_time, end_time = _parse_time_filter(time_filter)
+                    start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
                     
                     # Get collection UUID from the camera object we already have
                     collection_uuid = camera.get("uuid")
@@ -1059,6 +1206,16 @@ async def get_behavioral_analytics(
                     # Step 3: Extract timestamps from appearances (MVR response structure)
                     appearances_processed = 0
                     for mvr_person in mvr_people:
+                        # Apply demographic filters on per-person level
+                        if selected_genders:
+                            person_gender = (mvr_person.get("gender") or "").lower()
+                            if person_gender not in selected_genders:
+                                continue
+                        if selected_age_groups:
+                            person_age = (mvr_person.get("age_group") or "").lower()
+                            if person_age not in selected_age_groups:
+                                continue
+                        
                         # Get appearances - each has start_timestamp and end_timestamp
                         appearances = mvr_person.get("appearances", [])
                         
@@ -1156,8 +1313,10 @@ async def get_behavioral_analytics(
 )
 async def get_quality_metrics(
     request: Request,
-    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month"),
+    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month, custom"),
     collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs (null = all collections)", alias="camera_ids"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -1200,7 +1359,7 @@ async def get_quality_metrics(
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
         
         # Parse time filter
-        start_time, end_time = _parse_time_filter(time_filter)
+        start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
         
         # Parse collection IDs
         selected_collection_ids = None
@@ -1354,9 +1513,11 @@ def _get_quality_grade(quality: float) -> str:
 )
 async def get_mvr_quality_metrics(
     request: Request,
-    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month"),
+    time_filter: str = Query("today", description="Time period: today, last_3_days, last_week, last_month, custom"),
     collection_name: Optional[str] = Query(None, description="Collection name filter (null = aggregate all)"),
     collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs", alias="camera_ids"),
+    start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
+    end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -1392,17 +1553,21 @@ async def get_mvr_quality_metrics(
     """
     try:
         # Get time range based on filter
-        end_time = datetime.now(timezone.utc)
-        if time_filter == "today":
-            start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
-        elif time_filter == "last_3_days":
-            start_time = end_time - timedelta(days=3)
-        elif time_filter == "last_week":
-            start_time = end_time - timedelta(days=7)
-        elif time_filter == "last_month":
-            start_time = end_time - timedelta(days=30)
+        if time_filter == "custom" and start_date and end_date:
+            start_time = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            end_time = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
         else:
-            start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_time = datetime.now(timezone.utc)
+            if time_filter == "today":
+                start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            elif time_filter == "last_3_days":
+                start_time = end_time - timedelta(days=3)
+            elif time_filter == "last_week":
+                start_time = end_time - timedelta(days=7)
+            elif time_filter == "last_month":
+                start_time = end_time - timedelta(days=30)
+            else:
+                start_time = end_time.replace(hour=0, minute=0, second=0, microsecond=0)
         
         logger.info(
             f"📊 MVR Quality Metrics (time_filter: {time_filter}, collection: {collection_name or 'ALL'}, camera_ids: {collection_ids or 'none'})"

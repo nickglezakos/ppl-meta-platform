@@ -28,11 +28,13 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   // Filter state
-  String _timeFilter = 'today'; // today, last_hour, last_3_hours, last_week, last_month
+  String _timeFilter = 'today'; // today, last_hour, last_3_hours, last_week, last_month, custom
   List<String> _selectedCollectionIds = []; // empty = all collections
   List<String> _selectedGenders = []; // empty = all genders (male, female)
   List<String> _selectedAgeGroups = []; // empty = all ages (young, adult, elderly)
   bool _autoRefresh = false;
+  DateTime? _startDate;
+  DateTime? _endDate;
   
   // Loading and error state
   bool _isLoading = false;
@@ -75,6 +77,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         timeFilter: _timeFilter,
         cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
         forceRefresh: false,
+        startDate: _startDate,
+        endDate: _endDate,
+        genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
+        ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
       );
       
       if (response.success && response.data != null) {
@@ -98,6 +104,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           timeFilter: _timeFilter,
           collectionName: null, // null = all collections
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          startDate: _startDate,
+          endDate: _endDate,
+          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
+          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
         );
         
         debugPrint('🔍 Analytics: Quality response success: ${qualityResponse.success}');
@@ -140,6 +150,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           interval: _timeFilter == 'today' || _timeFilter == 'last_hour' || _timeFilter == 'last_3_hours' 
               ? 'hour' 
               : 'day',
+          startDate: _startDate,
+          endDate: _endDate,
         );
         
         if (mounted && timeSeriesResponse.success && timeSeriesResponse.data != null) {
@@ -157,6 +169,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         final demographicsResponse = await apiClient.getDemographicsBreakdown(
           timeFilter: _timeFilter,
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          startDate: _startDate,
+          endDate: _endDate,
+          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
+          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
         );
         
         if (mounted && demographicsResponse.success && demographicsResponse.data != null) {
@@ -174,6 +190,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         final behavioralResponse = await apiClient.getBehavioralAnalytics(
           timeFilter: _timeFilter,
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          startDate: _startDate,
+          endDate: _endDate,
+          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
+          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
         );
         
         if (mounted && behavioralResponse.success && behavioralResponse.data != null) {
@@ -318,6 +338,12 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         return 'Last Week';
       case 'last_month':
         return 'Last Month';
+      case 'custom':
+        if (_startDate != null && _endDate != null) {
+          final fmt = DateFormat('MMM d, HH:mm');
+          return '${fmt.format(_startDate!)} - ${fmt.format(_endDate!)}';
+        }
+        return 'Custom Range';
       default:
         return 'Today';
     }
@@ -1821,6 +1847,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         selectedAgeGroups: _selectedAgeGroups,
         autoRefresh: _autoRefresh,
         cameras: _cameras,
+        startDate: _startDate,
+        endDate: _endDate,
       ),
     );
 
@@ -1831,6 +1859,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         _selectedGenders = result['genders'] as List<String>;
         _selectedAgeGroups = result['ageGroups'] as List<String>;
         _autoRefresh = result['autoRefresh'] as bool;
+        _startDate = result['startDate'] as DateTime?;
+        _endDate = result['endDate'] as DateTime?;
       });
       await _loadAnalytics();
     }
@@ -2532,6 +2562,8 @@ class _FilterDialog extends StatefulWidget {
   final List<String> selectedAgeGroups;
   final bool autoRefresh;
   final List<Map<String, dynamic>> cameras;
+  final DateTime? startDate;
+  final DateTime? endDate;
 
   const _FilterDialog({
     required this.currentTimeFilter,
@@ -2540,6 +2572,8 @@ class _FilterDialog extends StatefulWidget {
     required this.selectedAgeGroups,
     required this.autoRefresh,
     required this.cameras,
+    this.startDate,
+    this.endDate,
   });
 
   @override
@@ -2552,6 +2586,8 @@ class _FilterDialogState extends State<_FilterDialog> {
   late List<String> _selectedGenders;
   late List<String> _selectedAgeGroups;
   late bool _autoRefresh;
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   @override
   void initState() {
@@ -2561,6 +2597,39 @@ class _FilterDialogState extends State<_FilterDialog> {
     _selectedGenders = List.from(widget.selectedGenders);
     _selectedAgeGroups = List.from(widget.selectedAgeGroups);
     _autoRefresh = widget.autoRefresh;
+    _startDate = widget.startDate;
+    _endDate = widget.endDate;
+  }
+
+  Future<void> _pickDateTime({required bool isStart}) async {
+    final now = DateTime.now();
+    final initialDate = isStart
+        ? (_startDate ?? now.subtract(const Duration(days: 7)))
+        : (_endDate ?? now);
+
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(2020),
+      lastDate: now,
+    );
+    if (date == null) return;
+
+    if (!mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDate),
+    );
+    if (time == null) return;
+
+    final picked = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    setState(() {
+      if (isStart) {
+        _startDate = picked;
+      } else {
+        _endDate = picked;
+      }
+    });
   }
 
   @override
@@ -2592,8 +2661,54 @@ class _FilterDialogState extends State<_FilterDialog> {
                   _buildFilterChip('Last 3 Hours', 'last_3_hours'),
                   _buildFilterChip('Last Week', 'last_week'),
                   _buildFilterChip('Last Month', 'last_month'),
+                  _buildFilterChip('Custom Range', 'custom'),
                 ],
               ),
+              
+              // Custom date range pickers
+              if (_timeFilter == 'custom') ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickDateTime(isStart: true),
+                        icon: const Icon(Icons.calendar_today, size: 16),
+                        label: Text(
+                          _startDate != null
+                              ? DateFormat('MMM d, yyyy HH:mm').format(_startDate!)
+                              : 'Start Date',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(Icons.arrow_forward, size: 16, color: Colors.grey),
+                    ),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _pickDateTime(isStart: false),
+                        icon: const Icon(Icons.calendar_today, size: 16),
+                        label: Text(
+                          _endDate != null
+                              ? DateFormat('MMM d, yyyy HH:mm').format(_endDate!)
+                              : 'End Date',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_timeFilter == 'custom' && (_startDate == null || _endDate == null))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Please select both start and end dates',
+                      style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+                    ),
+                  ),
+              ],
               
               const SizedBox(height: 24),
               
@@ -2734,12 +2849,20 @@ class _FilterDialogState extends State<_FilterDialog> {
         ),
         ElevatedButton(
           onPressed: () {
+            if (_timeFilter == 'custom' && (_startDate == null || _endDate == null)) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Please select both start and end dates for custom range')),
+              );
+              return;
+            }
             Navigator.pop(context, {
               'timeFilter': _timeFilter,
               'collectionIds': _selectedCollectionIds,
               'genders': _selectedGenders,
               'ageGroups': _selectedAgeGroups,
               'autoRefresh': _autoRefresh,
+              'startDate': _timeFilter == 'custom' ? _startDate : null,
+              'endDate': _timeFilter == 'custom' ? _endDate : null,
             });
           },
           child: const Text('Apply'),

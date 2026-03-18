@@ -706,6 +706,10 @@ class MediaApiClient {
     String timeFilter = 'today',
     List<String>? cameraIds,
     bool forceRefresh = false,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<String>? genders,
+    List<String>? ageGroups,
   }) async {
     try {
       debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"})');
@@ -717,6 +721,16 @@ class MediaApiClient {
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
         queryParams['camera_ids'] = cameraIds.join(',');
+      }
+      if (timeFilter == 'custom' && startDate != null && endDate != null) {
+        queryParams['start_date'] = startDate.toUtc().toIso8601String();
+        queryParams['end_date'] = endDate.toUtc().toIso8601String();
+      }
+      if (genders != null && genders.isNotEmpty) {
+        queryParams['genders'] = genders.join(',');
+      }
+      if (ageGroups != null && ageGroups.isNotEmpty) {
+        queryParams['age_groups'] = ageGroups.join(',');
       }
       
       final response = await _apiClient.get(
@@ -756,6 +770,8 @@ class MediaApiClient {
     String timeFilter = 'today',
     List<String>? cameraIds,
     String interval = 'hour',
+    DateTime? startDate,
+    DateTime? endDate,
   }) async {
     try {
       debugPrint('📈 Fetching time-based analytics (timeFilter: $timeFilter, interval: $interval)');
@@ -767,6 +783,10 @@ class MediaApiClient {
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
         queryParams['camera_ids'] = cameraIds.join(',');
+      }
+      if (timeFilter == 'custom' && startDate != null && endDate != null) {
+        queryParams['start_date'] = startDate.toUtc().toIso8601String();
+        queryParams['end_date'] = endDate.toUtc().toIso8601String();
       }
       
       final response = await _apiClient.get(
@@ -805,6 +825,10 @@ class MediaApiClient {
   Future<ApiResponse<Map<String, dynamic>>> getDemographicsBreakdown({
     String timeFilter = 'today',
     List<String>? cameraIds,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<String>? genders,
+    List<String>? ageGroups,
   }) async {
     try {
       final cameraCount = cameraIds?.length ?? 0;
@@ -820,6 +844,16 @@ class MediaApiClient {
         debugPrint('   🎯 Camera IDs filter: ${cameraIds.join(", ")}');
       } else {
         debugPrint('   🌐 No camera filter - fetching all collections');
+      }
+      if (timeFilter == 'custom' && startDate != null && endDate != null) {
+        queryParams['start_date'] = startDate.toUtc().toIso8601String();
+        queryParams['end_date'] = endDate.toUtc().toIso8601String();
+      }
+      if (genders != null && genders.isNotEmpty) {
+        queryParams['genders'] = genders.join(',');
+      }
+      if (ageGroups != null && ageGroups.isNotEmpty) {
+        queryParams['age_groups'] = ageGroups.join(',');
       }
       
       final response = await _apiClient.get(
@@ -862,6 +896,10 @@ class MediaApiClient {
   Future<ApiResponse<Map<String, dynamic>>> getBehavioralAnalytics({
     String timeFilter = 'last_week',
     List<String>? cameraIds,
+    DateTime? startDate,
+    DateTime? endDate,
+    List<String>? genders,
+    List<String>? ageGroups,
   }) async {
     try {
       final cameraCount = cameraIds?.length ?? 0;
@@ -877,6 +915,16 @@ class MediaApiClient {
         debugPrint('   🎯 Camera IDs filter: ${cameraIds.join(", ")}');
       } else {
         debugPrint('   🌐 No camera filter - analyzing all collections');
+      }
+      if (timeFilter == 'custom' && startDate != null && endDate != null) {
+        queryParams['start_date'] = startDate.toUtc().toIso8601String();
+        queryParams['end_date'] = endDate.toUtc().toIso8601String();
+      }
+      if (genders != null && genders.isNotEmpty) {
+        queryParams['genders'] = genders.join(',');
+      }
+      if (ageGroups != null && ageGroups.isNotEmpty) {
+        queryParams['age_groups'] = ageGroups.join(',');
       }
       
       final response = await _apiClient.get(
