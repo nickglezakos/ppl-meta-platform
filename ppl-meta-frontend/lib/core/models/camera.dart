@@ -21,6 +21,8 @@ class Camera {
   final bool recordingPipelineEnabled;
   final int instantDetectionIntervalSeconds;
   final int segmentDurationSeconds;
+  final int storageMultiple;
+  final int trackingSessionDurationMinutes;
 
   // Workflow settings (face detection & performance)
   final bool autoFaceDetection;
@@ -53,6 +55,8 @@ class Camera {
     this.recordingPipelineEnabled = true,
     this.instantDetectionIntervalSeconds = 5,
     this.segmentDurationSeconds = 30,
+    this.storageMultiple = 1,
+    this.trackingSessionDurationMinutes = 0,
     this.autoFaceDetection = false,
     this.detectionMethods = const ['opencv', 'dlib'],
     this.processingOptions = const {},
@@ -114,6 +118,8 @@ class Camera {
       recordingPipelineEnabled: json['recording_pipeline_enabled'] as bool? ?? true,
       instantDetectionIntervalSeconds: json['instant_detection_interval_seconds'] as int? ?? 5,
       segmentDurationSeconds: json['segment_duration_seconds'] as int? ?? 30,
+      storageMultiple: json['storage_multiple'] as int? ?? 1,
+      trackingSessionDurationMinutes: json['tracking_session_duration_minutes'] as int? ?? 0,
       autoFaceDetection: json['auto_face_detection'] as bool? ?? false,
       detectionMethods: (json['detection_methods'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? ['opencv', 'dlib'],
       processingOptions: Map<String, dynamic>.from(json['processing_options'] as Map<String, dynamic>? ?? {}),
@@ -145,6 +151,8 @@ class Camera {
       'recording_pipeline_enabled': recordingPipelineEnabled,
       'instant_detection_interval_seconds': instantDetectionIntervalSeconds,
       'segment_duration_seconds': segmentDurationSeconds,
+      'storage_multiple': storageMultiple,
+      'tracking_session_duration_minutes': trackingSessionDurationMinutes,
       'auto_face_detection': autoFaceDetection,
       'detection_methods': detectionMethods,
       'processing_options': processingOptions,
@@ -174,6 +182,8 @@ class Camera {
     bool? recordingPipelineEnabled,
     int? instantDetectionIntervalSeconds,
     int? segmentDurationSeconds,
+    int? storageMultiple,
+    int? trackingSessionDurationMinutes,
     bool? autoFaceDetection,
     List<String>? detectionMethods,
     Map<String, dynamic>? processingOptions,
@@ -201,6 +211,8 @@ class Camera {
       recordingPipelineEnabled: recordingPipelineEnabled ?? this.recordingPipelineEnabled,
       instantDetectionIntervalSeconds: instantDetectionIntervalSeconds ?? this.instantDetectionIntervalSeconds,
       segmentDurationSeconds: segmentDurationSeconds ?? this.segmentDurationSeconds,
+      storageMultiple: storageMultiple ?? this.storageMultiple,
+      trackingSessionDurationMinutes: trackingSessionDurationMinutes ?? this.trackingSessionDurationMinutes,
       autoFaceDetection: autoFaceDetection ?? this.autoFaceDetection,
       detectionMethods: detectionMethods ?? this.detectionMethods,
       processingOptions: processingOptions ?? this.processingOptions,

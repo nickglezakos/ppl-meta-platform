@@ -841,6 +841,8 @@ class CameraService {
     required bool recordingPipelineEnabled,
     required int instantDetectionIntervalSeconds,
     required int segmentDurationSeconds,
+    required int storageMultiple,
+    required int trackingSessionDurationMinutes,
   }) async {
     try {
       final response = await _cameraApiClient.patch(
@@ -850,6 +852,8 @@ class CameraService {
           'recording_pipeline_enabled': recordingPipelineEnabled,
           'instant_detection_interval_seconds': instantDetectionIntervalSeconds,
           'segment_duration_seconds': segmentDurationSeconds,
+          'storage_multiple': storageMultiple,
+          'tracking_session_duration_minutes': trackingSessionDurationMinutes,
         },
       );
 

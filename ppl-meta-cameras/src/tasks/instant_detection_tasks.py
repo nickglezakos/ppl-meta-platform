@@ -229,3 +229,63 @@ def health_check() -> Dict:
         "timestamp": datetime.utcnow().isoformat(),
         "worker": "instant_detection"
     }
+
+
+@celery_app.task(
+    name="instant_detection.persist_results",
+    queue="instant_detection_queue",
+    time_limit=15,
+    soft_time_limit=12,
+    max_retries=1,
+    retry_backoff=True,
+    acks_late=True,
+)
+def persist_instant_detection_results(
+    camera_id: str,
+    session_uuid: str,
+    cycle_timestamp: str,
+    person_objects: List[Dict[str, Any]],
+    demographics: Dict[str, Any],
+    auth_token: str,
+) -> Dict:
+    """
+    Persist instant detection results to VMeta database.
+
+    Called asynchronously after the main detection result has been
+    cached and broadcast.  Never blocks the detection loop.
+    """
+    import requests as http_requests
+
+    vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+    endpoint = f"{vmeta_url}/api/v1/instant-detection/persist"
+
+    payload = {
+        "session_uuid": session_uuid,
+        "camera_id": camera_id,
+        "cycle_timestamp": cycle_timestamp,
+        "person_objects": person_objects,
+        "demographics": demographics,
+    }
+
+    headers = {"Content-Type": "application/json"}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    try:
+        resp = http_requests.post(endpoint, json=payload, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            logger.info(
+                f"✅ [CELERY] Persisted instant detection for {camera_id}: "
+                f"{data.get('stored_individuals', 0)} individuals, "
+                f"{data.get('appearances_created', 0)} appearances"
+            )
+            return {"success": True, "camera_id": camera_id, **data}
+        else:
+            logger.warning(
+                f"⚠️ [CELERY] VMeta persist returned {resp.status_code}: {resp.text[:200]}"
+            )
+            return {"success": False, "camera_id": camera_id, "status": resp.status_code}
+    except Exception as e:
+        logger.error(f"❌ [CELERY] Persist task failed for {camera_id}: {e}")
+        return {"success": False, "camera_id": camera_id, "error": str(e)}

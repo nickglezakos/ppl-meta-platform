@@ -1,9 +1,10 @@
 # Instant Detection Module
 
-**Module Version**: 3.0  
+**Module Version**: 3.1  
 **Last Updated**: March 19, 2026  
 **Status**: Production  
-**Breaking Change**: v3.0 decouples instant detection from the recording lifecycle. Detection is now started/stopped independently via a dedicated eye button in the UI.
+**v3.0 Breaking Change**: Decouples instant detection from the recording lifecycle. Detection is now started/stopped independently via a dedicated eye button in the UI.  
+**v3.1 Feature**: MVR People Persistent Storage — detection results are now persisted to the database as first-class tracking sessions, individuals, and MVR people records, enabling analytics integration.
 
 ---
 
@@ -22,14 +23,17 @@
 11. [WebSocket Real-Time Updates](#websocket-real-time-updates)
 12. [Trigger Evaluation](#trigger-evaluation)
 13. [Identity Resolution](#identity-resolution)
-14. [Performance](#performance)
-15. [Troubleshooting](#troubleshooting)
+14. [Analytics Integration](#analytics-integration)
+15. [Performance](#performance)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Overview
 
-The Instant Detection module provides **real-time face detection feedback** by sampling 3 frames from the camera stream every 5 seconds. It uses the **same detection quality** as the main recording pipeline (Haar + Dlib two-stage detection via Vision Service, person grouping via Orchestrator, age/gender via VMeta) but without persistent database storage — results live in Redis cache with a 5-minute TTL.
+The Instant Detection module provides **real-time face detection feedback** by sampling 3 frames from the camera stream every 5 seconds. It uses the **same detection quality** as the main recording pipeline (Haar + Dlib two-stage detection via Vision Service, person grouping via Orchestrator, age/gender via VMeta).
+
+Since v3.1, detection results are **persistently stored** in the same database schema as the recording pipeline — as tracking sessions, individuals, video appearances, and MVR people records. This makes instant detection data visible to the analytics dashboard. Results also continue to live in Redis cache (5-minute TTL) for real-time display.
 
 ### Key Capabilities
 
@@ -39,6 +43,10 @@ The Instant Detection module provides **real-time face detection feedback** by s
 - **Age/gender detection** — DeepFace via VMeta Service (one face per person)
 - **Identity resolution** — Matches detected faces against MVR identity store via VMeta
 - **Demographics aggregation** — Gender/age breakdowns in the same format as MVR counter
+- **Persistent storage** — Results stored as tracking sessions, individuals, and MVR people in the VMeta database (configurable frequency)
+- **Analytics integration** — Instant detection data appears in the analytics dashboard via a "Data Source" filter
+- **Configurable storage frequency** — Per-camera `storage_multiple` controls how often results are persisted (every Nth cycle)
+- **Session batching** — Configurable `tracking_session_duration_minutes` groups detections into time-bounded sessions
 - **Redis cache + Pub/Sub** — Cross-process result access and real-time broadcasting
 - **Celery background processing** — Offloads heavy detection to workers (with threaded fallback)
 - **Webhook push** — Pushes results to Media Service trigger evaluation
@@ -77,7 +85,19 @@ Camera Stream (USB / RTSP / Mobile / Edge)
               │
               ├─ Push to webhook (Media Service trigger endpoint)
               │
-              └─ Evaluate triggers (Media Service /api/v1/triggers/evaluate)
+              ├─ Evaluate triggers (Media Service /api/v1/triggers/evaluate)
+              │
+              └─ [v3.1] Persist to database (every Nth cycle, governed by storage_multiple)
+                      │
+                      ├─ Submit Celery task: instant_detection.persist_results
+                      │       │
+                      │       └─ POST VMeta /api/v1/instant-detection/persist
+                      │               ├─ Upsert tracking_sessions (source_type = 'instant_detection')
+                      │               ├─ Create/reuse individuals
+                      │               ├─ Create individual_video_appearances (synthetic UUID)
+                      │               └─ Link individual_mvr_mapping (link_method = 'instant_detection')
+                      │
+                      └─ Session rotation (when tracking_session_duration_minutes elapses)
 ```
 
 ### Service Dependencies
@@ -87,7 +107,7 @@ Camera Stream (USB / RTSP / Mobile / Edge)
 | **Cameras Service** | 8005 | Frame capture, sampling loop, Celery submission |
 | **Vision Service** | 8003 | Face detection (`POST /faces/detect-single-frame`) |
 | **Orchestrator Service** | 8002 | Person grouping (`POST /api/v1/person-objects/from-faces`) |
-| **VMeta Service** | 8008 | Age/gender (`POST /api/v1/ml/detect-age-gender`), Identity (`POST /api/v1/ml/identify-face`) |
+| **VMeta Service** | 8008 | Age/gender (`POST /api/v1/ml/detect-age-gender`), Identity (`POST /api/v1/ml/identify-face`), Persistence (`POST /api/v1/instant-detection/persist`), Analytics (`GET /api/v1/tracking-sessions/summary`), Quality metrics (`GET /api/v1/mvr/quality-metrics` with `source_type` filter) |
 | **Media Service** | 8000 | Trigger evaluation (`POST /api/v1/triggers/evaluate`) |
 | **Gateway Service** | 8080 | API proxy + WebSocket bridge |
 | **Redis** | 6379 | Cache, Pub/Sub, Celery broker/backend |
@@ -107,9 +127,18 @@ Camera Stream (USB / RTSP / Mobile / Edge)
 | `src/api/v1/endpoints/instant_detection.py` | REST API endpoints (404 lines) — status, results, start, stop, webhook configuration |
 | `src/api/v1/routes.py` | Router registration — mounts at prefix `/instant-detection` |
 | `src/tasks/instant_detection_tasks.py` | Celery task `instant_detection.process_frames` — background processing, Redis cache, Pub/Sub publish, webhook push |
-| `src/models/camera.py` | Database columns: `instant_detection_enabled`, `instant_detection_interval_seconds` |
+| `src/models/camera.py` | Database columns: `instant_detection_enabled`, `instant_detection_interval_seconds`, `storage_multiple`, `tracking_session_duration_minutes` |
 | `src/services/camera_detection.py` | Recording pipeline — no longer auto-starts/stops instant detection (decoupled) |
 | `config/instant_detection.yml` | YAML configuration for sampling, detection, output, threading |
+
+#### Backend — VMeta Service (`ppl-meta-vmeta/`)
+
+| File | Purpose |
+|------|---------||
+| `src/api/v1/instant_detection_storage.py` | Persistence endpoint `POST /instant-detection/persist` — receives person objects, creates/updates tracking sessions, individuals, appearances, and MVR links in a single transaction |
+| `src/api/v1/tracking_sessions_summary.py` | Analytics endpoint `GET /tracking-sessions/summary` — aggregated tracking session data filtered by `source_type` and `camera_device_ids` for the analytics dashboard |
+| `src/api/v1/quality_metrics.py` | Quality metrics endpoints with `source_type` parameter — filters tracking sessions and `individual_mvr_mapping` by `link_method` for instant detection data |
+| `src/main.py` | Router registrations for `instant_detection_storage_router` and `tracking_sessions_summary_router` |
 
 #### Gateway (`ppl-meta-gateway/`)
 
@@ -240,6 +269,30 @@ After processing, results are distributed through multiple channels:
 | **Webhook** | `POST {webhook_url}` | Media Service triggers |
 | **Trigger Evaluation** | `POST {media_url}/api/v1/triggers/evaluate` | Media Service trigger engine |
 | **Memory Cache** | In-process dict | Internal hooks via `get_latest_instant_results()` |
+| **Database Persistence** | Celery task `instant_detection.persist_results` → VMeta `POST /instant-detection/persist` | VMeta DB (tracking sessions, individuals, MVR people) |
+
+### 5. Persistent Storage (v3.1)
+
+After result distribution, the sampler checks whether this cycle should be persisted to the database:
+
+```python
+self._cycle_counter += 1
+if self._storage_multiple > 0 and self._cycle_counter % self._storage_multiple == 0:
+    self._maybe_persist_cycle(camera_id)
+```
+
+**Storage flow:**
+
+1. **Cycle gating** — Persistence only fires every `storage_multiple` cycles (default: every cycle).
+2. **Celery task submission** — `instant_detection.persist_results` task is dispatched with person objects, camera ID, session UUID, and auth token.
+3. **VMeta persistence** — The task calls `POST /api/v1/instant-detection/persist` on VMeta, which in a single transaction:
+   - Updates the tracking session (`individuals_found`, `completed_at`)
+   - For each person: creates/reuses an Individual, creates an `individual_video_appearance` (with synthetic video UUID), and links via `individual_mvr_mapping` (link_method = `'instant_detection'`)
+4. **Session rotation** — If `tracking_session_duration_minutes > 0` and the duration has elapsed, the current session is completed and a new one created transparently.
+
+**Synthetic video UUID**: Since instant detection does not produce video segments, a deterministic UUID v5 is generated per detection cycle: `uuid5(NAMESPACE_URL, "instant-detection:{camera_id}:{timestamp}")`. This satisfies the `individual_video_appearances.video_uuid NOT NULL` constraint without schema changes.
+
+**Individual reuse via MVR identity**: When `identify-face` returns a match with an existing `mvr_people_uuid`, the corresponding featured individual is reused (a new appearance is added to the existing individual). When a new MVR person is created, a new individual is also created and linked.
 
 ---
 
@@ -326,7 +379,7 @@ Results are fetched from Redis first (cross-process), falling back to in-memory 
   ],
   "processing_time_seconds": 0.45,
   "detection_method": "vision_service_spatial_grouping",
-  "storage": "none",
+  "storage": "database",
   "_metadata": {
     "cached_at": 1710840600.0,
     "source": "redis",
@@ -444,7 +497,7 @@ instant_detection:
     enabled: true                  # Run age/gender on best face per person
 
   output:
-    storage: "memory_only"         # No database writes
+    storage: "database"            # v3.1: results persisted to VMeta DB
     cache_ttl_seconds: 5
     broadcast_method: "cache"      # cache, websocket, or redis
 
@@ -487,9 +540,43 @@ instant_detection_enabled = Column(Boolean, default=True)
 recording_pipeline_enabled = Column(Boolean, default=True)
 instant_detection_interval_seconds = Column(Integer, default=5)
 segment_duration_seconds = Column(Integer, default=30)
+
+# Persistent Storage Configuration (v3.1)
+storage_multiple = Column(Integer, default=1)
+tracking_session_duration_minutes = Column(Integer, default=0)
 ```
 
-These per-camera settings store detection configuration. Since v3.0 (decoupling), `instant_detection_enabled` no longer controls auto-start during recording — detection is started/stopped independently via the eye button. The setting is retained for future use (e.g., determining which cameras show the detection controls).
+| Column | Default | Description |
+|--------|---------|-------------|
+| `storage_multiple` | `1` | How many detection cycles to wait between database writes. `1` = persist every cycle (every 5s), `2` = every other cycle (10s), etc. Range: 1–12. |
+| `tracking_session_duration_minutes` | `0` (unlimited) | Max duration of a single tracking session. `0` = one session per detection run (eye on → off). Non-zero values auto-rotate sessions. Range: 0–480. |
+
+These settings are configurable per camera in the pipeline settings screen at `http://localhost:3000/#/cameras` (tune icon → Advanced Settings → Instant Detection section).
+
+### VMeta Database Columns (v3.1)
+
+The following columns were added to support persistent storage:
+
+**`tracking_sessions` table:**
+
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| `source_type` | `VARCHAR(30)` | `'recording_pipeline'` | `'recording_pipeline'` or `'instant_detection'` |
+| `camera_device_id` | `VARCHAR(100)` | `NULL` | Camera device identifier for instant detection sessions |
+
+**`individuals` table:**
+
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| `source_type` | `VARCHAR(30)` | `'recording_pipeline'` | `'recording_pipeline'` or `'instant_detection'` |
+
+**`individual_mvr_mapping` table:**
+
+| Value | Description |
+|-------|-------------|
+| `'instant_detection'` | New `link_method` value for mappings created by instant detection persistence |
+
+These columns enable the analytics dashboard to filter by data source, querying only recording or only instant detection data.
 
 ---
 
@@ -616,12 +703,37 @@ def process_instant_detection(camera_id, frames_data, timestamp):
     # 5. Push to webhook (if configured)
 ```
 
+### Task: `instant_detection.persist_results` (v3.1)
+
+Located in `ppl-meta-cameras/src/tasks/instant_detection_tasks.py`.
+
+```python
+@celery_app.task(
+    name="instant_detection.persist_results",
+    queue="instant_detection_queue",
+    time_limit=30,
+    soft_time_limit=25,
+    max_retries=2,
+    acks_late=True
+)
+def persist_instant_detection_results(
+    camera_id, session_uuid, person_objects, timestamp, auth_token
+):
+    # 1. Build request payload from person objects
+    # 2. POST to VMeta /api/v1/instant-detection/persist
+    # 3. VMeta handles: tracking session update, individual creation,
+    #    appearance records, MVR linking in a single transaction
+```
+
+This task is dispatched **after** result distribution (Redis cache, Pub/Sub, webhook) and only on cycles where `_cycle_counter % storage_multiple == 0`. It never blocks the detection loop.
+
 ### Queue Routing
 
 Defined in `shared/queue_config.py`:
 ```python
 task_routes = {
     "instant_detection.process_frames": {"queue": "instant_detection_queue"},
+    "instant_detection.persist_results": {"queue": "instant_detection_queue"},
 }
 ```
 
@@ -766,6 +878,48 @@ POST {vmeta_url}/api/v1/ml/identify-face
 
 When a match is found, the `mvr_person_uuid` is attached to both the person object and the face object in the results. These UUIDs are also extracted and included in Redis Pub/Sub messages as `source_mvr_uuids` for downstream matching.
 
+### Persistent identity chain (v3.1)
+
+When results are persisted to the database, the identity resolution outcome determines the storage path:
+
+| Identity outcome | Action |
+|-----------------|--------|
+| **Match found** (`matched=True`, existing MVR with `featured_individual_uuid`) | Reuse the existing individual — create a new `individual_video_appearance` linked to it |
+| **Match found** (existing MVR with `featured_individual_uuid = NULL`) | Create a new Individual, backfill `featured_individual_uuid` on the MVR, link via `individual_mvr_mapping` |
+| **New MVR created** (`created_new=True`) | Create a new Individual, link to the new MVR via `individual_mvr_mapping`, set `featured_individual_uuid`, flip `is_isolated = FALSE` |
+
+This ensures instant detection individuals are first-class citizens in the identity graph — they participate in analytics, cross-video merging, and identity group assignment.
+
+---
+
+## Analytics Integration
+
+With persistent storage enabled, instant detection data is visible in the analytics dashboard at `http://localhost:3000/#/analytics`.
+
+### Data Source filter
+
+The analytics filter dialog includes a **Data Source** selector with two options:
+
+| Value | Label | Description |
+|-------|-------|-------------|
+| `recording` | **Video Recording** (default) | Data from the recording pipeline |
+| `instant_detection` | **Instant Detection** | Data from instant detection sessions |
+
+When "Instant Detection" is selected, all five analytics levels (Summary, MVR Quality, Time Series, Demographics, Behavioral) query VMeta filtered by `source_type = 'instant_detection'`. An orange "Instant Detection" chip appears in the filter bar.
+
+### How it works
+
+1. The frontend sends `source_type=instant_detection` as a query parameter on each analytics API call.
+2. The Gateway detects the instant detection source and calls VMeta's `GET /tracking-sessions/summary` endpoint (instead of iterating Media service collections).
+3. VMeta queries `tracking_sessions` and `individuals` filtered by `source_type = 'instant_detection'`, aggregating session counts, demographics, and camera breakdowns.
+4. The response structure is identical to the recording path — all widgets render without modification.
+
+### Contextual labels
+
+When viewing instant detection data, the dashboard adapts labels: "Videos Analyzed" becomes "Sessions" and "Videos" becomes "Sessions" in the MVR quality section.
+
+> **Full details**: See [Analytics Module documentation](../analytics/Analytics.md) for the complete analytics architecture and endpoint reference.
+
 ---
 
 ## Performance
@@ -796,9 +950,10 @@ When a match is found, the `mvr_person_uuid` is attached to both the person obje
 | Person grouping | Orchestrator Service | **Same** Orchestrator Service |
 | Age/gender | VMeta Service (DeepFace) | **Same** VMeta Service |
 | Identity resolution | ❌ No | ✅ Yes (VMeta similarity) |
-| Database storage | ✅ Yes (MVR records) | ❌ No (Redis cache only) |
+| Database storage | ✅ Yes (MVR records) | ✅ Yes (tracking sessions, individuals, MVR — configurable frequency) |
+| Analytics integration | ✅ Yes (default source) | ✅ Yes (via Data Source filter) |
 | Trigger evaluation | ❌ No | ✅ Yes (real-time) |
-| Use case | Permanent records | Real-time feedback |
+| Use case | Permanent records | Real-time feedback + persistent analytics |
 
 ---
 

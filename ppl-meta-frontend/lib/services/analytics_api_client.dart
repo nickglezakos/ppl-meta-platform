@@ -23,6 +23,7 @@ class AnalyticsApiClient {
     DateTime? endDate,
     List<String>? genders,
     List<String>? ageGroups,
+    String? dataSource,
   }) async {
     try {
       final queryParams = <String, dynamic>{
@@ -39,6 +40,8 @@ class AnalyticsApiClient {
           'genders': genders.join(','),
         if (ageGroups != null && ageGroups.isNotEmpty)
           'age_groups': ageGroups.join(','),
+        if (dataSource != null && dataSource != 'recording')
+          'source_type': dataSource,
       };
 
       final response = await _apiClient.get(

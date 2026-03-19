@@ -74,6 +74,14 @@ class InstantDetectionSampler:
         self.webhook_enabled = False
         self.webhook_url: Optional[str] = None
         
+        # Instant detection storage state
+        self._cycle_counter: int = 0
+        self._storage_multiple: int = 1
+        self._session_duration_minutes: int = 0
+        self._session_started_at: Optional[datetime] = None
+        self.current_session_uuid: Optional[str] = None
+        self._auth_token: Optional[str] = None
+        
         logger.info("✅ Instant detection sampler initialized (Vision + VMeta APIs)")
     
     def start_sampling(self, camera_id: str, camera_capture):
@@ -174,6 +182,15 @@ class InstantDetectionSampler:
                         f"({len(frames)} frames)"
                     )
                     consecutive_failures = 0  # Reset failure counter on success
+                    
+                    # --- Persist to database (governed by storage_multiple) ---
+                    self._cycle_counter += 1
+                    if (
+                        self._storage_multiple > 0
+                        and self.current_session_uuid
+                        and self._cycle_counter % self._storage_multiple == 0
+                    ):
+                        self._maybe_persist_cycle(camera_id)
                     
                 elif len(frames) == 0:
                     # No frames captured at all - likely camera disconnected or stopped
@@ -1210,6 +1227,99 @@ class InstantDetectionSampler:
             except Exception as e:
                 logger.error(f"❌ Failed to start trigger evaluation thread: {e}")
     
+    # ------------------------------------------------------------------
+    # Instant detection persistent storage helpers
+    # ------------------------------------------------------------------
+
+    def _maybe_persist_cycle(self, camera_id: str):
+        """Submit a persist task for the latest cached detection result."""
+        try:
+            # Check if session needs rotation first
+            if self._should_rotate_session():
+                self._rotate_tracking_session(camera_id)
+
+            # Get the latest result from Redis cache
+            import redis as _redis
+            import json as _json
+
+            r = _redis.Redis(host="localhost", port=6379, decode_responses=False)
+            cached = r.get(f"instant_detection:{camera_id}")
+            if not cached:
+                return
+
+            result = _json.loads(cached.decode("utf-8"))
+            person_objects = result.get("person_objects") or []
+            if not person_objects:
+                return
+
+            from src.tasks.instant_detection_tasks import persist_instant_detection_results
+
+            persist_instant_detection_results.delay(
+                camera_id=camera_id,
+                session_uuid=self.current_session_uuid,
+                cycle_timestamp=result.get("timestamp", datetime.utcnow().isoformat()),
+                person_objects=person_objects,
+                demographics=result.get("demographics", {}),
+                auth_token=self._auth_token or "",
+            )
+            logger.info(
+                f"📦 [PERSIST] Queued storage for {camera_id} "
+                f"(cycle {self._cycle_counter}, session {self.current_session_uuid[:8]}...)"
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ [PERSIST] Failed to submit persist task: {e}")
+
+    def _should_rotate_session(self) -> bool:
+        """Check whether the current tracking session duration has been exceeded."""
+        if self._session_duration_minutes <= 0:
+            return False
+        if self._session_started_at is None:
+            return False
+        elapsed = (datetime.utcnow() - self._session_started_at).total_seconds() / 60
+        return elapsed >= self._session_duration_minutes
+
+    def _rotate_tracking_session(self, camera_id: str):
+        """Complete the current session and start a new one."""
+        import requests as _requests
+
+        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        headers = {}
+        if self._auth_token:
+            headers["Authorization"] = f"Bearer {self._auth_token}"
+
+        # Complete current session
+        try:
+            _requests.post(
+                f"{vmeta_url}/api/v1/instant-detection/complete-session/{self.current_session_uuid}",
+                headers=headers,
+                timeout=5,
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to complete session on rotation: {e}")
+
+        # Start new session
+        new_uuid = str(uuid.uuid4())
+        try:
+            _requests.post(
+                f"{vmeta_url}/api/v1/instant-detection/create-session",
+                json={
+                    "session_uuid": new_uuid,
+                    "camera_id": camera_id,
+                    "source_type": "instant_detection",
+                    "user_id": "system",
+                },
+                headers={**headers, "Content-Type": "application/json"},
+                timeout=5,
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to create new session on rotation: {e}")
+
+        self.current_session_uuid = new_uuid
+        self._session_started_at = datetime.utcnow()
+        logger.info(
+            f"🔄 [SESSION] Rotated tracking session for {camera_id} → {new_uuid[:8]}..."
+        )
+
     def _push_to_webhook_sync(self, camera_id: str, result: Dict):
         """
         Push instant detection results to webhook endpoint (synchronous version for threading).

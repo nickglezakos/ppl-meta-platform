@@ -33,6 +33,8 @@ class _CameraPipelineSettingsScreenState
   late bool _recordingPipelineEnabled;
   late int _instantDetectionInterval;
   late int _segmentDuration;
+  late int _storageMultiple;
+  late int _trackingSessionDurationMinutes;
 
   // Workflow settings state
   late bool _autoFaceDetection;
@@ -56,6 +58,8 @@ class _CameraPipelineSettingsScreenState
     _recordingPipelineEnabled = widget.camera.recordingPipelineEnabled;
     _instantDetectionInterval = widget.camera.instantDetectionIntervalSeconds;
     _segmentDuration = widget.camera.segmentDurationSeconds;
+    _storageMultiple = widget.camera.storageMultiple;
+    _trackingSessionDurationMinutes = widget.camera.trackingSessionDurationMinutes;
     
     // Initialize workflow settings
     _autoFaceDetection = widget.camera.autoFaceDetection;
@@ -93,6 +97,8 @@ class _CameraPipelineSettingsScreenState
           _recordingPipelineEnabled = pipelineSettings['recording_pipeline_enabled'] as bool? ?? true;
           _instantDetectionInterval = pipelineSettings['instant_detection_interval_seconds'] as int? ?? 5;
           _segmentDuration = pipelineSettings['segment_duration_seconds'] as int? ?? 30;
+          _storageMultiple = pipelineSettings['storage_multiple'] as int? ?? 1;
+          _trackingSessionDurationMinutes = pipelineSettings['tracking_session_duration_minutes'] as int? ?? 0;
           
           // Workflow settings
           _autoFaceDetection = workflowSettings['auto_face_detection'] as bool? ?? false;
@@ -149,6 +155,8 @@ class _CameraPipelineSettingsScreenState
         recordingPipelineEnabled: _recordingPipelineEnabled,
         instantDetectionIntervalSeconds: _instantDetectionInterval,
         segmentDurationSeconds: _segmentDuration,
+        storageMultiple: _storageMultiple,
+        trackingSessionDurationMinutes: _trackingSessionDurationMinutes,
       );
 
       // Save workflow settings
@@ -458,8 +466,25 @@ class _CameraPipelineSettingsScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Instant Detection Interval
+                  // Instant Detection section
                   if (_instantDetectionEnabled) ...[
+                    Text(
+                      'Instant Detection',
+                      style: OfflineFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Settings for real-time people detection',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
                       'Detection Interval: $_instantDetectionInterval seconds',
                       style: OfflineFonts.inter(
@@ -489,10 +514,89 @@ class _CameraPipelineSettingsScreenState
                       ),
                     ),
                     const SizedBox(height: 24),
+
+                    // Storage Multiple
+                    Text(
+                      'Storage Multiple: $_storageMultiple',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Slider(
+                      value: _storageMultiple.toDouble(),
+                      min: 1,
+                      max: 12,
+                      divisions: 11,
+                      label: '$_storageMultiple',
+                      onChanged: (value) {
+                        setState(() {
+                          _storageMultiple = value.round();
+                        });
+                      },
+                      activeColor: AppColors.primary,
+                    ),
+                    Text(
+                      'Persist every Nth detection cycle to MVR storage (1 = every cycle)',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Tracking Session Duration
+                    Text(
+                      'Session Duration: ${_trackingSessionDurationMinutes == 0 ? 'Unlimited' : '$_trackingSessionDurationMinutes min'}',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Slider(
+                      value: _trackingSessionDurationMinutes.toDouble(),
+                      min: 0,
+                      max: 480,
+                      divisions: 48,
+                      label: _trackingSessionDurationMinutes == 0 ? 'Unlimited' : '$_trackingSessionDurationMinutes min',
+                      onChanged: (value) {
+                        setState(() {
+                          _trackingSessionDurationMinutes = value.round();
+                        });
+                      },
+                      activeColor: AppColors.primary,
+                    ),
+                    Text(
+                      'Auto-rotate tracking session after N minutes (0 = no rotation)',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                   ],
 
-                  // Segment Duration
+                  // Recording Pipeline section
                   if (_recordingPipelineEnabled) ...[
+                    Text(
+                      'Recording Pipeline',
+                      style: OfflineFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Settings for video segment recording',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
                       'Segment Duration: $_segmentDuration seconds',
                       style: OfflineFonts.inter(

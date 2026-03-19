@@ -10,6 +10,10 @@ from typing import Dict, Optional
 import logging
 import time
 import os
+import uuid
+from datetime import datetime
+
+import requests as http_requests
 
 from src.services.instant_detection import InstantDetectionSampler
 from src.database import get_db
@@ -224,6 +228,36 @@ async def start_instant_detection(
     camera_path = camera.connection_string or f"/dev/video{camera.device_index or 0}"
     
     try:
+        # Load per-camera pipeline settings for storage configuration
+        storage_multiple = camera.storage_multiple if camera.storage_multiple is not None else 1
+        session_duration = camera.tracking_session_duration_minutes if camera.tracking_session_duration_minutes is not None else 0
+
+        # Create tracking session in VMeta for this detection run
+        session_uuid = str(uuid.uuid4())
+        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        try:
+            http_requests.post(
+                f"{vmeta_url}/api/v1/instant-detection/create-session",
+                json={
+                    "session_uuid": session_uuid,
+                    "camera_id": camera_id,
+                    "source_type": "instant_detection",
+                    "user_id": "system",
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=5,
+            )
+            logger.info(f"✅ Created tracking session {session_uuid[:8]}... for {camera_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not create tracking session in VMeta: {e}")
+
+        # Configure sampler with storage settings
+        manager.current_session_uuid = session_uuid
+        manager._session_started_at = datetime.utcnow()
+        manager._storage_multiple = storage_multiple
+        manager._session_duration_minutes = session_duration
+        manager._cycle_counter = 0
+
         manager.start_sampling(camera_id, camera_path)
         
         return {
@@ -231,7 +265,10 @@ async def start_instant_detection(
             "message": f"Instant detection started for camera {camera_id}",
             "camera_id": camera_id,
             "sampling_interval": manager.sampling_interval,
-            "temporal_window": manager.temporal_window
+            "temporal_window": manager.temporal_window,
+            "session_uuid": session_uuid,
+            "storage_multiple": storage_multiple,
+            "tracking_session_duration_minutes": session_duration,
         }
         
     except Exception as e:
@@ -253,6 +290,19 @@ async def stop_instant_detection(
         Success status
     """
     try:
+        # Complete tracking session in VMeta before stopping
+        if manager.current_session_uuid:
+            vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+            try:
+                http_requests.post(
+                    f"{vmeta_url}/api/v1/instant-detection/complete-session/{manager.current_session_uuid}",
+                    timeout=5,
+                )
+                logger.info(f"✅ Completed tracking session {manager.current_session_uuid[:8]}...")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not complete tracking session: {e}")
+            manager.current_session_uuid = None
+
         manager.stop_sampling()
         
         return {
@@ -286,6 +336,19 @@ async def stop_instant_detection_for_camera(
     try:
         status = manager.get_status()
         if status.get("running") and status.get("current_camera_id") == camera_id:
+            # Complete tracking session in VMeta before stopping
+            if manager.current_session_uuid:
+                vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+                try:
+                    http_requests.post(
+                        f"{vmeta_url}/api/v1/instant-detection/complete-session/{manager.current_session_uuid}",
+                        timeout=5,
+                    )
+                    logger.info(f"✅ Completed tracking session {manager.current_session_uuid[:8]}...")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not complete tracking session: {e}")
+                manager.current_session_uuid = None
+
             manager.stop_sampling()
             return {
                 "success": True,

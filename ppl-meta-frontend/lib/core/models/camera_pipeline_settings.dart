@@ -6,6 +6,8 @@ class CameraPipelineSettings {
   final bool recordingPipelineEnabled;
   final int instantDetectionIntervalSeconds;
   final int segmentDurationSeconds;
+  final int storageMultiple;
+  final int trackingSessionDurationMinutes;
 
   const CameraPipelineSettings({
     required this.deviceId,
@@ -14,6 +16,8 @@ class CameraPipelineSettings {
     required this.recordingPipelineEnabled,
     required this.instantDetectionIntervalSeconds,
     required this.segmentDurationSeconds,
+    this.storageMultiple = 1,
+    this.trackingSessionDurationMinutes = 0,
   });
 
   factory CameraPipelineSettings.fromJson(Map<String, dynamic> json) {
@@ -24,6 +28,8 @@ class CameraPipelineSettings {
       recordingPipelineEnabled: json['recording_pipeline_enabled'] as bool? ?? true,
       instantDetectionIntervalSeconds: json['instant_detection_interval_seconds'] as int? ?? 5,
       segmentDurationSeconds: json['segment_duration_seconds'] as int? ?? 30,
+      storageMultiple: json['storage_multiple'] as int? ?? 1,
+      trackingSessionDurationMinutes: json['tracking_session_duration_minutes'] as int? ?? 0,
     );
   }
 
@@ -35,6 +41,8 @@ class CameraPipelineSettings {
       'recording_pipeline_enabled': recordingPipelineEnabled,
       'instant_detection_interval_seconds': instantDetectionIntervalSeconds,
       'segment_duration_seconds': segmentDurationSeconds,
+      'storage_multiple': storageMultiple,
+      'tracking_session_duration_minutes': trackingSessionDurationMinutes,
     };
   }
 
@@ -45,6 +53,8 @@ class CameraPipelineSettings {
       'recording_pipeline_enabled': recordingPipelineEnabled,
       'instant_detection_interval_seconds': instantDetectionIntervalSeconds,
       'segment_duration_seconds': segmentDurationSeconds,
+      'storage_multiple': storageMultiple,
+      'tracking_session_duration_minutes': trackingSessionDurationMinutes,
     };
   }
 
@@ -55,6 +65,8 @@ class CameraPipelineSettings {
     bool? recordingPipelineEnabled,
     int? instantDetectionIntervalSeconds,
     int? segmentDurationSeconds,
+    int? storageMultiple,
+    int? trackingSessionDurationMinutes,
   }) {
     return CameraPipelineSettings(
       deviceId: deviceId ?? this.deviceId,
@@ -63,6 +75,8 @@ class CameraPipelineSettings {
       recordingPipelineEnabled: recordingPipelineEnabled ?? this.recordingPipelineEnabled,
       instantDetectionIntervalSeconds: instantDetectionIntervalSeconds ?? this.instantDetectionIntervalSeconds,
       segmentDurationSeconds: segmentDurationSeconds ?? this.segmentDurationSeconds,
+      storageMultiple: storageMultiple ?? this.storageMultiple,
+      trackingSessionDurationMinutes: trackingSessionDurationMinutes ?? this.trackingSessionDurationMinutes,
     );
   }
 
@@ -102,7 +116,9 @@ class CameraPipelineSettings {
         other.instantDetectionEnabled == instantDetectionEnabled &&
         other.recordingPipelineEnabled == recordingPipelineEnabled &&
         other.instantDetectionIntervalSeconds == instantDetectionIntervalSeconds &&
-        other.segmentDurationSeconds == segmentDurationSeconds;
+        other.segmentDurationSeconds == segmentDurationSeconds &&
+        other.storageMultiple == storageMultiple &&
+        other.trackingSessionDurationMinutes == trackingSessionDurationMinutes;
   }
 
   @override
@@ -113,6 +129,8 @@ class CameraPipelineSettings {
       recordingPipelineEnabled,
       instantDetectionIntervalSeconds,
       segmentDurationSeconds,
+      storageMultiple,
+      trackingSessionDurationMinutes,
     );
   }
 }

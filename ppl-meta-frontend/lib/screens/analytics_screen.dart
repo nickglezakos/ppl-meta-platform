@@ -32,6 +32,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   List<String> _selectedCollectionIds = []; // empty = all collections
   List<String> _selectedGenders = []; // empty = all genders (male, female)
   List<String> _selectedAgeGroups = []; // empty = all ages (young, adult, elderly)
+  String _dataSource = 'recording'; // 'recording' or 'instant_detection'
   bool _autoRefresh = false;
   DateTime? _startDate;
   DateTime? _endDate;
@@ -81,6 +82,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         endDate: _endDate,
         genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
         ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
+        dataSource: _dataSource,
       );
       
       if (response.success && response.data != null) {
@@ -108,6 +110,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           endDate: _endDate,
           genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
           ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
+          dataSource: _dataSource,
         );
         
         debugPrint('🔍 Analytics: Quality response success: ${qualityResponse.success}');
@@ -152,6 +155,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               : 'day',
           startDate: _startDate,
           endDate: _endDate,
+          dataSource: _dataSource,
         );
         
         if (mounted && timeSeriesResponse.success && timeSeriesResponse.data != null) {
@@ -173,6 +177,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           endDate: _endDate,
           genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
           ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
+          dataSource: _dataSource,
         );
         
         if (mounted && demographicsResponse.success && demographicsResponse.data != null) {
@@ -194,6 +199,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           endDate: _endDate,
           genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
           ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
+          dataSource: _dataSource,
         );
         
         if (mounted && behavioralResponse.success && behavioralResponse.data != null) {
@@ -295,6 +301,21 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 color: Colors.grey.shade700,
                 fontWeight: FontWeight.w500,
               ),
+            ),
+          ],
+          if (_dataSource == 'instant_detection') ...[
+            const SizedBox(width: 12),
+            Chip(
+              label: const Text('Instant Detection'),
+              avatar: const Icon(Icons.visibility, size: 16),
+              backgroundColor: Colors.orange.shade100,
+              deleteIcon: const Icon(Icons.close, size: 16),
+              onDeleted: () {
+                setState(() => _dataSource = 'recording');
+                _loadAnalytics();
+              },
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
             ),
           ],
           const Spacer(),
@@ -580,11 +601,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                   subtitle: 'With detections',
                 ),
                 _buildMetricCard(
-                  title: 'Videos Analyzed',
-                  value: _analyticsSummary?.totalVideos.toString() ?? '--',
-                  icon: Icons.movie,
+                  title: _dataSource == 'instant_detection' ? 'Sessions' : 'Videos Analyzed',
+                  value: _dataSource == 'instant_detection'
+                      ? '${_mvrQualityMetrics?.trackingSessionsCount ?? 0}'
+                      : _analyticsSummary?.totalVideos.toString() ?? '--',
+                  icon: _dataSource == 'instant_detection' ? Icons.visibility : Icons.movie,
                   color: Colors.orange,
-                  subtitle: 'In time range',
+                  subtitle: _dataSource == 'instant_detection' ? 'Detection sessions' : 'In time range',
                 ),
                 // NEW: Show Image Quality as main metric
                 if (_mvrQualityMetrics != null && _mvrQualityMetrics!.hasQualityData)
@@ -1845,6 +1868,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         selectedCollectionIds: _selectedCollectionIds,
         selectedGenders: _selectedGenders,
         selectedAgeGroups: _selectedAgeGroups,
+        dataSource: _dataSource,
         autoRefresh: _autoRefresh,
         cameras: _cameras,
         startDate: _startDate,
@@ -1858,6 +1882,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         _selectedCollectionIds = result['collectionIds'] as List<String>;
         _selectedGenders = result['genders'] as List<String>;
         _selectedAgeGroups = result['ageGroups'] as List<String>;
+        _dataSource = result['dataSource'] as String? ?? 'recording';
         _autoRefresh = result['autoRefresh'] as bool;
         _startDate = result['startDate'] as DateTime?;
         _endDate = result['endDate'] as DateTime?;
@@ -2227,9 +2252,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildQualityMetricTile(
-                        label: 'Videos',
+                        label: _dataSource == 'instant_detection' ? 'Sessions' : 'Videos',
                         value: metrics.totalVideosProcessed.toString(),
-                        icon: Icons.video_library,
+                        icon: _dataSource == 'instant_detection' ? Icons.visibility : Icons.video_library,
                         color: Colors.purple,
                       ),
                     ),
@@ -2560,6 +2585,7 @@ class _FilterDialog extends StatefulWidget {
   final List<String> selectedCollectionIds;
   final List<String> selectedGenders;
   final List<String> selectedAgeGroups;
+  final String dataSource;
   final bool autoRefresh;
   final List<Map<String, dynamic>> cameras;
   final DateTime? startDate;
@@ -2570,6 +2596,7 @@ class _FilterDialog extends StatefulWidget {
     required this.selectedCollectionIds,
     required this.selectedGenders,
     required this.selectedAgeGroups,
+    this.dataSource = 'recording',
     required this.autoRefresh,
     required this.cameras,
     this.startDate,
@@ -2585,6 +2612,7 @@ class _FilterDialogState extends State<_FilterDialog> {
   late List<String> _selectedCollectionIds;
   late List<String> _selectedGenders;
   late List<String> _selectedAgeGroups;
+  late String _dataSource;
   late bool _autoRefresh;
   DateTime? _startDate;
   DateTime? _endDate;
@@ -2596,6 +2624,7 @@ class _FilterDialogState extends State<_FilterDialog> {
     _selectedCollectionIds = List.from(widget.selectedCollectionIds);
     _selectedGenders = List.from(widget.selectedGenders);
     _selectedAgeGroups = List.from(widget.selectedAgeGroups);
+    _dataSource = widget.dataSource;
     _autoRefresh = widget.autoRefresh;
     _startDate = widget.startDate;
     _endDate = widget.endDate;
@@ -2643,6 +2672,46 @@ class _FilterDialogState extends State<_FilterDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Data Source Filter
+              const Text(
+                'Data Source',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('Video Recording'),
+                    selected: _dataSource == 'recording',
+                    onSelected: (_) => setState(() => _dataSource = 'recording'),
+                    selectedColor: Colors.blue.shade100,
+                    avatar: _dataSource == 'recording'
+                        ? const Icon(Icons.videocam, size: 18)
+                        : const Icon(Icons.videocam_outlined, size: 18),
+                  ),
+                  ChoiceChip(
+                    label: const Text('Instant Detection'),
+                    selected: _dataSource == 'instant_detection',
+                    onSelected: (_) => setState(() => _dataSource = 'instant_detection'),
+                    selectedColor: Colors.orange.shade100,
+                    avatar: _dataSource == 'instant_detection'
+                        ? const Icon(Icons.visibility, size: 18)
+                        : const Icon(Icons.visibility_outlined, size: 18),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _dataSource == 'recording'
+                    ? 'Analytics from video recording sessions (default)'
+                    : 'Analytics from real-time instant detection sessions',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 20),
               // Time Range Filter
               const Text(
                 'Time Range',
@@ -2860,6 +2929,7 @@ class _FilterDialogState extends State<_FilterDialog> {
               'collectionIds': _selectedCollectionIds,
               'genders': _selectedGenders,
               'ageGroups': _selectedAgeGroups,
+              'dataSource': _dataSource,
               'autoRefresh': _autoRefresh,
               'startDate': _timeFilter == 'custom' ? _startDate : null,
               'endDate': _timeFilter == 'custom' ? _endDate : null,

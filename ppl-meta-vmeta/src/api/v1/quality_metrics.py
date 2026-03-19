@@ -241,6 +241,7 @@ async def get_mvr_quality_metrics(
     start_time: datetime = Query(..., description="Start time for filtering (ISO format)"),
     end_time: datetime = Query(..., description="End time for filtering (ISO format)"),
     collection_name: Optional[str] = Query(None, description="Optional collection name to filter (if omitted, returns all)"),
+    source_type: Optional[str] = Query(None, description="Filter by source type: recording_pipeline or instant_detection (if omitted, returns all)"),
     current_user: dict = Depends(get_current_user),
     db_connection = Depends(get_db_connection)
 ) -> Dict:
@@ -271,7 +272,8 @@ async def get_mvr_quality_metrics(
     """
     try:
         collection_display = collection_name if collection_name and collection_name != "all" else "ALL"
-        logger.info(f"📊 MVR Quality Metrics for {collection_display} ({start_time} to {end_time})")
+        source_display = source_type if source_type else "ALL"
+        logger.info(f"📊 MVR Quality Metrics for {collection_display} source={source_display} ({start_time} to {end_time})")
         
         # Database columns are 'timestamp without time zone'
         # But PostgreSQL still stores the server's local time
@@ -310,10 +312,11 @@ async def get_mvr_quality_metrics(
         WHERE created_at >= $1
             AND created_at <= $2
             AND status = 'completed'
+            AND ($3::text IS NULL OR source_type = $3)
             ORDER BY created_at DESC
         """
         
-        sessions = await db_connection.fetch(sessions_query, start_time_local, end_time_local)
+        sessions = await db_connection.fetch(sessions_query, start_time_local, end_time_local, source_type)
         
         if not sessions:
             logger.info(f"No completed tracking sessions found for {collection_display}")
@@ -364,6 +367,27 @@ async def get_mvr_quality_metrics(
             AND merged_into_mvr_uuid IS NULL
         ORDER BY created_at DESC
         """
+        
+        # When source_type is specified, filter MVR people through individual_mvr_mapping link_method
+        if source_type == 'instant_detection':
+            mvr_query = """
+            SELECT DISTINCT ON (mp.mvr_people_uuid)
+                mp.mvr_people_uuid,
+                mp.face_quality,
+                mp.quality_score,
+                mp.total_linked_individuals,
+                mp.total_appearances,
+                mp.total_videos,
+                mp.created_at
+            FROM mvr_people mp
+            JOIN individual_mvr_mapping imm ON mp.mvr_people_uuid = imm.mvr_people_uuid
+            WHERE mp.created_at >= $1
+                AND mp.created_at <= $2
+                AND mp.is_orphaned = false
+                AND mp.merged_into_mvr_uuid IS NULL
+                AND imm.link_method = 'instant_detection'
+            ORDER BY mp.mvr_people_uuid, mp.created_at DESC
+            """
         
         mvr_people = await db_connection.fetch(mvr_query, start_time_local, end_time_local)
         
@@ -419,6 +443,22 @@ async def get_mvr_quality_metrics(
             AND is_orphaned = false
             AND merged_into_mvr_uuid IS NULL
         """
+        
+        if source_type == 'instant_detection':
+            demographics_query = """
+            SELECT DISTINCT ON (mp.mvr_people_uuid)
+                mp.gender,
+                mp.age_min,
+                mp.age_max
+            FROM mvr_people mp
+            JOIN individual_mvr_mapping imm ON mp.mvr_people_uuid = imm.mvr_people_uuid
+            WHERE mp.created_at >= $1
+                AND mp.created_at <= $2
+                AND mp.is_orphaned = false
+                AND mp.merged_into_mvr_uuid IS NULL
+                AND imm.link_method = 'instant_detection'
+            ORDER BY mp.mvr_people_uuid
+            """
         
         mvr_demographics = await db_connection.fetch(demographics_query, start_time_local, end_time_local)
         

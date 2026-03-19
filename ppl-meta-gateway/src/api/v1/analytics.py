@@ -21,6 +21,16 @@ router = APIRouter()
 # Service URLs
 CAMERAS_SERVICE_URL = "http://localhost:8005"
 MEDIA_SERVICE_URL = "http://localhost:8000"
+VMETA_SERVICE_URL = "http://localhost:8008"
+
+
+def _normalize_source_type(source_type: Optional[str]) -> str:
+    """Normalize source_type parameter to database column value."""
+    if source_type in (None, "recording", "recording_pipeline"):
+        return "recording_pipeline"
+    if source_type in ("instant_detection",):
+        return "instant_detection"
+    return "recording_pipeline"  # Safe default
 
 
 def _parse_time_filter(
@@ -177,6 +187,182 @@ def _filter_demographics_count(
         return age_count
 
 
+async def _get_instant_detection_summary(
+    auth_token: str,
+    time_filter: str,
+    collection_ids: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    genders: Optional[str],
+    age_groups: Optional[str],
+) -> Dict:
+    """Fetch analytics summary from VMeta tracking-sessions/summary for instant detection data."""
+    try:
+        start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
+    except ValueError as e:
+        logger.error(f"Invalid time filter for instant detection summary: {e}")
+        return _empty_summary(time_filter, error=str(e))
+
+    # Determine camera device IDs to query
+    camera_device_ids: Optional[str] = None
+    if collection_ids:
+        camera_device_ids = collection_ids  # Pass through comma-separated
+    else:
+        # Get all collections from Media to discover camera_device_ids
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
+                    headers={"Authorization": f"Bearer {auth_token}"},
+                    params={"limit": 1000},
+                )
+                if resp.status_code == 200:
+                    collections = resp.json()
+                    device_ids = []
+                    for col in collections:
+                        did = col.get("camera_device_id") or col.get("device_id")
+                        if did:
+                            device_ids.append(str(did))
+                    if device_ids:
+                        camera_device_ids = ",".join(device_ids)
+        except Exception as e:
+            logger.warning(f"Could not fetch collections for instant detection summary: {e}")
+
+    # Call VMeta tracking-sessions/summary
+    params = {
+        "source_type": "instant_detection",
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+    }
+    if camera_device_ids:
+        params["camera_device_ids"] = camera_device_ids
+
+    logger.info(f"📊 Instant detection summary: calling VMeta tracking-sessions/summary with params={params}")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{VMETA_SERVICE_URL}/api/v1/tracking-sessions/summary",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                params=params,
+            )
+            if resp.status_code != 200:
+                logger.error(f"VMeta tracking-sessions/summary returned {resp.status_code}: {resp.text[:300]}")
+                return _empty_summary(time_filter, error=f"VMeta returned {resp.status_code}")
+
+            data = resp.json()
+    except Exception as e:
+        logger.error(f"Error calling VMeta tracking-sessions/summary: {e}")
+        return _empty_summary(time_filter, error=str(e))
+
+    # Parse demographic filters
+    selected_genders = [g.strip() for g in genders.split(",") if g.strip()] if genders else None
+    selected_age_groups = [a.strip() for a in age_groups.split(",") if a.strip()] if age_groups else None
+
+    # Build demographics from VMeta response
+    vmeta_demographics = data.get("demographics", {})
+    gender_male = vmeta_demographics.get("total_male", 0)
+    gender_female = vmeta_demographics.get("total_female", 0)
+    age_young = vmeta_demographics.get("total_young", 0)
+    age_adult = vmeta_demographics.get("total_adult", 0)
+    age_elderly = vmeta_demographics.get("total_elderly", 0)
+
+    total_people = data.get("total_mvr_people", 0)
+
+    # Apply demographic filters
+    if selected_genders:
+        if "male" not in selected_genders:
+            gender_male = 0
+        if "female" not in selected_genders:
+            gender_female = 0
+    if selected_age_groups:
+        if "young" not in selected_age_groups:
+            age_young = 0
+        if "adult" not in selected_age_groups:
+            age_adult = 0
+        if "elderly" not in selected_age_groups:
+            age_elderly = 0
+
+    if selected_genders or selected_age_groups:
+        total_people = _filter_demographics_count(
+            vmeta_demographics, total_people, selected_genders, selected_age_groups
+        )
+
+    total_gender = gender_male + gender_female
+    total_age = age_young + age_adult + age_elderly
+
+    demographics = {
+        "gender": {
+            "male": gender_male,
+            "female": gender_female,
+            "male_percentage": round((gender_male / total_gender * 100) if total_gender > 0 else 0, 1),
+            "female_percentage": round((gender_female / total_gender * 100) if total_gender > 0 else 0, 1),
+        },
+        "age": {
+            "young": age_young,
+            "adult": age_adult,
+            "elderly": age_elderly,
+            "young_percentage": round((age_young / total_age * 100) if total_age > 0 else 0, 1),
+            "adult_percentage": round((age_adult / total_age * 100) if total_age > 0 else 0, 1),
+            "elderly_percentage": round((age_elderly / total_age * 100) if total_age > 0 else 0, 1),
+        },
+    }
+
+    # Build camera breakdown
+    camera_breakdown = []
+    for cam in data.get("camera_breakdown", []):
+        camera_breakdown.append({
+            "camera_id": cam.get("camera_device_id", ""),
+            "camera_name": cam.get("camera_device_id", ""),
+            "count": cam.get("total_mvr_people", 0),
+            "video_count": 0,  # Not applicable for instant detection
+            "demographics": None,
+            "last_detection": cam.get("last_detection"),
+            "cached": False,
+        })
+
+    active_cameras = data.get("active_cameras", 0)
+
+    logger.info(
+        f"✅ Instant detection summary: {total_people} people, "
+        f"{active_cameras} cameras, {data.get('session_count', 0)} sessions"
+    )
+
+    return {
+        "total_people": total_people,
+        "active_cameras": active_cameras,
+        "total_videos": 0,  # Instant detection doesn't produce videos
+        "last_detection": data.get("last_detection"),
+        "time_filter": time_filter,
+        "demographics": demographics,
+        "camera_breakdown": camera_breakdown,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "cached": False,
+        "source_type": "instant_detection",
+    }
+
+
+def _empty_summary(time_filter: str, error: Optional[str] = None) -> Dict:
+    """Return an empty analytics summary response."""
+    result = {
+        "total_people": 0,
+        "active_cameras": 0,
+        "total_videos": 0,
+        "last_detection": None,
+        "time_filter": time_filter,
+        "demographics": {
+            "gender": {"male": 0, "female": 0, "male_percentage": 0.0, "female_percentage": 0.0},
+            "age": {"young": 0, "adult": 0, "elderly": 0, "young_percentage": 0.0, "adult_percentage": 0.0, "elderly_percentage": 0.0},
+        },
+        "camera_breakdown": [],
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "cached": False,
+    }
+    if error:
+        result["error"] = error
+    return result
+
+
 @router.get(
     "/analytics/summary",
     summary="Get aggregated analytics summary",
@@ -191,6 +377,7 @@ async def get_analytics_summary(
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
+    source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'. Default: recording_pipeline"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -216,6 +403,20 @@ async def get_analytics_summary(
         # Extract auth token for service calls
         auth_header = request.headers.get("authorization", "")
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
+        
+        effective_source = _normalize_source_type(source_type)
+        
+        # --- Instant detection path: call VMeta tracking-sessions/summary ---
+        if effective_source == "instant_detection":
+            return await _get_instant_detection_summary(
+                auth_token=auth_token,
+                time_filter=time_filter,
+                collection_ids=collection_ids,
+                start_date=start_date,
+                end_date=end_date,
+                genders=genders,
+                age_groups=age_groups,
+            )
         
         # Note: No analytics-level caching needed - the camera counter endpoint
         # already caches individual collection results with 10-minute TTL
@@ -445,6 +646,330 @@ async def get_analytics_summary(
         }
 
 
+# ────────────────────────────────────────────────────────────────────
+# Instant detection helper functions
+# ────────────────────────────────────────────────────────────────────
+
+async def _get_instant_detection_time_series(
+    auth_token: str,
+    time_filter: str,
+    collection_ids: Optional[str],
+    interval: str,
+    start_date: Optional[str],
+    end_date: Optional[str],
+) -> Dict:
+    """Fetch time-series data from VMeta tracking-sessions/summary for instant detection."""
+    try:
+        start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
+    except ValueError as e:
+        return {
+            "time_filter": time_filter, "interval": interval,
+            "start_time": None, "end_time": None,
+            "data_points": [], "peak_count": 0, "peak_time": None,
+            "average_count": 0.0, "total_count": 0, "error": str(e),
+        }
+
+    # Auto-select interval based on range
+    range_hours = (end_time - start_time).total_seconds() / 3600
+    if range_hours <= 72:
+        interval = "hour"
+    else:
+        interval = "day"
+
+    # Build camera_device_ids
+    camera_device_ids = collection_ids  # Pass through if provided
+
+    params = {
+        "source_type": "instant_detection",
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+    }
+    if camera_device_ids:
+        params["camera_device_ids"] = camera_device_ids
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{VMETA_SERVICE_URL}/api/v1/tracking-sessions/summary",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                params=params,
+            )
+            if resp.status_code != 200:
+                logger.error(f"VMeta tracking-sessions/summary for time-series returned {resp.status_code}")
+                data = {}
+            else:
+                data = resp.json()
+    except Exception as e:
+        logger.error(f"Error calling VMeta for instant detection time-series: {e}")
+        data = {}
+
+    total_count = data.get("total_mvr_people", 0)
+
+    # Build time buckets and distribute count into the most recent bucket
+    # (Same simplified approach as recording pipeline; VMeta doesn't provide per-bucket data yet)
+    time_buckets = {}
+    if interval == "hour":
+        total_hours = max(1, int((end_time - start_time).total_seconds() / 3600) + 1)
+        for i in range(total_hours):
+            bucket_time = start_time + timedelta(hours=i)
+            time_buckets[bucket_time.strftime("%Y-%m-%d %H:00")] = {
+                "timestamp": bucket_time.isoformat(),
+                "count": 0,
+                "video_count": 0,
+            }
+    else:
+        total_days = max(1, (end_time - start_time).days + 1)
+        for i in range(total_days):
+            bucket_time = start_time + timedelta(days=i)
+            time_buckets[bucket_time.strftime("%Y-%m-%d")] = {
+                "timestamp": bucket_time.replace(hour=0, minute=0, second=0).isoformat(),
+                "count": 0,
+                "video_count": 0,
+            }
+
+    if time_buckets and total_count > 0:
+        last_bucket_key = list(time_buckets.keys())[-1]
+        time_buckets[last_bucket_key]["count"] = total_count
+
+    data_points = list(time_buckets.values())
+    counts = [dp["count"] for dp in data_points]
+    peak_count = max(counts) if counts else 0
+    average_count = sum(counts) / len(counts) if counts else 0.0
+    peak_time = None
+    for dp in data_points:
+        if dp["count"] == peak_count:
+            peak_time = dp["timestamp"]
+            break
+
+    return {
+        "time_filter": time_filter,
+        "interval": interval,
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "data_points": data_points,
+        "peak_count": peak_count,
+        "peak_time": peak_time,
+        "average_count": round(average_count, 2),
+        "total_count": total_count,
+        "source_type": "instant_detection",
+    }
+
+
+async def _get_instant_detection_demographics(
+    auth_token: str,
+    time_filter: str,
+    collection_ids: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    genders: Optional[str],
+    age_groups: Optional[str],
+) -> Dict:
+    """Fetch demographics from VMeta tracking-sessions/summary for instant detection."""
+    try:
+        start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    params = {
+        "source_type": "instant_detection",
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+    }
+    if collection_ids:
+        params["camera_device_ids"] = collection_ids
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{VMETA_SERVICE_URL}/api/v1/tracking-sessions/summary",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                params=params,
+            )
+            if resp.status_code != 200:
+                logger.error(f"VMeta returned {resp.status_code} for instant detection demographics")
+                raise HTTPException(status_code=500, detail="Failed to fetch instant detection demographics")
+            data = resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching instant detection demographics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    vmeta_demo = data.get("demographics", {})
+    total_male = vmeta_demo.get("total_male", 0)
+    total_female = vmeta_demo.get("total_female", 0)
+    total_unknown_gender = 0
+    total_young = vmeta_demo.get("total_young", 0)
+    total_adult = vmeta_demo.get("total_adult", 0)
+    total_middle_aged = 0
+    total_elderly = vmeta_demo.get("total_elderly", 0)
+    total_unknown_age = 0
+
+    # Apply filters
+    selected_genders = [g.strip() for g in genders.split(",") if g.strip()] if genders else None
+    selected_age_groups = [a.strip() for a in age_groups.split(",") if a.strip()] if age_groups else None
+
+    if selected_genders:
+        if "male" not in selected_genders:
+            total_male = 0
+        if "female" not in selected_genders:
+            total_female = 0
+    if selected_age_groups:
+        if "young" not in selected_age_groups:
+            total_young = 0
+        if "adult" not in selected_age_groups:
+            total_adult = 0
+        if "elderly" not in selected_age_groups:
+            total_elderly = 0
+
+    total_people = total_male + total_female + total_unknown_gender
+
+    male_pct = round((total_male / total_people * 100) if total_people > 0 else 0, 1)
+    female_pct = round((total_female / total_people * 100) if total_people > 0 else 0, 1)
+
+    total_age_people = total_young + total_adult + total_middle_aged + total_elderly + total_unknown_age
+    young_pct = round((total_young / total_age_people * 100) if total_age_people > 0 else 0, 1)
+    adult_pct = round((total_adult / total_age_people * 100) if total_age_people > 0 else 0, 1)
+    elderly_pct = round((total_elderly / total_age_people * 100) if total_age_people > 0 else 0, 1)
+
+    # Build per-camera breakdown from VMeta camera_breakdown
+    camera_demographics = []
+    for cam in data.get("camera_breakdown", []):
+        cam_id = cam.get("camera_device_id", "")
+        cam_people = cam.get("total_mvr_people", 0)
+        if cam_people > 0:
+            camera_demographics.append({
+                "camera_id": cam_id,
+                "camera_name": cam_id,
+                "total_people": cam_people,
+                "gender": {"male": 0, "female": 0, "unknown": 0, "male_percentage": 0.0, "female_percentage": 0.0},
+                "age": {"young": 0, "adult": 0, "middle_aged": 0, "elderly": 0, "unknown": 0,
+                        "young_percentage": 0.0, "adult_percentage": 0.0, "middle_aged_percentage": 0.0, "elderly_percentage": 0.0},
+            })
+
+    return {
+        "time_filter": time_filter,
+        "total_people": total_people,
+        "gender_distribution": {
+            "male": total_male, "female": total_female, "unknown": total_unknown_gender,
+            "male_percentage": male_pct, "female_percentage": female_pct, "unknown_percentage": 0.0,
+        },
+        "age_distribution": {
+            "young": total_young, "adult": total_adult, "middle_aged": total_middle_aged,
+            "elderly": total_elderly, "unknown": total_unknown_age,
+            "young_percentage": young_pct, "adult_percentage": adult_pct,
+            "middle_aged_percentage": 0.0, "elderly_percentage": elderly_pct, "unknown_percentage": 0.0,
+        },
+        "demographic_matrix": {
+            "male": {"young": 0, "adult": 0, "middle_aged": 0, "elderly": 0, "unknown": 0},
+            "female": {"young": 0, "adult": 0, "middle_aged": 0, "elderly": 0, "unknown": 0},
+            "unknown": {"young": 0, "adult": 0, "middle_aged": 0, "elderly": 0, "unknown": 0},
+        },
+        "camera_breakdown": camera_demographics,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source_type": "instant_detection",
+    }
+
+
+async def _get_instant_detection_behavioral(
+    auth_token: str,
+    time_filter: str,
+    collection_ids: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    genders: Optional[str],
+    age_groups: Optional[str],
+) -> Dict:
+    """Fetch behavioral analytics from VMeta tracking-sessions/summary for instant detection."""
+    try:
+        start_time, end_time = _parse_time_filter(time_filter, start_date, end_date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    params = {
+        "source_type": "instant_detection",
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+    }
+    if collection_ids:
+        params["camera_device_ids"] = collection_ids
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{VMETA_SERVICE_URL}/api/v1/tracking-sessions/summary",
+                headers={"Authorization": f"Bearer {auth_token}"},
+                params=params,
+            )
+            if resp.status_code != 200:
+                logger.error(f"VMeta returned {resp.status_code} for instant detection behavioral")
+                raise HTTPException(status_code=500, detail="Failed to fetch instant detection behavioral data")
+            data = resp.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching instant detection behavioral: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    total_people = data.get("total_mvr_people", 0)
+
+    # Initialize behavioral structures
+    days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    weekly_heatmap = {day: {hour: 0 for hour in range(24)} for day in days_of_week}
+    daily_activity = {day: 0 for day in days_of_week}
+    hourly_activity = {hour: 0 for hour in range(24)}
+
+    # Distribute total_people into current time slot (simplified — same as recording path)
+    if total_people > 0:
+        now = datetime.utcnow()
+        current_hour = now.hour
+        current_day = days_of_week[now.weekday()]
+        hourly_activity[current_hour] = total_people
+        daily_activity[current_day] = total_people
+        weekly_heatmap[current_day][current_hour] = total_people
+
+    # Build camera comparison from camera_breakdown
+    camera_comparison = []
+    for cam in data.get("camera_breakdown", []):
+        cam_id = cam.get("camera_device_id", "")
+        cam_count = cam.get("total_mvr_people", 0)
+        if cam_count > 0:
+            camera_comparison.append({"camera_id": cam_id, "total_people": cam_count})
+    camera_comparison.sort(key=lambda x: x["total_people"], reverse=True)
+
+    peak_hours = sorted(
+        [{"hour": h, "count": c, "time_label": f"{h:02d}:00 - {(h + 1) % 24:02d}:00"}
+         for h, c in hourly_activity.items() if c > 0],
+        key=lambda x: x["count"], reverse=True,
+    )[:5]
+
+    peak_days = sorted(
+        [{"day": d, "count": c} for d, c in daily_activity.items() if c > 0],
+        key=lambda x: x["count"], reverse=True,
+    )[:3]
+
+    visit_frequency = {
+        "new_visitors": int(total_people * 0.6),
+        "returning_visitors": int(total_people * 0.3),
+        "frequent_visitors": int(total_people * 0.1),
+    }
+
+    return {
+        "time_filter": time_filter,
+        "total_detections": total_people,
+        "active_cameras": len(camera_comparison),
+        "weekly_heatmap": weekly_heatmap,
+        "hourly_activity": hourly_activity,
+        "daily_activity": daily_activity,
+        "peak_hours": peak_hours,
+        "peak_days": peak_days,
+        "camera_comparison": camera_comparison[:5],
+        "visit_frequency": visit_frequency,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source_type": "instant_detection",
+    }
+
+
 @router.get(
     "/analytics/cameras",
     summary="Get list of collections for analytics filtering",
@@ -525,6 +1050,7 @@ async def get_time_series_analytics(
     interval: str = Query("hour", description="Data interval: hour, day"),
     start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
+    source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -549,6 +1075,19 @@ async def get_time_series_analytics(
         # Extract auth token
         auth_header = request.headers.get("authorization", "")
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
+        
+        effective_source = _normalize_source_type(source_type)
+        
+        # --- Instant detection path ---
+        if effective_source == "instant_detection":
+            return await _get_instant_detection_time_series(
+                auth_token=auth_token,
+                time_filter=time_filter,
+                collection_ids=collection_ids,
+                interval=interval,
+                start_date=start_date,
+                end_date=end_date,
+            )
         
         # Determine date range based on time_filter
         now = datetime.utcnow()
@@ -757,6 +1296,7 @@ async def get_demographics_breakdown(
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     genders: Optional[str] = Query(None, description="Comma-separated gender filter: male,female"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age group filter: young,adult,elderly"),
+    source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -773,6 +1313,20 @@ async def get_demographics_breakdown(
         
         # Get auth token from request
         auth_token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        
+        effective_source = _normalize_source_type(source_type)
+        
+        # --- Instant detection path ---
+        if effective_source == "instant_detection":
+            return await _get_instant_detection_demographics(
+                auth_token=auth_token,
+                time_filter=time_filter,
+                collection_ids=collection_ids,
+                start_date=start_date,
+                end_date=end_date,
+                genders=genders,
+                age_groups=age_groups,
+            )
         
         # Parse collection IDs
         selected_collection_ids = None
@@ -1042,6 +1596,7 @@ async def get_behavioral_analytics(
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
     genders: Optional[str] = Query(None, description="Comma-separated gender filter (male,female)"),
     age_groups: Optional[str] = Query(None, description="Comma-separated age groups (young,adult,middle_aged,elderly)"),
+    source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -1073,6 +1628,20 @@ async def get_behavioral_analytics(
         # Extract auth token
         auth_header = request.headers.get("authorization", "")
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
+        
+        effective_source = _normalize_source_type(source_type)
+        
+        # --- Instant detection path ---
+        if effective_source == "instant_detection":
+            return await _get_instant_detection_behavioral(
+                auth_token=auth_token,
+                time_filter=time_filter,
+                collection_ids=collection_ids,
+                start_date=start_date,
+                end_date=end_date,
+                genders=genders,
+                age_groups=age_groups,
+            )
         
         # Parse collection IDs
         selected_collection_ids = None
@@ -1518,6 +2087,7 @@ async def get_mvr_quality_metrics(
     collection_ids: Optional[str] = Query(None, description="Comma-separated collection IDs", alias="camera_ids"),
     start_date: Optional[str] = Query(None, description="ISO 8601 start datetime (required when time_filter=custom)"),
     end_date: Optional[str] = Query(None, description="ISO 8601 end datetime (required when time_filter=custom)"),
+    source_type: Optional[str] = Query(None, description="Data source: 'recording_pipeline' or 'instant_detection'"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict:
     """
@@ -1573,7 +2143,7 @@ async def get_mvr_quality_metrics(
             f"📊 MVR Quality Metrics (time_filter: {time_filter}, collection: {collection_name or 'ALL'}, camera_ids: {collection_ids or 'none'})"
         )
         
-        VMETA_SERVICE_URL = "http://localhost:8008"
+        effective_source = _normalize_source_type(source_type)
         
         vmeta_url = f"{VMETA_SERVICE_URL}/api/v1/mvr/quality-metrics"
         headers = {"Authorization": request.headers.get("Authorization")}
@@ -1584,6 +2154,8 @@ async def get_mvr_quality_metrics(
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),
             }
+            if effective_source != "recording_pipeline":
+                params["source_type"] = effective_source
             async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.get(vmeta_url, params=params, headers=headers)
                 response.raise_for_status()

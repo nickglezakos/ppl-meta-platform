@@ -710,9 +710,10 @@ class MediaApiClient {
     DateTime? endDate,
     List<String>? genders,
     List<String>? ageGroups,
+    String? dataSource,
   }) async {
     try {
-      debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"})');
+      debugPrint('📊 Fetching analytics summary (timeFilter: $timeFilter, collections: ${cameraIds?.length ?? "all"}, source: ${dataSource ?? "recording"})');
       
       final queryParams = <String, dynamic>{
         'time_filter': timeFilter,
@@ -731,6 +732,9 @@ class MediaApiClient {
       }
       if (ageGroups != null && ageGroups.isNotEmpty) {
         queryParams['age_groups'] = ageGroups.join(',');
+      }
+      if (dataSource != null && dataSource != 'recording') {
+        queryParams['source_type'] = dataSource;
       }
       
       final response = await _apiClient.get(
@@ -772,6 +776,7 @@ class MediaApiClient {
     String interval = 'hour',
     DateTime? startDate,
     DateTime? endDate,
+    String? dataSource,
   }) async {
     try {
       debugPrint('📈 Fetching time-based analytics (timeFilter: $timeFilter, interval: $interval)');
@@ -787,6 +792,9 @@ class MediaApiClient {
       if (timeFilter == 'custom' && startDate != null && endDate != null) {
         queryParams['start_date'] = startDate.toUtc().toIso8601String();
         queryParams['end_date'] = endDate.toUtc().toIso8601String();
+      }
+      if (dataSource != null && dataSource != 'recording') {
+        queryParams['source_type'] = dataSource;
       }
       
       final response = await _apiClient.get(
@@ -829,6 +837,7 @@ class MediaApiClient {
     DateTime? endDate,
     List<String>? genders,
     List<String>? ageGroups,
+    String? dataSource,
   }) async {
     try {
       final cameraCount = cameraIds?.length ?? 0;
@@ -854,6 +863,9 @@ class MediaApiClient {
       }
       if (ageGroups != null && ageGroups.isNotEmpty) {
         queryParams['age_groups'] = ageGroups.join(',');
+      }
+      if (dataSource != null && dataSource != 'recording') {
+        queryParams['source_type'] = dataSource;
       }
       
       final response = await _apiClient.get(
@@ -900,6 +912,7 @@ class MediaApiClient {
     DateTime? endDate,
     List<String>? genders,
     List<String>? ageGroups,
+    String? dataSource,
   }) async {
     try {
       final cameraCount = cameraIds?.length ?? 0;
@@ -925,6 +938,9 @@ class MediaApiClient {
       }
       if (ageGroups != null && ageGroups.isNotEmpty) {
         queryParams['age_groups'] = ageGroups.join(',');
+      }
+      if (dataSource != null && dataSource != 'recording') {
+        queryParams['source_type'] = dataSource;
       }
       
       final response = await _apiClient.get(

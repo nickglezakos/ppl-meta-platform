@@ -469,6 +469,34 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"❌ Error adding ML Inference API router: {e}")
 
+# Add Instant Detection Storage API router
+try:
+    from api.v1.instant_detection_storage import router as instant_detection_storage_router
+    app.include_router(
+        instant_detection_storage_router,
+        prefix="/api/v1",
+        tags=["instant-detection-storage"]
+    )
+    logger.info("✅ Instant Detection Storage API router added successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Instant Detection Storage API router not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Error adding Instant Detection Storage API router: {e}")
+
+# Add Tracking Sessions Summary API router
+try:
+    from api.v1.tracking_sessions_summary import router as tracking_sessions_summary_router
+    app.include_router(
+        tracking_sessions_summary_router,
+        prefix="/api/v1",
+        tags=["tracking-sessions-summary"]
+    )
+    logger.info("✅ Tracking Sessions Summary API router added successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Tracking Sessions Summary API router not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Error adding Tracking Sessions Summary API router: {e}")
+
 
 @app.get("/")
 async def root():

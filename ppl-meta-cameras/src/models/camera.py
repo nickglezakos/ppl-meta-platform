@@ -94,6 +94,10 @@ class Camera(Base):
     instant_detection_interval_seconds = Column(Integer, default=5)
     segment_duration_seconds = Column(Integer, default=30)
 
+    # Instant Detection Storage Configuration
+    storage_multiple = Column(Integer, default=1)
+    tracking_session_duration_minutes = Column(Integer, default=0)
+
     # Workflow Configuration (Face Detection & Performance)
     auto_face_detection = Column(Boolean, default=False)
     detection_methods = Column(JSON, default=lambda: ['opencv', 'dlib'])  # ['opencv', 'dlib', 'mtcnn', 'yolo']

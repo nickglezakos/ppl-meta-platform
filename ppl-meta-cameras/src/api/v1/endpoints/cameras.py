@@ -2599,6 +2599,8 @@ async def get_pipeline_settings(
             "recording_pipeline_enabled": camera.recording_pipeline_enabled,
             "instant_detection_interval_seconds": camera.instant_detection_interval_seconds,
             "segment_duration_seconds": camera.segment_duration_seconds,
+            "storage_multiple": camera.storage_multiple if camera.storage_multiple is not None else 1,
+            "tracking_session_duration_minutes": camera.tracking_session_duration_minutes if camera.tracking_session_duration_minutes is not None else 0,
             "created_at": camera.created_at.isoformat() if camera.created_at else None,
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }
@@ -2620,6 +2622,8 @@ async def update_pipeline_settings(
     recording_pipeline_enabled: bool,
     instant_detection_interval_seconds: int = 5,
     segment_duration_seconds: int = 30,
+    storage_multiple: int = 1,
+    tracking_session_duration_minutes: int = 0,
     db: Session = Depends(get_db),
     current_user: Dict = Depends(get_current_user),
 ) -> Dict:
@@ -2662,6 +2666,18 @@ async def update_pipeline_settings(
                 detail="Segment duration must be between 5 and 300 seconds",
             )
         
+        if storage_multiple < 1 or storage_multiple > 12:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Storage multiple must be between 1 and 12",
+            )
+        
+        if tracking_session_duration_minutes < 0 or tracking_session_duration_minutes > 480:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tracking session duration must be between 0 and 480 minutes",
+            )
+        
         # Get camera from database
         camera = db.query(Camera).filter(Camera.device_id == device_id).first()
         if not camera:
@@ -2675,6 +2691,8 @@ async def update_pipeline_settings(
         camera.recording_pipeline_enabled = recording_pipeline_enabled
         camera.instant_detection_interval_seconds = instant_detection_interval_seconds
         camera.segment_duration_seconds = segment_duration_seconds
+        camera.storage_multiple = storage_multiple
+        camera.tracking_session_duration_minutes = tracking_session_duration_minutes
         
         db.commit()
         db.refresh(camera)
@@ -2692,6 +2710,8 @@ async def update_pipeline_settings(
             "recording_pipeline_enabled": camera.recording_pipeline_enabled,
             "instant_detection_interval_seconds": camera.instant_detection_interval_seconds,
             "segment_duration_seconds": camera.segment_duration_seconds,
+            "storage_multiple": camera.storage_multiple if camera.storage_multiple is not None else 1,
+            "tracking_session_duration_minutes": camera.tracking_session_duration_minutes if camera.tracking_session_duration_minutes is not None else 0,
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }
     except HTTPException:
