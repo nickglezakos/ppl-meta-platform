@@ -354,6 +354,7 @@ async def get_mvr_quality_metrics(
         mvr_query = """
         SELECT 
             mvr_people_uuid,
+            identity_group_uuid,
             face_quality,
             quality_score,
             total_linked_individuals,
@@ -373,6 +374,7 @@ async def get_mvr_quality_metrics(
             mvr_query = """
             SELECT DISTINCT ON (mp.mvr_people_uuid)
                 mp.mvr_people_uuid,
+                mp.identity_group_uuid,
                 mp.face_quality,
                 mp.quality_score,
                 mp.total_linked_individuals,
@@ -388,17 +390,56 @@ async def get_mvr_quality_metrics(
                 AND imm.link_method = 'instant_detection'
             ORDER BY mp.mvr_people_uuid, mp.created_at DESC
             """
+        elif source_type == 'recording_pipeline':
+            mvr_query = """
+            SELECT DISTINCT ON (mp.mvr_people_uuid)
+                mp.mvr_people_uuid,
+                mp.identity_group_uuid,
+                mp.face_quality,
+                mp.quality_score,
+                mp.total_linked_individuals,
+                mp.total_appearances,
+                mp.total_videos,
+                mp.created_at
+            FROM mvr_people mp
+            JOIN individual_mvr_mapping imm ON mp.mvr_people_uuid = imm.mvr_people_uuid
+            WHERE mp.created_at >= $1
+                AND mp.created_at <= $2
+                AND mp.is_orphaned = false
+                AND mp.merged_into_mvr_uuid IS NULL
+                AND imm.link_method IN ('auto_create', 'auto_merge')
+            ORDER BY mp.mvr_people_uuid, mp.created_at DESC
+            """
         
         mvr_people = await db_connection.fetch(mvr_query, start_time_local, end_time_local)
         
         logger.info(f"Found {len(mvr_people)} MVR people records")
+        
+        # Deduplicate across cross-source identity groups when no source_type filter
+        # (or when source is specified, dedup has no effect since groups are within-source)
+        seen_identity_groups = set()
+        deduplicated_mvr_people = []
+        for mvr in mvr_people:
+            group_key = mvr['identity_group_uuid'] or mvr['mvr_people_uuid']
+            if group_key not in seen_identity_groups:
+                seen_identity_groups.add(group_key)
+                deduplicated_mvr_people.append(mvr)
+        
+        if not source_type and len(deduplicated_mvr_people) < len(mvr_people):
+            logger.info(
+                f"Cross-source deduplication: {len(mvr_people)} MVR → "
+                f"{len(deduplicated_mvr_people)} unique people"
+            )
+        
+        # Use deduplicated list for counts and quality analysis
+        effective_mvr = deduplicated_mvr_people if not source_type else mvr_people
         
         # Step 4: Extract quality scores from MVR people
         all_quality_scores = []
         mvr_with_quality = 0
         mvr_without_quality = 0
         
-        for mvr in mvr_people:
+        for mvr in effective_mvr:
             # Use face_quality if available, otherwise fall back to quality_score
             # Check for None explicitly since 0.0 is a valid (though poor) quality score
             quality = mvr['face_quality'] if mvr['face_quality'] is not None else mvr['quality_score']
@@ -432,16 +473,19 @@ async def get_mvr_quality_metrics(
                    f"avg quality: {avg_quality:.3f}")
         
         # Step 6: Get demographics from MVR people
+        # When unfiltered, deduplicate across cross-source identity groups
+        # by picking the highest quality_score representative per group.
         demographics_query = """
-        SELECT 
-            gender,
-            age_min,
-            age_max
-        FROM mvr_people
-        WHERE created_at >= $1
-            AND created_at <= $2
-            AND is_orphaned = false
-            AND merged_into_mvr_uuid IS NULL
+        SELECT gender, age_min, age_max FROM (
+            SELECT DISTINCT ON (COALESCE(identity_group_uuid, mvr_people_uuid))
+                gender, age_min, age_max, quality_score
+            FROM mvr_people
+            WHERE created_at >= $1
+                AND created_at <= $2
+                AND is_orphaned = false
+                AND merged_into_mvr_uuid IS NULL
+            ORDER BY COALESCE(identity_group_uuid, mvr_people_uuid), quality_score DESC
+        ) deduplicated
         """
         
         if source_type == 'instant_detection':
@@ -457,6 +501,21 @@ async def get_mvr_quality_metrics(
                 AND mp.is_orphaned = false
                 AND mp.merged_into_mvr_uuid IS NULL
                 AND imm.link_method = 'instant_detection'
+            ORDER BY mp.mvr_people_uuid
+            """
+        elif source_type == 'recording_pipeline':
+            demographics_query = """
+            SELECT DISTINCT ON (mp.mvr_people_uuid)
+                mp.gender,
+                mp.age_min,
+                mp.age_max
+            FROM mvr_people mp
+            JOIN individual_mvr_mapping imm ON mp.mvr_people_uuid = imm.mvr_people_uuid
+            WHERE mp.created_at >= $1
+                AND mp.created_at <= $2
+                AND mp.is_orphaned = false
+                AND mp.merged_into_mvr_uuid IS NULL
+                AND imm.link_method IN ('auto_create', 'auto_merge')
             ORDER BY mp.mvr_people_uuid
             """
         
@@ -521,7 +580,7 @@ async def get_mvr_quality_metrics(
             "end_time": end_time.isoformat(),
             "tracking_sessions_count": len(sessions),
             "total_individuals": total_individuals,  # From tracking sessions
-            "total_mvr_people": total_mvr_people,    # From tracking sessions
+            "total_mvr_people": len(effective_mvr),   # Deduplicated across identity groups
             "total_videos_processed": total_videos_processed,
             "mvr_with_quality": mvr_with_quality,
             "mvr_without_quality": mvr_without_quality,
@@ -531,19 +590,19 @@ async def get_mvr_quality_metrics(
             "max_quality": max_quality,
             "quality_std_dev": std_dev,
             "data_completeness": {
-                "total_mvr_people": total_mvr_people,
+                "total_mvr_people": len(effective_mvr),
                 "mvr_with_quality_scores": mvr_with_quality,
-                "percentage": round((mvr_with_quality / total_mvr_people * 100) if total_mvr_people > 0 else 0, 2)
+                "percentage": round((mvr_with_quality / len(effective_mvr) * 100) if len(effective_mvr) > 0 else 0, 2)
             },
             "demographics": {
-                "total_mvr_people": total_mvr_people,
+                "total_mvr_people": len(effective_mvr),
                 "mvr_with_gender": mvr_with_gender,
                 "mvr_with_age": mvr_with_age,
                 "gender_distribution": gender_counts,
                 "age_distribution": age_ranges,
                 "completeness": {
-                    "gender_percentage": round((mvr_with_gender / total_mvr_people * 100) if total_mvr_people > 0 else 0, 2),
-                    "age_percentage": round((mvr_with_age / total_mvr_people * 100) if total_mvr_people > 0 else 0, 2)
+                    "gender_percentage": round((mvr_with_gender / len(effective_mvr) * 100) if len(effective_mvr) > 0 else 0, 2),
+                    "age_percentage": round((mvr_with_age / len(effective_mvr) * 100) if len(effective_mvr) > 0 else 0, 2)
                 }
             }
         }

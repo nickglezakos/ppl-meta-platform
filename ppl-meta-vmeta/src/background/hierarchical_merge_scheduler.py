@@ -11,16 +11,23 @@ Part of the three-queue architecture:
 - Queue B: Individuals → MVR People
 - Queue C: MVR People → Super-Individuals (THIS FILE)
 
+Two-Tier Merge (v3.2):
+- Tier 1: Source-separated hard merge (recording and instant detection
+  MVR people are merged independently within their own source)
+- Tier 2: Cross-source soft link (surviving winners from different sources
+  that represent the same person are linked via identity_group_uuid
+  without orphaning either side)
+
 Created: January 9, 2026
 Author: PPL Meta Platform Team
-Version: 2.22.4
+Version: 2.23.0
 """
 
 import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from services.hierarchical_mvr_merger import HierarchicalMVRMerger
 from database.mvr_repository import MVRRepository
@@ -333,56 +340,171 @@ class HierarchicalMergeScheduler:
         logger.info("[Queue C] Periodic merge loop stopped")
     
     async def _run_periodic_merge(self) -> None:
-        """Internal: Execute periodic merge for recent MVR people."""
+        """
+        Internal: Execute two-tier periodic merge for recent MVR people.
+
+        Tier 1 — Source-separated hard merge:
+          Pass 1: recording_pipeline MVR people only
+          Pass 2: instant_detection MVR people only
+          Within each pass losers are orphaned (same as before).
+
+        Tier 2 — Cross-source soft link:
+          All surviving (non-orphaned) winners from both sources are compared.
+          Matches above the similarity threshold share an identity_group_uuid
+          without orphaning either side.
+        """
         try:
-            # Get recent MVR people
             cutoff_time = datetime.utcnow() - timedelta(minutes=self.lookback_minutes)
-            
-            # Use repository's connection pool directly
+
+            # ── Tier 1: Source-separated hard merges ──────────────────────
+            for source_type in ('recording_pipeline', 'instant_detection'):
+                async with self.repository.pool.acquire() as conn:
+                    rows = await conn.fetch("""
+                        SELECT mp.mvr_people_uuid
+                        FROM mvr_people mp
+                        JOIN tracking_sessions ts
+                          ON mp.created_by_session = ts.session_uuid
+                        WHERE mp.created_at >= $1
+                          AND ts.source_type = $2
+                        ORDER BY mp.created_at DESC
+                    """, cutoff_time, source_type)
+
+                mvr_uuids = [row['mvr_people_uuid'] for row in rows]
+
+                if not mvr_uuids:
+                    logger.info(
+                        f"[Queue C] Tier 1: No recent {source_type} MVR people "
+                        f"(lookback={self.lookback_minutes}min)"
+                    )
+                    continue
+
+                logger.info(
+                    f"[Queue C] Tier 1: Found {len(mvr_uuids)} {source_type} MVR people "
+                    f"in last {self.lookback_minutes} minutes"
+                )
+
+                merger = HierarchicalMVRMerger(
+                    repository=self.repository,
+                    mvr_matcher=self.mvr_matcher
+                )
+
+                result = await merger.merge_hierarchical(
+                    mvr_uuids=mvr_uuids,
+                    similarity_threshold=self.similarity_threshold,
+                    min_similarity_check=0.50
+                )
+
+                stats = result['statistics']
+                logger.info(
+                    f"✅ [Queue C] Tier 1 ({source_type}): "
+                    f"{stats['total_mvr']} MVR → {stats['super_individuals']} super-individuals "
+                    f"({stats['merges_performed']} merges)"
+                )
+
+            # ── Tier 2: Cross-source soft link ────────────────────────────
+            await self._run_cross_source_link(cutoff_time)
+
+        except Exception as e:
+            logger.error(f"[Queue C] Periodic merge failed: {e}", exc_info=True)
+            raise
+
+    async def _run_cross_source_link(self, cutoff_time: datetime) -> None:
+        """
+        Tier 2: Link surviving MVR winners across sources via identity_group_uuid.
+
+        Fetches all non-orphaned MVR people created since *cutoff_time*,
+        computes pairwise cosine similarity, finds connected components,
+        and assigns the same identity_group_uuid to each component that
+        spans more than one MVR person.  No MVR is orphaned in this step.
+        """
+        try:
+            merger = HierarchicalMVRMerger(
+                repository=self.repository,
+                mvr_matcher=self.mvr_matcher
+            )
+
+            # Fetch all surviving MVR people in the lookback window
             async with self.repository.pool.acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT mvr_people_uuid
                     FROM mvr_people
                     WHERE created_at >= $1
+                      AND is_orphaned = false
+                      AND merged_into_mvr_uuid IS NULL
                     ORDER BY created_at DESC
                 """, cutoff_time)
-            
+
             mvr_uuids = [row['mvr_people_uuid'] for row in rows]
-            
-            if not mvr_uuids:
-                logger.info(
-                    f"[Queue C] No recent MVR people found "
-                    f"(lookback={self.lookback_minutes}min)"
-                )
+
+            if len(mvr_uuids) < 2:
+                logger.info("[Queue C] Tier 2: Fewer than 2 surviving MVR people, skipping cross-source link")
                 return
-            
+
+            logger.info(f"[Queue C] Tier 2: Evaluating {len(mvr_uuids)} surviving MVR people for cross-source linking")
+
+            # Fetch embeddings
+            mvr_people = await merger._fetch_mvr_people(mvr_uuids)
+
+            if len(mvr_people) < 2:
+                return
+
+            # Calculate similarity matrix
+            similarity_matrix = await merger._calculate_similarity_matrix(
+                mvr_people,
+                min_similarity=0.50
+            )
+
+            # Find connected components
+            merge_groups = merger._find_merge_groups(
+                mvr_people,
+                similarity_matrix,
+                self.similarity_threshold
+            )
+
+            # Assign identity_group_uuid to multi-member groups
+            groups_linked = 0
+            mvr_linked = 0
+
+            async with self.repository.pool.acquire() as conn:
+                for group in merge_groups:
+                    if len(group) < 2:
+                        continue
+
+                    group_uuid = uuid4()
+                    group_uuids = [m["mvr_people_uuid"] for m in group]
+
+                    await conn.execute("""
+                        UPDATE mvr_people
+                        SET identity_group_uuid = $1
+                        WHERE mvr_people_uuid = ANY($2::uuid[])
+                    """, group_uuid, group_uuids)
+
+                    groups_linked += 1
+                    mvr_linked += len(group)
+
+                # Clear stale identity_group_uuid for MVR people that are no longer
+                # part of any cross-source group (singleton after re-evaluation)
+                singleton_uuids = [
+                    group[0]["mvr_people_uuid"]
+                    for group in merge_groups
+                    if len(group) == 1
+                ]
+                if singleton_uuids:
+                    await conn.execute("""
+                        UPDATE mvr_people
+                        SET identity_group_uuid = NULL
+                        WHERE mvr_people_uuid = ANY($1::uuid[])
+                          AND identity_group_uuid IS NOT NULL
+                    """, singleton_uuids)
+
             logger.info(
-                f"[Queue C] Found {len(mvr_uuids)} MVR people in last "
-                f"{self.lookback_minutes} minutes"
+                f"✅ [Queue C] Tier 2: Linked {mvr_linked} MVR people into "
+                f"{groups_linked} cross-source identity groups"
             )
-            
-            # Run hierarchical merge
-            merger = HierarchicalMVRMerger(
-                repository=self.repository,
-                mvr_matcher=self.mvr_matcher
-            )
-            
-            result = await merger.merge_hierarchical(
-                mvr_uuids=mvr_uuids,
-                similarity_threshold=self.similarity_threshold,
-                min_similarity_check=0.50
-            )
-            
-            stats = result['statistics']
-            logger.info(
-                f"✅ [Queue C] Periodic merge complete: "
-                f"{stats['total_mvr']} MVR → {stats['super_individuals']} super-individuals "
-                f"({stats['merges_performed']} merges)"
-            )
-            
+
         except Exception as e:
-            logger.error(f"[Queue C] Periodic merge failed: {e}", exc_info=True)
-            raise
+            logger.error(f"[Queue C] Cross-source link failed: {e}", exc_info=True)
+            # Non-fatal — Tier 1 merges already succeeded
     
     # ========================================================================
     # UTILITIES

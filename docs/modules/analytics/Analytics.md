@@ -10,12 +10,15 @@
 
 The Analytics module is the MVR (Multi-Video Recognition) people detection insights dashboard. It aggregates data from camera collections to show who was detected, when, and where — with demographic breakdowns and behavioral patterns.
 
-The dashboard supports two **data sources**, selectable via a filter:
+The dashboard supports three **data source modes**, selectable via a filter:
 
 - **Video Recording** (default) — Data from the recording pipeline: video segments → Vision → Orchestrator → VMeta tracking sessions. Fetched via the Media service collection iteration path.
 - **Instant Detection** — Data from instant detection: live frames → Vision → Orchestrator → VMeta identity resolution → persisted sessions. Fetched directly from VMeta's `tracking-sessions/summary` endpoint.
+- **Combined (Both Sources)** — When no source filter is applied, results from both pipelines are shown simultaneously. The VMeta quality-metrics endpoint uses `identity_group_uuid` cross-source deduplication to ensure the same real person detected by both funnels is counted only once.
 
-Both paths produce identical response structures so all dashboard widgets (charts, tables, metrics) render without modification regardless of the selected source.
+All three modes produce identical response structures so all dashboard widgets (charts, tables, metrics) render without modification regardless of the selected source.
+
+> **Cross-source deduplication (v2.23.0):** The VMeta service runs a two-tier merge scheduler that (1) merges duplicates within each source independently, then (2) soft-links matching MVR people across sources via a shared `identity_group_uuid`. Analytics queries use `COALESCE(identity_group_uuid, mvr_people_uuid)` to deduplicate in combined mode. See [MVR-People-Merge-Worker.md](../instant-detection/MVR-People-Merge-Worker.md) for full details.
 
 The screen is organized into five dashboard levels, each backed by a dedicated API endpoint:
 
@@ -69,9 +72,13 @@ There is also a supporting endpoint for the filter UI:
 |--------|-----------|--------|
 | **Recording** (default) | Gateway → Media (collections) → Camera MVR counter → VMeta (per-video) | summary, time-series, demographics, behavioral |
 | **Instant Detection** | Gateway → VMeta `/tracking-sessions/summary` (direct query) | summary, time-series, demographics, behavioral |
-| **Both paths** | Gateway → VMeta `/mvr/quality-metrics` with `source_type` filter | mvr-quality-metrics |
+| **Recording (quality)** | Gateway → VMeta `/mvr/quality-metrics` with `source_type=recording_pipeline` | mvr-quality-metrics |
+| **Instant Detection (quality)** | Gateway → VMeta `/mvr/quality-metrics` with `source_type=instant_detection` | mvr-quality-metrics |
+| **Combined / No filter (quality)** | Gateway → VMeta `/mvr/quality-metrics` without `source_type` → identity_group_uuid dedup | mvr-quality-metrics |
 
 When the data source is `instant_detection`, the gateway bypasses the Media service collection iteration entirely and instead calls VMeta's tracking-sessions/summary endpoint directly, which queries the `tracking_sessions` and `individuals` tables filtered by `source_type = 'instant_detection'`.
+
+When no source filter is active, the quality-metrics endpoint returns all MVR people from both pipelines, deduplicated via `identity_group_uuid` so that the same real person is counted once even if detected by both funnels.
 
 ### Service dependencies
 
@@ -409,7 +416,7 @@ Average face quality metrics from individual objects (not MVR objects). This is 
 
 ### 4.7 `GET /analytics/mvr-quality-metrics` (recommended)
 
-Quality metrics following the MVR → Individual data tree. This is the recommended endpoint for the dashboard.
+Quality metrics following the MVR → Individual data tree. This is the recommended endpoint for the dashboard. Supports cross-source deduplication via `identity_group_uuid`.
 
 **Parameters:**
 
@@ -419,7 +426,7 @@ Quality metrics following the MVR → Individual data tree. This is the recommen
 | `collection_name` | string | null | Single collection name filter |
 | `time_filter` | string | `"today"` | Time period |
 | `start_date` / `end_date` | string | null | For custom range |
-| `source_type` | string | null | `recording_pipeline` or `instant_detection`. Passed through to VMeta's quality-metrics endpoint. |
+| `source_type` | string | null | `recording_pipeline`, `instant_detection`, or null. When null, VMeta returns all sources deduplicated via `identity_group_uuid` (real unique people across both funnels). |
 
 **Internal flow:**
 
@@ -435,6 +442,27 @@ When no filter is provided:
 
 When `collection_name` is provided (single collection mode):
 - Calls VMeta quality endpoint with that specific collection name.
+
+**VMeta source_type behavior (three modes):**
+
+The VMeta `/mvr/quality-metrics` endpoint handles three distinct source modes:
+
+| `source_type` value | MVR query | Demographics query | Dedup method |
+|---------------------|-----------|--------------------|--------------|
+| `null` (no filter) | All non-orphaned MVR people | `DISTINCT ON (COALESCE(identity_group_uuid, mvr_people_uuid)) ORDER BY quality_score DESC` | `identity_group_uuid` set-based dedup in Python + SQL `COALESCE` |
+| `recording_pipeline` | `JOIN individual_mvr_mapping` with `link_method IN ('auto_create', 'auto_merge')` | Same JOIN filter | No cross-source dedup needed (single source) |
+| `instant_detection` | `JOIN individual_mvr_mapping` with `link_method = 'instant_detection'` | Same JOIN filter | No cross-source dedup needed (single source) |
+
+**Cross-source deduplication (unfiltered mode):**
+
+When no `source_type` is specified, the same real person may appear as two separate MVR entries — one from each funnel. The VMeta endpoint deduplicates using `identity_group_uuid`:
+
+1. **MVR count**: Python-side dedup iterates all MVR rows, using `mvr['identity_group_uuid'] or mvr['mvr_people_uuid']` as a group key. Only the first MVR per group key is counted.
+2. **Demographics**: SQL `DISTINCT ON (COALESCE(identity_group_uuid, mvr_people_uuid)) ORDER BY quality_score DESC` picks one representative per identity group (highest quality score).
+3. **Quality scores**: Calculated from the deduplicated MVR list.
+4. **`total_mvr_people`** in the response reflects the deduplicated count, not the raw query count.
+
+MVR people that exist in only one source have `identity_group_uuid = NULL`; `COALESCE` falls back to their `mvr_people_uuid`, so they are always counted.
 
 **Response structure:**
 ```json
@@ -688,6 +716,38 @@ The `source_type` parameter controls which data pipeline is queried:
 3. **Gateway branches**: If the effective source is `instant_detection`, the endpoint returns early by calling a dedicated helper (e.g., `_get_instant_detection_summary()`) that queries VMeta's `/tracking-sessions/summary` directly. Otherwise, the existing Media-service-based collection iteration runs.
 4. **VMeta** filters its SQL queries with `WHERE source_type = $N` on the `tracking_sessions` table. The quality metrics endpoint also accepts `source_type` and filters `individual_mvr_mapping.link_method` accordingly.
 
+### Cross-source deduplication (quality-metrics endpoint)
+
+The `/analytics/mvr-quality-metrics` endpoint has an additional filtering behavior for the combined (both sources) mode:
+
+1. **Gateway** does not send `source_type` to VMeta when the effective source is `recording_pipeline` (the default).
+2. **VMeta** receives no `source_type` → queries ALL non-orphaned MVR people without source filtering.
+3. **VMeta deduplicates** using `identity_group_uuid`: MVR people from different sources that represent the same real person share a common `identity_group_uuid` (assigned by the two-tier merge scheduler). The endpoint counts each identity group once.
+4. **Result**: `total_mvr_people` reflects the true count of unique real people across both funnels.
+
+This deduplication only applies to the quality-metrics endpoint. The other analytics endpoints (summary, time-series, demographics, behavioral) operate per-source and do not currently aggregate across funnels.
+
+```
+Source filter flow for quality-metrics:
+
+  Frontend: dataSource='recording'  ──► Gateway: source_type=null
+                                            │
+                                ┌───────────┴───────────────┐
+                                ▼                           ▼
+                    _normalize_source_type()         (not passed to VMeta)
+                    → 'recording_pipeline'           → VMeta gets source_type=None
+                                                     → All MVR people
+                                                     → Deduplicated via identity_group_uuid
+                                                     → Real unique people count
+
+  Frontend: dataSource='instant_detection'  ──► Gateway: source_type='instant_detection'
+                                                        │
+                                                        ▼
+                                                VMeta: source_type='instant_detection'
+                                                → Filters: link_method = 'instant_detection'
+                                                → Instant detection MVR people only
+```
+
 ### Collection identifier resolution
 
 The gateway uses a UUID-first approach for stable identification:
@@ -709,7 +769,7 @@ When demographic filters are active:
 - **Summary** uses `_filter_demographics_count()` which estimates intersection assuming gender/age independence: if both gender and age filters are set, `filtered_count = age_count × (gender_count / total_count)`.
 - **Demographics** zeros out non-selected categories at the per-camera level before aggregating.
 - **Behavioral** applies per-person filtering by checking each MVR person's `gender` and `age_group` fields before processing their appearances.
-- **MVR Quality** passes `genders`, `age_groups`, and `source_type` through to the AnalyticsApiClient → VMeta quality endpoint. VMeta's quality-metrics endpoint filters tracking sessions and individual mappings by `source_type`.
+- **MVR Quality** passes `genders`, `age_groups`, and `source_type` through to the AnalyticsApiClient → VMeta quality endpoint. VMeta's quality-metrics endpoint filters tracking sessions and individual mappings by `source_type`. When no `source_type` is sent, VMeta returns all sources deduplicated via `identity_group_uuid` — see [Section 4.7](#47-get-analyticsmvr-quality-metrics-recommended) and the [MVR-People-Merge-Worker](../instant-detection/MVR-People-Merge-Worker.md) documentation.
 
 ---
 
@@ -748,13 +808,15 @@ Analytics data is not cached at the gateway analytics level. Instead, caching le
 
 4. **Demographic matrix is estimated**: Cross-tabulations (e.g., "young males") are computed assuming independence between gender and age, which may not reflect actual distributions.
 
-5. **Sequential endpoint calls**: `_loadAnalytics()` calls all 6 endpoints sequentially. Parallelizing these calls would reduce total load time.
+5. **Cross-source dedup is quality-metrics only**: The `identity_group_uuid` deduplication that produces correct real-person counts across both funnels is currently implemented only in the `/analytics/mvr-quality-metrics` endpoint (backed by VMeta's `/mvr/quality-metrics`). The other analytics endpoints (summary, time-series, demographics, behavioral) still operate per-source with a binary recording/instant_detection branching. Extending combined-mode support to these endpoints requires additional VMeta query changes.
 
-6. **No combined data source view**: A "Both" option (showing recording + instant detection data together) is intentionally excluded. The same physical person may appear in both data sources if both pipelines run simultaneously, which would inflate totals. This requires cross-source MVR deduplication logic that is not yet implemented.
+6. **Default mode shows combined results in quality metrics**: When the data source filter is set to "Video Recording" (the default), the quality-metrics endpoint returns **all sources deduplicated** (not recording-only). This is because the gateway does not pass `source_type` to VMeta for this endpoint when the default is active. This means the L1.5 quality panel always reflects total unique people across both funnels.
 
-7. **Instant detection time-series is approximate**: The instant detection time-series distributes session counts across time buckets rather than using per-detection timestamps. This produces a less granular chart compared to the recording path.
+7. **Sequential endpoint calls**: `_loadAnalytics()` calls all 6 endpoints sequentially. Parallelizing these calls would reduce total load time.
 
-8. **Instant detection behavioral data is simplified**: The behavioral endpoint for instant detection uses the aggregate VMeta summary rather than drilling into individual appearances, so the weekly heatmap and hourly activity are derived from session-level data rather than per-person appearance timestamps.
+8. **Instant detection time-series is approximate**: The instant detection time-series distributes session counts across time buckets rather than using per-detection timestamps. This produces a less granular chart compared to the recording path.
+
+9. **Instant detection behavioral data is simplified**: The behavioral endpoint for instant detection uses the aggregate VMeta summary rather than drilling into individual appearances, so the weekly heatmap and hourly activity are derived from session-level data rather than per-person appearance timestamps.
 
 ---
 
