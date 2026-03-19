@@ -1569,6 +1569,7 @@ class InstantDetectionSampler:
         return {
             "running": self._running,
             "thread_alive": self._detection_thread.is_alive() if self._detection_thread else False,
+            "current_camera_id": self._current_camera_id,
             "cached_results": len(self.results_cache),
             "sampling_interval": self.sampling_interval,
             "temporal_window": self.temporal_window

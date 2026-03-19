@@ -247,7 +247,7 @@ async def stop_instant_detection(
     manager: InstantDetectionSampler = Depends(get_instant_detection_manager)
 ) -> Dict:
     """
-    Stop instant detection sampling
+    Stop instant detection sampling (global stop)
     
     Returns:
         Success status
@@ -262,6 +262,42 @@ async def stop_instant_detection(
         
     except Exception as e:
         logger.error(f"Failed to stop instant detection: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to stop instant detection: {str(e)}"
+        )
+
+
+@router.post("/stop/{camera_id}")
+async def stop_instant_detection_for_camera(
+    camera_id: str,
+    manager: InstantDetectionSampler = Depends(get_instant_detection_manager)
+) -> Dict:
+    """
+    Stop instant detection for a specific camera.
+    Only stops if the currently running camera matches the requested camera_id.
+    
+    Args:
+        camera_id: Camera device ID to stop detection for
+        
+    Returns:
+        Success status
+    """
+    try:
+        status = manager.get_status()
+        if status.get("running") and status.get("current_camera_id") == camera_id:
+            manager.stop_sampling()
+            return {
+                "success": True,
+                "message": f"Instant detection stopped for {camera_id}"
+            }
+        else:
+            return {
+                "success": True,
+                "message": f"Instant detection was not running for {camera_id}"
+            }
+    except Exception as e:
+        logger.error(f"Failed to stop instant detection for {camera_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to stop instant detection: {str(e)}"

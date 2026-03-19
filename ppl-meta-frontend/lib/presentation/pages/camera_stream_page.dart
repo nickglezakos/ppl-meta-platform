@@ -6,6 +6,7 @@ import '../../core/providers/camera_providers.dart';
 import '../widgets/camera/camera_stream_player_simple.dart';
 import '../../widgets/camera/camera_counter_widget.dart';
 import '../../widgets/camera/instant_detection_widget.dart';
+import '../../widgets/camera/instant_detection_controls.dart';
 
 /// Full-screen camera stream page with isolated widgets
 /// Uses Column layout (not Stack) to prevent control overlays from affecting stream performance
@@ -98,6 +99,8 @@ class CameraStreamPage extends ConsumerWidget {
                       ),
                       
                       // Recording controls for all camera types
+                      StreamInstantDetectionControls(cameraId: camera.deviceId),
+                      const SizedBox(width: 8),
                       _StreamRecordingControls(cameraId: camera.deviceId),
                       
                       // Fullscreen toggle (optional - for future enhancement)

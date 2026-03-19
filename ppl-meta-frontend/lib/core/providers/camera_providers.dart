@@ -826,3 +826,122 @@ final cameraRecordingProvider = StateNotifierProvider.family<CameraRecordingNoti
 
 /// Alias for backward compatibility
 final recordingStateProvider = cameraRecordingProvider;
+
+// ============================================================
+// INSTANT DETECTION STATE (decoupled from recording)
+// ============================================================
+
+/// Instant detection state for a camera
+class CameraInstantDetectionState {
+  final String cameraId;
+  final bool isDetecting;
+  final bool isLoading;
+  final String? error;
+
+  const CameraInstantDetectionState({
+    required this.cameraId,
+    this.isDetecting = false,
+    this.isLoading = false,
+    this.error,
+  });
+
+  CameraInstantDetectionState copyWith({
+    String? cameraId,
+    bool? isDetecting,
+    bool? isLoading,
+    String? error,
+  }) {
+    return CameraInstantDetectionState(
+      cameraId: cameraId ?? this.cameraId,
+      isDetecting: isDetecting ?? this.isDetecting,
+      isLoading: isLoading ?? this.isLoading,
+      error: error ?? this.error,
+    );
+  }
+}
+
+/// State notifier for managing instant detection independently.
+/// Syncs with backend on initialization so the eye button reflects
+/// the real server-side state after page refresh or app restart.
+class CameraInstantDetectionNotifier
+    extends StateNotifier<CameraInstantDetectionState> {
+  final CameraService _cameraService;
+
+  CameraInstantDetectionNotifier(this._cameraService, String cameraId)
+      : super(CameraInstantDetectionState(cameraId: cameraId)) {
+    _syncFromBackend();
+  }
+
+  /// Fetch the current detection status from the backend and update local state.
+  Future<void> _syncFromBackend() async {
+    try {
+      final status = await _cameraService.getInstantDetectionStatus();
+      if (status != null && mounted) {
+        final isRunning = status['status']?['running'] == true;
+        final activeCameraId = status['status']?['current_camera_id'];
+        final detectingThisCamera =
+            isRunning && activeCameraId == state.cameraId;
+        state = state.copyWith(isDetecting: detectingThisCamera);
+      }
+    } catch (_) {
+      // Silent fail — backend may not be reachable yet
+    }
+  }
+
+  Future<void> startDetection() async {
+    if (state.isDetecting || state.isLoading) return;
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final result =
+          await _cameraService.startInstantDetection(state.cameraId);
+      if (result != null && result['success'] == true) {
+        state = state.copyWith(isLoading: false, isDetecting: true);
+      } else {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Failed to start detection',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: '$e');
+    }
+  }
+
+  Future<void> stopDetection() async {
+    if (!state.isDetecting || state.isLoading) return;
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final result =
+          await _cameraService.stopInstantDetection(state.cameraId);
+      if (result != null && result['success'] == true) {
+        state = state.copyWith(isLoading: false, isDetecting: false);
+      } else {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Failed to stop detection',
+        );
+      }
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: '$e');
+    }
+  }
+
+  void toggleDetection() {
+    if (state.isDetecting) {
+      stopDetection();
+    } else {
+      startDetection();
+    }
+  }
+}
+
+/// Provider for camera instant detection state (decoupled from recording)
+final cameraInstantDetectionProvider = StateNotifierProvider.family<
+    CameraInstantDetectionNotifier,
+    CameraInstantDetectionState,
+    String>((ref, cameraId) {
+  final cameraService = ref.watch(cameraServiceProvider);
+  return CameraInstantDetectionNotifier(cameraService, cameraId);
+});

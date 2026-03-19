@@ -13,6 +13,7 @@ import '../../pages/camera_stream_page.dart';
 import '../../screens/cameras/camera_pipeline_settings_screen.dart';
 import '../../../widgets/camera/camera_counter_widget.dart';
 import '../../../widgets/camera/instant_detection_widget.dart';
+import '../../../widgets/camera/instant_detection_controls.dart';
 import 'rtsp_camera_dialog.dart';
 import 'edit_camera_name_dialog.dart';
 
@@ -397,6 +398,7 @@ class CameraCard extends ConsumerWidget {
                   if (isConnected) ...[
                     // For USB/RTSP/edge cameras, show recording controls
                     if (updatedCamera.type != CameraType.edge) ...[
+                      InstantDetectionControls(cameraId: updatedCamera.deviceId),
                       _RecordingControls(cameraId: updatedCamera.deviceId),
                       SizedBox(width: actionSpacingMedium),
                     ],

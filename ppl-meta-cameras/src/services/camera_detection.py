@@ -1028,16 +1028,9 @@ class CameraDetectionService:
                 queue_service = get_queue_service()
                 worker = await queue_service.get_camera_stream(device_id)
             
-            if worker and instant_detection_enabled:
-                logger.info(f"🔍 [INSTANT-DETECT] Enabling integrated detection in worker {device_id} (interval: {instant_detection_interval}s)")
-                try:
-                    detection_config = {
-                        "interval_seconds": instant_detection_interval
-                    }
-                    worker.start_detection(detection_config)
-                    logger.info(f"✅ Integrated detection enabled for worker {device_id}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to enable worker detection for {device_id}: {e}")
+            # NOTE: Instant detection is now decoupled from recording.
+            # Detection is started/stopped independently via the eye button (POST /instant-detection/start/{camera_id}).
+            # See: docs/proposals/instant-detection-decoupling.md
             
             # Use unified recording path for ALL camera types (USB/RTSP/MOBILE/EDGE)
             logger.info(f"🎬 [SESSION] Starting recording for {device_id}, session: {session_uuid}")
@@ -1810,27 +1803,10 @@ class CameraDetectionService:
                     device_id, user_id, recording_info
                 )
             
-            # 🔧 PIPELINE SETTINGS: Auto-stop instant detection based on current settings
-            if result:
-                db_gen = get_db()
-                db = next(db_gen)
-                try:
-                    camera = db.query(Camera).filter(Camera.device_id == device_id).first()
-                    instant_detection_enabled = camera and camera.instant_detection_enabled
-                finally:
-                    db.close()
-                
-                # Only auto-stop if instant detection is now disabled in settings
-                if auto_stop_instant_detection and not instant_detection_enabled:
-                    try:
-                        from src.api.v1.endpoints.instant_detection import get_instant_detection_manager
-                        manager = get_instant_detection_manager()
-                        manager.stop_sampling()
-                        logger.info(f"✅ Auto-stopped instant detection for camera {device_id} (disabled in settings)")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Failed to auto-stop instant detection for {device_id}: {e}")
-                elif instant_detection_enabled:
-                    logger.info(f"⏸️ Instant detection remains active for {device_id} (enabled in settings)")
+            # NOTE: Instant detection is now decoupled from recording.
+            # Detection is started/stopped independently via the eye button (POST /instant-detection/stop/{camera_id}).
+            # The auto_stop_instant_detection parameter is deprecated and ignored.
+            # See: docs/proposals/instant-detection-decoupling.md
             
             return result
 

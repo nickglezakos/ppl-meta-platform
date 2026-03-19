@@ -45,7 +45,7 @@ class _InstantDetectionWidgetState
     print('🔍 [INSTANT_DETECTION_WIDGET] initState called for device: ${widget.cameraId}');
     _loadRefreshInterval();
     
-    // Initial recording state check will happen in build method via ref.listen
+    // Initial detection state check will happen in build method via ref.listen
   }
 
   Future<void> _loadRefreshInterval() async {
@@ -114,7 +114,7 @@ class _InstantDetectionWidgetState
   }
 
   void _stopAutoRefresh() {
-    // Stop fast polling, resume lazy checking only if recording
+    // Stop fast polling, resume lazy checking only if detection is active
     _fastPollTimer?.cancel();
     _fastPollTimer = null;
     
@@ -126,13 +126,13 @@ class _InstantDetectionWidgetState
         _isLoading = false;
       });
       
-      // Resume lazy checking only if still recording
-      final recordingState = ref.read(cameraRecordingProvider(widget.cameraId));
-      if (recordingState.isRecording) {
-        print('🔍 [INSTANT_DETECTION_WIDGET] Resuming lazy checking (still recording)');
+      // Resume lazy checking only if detection is still active
+      final detectionState = ref.read(cameraInstantDetectionProvider(widget.cameraId));
+      if (detectionState.isDetecting) {
+        print('🔍 [INSTANT_DETECTION_WIDGET] Resuming lazy checking (detection still active)');
         _startLazyChecking();
       } else {
-        print('🔍 [INSTANT_DETECTION_WIDGET] Not resuming lazy checking (not recording)');
+        print('🔍 [INSTANT_DETECTION_WIDGET] Not resuming lazy checking (detection not active)');
       }
     }
   }
@@ -216,61 +216,28 @@ class _InstantDetectionWidgetState
   Widget build(BuildContext context) {
     final personCount = _personObjects?.length ?? 0;
     final hasDetections = personCount > 0;
-    final recordingState = ref.watch(cameraRecordingProvider(widget.cameraId));
+    final detectionState = ref.watch(cameraInstantDetectionProvider(widget.cameraId));
     
     // Debug: Log state on every build
     print('🎨 [BUILD] hasDetections=$hasDetections, _demographics=${_demographics != null ? "EXISTS" : "NULL"}, personCount=$personCount');
     
-    // Set up recording state listener - MUST be in build method for Riverpod
-    ref.listen(cameraRecordingProvider(widget.cameraId), (previous, next) {
-      print('🔍 [INSTANT_DETECTION_WIDGET] Recording state changed: prev=${previous?.isRecording}, next=${next.isRecording}');
+    // Set up detection state listener - MUST be in build method for Riverpod
+    ref.listen(cameraInstantDetectionProvider(widget.cameraId), (previous, next) {
+      print('🔍 [INSTANT_DETECTION_WIDGET] Detection state changed: prev=${previous?.isDetecting}, next=${next.isDetecting}');
       
-      if (next.isRecording && previous?.isRecording != true) {
-        // Recording JUST started - begin checking for instant detection
-        print('🔍 [INSTANT_DETECTION_WIDGET] Recording JUST started, starting lazy checks');
+      if (next.isDetecting && previous?.isDetecting != true) {
+        // Detection JUST started - begin checking for results
+        print('🔍 [INSTANT_DETECTION_WIDGET] Detection JUST started, starting lazy checks');
         _startLazyChecking();
-      } else if (!next.isRecording && previous?.isRecording == true) {
-        // Recording JUST stopped - stop all polling
-        print('🔍 [INSTANT_DETECTION_WIDGET] Recording JUST stopped, stopping all polling');
+      } else if (!next.isDetecting && previous?.isDetecting == true) {
+        // Detection JUST stopped - stop all polling
+        print('🔍 [INSTANT_DETECTION_WIDGET] Detection JUST stopped, stopping all polling');
         _stopAllPolling();
       }
     });
 
-    // If not recording, show message to start recording
-    if (!recordingState.isRecording) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.02),
-          border: Border(
-            top: BorderSide(
-              color: Colors.grey.withOpacity(0.1),
-              width: 1,
-            ),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.videocam_off,
-              size: 13,
-              color: Colors.grey.shade400,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              'Start recording to see live detection',
-              style: OfflineFonts.inter(
-                fontSize: 11,
-                color: Colors.grey.shade500,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // If recording but instant detection not running yet and not loading, show minimal "inactive" state
-    if (!_isInstantDetectionRunning && !_isLoading) {
+    // If detection not active, show message to start detection
+    if (!detectionState.isDetecting) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -291,7 +258,40 @@ class _InstantDetectionWidgetState
             ),
             const SizedBox(width: 6),
             Text(
-              'Instant detection inactive',
+              'Start detection to see live results',
+              style: OfflineFonts.inter(
+                fontSize: 11,
+                color: Colors.grey.shade500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // If detection is active but backend hasn't returned results yet, show waiting state
+    if (!_isInstantDetectionRunning && !_isLoading) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.withOpacity(0.02),
+          border: Border(
+            top: BorderSide(
+              color: Colors.grey.withOpacity(0.1),
+              width: 1,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.visibility,
+              size: 13,
+              color: Colors.blue.shade300,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Waiting for detection results...',
               style: OfflineFonts.inter(
                 fontSize: 11,
                 color: Colors.grey.shade500,

@@ -1036,6 +1036,53 @@ class CameraService {
     }
   }
 
+  /// Start instant detection for a camera (decoupled from recording)
+  Future<Map<String, dynamic>?> startInstantDetection(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.post(
+        '/api/v1/instant-detection/start/$deviceId',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print('Failed to start instant detection: $e');
+      return null;
+    }
+  }
+
+  /// Stop instant detection for a specific camera
+  Future<Map<String, dynamic>?> stopInstantDetection(String deviceId) async {
+    try {
+      final response = await _cameraApiClient.post(
+        '/api/v1/instant-detection/stop/$deviceId',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print('Failed to stop instant detection: $e');
+      return null;
+    }
+  }
+
+  /// Get instant detection system status (used for state sync on app restart)
+  Future<Map<String, dynamic>?> getInstantDetectionStatus() async {
+    try {
+      final response = await _cameraApiClient.get(
+        '/api/v1/instant-detection/status',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return response.data as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   CameraException _handleDioError(DioException e) {
     if (e.response?.data != null) {
       try {

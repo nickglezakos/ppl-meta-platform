@@ -1463,15 +1463,21 @@ async def get_all_instant_detection_results(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
-@api_router.post("/instant-detection/{camera_id}/start")
+@api_router.post("/instant-detection/start/{camera_id}")
 async def start_instant_detection(request: Request):
     """Proxy start instant detection to Cameras service."""
     return await _proxy_to_cameras_service(request)
 
 
-@api_router.post("/instant-detection/{camera_id}/stop")
+@api_router.post("/instant-detection/stop/{camera_id}")
+async def stop_instant_detection_for_camera(request: Request):
+    """Proxy stop instant detection for a specific camera to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/instant-detection/stop")
 async def stop_instant_detection(request: Request):
-    """Proxy stop instant detection to Cameras service."""
+    """Proxy global stop instant detection to Cameras service."""
     return await _proxy_to_cameras_service(request)
 
 
