@@ -1,0 +1,213 @@
+import 'package:json_annotation/json_annotation.dart';
+
+part 'trigger_model.g.dart';
+
+/// Demographic condition for trigger evaluation
+@JsonSerializable()
+class DemographicCondition {
+  final String field;
+  final String operator;
+  final double value;
+
+  DemographicCondition({
+    required this.field,
+    required this.operator,
+    required this.value,
+  });
+
+  factory DemographicCondition.fromJson(Map<String, dynamic> json) =>
+      _$DemographicConditionFromJson(json);
+
+  Map<String, dynamic> toJson() => _$DemographicConditionToJson(this);
+}
+
+@JsonSerializable()
+class TriggerModel {
+  final int id;
+  final String uuid;
+  
+  @JsonKey(name: 'demographic_conditions')
+  final List<DemographicCondition> demographicConditions;
+  
+  @JsonKey(name: 'time_span')
+  final String timeSpan;
+  
+  @JsonKey(name: 'camera_device_id')
+  final String cameraDeviceId;
+  
+  @JsonKey(name: 'camera_name')
+  final String? cameraName;
+  
+  @JsonKey(name: 'action_uuid')
+  final String? actionUuid;
+  
+  @JsonKey(name: 'action_name')
+  final String? actionName;
+  
+  @JsonKey(name: 'tracking_duration')
+  final String trackingDuration;
+  
+  @JsonKey(name: 'is_active')
+  final bool isActive;
+  
+  @JsonKey(name: 'cooldown_seconds')
+  final int cooldownSeconds;
+  
+  @JsonKey(name: 'last_fired_at')
+  final DateTime? lastFiredAt;
+
+  @JsonKey(name: 'trigger_mode')
+  final String triggerMode;
+
+  @JsonKey(name: 'ppl_match_group_id')
+  final String? pplMatchGroupId;
+
+  @JsonKey(name: 'ppl_match_similarity_threshold')
+  final double pplMatchSimilarityThreshold;
+
+  @JsonKey(name: 'ppl_match_top_k')
+  final int pplMatchTopK;
+
+  @JsonKey(name: 'last_match_info')
+  final Map<String, dynamic>? lastMatchInfo;
+
+  @JsonKey(name: 'last_matched_at')
+  final DateTime? lastMatchedAt;
+  
+  final String? name;
+  final String? description;
+  
+  @JsonKey(name: 'created_at')
+  final DateTime createdAt;
+  
+  @JsonKey(name: 'updated_at')
+  final DateTime? updatedAt;
+
+  TriggerModel({
+    required this.id,
+    required this.uuid,
+    required this.demographicConditions,
+    required this.timeSpan,
+    required this.cameraDeviceId,
+    this.cameraName,
+    this.actionUuid,
+    this.actionName,
+    this.trackingDuration = '10 minutes',
+    required this.isActive,
+    this.cooldownSeconds = 60,
+    this.lastFiredAt,
+    this.triggerMode = 'demographic',
+    this.pplMatchGroupId,
+    this.pplMatchSimilarityThreshold = 0.75,
+    this.pplMatchTopK = 1,
+    this.lastMatchInfo,
+    this.lastMatchedAt,
+    this.name,
+    this.description,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory TriggerModel.fromJson(Map<String, dynamic> json) {
+    return _$TriggerModelFromJson(json);
+  }
+
+  Map<String, dynamic> toJson() => _$TriggerModelToJson(this);
+  
+  /// Human-readable display for conditions
+  String get conditionsDisplay {
+    if (triggerMode == 'ppl_match') {
+      return 'Group: ${pplMatchGroupId ?? 'Not set'}';
+    }
+    if (demographicConditions.isEmpty) return 'No conditions';
+    return '${demographicConditions.length} condition(s)';
+  }
+}
+
+@JsonSerializable()
+class TriggerCreateRequest {
+  @JsonKey(name: 'demographic_conditions')
+  final List<DemographicCondition> demographicConditions;
+  
+  @JsonKey(name: 'time_span')
+  final String timeSpan;
+  
+  @JsonKey(name: 'camera_device_id')
+  final String cameraDeviceId;
+  
+  @JsonKey(name: 'camera_name')
+  final String? cameraName;
+  
+  @JsonKey(name: 'action_uuid')
+  final String? actionUuid;
+  
+  @JsonKey(name: 'tracking_duration')
+  final String trackingDuration;
+  
+  @JsonKey(name: 'is_active')
+  final bool isActive;
+  
+  @JsonKey(name: 'cooldown_seconds')
+  final int cooldownSeconds;
+
+  @JsonKey(name: 'trigger_mode')
+  final String triggerMode;
+
+  @JsonKey(name: 'ppl_match_group_id')
+  final String? pplMatchGroupId;
+
+  @JsonKey(name: 'ppl_match_similarity_threshold')
+  final double? pplMatchSimilarityThreshold;
+
+  @JsonKey(name: 'ppl_match_top_k')
+  final int? pplMatchTopK;
+  
+  final String? name;
+  final String? description;
+
+  TriggerCreateRequest({
+    required this.demographicConditions,
+    required this.timeSpan,
+    required this.cameraDeviceId,
+    this.cameraName,
+    this.actionUuid,
+    this.trackingDuration = '10 minutes',
+    this.isActive = true,
+    this.cooldownSeconds = 60,
+    this.triggerMode = 'demographic',
+    this.pplMatchGroupId,
+    this.pplMatchSimilarityThreshold,
+    this.pplMatchTopK,
+    this.name,
+    this.description,
+  });
+
+  factory TriggerCreateRequest.fromJson(Map<String, dynamic> json) =>
+      _$TriggerCreateRequestFromJson(json);
+
+  Map<String, dynamic> toJson() => _$TriggerCreateRequestToJson(this);
+}
+
+@JsonSerializable()
+class TriggerListResponse {
+  final List<TriggerModel> triggers;
+  final int total;
+  final int page;
+  @JsonKey(name: 'page_size')
+  final int pageSize;
+  @JsonKey(name: 'total_pages')
+  final int totalPages;
+
+  TriggerListResponse({
+    required this.triggers,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+    required this.totalPages,
+  });
+
+  factory TriggerListResponse.fromJson(Map<String, dynamic> json) =>
+      _$TriggerListResponseFromJson(json);
+
+  Map<String, dynamic> toJson() => _$TriggerListResponseToJson(this);
+}

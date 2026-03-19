@@ -890,7 +890,16 @@ class MediaService:
         
         # Filter out camera collections if requested (user-created collections only)
         if exclude_camera_collections:
+            # 1. Exclude collections with camera_device_id set
             query = query.filter(MediaCollection.camera_device_id == None)
+            # 2. Exclude collections whose description matches the auto-created camera pattern
+            #    (handles cases where camera_device_id was never set or was cleared)
+            query = query.filter(
+                or_(
+                    MediaCollection.description == None,
+                    ~MediaCollection.description.like('Collection for camera:%'),
+                )
+            )
 
         return query.offset(skip).limit(limit).all()
 
