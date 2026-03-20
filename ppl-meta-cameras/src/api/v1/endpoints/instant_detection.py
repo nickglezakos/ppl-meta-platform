@@ -251,14 +251,19 @@ async def start_instant_detection(
         except Exception as e:
             logger.warning(f"⚠️ Could not create tracking session in VMeta: {e}")
 
-        # Configure sampler with storage settings
-        manager.current_session_uuid = session_uuid
-        manager._session_started_at = datetime.utcnow()
-        manager._storage_multiple = storage_multiple
-        manager._session_duration_minutes = session_duration
-        manager._cycle_counter = 0
-
+        # Start sampling — the manager creates per-camera state internally
         manager.start_sampling(camera_id, camera_path)
+
+        # Configure per-camera state that was just created
+        with manager._lock:
+            state = manager._samplers.get(camera_id)
+            if state:
+                state.session_uuid = session_uuid
+                state.session_started_at = datetime.utcnow()
+                state.storage_multiple = storage_multiple
+                state.session_duration_minutes = session_duration
+                state.cycle_counter = 0
+                state.auth_token = getattr(manager, '_auth_token', None)
         
         return {
             "success": True,
@@ -290,18 +295,20 @@ async def stop_instant_detection(
         Success status
     """
     try:
-        # Complete tracking session in VMeta before stopping
-        if manager.current_session_uuid:
-            vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
-            try:
-                http_requests.post(
-                    f"{vmeta_url}/api/v1/instant-detection/complete-session/{manager.current_session_uuid}",
-                    timeout=5,
-                )
-                logger.info(f"✅ Completed tracking session {manager.current_session_uuid[:8]}...")
-            except Exception as e:
-                logger.warning(f"⚠️ Could not complete tracking session: {e}")
-            manager.current_session_uuid = None
+        # Complete tracking sessions for all active cameras in VMeta before stopping
+        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        with manager._lock:
+            active_states = list(manager._samplers.values())
+        for state in active_states:
+            if state.session_uuid:
+                try:
+                    http_requests.post(
+                        f"{vmeta_url}/api/v1/instant-detection/complete-session/{state.session_uuid}",
+                        timeout=5,
+                    )
+                    logger.info(f"✅ Completed tracking session {state.session_uuid[:8]}... for {state.camera_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not complete tracking session for {state.camera_id}: {e}")
 
         manager.stop_sampling()
         
@@ -334,22 +341,23 @@ async def stop_instant_detection_for_camera(
         Success status
     """
     try:
-        status = manager.get_status()
-        if status.get("running") and status.get("current_camera_id") == camera_id:
+        with manager._lock:
+            state = manager._samplers.get(camera_id)
+
+        if state and state.running:
             # Complete tracking session in VMeta before stopping
-            if manager.current_session_uuid:
+            if state.session_uuid:
                 vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
                 try:
                     http_requests.post(
-                        f"{vmeta_url}/api/v1/instant-detection/complete-session/{manager.current_session_uuid}",
+                        f"{vmeta_url}/api/v1/instant-detection/complete-session/{state.session_uuid}",
                         timeout=5,
                     )
-                    logger.info(f"✅ Completed tracking session {manager.current_session_uuid[:8]}...")
+                    logger.info(f"✅ Completed tracking session {state.session_uuid[:8]}...")
                 except Exception as e:
                     logger.warning(f"⚠️ Could not complete tracking session: {e}")
-                manager.current_session_uuid = None
 
-            manager.stop_sampling()
+            manager.stop_sampling(camera_id)
             return {
                 "success": True,
                 "message": f"Instant detection stopped for {camera_id}"
