@@ -19,6 +19,7 @@ import asyncio
 import time
 import uuid
 import os
+from dataclasses import dataclass, field
 from typing import Any, List, Dict, Optional
 from datetime import datetime
 import logging
@@ -28,6 +29,103 @@ import numpy as np
 import aiohttp
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Circuit Breaker — prevents cascading failures to downstream services
+# ---------------------------------------------------------------------------
+
+class CircuitBreaker:
+    """
+    Three-state circuit breaker for outbound service calls.
+
+    States:
+      CLOSED    — normal operation, requests pass through
+      OPEN      — service is down, requests are rejected immediately
+      HALF_OPEN — probing with a single request to check recovery
+    """
+
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+    def __init__(self, service_name: str, failure_threshold: int = 3,
+                 cooldown_seconds: float = 30.0):
+        self.service_name = service_name
+        self.failure_threshold = failure_threshold
+        self.cooldown_seconds = cooldown_seconds
+        self._state = self.CLOSED
+        self._failure_count = 0
+        self._last_failure_time: Optional[float] = None
+        self._lock = threading.Lock()
+
+    @property
+    def state(self) -> str:
+        with self._lock:
+            if self._state == self.OPEN and self._last_failure_time is not None:
+                if (time.time() - self._last_failure_time) >= self.cooldown_seconds:
+                    self._state = self.HALF_OPEN
+                    logger.info(
+                        f"🔄 Circuit breaker [{self.service_name}]: "
+                        f"OPEN → HALF_OPEN (cooldown elapsed, probing...)"
+                    )
+            return self._state
+
+    def allow_request(self) -> bool:
+        """Check if a request should be allowed through."""
+        current_state = self.state
+        if current_state == self.CLOSED:
+            return True
+        if current_state == self.HALF_OPEN:
+            return True  # Allow one probe request
+        return False  # OPEN — reject
+
+    def record_success(self):
+        with self._lock:
+            if self._state == self.HALF_OPEN:
+                logger.info(
+                    f"✅ Circuit breaker [{self.service_name}]: "
+                    f"HALF_OPEN → CLOSED (probe succeeded)"
+                )
+            self._state = self.CLOSED
+            self._failure_count = 0
+
+    def record_failure(self):
+        with self._lock:
+            self._failure_count += 1
+            self._last_failure_time = time.time()
+            if self._state == self.HALF_OPEN:
+                self._state = self.OPEN
+                logger.warning(
+                    f"⚡ Circuit breaker [{self.service_name}]: "
+                    f"HALF_OPEN → OPEN (probe failed, cooling down {self.cooldown_seconds}s)"
+                )
+            elif self._failure_count >= self.failure_threshold:
+                self._state = self.OPEN
+                logger.warning(
+                    f"⚡ Circuit breaker [{self.service_name}]: "
+                    f"CLOSED → OPEN ({self._failure_count} consecutive failures, "
+                    f"cooling down {self.cooldown_seconds}s)"
+                )
+
+
+# ---------------------------------------------------------------------------
+# Per-camera sampler state — one instance per active camera
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CameraSamplerState:
+    """State for a single camera's instant detection loop."""
+    camera_id: str
+    thread: Optional[threading.Thread] = None
+    running: bool = False
+    cycle_counter: int = 0
+    storage_multiple: int = 1
+    session_duration_minutes: int = 0
+    session_started_at: Optional[datetime] = None
+    session_uuid: Optional[str] = None
+    auth_token: Optional[str] = None
+    stagger_offset: float = 0.0
 
 
 class InstantDetectionSampler:
@@ -56,10 +154,6 @@ class InstantDetectionSampler:
         sampling_interval: int = 5,
         temporal_window: float = 1.0
     ):
-        self._detection_thread = None
-        self._running = False
-        self._current_camera_id: Optional[str] = None  # Track which camera is being sampled
-        self._current_capture = None  # Track current VideoCapture object
         self.vision_service_url = vision_service_url
         self.vmeta_service_url = vmeta_service_url
         self.orchestrator_service_url = orchestrator_service_url
@@ -67,96 +161,201 @@ class InstantDetectionSampler:
         self.sampling_interval = sampling_interval
         self.temporal_window = temporal_window
         
-        # Results cache (in-memory only)
+        # Multi-camera registry — replaces single-camera state
+        self._samplers: Dict[str, CameraSamplerState] = {}
+        self._lock = threading.RLock()
+
+        # Results cache (in-memory) — already per-camera keyed
         self.results_cache: Dict[str, Dict] = {}
+        self._cache_lock = threading.Lock()
         
         # Webhook configuration for pushing results to media service triggers
         self.webhook_enabled = False
         self.webhook_url: Optional[str] = None
+
+        # Multi-camera feature flag (backward compat)
+        self._multi_camera_enabled = os.getenv(
+            "INSTANT_DETECTION_MULTI_CAMERA_ENABLED", "true"
+        ).lower() == "true"
+
+        # --- Concurrency controls (shared across all cameras) ---
+        vision_concurrency = int(os.getenv("INSTANT_DETECTION_VISION_CONCURRENCY", "2"))
+        vmeta_concurrency = int(os.getenv("INSTANT_DETECTION_VMETA_CONCURRENCY", "3"))
+        orchestrator_concurrency = int(os.getenv("INSTANT_DETECTION_ORCHESTRATOR_CONCURRENCY", "2"))
+        self._vision_semaphore = threading.Semaphore(vision_concurrency)
+        self._vmeta_semaphore = threading.Semaphore(vmeta_concurrency)
+        self._orchestrator_semaphore = threading.Semaphore(orchestrator_concurrency)
+
+        # --- Circuit breakers (one per downstream service) ---
+        cb_threshold = int(os.getenv("CIRCUIT_BREAKER_FAILURE_THRESHOLD", "3"))
+        cb_cooldown = float(os.getenv("CIRCUIT_BREAKER_COOLDOWN_SECONDS", "30"))
+        self._vision_circuit = CircuitBreaker("Vision", cb_threshold, cb_cooldown)
+        self._vmeta_circuit = CircuitBreaker("VMeta", cb_threshold, cb_cooldown)
+        self._orchestrator_circuit = CircuitBreaker("Orchestrator", cb_threshold, cb_cooldown)
         
-        # Instant detection storage state
-        self._cycle_counter: int = 0
-        self._storage_multiple: int = 1
-        self._session_duration_minutes: int = 0
-        self._session_started_at: Optional[datetime] = None
-        self.current_session_uuid: Optional[str] = None
-        self._auth_token: Optional[str] = None
-        
-        logger.info("✅ Instant detection sampler initialized (Vision + VMeta APIs)")
-    
-    def start_sampling(self, camera_id: str, camera_capture):
-        """
-        Start parallel frame sampling thread (non-blocking)
-        
-        Args:
-            camera_id: Unique camera identifier
-            camera_capture: Legacy parameter (can be None) - we now use queue workers
-        """
-        # Check if we need to restart due to camera change
-        camera_changed = self._current_camera_id != camera_id
-        
-        if camera_changed and self._running:
-            logger.info(
-                f"🔄 Camera changed (was: {self._current_camera_id}, now: {camera_id}) - "
-                f"restarting instant detection"
-            )
-            self.stop_sampling()
-        
-        # Check if thread is still running (even if _running flag says otherwise)
-        if self._running and self._detection_thread and self._detection_thread.is_alive():
-            logger.warning(f"Instant detection already running for camera {camera_id}")
-            return
-        
-        # If thread exists but is not alive, ensure clean state
-        if self._detection_thread and not self._detection_thread.is_alive():
-            logger.info(f"🔄 Cleaning up previous thread state for camera {camera_id}")
-            self._running = False
-            self._detection_thread = None
-        
-        # Store current camera (we now use queue workers, not capture object)
-        self._current_camera_id = camera_id
-        self._current_capture = None  # Not used anymore
-        
-        self._running = True
-        self._detection_thread = threading.Thread(
-            target=self._sample_loop,
-            args=(camera_id, None),  # Pass None for capture - use queue worker
-            daemon=True,
-            name=f"instant-detection-{camera_id}"
+        logger.info(
+            f"✅ Instant detection sampler initialized "
+            f"(multi_camera={self._multi_camera_enabled}, "
+            f"vision_concurrency={vision_concurrency}, "
+            f"vmeta_concurrency={vmeta_concurrency})"
         )
-        self._detection_thread.start()
-        logger.info(f"🚀 Instant detection sampler started for camera {camera_id} (using queue worker)")
     
-    def stop_sampling(self):
-        """Stop the sampling thread"""
-        self._running = False
-        if self._detection_thread:
-            self._detection_thread.join(timeout=2)
-        
-        # Clear camera tracking on stop
-        self._current_camera_id = None
-        self._current_capture = None
-        
-        logger.info("🛑 Instant detection sampler stopped")
-    
-    def _sample_loop(self, camera_id: str, camera_capture):
+    # ------------------------------------------------------------------
+    # Backward-compatible properties for code that reads legacy fields
+    # ------------------------------------------------------------------
+
+    @property
+    def _running(self) -> bool:
+        """True if any camera is active."""
+        with self._lock:
+            return any(s.running for s in self._samplers.values())
+
+    @property
+    def _current_camera_id(self) -> Optional[str]:
+        """Return the first active camera ID (backward compat)."""
+        with self._lock:
+            for cam_id, s in self._samplers.items():
+                if s.running:
+                    return cam_id
+            return None
+
+    @property
+    def current_session_uuid(self) -> Optional[str]:
+        """Return the first active session UUID (backward compat)."""
+        with self._lock:
+            for s in self._samplers.values():
+                if s.running and s.session_uuid:
+                    return s.session_uuid
+            return None
+
+    @current_session_uuid.setter
+    def current_session_uuid(self, value):
+        """Set session UUID on the first active camera (backward compat)."""
+        with self._lock:
+            for s in self._samplers.values():
+                if s.running:
+                    s.session_uuid = value
+                    return
+
+    # ------------------------------------------------------------------
+    # Stagger offset calculation
+    # ------------------------------------------------------------------
+
+    def _calculate_stagger_offset(self, camera_id: str) -> float:
+        """Calculate time offset for this camera to spread cycles over the interval."""
+        with self._lock:
+            active_count = len(self._samplers) + 1  # +1 for camera being added
+        if active_count <= 1:
+            return 0.0
+        index = hash(camera_id) % active_count
+        return (self.sampling_interval / active_count) * index
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def start_sampling(self, camera_id: str, camera_capture=None):
         """
-        Main sampling loop - runs every N seconds using queue worker frames.
-        Now submits frames to Celery for non-blocking processing.
+        Start instant detection for a camera. Multiple cameras can run in parallel
+        when INSTANT_DETECTION_MULTI_CAMERA_ENABLED=true.
         """
+        with self._lock:
+            # If multi-camera is disabled, stop any other running cameras first
+            if not self._multi_camera_enabled:
+                other_cameras = [
+                    cid for cid, s in self._samplers.items()
+                    if s.running and cid != camera_id
+                ]
+                for cid in other_cameras:
+                    logger.info(
+                        f"🔄 Multi-camera disabled — stopping {cid} "
+                        f"before starting {camera_id}"
+                    )
+                    self._stop_camera_unlocked(cid)
+
+            # Already running for this camera?
+            if camera_id in self._samplers:
+                existing = self._samplers[camera_id]
+                if existing.running and existing.thread and existing.thread.is_alive():
+                    logger.warning(
+                        f"Instant detection already running for camera {camera_id}"
+                    )
+                    return
+                # Thread died — clean up
+                del self._samplers[camera_id]
+
+            state = CameraSamplerState(
+                camera_id=camera_id,
+                stagger_offset=self._calculate_stagger_offset(camera_id),
+            )
+            state.running = True
+            state.thread = threading.Thread(
+                target=self._sample_loop,
+                args=(state,),
+                daemon=True,
+                name=f"instant-detection-{camera_id}",
+            )
+            self._samplers[camera_id] = state
+            state.thread.start()
+
+        logger.info(
+            f"🚀 Instant detection started for {camera_id} "
+            f"(stagger={state.stagger_offset:.1f}s, "
+            f"active_cameras={len(self._samplers)})"
+        )
+
+    def stop_sampling(self, camera_id: str = None):
+        """Stop one camera (if camera_id given) or all cameras."""
+        with self._lock:
+            if camera_id:
+                self._stop_camera_unlocked(camera_id)
+            else:
+                # Global stop
+                for s in self._samplers.values():
+                    s.running = False
+                for s in list(self._samplers.values()):
+                    if s.thread:
+                        s.thread.join(timeout=2)
+                self._samplers.clear()
+        if camera_id:
+            logger.info(f"🛑 Instant detection stopped for {camera_id}")
+        else:
+            logger.info("🛑 Instant detection stopped (all cameras)")
+
+    def _stop_camera_unlocked(self, camera_id: str):
+        """Stop a single camera. Must be called while holding self._lock."""
+        state = self._samplers.get(camera_id)
+        if state:
+            state.running = False
+            if state.thread:
+                state.thread.join(timeout=2)
+            del self._samplers[camera_id]
+
+    def _sample_loop(self, state: CameraSamplerState):
+        """
+        Per-camera sampling loop — runs every N seconds using queue worker frames.
+        Submits frames to Celery for non-blocking processing.
+        """
+        camera_id = state.camera_id
+
+        # Stagger: delay start so cameras don't all fire at once
+        if state.stagger_offset > 0:
+            logger.info(
+                f"⏱️ Camera {camera_id}: stagger delay {state.stagger_offset:.1f}s"
+            )
+            time.sleep(state.stagger_offset)
+
         consecutive_failures = 0
-        max_failures = 3  # Stop after 3 consecutive failures
+        max_failures = 3
         
-        while self._running:
+        while state.running:
             try:
                 start_time = time.time()
                 
                 # Check if queue worker is still active
-                # Import here to avoid circular dependency
                 import asyncio
                 from src.services.camera_service_queue import get_camera_service as get_queue_service
                 
-                # Run async check in a new event loop (we're in a thread)
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
@@ -165,7 +364,7 @@ class InstantDetectionSampler:
                     
                     if not worker or worker.status.value != 'connected':
                         logger.warning(f"⚠️ Queue worker not connected for {camera_id}, stopping instant detection")
-                        self._running = False
+                        state.running = False
                         break
                 finally:
                     loop.close()
@@ -181,19 +380,18 @@ class InstantDetectionSampler:
                         f"📤 [INSTANT] Submitted {camera_id} to Celery for processing "
                         f"({len(frames)} frames)"
                     )
-                    consecutive_failures = 0  # Reset failure counter on success
+                    consecutive_failures = 0
                     
                     # --- Persist to database (governed by storage_multiple) ---
-                    self._cycle_counter += 1
+                    state.cycle_counter += 1
                     if (
-                        self._storage_multiple > 0
-                        and self.current_session_uuid
-                        and self._cycle_counter % self._storage_multiple == 0
+                        state.storage_multiple > 0
+                        and state.session_uuid
+                        and state.cycle_counter % state.storage_multiple == 0
                     ):
-                        self._maybe_persist_cycle(camera_id)
+                        self._maybe_persist_cycle(state)
                     
                 elif len(frames) == 0:
-                    # No frames captured at all - likely camera disconnected or stopped
                     consecutive_failures += 1
                     logger.warning(
                         f"⚠️ Failed to capture any frames for {camera_id} "
@@ -205,10 +403,9 @@ class InstantDetectionSampler:
                             f"❌ Too many consecutive failures ({consecutive_failures}), "
                             f"stopping instant detection for {camera_id}"
                         )
-                        self._running = False
+                        state.running = False
                         break
                 else:
-                    # Partial frames captured
                     consecutive_failures += 1
                     logger.warning(
                         f"⚠️ Only captured {len(frames)}/3 frames for {camera_id} "
@@ -220,7 +417,7 @@ class InstantDetectionSampler:
                             f"❌ Too many consecutive failures ({consecutive_failures}), "
                             f"stopping instant detection for {camera_id}"
                         )
-                        self._running = False
+                        state.running = False
                         break
                 
                 # Wait for next iteration (accounting for processing time)
@@ -241,11 +438,12 @@ class InstantDetectionSampler:
                         f"❌ Too many consecutive errors ({consecutive_failures}), "
                         f"stopping instant detection for {camera_id}"
                     )
-                    self._running = False
+                    state.running = False
                     break
                 
                 time.sleep(self.sampling_interval)
         
+        state.running = False
         logger.info(f"🛑 Instant detection sample loop exited for {camera_id}")
     
     def _capture_3_frames_from_queue(self, camera_id: str) -> List[Dict]:
@@ -554,6 +752,11 @@ class InstantDetectionSampler:
         - Face embedding model
         """
         try:
+            # Circuit breaker check
+            if not self._vision_circuit.allow_request():
+                logger.debug(f"Vision circuit OPEN — skipping detection for frame {frame_index}")
+                return []
+
             # Validate frame
             if frame is None or frame.size == 0:
                 logger.warning(f"⚠️ Frame {frame_index} is None or empty")
@@ -577,32 +780,39 @@ class InstantDetectionSampler:
             
             url = f"{self.vision_service_url}/faces/detect-single-frame"
             
-            async with session.post(url, data=data) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    faces_count = len(result.get("faces", []))
-                    logger.info(f"🔍 Vision Service returned {faces_count} faces for frame {frame_index}")
-                    
-                    # Convert Vision Service format to our format
-                    detections = []
-                    for face in result.get("faces", []):
-                        detections.append({
-                            "face_id": face.get("face_id", str(uuid.uuid4())),
-                            "frame_index": frame_index,
-                            "timestamp": timestamp,
-                            "bbox": face.get("bbox", [0, 0, 0, 0]),
-                            "confidence": face.get("confidence", 0.0),
-                            "method": "two_stage_haar_dlib",
-                            "embedding": face.get("embedding", [0.0] * 128)
-                        })
-                    
-                    return detections
-                else:
-                    response_text = await response.text()
-                    logger.error(f"Vision Service error: {response.status} - {response_text}")
-                    return []
+            self._vision_semaphore.acquire()
+            try:
+                async with session.post(url, data=data) as response:
+                    if response.status == 200:
+                        self._vision_circuit.record_success()
+                        result = await response.json()
+                        faces_count = len(result.get("faces", []))
+                        logger.info(f"🔍 Vision Service returned {faces_count} faces for frame {frame_index}")
+                        
+                        # Convert Vision Service format to our format
+                        detections = []
+                        for face in result.get("faces", []):
+                            detections.append({
+                                "face_id": face.get("face_id", str(uuid.uuid4())),
+                                "frame_index": frame_index,
+                                "timestamp": timestamp,
+                                "bbox": face.get("bbox", [0, 0, 0, 0]),
+                                "confidence": face.get("confidence", 0.0),
+                                "method": "two_stage_haar_dlib",
+                                "embedding": face.get("embedding", [0.0] * 128)
+                            })
+                        
+                        return detections
+                    else:
+                        self._vision_circuit.record_failure()
+                        response_text = await response.text()
+                        logger.error(f"Vision Service error: {response.status} - {response_text}")
+                        return []
+            finally:
+                self._vision_semaphore.release()
         
         except Exception as e:
+            self._vision_circuit.record_failure()
             logger.error(f"Error calling Vision Service: {e}")
             return []
     
@@ -619,6 +829,11 @@ class InstantDetectionSampler:
         This is called ONCE per person (for the best quality face).
         """
         try:
+            # Circuit breaker check
+            if not self._vmeta_circuit.allow_request():
+                logger.debug("VMeta circuit OPEN — skipping age/gender detection")
+                return self._default_age_gender()
+
             # Extract face region
             x1, y1, x2, y2 = bbox
             face_roi = frame[y1:y2, x1:x2]
@@ -643,39 +858,46 @@ class InstantDetectionSampler:
             
             logger.info(f"🔍 Calling VMeta age/gender endpoint: {url}")
             
-            # Add 2-second timeout to prevent blocking
             timeout = aiohttp.ClientTimeout(total=2.0)
-            async with session.post(url, data=data, timeout=timeout) as response:
-                if response.status == 200:
-                    result = await response.json()
+            self._vmeta_semaphore.acquire()
+            try:
+                async with session.post(url, data=data, timeout=timeout) as response:
+                    if response.status == 200:
+                        self._vmeta_circuit.record_success()
+                        result = await response.json()
                     
-                    logger.info(f"✅ VMeta age/gender response: {result}")
-                    logger.info(f"📊 Response details - age_min: {result.get('age_min')}, age_max: {result.get('age_max')}, gender: {result.get('gender')}, gender_conf: {result.get('gender_confidence')}")
-                    
-                    # Format age range from min/max
-                    age_min = result.get("age_min", 0)
-                    age_max = result.get("age_max", 100)
-                    age_range = f"({age_min}-{age_max})"
-                    
-                    age_gender_result = {
-                        "age_range": age_range,
-                        "age_confidence": result.get("age_confidence", 0.0),
-                        "gender": result.get("gender", "unknown"),
-                        "gender_confidence": result.get("gender_confidence", 0.0)
-                    }
-                    
-                    logger.info(f"📊 Formatted age/gender: {age_gender_result}")
-                    
-                    return age_gender_result
-                else:
-                    response_text = await response.text()
-                    logger.error(f"❌ VMeta Service age/gender error: {response.status} - {response_text}")
-                    return self._default_age_gender()
+                        logger.info(f"✅ VMeta age/gender response: {result}")
+                        logger.info(f"📊 Response details - age_min: {result.get('age_min')}, age_max: {result.get('age_max')}, gender: {result.get('gender')}, gender_conf: {result.get('gender_confidence')}")
+                        
+                        # Format age range from min/max
+                        age_min = result.get("age_min", 0)
+                        age_max = result.get("age_max", 100)
+                        age_range = f"({age_min}-{age_max})"
+                        
+                        age_gender_result = {
+                            "age_range": age_range,
+                            "age_confidence": result.get("age_confidence", 0.0),
+                            "gender": result.get("gender", "unknown"),
+                            "gender_confidence": result.get("gender_confidence", 0.0)
+                        }
+                        
+                        logger.info(f"📊 Formatted age/gender: {age_gender_result}")
+                        
+                        return age_gender_result
+                    else:
+                        self._vmeta_circuit.record_failure()
+                        response_text = await response.text()
+                        logger.error(f"❌ VMeta Service age/gender error: {response.status} - {response_text}")
+                        return self._default_age_gender()
+            finally:
+                self._vmeta_semaphore.release()
         
         except asyncio.TimeoutError:
+            self._vmeta_circuit.record_failure()
             logger.warning(f"⏱️ VMeta age/gender timeout (>2s) - returning unknown")
             return self._default_age_gender()
         except Exception as e:
+            self._vmeta_circuit.record_failure()
             logger.error(f"Error getting age/gender from VMeta: {e}")
             return self._default_age_gender()
 
@@ -691,6 +913,12 @@ class InstantDetectionSampler:
         Returns:
             {"matched": bool, "mvr_people_uuid": str|None, "similarity_score": float}
         """
+        _no_match = {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+
+        if not self._vmeta_circuit.allow_request():
+            logger.debug("VMeta circuit OPEN – skipping identity lookup")
+            return _no_match
+
         try:
             x1, y1, x2, y2 = [int(v) for v in bbox]
             height, width = frame.shape[:2]
@@ -702,11 +930,11 @@ class InstantDetectionSampler:
 
             face_roi = frame[y1:y2, x1:x2]
             if face_roi.size == 0:
-                return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+                return _no_match
 
             ok, buffer = cv2.imencode('.jpg', face_roi)
             if not ok:
-                return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+                return _no_match
 
             data = aiohttp.FormData()
             data.add_field(
@@ -729,27 +957,35 @@ class InstantDetectionSampler:
             )
 
             timeout = aiohttp.ClientTimeout(total=2.0)
-            async with session.post(url, data=data, timeout=timeout) as response:
-                if response.status != 200:
-                    response_text = await response.text()
-                    logger.debug(
-                        f"Identity lookup failed ({response.status}): {response_text[:200]}"
-                    )
-                    return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+            self._vmeta_semaphore.acquire()
+            try:
+                async with session.post(url, data=data, timeout=timeout) as response:
+                    if response.status != 200:
+                        self._vmeta_circuit.record_failure()
+                        response_text = await response.text()
+                        logger.debug(
+                            f"Identity lookup failed ({response.status}): {response_text[:200]}"
+                        )
+                        return _no_match
 
-                result = await response.json()
-                return {
-                    "matched": bool(result.get("matched")),
-                    "mvr_people_uuid": result.get("mvr_people_uuid"),
-                    "similarity_score": float(result.get("similarity_score", 0.0) or 0.0),
-                }
+                    self._vmeta_circuit.record_success()
+                    result = await response.json()
+                    return {
+                        "matched": bool(result.get("matched")),
+                        "mvr_people_uuid": result.get("mvr_people_uuid"),
+                        "similarity_score": float(result.get("similarity_score", 0.0) or 0.0),
+                    }
+            finally:
+                self._vmeta_semaphore.release()
 
         except asyncio.TimeoutError:
+            self._vmeta_circuit.record_failure()
             logger.debug("Identity lookup timeout (>2s)")
-            return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+            return _no_match
         except Exception as e:
+            self._vmeta_circuit.record_failure()
             logger.debug(f"Identity lookup error: {e}")
-            return {"matched": False, "mvr_people_uuid": None, "similarity_score": 0.0}
+            return _no_match
     
     def _calculate_demographics(self, person_objects: List[Dict]) -> Dict:
         """
@@ -881,6 +1117,10 @@ class InstantDetectionSampler:
         """
         if not face_detections:
             return []
+
+        if not self._orchestrator_circuit.allow_request():
+            logger.debug("Orchestrator circuit OPEN – using local grouping fallback")
+            return self._simple_spatial_grouping(face_detections)
         
         # Get camera-specific tolerance setting
         tolerance_percent = await self._get_camera_tolerance(camera_id) if camera_id else 20.0
@@ -899,50 +1139,58 @@ class InstantDetectionSampler:
                     "enable_quality_analysis": True,
                     "storage_mode": "memory_only"  # Don't persist instant detection results
                 }
-                
-                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        
-                        # Extract person objects from response
-                        person_groups = result.get("person_groups", [])
-                        
-                        # Convert to simpler format for instant detection
-                        person_objects = []
-                        for group in person_groups:
-                            person_faces = []
-                            for face_obj in group.get("representative_faces", []):
-                                person_faces.append(face_obj.get("face_data", {}))
+
+                self._orchestrator_semaphore.acquire()
+                try:
+                    async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as response:
+                        if response.status == 200:
+                            self._orchestrator_circuit.record_success()
+                            result = await response.json()
                             
-                            if person_faces:
-                                person_uuid = group.get("person_uuid", str(uuid.uuid4()))
-                                person_objects.append({
-                                    "person_id": person_uuid,
-                                    "person_object_uuid": person_uuid,
-                                    "faces": person_faces,
-                                    "face_count": len(person_faces),
-                                    "avg_confidence": sum(f.get("confidence", 0) for f in person_faces) / len(person_faces),
-                                    "best_bbox": max(person_faces, key=lambda f: f.get("confidence", 0)).get("bbox", [0,0,0,0])
-                                })
-                        
-                        logger.info(
-                            f"Orchestrator grouped {len(face_detections)} faces "
-                            f"into {len(person_objects)} person objects"
-                        )
-                        
-                        return person_objects
-                    else:
-                        response_text = await response.text()
-                        logger.warning(
-                            f"Orchestrator person grouping returned {response.status}: {response_text[:200]}"
-                        )
-                        # Fallback: simple spatial grouping locally
-                        return self._simple_spatial_grouping(face_detections)
+                            # Extract person objects from response
+                            person_groups = result.get("person_groups", [])
+                            
+                            # Convert to simpler format for instant detection
+                            person_objects = []
+                            for group in person_groups:
+                                person_faces = []
+                                for face_obj in group.get("representative_faces", []):
+                                    person_faces.append(face_obj.get("face_data", {}))
+                                
+                                if person_faces:
+                                    person_uuid = group.get("person_uuid", str(uuid.uuid4()))
+                                    person_objects.append({
+                                        "person_id": person_uuid,
+                                        "person_object_uuid": person_uuid,
+                                        "faces": person_faces,
+                                        "face_count": len(person_faces),
+                                        "avg_confidence": sum(f.get("confidence", 0) for f in person_faces) / len(person_faces),
+                                        "best_bbox": max(person_faces, key=lambda f: f.get("confidence", 0)).get("bbox", [0,0,0,0])
+                                    })
+                            
+                            logger.info(
+                                f"Orchestrator grouped {len(face_detections)} faces "
+                                f"into {len(person_objects)} person objects"
+                            )
+                            
+                            return person_objects
+                        else:
+                            self._orchestrator_circuit.record_failure()
+                            response_text = await response.text()
+                            logger.warning(
+                                f"Orchestrator person grouping returned {response.status}: {response_text[:200]}"
+                            )
+                            # Fallback: simple spatial grouping locally
+                            return self._simple_spatial_grouping(face_detections)
+                finally:
+                    self._orchestrator_semaphore.release()
         
         except asyncio.TimeoutError:
+            self._orchestrator_circuit.record_failure()
             logger.warning("Orchestrator timeout - using simple local grouping")
             return self._simple_spatial_grouping(face_detections)
         except Exception as e:
+            self._orchestrator_circuit.record_failure()
             logger.warning(f"Orchestrator error: {e} - using simple local grouping")
             return self._simple_spatial_grouping(face_detections)
     
@@ -1094,11 +1342,12 @@ class InstantDetectionSampler:
         This allows other hooks to access the latest instant detection results
         while recording is active.
         """
-        self.results_cache[camera_id] = {
-            "result": result,
-            "cached_at": time.time(),
-            "iteration": self.results_cache.get(camera_id, {}).get("iteration", 0) + 1
-        }
+        with self._cache_lock:
+            self.results_cache[camera_id] = {
+                "result": result,
+                "cached_at": time.time(),
+                "iteration": self.results_cache.get(camera_id, {}).get("iteration", 0) + 1
+            }
     
     def _submit_to_celery(self, camera_id: str, frames: List[Dict]):
         """
@@ -1231,12 +1480,13 @@ class InstantDetectionSampler:
     # Instant detection persistent storage helpers
     # ------------------------------------------------------------------
 
-    def _maybe_persist_cycle(self, camera_id: str):
+    def _maybe_persist_cycle(self, state: 'CameraSamplerState'):
         """Submit a persist task for the latest cached detection result."""
+        camera_id = state.camera_id
         try:
             # Check if session needs rotation first
-            if self._should_rotate_session():
-                self._rotate_tracking_session(camera_id)
+            if self._should_rotate_session(state):
+                self._rotate_tracking_session(state)
 
             # Get the latest result from Redis cache
             import redis as _redis
@@ -1256,41 +1506,42 @@ class InstantDetectionSampler:
 
             persist_instant_detection_results.delay(
                 camera_id=camera_id,
-                session_uuid=self.current_session_uuid,
+                session_uuid=state.session_uuid,
                 cycle_timestamp=result.get("timestamp", datetime.utcnow().isoformat()),
                 person_objects=person_objects,
                 demographics=result.get("demographics", {}),
-                auth_token=self._auth_token or "",
+                auth_token=state.auth_token or "",
             )
             logger.info(
                 f"📦 [PERSIST] Queued storage for {camera_id} "
-                f"(cycle {self._cycle_counter}, session {self.current_session_uuid[:8]}...)"
+                f"(cycle {state.cycle_counter}, session {state.session_uuid[:8]}...)"
             )
         except Exception as e:
             logger.warning(f"⚠️ [PERSIST] Failed to submit persist task: {e}")
 
-    def _should_rotate_session(self) -> bool:
+    def _should_rotate_session(self, state: 'CameraSamplerState') -> bool:
         """Check whether the current tracking session duration has been exceeded."""
-        if self._session_duration_minutes <= 0:
+        if state.session_duration_minutes <= 0:
             return False
-        if self._session_started_at is None:
+        if state.session_started_at is None:
             return False
-        elapsed = (datetime.utcnow() - self._session_started_at).total_seconds() / 60
-        return elapsed >= self._session_duration_minutes
+        elapsed = (datetime.utcnow() - state.session_started_at).total_seconds() / 60
+        return elapsed >= state.session_duration_minutes
 
-    def _rotate_tracking_session(self, camera_id: str):
+    def _rotate_tracking_session(self, state: 'CameraSamplerState'):
         """Complete the current session and start a new one."""
         import requests as _requests
 
+        camera_id = state.camera_id
         vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
         headers = {}
-        if self._auth_token:
-            headers["Authorization"] = f"Bearer {self._auth_token}"
+        if state.auth_token:
+            headers["Authorization"] = f"Bearer {state.auth_token}"
 
         # Complete current session
         try:
             _requests.post(
-                f"{vmeta_url}/api/v1/instant-detection/complete-session/{self.current_session_uuid}",
+                f"{vmeta_url}/api/v1/instant-detection/complete-session/{state.session_uuid}",
                 headers=headers,
                 timeout=5,
             )
@@ -1314,8 +1565,8 @@ class InstantDetectionSampler:
         except Exception as e:
             logger.warning(f"⚠️ Failed to create new session on rotation: {e}")
 
-        self.current_session_uuid = new_uuid
-        self._session_started_at = datetime.utcnow()
+        state.session_uuid = new_uuid
+        state.session_started_at = datetime.utcnow()
         logger.info(
             f"🔄 [SESSION] Rotated tracking session for {camera_id} → {new_uuid[:8]}..."
         )
@@ -1674,15 +1925,36 @@ class InstantDetectionSampler:
     
     def get_status(self) -> Dict:
         """
-        Get current status of instant detection sampler
+        Get current status of instant detection sampler.
+
+        Returns a per-camera map alongside aggregate information and
+        circuit breaker health.
         """
+        with self._lock:
+            active_cameras = {}
+            for cam_id, state in self._samplers.items():
+                active_cameras[cam_id] = {
+                    "running": state.running,
+                    "thread_alive": state.thread.is_alive() if state.thread else False,
+                    "cycle_counter": state.cycle_counter,
+                    "session_uuid": state.session_uuid,
+                    "stagger_offset": state.stagger_offset,
+                }
+
         return {
             "running": self._running,
-            "thread_alive": self._detection_thread.is_alive() if self._detection_thread else False,
             "current_camera_id": self._current_camera_id,
+            "active_cameras": active_cameras,
+            "active_camera_count": len(active_cameras),
             "cached_results": len(self.results_cache),
             "sampling_interval": self.sampling_interval,
-            "temporal_window": self.temporal_window
+            "temporal_window": self.temporal_window,
+            "multi_camera_enabled": self._multi_camera_enabled,
+            "service_circuits": {
+                "vision": self._vision_circuit.state,
+                "vmeta": self._vmeta_circuit.state,
+                "orchestrator": self._orchestrator_circuit.state,
+            },
         }
 
 
@@ -1752,5 +2024,7 @@ def is_instant_detection_running(camera_id: Optional[str] = None) -> bool:
         True if instant detection is active
     """
     if camera_id:
-        return camera_id in instant_detection_sampler.results_cache
+        with instant_detection_sampler._lock:
+            state = instant_detection_sampler._samplers.get(camera_id)
+            return state is not None and state.running
     return instant_detection_sampler._running
