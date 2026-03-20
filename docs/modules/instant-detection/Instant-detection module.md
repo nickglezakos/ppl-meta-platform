@@ -1,10 +1,11 @@
 # Instant Detection Module
 
-**Module Version**: 3.1  
-**Last Updated**: March 19, 2026  
+**Module Version**: 3.2  
+**Last Updated**: March 20, 2026  
 **Status**: Production  
 **v3.0 Breaking Change**: Decouples instant detection from the recording lifecycle. Detection is now started/stopped independently via a dedicated eye button in the UI.  
-**v3.1 Feature**: MVR People Persistent Storage — detection results are now persisted to the database as first-class tracking sessions, individuals, and MVR people records, enabling analytics integration.
+**v3.1 Feature**: MVR People Persistent Storage — detection results are now persisted to the database as first-class tracking sessions, individuals, and MVR people records, enabling analytics integration.  
+**v3.2 Feature**: Parallel Multi-Camera Instant Detection — multiple cameras can run instant detection simultaneously with per-camera state, staggered scheduling, concurrency semaphores, and circuit breakers to prevent downstream service saturation.
 
 ---
 
@@ -24,8 +25,9 @@
 12. [Trigger Evaluation](#trigger-evaluation)
 13. [Identity Resolution](#identity-resolution)
 14. [Analytics Integration](#analytics-integration)
-15. [Performance](#performance)
-16. [Troubleshooting](#troubleshooting)
+15. [Parallel Multi-Camera Detection](#parallel-multi-camera-detection)
+16. [Performance](#performance)
+17. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -37,6 +39,10 @@ Since v3.1, detection results are **persistently stored** in the same database s
 
 ### Key Capabilities
 
+- **Multi-camera parallel detection** — Multiple cameras can run instant detection simultaneously, each with independent per-camera state, sampling threads, and session management (v3.2)
+- **Staggered scheduling** — Camera sampling cycles are offset in time to avoid simultaneous bursts against downstream services (v3.2)
+- **Concurrency semaphores** — Per-service semaphores limit how many cameras can call Vision, VMeta, or Orchestrator simultaneously (v3.2)
+- **Circuit breakers** — Three-state (CLOSED / OPEN / HALF_OPEN) circuit breakers per downstream service prevent cascading failures when a service is degraded (v3.2)
 - **Non-blocking parallel processing** — Runs in a daemon thread or Celery worker, independent from the main recording pipeline
 - **Same detection quality** — Two-stage Haar + Dlib via Vision Service API
 - **Person grouping** — Spatial/IoU-based grouping via Orchestrator Service (with local fallback)
@@ -53,6 +59,7 @@ Since v3.1, detection results are **persistently stored** in the same database s
 - **WebSocket streaming** — Gateway broadcasts results to frontend via Redis → WebSocket bridge
 - **Decoupled lifecycle** — Starts/stops independently from recording via dedicated eye button
 - **State persistence** — Frontend syncs detection state from backend on mount (survives app restart/refresh)
+- **Feature flag** — Multi-camera mode is controlled by `INSTANT_DETECTION_MULTI_CAMERA_ENABLED` (default: `true`); setting to `false` restores legacy single-camera behavior (v3.2)
 
 ---
 
@@ -61,15 +68,31 @@ Since v3.1, detection results are **persistently stored** in the same database s
 ### High-Level System Diagram
 
 ```
-Camera Stream (USB / RTSP / Mobile / Edge)
-     │
+Camera Stream A (USB / RTSP / Mobile / Edge)  ─┐
+Camera Stream B ─────────────────────────────────┤
+Camera Stream C ─────────────────────────────────┘
+     │                                            
      ├──> [RECORDING PIPELINE] Segments → Full processing → Database → MVR
      │
-     └──> [INSTANT DETECTION]
+     └──> [INSTANT DETECTION — per-camera CameraSamplerState threads]
               │
-              ├─ Queue Worker captures 3 frames (0s, 0.5s, 1.0s)
+              │   (stagger offset applied per camera)
               │
-              ├─ Submit to Celery Task (or threaded fallback)
+              ├─ Queue Worker captures 3 frames (0s, 0.5s, 1.0s) per camera
+              │
+              ├─ Submit to Celery Task (or threaded fallback) per camera
+              │       │
+              │       │   ┌── Concurrency Semaphores ──┐
+              │       │   │  Vision:       max 2       │
+              │       │   │  VMeta:        max 3       │
+              │       │   │  Orchestrator: max 2       │
+              │       │   └────────────────────────────┘
+              │       │
+              │       │   ┌── Circuit Breakers (per service) ──┐
+              │       │   │  CLOSED → OPEN (after N failures)  │
+              │       │   │  OPEN → HALF_OPEN (after cooldown) │
+              │       │   │  HALF_OPEN → CLOSED (on success)   │
+              │       │   └────────────────────────────────────┘
               │       │
               │       ├─ Vision Service → Face detection (Haar + Dlib)
               │       ├─ Orchestrator Service → Person grouping (spatial/IoU)
@@ -122,7 +145,7 @@ Camera Stream (USB / RTSP / Mobile / Edge)
 
 | File | Purpose |
 |------|---------|
-| `src/services/instant_detection.py` | Core `InstantDetectionSampler` class (1646 lines) — sampling loop, frame capture, service API calls, processing pipeline, caching, webhook, Redis pub/sub, trigger evaluation, demographics |
+| `src/services/instant_detection.py` | Core `InstantDetectionSampler` class (~2030 lines) — `CircuitBreaker`, `CameraSamplerState` dataclass, multi-camera registry, sampling loop, frame capture, service API calls with concurrency semaphores + circuit breakers, processing pipeline, caching, webhook, Redis pub/sub, trigger evaluation, demographics |
 | `src/services/instant_detection_sampler.py` | Lightweight sampler for worker integration (137 lines) — processes frames inline within camera worker thread |
 | `src/api/v1/endpoints/instant_detection.py` | REST API endpoints (404 lines) — status, results, start, stop, webhook configuration |
 | `src/api/v1/routes.py` | Router registration — mounts at prefix `/instant-detection` |
@@ -177,38 +200,51 @@ Frontend (eye button tap)
     → CameraService.startInstantDetection(deviceId)
       → POST /api/v1/instant-detection/start/{camera_id}
         → InstantDetectionSampler.start_sampling(camera_id, ...)
+          → Creates CameraSamplerState for this camera
+          → Spawns dedicated daemon thread for this camera
+          → Calculates stagger offset based on active camera count
 ```
 
-Recording and detection are **fully independent** — you can run detection without recording, recording without detection, or both simultaneously.
+Recording and detection are **fully independent** — you can run detection without recording, recording without detection, or both simultaneously. Multiple cameras can run instant detection at the same time (v3.2).
 
 > **Note**: The `camera_detection.py` recording flow no longer auto-starts or auto-stops instant detection. The `enable_instant_detection` and `auto_stop_instant_detection` parameters are deprecated.
+>
+> **v3.2**: Starting detection for a second camera no longer stops the first. Each camera gets its own `CameraSamplerState` and thread. When `INSTANT_DETECTION_MULTI_CAMERA_ENABLED` is `false`, starting a new camera stops any other active camera (legacy behavior).
 
-### 2. Sampling Loop (Every 5 Seconds)
+### 2. Sampling Loop (Every 5 Seconds — Per Camera)
 
-The `InstantDetectionSampler._sample_loop()` runs in a daemon thread:
+Each active camera runs its own `_sample_loop(state: CameraSamplerState)` in a dedicated daemon thread:
 
-1. **Check queue worker status** — verifies the worker is still connected
-2. **Capture 3 frames** via `_capture_3_frames_from_queue()`:
+1. **Stagger delay** — On first iteration, sleep for `state.stagger_offset` seconds so cameras don't all fire simultaneously
+2. **Check queue worker status** — verifies the worker is still connected
+3. **Capture 3 frames** via `_capture_3_frames_from_queue()`:
    - Frame 0 at `t=0.0s`
    - Frame 1 at `t=0.5s`
    - Frame 2 at `t=1.0s`
-3. **Submit to Celery** via `_submit_to_celery()` — non-blocking
-4. **Sleep** for remaining interval time
-5. **Failure handling** — stops after 3 consecutive failures
+4. **Submit to Celery** via `_submit_to_celery()` — non-blocking
+5. **Sleep** for remaining interval time
+6. **Failure handling** — stops after 3 consecutive failures
+
+The stagger offset for each camera is calculated as:
+```python
+offset = (interval / active_count) * (hash(camera_id) % active_count)
+```
+With 3 cameras and a 5-second interval, cameras would fire at approximately 0s, 1.67s, and 3.33s offsets.
 
 ### 3. Processing Pipeline (Celery Worker or Threaded Fallback)
 
-The `_process_3_frames()` method orchestrates:
+The `_process_3_frames()` method orchestrates. All downstream service calls are guarded by **concurrency semaphores** (to limit parallel load) and **circuit breakers** (to fail fast when a service is degraded).
 
-**Step 1 — Face Detection (Vision Service)**
+**Step 1 — Face Detection (Vision Service)** — guarded by `_vision_semaphore` (max 2) + `_vision_circuit`
 ```
 POST {vision_url}/faces/detect-single-frame
 Content-Type: multipart/form-data (JPEG-encoded frame)
 
 Returns: List of faces with bbox, confidence, embedding, method
 ```
+If the vision circuit is OPEN, face detection is skipped and an empty list is returned.
 
-**Step 2 — Person Grouping (Orchestrator Service)**
+**Step 2 — Person Grouping (Orchestrator Service)** — guarded by `_orchestrator_semaphore` (max 2) + `_orchestrator_circuit`
 ```
 POST {orchestrator_url}/api/v1/person-objects/from-faces
 Body: {
@@ -222,9 +258,9 @@ Body: {
 Returns: person_groups with representative_faces
 ```
 
-Falls back to local `_simple_spatial_grouping()` (IoU-based) if Orchestrator is unavailable.
+Falls back to local `_simple_spatial_grouping()` (IoU-based) if Orchestrator is unavailable or circuit is OPEN.
 
-**Step 3 — Age/Gender (VMeta Service)**
+**Step 3 — Age/Gender (VMeta Service)** — guarded by `_vmeta_semaphore` (max 3) + `_vmeta_circuit`
 
 Called **once per person** on the highest-confidence face:
 ```
@@ -235,7 +271,7 @@ Timeout: 2 seconds
 Returns: { age_min, age_max, gender, gender_confidence, age_confidence }
 ```
 
-**Step 4 — Identity Resolution (VMeta Service)**
+**Step 4 — Identity Resolution (VMeta Service)** — guarded by `_vmeta_semaphore` (max 3) + `_vmeta_circuit`
 
 Called per person to match against MVR identity store:
 ```
@@ -273,12 +309,12 @@ After processing, results are distributed through multiple channels:
 
 ### 5. Persistent Storage (v3.1)
 
-After result distribution, the sampler checks whether this cycle should be persisted to the database:
+After result distribution, the sampler checks whether this cycle should be persisted to the database. Each camera maintains its own cycle counter and session state:
 
 ```python
-self._cycle_counter += 1
-if self._storage_multiple > 0 and self._cycle_counter % self._storage_multiple == 0:
-    self._maybe_persist_cycle(camera_id)
+state.cycle_counter += 1
+if state.storage_multiple > 0 and state.cycle_counter % state.storage_multiple == 0:
+    self._maybe_persist_cycle(state)
 ```
 
 **Storage flow:**
@@ -302,7 +338,7 @@ All endpoints are mounted at `/api/v1/instant-detection/` on the Cameras Service
 
 ### GET /status
 
-Get status of the instant detection system. Includes `current_camera_id` so the frontend can sync detection state on mount (after app restart or page refresh).
+Get status of the instant detection system. Returns per-camera state map, aggregate info, and circuit breaker health. The frontend uses `active_cameras` to sync detection state per camera on mount (v3.2). The legacy `current_camera_id` field is retained for backward compatibility.
 
 **Response:**
 ```json
@@ -310,11 +346,33 @@ Get status of the instant detection system. Includes `current_camera_id` so the 
   "success": true,
   "status": {
     "running": true,
-    "thread_alive": true,
     "current_camera_id": "usb_camera_0",
+    "active_cameras": {
+      "usb_camera_0": {
+        "running": true,
+        "thread_alive": true,
+        "cycle_counter": 12,
+        "session_uuid": "uuid",
+        "stagger_offset": 0.0
+      },
+      "edge-camera-1": {
+        "running": true,
+        "thread_alive": true,
+        "cycle_counter": 8,
+        "session_uuid": "uuid",
+        "stagger_offset": 2.5
+      }
+    },
+    "active_camera_count": 2,
     "cached_results": 2,
     "sampling_interval": 5,
-    "temporal_window": 1.0
+    "temporal_window": 1.0,
+    "multi_camera_enabled": true,
+    "service_circuits": {
+      "vision": "closed",
+      "vmeta": "closed",
+      "orchestrator": "closed"
+    }
   }
 }
 ```
@@ -423,7 +481,7 @@ Manually start instant detection for a camera. Verifies the camera exists in the
 
 ### POST /stop
 
-Stop instant detection sampling globally.
+Stop instant detection sampling globally. Completes tracking sessions for **all** active cameras in VMeta before stopping (v3.2).
 
 **Response:**
 ```json
@@ -435,7 +493,7 @@ Stop instant detection sampling globally.
 
 ### POST /stop/{camera_id}
 
-Stop instant detection for a **specific camera**. Only stops if the currently running camera matches the requested `camera_id`. This is the endpoint used by the frontend eye button.
+Stop instant detection for a **specific camera**. Only stops the sampling thread for the given `camera_id`; other cameras continue running (v3.2). This is the endpoint used by the frontend eye button.
 
 **Response (running for this camera):**
 ```json
@@ -519,6 +577,12 @@ services:
 |----------|---------|-------------|
 | `INSTANT_DETECTION_WEBHOOK_URL` | — | Webhook endpoint URL |
 | `INSTANT_DETECTION_WEBHOOK_ENABLED` | `false` | Enable webhook push |
+| `INSTANT_DETECTION_MULTI_CAMERA_ENABLED` | `true` | Enable parallel multi-camera detection. Set `false` to restore legacy single-camera behavior (v3.2) |
+| `INSTANT_DETECTION_VISION_CONCURRENCY` | `2` | Max concurrent Vision Service calls across all cameras (semaphore permits) (v3.2) |
+| `INSTANT_DETECTION_VMETA_CONCURRENCY` | `3` | Max concurrent VMeta Service calls (age/gender + identity) across all cameras (v3.2) |
+| `INSTANT_DETECTION_ORCHESTRATOR_CONCURRENCY` | `2` | Max concurrent Orchestrator Service calls across all cameras (v3.2) |
+| `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `3` | Number of consecutive failures before a circuit breaker trips from CLOSED → OPEN (v3.2) |
+| `CIRCUIT_BREAKER_COOLDOWN_SECONDS` | `30` | How long a tripped circuit breaker stays OPEN before transitioning to HALF_OPEN for probing (v3.2) |
 | `INSTANT_IDENTITY_SIMILARITY_THRESHOLD` | `0.70` | Face identity match threshold |
 | `INSTANT_IDENTITY_DEDUPE_SIMILARITY_THRESHOLD` | `0.55` | Deduplication similarity threshold |
 | `INSTANT_IDENTITY_MAX_RESULTS` | `1` | Max identity matches returned |
@@ -612,12 +676,12 @@ final cameraInstantDetectionProvider = StateNotifierProvider.family<
 ```
 
 **Key behaviour:**
-- **On creation**: Calls `_syncFromBackend()` — fetches `GET /status`, reads `current_camera_id`, sets `isDetecting=true` if the backend is running for **this** camera
+- **On creation**: Calls `_syncFromBackend()` — fetches `GET /status`, reads `active_cameras` map (v3.2, with fallback to legacy `current_camera_id`), sets `isDetecting=true` if the backend has this camera in the active cameras map
 - **`startDetection()`**: Calls `POST /instant-detection/start/{camera_id}`, updates state
 - **`stopDetection()`**: Calls `POST /instant-detection/stop/{camera_id}`, updates state
 - **`toggleDetection()`**: Convenience method that calls start or stop based on current state
 
-**State persistence across app restarts**: The `_syncFromBackend()` call on init means the eye button immediately reflects the real server-side state after refresh. No stale "off" state.
+**State persistence across app restarts**: The `_syncFromBackend()` call on init means the eye button immediately reflects the real server-side state after refresh. No stale "off" state. With multi-camera support (v3.2), each camera's eye button independently syncs from the `active_cameras` map.
 
 ### Results Widget — `InstantDetectionWidget`
 
@@ -930,14 +994,20 @@ When viewing instant detection data, the dashboard adapts labels: "Videos Analyz
 | Temporal window | 1.0 second (0.5s spacing) |
 | Iteration frequency | Every 5 seconds (configurable) |
 | Processing time | 0.4–2.5 seconds (depends on face count) |
-| CPU usage | ~5–10% (low priority daemon thread) |
+| CPU usage (single camera) | ~5–10% (low priority daemon thread) |
+| CPU usage (3 cameras) | ~15–25% (staggered, with semaphore limits) |
+| Max concurrent Vision calls | 2 (configurable via `INSTANT_DETECTION_VISION_CONCURRENCY`) |
+| Max concurrent VMeta calls | 3 (configurable via `INSTANT_DETECTION_VMETA_CONCURRENCY`) |
+| Max concurrent Orchestrator calls | 2 (configurable via `INSTANT_DETECTION_ORCHESTRATOR_CONCURRENCY`) |
+| Circuit breaker trip threshold | 3 consecutive failures (configurable) |
+| Circuit breaker cooldown | 30 seconds (configurable) |
 | Redis cache TTL | 300 seconds |
 | Celery task time limit | 30 seconds (hard), 25 seconds (soft) |
 | Celery max retries | 2 (with exponential backoff) |
 | VMeta timeout | 2 seconds per call |
 | Webhook timeout | 2 seconds |
 | Trigger eval timeout | 3 seconds |
-| Max consecutive failures | 3 (then auto-stop) |
+| Max consecutive failures | 3 (then auto-stop per camera) |
 
 ### Comparison with Main Recording Pipeline
 
@@ -961,12 +1031,12 @@ When viewing instant detection data, the dashboard adapts labels: "Videos Analyz
 
 ### Eye Button Shows Inactive After App Restart
 
-This should not happen in v3.0 — the `CameraInstantDetectionNotifier` calls `_syncFromBackend()` on mount, which fetches `GET /status` and reads `current_camera_id`. If the button still shows inactive:
+This should not happen in v3.0+ — the `CameraInstantDetectionNotifier` calls `_syncFromBackend()` on mount, which fetches `GET /status` and reads the `active_cameras` map (v3.2) or legacy `current_camera_id`. If the button still shows inactive:
 
 1. Check the backend is actually running detection:
    ```bash
    curl http://localhost:8005/api/v1/instant-detection/status
-   # Should show: "running": true, "current_camera_id": "your_camera_id"
+   # Should show: "running": true, "active_cameras": {"your_camera_id": {"running": true, ...}}
    ```
 2. Check the gateway is proxying the status endpoint:
    ```bash
@@ -1031,6 +1101,56 @@ The sampling loop stops automatically after 3 consecutive frame capture failures
 
 Check camera worker status, ensure a frame source is available, and tap the eye button to restart detection.
 
+### Circuit Breaker Tripped (v3.2)
+
+When a downstream service has too many consecutive failures, its circuit breaker trips to OPEN and stops sending requests. Symptoms include:
+- Missing age/gender data (VMeta circuit open)
+- No face detections (Vision circuit open)
+- All person grouping done locally instead of via Orchestrator
+
+**Diagnose:**
+```bash
+curl -s http://localhost:8005/api/v1/instant-detection/status | python -m json.tool
+# Check "service_circuits" — any circuit showing "open" is tripped
+```
+
+**Resolution:**
+1. Check the health of the affected service (Vision, VMeta, or Orchestrator).
+2. Fix the underlying issue (service down, network partition, resource exhaustion).
+3. The circuit breaker will automatically recover — after the cooldown period (default 30s), it transitions to HALF_OPEN and sends a single probe request. If the probe succeeds, it returns to CLOSED.
+4. To adjust sensitivity, tune `CIRCUIT_BREAKER_FAILURE_THRESHOLD` (higher = more tolerant) and `CIRCUIT_BREAKER_COOLDOWN_SECONDS` (lower = faster recovery probing).
+
+### Multi-Camera: Second Camera Not Starting (v3.2)
+
+If tapping the eye button on a second camera doesn't start detection while another camera is already active:
+
+1. Check `INSTANT_DETECTION_MULTI_CAMERA_ENABLED` is `true`:
+   ```bash
+   curl -s http://localhost:8005/api/v1/instant-detection/status | python -m json.tool
+   # Check "multi_camera_enabled": true
+   ```
+2. If set to `false`, the system is in legacy single-camera mode. Starting camera B will stop camera A.
+3. Check the status response to see if the second camera appears in `active_cameras`.
+
+### Multi-Camera: Downstream Services Slow or Overloaded (v3.2)
+
+If detection results are delayed or incomplete when running multiple cameras:
+
+1. **Check semaphore utilization** — Lower the concurrency limits:
+   ```bash
+   # In .env:
+   INSTANT_DETECTION_VISION_CONCURRENCY=1
+   INSTANT_DETECTION_VMETA_CONCURRENCY=2
+   INSTANT_DETECTION_ORCHESTRATOR_CONCURRENCY=1
+   ```
+2. **Check sampling interval** — Increase from 5s to 10s for multi-camera:
+   ```yaml
+   # In config/instant_detection.yml:
+   sampling:
+     interval_seconds: 10
+   ```
+3. **Check circuit breaker state** — A service may be partially degraded. If the circuit is flipping between OPEN and HALF_OPEN, the service may need scaling.
+
 ### Frontend Polling Continues After Stop
 
 Hot restart the Flutter app:
@@ -1040,9 +1160,132 @@ cd ppl-meta-frontend && flutter clean && flutter pub get && flutter run -d chrom
 
 ---
 
-## Singleton Pattern
+## Parallel Multi-Camera Detection
 
-The `InstantDetectionSampler` is managed as a singleton:
+> Added in **v3.2**. Prior to this version, instant detection was limited to a single camera at a time via a singleton pattern. Starting detection for a second camera would stop the first.
+
+### Architecture
+
+The `InstantDetectionSampler` class remains a singleton manager, but now maintains a **registry of per-camera states** instead of tracking a single active camera. Each camera gets its own `CameraSamplerState` with an independent thread, cycle counter, session UUID, and auth token.
+
+```python
+@dataclass
+class CameraSamplerState:
+    camera_id: str
+    thread: Optional[threading.Thread] = None
+    running: bool = False
+    cycle_counter: int = 0
+    storage_multiple: int = 1
+    session_duration_minutes: int = 0
+    session_started_at: Optional[datetime] = None
+    session_uuid: Optional[str] = None
+    auth_token: Optional[str] = None
+    stagger_offset: float = 0.0
+```
+
+The manager holds `self._samplers: Dict[str, CameraSamplerState]` protected by `threading.RLock()`. Starting detection for a camera creates a new entry; stopping removes it. All existing per-camera infrastructure (Redis cache keys, Pub/Sub messages, results cache) already used `camera_id` as the key, so no downstream changes are required.
+
+### Staggered Scheduling
+
+When multiple cameras are active, their sampling cycles are staggered in time to avoid simultaneous bursts:
+
+```python
+def _calculate_stagger_offset(self, camera_id: str) -> float:
+    active_count = max(1, len(self._samplers))
+    return (self.sampling_interval / active_count) * (hash(camera_id) % active_count)
+```
+
+**Example** — 3 cameras, 5-second interval:
+| Camera | Hash % 3 | Offset |
+|--------|----------|--------|
+| `usb_camera_0` | 0 | 0.00s |
+| `edge-camera-1` | 1 | 1.67s |
+| `rtsp-camera-2` | 2 | 3.33s |
+
+This ensures downstream services receive a steady stream of requests instead of periodic bursts.
+
+### Concurrency Semaphores
+
+Each downstream service has a shared `threading.Semaphore` that limits how many cameras can call it simultaneously:
+
+| Service | Semaphore | Default Max | Env Variable |
+|---------|-----------|-------------|--------------|
+| Vision Service | `_vision_semaphore` | 2 | `INSTANT_DETECTION_VISION_CONCURRENCY` |
+| VMeta Service | `_vmeta_semaphore` | 3 | `INSTANT_DETECTION_VMETA_CONCURRENCY` |
+| Orchestrator Service | `_orchestrator_semaphore` | 2 | `INSTANT_DETECTION_ORCHESTRATOR_CONCURRENCY` |
+
+When a camera's thread needs to call a service, it acquires the semaphore first. If all permits are in use, the thread blocks until one is released. This prevents service overload when many cameras are active.
+
+The VMeta semaphore has a higher default (3) because VMeta handles two types of calls (age/gender + identity) and is typically the fastest responder.
+
+### Circuit Breakers
+
+Each downstream service has a dedicated `CircuitBreaker` instance that prevents cascading failures:
+
+```
+CLOSED ──(N failures)──> OPEN ──(cooldown elapsed)──> HALF_OPEN ──(probe succeeds)──> CLOSED
+                                                            │
+                                                      (probe fails)
+                                                            │
+                                                            └──> OPEN
+```
+
+| Parameter | Default | Env Variable |
+|-----------|---------|--------------|
+| Failure threshold | 3 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD` |
+| Cooldown period | 30s | `CIRCUIT_BREAKER_COOLDOWN_SECONDS` |
+
+**Behavior per state:**
+
+| State | Behavior |
+|-------|----------|
+| **CLOSED** | All requests pass through normally. Failures are counted. |
+| **OPEN** | All requests are immediately rejected (return default/fallback). No HTTP call is made. |
+| **HALF_OPEN** | One probe request is allowed. If it succeeds → CLOSED. If it fails → OPEN again. |
+
+**Fallback behavior when circuit is OPEN:**
+
+| Service | Fallback |
+|---------|----------|
+| Vision | Skip face detection, return empty detections list |
+| VMeta (age/gender) | Return `{"age_range": "(unknown)", "gender": "unknown"}` |
+| VMeta (identity) | Return `{"matched": false, "mvr_people_uuid": null}` |
+| Orchestrator | Use local `_simple_spatial_grouping()` (IoU-based) |
+
+Circuit breaker state is visible in the `GET /status` response under `service_circuits`.
+
+### Thread Safety
+
+All shared state is protected by locks:
+
+| Resource | Lock Type | Purpose |
+|----------|-----------|---------|
+| `_samplers` dict | `threading.RLock` | Adding/removing camera states |
+| `results_cache` | `threading.Lock` via `_cache_lock` | Writing cached results |
+| `CircuitBreaker._state` | `threading.Lock` per breaker | State transitions |
+
+### Feature Flag
+
+Multi-camera detection is controlled by `INSTANT_DETECTION_MULTI_CAMERA_ENABLED` (default: `"true"`):
+
+- **`true`**: Starting detection for camera B does **not** stop camera A. Both run in parallel.
+- **`false`**: Starting detection for camera B first stops camera A (legacy single-camera behavior).
+
+This allows a gradual rollout — set to `false` to restore pre-v3.2 behavior if issues arise.
+
+### Backward Compatibility
+
+The following backward-compat properties are maintained on `InstantDetectionSampler`:
+
+| Property | Behavior |
+|----------|----------|
+| `_running` | Returns `True` if **any** camera is active |
+| `_current_camera_id` | Returns the first active camera ID (arbitrary if multiple) |
+| `current_session_uuid` | Getter/setter that maps to the first active camera's session |
+
+These ensure existing code that reads `sampler._running` or `sampler._current_camera_id` continues to work. The `GET /status` response includes both legacy `current_camera_id` and new `active_cameras`.
+
+### Module-Level Singleton and Hook Functions
 
 ```python
 # In instant_detection.py (module-level):
@@ -1076,8 +1319,10 @@ if results:
 from src.services.instant_detection import get_all_instant_results, is_instant_detection_running
 
 all_results = get_all_instant_results()
-running = is_instant_detection_running("usb_camera_0")
+running = is_instant_detection_running("usb_camera_0")  # checks _samplers dict per camera
 ```
+
+The `is_instant_detection_running(camera_id)` function now checks the per-camera `_samplers` dict for an active `CameraSamplerState` with `running=True`, rather than just checking the results cache.
 
 ---
 
