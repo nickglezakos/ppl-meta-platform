@@ -878,9 +878,20 @@ class CameraInstantDetectionNotifier
       final status = await _cameraService.getInstantDetectionStatus();
       if (status != null && mounted) {
         final isRunning = status['status']?['running'] == true;
-        final activeCameraId = status['status']?['current_camera_id'];
-        final detectingThisCamera =
-            isRunning && activeCameraId == state.cameraId;
+        // Multi-camera: check active_cameras map first, fall back to legacy field
+        final activeCameras =
+            status['status']?['active_cameras'] as Map<String, dynamic>?;
+        bool detectingThisCamera;
+        if (activeCameras != null) {
+          detectingThisCamera =
+              activeCameras.containsKey(state.cameraId) &&
+              activeCameras[state.cameraId]?['running'] == true;
+        } else {
+          // Legacy single-camera fallback
+          final activeCameraId = status['status']?['current_camera_id'];
+          detectingThisCamera =
+              isRunning && activeCameraId == state.cameraId;
+        }
         state = state.copyWith(isDetecting: detectingThisCamera);
       }
     } catch (_) {
