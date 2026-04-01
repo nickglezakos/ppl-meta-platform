@@ -86,7 +86,7 @@ white_balance_automatic=1  # Keep auto white balance
 ++++++++++++
 
 /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-vmeta.log
-
+ 
 b24ad688-26f0-4e1e-9484-4fecec18df9c (that's your "Nick" MVR person!)
 
 
