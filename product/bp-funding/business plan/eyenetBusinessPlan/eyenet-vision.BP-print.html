@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EyeNet Vision - Business Plan 2026</title>
+    <title>EyeNet Vision - Business Plan 2026 (Print Version)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
             --primary-cyan: #000000;
             --primary-teal: #1a1a1a;
             --light-cyan: #333333;
-            --dark-slate: #f5f5f5;
+            --dark-slate: #ffffff;
             --darker-slate: #ffffff;
             --medium-slate: #666666;
             --light-slate: #999999;
@@ -22,8 +22,8 @@
             --success: #2a2a2a;
             --warning: #666666;
             --danger: #404040;
-            --border-color: #dddddd;
-            --header-height: 120px;
+            --border-color: #cccccc;
+            --header-height: auto;
         }
 
         * {
@@ -34,32 +34,31 @@
 
         body {
             font-family: 'Georgia', 'Times New Roman', serif;
-            background: var(--dark-slate);
+            background: #ffffff;
             color: var(--text-primary);
-            line-height: 1.6;
+            line-height: 1.5;
             min-height: 100vh;
+            font-size: 11pt;
         }
 
-        /* Header */
+        /* Header - print-friendly inline header */
         header {
-            background: var(--darker-slate);
+            background: #ffffff;
             color: var(--text-primary);
             padding: 0;
-            box-shadow: 0 3px 12px rgba(0,0,0,0.08);
-            border-bottom: 2px solid var(--primary-cyan);
-            height: var(--header-height);
+            border-bottom: 3px solid #000000;
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            margin-left: 280px;
-            width: calc(100% - 280px);
+            margin: 0;
+            width: 100%;
         }
 
         .header-content {
             display: flex;
             align-items: center;
             gap: 1.5rem;
-            margin-left: 2.5rem;
+            margin-left: 0;
             height: 100%;
             width: 100%;
             padding: 1.5rem 2rem;
@@ -116,7 +115,6 @@
             color: var(--primary-teal);
             text-decoration: none;
             font-weight: 600;
-            transition: all 0.3s ease;
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
@@ -125,102 +123,50 @@
             margin-top: 0.5rem;
         }
 
-        header .header-link:hover {
-            color: var(--primary-cyan);
-            transform: translateX(2px);
-        }
-
         header .header-link-icon {
             width: 16px;
             height: 16px;
             display: inline-block;
         }
 
-        /* Navigation */
+        /* Navigation - hidden in print version */
         nav {
-            background: #f0f0f0;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 280px;
-            height: 100vh;
-            overflow-y: auto;
-            box-shadow: 3px 0 12px rgba(0,0,0,0.08);
-            z-index: 999;
-            border-right: 1px solid var(--border-color);
+            display: none !important;
         }
 
-        nav ul {
-            list-style: none;
-            padding: 1rem 0;
-        }
-
-        nav li {
-            margin: 0;
-        }
-
-        nav a {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 1rem 1.5rem;
-            color: #2a2a2a;
-            text-decoration: none;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            border-left: 3px solid transparent;
-            font-weight: 500;
-        }
-
-        nav a:hover {
-            background: #e8e8e8;
-            color: var(--primary-cyan);
-            border-left-color: var(--primary-cyan);
-            transform: translateX(2px);
-        }
-
-        nav a.active {
-            background: #dedede;
-            color: var(--primary-cyan);
-            border-left-color: var(--primary-cyan);
-            font-weight: 600;
-        }
-
-        .nav-icon {
-            width: 20px;
-            height: 20px;
-            flex-shrink: 0;
-        }
-
-        /* Main Content */
+        /* Main Content - no sidebar offset */
         main {
-            margin-left: 280px;
-            padding: 2rem;
-            padding-bottom: 2rem;
-            min-height: 100vh;
+            margin: 0;
+            padding: 1.5rem 2rem;
+            min-height: auto;
         }
 
+        /* All pages visible in print version */
         .page {
-            display: none;
-            animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            display: block !important;
+            animation: none !important;
+            margin-bottom: 0;
         }
 
         .page.active {
-            display: block;
+            display: block !important;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
+        /* Section divider between pages */
+        .page + .page {
+            border-top: 3px solid #000000;
+            padding-top: 2rem;
+            margin-top: 2rem;
         }
 
         .content-wrapper {
-            max-width: 1200px;
+            max-width: 100%;
             margin: 0 auto;
-            background: var(--darker-slate);
-            padding: 3rem;
-            border-radius: 10px;
-            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
-            border: 1px solid var(--border-color);
+            background: #ffffff;
+            padding: 1.5rem 0;
+            border-radius: 0;
+            box-shadow: none;
+            border: none;
         }
 
         /* Typography */
@@ -402,178 +348,150 @@
             padding: 0;
         }
 
-        /* Responsive */
-        @media (max-width: 768px) {
-            nav {
-                width: 100%;
-                height: auto;
-                position: relative;
-                top: 0;
-            }
-
-            main {
-                margin-left: 0;
-                margin-top: 0;
-            }
-
-            .content-wrapper {
-                padding: 1.5rem;
-            }
-        }
-
-        /* Print Styles */
+        /* Print TOC - always visible in this version */
         .print-toc {
-            display: none;
-        }
-
-        .print-header,
-        .print-footer {
-            display: none;
-        }
-
-        .figure-caption {
-            margin-top: 0.4rem;
-            font-size: 0.9rem;
-            color: #333333;
-            font-style: italic;
-            text-align: center;
-        }
-
-        .section-number,
-        .subsection-number {
-            color: #000000;
-            font-weight: 700;
-            margin-right: 0.35rem;
-        }
-
-        .chart-print-block {
-            break-inside: avoid;
-            page-break-inside: avoid;
-            margin-bottom: 1.2rem;
-        }
-
-        .print-chart-image {
-            width: 100%;
-            height: auto;
             display: block;
+            background: #ffffff;
+            border: 1px solid #cccccc;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
         }
 
-        .print-prep .page {
-            display: block !important;
-            animation: none !important;
+        .print-toc h1 {
+            font-size: 1.8rem;
+            margin-bottom: 0.6rem;
+            border-bottom: 2px solid #333333;
         }
 
+        .print-toc p {
+            margin-bottom: 0.8rem;
+            color: #444444;
+        }
+
+        .print-toc ol {
+            margin: 0;
+            padding-left: 1.2rem;
+        }
+
+        .print-toc li {
+            margin: 0.35rem 0;
+            color: #222222;
+        }
+
+        /* Chart sizing for print */
+        canvas[id$="Chart"] {
+            max-height: 400px;
+        }
+
+        /* Section cards (Document Structure grid items) */
+        .section-card {
+            background: #f5f5f5;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid #cccccc;
+        }
+
+        .section-card h3 {
+            margin-top: 0;
+        }
+
+        .section-card p {
+            margin-bottom: 0;
+        }
+
+        .chart-scroll-wrapper {
+            overflow: visible !important;
+            width: 100% !important;
+        }
+
+        .chart-scroll-content {
+            min-width: 0 !important;
+            width: 100% !important;
+        }
+
+        /* ===== PRINT MEDIA RULES ===== */
         @media print {
             @page {
                 size: A4;
-                margin: 14mm;
+                margin: 12mm 14mm;
             }
 
-            header, nav {
-                display: none;
+            body {
+                font-size: 10pt;
+                line-height: 1.4;
+                background: #ffffff;
+            }
+
+            header {
+                border-bottom: 2px solid #000000;
+                padding: 0.5rem 1rem;
+            }
+
+            header h1 {
+                font-size: 1.4rem;
             }
 
             .badge-nav-container,
             footer,
-            #backToTop {
+            #backToTop,
+            nav {
                 display: none !important;
-            }
-
-            body {
-                background: #ffffff;
-                counter-reset: page;
             }
 
             main {
                 margin: 0;
-                padding: 18mm 0 14mm 0;
-                min-height: auto;
+                padding: 0.5rem;
             }
 
-            .print-header,
-            .print-footer {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                position: fixed;
-                left: 0;
-                right: 0;
-                padding: 0 14mm;
-                background: #ffffff;
-                color: #111111;
-                z-index: 2000;
-                font-size: 10pt;
-            }
-
-            .print-header {
-                top: 0;
-                height: 14mm;
-                border-bottom: 1px solid #bdbdbd;
-                font-weight: 600;
-            }
-
-            .print-footer {
-                bottom: 0;
-                height: 10mm;
-                border-top: 1px solid #bdbdbd;
-            }
-
-            .print-page-number::after {
-                content: counter(page);
-            }
-
+            /* Section page breaks */
             .print-toc {
-                display: block;
                 page-break-after: always;
-                background: #ffffff;
-                border: 1px solid #d9d9d9;
-                padding: 1.2rem 1.4rem;
-            }
-
-            .print-toc h1 {
-                font-size: 1.8rem;
-                margin-bottom: 0.6rem;
-                border-bottom: 2px solid #333333;
-            }
-
-            .print-toc p {
-                margin-bottom: 0.8rem;
-                color: #444444;
-            }
-
-            .print-toc ol {
-                margin: 0;
-                padding-left: 1.2rem;
-            }
-
-            .print-toc li {
-                margin: 0.35rem 0;
-                color: #222222;
+                break-after: page;
             }
 
             .page {
                 display: block !important;
-                break-after: auto;
-                page-break-after: auto;
                 animation: none !important;
             }
 
             .page + .page {
-                break-before: page;
                 page-break-before: always;
+                break-before: page;
+                border-top: none;
+                padding-top: 0;
+                margin-top: 0;
             }
 
-            .visual-placeholder {
-                border: 2px solid var(--border-color);
-            }
-
+            /* Avoid breaking inside key elements */
             .content-wrapper {
                 box-shadow: none;
-                border: 1px solid #d9d9d9;
-                border-radius: 0;
-                padding: 1rem;
-                break-inside: auto;
+                border: none;
+                padding: 0.5rem;
                 page-break-inside: auto;
+            }
+
+            .info-box, .success-box, .warning-box, .danger-box {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            table {
+                page-break-inside: avoid;
+                break-inside: avoid;
+                font-size: 9pt;
+            }
+
+            h1, h2, h3, h4 {
+                page-break-after: avoid;
+                break-after: avoid;
+            }
+
+            /* Chart print sizing */
+            canvas[id$="Chart"] {
+                max-height: 320px !important;
+                width: 100% !important;
+                page-break-inside: avoid;
+                break-inside: avoid;
             }
 
             .chart-scroll-wrapper,
@@ -584,21 +502,39 @@
                 max-width: 100% !important;
             }
 
-            canvas[id$="Chart"] {
-                width: 100% !important;
-                min-width: 0 !important;
-                max-width: 100% !important;
-                height: auto !important;
-                max-height: none !important;
+            /* Avoid orphaned content */
+            p {
+                orphans: 3;
+                widows: 3;
             }
 
-            .chart-print-block,
-            table,
-            .info-box,
-            .success-box,
-            .warning-box {
-                break-inside: avoid;
+            /* No background colors in print */
+            .badge {
+                border: 1px solid #999;
+                background: transparent !important;
+                color: #000 !important;
+                box-shadow: none;
+            }
+
+            /* Section cards in print */
+            .section-card {
+                background: #f9f9f9 !important;
+                border: 1px solid #999 !important;
                 page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            /* Grids as single column in print */
+            [style*="display: grid"] {
+                display: block !important;
+            }
+
+            [style*="display: grid"] > * {
+                margin-bottom: 1rem;
+            }
+
+            a[href]:after {
+                content: none;
             }
         }
 
@@ -640,9 +576,9 @@
             color: #ffffff;
         }
 
-        /* Badge Navigation for Mobile */
+        /* Badge Navigation - hidden in print version */
         .badge-nav-container {
-            display: none;
+            display: none !important;
             background: #f0f0f0;
             padding: 0.75rem;
             border-bottom: 1px solid var(--border-color);
@@ -723,373 +659,21 @@
             border-radius: 4px;
         }
 
-        /* Back to Top Button */
+        /* Back to Top Button - hidden in print version */
         #backToTop {
             display: none !important;
-            position: fixed;
-            bottom: 2rem;
-            right: 2rem;
-            background: #333333;
-            color: #ffffff;
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 1.5rem;
-            cursor: pointer;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            transition: all 0.3s ease;
-            align-items: center;
-            justify-content: center;
         }
+        /* Responsive - simplified for print version (no mobile nav needed) */
 
-        #backToTop:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 16px rgba(0,0,0,0.3);
-        }
-
-        #backToTop.show {
-            display: flex !important;
-        }
-
-        /* Hide back-to-top on large screens */
-        @media (min-width: 769px) {
-            #backToTop {
-                display: none !important;
-            }
-
-            #backToTop.show {
-                display: none !important;
-            }
-
-            .badge-nav-container {
-                display: none !important;
-            }
-
-            nav {
-                display: block !important;
-            }
-        }
-        @media (max-width: 768px) {
-            :root {
-                --header-height: auto;
-            }
-
-            header {
-                height: auto;
-                width: 100%;
-                margin-left: 0;
-                flex-direction: row;
-                justify-content: flex-start;
-                padding: 0.75rem 1rem;
-            }
-
-            .header-content {
-                flex-direction: row;
-                align-items: center;
-                gap: 1rem;
-                margin-left: 0;
-                padding: 0;
-                width: 100%;
-                flex-wrap: wrap;
-            }
-
-            .header-content > div {
-                gap: 0.2rem;
-                flex: 1;
-                min-width: 200px;
-            }
-
-            .logo-container {
-                flex-shrink: 0;
-            }
-
-            .logo-svg {
-                height: 40px;
-            }
-
-            header h1 {
-                font-size: 1.2rem;
-            }
-
-            header p {
-                font-size: 0.75rem;
-            }
-
-            /* Badge Navigation on Mobile */
-            .badge-nav-container {
-                display: block;
-            }
-
-            /* Hide traditional Navigation on Mobile */
-            nav {
-                display: none;
-            }
-
-
-
-            /* Main Content */
-            main {
-                margin-left: 0;
-                padding: 0.75rem;
-                margin-bottom: 0;
-                padding-top: 1.5rem;
-                padding-bottom: 100px;
-            }
-
-            .content-wrapper {
-                padding: 1.5rem;
-                max-width: 100%;
-            }
-
-            /* Typography */
-            h1 {
-                font-size: 1.8rem;
-            }
-
-            h2 {
-                font-size: 1.4rem;
-            }
-
-            h3 {
-                font-size: 1.1rem;
-            }
-
-            h4 {
-                font-size: 1rem;
-            }
-
-            /* Tables */
-            table {
-                font-size: 0.85rem;
-                display: block;
-                overflow-x: auto;
-            }
-
-            th, td {
-                padding: 0.75rem;
-            }
-
-            /* Info/Success/Warning/Danger Boxes */
-            .info-box,
-            .success-box,
-            .warning-box,
-            .danger-box {
-                padding: 1rem;
-            }
-
-            .info-box h3,
-            .success-box h3,
-            .warning-box h3,
-            .danger-box h3 {
-                font-size: 1rem;
-            }
-
-            /* Grid Layout */
-            [style*="display: grid"] {
-                grid-template-columns: 1fr !important;
-            }
-
-            /* Back to Top Button - Mobile */
-            #backToTop {
-                bottom: 100px;
-                right: 1rem;
-                width: 45px;
-                height: 45px;
-                font-size: 1.3rem;
-            }
-        }
-
-        @media (max-width: 480px) {
-            :root {
-                --header-height: auto;
-            }
-
-            header {
-                height: auto;
-                width: 100%;
-                margin-left: 0;
-                flex-direction: column;
-                align-items: flex-start;
-                padding: 0.75rem;
-                gap: 0.75rem;
-            }
-
-            .header-content {
-                flex-direction: column;
-                gap: 0.5rem;
-                margin-left: 0;
-                padding: 0;
-                width: 100%;
-            }
-
-            .logo-container {
-                width: 100%;
-                justify-content: flex-start;
-            }
-
-            .logo-svg {
-                height: 30px;
-            }
-
-            header h1 {
-                font-size: 1rem;
-            }
-
-            header p {
-                font-size: 0.7rem;
-            }
-
-            header span {
-                font-size: 0.6rem !important;
-            }
-
-            main {
-                margin-bottom: 0;
-                padding: 0.75rem;
-                padding-top: 1.5rem;
-                padding-bottom: 100px;
-            }
-
-            .content-wrapper {
-                padding: 1rem;
-            }
-
-            nav a {
-                padding: 0.5rem 0.75rem;
-                font-size: 0.65rem;
-            }
-
-            /* Back to Top Button - Very Small Screens */
-            #backToTop {
-                bottom: 90px;
-                right: 0.75rem;
-                width: 40px;
-                height: 40px;
-                font-size: 1.1rem;
-            }
-        }
-
-        /* Mobile chart readability */
-        .chart-scroll-wrapper {
-            width: 100%;
-        }
-
-        @media (max-width: 768px) {
-            .chart-scroll-wrapper {
-                overflow-x: auto;
-                overflow-y: hidden;
-                -webkit-overflow-scrolling: touch;
-                padding-bottom: 0.25rem;
-                width: 100%;
-            }
-
-            .chart-scroll-wrapper .chart-scroll-content {
-                min-width: 680px;
-                width: 680px;
-            }
-
-            .chart-scroll-wrapper canvas[id$="Chart"] {
-                display: block;
-                width: 100% !important;
-                max-width: none !important;
-                height: auto !important;
-            }
-        }
-
-        /* Footer Navigation */
+        /* Footer Navigation - hidden in print version */
         footer {
-            background: #f0f0f0;
-            border-top: 1px solid var(--border-color);
-            padding: 1rem 2rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 1rem;
-            margin-left: 280px;
+            display: none !important;
         }
 
-        .footer-arrow {
-            background: #333333;
-            border: none;
-            color: #ffffff;
-            width: 40px;
-            height: 40px;
-            border-radius: 8px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.2rem;
-            transition: all 0.3s ease;
-            flex-shrink: 0;
-        }
 
-        .footer-arrow:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-
-        .footer-arrow:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
-        .footer-page-title {
-            flex: 1;
-            text-align: center;
-            font-size: 1rem;
-            font-weight: 600;
-            color: var(--primary-cyan);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        @media (max-width: 768px) {
-            footer {
-                left: 0;
-                right: 0;
-                position: fixed;
-                bottom: 0;
-                z-index: 100;
-                margin-left: 0;
-            }
-
-            .footer-page-title {
-                font-size: 0.9rem;
-            }
-        }
-
-        @media (max-width: 480px) {
-            footer {
-                padding: 0.75rem;
-                gap: 0.5rem;
-            }
-
-            .footer-arrow {
-                width: 35px;
-                height: 35px;
-                font-size: 1rem;
-            }
-
-            .footer-page-title {
-                font-size: 0.8rem;
-            }
-        }
     </style>
 </head>
 <body>
-    <div class="print-header" aria-hidden="true">
-        <span id="printHeaderTitle">EyeNet Vision - Business Plan 2026</span>
-        <span id="printHeaderSection">Full Document</span>
-    </div>
-
-    <div class="print-footer" aria-hidden="true">
-        <span>Confidential - EyeNet Vision</span>
-        <span class="print-page-number">Page </span>
-    </div>
-
     <header>
         <div class="header-content">
             <div class="logo-container">
@@ -1255,37 +839,37 @@
                 <p>This business plan is organized into the following sections:</p>
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); backdrop-filter: blur(10px);">
+                    <div class="section-card">
                         <h3>Customer Personas</h3>
                         <p>Detailed profiles of target customers including warehouse managers, educational institutes, industrial facilities, retail owners, and security services.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); backdrop-filter: blur(10px);">
+                    <div class="section-card">
                         <h3>Competitive Analysis</h3>
                         <p>Comprehensive analysis of EyeNet Vision's commercial product offerings, competitive positioning, and market opportunities.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); backdrop-filter: blur(10px);">
+                    <div class="section-card">
                         <h3>Platform Functionalities</h3>
                         <p>Core capabilities including computer vision, intelligent triggers, automated actions, and event-driven automation.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); backdrop-filter: blur(10px);">
+                    <div class="section-card">
                         <h3>Make Business Better</h3>
                         <p>Real stories from real businesses showing how EyeNet Vision improves operations across different industries.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); backdrop-filter: blur(10px);">
+                    <div class="section-card">
                         <h3>Financial Model</h3>
                         <p>Dual-model revenue strategy with 3-year projections showing growth from $1M to $26M ARR.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); backdrop-filter: blur(10px);">
+                    <div class="section-card">
                         <h3>Investor Strategy</h3>
                         <p>Investment rounds overview, valuation timeline, and clear exit paths (IPO or strategic acquisition).</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(34, 211, 238, 0.2); backdrop-filter: blur(10px);">
+                    <div class="section-card">
                         <h3>Product Roadmap</h3>
                         <p>Development status and launch timeline for all six product applications across deployment modes.</p>
                     </div>
                 </div>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem auto; max-width: 550px; border: 1px solid #dddddd;">
                     <canvas id="marketOpportunityChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -1314,8 +898,8 @@
                     </ul>
                 </div>
 
-                <h2>Navigation</h2>
-                <p>Use the sidebar navigation to explore each section of the business plan. Each section includes detailed analysis and placeholder areas for charts and visualizations that will be added after review.</p>
+                <h2>How to Use This Document</h2>
+                <p>All sections are displayed in sequence below. To generate a PDF, use your browser's Print function (Ctrl+P / Cmd+P) and select "Save as PDF". Each section will start on a new page.</p>
             </div>
         </div>
 
@@ -1353,7 +937,7 @@
 
                 <h2>Financial Projections (2026-2028)</h2>
                 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0;">
                     <canvas id="revenueChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -1420,11 +1004,11 @@
 
                 <h2>Revenue Mix by Source</h2>
                 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin: 2rem 0;">
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem; margin: 2rem 0; max-width: 900px;">
+                    <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; border: 1px solid #dddddd; max-width: 420px; margin: 0 auto;">
                         <canvas id="revenueMixChart"></canvas>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px;">
+                    <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; border: 1px solid #dddddd; max-width: 420px; margin: 0 auto;">
                         <canvas id="customerGrowthChart"></canvas>
                     </div>
                 </div>
@@ -1544,7 +1128,7 @@
                     </tbody>
                 </table>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0;">
                     <canvas id="investorReturnsChart" style="max-height: 400px;"></canvas>
                 </div>
 
@@ -1582,7 +1166,7 @@
 
                 <h2>Unit Economics</h2>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0;">
                     <canvas id="unitEconomicsChart" style="max-height: 350px;"></canvas>
                 </div>
 
@@ -1639,7 +1223,7 @@
 
                 <h2>Use of Funds (Series A: $2-3M)</h2>
 
-                <div style="background: rgba(34, 211, 238, 0.1); padding: 2rem; border-radius: 10px; margin: 2rem 0;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem auto; max-width: 550px; border: 1px solid #dddddd;">
                     <canvas id="useOfFundsChart" style="max-height: 350px;"></canvas>
                 </div>
 
@@ -1802,7 +1386,7 @@
                     <p><em>This modest hardware requirement means most businesses can deploy Eyenet-vision without specialized server infrastructure.</em></p>
                 </div>
 
-                <div style="max-width: 700px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
+                <div style="max-width: 550px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Customer Persona Distribution Chart</h3>
                     <canvas id="personaDistributionChart"></canvas>
                 </div>
@@ -2380,7 +1964,7 @@
                     <li>Automated reporting and compliance documentation</li>
                 </ul>
 
-                <div style="max-width: 700px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
+                <div style="max-width: 550px; margin: 3rem auto; padding: 2rem; background: #f5f5f5; border-radius: 12px; border: 1px solid #dddddd;">
                     <h3 style="text-align: center; margin-bottom: 2rem;">Stakeholder Value Map</h3>
                     <canvas id="stakeholderValueChart"></canvas>
                 </div>
@@ -2816,7 +2400,7 @@
 
                 <h2>Competitive Comparison Framework</h2>
 
-                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem auto; max-width: 600px; border: 1px solid #dddddd;">
                     <canvas id="featureComparisonChart" style="max-height: 500px;"></canvas>
                 </div>
 
@@ -3010,7 +2594,7 @@
                     <li>Commercial support, compliance documentation, and industry certifications provide guarantees</li>
                 </ul>
 
-                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem auto; max-width: 600px; border: 1px solid #dddddd;">
                     <canvas id="competitiveMoatChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -3521,7 +3105,7 @@
                 <div class="info-box">
                     <h3>Launch Timeline</h3>
                     
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem; border-left: 4px solid var(--accent-color);">
+                    <div style="background: #f5f5f5; padding: 1.5rem; border-radius: 12px; margin-top: 1rem; border-left: 4px solid var(--accent-color);">
                         <h4>Phase 1: Q2 2026 (5 Products Launch)</h4>
                         <ul style="margin-top: 1rem;">
                             <li>Intelligent Signage (Fixed + Mobile)</li>
@@ -3532,7 +3116,7 @@
                         </ul>
                     </div>
 
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px; margin-top: 1rem; border-left: 4px solid var(--accent-color);">
+                    <div style="background: #f5f5f5; padding: 1.5rem; border-radius: 12px; margin-top: 1rem; border-left: 4px solid var(--accent-color);">
                         <h4>Phase 2: Q3/Q4 2026 (Security Officer Agent)</h4>
                         <ul style="margin-top: 1rem;">
                             <li>Smart glasses prototype completion</li>
@@ -3790,7 +3374,7 @@
 
                 <h2>Real Stories from Real Businesses</h2>
 
-                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(34, 211, 238, 0.05) 100%);">
+                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, #f0fdf4 0%, #f9f9f9 100%);">
                     <h3>Warehouse Manager - Drive 60% Reduction in Security Incidents</h3>
                     <p><strong>Challenge:</strong> Spent hours every week on attendance tracking, writing reports about security incidents, and worrying about loading dock safety.</p>
                     <p><strong>Solution with EyeNet Vision:</strong></p>
@@ -3803,7 +3387,7 @@
                     <p><strong>Results:</strong> 15 hours/week saved on attendance | 60% reduction in security incidents | 4-month payback period</p>
                 </div>
 
-                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(34, 211, 238, 0.05) 100%);">
+                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, #eff6ff 0%, #f9f9f9 100%);">
                     <h3>School Principal - Improve Safety & Reduce Paperwork</h3>
                     <p><strong>Challenge:</strong> Worried about student safety, spent too much time on attendance reports, never knew for sure if unauthorized visitors entered the building.</p>
                     <p><strong>Solution with EyeNet Vision:</strong></p>
@@ -3816,7 +3400,7 @@
                     <p><strong>Results:</strong> 2,500+ teacher hours saved per year | 95% parent safety satisfaction | 1-semester payback</p>
                 </div>
 
-                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(34, 211, 238, 0.05) 100%);">
+                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, #fef2f2 0%, #f9f9f9 100%);">
                     <h3>Retail Store Owner - Increase Sales by 22%</h3>
                     <p><strong>Challenge:</strong> Struggled to understand customers. Which displays work? Do people actually see new products? Why are some days busy and others dead?</p>
                     <p><strong>Solution with EyeNet Vision:</strong></p>
@@ -3829,7 +3413,7 @@
                     <p><strong>Results:</strong> 22% sales increase | 30% reduction in overstaffing costs | 6-month payback | Data-driven decisions</p>
                 </div>
 
-                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0%, rgba(34, 211, 238, 0.05) 100%);">
+                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, #fffbeb 0%, #f9f9f9 100%);">
                     <h3>Marketing Manager - Boost Ad Effectiveness by 25%</h3>
                     <p><strong>Challenge:</strong> Spent thousands on digital screens but had no idea if anyone looked. Same ads played to teenagers and seniors.</p>
                     <p><strong>Solution with EyeNet Vision:</strong></p>
@@ -3842,7 +3426,7 @@
                     <p><strong>Results:</strong> 25% increase in sales from screens | Relevant ad delivery | Easy budget justification</p>
                 </div>
 
-                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(34, 211, 238, 0.05) 100%);">
+                <div class="info-box" style="margin-bottom: 2rem; background: linear-gradient(135deg, #f5f3ff 0%, #f9f9f9 100%);">
                     <h3>Security Firm Owner - Cover Twice as Many Locations</h3>
                     <p><strong>Challenge:</strong> Managed 15 buildings but couldn't be everywhere. Couldn't prove guards did their rounds. Slow response times to incidents.</p>
                     <p><strong>Solution with EyeNet Vision:</strong></p>
@@ -3889,24 +3473,24 @@
                     <li><strong>Integrate</strong> with your existing systems</li>
                 </ul>
 
-                <h2>What Makes EyeNet Vision Different?</h2>
+                <h2 style="margin-bottom: 0.5rem;">What Makes EyeNet Vision Different?</h2>
 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px;">
-                        <h4>Your Data Stays Yours</h4>
-                        <p>Videos and information never leave your building. Everything stays on your own computer—no surprise cloud charges.</p>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin: 0.5rem 0 1rem 0;">
+                    <div style="background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 8px;">
+                        <h4 style="margin: 0 0 0.25rem 0;">Your Data Stays Yours</h4>
+                        <p style="margin: 0; font-size: 0.9em; line-height: 1.4;">Videos and information never leave your building. Everything stays on your own computer—no surprise cloud charges.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px;">
-                        <h4>Works Without Internet</h4>
-                        <p>Lost your internet connection? No problem. Keeps working. You only need internet for phone alerts or emails.</p>
+                    <div style="background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 8px;">
+                        <h4 style="margin: 0 0 0.25rem 0;">Works Without Internet</h4>
+                        <p style="margin: 0; font-size: 0.9em; line-height: 1.4;">Lost your internet connection? No problem. Keeps working. You only need internet for phone alerts or emails.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px;">
-                        <h4>Affordable to Start</h4>
-                        <p>Start with one or two cameras on a regular business computer ($500-1000). No expensive servers needed.</p>
+                    <div style="background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 8px;">
+                        <h4 style="margin: 0 0 0.25rem 0;">Affordable to Start</h4>
+                        <p style="margin: 0; font-size: 0.9em; line-height: 1.4;">Start with one or two cameras on a regular business computer ($500-1000). No expensive servers needed.</p>
                     </div>
-                    <div style="background: rgba(34, 211, 238, 0.1); padding: 1.5rem; border-radius: 12px;">
-                        <h4>Grows With You</h4>
-                        <p>Start small and add cameras as needed. Same software works for 2 cameras or 200 cameras.</p>
+                    <div style="background: #f5f5f5; padding: 0.75rem 1rem; border-radius: 8px;">
+                        <h4 style="margin: 0 0 0.25rem 0;">Grows With You</h4>
+                        <p style="margin: 0; font-size: 0.9em; line-height: 1.4;">Start small and add cameras as needed. Same software works for 2 cameras or 200 cameras.</p>
                     </div>
                 </div>
             </div>
@@ -3946,7 +3530,7 @@
                             <td>$3.59M</td>
                             <td>$11.65M</td>
                         </tr>
-                        <tr style="background: rgba(34, 211, 238, 0.15);">
+                        <tr style="background: #eeeeee;">
                             <td><strong>Total Revenue</strong></td>
                             <td><strong>$1.04M</strong></td>
                             <td><strong>$8.09M</strong></td>
@@ -4117,7 +3701,7 @@
 
                 <h2>Revenue Mix by Product (2028 Projection)</h2>
                 
-                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem auto; max-width: 550px; border: 1px solid #dddddd;">
                     <canvas id="productRevenueChart" style="max-height: 450px;"></canvas>
                 </div>
 
@@ -4155,7 +3739,7 @@
                             <td>$2.8M + $4.2M</td>
                             <td>27%</td>
                         </tr>
-                        <tr style="background: rgba(34, 211, 238, 0.15);">
+                        <tr style="background: #eeeeee;">
                             <td><strong>Total Revenue</strong></td>
                             <td><strong>$26.15M</strong></td>
                             <td><strong>100%</strong></td>
@@ -4382,7 +3966,7 @@
                             <td>3.5 FTE ($350K)</td>
                             <td>7 FTE ($655K)</td>
                         </tr>
-                        <tr style="background: rgba(34, 211, 238, 0.15);">
+                        <tr style="background: #eeeeee;">
                             <td><strong>Total Personnel</strong></td>
                             <td><strong>14 FTE ($1.46M)</strong></td>
                             <td><strong>32 FTE ($3.07M)</strong></td>
@@ -4476,7 +4060,7 @@
                             <td>$30K</td>
                             <td>$70K</td>
                         </tr>
-                        <tr style="background: rgba(34, 211, 238, 0.15);">
+                        <tr style="background: #eeeeee;">
                             <td><strong>Total Marketing</strong></td>
                             <td><strong>$180K</strong></td>
                             <td><strong>$350K</strong></td>
@@ -4532,7 +4116,7 @@
                             <td>$35K</td>
                             <td>$55K</td>
                         </tr>
-                        <tr style="background: rgba(34, 211, 238, 0.15);">
+                        <tr style="background: #eeeeee;">
                             <td><strong>Total Tech/Infrastructure</strong></td>
                             <td><strong>$121K</strong></td>
                             <td><strong>$220K</strong></td>
@@ -4609,7 +4193,7 @@
                             <td>$422K</td>
                             <td>4%</td>
                         </tr>
-                        <tr style="background: rgba(34, 211, 238, 0.15);">
+                        <tr style="background: #eeeeee;">
                             <td><strong>Total OpEx</strong></td>
                             <td><strong>$2,156K</strong></td>
                             <td><strong>$4,475K</strong></td>
@@ -4765,7 +4349,7 @@
                             <td>25.0%</td>
                             <td>$1M invested at $3M pre-money</td>
                         </tr>
-                        <tr style="background: rgba(34, 211, 238, 0.15);">
+                        <tr style="background: #eeeeee;">
                             <td><strong>Total</strong></td>
                             <td><strong>100.0%</strong></td>
                             <td><strong>100.0%</strong></td>
@@ -5475,190 +5059,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script>
-        let isPreparingPrint = false;
-        const printChartState = new Map();
-
-        function assignSectionAndFigureNumbers() {
-            const pagesList = document.querySelectorAll('.page');
-            let sectionIndex = 1;
-            let figureIndex = 1;
-
-            pagesList.forEach((page) => {
-                const wrapper = page.querySelector('.content-wrapper');
-                if (!wrapper) return;
-
-                const h1 = wrapper.querySelector('h1');
-                if (h1) {
-                    if (!h1.dataset.numbered) {
-                        const numberSpan = document.createElement('span');
-                        numberSpan.className = 'section-number';
-                        numberSpan.textContent = sectionIndex + '.';
-                        h1.prepend(numberSpan);
-                        h1.dataset.numbered = 'true';
-                    }
-                    page.dataset.sectionNumber = String(sectionIndex);
-                    sectionIndex += 1;
-                }
-
-                const h2List = wrapper.querySelectorAll('h2');
-                h2List.forEach((h2, idx) => {
-                    if (h2.dataset.numbered) return;
-                    const subsectionNumber = (page.dataset.sectionNumber || '0') + '.' + (idx + 1);
-                    const subSpan = document.createElement('span');
-                    subSpan.className = 'subsection-number';
-                    subSpan.textContent = subsectionNumber;
-                    h2.prepend(subSpan);
-                    h2.dataset.numbered = 'true';
-                });
-            });
-
-            const chartCanvases = document.querySelectorAll('canvas[id$="Chart"]');
-            chartCanvases.forEach((canvas) => {
-                const page = canvas.closest('.page');
-                const sectionNumber = (page && page.dataset.sectionNumber) ? page.dataset.sectionNumber : '?';
-                const figureNumber = 'Figure ' + sectionNumber + '.' + figureIndex;
-                const chartIdName = canvas.id || 'chart';
-                const chartTitle = chartIdName
-                    .replace(/Chart$/, '')
-                    .replace(/([A-Z])/g, ' $1')
-                    .replace(/^./, (c) => c.toUpperCase())
-                    .trim();
-
-                const container = canvas.parentElement;
-                if (!container) return;
-                container.classList.add('chart-print-block');
-
-                let caption = container.querySelector('.figure-caption[data-figure-for="' + chartIdName + '"]');
-                if (!caption) {
-                    caption = document.createElement('div');
-                    caption.className = 'figure-caption';
-                    caption.dataset.figureFor = chartIdName;
-                    container.appendChild(caption);
-                }
-                caption.textContent = figureNumber + ' - ' + chartTitle;
-
-                figureIndex += 1;
-            });
-        }
-
-        function initializeAllChartsForPrint() {
-            const initFunctions = [
-                initializeMarketOpportunityChart,
-                initializeCharts,
-                initializePersonaChart,
-                initializeWarehouseEfficiencyChart,
-                initializeAttendanceTrackingChart,
-                initializeSafetyComplianceChart,
-                initializeCustomerAnalyticsChart,
-                initializeDigitalSignageChart,
-                initializeSecurityResponseChart,
-                initializeROITimelineChart,
-                initializePlatformArchitectureChart,
-                initializeStakeholderValueChart,
-                initializeIntelligentSignageROIChart,
-                initializeDeploymentModesChart,
-                initializeTechnicalArchitectureChart,
-                initializeMarketSegmentationChart,
-                initializeFeatureComparisonChart,
-                initializeMarketGrowthTrendsChart,
-                initializeCompetitiveMoatChart,
-                initializeDifferentiationStrategyChart,
-                initializeRevenueGrowthChart,
-                initializeProductRevenueChart,
-                initializeGeographicRevenueChart,
-                initializeScenarioComparisonChart,
-                initializeOpexBreakdownChart,
-                initializeInvestmentRoundsChart,
-                initializeReturnMultiplesChart,
-                initializeExitValuationChart,
-                initializeComparableCompaniesChart
-            ];
-
-            initFunctions.forEach((fn) => {
-                if (typeof fn === 'function') {
-                    try {
-                        fn();
-                    } catch (e) {
-                        console.warn('Chart initialization failed during print prep:', fn.name, e);
-                    }
-                }
-            });
-
-            assignSectionAndFigureNumbers();
-            enableMobileChartScrolling();
-        }
-
-        function setPrintHeaderSection() {
-            const activePage = document.querySelector('.page.active');
-            const sectionName = activePage ? (activePage.querySelector('h1') || {}).textContent : '';
-            const sectionEl = document.getElementById('printHeaderSection');
-            if (sectionEl) {
-                sectionEl.textContent = (sectionName || 'Full Document').trim();
-            }
-        }
-
-        function waitFrame() {
-            return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-        }
-
-        async function buildPrintChartImagesInBatches(batchSize) {
-            const chartCanvases = Array.from(document.querySelectorAll('canvas[id$="Chart"]'));
-            for (let i = 0; i < chartCanvases.length; i += batchSize) {
-                const chunk = chartCanvases.slice(i, i + batchSize);
-                chunk.forEach((canvas) => {
-                    if (printChartState.has(canvas)) return;
-
-                    const chart = Chart.getChart(canvas);
-                    if (chart) {
-                        chart.resize();
-                        chart.update('none');
-                    }
-
-                    const imageSrc = canvas.toDataURL('image/png', 1.0);
-                    const image = document.createElement('img');
-                    image.className = 'print-chart-image';
-                    image.alt = (canvas.id || 'chart') + ' printable image';
-                    image.src = imageSrc;
-
-                    canvas.style.display = 'none';
-                    canvas.insertAdjacentElement('afterend', image);
-                    printChartState.set(canvas, image);
-                });
-
-                await waitFrame();
-            }
-        }
-
-        async function prepareForPrint() {
-            if (isPreparingPrint) return;
-            isPreparingPrint = true;
-
-            document.body.classList.add('print-prep');
-            setPrintHeaderSection();
-            initializeAllChartsForPrint();
-            await waitFrame();
-            await waitFrame();
-            await buildPrintChartImagesInBatches(3);
-            isPreparingPrint = false;
-        }
-
-        function restoreAfterPrint() {
-            printChartState.forEach((image, canvas) => {
-                if (image && image.parentElement) {
-                    image.remove();
-                }
-                canvas.style.display = '';
-                const chart = Chart.getChart(canvas);
-                if (chart) {
-                    chart.resize();
-                    chart.update('none');
-                }
-            });
-            printChartState.clear();
-            document.body.classList.remove('print-prep');
-            setPrintHeaderSection();
-        }
-
         function showPage(pageId) {
             // Hide all pages
             document.querySelectorAll('.page').forEach(page => {
@@ -5750,12 +5150,10 @@
 
             // Re-apply mobile chart sizing after section changes and chart initialization.
             setTimeout(enableMobileChartScrolling, 180);
-            setTimeout(assignSectionAndFigureNumbers, 200);
         }
 
         // Print functionality
-        async function printDocument() {
-            await prepareForPrint();
+        function printDocument() {
             window.print();
         }
 
@@ -5830,9 +5228,77 @@
             if (window.marketOpportunityChartInstance) {
                 window.marketOpportunityChartInstance.destroy();
             }
+            
+            // Keep chart canvas transparent
+            canvas.style.backgroundColor = 'transparent';
 
+            const marketOpportunityCallouts = {
+                id: 'marketOpportunityCallouts',
+                afterDatasetsDraw(chart) {
+                    const dataset = chart.data.datasets[0];
+                    const meta = chart.getDatasetMeta(0);
+                    if (!dataset || !meta || !meta.data || !meta.data.length) return;
+
+                    const total = dataset.data.reduce((sum, val) => sum + Number(val || 0), 0);
+                    const ctx = chart.ctx;
+                    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+                    const lineLength = isMobile ? 14 : 18;
+                    const elbowLength = isMobile ? 16 : 30;
+                    const titleFontSize = isMobile ? 9 : 13;
+                    const valueFontSize = isMobile ? 8 : 12;
+
+                    ctx.save();
+
+                    meta.data.forEach((arc, index) => {
+                        const value = Number(dataset.data[index] || 0);
+                        if (!value) return;
+
+                        const { x, y, startAngle, endAngle, outerRadius } = arc.getProps([
+                            'x',
+                            'y',
+                            'startAngle',
+                            'endAngle',
+                            'outerRadius'
+                        ], true);
+
+                        const angle = (startAngle + endAngle) / 2;
+                        const x1 = x + Math.cos(angle) * outerRadius;
+                        const y1 = y + Math.sin(angle) * outerRadius;
+                        const x2 = x + Math.cos(angle) * (outerRadius + lineLength);
+                        const y2 = y + Math.sin(angle) * (outerRadius + lineLength);
+                        const rightSide = Math.cos(angle) >= 0;
+                        const x3 = x2 + (rightSide ? elbowLength : -elbowLength);
+                        const percentage = ((value / total) * 100).toFixed(1);
+
+                        ctx.strokeStyle = '#333333';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+                        ctx.lineTo(x3, y2);
+                        ctx.stroke();
+
+                        ctx.textAlign = rightSide ? 'left' : 'right';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillStyle = '#000000';
+
+                        const textX = x3 + (rightSide ? 4 : -4);
+                        const label = chart.data.labels[index] || '';
+
+                        ctx.font = `600 ${titleFontSize}px Georgia`;
+                        ctx.fillText(label, textX, y2 - (isMobile ? 5 : 7));
+
+                        ctx.font = `400 ${valueFontSize}px Georgia`;
+                        ctx.fillText(`${percentage}% | $${value}M`, textX, y2 + (isMobile ? 6 : 7));
+                    });
+
+                    ctx.restore();
+                }
+            };
+            
             window.marketOpportunityChartInstance = new Chart(ctx, {
                 type: 'doughnut',
+                plugins: [marketOpportunityCallouts],
                 data: {
                     labels: [
                         'Retail & E-Commerce',
@@ -5862,33 +5328,29 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: true,
-                    radius: '72%',
+                    radius: window.matchMedia('(max-width: 768px)').matches ? '90%' : '72%',
                     layout: {
-                        padding: { left: 80, right: 80, top: 30, bottom: 30 }
+                        padding: window.matchMedia('(max-width: 768px)').matches
+                            ? { left: 70, right: 70, top: 20, bottom: 20 }
+                            : { left: 150, right: 150, top: 50, bottom: 50 }
                     },
                     plugins: {
                         title: {
                             display: true,
                             text: 'Total Addressable Market by Vertical ($3.25B)',
                             font: {
-                                size: 16,
+                                size: 18,
                                 weight: 'bold'
                             },
                             color: '#000000',
-                            padding: {
-                                bottom: 16
-                            }
+                            padding: 20
                         },
                         legend: {
-                            display: true,
-                            position: 'bottom',
+                            display: false,
                             labels: {
-                                color: '#111111',
-                                font: {
-                                    size: 12
-                                },
-                                padding: 12,
-                                usePointStyle: true
+                                generateLabels: function() {
+                                    return [];
+                                }
                             }
                         },
                         tooltip: {
@@ -5900,8 +5362,14 @@
                             padding: 12,
                             callbacks: {
                                 label: function(context) {
-                                    const percentage = ((context.raw / 3250) * 100).toFixed(1);
-                                    return context.label + ': $' + context.raw + 'M (' + percentage + '%)';
+                                    const label = context.label || '';
+                                    const value = context.raw;
+                                    const percentage = ((value / 3250) * 100).toFixed(1);
+                                    return [
+                                        label,
+                                        'Market Size: $' + value + 'M',
+                                        'Share: ' + percentage + '%'
+                                    ];
                                 }
                             }
                         }
@@ -5941,16 +5409,12 @@
                     },
                     options: {
                         responsive: true,
-                        maintainAspectRatio: false,
+                        maintainAspectRatio: true,
                         plugins: {
                             title: {
                                 display: true,
                                 text: 'Revenue Growth Projection (2026-2028)',
-                                font: { size: 18, weight: 'bold' },
-                                color: '#000000',
-                                padding: {
-                                    bottom: 16
-                                }
+                                font: { size: 18, weight: 'bold' }
                             },
                             legend: {
                                 display: true,
@@ -6112,16 +5576,12 @@
                     },
                     options: {
                         responsive: true,
-                        maintainAspectRatio: false,
+                        maintainAspectRatio: true,
                         plugins: {
                             title: {
                                 display: true,
                                 text: 'Investor Return Projections (at $750M exit)',
-                                font: { size: 18, weight: 'bold' },
-                                color: '#000000',
-                                padding: {
-                                    bottom: 16
-                                }
+                                font: { size: 18, weight: 'bold' }
                             },
                             legend: {
                                 position: 'top'
@@ -6243,33 +5703,14 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: true,
-                        radius: '72%',
-                        layout: {
-                            padding: {
-                                top: 20,
-                                bottom: 20
-                            }
-                        },
                         plugins: {
                             title: {
                                 display: true,
                                 text: 'Series A Use of Funds ($2.5M)',
-                                font: { size: 16, weight: 'bold' },
-                                color: '#000000',
-                                padding: {
-                                    bottom: 16
-                                }
+                                font: { size: 16, weight: 'bold' }
                             },
                             legend: {
-                                position: 'bottom',
-                                labels: {
-                                    color: '#111111',
-                                    font: {
-                                        size: 12
-                                    },
-                                    padding: 12,
-                                    usePointStyle: true
-                                }
+                                position: 'right'
                             },
                             tooltip: {
                                 callbacks: {
@@ -8020,26 +7461,44 @@
                         display: true,
                         text: 'Feature Comparison Matrix - All Six Applications',
                         font: {
-                            size: 16,
+                            size: 18,
                             weight: 'bold'
                         },
                         color: '#000000',
-                        padding: {
-                            bottom: 16
-                        }
+                        padding: 20
                     },
                     legend: {
                         display: true,
                         position: 'bottom',
                         labels: {
                             color: '#000000',
-                            padding: 14,
+                            padding: 15,
                             font: {
                                 size: 12
                             },
                             usePointStyle: true
                         }
                     },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: true,
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                let level;
+                                if (value === 100) level = '✓ Full';
+                                else if (value >= 50) level = '◐ Partial';
+                                else if (value >= 30) level = '◔ Limited';
+                                else level = '✗ None';
+                                return context.dataset.label + ': ' + level;
+                            }
+                        }
+                    }
                 },
                 scales: {
                     r: {
@@ -8050,7 +7509,7 @@
                             stepSize: 25
                         },
                         pointLabels: {
-                            color: '#333333',
+                            color: '#666666',
                             font: {
                                 size: 13,
                                 weight: '500'
@@ -8064,6 +7523,10 @@
                         }
                     }
                 },
+                interaction: {
+                    mode: 'nearest',
+                    intersect: false
+                }
             }
         });
     }
@@ -8323,19 +7786,17 @@
                         display: true,
                         text: 'Competitive Moat Analysis - Defensibility Against Threats',
                         font: {
-                            size: 16,
+                            size: 18,
                             weight: 'bold'
                         },
                         color: '#000000',
-                        padding: {
-                            bottom: 8
-                        }
+                        padding: 20
                     },
                     subtitle: {
                         display: true,
                         text: 'Higher scores indicate stronger defensibility',
                         font: {
-                            size: 12
+                            size: 13
                         },
                         color: '#666666',
                         padding: {
@@ -8347,11 +7808,43 @@
                         position: 'bottom',
                         labels: {
                             color: '#000000',
-                            padding: 14,
+                            padding: 15,
                             font: {
                                 size: 12
                             },
                             usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: true,
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                let strength;
+                                if (value >= 85) strength = 'Very Strong';
+                                else if (value >= 75) strength = 'Strong';
+                                else if (value >= 60) strength = 'Moderate';
+                                else if (value >= 50) strength = 'Weak';
+                                else strength = 'Very Weak';
+                                return context.dataset.label + ': ' + value + '/100 (' + strength + ')';
+                            },
+                            afterBody: function(tooltipItems) {
+                                const dataIndex = tooltipItems[0].dataIndex;
+                                const descriptions = [
+                                    'Modular design, on-premises options, flexible privacy controls',
+                                    'Specialized verticals, high switching costs, deep expertise',
+                                    'Proprietary algorithms, complex integration, commercial support',
+                                    'Modular deployment, flexible integration, API-first design',
+                                    'Clear use cases, compliance focus, transparent positioning'
+                                ];
+                                return '\n' + descriptions[dataIndex];
+                            }
                         }
                     }
                 },
@@ -8369,7 +7862,7 @@
                             }
                         },
                         pointLabels: {
-                            color: '#333333',
+                            color: '#666666',
                             font: {
                                 size: 12,
                                 weight: '500'
@@ -8384,6 +7877,10 @@
                         }
                     }
                 },
+                interaction: {
+                    mode: 'nearest',
+                    intersect: false
+                }
             }
         });
     }
@@ -9903,88 +9400,48 @@
             });
         }
 
+        // Print version: Initialize ALL charts on page load
         window.addEventListener('load', function() {
-            assignSectionAndFigureNumbers();
-            enableMobileChartScrolling();
-            const currentPage = document.querySelector('.page.active');
-            if (currentPage && currentPage.id === 'home') {
-                setTimeout(initializeMarketOpportunityChart, 100);
-            }
-            if (currentPage && currentPage.id === 'executive') {
-                setTimeout(initializeCharts, 100);
-            }
-            if (currentPage && currentPage.id === 'personas') {
-                setTimeout(initializePersonaChart, 100);
-                setTimeout(initializeWarehouseEfficiencyChart, 100);
-                setTimeout(initializeAttendanceTrackingChart, 100);
-                setTimeout(initializeSafetyComplianceChart, 100);
-                setTimeout(initializeCustomerAnalyticsChart, 100);
-                setTimeout(initializeDigitalSignageChart, 100);
-                setTimeout(initializeSecurityResponseChart, 100);
-                setTimeout(initializeROITimelineChart, 100);
-            }
-            if (currentPage && currentPage.id === 'competitive') {
-                setTimeout(initializePlatformArchitectureChart, 100);
-                setTimeout(initializeStakeholderValueChart, 100);
-                setTimeout(initializeIntelligentSignageROIChart, 100);
-                setTimeout(initializeDeploymentModesChart, 100);
-                setTimeout(initializeTechnicalArchitectureChart, 100);
-                setTimeout(initializeMarketSegmentationChart, 100);
-                setTimeout(initializeFeatureComparisonChart, 100);
-                setTimeout(initializeMarketGrowthTrendsChart, 100);
-                setTimeout(initializeCompetitiveMoatChart, 100);
-                setTimeout(initializeDifferentiationStrategyChart, 100);
-            }
-            if (currentPage && currentPage.id === 'revenue') {
-                setTimeout(initializeRevenueGrowthChart, 100);
-                setTimeout(initializeProductRevenueChart, 100);
-                setTimeout(initializeGeographicRevenueChart, 100);
-                setTimeout(initializeScenarioComparisonChart, 100);
-                setTimeout(initializeOpexBreakdownChart, 100);
-            }
-            if (currentPage && currentPage.id === 'investor') {
-                setTimeout(initializeInvestmentRoundsChart, 100);
-                setTimeout(initializeReturnMultiplesChart, 100);
-                setTimeout(initializeExitValuationChart, 100);
-                setTimeout(initializeComparableCompaniesChart, 100);
-            }
-            setTimeout(enableMobileChartScrolling, 200);
-            setTimeout(assignSectionAndFigureNumbers, 250);
-            // Initialize footer navigation
-            updateFooterNavigation();
-        });
+            // Home charts
+            setTimeout(initializeMarketOpportunityChart, 100);
 
-        window.addEventListener('beforeprint', () => {
-            prepareForPrint();
-        });
+            // Executive charts
+            setTimeout(initializeCharts, 200);
 
-        window.addEventListener('afterprint', () => {
-            restoreAfterPrint();
-        });
+            // Persona charts
+            setTimeout(initializePersonaChart, 300);
+            setTimeout(initializeWarehouseEfficiencyChart, 350);
+            setTimeout(initializeAttendanceTrackingChart, 400);
+            setTimeout(initializeSafetyComplianceChart, 450);
+            setTimeout(initializeCustomerAnalyticsChart, 500);
+            setTimeout(initializeDigitalSignageChart, 550);
+            setTimeout(initializeSecurityResponseChart, 600);
+            setTimeout(initializeROITimelineChart, 650);
 
-        window.addEventListener('resize', enableMobileChartScrolling);
-        window.addEventListener('orientationchange', () => {
-            setTimeout(enableMobileChartScrolling, 120);
-        });
+            // Competitive charts
+            setTimeout(initializePlatformArchitectureChart, 700);
+            setTimeout(initializeStakeholderValueChart, 750);
+            setTimeout(initializeIntelligentSignageROIChart, 800);
+            setTimeout(initializeDeploymentModesChart, 850);
+            setTimeout(initializeTechnicalArchitectureChart, 900);
+            setTimeout(initializeMarketSegmentationChart, 950);
+            setTimeout(initializeFeatureComparisonChart, 1000);
+            setTimeout(initializeMarketGrowthTrendsChart, 1050);
+            setTimeout(initializeCompetitiveMoatChart, 1100);
+            setTimeout(initializeDifferentiationStrategyChart, 1150);
 
-        // Back to Top Button Functionality
-        const backToTopBtn = document.getElementById('backToTop');
+            // Revenue charts
+            setTimeout(initializeRevenueGrowthChart, 1200);
+            setTimeout(initializeProductRevenueChart, 1250);
+            setTimeout(initializeGeographicRevenueChart, 1300);
+            setTimeout(initializeScenarioComparisonChart, 1350);
+            setTimeout(initializeOpexBreakdownChart, 1400);
 
-        // Show/hide back to top button based on scroll position
-        window.addEventListener('scroll', function() {
-            if (window.pageYOffset > 300) {
-                backToTopBtn.classList.add('show');
-            } else {
-                backToTopBtn.classList.remove('show');
-            }
-        });
-
-        // Scroll to top when button is clicked
-        backToTopBtn.addEventListener('click', function() {
-            window.scrollTo({
-                top: 0,
-                behavior: 'smooth'
-            });
+            // Investor charts
+            setTimeout(initializeInvestmentRoundsChart, 1450);
+            setTimeout(initializeReturnMultiplesChart, 1500);
+            setTimeout(initializeExitValuationChart, 1550);
+            setTimeout(initializeComparableCompaniesChart, 1600);
         });
     </script>
 </body>

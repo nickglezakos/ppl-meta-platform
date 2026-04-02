@@ -412,6 +412,188 @@ class IndividualGroupsApiClient {
     }
   }
 
+  /// Get paginated route points for an individual
+  Future<ApiResponse<Map<String, dynamic>>> getIndividualRoutes({
+    required String individualUuid,
+    int pageIndex = 0,
+    int pageSize = 500,
+    String? cameraId,
+    int? startTimeMs,
+    int? endTimeMs,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page_index': pageIndex,
+        'page_size': pageSize,
+      };
+
+      if (cameraId != null && cameraId.isNotEmpty) {
+        queryParams['camera_id'] = cameraId;
+      }
+      if (startTimeMs != null) {
+        queryParams['start_time_ms'] = startTimeMs;
+      }
+      if (endTimeMs != null) {
+        queryParams['end_time_ms'] = endTimeMs;
+      }
+
+      final response = await _apiClient.get(
+        '/api/v1/individuals/$individualUuid/routes',
+        queryParameters: queryParams,
+      );
+
+      return ApiResponse<Map<String, dynamic>>.success(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      debugPrint('❌ Get individual routes failed: ${e.message}');
+      return ApiResponse<Map<String, dynamic>>.error(
+        _parseErrorDetail(
+          e.response?.data?['detail'],
+          e.message ?? 'Failed to get individual routes',
+        ),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      debugPrint('❌ Get individual routes error: $e');
+      return ApiResponse<Map<String, dynamic>>.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get paginated route points grouped by camera for an individual
+  Future<ApiResponse<Map<String, dynamic>>> getIndividualRoutesByCamera({
+    required String individualUuid,
+    int pageIndex = 0,
+    int pageSize = 500,
+    String? cameraId,
+    int? startTimeMs,
+    int? endTimeMs,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{
+        'page_index': pageIndex,
+        'page_size': pageSize,
+      };
+
+      if (cameraId != null && cameraId.isNotEmpty) {
+        queryParams['camera_id'] = cameraId;
+      }
+      if (startTimeMs != null) {
+        queryParams['start_time_ms'] = startTimeMs;
+      }
+      if (endTimeMs != null) {
+        queryParams['end_time_ms'] = endTimeMs;
+      }
+
+      final response = await _apiClient.get(
+        '/api/v1/individuals/$individualUuid/routes/by-camera',
+        queryParameters: queryParams,
+      );
+
+      return ApiResponse<Map<String, dynamic>>.success(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      debugPrint('❌ Get individual routes by camera failed: ${e.message}');
+      return ApiResponse<Map<String, dynamic>>.error(
+        _parseErrorDetail(
+          e.response?.data?['detail'],
+          e.message ?? 'Failed to get individual routes by camera',
+        ),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      debugPrint('❌ Get individual routes by camera error: $e');
+      return ApiResponse<Map<String, dynamic>>.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get route metadata for an individual (without route points payload)
+  Future<ApiResponse<Map<String, dynamic>>> getIndividualRoutesMetadata({
+    required String individualUuid,
+    String? cameraId,
+    int? startTimeMs,
+    int? endTimeMs,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+
+      if (cameraId != null && cameraId.isNotEmpty) {
+        queryParams['camera_id'] = cameraId;
+      }
+      if (startTimeMs != null) {
+        queryParams['start_time_ms'] = startTimeMs;
+      }
+      if (endTimeMs != null) {
+        queryParams['end_time_ms'] = endTimeMs;
+      }
+
+      final response = await _apiClient.get(
+        '/api/v1/individuals/$individualUuid/routes/metadata',
+        queryParameters: queryParams,
+      );
+
+      return ApiResponse<Map<String, dynamic>>.success(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      debugPrint('❌ Get individual route metadata failed: ${e.message}');
+      return ApiResponse<Map<String, dynamic>>.error(
+        _parseErrorDetail(
+          e.response?.data?['detail'],
+          e.message ?? 'Failed to get individual route metadata',
+        ),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      debugPrint('❌ Get individual route metadata error: $e');
+      return ApiResponse<Map<String, dynamic>>.error('Unexpected error: $e');
+    }
+  }
+
+  /// Get route metadata grouped by camera for an individual
+  Future<ApiResponse<Map<String, dynamic>>> getIndividualRoutesMetadataByCamera({
+    required String individualUuid,
+    String? cameraId,
+    int? startTimeMs,
+    int? endTimeMs,
+  }) async {
+    try {
+      final queryParams = <String, dynamic>{};
+
+      if (cameraId != null && cameraId.isNotEmpty) {
+        queryParams['camera_id'] = cameraId;
+      }
+      if (startTimeMs != null) {
+        queryParams['start_time_ms'] = startTimeMs;
+      }
+      if (endTimeMs != null) {
+        queryParams['end_time_ms'] = endTimeMs;
+      }
+
+      final response = await _apiClient.get(
+        '/api/v1/individuals/$individualUuid/routes/metadata/by-camera',
+        queryParameters: queryParams,
+      );
+
+      return ApiResponse<Map<String, dynamic>>.success(
+        response.data as Map<String, dynamic>,
+      );
+    } on DioException catch (e) {
+      debugPrint('❌ Get individual route metadata by camera failed: ${e.message}');
+      return ApiResponse<Map<String, dynamic>>.error(
+        _parseErrorDetail(
+          e.response?.data?['detail'],
+          e.message ?? 'Failed to get individual route metadata by camera',
+        ),
+        statusCode: e.response?.statusCode,
+      );
+    } catch (e) {
+      debugPrint('❌ Get individual route metadata by camera error: $e');
+      return ApiResponse<Map<String, dynamic>>.error('Unexpected error: $e');
+    }
+  }
+
   /// Check for duplicate members in a group
   Future<ApiResponse<CheckDuplicatesResponse>> checkDuplicates(
     String groupId,

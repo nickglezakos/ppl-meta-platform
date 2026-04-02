@@ -10,7 +10,9 @@ Author: PPL Meta Platform Team
 """
 
 import asyncpg
+import httpx
 import logging
+import os
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
@@ -1129,3 +1131,639 @@ class MVRRepository:
             except Exception as e:
                 logger.error(f"Get individuals for MVR failed: {e}")
                 raise MVRRepositoryError(f"Get individuals for MVR failed: {e}")
+
+    # ========================================================================
+    # Individual Route Paging
+    # ========================================================================
+
+    async def _resolve_route_target_individual_uuids(
+        self,
+        conn: asyncpg.Connection,
+        requested_uuid: UUID,
+    ) -> List[UUID]:
+        """
+        Resolve a route request UUID to raw individual UUIDs.
+
+        Rules:
+        - If the UUID is a raw individual UUID, use it directly.
+        - If the UUID is an MVR UUID, normalize merged children to the
+          containing super-individual and expand to all linked raw individuals.
+        - If nothing matches, return the UUID as-is so callers get an empty
+          result set rather than a special-case failure.
+        """
+        is_mvr = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM mvr_people WHERE mvr_people_uuid = $1)",
+            requested_uuid,
+        )
+        if is_mvr:
+            rows = await conn.fetch(
+                """
+                WITH normalized_root AS (
+                    SELECT COALESCE(
+                        (
+                            SELECT super_individual_uuid
+                            FROM mvr_merge_hierarchy
+                            WHERE merged_mvr_uuid = $1
+                            LIMIT 1
+                        ),
+                        $1::uuid
+                    ) AS root_uuid
+                ),
+                all_mvr AS (
+                    SELECT root_uuid AS mvr_people_uuid
+                    FROM normalized_root
+                    UNION
+                    SELECT mh.merged_mvr_uuid
+                    FROM mvr_merge_hierarchy mh
+                    JOIN normalized_root nr
+                      ON mh.super_individual_uuid = nr.root_uuid
+                )
+                SELECT DISTINCT imm.individual_uuid
+                FROM individual_mvr_mapping imm
+                JOIN all_mvr am
+                  ON am.mvr_people_uuid = imm.mvr_people_uuid
+                ORDER BY imm.individual_uuid
+                """,
+                requested_uuid,
+            )
+
+            resolved = [row["individual_uuid"] for row in rows]
+            return resolved or [requested_uuid]
+
+        is_individual = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM individuals WHERE individual_uuid = $1)",
+            requested_uuid,
+        )
+        if not is_individual:
+            return [requested_uuid]
+        return [requested_uuid]
+
+    async def _fetch_route_source_rows(
+        self,
+        conn: asyncpg.Connection,
+        requested_uuid: UUID,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch raw route source rows for a raw individual or MVR/super UUID."""
+        target_individual_uuids = await self._resolve_route_target_individual_uuids(
+            conn,
+            requested_uuid,
+        )
+
+        conditions = ["iva.individual_uuid = ANY($1::uuid[])"]
+        params: List[Any] = [target_individual_uuids]
+        idx = 2
+
+        if start_time_ms is not None:
+            conditions.append(
+                f"iva.start_timestamp >= to_timestamp(${idx}::float8 / 1000.0)"
+            )
+            params.append(start_time_ms)
+            idx += 1
+
+        if end_time_ms is not None:
+            conditions.append(
+                f"iva.start_timestamp <= to_timestamp(${idx}::float8 / 1000.0)"
+            )
+            params.append(end_time_ms)
+            idx += 1
+
+        query = f"""
+            SELECT
+                (EXTRACT(EPOCH FROM iva.start_timestamp) * 1000)::bigint AS timestamp_ms,
+                iva.start_timestamp,
+                iva.representative_faces,
+                iva.entry_bbox,
+                iva.exit_bbox,
+                iva.video_uuid::text AS video_uuid,
+                iva.person_object_uuid::text AS person_object_uuid,
+                iva.individual_uuid::text AS individual_uuid,
+                iva.confidence
+            FROM individual_video_appearances iva
+            WHERE {' AND '.join(conditions)}
+            ORDER BY iva.start_timestamp ASC
+        """
+
+        rows = await conn.fetch(query, *params)
+        return [dict(row) for row in rows]
+
+    async def _resolve_route_camera_ids(
+        self,
+        video_uuids: List[str],
+        auth_header: Optional[str],
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+    ) -> Dict[str, Tuple[str, str]]:
+        """
+        Resolve each video UUID to (collection_uuid, collection_name).
+
+        Preferred: collection UUID + name from media search response.
+        Fallback: video UUID as both id and name.
+        """
+        if not video_uuids:
+            return {}
+
+        if not auth_header:
+            return {v: (v, v) for v in video_uuids}
+
+        unresolved = set(video_uuids)
+        resolved: Dict[str, Tuple[str, str]] = {}
+        media_base_url = os.getenv("PPL_MEDIA_URL", "http://localhost:8000").rstrip("/")
+        headers = {"Authorization": auth_header}
+        page = 1
+        page_size = 200
+        search_params: Dict[str, Any] = {
+            "page": page,
+            "page_size": page_size,
+        }
+
+        if start_time_ms is not None:
+            search_params["start_time"] = datetime.utcfromtimestamp(
+                start_time_ms / 1000.0
+            ).isoformat() + "Z"
+        if end_time_ms is not None:
+            search_params["end_time"] = datetime.utcfromtimestamp(
+                end_time_ms / 1000.0
+            ).isoformat() + "Z"
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                while unresolved:
+                    search_params["page"] = page
+                    response = await client.get(
+                        f"{media_base_url}/api/v1/media/search",
+                        headers=headers,
+                        params=search_params,
+                    )
+                    if response.status_code != 200:
+                        logger.warning(
+                            "Route media search fallback returned status %s on page %s",
+                            response.status_code,
+                            page,
+                        )
+                        break
+
+                    items = response.json()
+                    if not isinstance(items, list) or not items:
+                        break
+
+                    for item in items:
+                        video_uuid = str(item.get("uuid") or "")
+                        if video_uuid not in unresolved:
+                            continue
+
+                        collections = item.get("collections") or []
+                        collection_uuid = ""
+                        collection_name = ""
+                        if collections and isinstance(collections, list):
+                            first_collection = collections[0] or {}
+                            collection_uuid = str(
+                                first_collection.get("uuid")
+                                or first_collection.get("id")
+                                or ""
+                            )
+                            collection_name = str(
+                                first_collection.get("name") or collection_uuid
+                            )
+
+                        cam_id = collection_uuid or video_uuid
+                        cam_name = collection_name or cam_id
+                        resolved[video_uuid] = (cam_id, cam_name)
+                        unresolved.discard(video_uuid)
+
+                    if len(items) < page_size:
+                        break
+                    page += 1
+        except Exception as exc:
+            logger.warning("Route media UUID fallback failed: %s", exc)
+
+        for video_uuid in unresolved:
+            resolved[video_uuid] = (video_uuid, video_uuid)
+
+        return resolved
+
+    async def _build_route_dataset(
+        self,
+        requested_uuid: UUID,
+        auth_header: Optional[str] = None,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch route rows and annotate each row with a UUID-only camera/group id."""
+        async with self.pool.acquire() as conn:
+            rows = await self._fetch_route_source_rows(
+                conn,
+                requested_uuid=requested_uuid,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+            )
+
+        video_uuids = sorted(
+            {
+                row["video_uuid"]
+                for row in rows
+                if row.get("video_uuid")
+            }
+        )
+        video_camera_map = await self._resolve_route_camera_ids(
+            video_uuids,
+            auth_header=auth_header,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+        )
+
+        for row in rows:
+            video_uuid = row.get("video_uuid") or ""
+            cam_id, cam_name = video_camera_map.get(video_uuid, (video_uuid, video_uuid))
+            row["camera_id"] = cam_id
+            row["camera_name"] = cam_name
+
+        return rows
+
+    def _build_individual_routes_where_clause(
+        self,
+        individual_uuid: UUID,
+        camera_id: Optional[str] = None,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+    ) -> Tuple[str, List[Any], int]:
+        """
+        Build reusable WHERE clause for individual route queries.
+
+        Queries use individual_video_appearances (iva) joined to
+        tracking_sessions (ts) for camera identity.
+        """
+        conditions = [
+            "iva.individual_uuid = $1",
+            "ts.collections[1] IS NOT NULL",
+        ]
+        params: List[Any] = [individual_uuid]
+        idx = 2
+
+        if camera_id is not None:
+            conditions.append(f"ts.collections[1] = ${idx}")
+            params.append(camera_id)
+            idx += 1
+
+        if start_time_ms is not None:
+            conditions.append(f"iva.start_timestamp >= to_timestamp(${idx}::float8 / 1000.0)")
+            params.append(start_time_ms)
+            idx += 1
+
+        if end_time_ms is not None:
+            conditions.append(f"iva.start_timestamp <= to_timestamp(${idx}::float8 / 1000.0)")
+            params.append(end_time_ms)
+            idx += 1
+
+        return " AND ".join(conditions), params, idx
+
+    @staticmethod
+    def _bbox_to_center(bbox) -> tuple:
+        """Convert a face bounding box [x1,y1,x2,y2] or [x,y,w,h] to (center_x, center_y)."""
+        if not bbox or len(bbox) < 4:
+            return 0.0, 0.0
+        # Heuristic: if bbox[2] > bbox[0] and both are plausible pixel coordinates treat
+        # as [x1,y1,x2,y2]; otherwise treat as [x,y,w,h].
+        x0, y0, x2, y2 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+        if x2 > x0 and y2 > y0:
+            # [x1, y1, x2, y2]
+            return (x0 + x2) / 2.0, (y0 + y2) / 2.0
+        # [x, y, w, h]
+        return x0 + x2 / 2.0, y0 + y2 / 2.0
+
+    @staticmethod
+    def _extract_bbox_from_representative_faces(rep_faces: Any) -> Optional[List[float]]:
+        """Extract a bbox from representative_faces across known payload shapes."""
+        if isinstance(rep_faces, str):
+            try:
+                rep_faces = json.loads(rep_faces)
+            except (ValueError, TypeError):
+                return None
+
+        # Legacy/list shape: [{"bbox": [...]}, {"face_data": {"bbox": [...]}}]
+        if isinstance(rep_faces, list) and rep_faces:
+            first = rep_faces[0]
+            if isinstance(first, dict):
+                bbox = first.get("bbox")
+                if isinstance(bbox, list) and len(bbox) >= 4:
+                    return bbox[:4]
+                face_data = first.get("face_data")
+                if isinstance(face_data, dict):
+                    bbox = face_data.get("bbox")
+                    if isinstance(bbox, list) and len(bbox) >= 4:
+                        return bbox[:4]
+
+        # Current/object shape: {"faces": [{"face_data": {"bbox": [...]}}]}
+        if isinstance(rep_faces, dict):
+            faces = rep_faces.get("faces")
+            if isinstance(faces, list) and faces:
+                first_face = faces[0]
+                if isinstance(first_face, dict):
+                    bbox = first_face.get("bbox")
+                    if isinstance(bbox, list) and len(bbox) >= 4:
+                        return bbox[:4]
+                    face_data = first_face.get("face_data")
+                    if isinstance(face_data, dict):
+                        bbox = face_data.get("bbox")
+                        if isinstance(bbox, list) and len(bbox) >= 4:
+                            return bbox[:4]
+
+        return None
+
+    @staticmethod
+    def _appearance_to_route_point(row: dict, seq: int, camera_id: str) -> dict:
+        """Convert an individual_video_appearances row to a route-point dict."""
+        ts_ms = int(row["timestamp_ms"]) if row.get("timestamp_ms") is not None else 0
+        bbox = MVRRepository._extract_bbox_from_representative_faces(
+            row.get("representative_faces")
+        )
+        if not bbox:
+            bbox = row.get("entry_bbox") or row.get("exit_bbox")
+        center_x, center_y = MVRRepository._bbox_to_center(bbox)
+        return {
+            "sequence_number": seq,
+            "timestamp_ms": ts_ms,
+            "center_x": center_x,
+            "center_y": center_y,
+            "velocity_x": 0.0,
+            "velocity_y": 0.0,
+            "velocity_magnitude": 0.0,
+            "direction_radians": 0.0,
+            "confidence_score": float(row.get("confidence") or 0.0),
+            "detection_quality": None,
+            "video_uuid": row.get("video_uuid"),
+            "person_object_uuid": row.get("person_object_uuid"),
+            "individual_uuid": row.get("individual_uuid"),
+            "camera_id": camera_id,
+            "camera_name": camera_id,
+        }
+
+    async def get_individual_routes_by_camera_paged(
+        self,
+        individual_uuid: UUID,
+        page_index: int = 0,
+        page_size: int = 500,
+        camera_id: Optional[str] = None,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+        auth_header: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Return camera-grouped paginated route points for a single individual.
+
+        Route points are derived from individual_video_appearances joined to
+        tracking_sessions for camera identity.  Each appearance represents
+        one detection event and its best-face bounding-box is used as the
+        spatial position of the route point.
+        """
+        try:
+            page_size = min(page_size, 2000)
+            rows = await self._build_route_dataset(
+                requested_uuid=individual_uuid,
+                auth_header=auth_header,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+            )
+
+            grouped_rows: Dict[str, List[Dict[str, Any]]] = {}
+            for row in rows:
+                current_camera_id = row.get("camera_id") or row.get("video_uuid") or ""
+                if camera_id is not None and current_camera_id != camera_id:
+                    continue
+                grouped_rows.setdefault(current_camera_id, []).append(row)
+
+            if not grouped_rows:
+                return {"cameras": []}
+
+            cameras = []
+            for current_camera_id in sorted(grouped_rows):
+                camera_rows = grouped_rows[current_camera_id]
+                current_camera_name = camera_rows[0].get("camera_name") or current_camera_id
+                total_points = len(camera_rows)
+                total_appearances = len(
+                    {
+                        row.get("video_uuid")
+                        for row in camera_rows
+                        if row.get("video_uuid")
+                    }
+                )
+                page_start = page_index * page_size
+                page_end = page_start + page_size
+                page_rows = camera_rows[page_start:page_end]
+                points = [
+                    self._appearance_to_route_point(
+                        row,
+                        page_start + seq + 1,
+                        current_camera_id,
+                    )
+                    for seq, row in enumerate(page_rows)
+                ]
+                # Patch camera_name on each point from the row
+                for point, row in zip(points, page_rows):
+                    point["camera_name"] = row.get("camera_name") or current_camera_id
+                has_more = page_end < total_points
+                start_ts = int(camera_rows[0]["timestamp_ms"]) if camera_rows else None
+                end_ts = int(camera_rows[-1]["timestamp_ms"]) if camera_rows else None
+
+                cameras.append(
+                    {
+                        "camera_id": current_camera_id,
+                        "camera_name": current_camera_name,
+                        "total_points_across_individuals": total_points,
+                        "total_appearances_across_individuals": total_appearances,
+                        "has_more": has_more,
+                        "individuals": [
+                            {
+                                "individual_uuid": str(individual_uuid),
+                                "total_points": total_points,
+                                "total_appearances": total_appearances,
+                                "start_time_ms": start_ts,
+                                "end_time_ms": end_ts,
+                                "has_more": has_more,
+                                "points": points,
+                            }
+                        ],
+                    }
+                )
+
+            return {"cameras": cameras}
+        except Exception as e:
+            logger.error(
+                "get_individual_routes_by_camera_paged failed for %s: %s",
+                individual_uuid,
+                e,
+            )
+            raise MVRRepositoryError(
+                f"get_individual_routes_by_camera_paged failed: {e}"
+            ) from e
+
+    async def get_individual_routes_metadata_by_camera(
+        self,
+        individual_uuid: UUID,
+        camera_id: Optional[str] = None,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+        auth_header: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Return metadata grouped by camera for a single individual.
+
+        Uses individual_video_appearances + tracking_sessions for camera identity.
+        """
+        try:
+            rows = await self._build_route_dataset(
+                requested_uuid=individual_uuid,
+                auth_header=auth_header,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+            )
+
+            grouped_rows: Dict[str, List[Dict[str, Any]]] = {}
+            for row in rows:
+                current_camera_id = row.get("camera_id") or row.get("video_uuid") or ""
+                if camera_id is not None and current_camera_id != camera_id:
+                    continue
+                grouped_rows.setdefault(current_camera_id, []).append(row)
+
+            return {
+                "cameras": [
+                    {
+                        "camera_id": current_camera_id,
+                        "camera_name": (camera_rows[0].get("camera_name") or current_camera_id),
+                        "total_points": len(camera_rows),
+                        "total_appearances": len(
+                            {
+                                row.get("video_uuid")
+                                for row in camera_rows
+                                if row.get("video_uuid")
+                            }
+                        ),
+                        "start_time_ms": int(camera_rows[0]["timestamp_ms"]) if camera_rows else None,
+                        "end_time_ms": int(camera_rows[-1]["timestamp_ms"]) if camera_rows else None,
+                    }
+                    for current_camera_id, camera_rows in sorted(grouped_rows.items())
+                ]
+            }
+        except Exception as e:
+            logger.error(
+                "get_individual_routes_metadata_by_camera failed for %s: %s",
+                individual_uuid,
+                e,
+            )
+            raise MVRRepositoryError(
+                f"get_individual_routes_metadata_by_camera failed: {e}"
+            ) from e
+
+    async def get_individual_routes_paged(
+        self,
+        individual_uuid: UUID,
+        page_index: int = 0,
+        page_size: int = 500,
+        camera_id: Optional[str] = None,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+        auth_header: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Return a page of route points for an individual.
+
+        Route points are derived from individual_video_appearances joined to
+        tracking_sessions for camera identity.
+        """
+        try:
+            page_size = min(page_size, 2000)
+            rows = await self._build_route_dataset(
+                requested_uuid=individual_uuid,
+                auth_header=auth_header,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+            )
+
+            filtered_rows = [
+                row
+                for row in rows
+                if camera_id is None or (row.get("camera_id") or row.get("video_uuid") or "") == camera_id
+            ]
+            total_points = len(filtered_rows)
+            total_appearances = len(
+                {row.get("video_uuid") for row in filtered_rows if row.get("video_uuid")}
+            )
+            offset = page_index * page_size
+            page_rows = filtered_rows[offset:offset + page_size]
+            points = [
+                self._appearance_to_route_point(
+                    row,
+                    offset + seq + 1,
+                    row.get("camera_id") or row.get("video_uuid") or "",
+                )
+                for seq, row in enumerate(page_rows)
+            ]
+
+            return {
+                "points": points,
+                "total_points": total_points,
+                "total_appearances": total_appearances,
+                "start_time_ms": int(filtered_rows[0]["timestamp_ms"]) if filtered_rows else None,
+                "end_time_ms": int(filtered_rows[-1]["timestamp_ms"]) if filtered_rows else None,
+            }
+        except Exception as e:
+            logger.error(
+                f"get_individual_routes_paged failed for {individual_uuid}: {e}"
+            )
+            raise MVRRepositoryError(
+                f"get_individual_routes_paged failed: {e}"
+            )
+
+    async def get_individual_routes_metadata(
+        self,
+        individual_uuid: UUID,
+        camera_id: Optional[str] = None,
+        start_time_ms: Optional[int] = None,
+        end_time_ms: Optional[int] = None,
+        auth_header: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Return route metadata for an individual without returning point data.
+        """
+        try:
+            rows = await self._build_route_dataset(
+                requested_uuid=individual_uuid,
+                auth_header=auth_header,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+            )
+            filtered_rows = [
+                row
+                for row in rows
+                if camera_id is None or (row.get("camera_id") or row.get("video_uuid") or "") == camera_id
+            ]
+
+            per_video_counts: Dict[str, int] = {}
+            for row in filtered_rows:
+                video_uuid = row.get("video_uuid") or ""
+                if not video_uuid:
+                    continue
+                per_video_counts[video_uuid] = per_video_counts.get(video_uuid, 0) + 1
+
+            return {
+                "total_points": len(filtered_rows),
+                "total_appearances": len(per_video_counts),
+                "start_time_ms": int(filtered_rows[0]["timestamp_ms"]) if filtered_rows else None,
+                "end_time_ms": int(filtered_rows[-1]["timestamp_ms"]) if filtered_rows else None,
+                "per_video_counts": [
+                    {"video_uuid": video_uuid, "point_count": point_count}
+                    for video_uuid, point_count in sorted(
+                        per_video_counts.items(),
+                        key=lambda item: item[1],
+                        reverse=True,
+                    )
+                ],
+            }
+        except Exception as e:
+            logger.error(
+                f"get_individual_routes_metadata failed for {individual_uuid}: {e}"
+            )
+            raise MVRRepositoryError(
+                f"get_individual_routes_metadata failed: {e}"
+            ) from e

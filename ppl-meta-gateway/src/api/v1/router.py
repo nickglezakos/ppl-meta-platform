@@ -2055,6 +2055,30 @@ async def group_camera_search(request: Request):
 
 
 # Individual Thumbnails API Routes - Proxy to vmeta service
+@api_router.get("/individuals/{individual_id}/routes")
+async def get_individual_routes(request: Request):
+    """Proxy paginated individual route points to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individuals/{individual_id}/routes/by-camera")
+async def get_individual_routes_by_camera(request: Request):
+    """Proxy camera-grouped individual route points to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individuals/{individual_id}/routes/metadata")
+async def get_individual_routes_metadata(request: Request):
+    """Proxy individual route metadata to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
+@api_router.get("/individuals/{individual_id}/routes/metadata/by-camera")
+async def get_individual_routes_metadata_by_camera(request: Request):
+    """Proxy camera-grouped individual route metadata to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.get("/individuals/{individual_id}/thumbnail")
 async def get_individual_thumbnail(request: Request):
     """Proxy get individual thumbnail to vmeta service."""

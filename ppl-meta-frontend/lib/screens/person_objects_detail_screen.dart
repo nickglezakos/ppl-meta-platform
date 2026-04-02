@@ -93,6 +93,21 @@ class _PersonObjectsDetailScreenState
   // Best images for individuals in cross-video mode
   Map<String, BestImageResponse?> _bestImages = {};
 
+  // Cross-video paged route state (new route paging endpoints)
+  final int _routePageSize = 500;
+    final Map<String, Map<String, List<Map<String, dynamic>>>>
+      _routePointsByCamera = {};
+    final Map<String, Map<String, int>> _routePageIndexByCameraSource = {};
+    final Map<String, Map<String, bool>> _routeHasMoreByCameraSource = {};
+    final Map<String, Map<String, int>> _routeTotalPointsByCameraSource = {};
+    final Map<String, Map<String, String>> _routeDisplayIndividualByCameraSource =
+      {};
+    final Map<String, String> _routeCameraNamesById = {};
+    final Map<String, String> _routeDisplayPersonIdByUuid = {};
+    final Set<String> _loadedRouteSourceIndividuals = {};
+    String? _selectedRouteCameraId;
+  bool _isLoadingMoreCrossVideoRoutes = false;
+
   @override
   void initState() {
     super.initState();
@@ -1647,6 +1662,16 @@ class _PersonObjectsDetailScreenState
     setState(() {
       _isLoadingCrossVideoData = true;
       _crossVideoError = null;
+      _routePointsByCamera.clear();
+      _routePageIndexByCameraSource.clear();
+      _routeHasMoreByCameraSource.clear();
+      _routeTotalPointsByCameraSource.clear();
+      _routeDisplayIndividualByCameraSource.clear();
+      _routeCameraNamesById.clear();
+      _routeDisplayPersonIdByUuid.clear();
+      _loadedRouteSourceIndividuals.clear();
+      _selectedRouteCameraId = null;
+      _isLoadingMoreCrossVideoRoutes = false;
     });
     
     try {
@@ -5176,8 +5201,11 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           );
         }
 
-        final personGroups = snapshot.data;
-        if (personGroups == null || personGroups.isEmpty) {
+        final personGroups = snapshot.data ?? const <Map<String, dynamic>>[];
+        final cameraIds = _getRouteCameraIds();
+        final hasAnyRouteData = _hasAnyRouteDataInSelection();
+
+        if (!hasAnyRouteData) {
           return const Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -5194,15 +5222,17 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             ),
           );
         }
+        final selectedCameraId = _selectedRouteCameraId;
+        final selectedCameraName = selectedCameraId == null
+            ? null
+            : _routeCameraNamesById[selectedCameraId] ?? selectedCameraId;
+        final selectedCameraLoaded = selectedCameraId == null
+            ? 0
+            : _getLoadedPointsForCamera(selectedCameraId);
+        final selectedCameraTotal = selectedCameraId == null
+            ? 0
+            : _getTotalPointsForCamera(selectedCameraId);
 
-        // Group person groups by camera for separate visualization
-        final groupsByCamera = <String, List<Map<String, dynamic>>>{};
-        for (final group in personGroups) {
-          final cameraName = group['camera_name'] as String? ?? 'Unknown Camera';
-          groupsByCamera.putIfAbsent(cameraName, () => []).add(group);
-        }
-
-        // Now use the SAME visualization as single-video mode, but grouped by camera
         return SingleChildScrollView(
           child: Column(
             children: [
@@ -5222,14 +5252,46 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           Text(
-                            'Routes from ${personGroups.length} detection(s) across ${groupsByCamera.length} camera(s)',
+                            'Routes across ${cameraIds.length} camera(s)',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            selectedCameraId == null
+                                ? 'No camera selected'
+                                : 'Selected: $selectedCameraName • Loaded $selectedCameraLoaded / $selectedCameraTotal points',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
                     ),
+                    if (selectedCameraId != null &&
+                        _cameraHasMoreRoutes(selectedCameraId))
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoadingMoreCrossVideoRoutes
+                              ? null
+                              : () => _loadMoreCrossVideoRoutes(selectedCameraId),
+                          icon: _isLoadingMoreCrossVideoRoutes
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.expand_more, size: 16),
+                          label: Text(
+                            _isLoadingMoreCrossVideoRoutes
+                                ? 'Loading...'
+                                : 'Load more routes',
+                          ),
+                        ),
+                      ),
                     // Display mode toggle
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -5282,62 +5344,80 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                   ],
                 ),
               ),
-              
-              // Routes canvases - one per camera
-              ...groupsByCamera.entries.map((entry) {
-                final cameraName = entry.key;
-                final cameraGroups = entry.value;
-                
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Camera header (only show if multiple cameras)
-                    if (groupsByCamera.length > 1)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        margin: const EdgeInsets.only(top: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          border: Border(
-                            left: BorderSide(color: Colors.blue.shade700, width: 4),
+
+              if (cameraIds.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _buildRouteCameraSelector(cameraIds),
+                ),
+
+              if (selectedCameraId != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  margin: const EdgeInsets.only(top: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    border: Border(
+                      left: BorderSide(color: Colors.blue.shade700, width: 4),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.videocam, size: 18, color: Colors.blue[700]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          selectedCameraName ?? selectedCameraId,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue[700],
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.videocam, size: 18, color: Colors.blue[700]),
-                            const SizedBox(width: 8),
-                            Text(
-                              cameraName,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.blue[700],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              '${cameraGroups.length} route${cameraGroups.length != 1 ? 's' : ''}',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
+                      ),
+                      Text(
+                        '${personGroups.length} individual${personGroups.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
                         ),
                       ),
-                    
-                    // Routes canvas for this camera
-                    const SizedBox(height: 8),
-                    _buildCrossVideoRoutesCanvas(cameraGroups),
-                    
-                    // Legend for this camera
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: _buildRoutesLegend(cameraGroups),
+                    ],
+                  ),
+                ),
+
+              if (selectedCameraId != null) ...[
+                const SizedBox(height: 8),
+                if (personGroups.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
                     ),
-                  ],
-                );
-              }).toList(),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Text(
+                      'No route points have been loaded for this camera yet. If route metadata exists, the loader will keep scanning later pages automatically.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  )
+                else ...[
+                  _buildCrossVideoRoutesCanvas(personGroups),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: _buildRoutesLegend(personGroups),
+                  ),
+                ],
+              ],
             ],
           ),
         );
@@ -5464,188 +5544,419 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     }
 
     final apiClient = ref.read(apiClientProvider);
-    final personGroups = <Map<String, dynamic>>[];
+    final routesClient = IndividualGroupsApiClient(apiClient);
 
-    // Get all unique video UUIDs from all appearances
-    // Also track camera info for each video
-    final allVideoUuids = <String>{};
-    final videoToCameraMap = <String, String>{};  // video_uuid -> camera_name
-    
     for (final analysis in _aggregatedAnalyses!) {
-      for (final appearance in analysis.appearances) {
-        // Skip empty or invalid video UUIDs
-        if (appearance.videoUuid.isNotEmpty && appearance.videoUuid.length >= 8) {
-          allVideoUuids.add(appearance.videoUuid);
-          // Track which camera this video belongs to
-          if (appearance.cameraName != null || appearance.cameraId != null) {
-            videoToCameraMap[appearance.videoUuid] = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
-          }
-        }
-      }
-    }
+      _routeDisplayPersonIdByUuid[analysis.individualUuid] = analysis.individualId;
 
-    // Fetch person objects data for each video
-    final videoRoutesMap = <String, Map<String, dynamic>>{};
-    
-    for (final videoUuid in allVideoUuids) {
-      try {
-        final response = await apiClient.get(
-          '/api/v1/orchestrator/person-objects/$videoUuid',
+      final sourceIndividualUuids = _resolveRouteSourceIndividualUuids(analysis);
+
+      for (final sourceUuid in sourceIndividualUuids) {
+        if (_loadedRouteSourceIndividuals.contains(sourceUuid)) {
+          continue;
+        }
+
+        final metadataResp = await routesClient.getIndividualRoutesMetadataByCamera(
+          individualUuid: sourceUuid,
+        );
+        if (metadataResp.success && metadataResp.data != null) {
+          final metadataCameras =
+              (metadataResp.data!['cameras'] as List<dynamic>? ?? [])
+                  .whereType<Map<String, dynamic>>()
+                  .toList();
+          _registerCameraMetadata(
+            analysis: analysis,
+            sourceIndividualUuid: sourceUuid,
+            cameraMetadata: metadataCameras,
+          );
+        }
+
+        await _bootstrapRoutePagesForSource(
+          routesClient: routesClient,
+          analysis: analysis,
+          sourceIndividualUuid: sourceUuid,
         );
 
-        if (response.statusCode == 200 && response.data != null) {
-          final data = response.data as Map<String, dynamic>;
-          final success = data['success'] as bool? ?? false;
-          final status = data['status'] as String? ?? '';
-
-          if (success && status == 'completed') {
-            videoRoutesMap[videoUuid] = data;
-          }
-        }
-      } catch (e) {}
+        _loadedRouteSourceIndividuals.add(sourceUuid);
+      }
     }
 
-    // Now combine route data for each individual across all videos
-    for (int i = 0; i < _aggregatedAnalyses!.length; i++) {
-      final analysis = _aggregatedAnalyses![i];
-      final individualId = analysis.individualId;
+    final cameraIds = _getRouteCameraIds();
+    if (cameraIds.isNotEmpty &&
+        (_selectedRouteCameraId == null ||
+            !_getRouteCameraIds().contains(_selectedRouteCameraId))) {
+      _selectedRouteCameraId = cameraIds.firstWhere(
+        (cameraId) => _getTotalPointsForCamera(cameraId) > 0,
+        orElse: () => cameraIds.first,
+      );
+    }
 
-      // Group route points by camera/collection
-      final routePointsByCamera = <String, List<Map<String, dynamic>>>{};
+    return _buildSelectedCameraPersonGroups();
+  }
 
-      // For each appearance of this individual
-      for (int ai = 0; ai < analysis.appearances.length; ai++) {
-        final appearance = analysis.appearances[ai];
-        final videoUuid = appearance.videoUuid;
-        final personObjectUuid = appearance.personObjectUuid;
-        final cameraName = appearance.cameraName ?? appearance.cameraId ?? 'Unknown Camera';
-        
-        // Skip invalid UUIDs
-        if (videoUuid.isEmpty || videoUuid.length < 8) {
-          continue;
-        }
-        if (personObjectUuid.isEmpty || personObjectUuid.length < 8) {
-          continue;
-        }
-
-        // Get the routes data for this video
-        final videoData = videoRoutesMap[videoUuid];
-        if (videoData == null) {
-          continue;
-        }
-
-        // Find the person group that matches this person_object_uuid
-        final personGroupsData = videoData['group_tracking'] ?? videoData['person_groups'];
-        if (personGroupsData == null) {
-          continue;
-        }
-
-        final personGroupsList = personGroupsData as List<dynamic>;
-        
-        // IMPORTANT: Since the person_object_uuid in cross-video tracking is mock/fake,
-        // we'll use ALL person groups from this video appearance.
-        // For most cases there's only 1 person per video, so this works well.
-        // For videos with multiple people, we take all routes (future: need better matching)
-        
-        for (int gi = 0; gi < personGroupsList.length; gi++) {
-          final group = personGroupsList[gi] as Map<String, dynamic>;
-          
-          // Extract route points from this group
-          final movementTracking = group['movement_tracking'] as Map<String, dynamic>?;
-          if (movementTracking != null) {
-            final routePoints = movementTracking['route_points'] as List<dynamic>? ?? [];
-            
-            // Add route points to the appropriate camera group
-            routePointsByCamera.putIfAbsent(cameraName, () => []);
-            for (final point in routePoints) {
-              final pointMap = point as Map<String, dynamic>;
-              // Add camera info to each point
-              pointMap['camera_name'] = cameraName;
-              routePointsByCamera[cameraName]!.add(pointMap);
-            }
-          }
-        }
-      }
-
-      if (routePointsByCamera.isEmpty) {
+  void _registerCameraMetadata({
+    required AggregatedIndividualAnalysis analysis,
+    required String sourceIndividualUuid,
+    required List<Map<String, dynamic>> cameraMetadata,
+  }) {
+    for (final camera in cameraMetadata) {
+      final cameraId = (camera['camera_id'] ?? '').toString();
+      if (cameraId.isEmpty) {
         continue;
       }
 
-      // Create one person group per camera with sorted and sampled routes
-      for (final cameraName in routePointsByCamera.keys) {
-        final cameraRoutePoints = routePointsByCamera[cameraName]!;
-        
-        // Sort route points by timestamp or frame_number
-        cameraRoutePoints.sort((a, b) {
-          // Handle different timestamp formats
-          try {
-            final timestampA = a['timestamp'];
-            final timestampB = b['timestamp'];
-            
-            // If timestamp is a string (ISO format), parse as DateTime
-            if (timestampA is String && timestampB is String) {
-              final timeA = DateTime.parse(timestampA);
-              final timeB = DateTime.parse(timestampB);
-              return timeA.compareTo(timeB);
-            }
-            
-            // If timestamp is a number (Unix timestamp or frame number), compare directly
-            if (timestampA is num && timestampB is num) {
-              return timestampA.compareTo(timestampB);
-            }
-            
-            // Fallback: try to use frame_number if timestamp comparison fails
-            final frameA = a['frame_number'] as num? ?? 0;
-            final frameB = b['frame_number'] as num? ?? 0;
-            return frameA.compareTo(frameB);
-          } catch (e) {
-            // Fallback to frame number
-            final frameA = a['frame_number'] as num? ?? 0;
-            final frameB = b['frame_number'] as num? ?? 0;
-            return frameA.compareTo(frameB);
-          }
-        });
+      final cameraName = (camera['camera_name'] ?? cameraId).toString();
+      final totalPoints = (camera['total_points'] as num?)?.toInt() ?? 0;
 
-        // Sample route points if there are too many (threshold: 100 points)
-        const maxRoutePoints = 100;
-        List<Map<String, dynamic>> sampledRoutePoints = cameraRoutePoints;
-        
-        if (cameraRoutePoints.length > maxRoutePoints) {
-          // Calculate sampling interval
-          final interval = (cameraRoutePoints.length / maxRoutePoints).ceil();
-          sampledRoutePoints = [];
-          
-          // Always include first and last points
-          sampledRoutePoints.add(cameraRoutePoints.first);
-          
-          // Sample intermediate points
-          for (int j = interval; j < cameraRoutePoints.length - 1; j += interval) {
-            sampledRoutePoints.add(cameraRoutePoints[j]);
-          }
-          
-          // Always include last point
-          if (cameraRoutePoints.length > 1) {
-            sampledRoutePoints.add(cameraRoutePoints.last);
-          }
-          
+      _routeCameraNamesById[cameraId] = cameraName;
+      _routeDisplayIndividualByCameraSource
+          .putIfAbsent(cameraId, () => {})[sourceIndividualUuid] =
+          analysis.individualUuid;
+      _routePageIndexByCameraSource.putIfAbsent(cameraId, () => {});
+      _routeHasMoreByCameraSource.putIfAbsent(cameraId, () => {});
+      _routeTotalPointsByCameraSource.putIfAbsent(cameraId, () => {});
+      _routeTotalPointsByCameraSource[cameraId]![sourceIndividualUuid] =
+          totalPoints;
+      _routeHasMoreByCameraSource[cameraId]![sourceIndividualUuid] =
+          totalPoints > 0;
+    }
+  }
+
+  Future<void> _bootstrapRoutePagesForSource({
+    required IndividualGroupsApiClient routesClient,
+    required AggregatedIndividualAnalysis analysis,
+    required String sourceIndividualUuid,
+  }) async {
+    final candidateCameraIds = _routeDisplayIndividualByCameraSource.entries
+        .where((entry) => entry.value.containsKey(sourceIndividualUuid))
+        .map((entry) => entry.key)
+        .toList();
+
+    if (candidateCameraIds.isEmpty) {
+      final firstPageResp = await routesClient.getIndividualRoutesByCamera(
+        individualUuid: sourceIndividualUuid,
+        pageIndex: 0,
+        pageSize: _routePageSize,
+      );
+      if (!firstPageResp.success || firstPageResp.data == null) {
+        return;
+      }
+
+      final cameras = (firstPageResp.data!['cameras'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      for (final cameraGroup in cameras) {
+        _appendCameraGroupedRoutePage(
+          analysis: analysis,
+          sourceIndividualUuid: sourceIndividualUuid,
+          cameraGroup: cameraGroup,
+        );
+      }
+      return;
+    }
+
+    for (final cameraId in candidateCameraIds) {
+      final totalPoints =
+          _routeTotalPointsByCameraSource[cameraId]?[sourceIndividualUuid] ?? 0;
+      if (totalPoints <= 0) {
+        continue;
+      }
+
+      final maxPageIndex = ((totalPoints - 1) / _routePageSize).floor();
+      var foundPoints = false;
+
+      for (var pageIndex = 0; pageIndex <= maxPageIndex; pageIndex++) {
+        final pageResp = await routesClient.getIndividualRoutesByCamera(
+          individualUuid: sourceIndividualUuid,
+          cameraId: cameraId,
+          pageIndex: pageIndex,
+          pageSize: _routePageSize,
+        );
+        if (!pageResp.success || pageResp.data == null) {
+          break;
         }
 
-        // Create person group for this camera
-        personGroups.add({
-          'person_id': individualId,
-          'camera_name': cameraName,  // Add camera identifier
-          'total_detections': cameraRoutePoints.length,
-          'sampled_points': sampledRoutePoints.length,
-          'movement_tracking': {
-            'route_points': sampledRoutePoints,
-            'total_distance': 0.0,
-            'movement_duration': analysis.totalDurationSeconds / routePointsByCamera.length,  // Approximate duration per camera
-          },
-        });
+        final cameras = (pageResp.data!['cameras'] as List<dynamic>? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        if (cameras.isEmpty) {
+          continue;
+        }
+
+        var appendedPointsForPage = false;
+        for (final cameraGroup in cameras) {
+          final individuals = (cameraGroup['individuals'] as List<dynamic>? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          final pointsCount = individuals.fold<int>(
+            0,
+            (sum, individualGroup) =>
+                sum +
+                ((individualGroup['points'] as List<dynamic>? ?? []).length),
+          );
+          _appendCameraGroupedRoutePage(
+            analysis: analysis,
+            sourceIndividualUuid: sourceIndividualUuid,
+            cameraGroup: cameraGroup,
+          );
+          if (pointsCount > 0) {
+            appendedPointsForPage = true;
+          }
+        }
+
+        if (appendedPointsForPage) {
+          foundPoints = true;
+          break;
+        }
       }
+
+      if (!foundPoints) {
+        _routeHasMoreByCameraSource[cameraId]?[sourceIndividualUuid] = false;
+      }
+    }
+  }
+
+  void _appendCameraGroupedRoutePage({
+    required AggregatedIndividualAnalysis analysis,
+    required String sourceIndividualUuid,
+    required Map<String, dynamic> cameraGroup,
+  }) {
+    final cameraId = (cameraGroup['camera_id'] ?? '').toString();
+    if (cameraId.isEmpty) {
+      return;
+    }
+
+    final cameraName = (cameraGroup['camera_name'] ?? cameraId).toString();
+    _routeCameraNamesById[cameraId] = cameraName;
+    _routeDisplayIndividualByCameraSource
+        .putIfAbsent(cameraId, () => {})[sourceIndividualUuid] =
+        analysis.individualUuid;
+
+    final individuals = (cameraGroup['individuals'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>();
+    for (final individualGroup in individuals) {
+      final page = individualGroup['page'] as Map<String, dynamic>? ?? {};
+      final pageIndex = (page['page_index'] as num?)?.toInt() ?? 0;
+      final hasMore = page['has_more'] as bool? ?? false;
+      final totalPoints =
+          (page['total_points'] as num?)?.toInt() ??
+          (individualGroup['total_points'] as num?)?.toInt() ??
+          0;
+
+      _routePageIndexByCameraSource
+          .putIfAbsent(cameraId, () => {})[sourceIndividualUuid] = pageIndex;
+      _routeHasMoreByCameraSource
+          .putIfAbsent(cameraId, () => {})[sourceIndividualUuid] = hasMore;
+      _routeTotalPointsByCameraSource
+          .putIfAbsent(cameraId, () => {})[sourceIndividualUuid] = totalPoints;
+
+      final points = (individualGroup['points'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .map((point) => _normalizeRoutePoint(point, cameraId, cameraName))
+          .toList();
+
+      _routePointsByCamera.putIfAbsent(cameraId, () => {});
+      _routePointsByCamera[cameraId]!
+          .putIfAbsent(analysis.individualUuid, () => []);
+      _routePointsByCamera[cameraId]![analysis.individualUuid]!.addAll(points);
+    }
+  }
+
+  Map<String, dynamic> _normalizeRoutePoint(
+    Map<String, dynamic> point,
+    String cameraId,
+    String cameraName,
+  ) {
+    return <String, dynamic>{
+      'sequence_number': (point['sequence_number'] as num?)?.toInt() ?? 0,
+      'timestamp': (point['timestamp_ms'] as num?)?.toInt() ?? 0,
+      'frame_number': (point['sequence_number'] as num?)?.toInt() ?? 0,
+      'center_x': (point['center_x'] as num?)?.toDouble() ?? 0.0,
+      'center_y': (point['center_y'] as num?)?.toDouble() ?? 0.0,
+      'velocity_x': (point['velocity_x'] as num?)?.toDouble() ?? 0.0,
+      'velocity_y': (point['velocity_y'] as num?)?.toDouble() ?? 0.0,
+      'velocity_magnitude':
+          (point['velocity_magnitude'] as num?)?.toDouble() ?? 0.0,
+      'camera_id': cameraId,
+      'camera_name': cameraName,
+      'video_uuid': point['video_uuid'],
+      'person_object_uuid': point['person_object_uuid'],
+      'individual_uuid': point['individual_uuid'],
+    };
+  }
+
+  List<String> _getRouteCameraIds() {
+    final ids = {
+      ..._routeCameraNamesById.keys,
+      ..._routeTotalPointsByCameraSource.keys,
+      ..._routePointsByCamera.keys,
+    }.toList()
+      ..sort();
+    return ids;
+  }
+
+  bool _hasAnyRouteDataInSelection() {
+    return _routeTotalPointsByCameraSource.values.any(
+      (sourceTotals) => sourceTotals.values.any((count) => count > 0),
+    );
+  }
+
+  List<Map<String, dynamic>> _buildSelectedCameraPersonGroups() {
+    final selectedCameraId = _selectedRouteCameraId;
+    if (selectedCameraId == null) {
+      return [];
+    }
+
+    final cameraName =
+        _routeCameraNamesById[selectedCameraId] ?? selectedCameraId;
+    final cameraPoints = _routePointsByCamera[selectedCameraId] ?? {};
+    final personGroups = <Map<String, dynamic>>[];
+
+    for (final analysis in _aggregatedAnalyses!) {
+      final rawPoints = cameraPoints[analysis.individualUuid] ?? [];
+      if (rawPoints.isEmpty) {
+        continue;
+      }
+
+      rawPoints.sort((a, b) {
+        final timestampA = a['timestamp'] as num? ?? 0;
+        final timestampB = b['timestamp'] as num? ?? 0;
+        return timestampA.compareTo(timestampB);
+      });
+
+      personGroups.add({
+        'person_id': _routeDisplayPersonIdByUuid[analysis.individualUuid] ??
+            analysis.individualId,
+        'camera_id': selectedCameraId,
+        'camera_name': cameraName,
+        'total_detections': rawPoints.length,
+        'sampled_points': rawPoints.length,
+        'movement_tracking': {
+          'route_points': rawPoints,
+          'total_distance': 0.0,
+          'movement_duration': analysis.totalDurationSeconds,
+        },
+      });
     }
 
     return personGroups;
+  }
+
+  List<String> _resolveRouteSourceIndividualUuids(
+    AggregatedIndividualAnalysis analysis,
+  ) {
+    // Always use individualId (the MVR/super UUID).
+    // - In camera-search results: individualUuid = raw individual, individualId = MVR/super UUID.
+    // - In hierarchy results: both are the super UUID.
+    // The backend expands the super UUID to all linked raw individuals via mvr_merge_hierarchy.
+    final resolvedUuid = analysis.individualId.isNotEmpty
+        ? analysis.individualId
+        : analysis.individualUuid;
+    debugPrint('🗺️ Route UUID for ${analysis.individualUuid}: '
+        'isSuperIndividual=${analysis.isSuperIndividual}, '
+        'individualId=${analysis.individualId} → using $resolvedUuid');
+    return [resolvedUuid];
+  }
+
+  Widget _buildRouteCameraSelector(List<String> cameraIds) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: cameraIds.map((cameraId) {
+          final isSelected = cameraId == _selectedRouteCameraId;
+          final cameraName = _routeCameraNamesById[cameraId] ?? cameraId;
+          final totalPoints = _getTotalPointsForCamera(cameraId);
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text('$cameraName ($totalPoints pts)'),
+              selected: isSelected,
+              onSelected: (_) {
+                setState(() {
+                  _selectedRouteCameraId = cameraId;
+                });
+              },
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  int _getLoadedPointsForCamera(String cameraId) {
+    final cameraGroups = _routePointsByCamera[cameraId] ?? {};
+    return cameraGroups.values.fold<int>(0, (sum, points) => sum + points.length);
+  }
+
+  int _getTotalPointsForCamera(String cameraId) {
+    final sourceTotals = _routeTotalPointsByCameraSource[cameraId] ?? {};
+    return sourceTotals.values.fold<int>(0, (sum, count) => sum + count);
+  }
+
+  bool _cameraHasMoreRoutes(String cameraId) {
+    final sourceHasMore = _routeHasMoreByCameraSource[cameraId] ?? {};
+    return sourceHasMore.values.any((value) => value);
+  }
+
+  Future<void> _loadMoreCrossVideoRoutes(String cameraId) async {
+    if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
+      return;
+    }
+    if (_isLoadingMoreCrossVideoRoutes) {
+      return;
+    }
+
+    setState(() {
+      _isLoadingMoreCrossVideoRoutes = true;
+    });
+
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final routesClient = IndividualGroupsApiClient(apiClient);
+
+      for (final analysis in _aggregatedAnalyses!) {
+        final sourceIndividualUuids = _resolveRouteSourceIndividualUuids(analysis);
+        for (final sourceUuid in sourceIndividualUuids) {
+          final hasMore =
+              _routeHasMoreByCameraSource[cameraId]?[sourceUuid] ?? false;
+          if (!hasMore) {
+            continue;
+          }
+
+          final currentPage =
+              _routePageIndexByCameraSource[cameraId]?[sourceUuid] ?? 0;
+          final nextPage = currentPage + 1;
+
+          final pageResp = await routesClient.getIndividualRoutesByCamera(
+            individualUuid: sourceUuid,
+            cameraId: cameraId,
+            pageIndex: nextPage,
+            pageSize: _routePageSize,
+          );
+
+          if (!pageResp.success || pageResp.data == null) {
+            continue;
+          }
+
+          final cameras = (pageResp.data!['cameras'] as List<dynamic>? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          for (final cameraGroup in cameras) {
+            _appendCameraGroupedRoutePage(
+              analysis: analysis,
+              sourceIndividualUuid: sourceUuid,
+              cameraGroup: cameraGroup,
+            );
+          }
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingMoreCrossVideoRoutes = false;
+        });
+      }
+    }
   }
 
   String _formatTimestamp(dynamic timestamp) {

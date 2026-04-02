@@ -1,0 +1,1857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EyeNet Vision - B2B Greece - B2C International</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-cyan: #000000;
+            --primary-teal: #1a1a1a;
+            --light-cyan: #333333;
+            --dark-slate: #ffffff;
+            --darker-slate: #ffffff;
+            --medium-slate: #666666;
+            --light-slate: #999999;
+            --text-primary: #1a1a1a;
+            --text-secondary: #333333;
+            --card-bg: #ffffff;
+            --success: #2a2a2a;
+            --warning: #666666;
+            --danger: #404040;
+            --border-color: #cccccc;
+            --header-height: auto;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Georgia', 'Times New Roman', serif;
+            background: #ffffff;
+            color: var(--text-primary);
+            line-height: 1.5;
+            min-height: 100vh;
+            font-size: 11pt;
+        }
+
+        /* Header - print-friendly inline header */
+        header {
+            background: #ffffff;
+            color: var(--text-primary);
+            padding: 0;
+            border-bottom: 3px solid #000000;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin: 0;
+            width: 100%;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-left: 0;
+            height: 100%;
+            width: 100%;
+            padding: 1.5rem 2rem;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .logo-svg {
+            height: 50px;
+            width: auto;
+        }
+
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary-cyan);
+            margin: 0;
+            padding: 0;
+            line-height: 1.2;
+        }
+
+        header p {
+            font-size: 0.9rem;
+            opacity: 1;
+            margin: 0;
+            padding: 0;
+            color: var(--text-secondary);
+            line-height: 1.2;
+        }
+
+        .header-content > div {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            justify-content: center;
+            height: 100%;
+        }
+
+        /* Main Content */
+        main {
+            margin: 0;
+            padding: 1.5rem 2rem;
+            min-height: auto;
+        }
+
+        .page {
+            display: block !important;
+            animation: none !important;
+            margin-bottom: 0;
+        }
+
+        .content-wrapper {
+            max-width: 100%;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 1.5rem 0;
+            border-radius: 0;
+            box-shadow: none;
+            border: none;
+        }
+
+        /* Typography */
+        h1 {
+            color: var(--text-primary);
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            border-bottom: 3px solid var(--primary-cyan);
+            padding-bottom: 0.5rem;
+        }
+
+        h2 {
+            color: var(--primary-cyan);
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #666666;
+            padding-bottom: 0.3rem;
+        }
+
+        h3 {
+            color: #333333;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        h4 {
+            color: #333333;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        p {
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            background: var(--darker-slate);
+            border: 1px solid var(--border-color);
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border: 1px solid var(--border-color);
+        }
+
+        th {
+            background: #333333;
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        td {
+            color: var(--text-secondary);
+        }
+
+        tr:hover {
+            background: #eeeeee;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* Info Boxes */
+        .info-box {
+            background: #f5f5f5;
+            border-left: 4px solid #333333;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .warning-box {
+            background: #f5f5f5;
+            border-left: 4px solid #666666;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .success-box {
+            background: #f5f5f5;
+            border-left: 4px solid #000000;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .danger-box {
+            background: #f5f5f5;
+            border-left: 4px solid #404040;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Strong emphasis */
+        strong {
+            color: #000000;
+            font-weight: 700;
+        }
+
+        /* Chart sizing for print */
+        canvas[id$="Chart"] {
+            max-height: 400px;
+        }
+
+        /* ===== PRINT MEDIA RULES ===== */
+        @media print {
+            @page {
+                size: A4;
+                margin: 12mm 14mm;
+            }
+
+            body {
+                font-size: 10pt;
+                line-height: 1.4;
+                background: #ffffff;
+            }
+
+            header {
+                border-bottom: 2px solid #000000;
+                padding: 0.5rem 1rem;
+            }
+
+            header h1 {
+                font-size: 1.4rem;
+            }
+
+            main {
+                margin: 0;
+                padding: 0.5rem;
+            }
+
+            .page {
+                display: block !important;
+                animation: none !important;
+            }
+
+            .content-wrapper {
+                box-shadow: none;
+                border: none;
+                padding: 0.5rem;
+                page-break-inside: auto;
+            }
+
+            .info-box, .success-box, .warning-box, .danger-box {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            table {
+                page-break-inside: avoid;
+                break-inside: avoid;
+                font-size: 9pt;
+            }
+
+            h1, h2, h3, h4 {
+                page-break-after: avoid;
+                break-after: avoid;
+            }
+
+            canvas[id$="Chart"] {
+                max-height: 320px !important;
+                width: 100% !important;
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
+
+            p {
+                orphans: 3;
+                widows: 3;
+            }
+
+            a[href]:after {
+                content: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Print-optimized Cover Page (prints separately) -->
+    <div class="print-cover-page" style="width:100vw;min-height:100vh;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0;margin:0;">
+        <style>
+            @media print {
+                .print-cover-page { page-break-after: always; break-after: page; display: block !important; }
+            }
+        </style>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;width:100vw;">
+            <div style="margin-bottom:2rem;">
+                <svg class="logo-svg" viewBox="5 5 285 70" xmlns="http://www.w3.org/2000/svg" style="width:220px;height:auto;">
+                    <rect x="10" y="10" width="8" height="60" fill="#22d3ee" opacity="1"></rect>
+                    <rect x="18" y="10" width="25" height="8" fill="#22d3ee" opacity="0.9"></rect>
+                    <rect x="18" y="36" width="20" height="8" fill="#22d3ee" opacity="0.8"></rect>
+                    <rect x="18" y="62" width="25" height="8" fill="#22d3ee" opacity="1"></rect>
+                    <rect x="55" y="10" width="8" height="25" fill="#67e8f9" opacity="1"></rect>
+                    <rect x="63" y="35" width="8" height="35" fill="#67e8f9" opacity="0.9"></rect>
+                    <rect x="71" y="10" width="8" height="25" fill="#67e8f9" opacity="0.8"></rect>
+                    <rect x="95" y="10" width="8" height="60" fill="#22d3ee" opacity="1"></rect>
+                    <rect x="103" y="10" width="25" height="8" fill="#22d3ee" opacity="0.9"></rect>
+                    <rect x="103" y="36" width="20" height="8" fill="#22d3ee" opacity="0.8"></rect>
+                    <rect x="103" y="62" width="25" height="8" fill="#22d3ee" opacity="1"></rect>
+                    <rect x="145" y="10" width="8" height="60" fill="#22d3ee" opacity="1"></rect>
+                    <rect x="153" y="20" width="8" height="13" fill="#22d3ee" opacity="0.9"></rect>
+                    <rect x="161" y="33" width="8" height="14" fill="#22d3ee" opacity="0.8"></rect>
+                    <rect x="169" y="47" width="8" height="13" fill="#22d3ee" opacity="0.9"></rect>
+                    <rect x="177" y="10" width="8" height="60" fill="#22d3ee" opacity="1"></rect>
+                    <rect x="200" y="10" width="8" height="60" fill="#67e8f9" opacity="1"></rect>
+                    <rect x="208" y="10" width="25" height="8" fill="#67e8f9" opacity="0.9"></rect>
+                    <rect x="208" y="36" width="20" height="8" fill="#67e8f9" opacity="0.8"></rect>
+                    <rect x="208" y="62" width="25" height="8" fill="#67e8f9" opacity="1"></rect>
+                    <rect x="250" y="10" width="30" height="8" fill="#22d3ee" opacity="1"></rect>
+                    <rect x="261" y="18" width="8" height="52" fill="#22d3ee" opacity="0.9"></rect>
+                </svg>
+            </div>
+            <h1 style="font-size:2.6rem;font-weight:800;color:#111;margin-bottom:1.2rem;">EyeNet Vision</h1>
+            <div style="font-size:1.25rem;font-weight:600;color:#1985a1;margin-bottom:0.7rem;">B2B Greece - B2C International</div>
+            <h2 style="font-size:1.5rem;font-weight:600;color:#333;margin-bottom:1.5rem;">Financial & Investor Scenarios</h2>
+            <div style="font-size:1.1rem;color:#444;margin-bottom:2.5rem;">2026 Print Edition &mdash; Confidential</div>
+            <div style="font-size:1rem;color:#666;margin-bottom:0.5rem;">Prepared for investor, partner, and strategic review distribution.</div>
+            <div style="font-size:1rem;color:#666;">March 2026</div>
+        </div>
+    </div>
+    <header>
+        <div class="header-content">
+            <div class="logo-container">
+                <svg class="logo-svg" viewBox="5 5 285 70" xmlns="http://www.w3.org/2000/svg">
+                    <!-- E -->
+                    <rect x="10" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    <rect x="18" y="10" width="25" height="8" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="18" y="36" width="20" height="8" fill="#22d3ee" opacity="0.8"/>
+                    <rect x="18" y="62" width="25" height="8" fill="#22d3ee" opacity="1"/>
+                    
+                    <!-- Y -->
+                    <rect x="55" y="10" width="8" height="25" fill="#67e8f9" opacity="1"/>
+                    <rect x="63" y="35" width="8" height="35" fill="#67e8f9" opacity="0.9"/>
+                    <rect x="71" y="10" width="8" height="25" fill="#67e8f9" opacity="0.8"/>
+                    
+                    <!-- E -->
+                    <rect x="95" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    <rect x="103" y="10" width="25" height="8" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="103" y="36" width="20" height="8" fill="#22d3ee" opacity="0.8"/>
+                    <rect x="103" y="62" width="25" height="8" fill="#22d3ee" opacity="1"/>
+                    
+                    <!-- N -->
+                    <rect x="145" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    <rect x="153" y="20" width="8" height="13" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="161" y="33" width="8" height="14" fill="#22d3ee" opacity="0.8"/>
+                    <rect x="169" y="47" width="8" height="13" fill="#22d3ee" opacity="0.9"/>
+                    <rect x="177" y="10" width="8" height="60" fill="#22d3ee" opacity="1"/>
+                    
+                    <!-- E -->
+                    <rect x="200" y="10" width="8" height="60" fill="#67e8f9" opacity="1"/>
+                    <rect x="208" y="10" width="25" height="8" fill="#67e8f9" opacity="0.9"/>
+                    <rect x="208" y="36" width="20" height="8" fill="#67e8f9" opacity="0.8"/>
+                    <rect x="208" y="62" width="25" height="8" fill="#67e8f9" opacity="1"/>
+                    
+                    <!-- T -->
+                    <rect x="250" y="10" width="30" height="8" fill="#22d3ee" opacity="1"/>
+                    <rect x="261" y="18" width="8" height="52" fill="#22d3ee" opacity="0.9"/>
+                </svg>
+            </div>
+            <div>
+                <h1>B2B Greece - B2C International</h1>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <p>Intelligent Vision Technology Platform</p>
+                    <span style="font-size: 0.8rem; color: var(--text-secondary);">Version 2.24.36 | February 15, 2026</span>
+                    <a href="https://eyenet-vision.com/" target="_blank" style="font-size: 0.8rem; color: var(--primary-cyan); text-decoration: none; font-weight: 500; display: inline-flex; align-items: center; gap: 0.3rem; transition: all 0.3s ease; width: fit-content;">
+                        <svg style="width: 14px; height: 14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6m4-3h6v6m-11-2.586a1 1 0 00-1.414 1.414l9 9"/>
+                        </svg>
+                        EyeNet Vision
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Financial & Revenue Model Page -->
+        <div id="revenue" class="page">
+            <div class="content-wrapper">
+                <h1>Financial & Revenue Model</h1>
+                <p style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem;">Dual-model revenue strategy with projected growth from $1M to $26M ARR over 3 years.</p>
+
+                <h2>Executive Summary</h2>
+                <div class="success-box">
+                    <p>Dual revenue model combining enterprise B2B subscriptions with consumer-focused B2C offerings creates diversified revenue streams across market segments.</p>
+                </div>
+
+                <h2>3-Year Revenue Projection</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>B2B Enterprise Revenue</strong></td>
+                            <td>$600K</td>
+                            <td>$4.5M</td>
+                            <td>$14.5M</td>
+                        </tr>
+                        <tr>
+                            <td><strong>B2C Light Revenue</strong></td>
+                            <td>$440K</td>
+                            <td>$3.59M</td>
+                            <td>$11.65M</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Revenue</strong></td>
+                            <td><strong>$1.04M</strong></td>
+                            <td><strong>$8.09M</strong></td>
+                            <td><strong>$26.15M</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>YoY Growth</strong></td>
+                            <td>—</td>
+                            <td>776%</td>
+                            <td>223%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>B2B Accounts</strong></td>
+                            <td>50</td>
+                            <td>200</td>
+                            <td>500</td>
+                        </tr>
+                        <tr>
+                            <td><strong>B2C Paid Users</strong></td>
+                            <td>600</td>
+                            <td>6,000+</td>
+                            <td>20,000+</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Gross Margin</strong></td>
+                            <td>65%</td>
+                            <td>62%</td>
+                            <td>60%</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="revenueGrowthChart" style="max-height: 400px;"></canvas>
+                </div>
+
+                <h2>B2B Enterprise Model</h2>
+                <h3>Pricing Tiers</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tier</th>
+                            <th>Price Range (Greece)</th>
+                            <th>Scope</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Starter</strong></td>
+                            <td>€150-250/month</td>
+                            <td>Small/independent stores, local agencies, small schools, small properties</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Professional</strong></td>
+                            <td>€499-1,999/month</td>
+                            <td>Regional chains, regional agencies, school districts, hotel groups, office parks</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Enterprise</strong></td>
+                            <td>€2,000+/month</td>
+                            <td>Large national chains, major security firms, universities, major developers, resorts</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Governmental Contracts</strong></td>
+                            <td>€5,000+/month</td>
+                            <td>Military, government agencies, large-scale public sector projects</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>Unit Economics</h3>
+                <ul>
+                    <li><strong>Average Monthly Recurring Revenue (Greece):</strong> €400/customer (weighted avg. across tiers)</li>
+                    <li><strong>Annual Contract Value (Greece):</strong> €4,800</li>
+                    <li><strong>Customer Acquisition Cost:</strong> €1,000-2,000</li>
+                    <li><strong>Lifetime Value:</strong> €14,400 (3-year average)</li>
+                    <li><strong>Payback Period:</strong> 2-3 months</li>
+                    <li><strong>Customer Retention Rate:</strong> 85-90% annually</li>
+                </ul>
+
+                <h3>Target Penetration by Pricing in Greece</h3>
+                <p>This table presents the target penetration of the B2B Enterprise TAM in Greece, segmented by local pricing tiers and market segments, including governmental and military contracts.</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Market Segment</th>
+                            <th>Starter Tier<br><span style="font-weight:400; font-size:0.95em">(&euro;150-250/mo)</span></th>
+                            <th>Professional Tier<br><span style="font-weight:400; font-size:0.95em">(&euro;499-1,999/mo)</span></th>
+                            <th>Enterprise Tier<br><span style="font-weight:400; font-size:0.95em">(&euro;2,000+/mo)</span></th>
+                            <th>Govermental Contracts<br><span style="font-weight:400; font-size:0.95em">(&euro;5,000+/mo)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Retail chains & stores</td>
+                            <td>20-50 accounts<br><span style="color:#666">Small/independent stores</span></td>
+                            <td>2-6 accounts<br><span style="color:#666">Regional chains</span></td>
+                            <td>0-2 accounts<br><span style="color:#666">Large national chains</span></td>
+                            <td>n/a</td>
+                        </tr>
+                        <tr>
+                            <td>Security agencies</td>
+                            <td>20-50 accounts<br><span style="color:#666">Local agencies</span></td>
+                            <td>3-5 accounts<br><span style="color:#666">Regional agencies</span></td>
+                            <td>0-1 accounts<br><span style="color:#666">Major security firms</span></td>
+                            <td>Military 0-1</td>
+                        </tr>
+                        <tr>
+                            <td>Educational institutions</td>
+                            <td>20-50 accounts<br><span style="color:#666">Small schools</span></td>
+                            <td>10-15 accounts<br><span style="color:#666">School districts</span></td>
+                            <td>0-5 accounts<br><span style="color:#666">Universities</span></td>
+                            <td>n/a</td>
+                        </tr>
+                        <tr>
+                            <td>Commercial real estate & tourism</td>
+                            <td>10-30 accounts<br><span style="color:#666">Small properties</span></td>
+                            <td>20-50 accounts<br><span style="color:#666">Hotel groups, office parks</span></td>
+                            <td>20-50 accounts<br><span style="color:#666">Major developers, resorts</span></td>
+                            <td>n/a</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p style="font-size:0.98em; color:#444; margin-top:-1rem;">* Greek market pricing and account targets. Governmental and military contracts are strategic but rare.</p>
+
+                <h2>B2C Light Model</h2>
+                <h3>Product Portfolio</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Target Market</th>
+                            <th>Pricing</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Intelligent Signage Lite</strong></td>
+                            <td>Marketing consultants, small agencies</td>
+                            <td>$29.99 - $99.99/month</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Home Security Lite</strong></td>
+                            <td>Homeowners, small property managers</td>
+                            <td>$19.99 - $49.99/month</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Event Security Lite</strong></td>
+                            <td>Security contractors, venue managers</td>
+                            <td>$199 - $1,200/event</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Retail Compliance Lite</strong></td>
+                            <td>Small retail, bars, restaurants</td>
+                            <td>$49.99 - $99.99/month</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>B2C Unit Economics</h3>
+                <ul>
+                    <li><strong>Average Monthly Recurring Revenue:</strong> $49.99/user</li>
+                    <li><strong>Lifetime Value:</strong> $600-1,200 (18 months average)</li>
+                    <li><strong>Customer Acquisition Cost:</strong> $20-30</li>
+                    <li><strong>Payback Period:</strong> 1-2 months</li>
+                    <li><strong>Customer Retention Rate:</strong> 60-70% annually</li>
+                    <li><strong>CAC Ratio (LTV:CAC):</strong> 30:1 (highly profitable)</li>
+                </ul>
+
+                <h2>Market Opportunity</h2>
+                <h3>B2B Enterprise TAM</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>2026</th>
+                                    <th>2027</th>
+                                    <th>2028</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>B2B Enterprise Revenue (Greece)</strong></td>
+                                    <td>€180K</td>
+                                    <td>€600K</td>
+                                    <td>€1.2M</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>B2C Light Revenue</strong></td>
+                                    <td>$440K</td>
+                                    <td>$3.59M</td>
+                                    <td>$11.65M</td>
+                                </tr>
+                                <tr style="background: #eeeeee;">
+                                    <td><strong>Total Revenue</strong></td>
+                                    <td><strong>€600K</strong></td>
+                                    <td><strong>€2.1M</strong></td>
+                                    <td><strong>€5.0M</strong></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>YoY Growth</strong></td>
+                                    <td>—</td>
+                                    <td>250%</td>
+                                    <td>138%</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>B2B Accounts (Greece)</strong></td>
+                                    <td>60</td>
+                                    <td>120</td>
+                                    <td>180</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>B2C Paid Users</strong></td>
+                                    <td>600</td>
+                                    <td>6,000+</td>
+                                    <td>20,000+</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Gross Margin</strong></td>
+                                    <td>65%</td>
+                                    <td>62%</td>
+                                    <td>60%</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <tr>
+                            <td>Home Security Lite</td>
+                            <td>500M+ homeowners & hosts</td>
+                            <td>10,000-25,000 users</td>
+                            <td>$6-15M</td>
+                        </tr>
+                        <tr>
+                            <td>Event Security Lite</td>
+                            <td>200,000+ contractors</td>
+                            <td>500-1,500 users</td>
+                            <td>$0.5-1.5M</td>
+                        </tr>
+                        <tr>
+                            <td>Retail Compliance Lite</td>
+                            <td>10M+ small retailers</td>
+                            <td>3,000-8,000 users</td>
+                            <td>$2-6M</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <ul>
+                    <li>International deployment via internet and social marketing, targeting global users with digital campaigns and influencer partnerships.</li>
+                </ul>
+
+                <h2>Revenue Mix by Product (2028 Projection)</h2>
+                
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem auto; max-width: 550px; border: 1px solid #dddddd;">
+                    <canvas id="productRevenueChart" style="max-height: 450px;"></canvas>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>Revenue</th>
+                            <th>% of Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Intelligent Signage</td>
+                            <td>$5.0M</td>
+                            <td>19%</td>
+                        </tr>
+                        <tr>
+                            <td>Gate Activity</td>
+                            <td>$5.0M</td>
+                            <td>19%</td>
+                        </tr>
+                        <tr>
+                            <td>Security Officer Agent</td>
+                            <td>$7.5M</td>
+                            <td>29%</td>
+                        </tr>
+                        <tr>
+                            <td>Sentinal</td>
+                            <td>$4.0M</td>
+                            <td>15%</td>
+                        </tr>
+                        <tr>
+                            <td>Home Security + Retail</td>
+                            <td>$2.8M + $4.2M</td>
+                            <td>27%</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Revenue</strong></td>
+                            <td><strong>$26.15M</strong></td>
+                            <td><strong>100%</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h2>Geographic Market Analysis</h2>
+                <p>Revenue projections by target geography (2026-2028):</p>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="geographicRevenueChart" style="max-height: 400px;"></canvas>
+                </div>
+
+                <h3>United States (Primary Market)</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 330M</li>
+                        <li><strong>B2B Addressable:</strong> 10,000+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 50M+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $600K</li>
+                        <li><strong>2027 Revenue:</strong> $3.2M</li>
+                        <li><strong>2028 Revenue:</strong> $14M</li>
+                        <li><strong>Strategy:</strong> Enterprise sales focus + national B2C app launch</li>
+                    </ul>
+                </div>
+
+                <h3>Canada (Secondary Market)</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 40M</li>
+                        <li><strong>B2B Addressable:</strong> 1,500+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 8M+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $100K</li>
+                        <li><strong>2027 Revenue:</strong> $600K</li>
+                        <li><strong>2028 Revenue:</strong> $3M</li>
+                        <li><strong>Strategy:</strong> Partner with Canadian retailers & security firms</li>
+                    </ul>
+                </div>
+
+                <h3>Greece (EU Pilot Market)</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 10.7M</li>
+                        <li><strong>B2B Addressable:</strong> 500+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 2M+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $50K</li>
+                        <li><strong>2027 Revenue:</strong> $300K</li>
+                        <li><strong>2028 Revenue:</strong> $1.2M</li>
+                        <li><strong>Strategy:</strong> Compliance-first (GDPR focus), education sector focus</li>
+                    </ul>
+                </div>
+
+                <h3>Romania (EU Emerging Market)</h3>
+                <div class="info-box">
+                    <ul>
+                        <li><strong>Population:</strong> 19M</li>
+                        <li><strong>B2B Addressable:</strong> 800+ potential accounts</li>
+                        <li><strong>B2C Addressable:</strong> 3M+ potential users</li>
+                        <li><strong>2026 Revenue:</strong> $30K</li>
+                        <li><strong>2027 Revenue:</strong> $200K</li>
+                        <li><strong>2028 Revenue:</strong> $900K</li>
+                        <li><strong>Strategy:</strong> Technology partners & system integrators</li>
+                    </ul>
+                </div>
+
+                <h2>Scenario Analysis & Cash Requirements</h2>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="scenarioComparisonChart" style="max-height: 450px;"></canvas>
+                </div>
+
+                <h3>Pessimistic Scenario</h3>
+                <div class="warning-box">
+                    <p><strong>Assumptions:</strong> 0.5% B2B penetration, 0.25% B2C penetration, 12-15% churn</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Revenue</th>
+                                <th>Operating Expenses</th>
+                                <th>Cash Burn</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026</td>
+                                <td>$520K</td>
+                                <td>$563K</td>
+                                <td>($43K)</td>
+                            </tr>
+                            <tr>
+                                <td>2027</td>
+                                <td>$4.05M</td>
+                                <td>$1.09M</td>
+                                <td>+$2.96M</td>
+                            </tr>
+                            <tr>
+                                <td>2028</td>
+                                <td>$13.08M</td>
+                                <td>$2.023M</td>
+                                <td>+$11.06M</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p><strong>Total Cash Injection Needed:</strong> $43K</p>
+                    <p><strong>Profitability Timeline:</strong> Q1 2027 (EBITDA breakeven)</p>
+                </div>
+
+                <h3>Baseline Scenario (Current Plan)</h3>
+                <div class="info-box">
+                    <p><strong>Assumptions:</strong> 1% B2B penetration, 0.5% B2C penetration, 8-10% churn</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Revenue</th>
+                                <th>Operating Expenses</th>
+                                <th>EBITDA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026</td>
+                                <td>$1.04M</td>
+                                <td>$563K</td>
+                                <td>+$477K</td>
+                            </tr>
+                            <tr>
+                                <td>2027</td>
+                                <td>$8.09M</td>
+                                <td>$1.09M</td>
+                                <td>+$7.00M</td>
+                            </tr>
+                            <tr>
+                                <td>2028</td>
+                                <td>$26.15M</td>
+                                <td>$2.023M</td>
+                                <td>+$24.13M</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p><strong>Total Cash Injection Needed:</strong> $0</p>
+                    <p><strong>Profitability Timeline:</strong> Q1 2026 (EBITDA breakeven)</p>
+                </div>
+
+                <h3>Optimistic Scenario</h3>
+                <div class="success-box">
+                    <p><strong>Assumptions:</strong> 2-3% B2B penetration, 1-2% B2C penetration, 5-8% churn</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th>Revenue</th>
+                                <th>Operating Expenses</th>
+                                <th>EBITDA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>2026</td>
+                                <td>$1.56M</td>
+                                <td>$563K</td>
+                                <td>+$997K</td>
+                            </tr>
+                            <tr>
+                                <td>2027</td>
+                                <td>$12.13M</td>
+                                <td>$1.09M</td>
+                                <td>+$11.04M</td>
+                            </tr>
+                            <tr>
+                                <td>2028</td>
+                                <td>$39.23M</td>
+                                <td>$2.023M</td>
+                                <td>+$37.21M</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p><strong>Total Cash Injection Needed:</strong> $0</p>
+                    <p><strong>Profitability Timeline:</strong> Q1 2026 (EBITDA breakeven, optimistic scenario)</p>
+                </div>
+
+                <h2>Operating Cost Structure</h2>
+                <h3>Personnel & Headcount (~30% of OpEx)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Department</th>
+                            <th>2026 Headcount</th>
+                            <th>2027 Headcount</th>
+                            <th>2028 Headcount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Sales & BD</td>
+                            <td>0.5 FTE</td>
+                            <td>2 FTE</td>
+                            <td>3 FTE</td>
+                        </tr>
+                        <tr>
+                            <td>Marketing</td>
+                            <td>0.5 FTE</td>
+                            <td>1.5 FTE</td>
+                            <td>2 FTE</td>
+                        </tr>
+                        <tr>
+                            <td>Product & Engineering</td>
+                            <td>1.5 FTE</td>
+                            <td>2 FTE</td>
+                            <td>3 FTE</td>
+                        </tr>
+                        <tr>
+                            <td>Customer Success</td>
+                            <td>0 FTE</td>
+                            <td>0.5 FTE (&euro;17K)</td>
+                            <td>1 FTE (&euro;35K)</td>
+                        </tr>
+                        <tr>
+                            <td>Operations & Finance</td>
+                            <td>Outsource</td>
+                            <td>1 FTE</td>
+                            <td>1 FTE</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Personnel</strong></td>
+                            <td><strong>2.5 FTE</strong></td>
+                            <td><strong>7 FTE</strong></td>
+                            <td><strong>10 FTE</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h4>Average Cost Per 1 FTE by Department (Year-by-Year)</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Department</th>
+                            <th>2026 Avg Cost / FTE</th>
+                            <th>2027 Avg Cost / FTE</th>
+                            <th>2028 Avg Cost / FTE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Sales &amp; BD</td>
+                            <td>$82.2K</td>
+                            <td>$94.4K</td>
+                            <td>$125.0K</td>
+                        </tr>
+                        <tr>
+                            <td>Marketing</td>
+                            <td>$76.3K</td>
+                            <td>$75.0K</td>
+                            <td>$81.5K</td>
+                        </tr>
+                        <tr>
+                            <td>Product &amp; Engineering</td>
+                            <td>$108.8K</td>
+                            <td>$115.6K</td>
+                            <td>$130.0K</td>
+                        </tr>
+                        <tr>
+                            <td>Customer Success</td>
+                            <td>N/A</td>
+                            <td>$83.3K</td>
+                            <td>$93.8K</td>
+                        </tr>
+                        <tr>
+                            <td>Operations &amp; Finance</td>
+                            <td>$100.0K</td>
+                            <td>$100.0K</td>
+                            <td>$93.6K</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h3>Marketing & CAC (~25% of OpEx)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Paid Social & Influencer Marketing</td>
+                            <td>$72K</td>
+                            <td>$150K</td>
+                            <td>$300K</td>
+                        </tr>
+                        <tr>
+                            <td>Content & SEO (Global)</td>
+                            <td>$24K</td>
+                            <td>$48K</td>
+                            <td>$96K</td>
+                        </tr>
+                        <tr>
+                            <td>Digital Events & Webinars</td>
+                            <td>$12K</td>
+                            <td>$24K</td>
+                            <td>$48K</td>
+                        </tr>
+                        <tr>
+                            <td>Tools & Automation</td>
+                            <td>$15K</td>
+                            <td>$24K</td>
+                            <td>$36K</td>
+                        </tr>
+                        <tr>
+                            <td>PR & Partnerships (International)</td>
+                            <td>$12K</td>
+                            <td>$24K</td>
+                            <td>$48K</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Marketing</strong></td>
+                            <td><strong>$135K</strong></td>
+                            <td><strong>$270K</strong></td>
+                            <td><strong>$528K</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h3>Technology & Infrastructure (~15% of OpEx)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Cloud Infrastructure (AWS/GCP)</td>
+                            <td>$13K</td>
+                            <td>$27K</td>
+                            <td>$50K</td>
+                        </tr>
+                        <tr>
+                            <td>Security & Compliance</td>
+                            <td>$10K</td>
+                            <td>$20K</td>
+                            <td>$35K</td>
+                        </tr>
+                        <tr>
+                            <td>Database & Storage</td>
+                            <td>$8K</td>
+                            <td>$15K</td>
+                            <td>$30K</td>
+                        </tr>
+                        <tr>
+                            <td>Development Tools</td>
+                            <td>$13K</td>
+                            <td>$23K</td>
+                            <td>$40K</td>
+                        </tr>
+                        <tr>
+                            <td>API & Third-Party Services</td>
+                            <td>$12K</td>
+                            <td>$20K</td>
+                            <td>$40K</td>
+                        </tr>
+                        <tr>
+                            <td>Hardware & IT Support</td>
+                            <td>$69K</td>
+                            <td>$105K</td>
+                            <td>$165K</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total Tech/Infrastructure</strong></td>
+                            <td><strong>$125K</strong></td>
+                            <td><strong>$210K</strong></td>
+                            <td><strong>$360K</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <h3>Operations & Facilities (~5-8% of OpEx)</h3>
+                <ul>
+                    <li><strong>2026:</strong> $30K (virtual/hybrid office, legal, insurance, professional services, travel)</li>
+                    <li><strong>2027:</strong> $90K (expanded office space, increased travel for sales)</li>
+                    <li><strong>2028:</strong> $200K (multi-location offices, international travel, comprehensive insurance)</li>
+                </ul>
+                <h3>Research & Development (~8% of OpEx)</h3>
+                <ul>
+                    <li><strong>2026:</strong> $80K (smart glasses R&D $50K, AI/ML development $10K, hardware lab $20K)</li>
+                    <li><strong>2027:</strong> $100K (continued hardware development, customer research, competitive intelligence)</li>
+                    <li><strong>2028:</strong> $150K (mature R&D focusing on next-generation features)</li>
+                </ul>
+
+                <h3>Total Operating Expenses Summary</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cost Center</th>
+                            <th>2026</th>
+                            <th>2027</th>
+                            <th>2028</th>
+                            <th>% of Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Personnel & Payroll</td>
+                            <td>$180K</td>
+                            <td>$420K</td>
+                            <td>$650K</td>
+                            <td>~30%</td>
+                        </tr>
+                        <tr>
+                            <td>Marketing & CAC</td>
+                            <td>$135K</td>
+                            <td>$270K</td>
+                            <td>$528K</td>
+                            <td>~25%</td>
+                        </tr>
+                        <tr>
+                            <td>Technology & Infrastructure</td>
+                            <td>$125K</td>
+                            <td>$210K</td>
+                            <td>$360K</td>
+                            <td>~15%</td>
+                        </tr>
+                        <tr>
+                            <td>Operations & Facilities</td>
+                            <td>$30K</td>
+                            <td>$90K</td>
+                            <td>$200K</td>
+                            <td>~5-8%</td>
+                        </tr>
+                        <tr>
+                            <td>Research & Development</td>
+                            <td>$80K</td>
+                            <td>$100K</td>
+                            <td>$150K</td>
+                            <td>~8%</td>
+                        </tr>
+                        <tr>
+                            <td>Contingency (5%)</td>
+                            <td>$45K</td>
+                            <td>$90K</td>
+                            <td>$130K</td>
+                            <td>~5%</td>
+                        </tr>
+                        <tr style="background: #eeeeee;">
+                            <td><strong>Total OpEx</strong></td>
+                            <td><strong>$563K</strong></td>
+                            <td><strong>$1,090K</strong></td>
+                            <td><strong>$2,023K</strong></td>
+                            <td><strong>100%</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="background: #f5f5f5; padding: 2rem; border-radius: 10px; margin: 2rem 0; border: 1px solid #dddddd;">
+                    <canvas id="opexBreakdownChart" style="max-height: 450px;"></canvas>
+                </div>
+
+                <h2>Capital Requirements & Funding Strategy</h2>
+                <div class="success-box">
+                    <p><strong>Funding Logic:</strong> To minimize dilution and align capital with key milestones, the funding strategy is staged: an initial seed round of $500,000 covers the first year of operations, product development, and launch. A follow-on Series A/growth round is planned after demonstrating traction, supporting scale-up and market expansion at a higher valuation.</p>
+                    <h3>Staged Funding Plan: $500K Seed + Series A Growth</h3>
+                    <p><strong>Allocation:</strong></p>
+                    <ul>
+                        <li><strong>Seed Round (Year 1):</strong> $500K for product development, initial team, launch, and working capital</li>
+                        <li><strong>Series A / Growth (Year 2+):</strong> Additional capital (est. $700K+) for market expansion, sales, and scaling operations, raised after key milestones are achieved</li>
+                    </ul>
+                    <p><strong>Use of Seed Funds:</strong></p>
+                    <ul>
+                        <li>Personnel & Payroll: $180K</li>
+                        <li>Marketing & CAC: $135K</li>
+                        <li>Technology & Infrastructure: $125K</li>
+                        <li>Operations, R&D, and Contingency: $60K</li>
+                    </ul>
+                    <p><strong>Note:</strong> This staged approach reduces early dilution, matches capital to risk, and enables a stronger Series A raise after demonstrating product-market fit and initial revenue traction.</p>
+                </div>
+
+                <h2>Key Financial Metrics</h2>
+                                <h2>Investor Strategy</h2>
+                                <p style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem;">Investment opportunity analysis with clear path to profitability and exit.</p>
+
+                                <h3>Investment Highlights</h3>
+                                <div class="success-box">
+                                    <ul>
+                                        <li><strong>Proven Technology:</strong> Beta-ready products with 5 applications ready for Q2 2026</li>
+                                        <li><strong>Dual Revenue Model:</strong> B2B (contracts $6K-$240K/year) + B2C ($20-$100/month, avg. $50/month)</li>
+                                        <li><strong>3-Year Trajectory:</strong> $1.04M (2026) → $8.09M (2027) → $26.15M (2028)</li>
+                                        <li><strong>Geographic Focus:</strong> Greece, North America, and EU pilots</li>
+                                        <li><strong>Exit Path:</strong> IPO or strategic acquisition at $8M-$26M ARR valuation multiples (2029-2030)</li>
+                                    </ul>
+                                </div>
+
+                                <h3>Investment Rounds Overview</h3>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Round</th>
+                                            <th>Timing</th>
+                                            <th>Target Raise</th>
+                                            <th>Valuation</th>
+                                            <th>Dilution</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><strong>Seed (Immediate)</strong></td>
+                                            <td>Q2 2026</td>
+                                            <td>$500K</td>
+                                            <td>$2M</td>
+                                            <td>25%</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Series A / Growth</strong></td>
+                                            <td>Q2-Q3 2027</td>
+                                            <td>$700K-$1M</td>
+                                            <td>$4M-$5M</td>
+                                            <td>25%</td>
+                                        </tr>
+                                        <tr>
+                                            <td><strong>Exit</strong></td>
+                                            <td>2029-2030</td>
+                                            <td>—</td>
+                                            <td>$50M-$100M</td>
+                                            <td>—</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h3>Seed Round Details (Q2 2026)</h3>
+                                <ul>
+                                    <li><strong>Target Raise:</strong> $500K</li>
+                                    <li><strong>Pre-Money Valuation:</strong> $2M</li>
+                                    <li><strong>Dilution:</strong> 25% equity stake</li>
+                                    <li><strong>Security:</strong> Convertible note or SAFE (preferred)</li>
+                                </ul>
+
+                                <h4>Seed Cap Table Example (Before vs After)</h4>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Holder</th>
+                                            <th>Before Seed</th>
+                                            <th>After Seed</th>
+                                            <th>Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Founders + Existing Holders</td>
+                                            <td>100.0%</td>
+                                            <td>75.0%</td>
+                                            <td>Diluted by new investor entry</td>
+                                        </tr>
+                                        <tr>
+                                            <td>New Seed Investor</td>
+                                            <td>0.0%</td>
+                                            <td>25.0%</td>
+                                            <td>$500K invested at $2M pre-money</td>
+                                        </tr>
+                                        <tr style="background: #eeeeee;">
+                                            <td><strong>Total</strong></td>
+                                            <td><strong>100.0%</strong></td>
+                                            <td><strong>100.0%</strong></td>
+                                            <td><strong>Post-money valuation: $2.5M</strong></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h4>Use of Seed Funds</h4>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Category</th>
+                                            <th>Allocation</th>
+                                            <th>Purpose</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Product Development</td>
+                                            <td>$200K (40%)</td>
+                                            <td>Platform, mobile apps, beta testing</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Go-to-Market</td>
+                                            <td>$150K (30%)</td>
+                                            <td>Sales hires, initial marketing</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Operations & Working Capital</td>
+                                            <td>$100K (20%)</td>
+                                            <td>Infrastructure, legal, compliance, buffer</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Contingency</td>
+                                            <td>$50K (10%)</td>
+                                            <td>Unforeseen needs</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h4>Seed Round Milestones</h4>
+                                <ul>
+                                    <li>Deploy 5-10 pilot customers</li>
+                                    <li>Achieve $50K-$100K ARR</li>
+                                    <li>Validate product-market fit with case studies</li>
+                                    <li>Build initial sales pipeline (50+ leads)</li>
+                                    <li>Establish 2-3 channel partnerships</li>
+                                </ul>
+
+                                <h3>Series A / Growth Round (Q2-Q3 2027)</h3>
+                                <ul>
+                                    <li><strong>Target Raise:</strong> $700K-$1M</li>
+                                    <li><strong>Pre-Money Valuation:</strong> $4M-$5M</li>
+                                    <li><strong>Dilution:</strong> 25% equity (cumulative: ~44%)</li>
+                                    <li><strong>Security:</strong> Series A Preferred Stock</li>
+                                </ul>
+
+                                <h4>Use of Series A Funds</h4>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Category</th>
+                                            <th>Allocation</th>
+                                            <th>Purpose</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Sales & Marketing Expansion</td>
+                                            <td>$400K (40%)</td>
+                                            <td>Enterprise sales, digital marketing, international events</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Product Scaling</td>
+                                            <td>$200K (20%)</td>
+                                            <td>Engineering, customer success tools</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Working Capital & Buffer</td>
+                                            <td>$200K (20%)</td>
+                                            <td>Runway, contingency</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Operations & Compliance</td>
+                                            <td>$100K (10-15%)</td>
+                                            <td>Legal, infrastructure, internationalization</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+
+                                <h4>Series A Milestones</h4>
+                                <ul>
+                                    <li>Achieve $1M+ ARR by Series A close</li>
+                                    <li>50+ B2B customers and 500+ B2C users</li>
+                                    <li>8-12% MoM B2B growth, 15-20% MoM B2C growth</li>
+                                    <li>CAC payback &lt;6 months (B2B), &lt;3 months (B2C)</li>
+                                    <li>Gross margin 60%+</li>
+                                </ul>
+
+                                <h3>Exit Strategy</h3>
+                                <div class="success-box">
+                                    <ul>
+                                        <li><strong>Target Exit:</strong> $50M-$100M valuation (2029-2030, based on ARR multiples and sector comps)</li>
+                                        <li><strong>Clear Path to Exit:</strong> IPO or strategic acquisition by cloud/tech giant or security conglomerate</li>
+                                        <li><strong>Revenue at Exit:</strong> $26M+ ARR</li>
+                                        <li><strong>Multiple Exit Paths:</strong> Strong strategic and financial buyer interest</li>
+                                    </ul>
+                                </div>
+
+                                <h4>Investor Return Analysis</h4>
+                                <p>At a $100M exit, seed investors (25% at $2.5M post) could realize $25M (50x), Series A investors (25% at $4.5M post) $25M (25x). Even at a $50M exit, multiples remain attractive for early investors (seed: $12.5M, 25x; Series A: $12.5M, 12.5x).</p>
+                <div class="info-box">
+                    <h3>Gross Margin</h3>
+                    <ul>
+                        <li><strong>2026:</strong> 65% (high initial efficiency)</li>
+                        <li><strong>2027:</strong> 62% (scaling investments)</li>
+                        <li><strong>2028:</strong> 60% (mature operations, $26M+ ARR)</li>
+                    </ul>
+                </div>
+
+                <div class="success-box">
+                    <h3>Profitability Path</h3>
+                    <ul>
+                        <li><strong>2026:</strong> +$477K EBITDA (lean cost structure, early break-even)</li>
+                        <li><strong>2027:</strong> +$7.0M EBITDA</li>
+                        <li><strong>2028:</strong> +$24.13M EBITDA (over 90% EBITDA margin, capital efficient growth)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(initializeRevenueGrowthChart, 100);
+        setTimeout(initializeProductRevenueChart, 100);
+        setTimeout(initializeGeographicRevenueChart, 100);
+        setTimeout(initializeScenarioComparisonChart, 100);
+        setTimeout(initializeOpexBreakdownChart, 100);
+    });
+
+    function initializeRevenueGrowthChart() {
+        const canvas = document.getElementById('revenueGrowthChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['2026', '2027', '2028'],
+                datasets: [
+                    {
+                        label: 'B2B Enterprise',
+                        data: [0.6, 4.5, 14.5],
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0d6efd',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'B2C Light',
+                        data: [0.44, 3.59, 11.65],
+                        backgroundColor: '#198754',
+                        borderColor: '#198754',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '3-Year Revenue Projection - B2B vs B2C',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 15, font: { size: 12 } }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': $' + context.raw + 'M';
+                            },
+                            afterBody: function(tooltipItems) {
+                                const year = tooltipItems[0].label;
+                                const totals = { '2026': 1.04, '2027': 8.09, '2028': 26.15 };
+                                return '\nTotal Revenue: $' + totals[year] + 'M';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: { color: '#000000', callback: function(value) { return '$' + value + 'M'; } },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Revenue (Millions USD)', color: '#000000' }
+                    },
+                    x: {
+                        stacked: true,
+                        ticks: { color: '#000000' },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function initializeProductRevenueChart() {
+        const canvas = document.getElementById('productRevenueChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: [
+                    'Security Officer Agent',
+                    'Intelligent Signage',
+                    'Gate Activity',
+                    'Home Security + Retail',
+                    'Sentinel',
+                    'Room & Gate Protection'
+                ],
+                datasets: [{
+                    data: [7.5, 5.0, 5.0, 7.0, 4.0, 2.5],
+                    backgroundColor: ['#0d6efd', '#198754', '#0dcaf0', '#ffc107', '#dc3545', '#6c757d'],
+                    borderColor: '#ffffff',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '2028 Revenue Mix by Product',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: {
+                            color: '#000000',
+                            padding: 12,
+                            font: { size: 11 },
+                            generateLabels: function(chart) {
+                                const data = chart.data;
+                                const dataset = data.datasets[0];
+                                const values = dataset.data || [];
+                                const total = values.reduce((sum, val) => sum + Number(val || 0), 0);
+                                return (data.labels || []).map((label, i) => {
+                                    const value = Number(values[i] || 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                                    return {
+                                        text: `${label}: $${value}M (${percentage}%)`,
+                                        fillStyle: dataset.backgroundColor[i],
+                                        strokeStyle: dataset.borderColor,
+                                        lineWidth: dataset.borderWidth,
+                                        hidden: !chart.getDataVisibility(i),
+                                        index: i
+                                    };
+                                });
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.raw;
+                                const total = 26.15;
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return context.label + ': $' + value + 'M (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function initializeGeographicRevenueChart() {
+        const canvas = document.getElementById('geographicRevenueChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['United States', 'Canada', 'Greece', 'Romania'],
+                datasets: [
+                    { label: '2026', data: [0.6, 0.1, 0.05, 0.03], backgroundColor: '#0d6efd', borderColor: '#0d6efd', borderWidth: 1 },
+                    { label: '2027', data: [3.2, 0.6, 0.3, 0.2], backgroundColor: '#0dcaf0', borderColor: '#0dcaf0', borderWidth: 1 },
+                    { label: '2028', data: [14.0, 3.0, 1.2, 0.9], backgroundColor: '#198754', borderColor: '#198754', borderWidth: 1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Revenue by Geography (2026-2028)',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 15, font: { size: 12 } }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) { return context.dataset.label + ': $' + context.raw + 'M'; }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#000000', callback: function(value) { return '$' + value + 'M'; } },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Revenue (Millions USD)', color: '#000000' }
+                    },
+                    x: {
+                        ticks: { color: '#000000' },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    function initializeScenarioComparisonChart() {
+        const canvas = document.getElementById('scenarioComparisonChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['2026', '2027', '2028'],
+                datasets: [
+                    {
+                        label: 'Pessimistic',
+                        data: [0.39, 2.35, 8.7],
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 5,
+                        pointBackgroundColor: '#dc3545',
+                        borderDash: [5, 5]
+                    },
+                    {
+                        label: 'Baseline',
+                        data: [1.04, 8.09, 26.15],
+                        borderColor: '#0d6efd',
+                        backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 6,
+                        pointBackgroundColor: '#0d6efd'
+                    },
+                    {
+                        label: 'Optimistic',
+                        data: [1.125, 9.4, 32.2],
+                        borderColor: '#198754',
+                        backgroundColor: 'rgba(25, 135, 84, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true,
+                        pointRadius: 5,
+                        pointBackgroundColor: '#198754',
+                        borderDash: [5, 5]
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Revenue Scenarios - Pessimistic vs Baseline vs Optimistic',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 15, font: { size: 12 }, usePointStyle: true }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) { return context.dataset.label + ': $' + context.raw + 'M'; },
+                            afterBody: function(tooltipItems) {
+                                const label = tooltipItems[0].dataset.label;
+                                const cashNeeds = { 'Pessimistic': '$2.5M', 'Baseline': '$2.0M', 'Optimistic': '$0.5M' };
+                                return '\nCash Injection: ' + cashNeeds[label];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#000000', callback: function(value) { return '$' + value + 'M'; } },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Revenue (Millions USD)', color: '#000000' }
+                    },
+                    x: {
+                        ticks: { color: '#000000' },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' }
+                    }
+                },
+                interaction: { mode: 'index', intersect: false }
+            }
+        });
+    }
+
+    function initializeOpexBreakdownChart() {
+        const canvas = document.getElementById('opexBreakdownChart');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['2026', '2027', '2028'],
+                datasets: [
+                    { label: 'Personnel & Payroll', data: [0.18, 0.42, 0.65], backgroundColor: '#0d6efd', borderColor: '#0d6efd', borderWidth: 1 },
+                    { label: 'Marketing & CAC', data: [0.135, 0.27, 0.528], backgroundColor: '#198754', borderColor: '#198754', borderWidth: 1 },
+                    { label: 'Technology & Infrastructure', data: [0.125, 0.21, 0.36], backgroundColor: '#0dcaf0', borderColor: '#0dcaf0', borderWidth: 1 },
+                    { label: 'Operations & Facilities', data: [0.03, 0.09, 0.2], backgroundColor: '#ffc107', borderColor: '#ffc107', borderWidth: 1 },
+                    { label: 'Research & Development', data: [0.08, 0.1, 0.15], backgroundColor: '#dc3545', borderColor: '#dc3545', borderWidth: 1 },
+                    { label: 'Contingency', data: [0.045, 0.09, 0.13], backgroundColor: '#6c757d', borderColor: '#6c757d', borderWidth: 1 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Operating Expenses Breakdown (2026-2028)',
+                        font: { size: 18, weight: 'bold' },
+                        color: '#000000',
+                        padding: 20
+                    },
+                    legend: {
+                        display: true,
+                        position: 'bottom',
+                        labels: { color: '#000000', padding: 12, font: { size: 11 }, boxWidth: 12 }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                        titleColor: '#000000',
+                        bodyColor: '#000000',
+                        borderColor: '#000000',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) { return context.dataset.label + ': $' + context.raw + 'M'; },
+                            afterBody: function(tooltipItems) {
+                                const year = tooltipItems[0].label;
+                                const totals = { '2026': 0.563, '2027': 1.09, '2028': 2.023 };
+                                return '\nTotal OpEx: $' + totals[year] + 'M';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        ticks: { color: '#000000', callback: function(value) { return '$' + value + 'M'; } },
+                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                        title: { display: true, text: 'Operating Expenses (Millions USD)', color: '#000000' }
+                    },
+                    x: {
+                        stacked: true,
+                        ticks: { color: '#000000' },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+    </script>
+</body>
+</html>

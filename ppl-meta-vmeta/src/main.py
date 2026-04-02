@@ -403,6 +403,18 @@ try:
 except Exception as e:
     logger.warning(f"⚠️ Individual Thumbnails API not available: {e}")
 
+# Add Individual Routes router (paginated route points)
+try:
+    from api.routes.individual_routes import router as individual_routes_router
+    app.include_router(
+        individual_routes_router,
+        prefix="/api/v1",
+        tags=["individual-routes"]
+    )
+    logger.info("✅ Individual Routes API registered")
+except Exception as e:
+    logger.warning(f"⚠️ Individual Routes API not available: {e}")
+
 # Add recording events router
 try:
     from api.v1 import recording_events
