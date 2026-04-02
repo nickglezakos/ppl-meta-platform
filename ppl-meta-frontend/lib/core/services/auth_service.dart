@@ -215,13 +215,17 @@ class AuthService {
   Future<void> _storeToken(String token) async {
     print('AuthService: Storing token (${token.length} chars)');
     try {
-      // Store in both secure storage and SharedPreferences for redundancy
       await SecureStorageService.setString(_tokenKey, token);
+    } catch (e) {
+      print('AuthService: Error storing token in secure storage: $e');
+    }
+
+    try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_tokenKey, token);
-      print('AuthService: Token stored successfully in both secure storage and SharedPreferences');
+      print('AuthService: Token stored successfully');
     } catch (e) {
-      print('AuthService: Error storing token: $e');
+      print('AuthService: Error storing token in SharedPreferences: $e');
     }
   }
 
@@ -274,11 +278,16 @@ class AuthService {
     try {
       await SecureStorageService.setString(_lastLoginEmailKey, email);
       await SecureStorageService.setString(_lastLoginPasswordKey, password);
+    } catch (e) {
+      print('AuthService: Error storing last login credentials in secure storage: $e');
+    }
+
+    try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_lastLoginEmailKey, email);
-      await prefs.remove(_lastLoginPasswordKey);
+      await prefs.setString(_lastLoginPasswordKey, password);
     } catch (e) {
-      print('AuthService: Error storing last login credentials: $e');
+      print('AuthService: Error storing last login credentials in SharedPreferences: $e');
     }
   }
 

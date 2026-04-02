@@ -190,6 +190,9 @@ class _CameraSearchDialogState extends ConsumerState<CameraSearchDialog> {
     
     final cameraIds = selectedCollections.map((c) => c.name).toList();
     final cameraNames = selectedCollections.map((c) => c.name).toList();
+    // UUIDs (collection.id) are used by the routes API; names are used by the
+    // group-camera-search API. Store both so each subsystem can use the right one.
+    final cameraUuids = selectedCollections.map((c) => c.id).toList();
     
     // Convert to UTC and format as ISO8601 with timezone
     final startTimeStr = _startTime!.toUtc().toIso8601String();
@@ -203,7 +206,8 @@ class _CameraSearchDialogState extends ConsumerState<CameraSearchDialog> {
     print('🔍 Camera Search - Collections: ${cameraIds.join(", ")}');
     
     Navigator.of(context).pop({
-      'camera_ids': cameraIds,
+      'camera_ids': cameraIds,        // collection names — used by group-camera-search API
+      'camera_uuids': cameraUuids,    // collection UUIDs — used by routes filtering
       'camera_names': cameraNames,
       'start_time': startTimeStr,
       'end_time': endTimeStr,

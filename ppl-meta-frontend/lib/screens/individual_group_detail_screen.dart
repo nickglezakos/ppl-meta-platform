@@ -4,7 +4,9 @@ library;
 
 import 'dart:ui' as ui;
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:math' as math;
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -1102,19 +1104,9 @@ class _IndividualGroupDetailScreenState
       if (bbox == null || bbox.length < 4) {
         // Fallback to showing the full frame image
         final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
-        final apiClient = ref.read(apiClientProvider);
-        return Image.network(
+        return _buildAuthenticatedFrameImageWidget(
           frameUrl,
           fit: BoxFit.cover,
-          headers: apiClient.authToken != null ? {
-            'Authorization': 'Bearer ${apiClient.authToken}',
-          } : {},
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              color: Colors.grey[300],
-              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-            );
-          },
         );
       }
       
@@ -1141,19 +1133,9 @@ class _IndividualGroupDetailScreenState
       // Validate expanded bounding box dimensions
       if (expandedWidth <= 0 || expandedHeight <= 0) {
         final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
-        final apiClient = ref.read(apiClientProvider);
-        return Image.network(
+        return _buildAuthenticatedFrameImageWidget(
           frameUrl,
           fit: BoxFit.cover,
-          headers: apiClient.authToken != null ? {
-            'Authorization': 'Bearer ${apiClient.authToken}',
-          } : {},
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              color: Colors.grey[300],
-              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-            );
-          },
         );
       }
       
@@ -1177,19 +1159,9 @@ class _IndividualGroupDetailScreenState
               ),
             );
           } else if (snapshot.hasError) {
-            final apiClient = ref.read(apiClientProvider);
-            return Image.network(
+            return _buildAuthenticatedFrameImageWidget(
               frameUrl,
               fit: BoxFit.cover,
-              headers: apiClient.authToken != null ? {
-                'Authorization': 'Bearer ${apiClient.authToken}',
-              } : {},
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  color: Colors.grey[300],
-                  child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-                );
-              },
             );
           } else {
             return Container(
@@ -1209,38 +1181,84 @@ class _IndividualGroupDetailScreenState
     }
   }
 
-  /// Load network image and return ui.Image for cropping - EXACT copy from preview screen
+  /// Load network image and return ui.Image for cropping
   Future<ui.Image> _loadNetworkImage(String url) async {
     try {
-      final apiClient = ref.read(apiClientProvider);
-      // Use Image.network to load the image with proper headers for web compatibility
-      final ImageProvider imageProvider = NetworkImage(
-        url,
-        headers: apiClient.authToken != null ? {
-          'Authorization': 'Bearer ${apiClient.authToken}',
-        } : {},
-      );
-      
-      final ImageStream stream = imageProvider.resolve(const ImageConfiguration());
-      final Completer<ui.Image> completer = Completer<ui.Image>();
-      
-      late ImageStreamListener listener;
-      listener = ImageStreamListener(
-        (ImageInfo info, bool synchronousCall) {
-          stream.removeListener(listener);
-          completer.complete(info.image);
-        },
-        onError: (exception, stackTrace) {
-          stream.removeListener(listener);
-          completer.completeError(exception);
-        },
-      );
-      
-      stream.addListener(listener);
-      return completer.future;
+      final bytes = await _fetchAuthenticatedFrameBytes(url);
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('Empty frame bytes');
+      }
+
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      return frame.image;
     } catch (e) {
       throw Exception('Failed to load image: $e');
     }
+  }
+
+  Future<Uint8List?> _fetchAuthenticatedFrameBytes(String url) async {
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final headers = <String, String>{};
+      if (apiClient.authToken != null && apiClient.authToken!.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ${apiClient.authToken}';
+      }
+
+      final response = await apiClient.dio.get<List<int>>(
+        url,
+        options: dio.Options(
+          responseType: dio.ResponseType.bytes,
+          headers: headers,
+        ),
+      );
+
+      final bytes = response.data;
+      if (bytes == null || bytes.isEmpty) {
+        return null;
+      }
+      return Uint8List.fromList(bytes);
+    } catch (e) {
+      debugPrint('[IG-DEBUG][UI] authenticated frame fetch failed url=$url error=$e');
+      return null;
+    }
+  }
+
+  Widget _buildAuthenticatedFrameImageWidget(
+    String frameUrl, {
+    BoxFit fit = BoxFit.cover,
+  }) {
+    return FutureBuilder<Uint8List?>(
+      future: _fetchAuthenticatedFrameBytes(frameUrl),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[300],
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
+          return Container(
+            color: Colors.grey[300],
+            child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+          );
+        }
+
+        return Image.memory(
+          bytes,
+          fit: fit,
+          gaplessPlayback: true,
+        );
+      },
+    );
   }
 
   Widget _buildThumbnailPlaceholder() {

@@ -100,7 +100,7 @@ class CameraCollectionService {
 
       // Make API call to create collection using form data
       final response = await _apiClient.post(
-        '/api/v1/media/collections/',
+        '/api/v1/media/collections',
         data: formData,
       );
 
@@ -409,7 +409,7 @@ class CameraCollectionService {
 
       // Backend uses JWT from Authorization header (set by ApiClient interceptor)
       // Do NOT pass user_id as query parameter - backend extracts user from JWT
-      final response = await _apiClient.get('/api/v1/media/collections/');
+      final response = await _apiClient.get('/api/v1/media/collections');
 
       if (response.statusCode == 200) {
         final data = response.data;

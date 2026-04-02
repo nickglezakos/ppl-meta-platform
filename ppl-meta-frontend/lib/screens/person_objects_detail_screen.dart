@@ -94,7 +94,8 @@ class _PersonObjectsDetailScreenState
   Map<String, BestImageResponse?> _bestImages = {};
 
   // Cross-video paged route state (new route paging endpoints)
-  final int _routePageSize = 500;
+  // Keep initial payload small so route loading is visibly paged in the UI.
+  final int _routePageSize = 100;
     final Map<String, Map<String, List<Map<String, dynamic>>>>
       _routePointsByCamera = {};
     final Map<String, Map<String, int>> _routePageIndexByCameraSource = {};
@@ -106,6 +107,7 @@ class _PersonObjectsDetailScreenState
     final Map<String, String> _routeDisplayPersonIdByUuid = {};
     final Set<String> _loadedRouteSourceIndividuals = {};
     String? _selectedRouteCameraId;
+    Future<List<Map<String, dynamic>>>? _crossVideoRoutesFetchInFlight;
   bool _isLoadingMoreCrossVideoRoutes = false;
 
   @override
@@ -2732,20 +2734,9 @@ class _PersonObjectsDetailScreenState
         if (shouldDebug) print('Warning: bbox is null or invalid, falling back to full frame image');
         // Fallback to showing the full frame image
         final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
-        final apiClient = ref.read(apiClientProvider);
-        return Image.network(
+        return _buildAuthenticatedFrameImageWidget(
           frameUrl,
           fit: BoxFit.cover,
-          headers: apiClient.authToken != null ? {
-            'Authorization': 'Bearer ${apiClient.authToken}',
-          } : {},
-          errorBuilder: (context, error, stackTrace) {
-            print('Error loading fallback frame image: $error');
-            return Container(
-              color: Colors.grey[300],
-              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-            );
-          },
         );
       }
       
@@ -2783,20 +2774,9 @@ class _PersonObjectsDetailScreenState
       if (expandedWidth <= 0 || expandedHeight <= 0) {
         print('Warning: Invalid expanded bbox dimensions (width: $expandedWidth, height: $expandedHeight), using fallback');
         final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
-        final apiClient = ref.read(apiClientProvider);
-        return Image.network(
+        return _buildAuthenticatedFrameImageWidget(
           frameUrl,
           fit: BoxFit.cover,
-          headers: apiClient.authToken != null ? {
-            'Authorization': 'Bearer ${apiClient.authToken}',
-          } : {},
-          errorBuilder: (context, error, stackTrace) {
-            print('Error loading fallback frame image: $error');
-            return Container(
-              color: Colors.grey[300],
-              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-            );
-          },
         );
       }
       
@@ -2821,32 +2801,9 @@ class _PersonObjectsDetailScreenState
               ),
             );
           } else {
-            final apiClient = ref.read(apiClientProvider);
-            return Image.network(
+            return _buildAuthenticatedFrameImageWidget(
               frameUrl,
               fit: BoxFit.cover,
-              headers: apiClient.authToken != null ? {
-                'Authorization': 'Bearer ${apiClient.authToken}',
-              } : {},
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                        : null,
-                    strokeWidth: 2,
-                  ),
-                );
-              },
-              errorBuilder: (context, error, stackTrace) {
-                print('Error loading cropped image: $error');
-                print('URL: $frameUrl');
-                return Container(
-                  color: Colors.grey[300],
-                  child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-                );
-              },
             );
           }
         },
@@ -2898,38 +2855,9 @@ class _PersonObjectsDetailScreenState
   Future<Widget> _buildFrameImage(int frameNumber) async {
     try {
       final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/${widget.mediaItem!.uuid}/frame/$frameNumber?format=jpeg';
-      final apiClient = ref.read(apiClientProvider);
-      
-      return Image.network(
+      return _buildAuthenticatedFrameImageWidget(
         frameUrl,
-        fit: BoxFit.contain, // Maintain aspect ratio and fit within container
-        headers: apiClient.authToken != null ? {
-          'Authorization': 'Bearer ${apiClient.authToken}',
-        } : {},
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return Center(
-            child: CircularProgressIndicator(
-              value: loadingProgress.expectedTotalBytes != null
-                  ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                  : null,
-            ),
-          );
-        },
-        errorBuilder: (context, error, stackTrace) {
-          print('Error loading frame image: $error');
-          print('URL: $frameUrl');
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error, color: Colors.grey, size: 24),
-                SizedBox(height: 4),
-                Text('Image failed to load', style: TextStyle(fontSize: 10, color: Colors.grey)),
-              ],
-            ),
-          );
-        },
+        fit: BoxFit.contain,
       );
     } catch (e) {
       print('Exception in _buildFrameImage: $e');
@@ -3665,19 +3593,9 @@ class _PersonObjectsDetailScreenState
       
       if (bbox == null || bbox.length < 4) {
         final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
-        final apiClient = ref.read(apiClientProvider);
-        return Image.network(
+        return _buildAuthenticatedFrameImageWidget(
           frameUrl,
           fit: BoxFit.cover,
-          headers: apiClient.authToken != null ? {
-            'Authorization': 'Bearer ${apiClient.authToken}',
-          } : {},
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              color: Colors.grey[300],
-              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-            );
-          },
         );
       }
       
@@ -3703,19 +3621,9 @@ class _PersonObjectsDetailScreenState
       
       if (expandedWidth <= 0 || expandedHeight <= 0) {
         final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
-        final apiClient = ref.read(apiClientProvider);
-        return Image.network(
+        return _buildAuthenticatedFrameImageWidget(
           frameUrl,
           fit: BoxFit.cover,
-          headers: apiClient.authToken != null ? {
-            'Authorization': 'Bearer ${apiClient.authToken}',
-          } : {},
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              color: Colors.grey[300],
-              child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-            );
-          },
         );
       }
       
@@ -3737,19 +3645,9 @@ class _PersonObjectsDetailScreenState
               ),
             );
           } else if (snapshot.hasError) {
-            final apiClient = ref.read(apiClientProvider);
-            return Image.network(
+            return _buildAuthenticatedFrameImageWidget(
               frameUrl,
               fit: BoxFit.cover,
-              headers: apiClient.authToken != null ? {
-                'Authorization': 'Bearer ${apiClient.authToken}',
-              } : {},
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  color: Colors.grey[300],
-                  child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
-                );
-              },
             );
           } else {
             return Container(
@@ -3767,6 +3665,63 @@ class _PersonObjectsDetailScreenState
         child: Icon(Icons.error, size: 24, color: Colors.red),
       );
     }
+  }
+
+  Future<Uint8List?> _fetchAuthenticatedFrameBytes(String url) async {
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final headers = <String, String>{};
+      if (apiClient.authToken != null && apiClient.authToken!.isNotEmpty) {
+        headers['Authorization'] = 'Bearer ${apiClient.authToken}';
+      }
+
+      final response = await apiClient.dio.get<List<int>>(
+        url,
+        options: dio.Options(
+          responseType: dio.ResponseType.bytes,
+          headers: headers,
+        ),
+      );
+
+      final bytes = response.data;
+      if (bytes == null || bytes.isEmpty) {
+        return null;
+      }
+      return Uint8List.fromList(bytes);
+    } catch (e) {
+      print('Error loading authenticated frame bytes: $e');
+      return null;
+    }
+  }
+
+  Widget _buildAuthenticatedFrameImageWidget(
+    String frameUrl, {
+    BoxFit fit = BoxFit.cover,
+  }) {
+    return FutureBuilder<Uint8List?>(
+      future: _fetchAuthenticatedFrameBytes(frameUrl),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
+          return Container(
+            color: Colors.grey[300],
+            child: Icon(Icons.broken_image, size: 24, color: Colors.grey[600]),
+          );
+        }
+
+        return Image.memory(
+          bytes,
+          fit: fit,
+          gaplessPlayback: true,
+        );
+      },
+    );
   }
 }
 
@@ -5539,6 +5494,19 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
 
   /// Fetch route data from all videos in cross-video appearances
   Future<List<Map<String, dynamic>>> _fetchCrossVideoRoutesData() async {
+    if (_crossVideoRoutesFetchInFlight != null) {
+      return _crossVideoRoutesFetchInFlight!;
+    }
+
+    _crossVideoRoutesFetchInFlight = _fetchCrossVideoRoutesDataInternal();
+    try {
+      return await _crossVideoRoutesFetchInFlight!;
+    } finally {
+      _crossVideoRoutesFetchInFlight = null;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchCrossVideoRoutesDataInternal() async {
     if (_aggregatedAnalyses == null || _aggregatedAnalyses!.isEmpty) {
       return [];
     }
@@ -5558,12 +5526,23 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
 
         final metadataResp = await routesClient.getIndividualRoutesMetadataByCamera(
           individualUuid: sourceUuid,
+          startTimeMs: _getRouteSearchStartTimeMs(),
+          endTimeMs: _getRouteSearchEndTimeMs(),
         );
         if (metadataResp.success && metadataResp.data != null) {
-          final metadataCameras =
+          final allMetadataCameras =
               (metadataResp.data!['cameras'] as List<dynamic>? ?? [])
                   .whereType<Map<String, dynamic>>()
                   .toList();
+          // Filter to only cameras that were selected in the original search.
+          final metadataCameras = _hasRouteSearchScopeFilter()
+              ? allMetadataCameras
+                  .where((c) => _isCameraInSearchScope(
+                        (c['camera_id'] ?? '').toString(),
+                        (c['camera_name'] ?? '').toString(),
+                      ))
+                  .toList()
+              : allMetadataCameras;
           _registerCameraMetadata(
             analysis: analysis,
             sourceIndividualUuid: sourceUuid,
@@ -5592,6 +5571,118 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     }
 
     return _buildSelectedCameraPersonGroups();
+  }
+
+  String _routePointKey(Map<String, dynamic> point) {
+    final personObjectUuid = (point['person_object_uuid'] ?? '').toString();
+    final sequence = (point['sequence_number'] ?? '').toString();
+    final timestamp = (point['timestamp'] ?? point['timestamp_ms'] ?? '').toString();
+    return '$personObjectUuid|$sequence|$timestamp';
+  }
+
+  /// Returns the search_parameters map from the cross-video session data, or null.
+  Map<String, dynamic>? _getRouteSearchParams() {
+    if (widget.crossVideoContext == null) return null;
+    return widget.crossVideoContext!.sessionData['search_parameters']
+        as Map<String, dynamic>?;
+  }
+
+  /// Start of the search time range in milliseconds, or null if unset.
+  int? _getRouteSearchStartTimeMs() {
+    final params = _getRouteSearchParams();
+    if (params == null) return null;
+    final startTime = params['start_time'] as String?;
+    if (startTime == null) return null;
+    return DateTime.tryParse(startTime)?.millisecondsSinceEpoch;
+  }
+
+  /// End of the search time range in milliseconds, or null if unset.
+  int? _getRouteSearchEndTimeMs() {
+    final params = _getRouteSearchParams();
+    if (params == null) return null;
+    final endTime = params['end_time'] as String?;
+    if (endTime == null) return null;
+    return DateTime.tryParse(endTime)?.millisecondsSinceEpoch;
+  }
+
+  /// Returns the list of camera IDs that were selected for the search, or null
+  /// if no camera filter was applied (= all cameras).
+  List<String>? _getRouteSearchCameraIds() {
+    final params = _getRouteSearchParams();
+    if (params == null) return null;
+    final cameraIds = params['camera_ids'] as List<dynamic>?;
+    if (cameraIds != null && cameraIds.isNotEmpty) {
+      return cameraIds.map((e) => e.toString()).toList();
+    }
+    final cameraId = params['camera_id'] as String?;
+    if (cameraId != null && cameraId.isNotEmpty) {
+      return [cameraId];
+    }
+    return null;
+  }
+
+  /// Returns true if there is any camera scope restriction for route data.
+  bool _hasRouteSearchScopeFilter() {
+    final sessionData = widget.crossVideoContext?.sessionData;
+    if (sessionData == null) return false;
+
+    // Collection-based search: sessionData['collection_id'] or ['collection_ids']
+    final collectionId = sessionData['collection_id']?.toString();
+    if (collectionId != null && collectionId.isNotEmpty) return true;
+    final collectionIds = sessionData['collection_ids'] as List?;
+    if (collectionIds != null && collectionIds.isNotEmpty) return true;
+
+    // Camera-based search via search_parameters
+    final params = _getRouteSearchParams();
+    if (params == null) return false;
+    if ((params['camera_uuids'] as List?)?.isNotEmpty == true) return true;
+    if ((params['camera_ids'] as List?)?.isNotEmpty == true) return true;
+    if ((params['camera_id'] as String?)?.isNotEmpty == true) return true;
+    return false;
+  }
+
+  /// Returns true if [cameraId] (UUID) / [cameraName] is within the camera
+  /// scope of the original search.  Compares both UUID and display name
+  /// against all stored forms of camera identifier so mismatches between
+  /// name-based and UUID-based identifiers are handled gracefully.
+  bool _isCameraInSearchScope(String cameraId, String cameraName) {
+    final sessionData = widget.crossVideoContext?.sessionData;
+    if (sessionData == null) return true; // no context → no restriction
+
+    // Helper: compare value against both cameraId and cameraName
+    bool matches(String v) =>
+        v == cameraId || v.toLowerCase() == cameraName.toLowerCase();
+
+    // 1. Single collection (collection-based search, top-level sessionData)
+    final collectionId = sessionData['collection_id']?.toString() ?? '';
+    if (collectionId.isNotEmpty && matches(collectionId)) return true;
+
+    // 2. Multiple collections (top-level sessionData)
+    final collectionIds = sessionData['collection_ids'] as List?;
+    if (collectionIds != null) {
+      if (collectionIds.any((id) => matches(id.toString()))) return true;
+    }
+
+    final params = _getRouteSearchParams();
+    if (params == null) return false;
+
+    // 3. camera_uuids (new — UUIDs stored alongside names for route filtering)
+    final cameraUuids = params['camera_uuids'] as List?;
+    if (cameraUuids != null && cameraUuids.isNotEmpty) {
+      if (cameraUuids.any((id) => matches(id.toString()))) return true;
+    }
+
+    // 4. camera_ids (may contain names OR UUIDs — match against both fields)
+    final cameraIds = params['camera_ids'] as List?;
+    if (cameraIds != null && cameraIds.isNotEmpty) {
+      if (cameraIds.any((id) => matches(id.toString()))) return true;
+    }
+
+    // 5. Single camera_id
+    final singleId = params['camera_id']?.toString() ?? '';
+    if (singleId.isNotEmpty && matches(singleId)) return true;
+
+    return false;
   }
 
   void _registerCameraMetadata({
@@ -5637,6 +5728,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         individualUuid: sourceIndividualUuid,
         pageIndex: 0,
         pageSize: _routePageSize,
+        startTimeMs: _getRouteSearchStartTimeMs(),
+        endTimeMs: _getRouteSearchEndTimeMs(),
       );
       if (!firstPageResp.success || firstPageResp.data == null) {
         return;
@@ -5671,6 +5764,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           cameraId: cameraId,
           pageIndex: pageIndex,
           pageSize: _routePageSize,
+          startTimeMs: _getRouteSearchStartTimeMs(),
+          endTimeMs: _getRouteSearchEndTimeMs(),
         );
         if (!pageResp.success || pageResp.data == null) {
           break;
@@ -5726,6 +5821,14 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return;
     }
 
+    // Respect the camera filter from the original search.
+    // If the user searched specific cameras, discard route data for any other camera.
+    if (_hasRouteSearchScopeFilter() &&
+        !_isCameraInSearchScope(cameraId,
+            (cameraGroup['camera_name'] ?? '').toString())) {
+      return;
+    }
+
     final cameraName = (cameraGroup['camera_name'] ?? cameraId).toString();
     _routeCameraNamesById[cameraId] = cameraName;
     _routeDisplayIndividualByCameraSource
@@ -5758,7 +5861,14 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       _routePointsByCamera.putIfAbsent(cameraId, () => {});
       _routePointsByCamera[cameraId]!
           .putIfAbsent(analysis.individualUuid, () => []);
-      _routePointsByCamera[cameraId]![analysis.individualUuid]!.addAll(points);
+      final existingPoints = _routePointsByCamera[cameraId]![analysis.individualUuid]!;
+      final existingKeys = existingPoints.map(_routePointKey).toSet();
+      for (final point in points) {
+        final key = _routePointKey(point);
+        if (existingKeys.add(key)) {
+          existingPoints.add(point);
+        }
+      }
     }
   }
 
@@ -5932,6 +6042,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             cameraId: cameraId,
             pageIndex: nextPage,
             pageSize: _routePageSize,
+            startTimeMs: _getRouteSearchStartTimeMs(),
+            endTimeMs: _getRouteSearchEndTimeMs(),
           );
 
           if (!pageResp.success || pageResp.data == null) {

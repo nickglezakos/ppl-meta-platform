@@ -258,6 +258,9 @@ class ApiClient {
   Future<void> _persistToken(String token) async {
     try {
       await SecureStorageService.setString(_tokenKey, token);
+    } catch (_) {
+    }
+    try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_tokenKey, token);
     } catch (_) {

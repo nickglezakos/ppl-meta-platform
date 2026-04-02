@@ -495,6 +495,7 @@ class _GroupCard extends StatelessWidget {
     if (searchParams != null && context.mounted) {
       // Handle both single and multiple cameras
       final cameraIds = searchParams['camera_ids'] as List<dynamic>?;
+      final cameraUuids = searchParams['camera_uuids'] as List<dynamic>?;
       final cameraNames = searchParams['camera_names'] as List<dynamic>?;
       
       // Format camera names for display
@@ -510,7 +511,8 @@ class _GroupCard extends StatelessWidget {
           'group_name': group.name,
           'camera_names': displayNames,  // Display string for UI
           'search_parameters': {
-            'camera_ids': cameraIds,  // List for backend API
+            'camera_ids': cameraIds,    // Collection names — used by group-camera-search API
+            'camera_uuids': cameraUuids, // Collection UUIDs — used by routes filtering
             'start_time': searchParams['start_time'],
             'end_time': searchParams['end_time'],
           },
