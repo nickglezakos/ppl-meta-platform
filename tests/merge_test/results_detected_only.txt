@@ -1,0 +1,54 @@
+MVR Merge Test - SINGLE VIDEO (DRY RUN, gender guard enabled)
+Run at     : 2026-04-03T18:03:24.502391
+Video      : d46124c8-8944-4784-be9f-3e6314e1f0b8
+Threshold  : 0.7  Gender gate: 0.8
+
+Raw MVR count (incl. orphaned from old false merges): 4
+  male=2  female=0  unknown=2
+
+NEW CODE dry-run result: 2 group(s)
+  merged groups = 2  standalone = 0
+  winner gender: male=1 female=0 unknown=1
+
+====================================================================
+MERGE GROUPS
+(* = winner/highest-quality  | - = loser/would be orphaned under new code)
+Gender guard blocks high-confidence male/female pairs from merging.
+====================================================================
+
+Group   1  (2 member(s))
+  * WINNER  MVR=2b489c25-ca96-48c3-9da9-dd02b0518743
+      gender=male  g_conf=1.0000  age=36-46  quality=0.6808
+      old_orphaned=True  old_merged_into=fb7f3a9f
+      face=det_g01_m01_2b489c25_male.jpg
+  - loser   MVR=4b102f8f-fe5f-4dbe-83ae-974748256c30
+      gender=male  g_conf=1.0000  age=36-46  quality=0.6808
+      old_orphaned=True  old_merged_into=fb7f3a9f
+      face=det_g01_m02_4b102f8f_male.jpg
+
+Group   2  (2 member(s))
+  * WINNER  MVR=6d8d7cdb-c2d1-47c4-9508-60010077990d
+      gender=unknown  g_conf=None  age=?  quality=0.6653
+      old_orphaned=True  old_merged_into=93a23392
+      face=det_g02_m01_6d8d7cdb_unknown.jpg
+  - loser   MVR=724ce94a-dd16-4d06-b9b0-bdc31079b6ec
+      gender=unknown  g_conf=None  age=?  quality=0.6653
+      old_orphaned=True  old_merged_into=93a23392
+      face=det_g02_m02_724ce94a_unknown.jpg
+
+====================================================================
+SUMMARY
+====================================================================
+Raw MVR count (incl. old orphaned): 4
+  male=2  female=0  unknown=2
+
+NEW code result: 2 distinct person group(s)
+  male groups    = 1
+  female groups  = 0
+  unknown groups = 1
+
+Old code problem:
+  Old merge algorithm followed merged_into_mvr_uuid chains and
+  merged males and females into a single super-individual.
+  The new confidence-aware gender guard (threshold >= 0.80)
+  blocks high-confidence cross-gender merges automatically.

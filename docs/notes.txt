@@ -34,7 +34,6 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 192.168.1.68
 8006
 
-the actual frames arriving from the mobile device might be at 10, 15, or 24 FPS.
 
  
 

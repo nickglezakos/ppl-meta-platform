@@ -1,0 +1,319 @@
+MVR Merge Test - NEW CODEBASE (DRY RUN, gender guard enabled)
+Run at     : 2026-04-03T18:33:32.257836
+Collection : 360460d5-4c00-4f90-a623-42a71811b0b3
+Time range : 2026-03-01T11:00:00 - 2026-03-01T15:00:00
+Threshold  : 0.7  Gender gate: 0.8
+
+Raw MVR count (incl. orphaned from old false merges): 70
+  male=36  female=16  unknown=18
+
+NEW CODE dry-run result: 2 group(s)
+  merged groups = 2  standalone = 0
+  winner gender: male=1 female=1 unknown=0
+
+====================================================================
+MERGE GROUPS
+(* = winner/highest-quality  | - = loser/would be orphaned under new code)
+Gender guard blocks high-confidence male/female pairs from merging.
+====================================================================
+
+Group   1  (48 member(s))
+  * WINNER  MVR=36ca2d7c-2942-4734-a7d3-3670f5923ac4
+      gender=male  g_conf=1.0000  age=38-48  quality=0.9790
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m01_36ca2d7c_male.jpg
+  - loser   MVR=79bd6286-30b0-497b-afa8-39b06dbbeaf3
+      gender=male  g_conf=1.0000  age=38-48  quality=0.9790
+      old_orphaned=True  old_merged_into=1bcb19dc
+      face=merge_g01_m02_79bd6286_male.jpg
+  - loser   MVR=86ddb334-fb01-41b6-a95b-dacd6d605c4d
+      gender=male  g_conf=1.0000  age=38-48  quality=0.9790
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m03_86ddb334_male.jpg
+  - loser   MVR=89332451-4c84-4f22-a100-407edb227123
+      gender=male  g_conf=1.0000  age=41-51  quality=0.9659
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m04_89332451_male.jpg
+  - loser   MVR=b9c78138-2649-488e-bfd6-79faabfe6c20
+      gender=male  g_conf=1.0000  age=41-51  quality=0.9659
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m05_b9c78138_male.jpg
+  - loser   MVR=27007c61-4892-4681-98ca-d89fc594d980
+      gender=male  g_conf=0.9997  age=37-47  quality=0.9145
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m06_27007c61_male.jpg
+  - loser   MVR=fb477b92-5def-4365-a611-dd50821d6949
+      gender=male  g_conf=0.9997  age=37-47  quality=0.9145
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m07_fb477b92_male.jpg
+  - loser   MVR=0c1b0ad2-15c4-4067-828e-0d2e7883f552
+      gender=male  g_conf=0.9987  age=36-46  quality=0.9111
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m08_0c1b0ad2_male.jpg
+  - loser   MVR=4bd1f145-2bab-4434-9152-2fea187c5cf9
+      gender=male  g_conf=0.9997  age=36-46  quality=0.8944
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m09_4bd1f145_male.jpg
+  - loser   MVR=ac468632-8ebe-4954-8168-a1d0820e19d0
+      gender=male  g_conf=0.9999  age=25-35  quality=0.8574
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m10_ac468632_male.jpg
+  - loser   MVR=c52c7c00-fff6-4613-92b8-51770cf58396
+      gender=male  g_conf=0.9999  age=25-35  quality=0.8574
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m11_c52c7c00_male.jpg
+  - loser   MVR=c6c3f4b9-38c0-42f4-86e1-1635c6a170cf
+      gender=male  g_conf=0.9999  age=25-35  quality=0.8574
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m12_c6c3f4b9_male.jpg
+  - loser   MVR=1cc7335b-26e8-41dc-878c-8d83d94ada18
+      gender=unknown  g_conf=None  age=?  quality=0.8283
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m13_1cc7335b_unknown.jpg
+  - loser   MVR=50cba238-baa4-404b-8910-f00fa905edc6
+      gender=unknown  g_conf=None  age=?  quality=0.8283
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m14_50cba238_unknown.jpg
+  - loser   MVR=525aea94-c711-4c9d-9b9b-ee74bf6ef96e
+      gender=unknown  g_conf=None  age=?  quality=0.8283
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m15_525aea94_unknown.jpg
+  - loser   MVR=7442eafa-6445-416e-a01c-accdfec0ecb4
+      gender=unknown  g_conf=None  age=?  quality=0.8283
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m16_7442eafa_unknown.jpg
+  - loser   MVR=db1d9960-f048-4e81-9ac2-a6d8d1a1e283
+      gender=unknown  g_conf=None  age=?  quality=0.8283
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m17_db1d9960_unknown.jpg
+  - loser   MVR=057ad8ed-c5ef-477b-ba54-4f81905be919
+      gender=male  g_conf=1.0000  age=43-53  quality=0.7912
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m18_057ad8ed_male.jpg
+  - loser   MVR=e6145308-ac5d-434f-8f64-f4226b44aeb4
+      gender=male  g_conf=1.0000  age=43-53  quality=0.7912
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m19_e6145308_male.jpg
+  - loser   MVR=1272de6d-fde3-4497-b099-a93eaa71d04d
+      gender=unknown  g_conf=None  age=?  quality=0.7622
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m20_1272de6d_unknown.jpg
+  - loser   MVR=29ac4539-3e35-4d1a-be9a-b0414bb53103
+      gender=unknown  g_conf=None  age=?  quality=0.7622
+      old_orphaned=True  old_merged_into=525aea94
+      face=merge_g01_m21_29ac4539_unknown.jpg
+  - loser   MVR=850d7680-259f-4087-b529-959942386c73
+      gender=male  g_conf=1.0000  age=23-33  quality=0.7622
+      old_orphaned=True  old_merged_into=7442eafa
+      face=merge_g01_m22_850d7680_male.jpg
+  - loser   MVR=c4b0ced3-8789-48e7-8ca9-57d6397719b2
+      gender=male  g_conf=1.0000  age=23-33  quality=0.7622
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m23_c4b0ced3_male.jpg
+  - loser   MVR=e99a22f6-d8d4-4303-83bb-617aa9752aaa
+      gender=male  g_conf=1.0000  age=23-33  quality=0.7622
+      old_orphaned=True  old_merged_into=db1d9960
+      face=merge_g01_m24_e99a22f6_male.jpg
+  - loser   MVR=e09f9bd1-26b2-4960-8b79-4e88024c2201
+      gender=male  g_conf=1.0000  age=37-47  quality=0.7581
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m25_e09f9bd1_male.jpg
+  - loser   MVR=f4c6eef5-1d97-4b1f-8efc-c9f8c31fceb8
+      gender=male  g_conf=1.0000  age=37-47  quality=0.7581
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m26_f4c6eef5_male.jpg
+  - loser   MVR=d9b0335f-8260-4096-b3e3-7a7677d08b42
+      gender=unknown  g_conf=None  age=?  quality=0.7453
+      old_orphaned=True  old_merged_into=1c7f2989
+      face=merge_g01_m27_d9b0335f_unknown.jpg
+  - loser   MVR=285001ab-da8e-41ef-b2c4-854048d9e135
+      gender=unknown  g_conf=None  age=?  quality=0.7317
+      old_orphaned=True  old_merged_into=86ddb334
+      face=merge_g01_m28_285001ab_unknown.jpg
+  - loser   MVR=a2fcce1c-f856-42fe-bf03-7e1cd2cd0d05
+      gender=male  g_conf=1.0000  age=34-44  quality=0.7317
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m29_a2fcce1c_male.jpg
+  - loser   MVR=cfe6d8ce-761a-4b38-a017-6733a1bf6fd3
+      gender=unknown  g_conf=None  age=?  quality=0.7317
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m30_cfe6d8ce_unknown.jpg
+  - loser   MVR=f97d44dd-1c2c-4540-bbd0-907edaf89710
+      gender=unknown  g_conf=None  age=?  quality=0.7317
+      old_orphaned=True  old_merged_into=36ca2d7c
+      face=merge_g01_m31_f97d44dd_unknown.jpg
+  - loser   MVR=8b731d53-a42f-4362-a52d-ba95cd2fc500
+      gender=male  g_conf=1.0000  age=35-45  quality=0.7308
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m32_8b731d53_male.jpg
+  - loser   MVR=08d2c73a-8749-4a7e-a1f2-6ce049d4800c
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m33_08d2c73a_male.jpg
+  - loser   MVR=11f67ca4-99e4-403e-9f83-e72f4af83ed4
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m34_11f67ca4_male.jpg
+  - loser   MVR=2a7eabfc-0f7c-49b7-890c-7d932d2ffeef
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m35_2a7eabfc_male.jpg
+  - loser   MVR=340b6216-6248-45fb-a45e-ff9de6f2d3f9
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m36_340b6216_male.jpg
+  - loser   MVR=390ee57e-d0c1-4f47-8b52-fcb8cdd2707c
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m37_390ee57e_male.jpg
+  - loser   MVR=51ac2c0a-6035-4b8d-9634-f9e292eba051
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m38_51ac2c0a_male.jpg
+  - loser   MVR=52494be5-4480-4ef4-9115-dd21c1fc8e52
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m39_52494be5_male.jpg
+  - loser   MVR=860a06ea-774e-46ef-8c72-73368b09a10b
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m40_860a06ea_male.jpg
+  - loser   MVR=9f486971-8197-43e8-9997-3d8140e55999
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m41_9f486971_male.jpg
+  - loser   MVR=f5a2cda4-2572-4bda-9dc4-d0e7839f1302
+      gender=male  g_conf=1.0000  age=36-46  quality=0.7165
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m42_f5a2cda4_male.jpg
+  - loser   MVR=1143818b-e009-4da7-9cf5-399bd7d17fbe
+      gender=unknown  g_conf=None  age=?  quality=0.7132
+      old_orphaned=True  old_merged_into=cfe6d8ce
+      face=merge_g01_m43_1143818b_unknown.jpg
+  - loser   MVR=367ad68b-547b-451c-82aa-1d6e0b6e48d0
+      gender=male  g_conf=0.9993  age=31-41  quality=0.7132
+      old_orphaned=True  old_merged_into=a2fcce1c
+      face=merge_g01_m44_367ad68b_male.jpg
+  - loser   MVR=c3c53195-2b9b-4970-aefc-7e452dd2059e
+      gender=male  g_conf=0.9993  age=31-41  quality=0.7132
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m45_c3c53195_male.jpg
+  - loser   MVR=60522da3-2be7-4f4e-aefb-8cc685c24251
+      gender=male  g_conf=1.0000  age=39-49  quality=0.7010
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m46_60522da3_male.jpg
+  - loser   MVR=6e79b5d6-215f-4bec-9776-6247b199d7d1
+      gender=male  g_conf=1.0000  age=39-49  quality=0.7010
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m47_6e79b5d6_male.jpg
+  - loser   MVR=42f58d66-7074-4944-ba45-e79d3262addc
+      gender=male  g_conf=0.9999  age=38-48  quality=0.5000
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g01_m48_42f58d66_male.jpg
+
+Group   2  (22 member(s))
+  * WINNER  MVR=2bcadf02-65d2-42f8-bb7f-42cd564b6de5
+      gender=female  g_conf=1.0000  age=31-41  quality=0.7473
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m01_2bcadf02_female.jpg
+  - loser   MVR=d0562ad2-086a-4ba2-aaa0-d46c57447924
+      gender=female  g_conf=1.0000  age=31-41  quality=0.7473
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m02_d0562ad2_female.jpg
+  - loser   MVR=f89e21a5-3113-415b-860c-d809f0a978d2
+      gender=female  g_conf=1.0000  age=31-41  quality=0.7473
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m03_f89e21a5_female.jpg
+  - loser   MVR=216c2e24-7a5f-4895-ade5-793ea9d14ee2
+      gender=unknown  g_conf=None  age=?  quality=0.7390
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m04_216c2e24_unknown.jpg
+  - loser   MVR=fa31b785-0b25-4dda-be6e-447c95447ab0
+      gender=female  g_conf=1.0000  age=35-45  quality=0.7279
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m05_fa31b785_female.jpg
+  - loser   MVR=3b6b1a96-04aa-418d-b00a-84c9aee69539
+      gender=female  g_conf=0.9999  age=31-41  quality=0.7266
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m06_3b6b1a96_female.jpg
+  - loser   MVR=53129ddc-5ec5-4fcd-98c4-873dfdbd70cc
+      gender=female  g_conf=0.9999  age=30-40  quality=0.7258
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m07_53129ddc_female.jpg
+  - loser   MVR=8f290225-4a5b-4980-9db3-a8357b602d70
+      gender=female  g_conf=0.9999  age=30-40  quality=0.7258
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m08_8f290225_female.jpg
+  - loser   MVR=da4a2b8e-ef63-418b-a269-6a0e625b2b57
+      gender=female  g_conf=0.9984  age=29-39  quality=0.7157
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m09_da4a2b8e_female.jpg
+  - loser   MVR=ee773ac7-b195-4662-bb39-94c12505ab8f
+      gender=unknown  g_conf=None  age=?  quality=0.7157
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m10_ee773ac7_unknown.jpg
+  - loser   MVR=3c12720f-b646-403f-93ad-3627fafd99ec
+      gender=female  g_conf=0.9994  age=29-39  quality=0.7019
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m11_3c12720f_female.jpg
+  - loser   MVR=a4b3664e-2567-4d02-9c18-16558186b2ec
+      gender=unknown  g_conf=None  age=?  quality=0.6991
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m12_a4b3664e_unknown.jpg
+  - loser   MVR=08536d88-2ea5-4da6-a835-0660fbfc3101
+      gender=female  g_conf=0.9978  age=30-40  quality=0.6973
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m13_08536d88_female.jpg
+  - loser   MVR=68387514-e851-4cf9-800b-64c28f42ec55
+      gender=unknown  g_conf=None  age=?  quality=0.6945
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m14_68387514_unknown.jpg
+  - loser   MVR=e06554d2-aa30-42ae-80f8-b9259f120660
+      gender=female  g_conf=0.9986  age=27-37  quality=0.6945
+      old_orphaned=True  old_merged_into=79bd6286
+      face=merge_g02_m15_e06554d2_female.jpg
+  - loser   MVR=161112eb-6150-45e1-955b-9dde24c4edb1
+      gender=female  g_conf=0.9995  age=32-42  quality=0.6780
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m16_161112eb_female.jpg
+  - loser   MVR=5f791427-55a4-4632-a4d0-305a9e5c2216
+      gender=female  g_conf=0.9995  age=32-42  quality=0.6780
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m17_5f791427_female.jpg
+  - loser   MVR=6393ebe2-d9ee-475d-ba17-1365a560c907
+      gender=female  g_conf=0.9995  age=32-42  quality=0.6780
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m18_6393ebe2_female.jpg
+  - loser   MVR=993558fb-1515-49a0-845c-efc44a57822e
+      gender=female  g_conf=0.9995  age=32-42  quality=0.6780
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m19_993558fb_female.jpg
+  - loser   MVR=b60db041-0041-4c98-9bdd-7d31c7bd180c
+      gender=female  g_conf=0.9995  age=32-42  quality=0.6780
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m20_b60db041_female.jpg
+  - loser   MVR=bb720440-26cf-4bb4-a711-49baf0cabd05
+      gender=unknown  g_conf=None  age=?  quality=0.6780
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m21_bb720440_unknown.jpg
+  - loser   MVR=cbf5fb63-6771-4bdc-97d4-856156e646e4
+      gender=unknown  g_conf=None  age=?  quality=0.6780
+      old_orphaned=True  old_merged_into=f89e21a5
+      face=merge_g02_m22_cbf5fb63_unknown.jpg
+
+====================================================================
+SUMMARY
+====================================================================
+Raw MVR count (incl. old orphaned): 70
+  male=36  female=16  unknown=18
+
+NEW code result: 2 distinct person group(s)
+  male groups    = 1
+  female groups  = 1
+  unknown groups = 0
+
+Old code problem:
+  Old merge algorithm followed merged_into_mvr_uuid chains and
+  merged males and females into a single super-individual.
+  The new confidence-aware gender guard (threshold >= 0.80)
+  blocks high-confidence cross-gender merges automatically.
