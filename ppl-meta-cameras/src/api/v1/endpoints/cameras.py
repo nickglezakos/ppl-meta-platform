@@ -2774,6 +2774,9 @@ async def get_workflow_settings(
             "show_performance_indicators": camera.show_performance_indicators if hasattr(camera, 'show_performance_indicators') else True,
             "default_playback_mode": camera.default_playback_mode if hasattr(camera, 'default_playback_mode') else "auto",
             "mvr_quality_threshold": camera.mvr_quality_threshold if hasattr(camera, 'mvr_quality_threshold') else 0.20,
+            "mvr_periodic_scheduler_enabled": camera.mvr_periodic_scheduler_enabled if hasattr(camera, 'mvr_periodic_scheduler_enabled') else False,
+            "mvr_periodic_scheduler_threshold": camera.mvr_periodic_scheduler_threshold if hasattr(camera, 'mvr_periodic_scheduler_threshold') else 0.70,
+            "mvr_periodic_scheduler_frequency_seconds": camera.mvr_periodic_scheduler_frequency_seconds if hasattr(camera, 'mvr_periodic_scheduler_frequency_seconds') else 300,
         }
     except HTTPException:
         raise
@@ -2816,6 +2819,9 @@ async def update_workflow_settings(
         show_performance_indicators = body.get('show_performance_indicators')
         default_playback_mode = body.get('default_playback_mode')
         mvr_quality_threshold = body.get('mvr_quality_threshold')
+        mvr_periodic_scheduler_enabled = body.get('mvr_periodic_scheduler_enabled')
+        mvr_periodic_scheduler_threshold = body.get('mvr_periodic_scheduler_threshold')
+        mvr_periodic_scheduler_frequency_seconds = body.get('mvr_periodic_scheduler_frequency_seconds')
         
         # Validate confidence threshold
         if confidence_threshold is not None and (confidence_threshold < 0.0 or confidence_threshold > 1.0):
@@ -2836,6 +2842,24 @@ async def update_workflow_settings(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="MVR quality threshold must be between 0.0 and 1.0",
+            )
+
+        if (
+            mvr_periodic_scheduler_threshold is not None
+            and (mvr_periodic_scheduler_threshold < 0.0 or mvr_periodic_scheduler_threshold > 1.0)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Periodic scheduler threshold must be between 0.0 and 1.0",
+            )
+
+        if (
+            mvr_periodic_scheduler_frequency_seconds is not None
+            and (mvr_periodic_scheduler_frequency_seconds < 30 or mvr_periodic_scheduler_frequency_seconds > 86400)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Periodic scheduler frequency must be between 30 and 86400 seconds",
             )
         
         # Validate detection methods
@@ -2873,6 +2897,12 @@ async def update_workflow_settings(
             camera.default_playback_mode = default_playback_mode
         if mvr_quality_threshold is not None:
             camera.mvr_quality_threshold = mvr_quality_threshold
+        if mvr_periodic_scheduler_enabled is not None:
+            camera.mvr_periodic_scheduler_enabled = mvr_periodic_scheduler_enabled
+        if mvr_periodic_scheduler_threshold is not None:
+            camera.mvr_periodic_scheduler_threshold = mvr_periodic_scheduler_threshold
+        if mvr_periodic_scheduler_frequency_seconds is not None:
+            camera.mvr_periodic_scheduler_frequency_seconds = mvr_periodic_scheduler_frequency_seconds
         
         # Update tolerance_percent in camera_settings table
         if tolerance_percent is not None:
@@ -2931,6 +2961,9 @@ async def update_workflow_settings(
             "show_performance_indicators": camera.show_performance_indicators,
             "default_playback_mode": camera.default_playback_mode,
             "mvr_quality_threshold": camera.mvr_quality_threshold,
+            "mvr_periodic_scheduler_enabled": camera.mvr_periodic_scheduler_enabled,
+            "mvr_periodic_scheduler_threshold": camera.mvr_periodic_scheduler_threshold,
+            "mvr_periodic_scheduler_frequency_seconds": camera.mvr_periodic_scheduler_frequency_seconds,
             "updated_at": camera.updated_at.isoformat() if camera.updated_at else None,
         }
     

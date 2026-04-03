@@ -112,6 +112,11 @@ final generalSettingsProvider = StateNotifierProvider<GeneralSettingsNotifier, A
 
 class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>> {
   final SettingsStorageService _storageService;
+  static const String _generalSettingsKey = 'general_settings';
+  static const String _workflowSettingsBaseUrl =
+      'http://localhost:8002/api/v1/settings/workflow';
+  static const String _internalToken =
+      'internal-service-token-ppl-meta-frontend';
 
   GeneralSettingsNotifier(this._storageService) : super(const AsyncValue.loading()) {
     _loadSettings();
@@ -119,10 +124,21 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
 
   Future<void> _loadSettings() async {
     try {
-      final settings = await _storageService.loadSettings(
+      var settings = await _storageService.loadSettings(
         'general_settings',
         GeneralSettings.fromJson,
       ) ?? GeneralSettings.defaultSettings();
+
+      // Backend is source of truth for MVR merge rule/threshold in headless mode.
+      final backendMergeSettings = await _fetchBackendMvrMergeSettings();
+      settings = settings.copyWith(
+        mergeIndividualsRule:
+            backendMergeSettings?['merge_rule'] as String? ?? 'semi',
+        mergeIndividualsThreshold:
+            (backendMergeSettings?['merge_threshold'] as num?)?.toDouble() ??
+                0.70,
+      );
+      await _saveSettings(settings);
       
       state = AsyncValue.data(settings);
     } catch (e, stack) {
@@ -130,9 +146,61 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
     }
   }
 
+  Future<Map<String, dynamic>?> _fetchBackendMvrMergeSettings() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_workflowSettingsBaseUrl/mvr-merge'),
+        headers: {'Authorization': 'Bearer $_internalToken'},
+      );
+
+      if (response.statusCode != 200) {
+        return null;
+      }
+
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        return data;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _updateBackendMvrMergeSettings({
+    String? mergeRule,
+    double? mergeThreshold,
+  }) async {
+    try {
+      final body = <String, dynamic>{
+        if (mergeRule != null) 'merge_rule': mergeRule,
+        if (mergeThreshold != null) 'merge_threshold': mergeThreshold,
+        'updated_by': 'ppl-meta-frontend',
+      };
+
+      final response = await http.put(
+        Uri.parse('$_workflowSettingsBaseUrl/mvr-merge'),
+        headers: {
+          'Authorization': 'Bearer $_internalToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(body),
+      );
+
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _saveSettings(GeneralSettings settings) async {
     try {
-      await _storageService.saveSettings('general_settings', settings);
+      // Keep merge settings backend-owned: do not persist them locally.
+      final prefs = await SharedPreferences.getInstance();
+      final settingsMap = settings.toJson();
+      settingsMap.remove('mergeIndividualsRule');
+      settingsMap.remove('mergeIndividualsThreshold');
+      await prefs.setString(_generalSettingsKey, jsonEncode(settingsMap));
       state = AsyncValue.data(settings);
     } catch (e, stack) {
       state = AsyncValue.error(e, stack);
@@ -191,7 +259,26 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
   Future<void> updateMergeIndividualsRule(String rule) async {
     final currentSettings = state.valueOrNull;
     if (currentSettings != null) {
+      final updated = await _updateBackendMvrMergeSettings(mergeRule: rule);
+      if (!updated) {
+        throw Exception('Failed to update backend merge rule');
+      }
       await _saveSettings(currentSettings.copyWith(mergeIndividualsRule: rule));
+    }
+  }
+
+  Future<void> updateMergeIndividualsThreshold(double threshold) async {
+    final currentSettings = state.valueOrNull;
+    if (currentSettings != null) {
+      final updated = await _updateBackendMvrMergeSettings(
+        mergeThreshold: threshold,
+      );
+      if (!updated) {
+        throw Exception('Failed to update backend merge threshold');
+      }
+      await _saveSettings(
+        currentSettings.copyWith(mergeIndividualsThreshold: threshold),
+      );
     }
   }
 }

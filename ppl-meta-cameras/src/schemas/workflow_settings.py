@@ -44,6 +44,22 @@ class CameraWorkflowSettingsBase(BaseModel):
         le=1.0, 
         description="Minimum quality threshold for creating MVR people"
     )
+    mvr_periodic_scheduler_enabled: bool = Field(
+        default=False,
+        description="Enable periodic MVR merge scheduler for this camera"
+    )
+    mvr_periodic_scheduler_threshold: float = Field(
+        default=0.70,
+        ge=0.0,
+        le=1.0,
+        description="Similarity threshold used by periodic MVR merge scheduler"
+    )
+    mvr_periodic_scheduler_frequency_seconds: int = Field(
+        default=300,
+        ge=30,
+        le=86400,
+        description="How often to run periodic MVR merge scheduler (seconds)"
+    )
 
 
 class CameraWorkflowSettingsUpdate(BaseModel):
@@ -57,6 +73,9 @@ class CameraWorkflowSettingsUpdate(BaseModel):
     show_performance_indicators: Optional[bool] = None
     default_playback_mode: Optional[str] = None
     mvr_quality_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    mvr_periodic_scheduler_enabled: Optional[bool] = None
+    mvr_periodic_scheduler_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    mvr_periodic_scheduler_frequency_seconds: Optional[int] = Field(None, ge=30, le=86400)
 
 
 class CameraWorkflowSettingsResponse(CameraWorkflowSettingsBase):

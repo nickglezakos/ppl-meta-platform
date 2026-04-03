@@ -15,7 +15,9 @@ GeneralSettings _$GeneralSettingsFromJson(Map<String, dynamic> json) =>
       maxLogEntries: (json['maxLogEntries'] as num).toInt(),
       debugMode: json['debugMode'] as bool,
       performanceMonitoring: json['performanceMonitoring'] as bool,
-      mergeIndividualsRule: json['mergeIndividualsRule'] as String,
+      mergeIndividualsRule: json['mergeIndividualsRule'] as String? ?? 'semi',
+      mergeIndividualsThreshold:
+          (json['mergeIndividualsThreshold'] as num?)?.toDouble() ?? 0.70,
     );
 
 Map<String, dynamic> _$GeneralSettingsToJson(GeneralSettings instance) =>
@@ -28,6 +30,7 @@ Map<String, dynamic> _$GeneralSettingsToJson(GeneralSettings instance) =>
       'debugMode': instance.debugMode,
       'performanceMonitoring': instance.performanceMonitoring,
       'mergeIndividualsRule': instance.mergeIndividualsRule,
+      'mergeIndividualsThreshold': instance.mergeIndividualsThreshold,
     };
 
 DetectionSettings _$DetectionSettingsFromJson(Map<String, dynamic> json) =>

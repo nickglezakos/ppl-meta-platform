@@ -108,6 +108,46 @@ class SettingsListResponse(BaseModel):
     count: int
 
 
+class MVRMergeSettingsResponse(BaseModel):
+    """Response model for MVR merge settings."""
+
+    merge_rule: str
+    merge_threshold: float
+    min_threshold: float
+    max_threshold: float
+
+
+class MVRMergeSettingsUpdate(BaseModel):
+    """Request model for updating MVR merge settings."""
+
+    merge_rule: Optional[str] = Field(
+        default=None,
+        description="MVR merge rule: none, semi, auto",
+    )
+    merge_threshold: Optional[float] = Field(
+        default=None,
+        ge=0.30,
+        le=0.95,
+        description="Default threshold for MVR merge operations",
+    )
+    updated_by: str = Field(default="user", description="Who updated the setting")
+
+    @validator("merge_rule")
+    def validate_merge_rule(cls, value):
+        if value is None:
+            return value
+        allowed = {"none", "semi", "auto"}
+        if value not in allowed:
+            raise ValueError("merge_rule must be one of: none, semi, auto")
+        return value
+
+    @validator("merge_threshold")
+    def round_threshold(cls, value):
+        if value is None:
+            return value
+        return round(float(value), 2)
+
+
 # Endpoints
 
 @router.get(
@@ -234,6 +274,70 @@ async def get_all_settings(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve settings: {str(e)}"
+        )
+
+
+@router.get(
+    "/mvr-merge",
+    response_model=MVRMergeSettingsResponse,
+    summary="Get MVR merge settings",
+    description="Get backend-managed MVR merge mode and default threshold.",
+)
+async def get_mvr_merge_settings(
+    db: Session = Depends(get_db),
+    auth_token: str = Depends(get_auth_token),
+):
+    try:
+        service = WorkflowSettingsService(db)
+        settings = await service.get_mvr_merge_settings()
+        return MVRMergeSettingsResponse(**settings)
+    except Exception as e:
+        logger.error(f"Error retrieving MVR merge settings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve MVR merge settings: {str(e)}",
+        )
+
+
+@router.put(
+    "/mvr-merge",
+    response_model=Dict[str, Any],
+    summary="Update MVR merge settings",
+    description="Update backend-managed MVR merge mode and/or threshold.",
+)
+async def update_mvr_merge_settings(
+    request: MVRMergeSettingsUpdate,
+    db: Session = Depends(get_db),
+    auth_token: str = Depends(get_auth_token),
+):
+    try:
+        if request.merge_rule is None and request.merge_threshold is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Provide merge_rule and/or merge_threshold",
+            )
+
+        service = WorkflowSettingsService(db)
+        result = await service.update_mvr_merge_settings(
+            merge_rule=request.merge_rule,
+            merge_threshold=request.merge_threshold,
+            updated_by=request.updated_by,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=result.get("message", "Failed to update MVR merge settings"),
+            )
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating MVR merge settings: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update MVR merge settings: {str(e)}",
         )
 
 

@@ -33,6 +33,9 @@ class Camera {
   final bool showPerformanceIndicators;
   final String defaultPlaybackMode;
   final double mvrQualityThreshold;
+  final bool mvrPeriodicSchedulerEnabled;
+  final double mvrPeriodicSchedulerThreshold;
+  final int mvrPeriodicSchedulerFrequencySeconds;
   
   // Archive status
   final bool archived;
@@ -65,6 +68,9 @@ class Camera {
     this.showPerformanceIndicators = true,
     this.defaultPlaybackMode = 'auto',
     this.mvrQualityThreshold = 0.20,
+    this.mvrPeriodicSchedulerEnabled = false,
+    this.mvrPeriodicSchedulerThreshold = 0.70,
+    this.mvrPeriodicSchedulerFrequencySeconds = 300,
     this.archived = false,
   });
 
@@ -128,6 +134,9 @@ class Camera {
       showPerformanceIndicators: json['show_performance_indicators'] as bool? ?? true,
       defaultPlaybackMode: json['default_playback_mode'] as String? ?? 'auto',
       mvrQualityThreshold: (json['mvr_quality_threshold'] as num?)?.toDouble() ?? 0.20,
+      mvrPeriodicSchedulerEnabled: json['mvr_periodic_scheduler_enabled'] as bool? ?? false,
+      mvrPeriodicSchedulerThreshold: (json['mvr_periodic_scheduler_threshold'] as num?)?.toDouble() ?? 0.70,
+      mvrPeriodicSchedulerFrequencySeconds: json['mvr_periodic_scheduler_frequency_seconds'] as int? ?? 300,
       archived: json['archived'] as bool? ?? false,
     );
   }
@@ -161,6 +170,9 @@ class Camera {
       'show_performance_indicators': showPerformanceIndicators,
       'default_playback_mode': defaultPlaybackMode,
       'mvr_quality_threshold': mvrQualityThreshold,
+      'mvr_periodic_scheduler_enabled': mvrPeriodicSchedulerEnabled,
+      'mvr_periodic_scheduler_threshold': mvrPeriodicSchedulerThreshold,
+      'mvr_periodic_scheduler_frequency_seconds': mvrPeriodicSchedulerFrequencySeconds,
       'archived': archived,
     };
   }
@@ -192,6 +204,9 @@ class Camera {
     bool? showPerformanceIndicators,
     String? defaultPlaybackMode,
     double? mvrQualityThreshold,
+    bool? mvrPeriodicSchedulerEnabled,
+    double? mvrPeriodicSchedulerThreshold,
+    int? mvrPeriodicSchedulerFrequencySeconds,
     bool? archived,
   }) {
     return Camera(
@@ -221,6 +236,12 @@ class Camera {
       showPerformanceIndicators: showPerformanceIndicators ?? this.showPerformanceIndicators,
       defaultPlaybackMode: defaultPlaybackMode ?? this.defaultPlaybackMode,
       mvrQualityThreshold: mvrQualityThreshold ?? this.mvrQualityThreshold,
+        mvrPeriodicSchedulerEnabled:
+          mvrPeriodicSchedulerEnabled ?? this.mvrPeriodicSchedulerEnabled,
+        mvrPeriodicSchedulerThreshold:
+          mvrPeriodicSchedulerThreshold ?? this.mvrPeriodicSchedulerThreshold,
+        mvrPeriodicSchedulerFrequencySeconds:
+          mvrPeriodicSchedulerFrequencySeconds ?? this.mvrPeriodicSchedulerFrequencySeconds,
       archived: archived ?? this.archived,
     );
   }

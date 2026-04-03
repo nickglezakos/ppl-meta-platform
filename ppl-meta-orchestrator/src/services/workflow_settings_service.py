@@ -17,6 +17,17 @@ logger = logging.getLogger(__name__)
 
 class WorkflowSettingsService:
     """Service for managing workflow settings."""
+
+    MERGE_RULE_TO_CODE = {
+        "none": 0.0,
+        "semi": 1.0,
+        "auto": 2.0,
+    }
+    MERGE_CODE_TO_RULE = {
+        0: "none",
+        1: "semi",
+        2: "auto",
+    }
     
     def __init__(self, db_session: Session):
         self.db = db_session
@@ -132,6 +143,108 @@ class WorkflowSettingsService:
         """
         value = await self.get_setting('velocity_sensitivity')
         return value if value is not None else 20.0
+
+    async def _ensure_setting_exists(
+        self,
+        key: str,
+        default_value: float,
+        min_value: Optional[float],
+        max_value: Optional[float],
+        description: str,
+    ) -> None:
+        """Ensure workflow setting row exists (idempotent)."""
+        self.db.execute(
+            text(
+                """
+                INSERT INTO workflow_settings (
+                    setting_key, setting_value, min_value, max_value, description, updated_by
+                ) VALUES (
+                    :key, :value, :min_value, :max_value, :description, 'system'
+                )
+                ON CONFLICT (setting_key) DO NOTHING
+                """
+            ),
+            {
+                "key": key,
+                "value": default_value,
+                "min_value": min_value,
+                "max_value": max_value,
+                "description": description,
+            },
+        )
+        self.db.commit()
+
+    async def _ensure_mvr_merge_settings(self) -> None:
+        await self._ensure_setting_exists(
+            key="mvr_merge_rule",
+            default_value=1.0,
+            min_value=0.0,
+            max_value=2.0,
+            description="MVR merge mode: 0=none, 1=semi, 2=auto",
+        )
+        await self._ensure_setting_exists(
+            key="mvr_merge_threshold",
+            default_value=0.70,
+            min_value=0.30,
+            max_value=0.95,
+            description="Default threshold for MVR merge operations",
+        )
+
+    async def get_mvr_merge_settings(self) -> Dict[str, Any]:
+        """Get MVR merge settings with defaults ensured."""
+        await self._ensure_mvr_merge_settings()
+
+        rule_code = await self.get_setting("mvr_merge_rule")
+        threshold = await self.get_setting("mvr_merge_threshold")
+
+        rule_int = int(round(rule_code if rule_code is not None else 1.0))
+        merge_rule = self.MERGE_CODE_TO_RULE.get(rule_int, "semi")
+
+        return {
+            "merge_rule": merge_rule,
+            "merge_threshold": float(threshold if threshold is not None else 0.70),
+            "min_threshold": 0.30,
+            "max_threshold": 0.95,
+        }
+
+    async def update_mvr_merge_settings(
+        self,
+        merge_rule: Optional[str] = None,
+        merge_threshold: Optional[float] = None,
+        updated_by: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Update one or both MVR merge settings."""
+        await self._ensure_mvr_merge_settings()
+
+        if merge_rule is not None:
+            if merge_rule not in self.MERGE_RULE_TO_CODE:
+                return {
+                    "success": False,
+                    "message": "merge_rule must be one of: none, semi, auto",
+                }
+            result = await self.update_setting(
+                key="mvr_merge_rule",
+                value=self.MERGE_RULE_TO_CODE[merge_rule],
+                updated_by=updated_by,
+            )
+            if not result.get("success"):
+                return result
+
+        if merge_threshold is not None:
+            result = await self.update_setting(
+                key="mvr_merge_threshold",
+                value=float(merge_threshold),
+                updated_by=updated_by,
+            )
+            if not result.get("success"):
+                return result
+
+        current = await self.get_mvr_merge_settings()
+        return {
+            "success": True,
+            "message": "MVR merge settings updated",
+            **current,
+        }
     
     async def get_all_settings(self) -> Dict[str, Any]:
         """

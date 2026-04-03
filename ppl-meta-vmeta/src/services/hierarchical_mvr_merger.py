@@ -127,6 +127,7 @@ class HierarchicalMVRMerger:
         """
         self.repository = repository
         self.mvr_matcher = mvr_matcher
+        self.gender_conflict_min_confidence = 0.80
         logger.info("HierarchicalMVRMerger initialized")
     
     async def merge_hierarchical(
@@ -267,6 +268,7 @@ class HierarchicalMVRMerger:
                     confidence_score,
                     featured_individual_uuid,
                     gender,
+                    gender_confidence,
                     age_min,
                     age_max,
                     is_orphaned
@@ -289,6 +291,7 @@ class HierarchicalMVRMerger:
                     "confidence_score": row["confidence_score"],
                     "featured_individual_uuid": row["featured_individual_uuid"],
                     "gender": row["gender"],
+                    "gender_confidence": row["gender_confidence"],
                     "age_min": row["age_min"],
                     "age_max": row["age_max"]
                 })
@@ -422,18 +425,30 @@ class HierarchicalMVRMerger:
         # Create Union-Find structure with UUIDs
         uuids = [mvr["mvr_people_uuid"] for mvr in mvr_people]
         uf = UnionFind(uuids)
+        uuid_to_mvr = {mvr["mvr_people_uuid"]: mvr for mvr in mvr_people}
+        blocked_gender_pairs = 0
         
         # Union similar MVR people
         for (uuid1, uuid2), similarity in similarity_matrix.items():
             if similarity >= threshold:
+                if not self._can_auto_merge_by_gender(
+                    uuid_to_mvr[uuid1],
+                    uuid_to_mvr[uuid2]
+                ):
+                    blocked_gender_pairs += 1
+                    continue
                 uf.union(uuid1, uuid2)
         
         # Get connected components
         uuid_groups = uf.get_groups()
         
+        if blocked_gender_pairs > 0:
+            logger.info(
+                f"Blocked {blocked_gender_pairs} high-confidence cross-gender pair(s) "
+                f"from auto-merge"
+            )
+
         # Map UUIDs back to full MVR people dicts
-        uuid_to_mvr = {mvr["mvr_people_uuid"]: mvr for mvr in mvr_people}
-        
         merge_groups = []
         for uuid_group in uuid_groups:
             group = [uuid_to_mvr[uuid] for uuid in uuid_group]
@@ -448,6 +463,51 @@ class HierarchicalMVRMerger:
         )
         
         return merge_groups
+
+    def _can_auto_merge_by_gender(
+        self,
+        mvr1: Dict[str, Any],
+        mvr2: Dict[str, Any]
+    ) -> bool:
+        """Block only high-confidence male/female conflicts during automatic grouping."""
+        gender1 = self._normalize_gender(mvr1.get("gender"))
+        gender2 = self._normalize_gender(mvr2.get("gender"))
+
+        # Unknown or missing gender should not block merges.
+        if gender1 is None or gender2 is None:
+            return True
+
+        # Same confident gender is merge-eligible.
+        if gender1 == gender2:
+            return True
+
+        conf1 = self._safe_float(mvr1.get("gender_confidence"))
+        conf2 = self._safe_float(mvr2.get("gender_confidence"))
+        if conf1 is None or conf2 is None:
+            return True
+
+        # Only block if both labels are confident and conflicting.
+        return not (
+            conf1 >= self.gender_conflict_min_confidence
+            and conf2 >= self.gender_conflict_min_confidence
+            and gender1 != gender2
+        )
+
+    def _normalize_gender(self, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        gender = str(value).strip().lower()
+        if gender in {"male", "female"}:
+            return gender
+        return None
+
+    def _safe_float(self, value: Any) -> Optional[float]:
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
     
     async def _merge_group(
         self,

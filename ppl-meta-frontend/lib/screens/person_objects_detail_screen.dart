@@ -28,6 +28,7 @@ import '../services/media_api_client.dart';
 import '../services/individual_groups_api_client.dart';
 import '../services/mvr_image_service.dart';
 import '../providers/mvr_image_service_provider.dart';
+import '../providers/settings_providers.dart';
 import '../models/mvr_best_image.dart';
 import '../utils/platform_file_download.dart';
 
@@ -88,7 +89,7 @@ class _PersonObjectsDetailScreenState
   final Set<String> _selectedIndividuals = {};
   
   // Similarity threshold for merging (adjustable by user)
-  double _similarityThreshold = 0.6;
+  double _similarityThreshold = 0.7;
   
   // Best images for individuals in cross-video mode
   Map<String, BestImageResponse?> _bestImages = {};
@@ -116,6 +117,9 @@ class _PersonObjectsDetailScreenState
     
     // Determine mode
     _isCrossVideoMode = widget.crossVideoContext != null;
+
+    final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
+    _similarityThreshold = generalSettings?.mergeIndividualsThreshold ?? 0.70;
     
     _tabController = TabController(length: 4, vsync: this);
     // _visionTabController = TabController(length: 3, vsync: this); // Vision tab has 3 sub-tabs - COMMENTED OUT
@@ -2322,7 +2326,10 @@ class _PersonObjectsDetailScreenState
 
   /// Show actions dialog with available operations for selected individuals
   Future<void> _showActionsDialog() async {
+    final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
+    final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
     final bool canMerge = _selectedIndividuals.length >= 2;
+    final bool mergeDisabledByRule = mergeRule == 'none';
     
     await showDialog(
       context: context,
@@ -2350,7 +2357,7 @@ class _PersonObjectsDetailScreenState
             const SizedBox(height: 12),
             
             // Merge Individuals button (only if 2+ selected)
-            if (canMerge)
+            if (canMerge && !mergeDisabledByRule)
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.of(context).pop();
@@ -2365,6 +2372,20 @@ class _PersonObjectsDetailScreenState
                 ),
               ),
             
+            if (canMerge && mergeDisabledByRule)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'Merge is disabled by settings (Merge Individuals Rules = No automatic merging).',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                    fontStyle: FontStyle.italic,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
             if (!canMerge)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
@@ -2454,6 +2475,18 @@ class _PersonObjectsDetailScreenState
 
   /// Show confirmation dialog for merging individuals
   Future<void> _showMergeConfirmationDialog() async {
+    final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
+    final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
+    if (mergeRule == 'none') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Merge is disabled in Settings. Change Merge Individuals Rules to continue.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (_selectedIndividuals.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

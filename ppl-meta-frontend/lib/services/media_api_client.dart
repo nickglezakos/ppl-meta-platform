@@ -1511,7 +1511,7 @@ class MediaApiClient {
   /// Request parameters:
   /// - individual_uuids: List of individual UUIDs to merge (minimum 2)
   /// - session_uuid: Session identifier for filtering
-  /// - similarity_threshold: Minimum similarity score (default 0.75)
+  /// - similarity_threshold: Minimum similarity score (default 0.70)
   /// 
   /// Returns:
   /// - predominant_individual_uuid: The UUID of the predominant individual
@@ -1521,7 +1521,7 @@ class MediaApiClient {
   Future<ApiResponse<Map<String, dynamic>>> mergeIndividuals({
     required List<String> individualUuids,
     required String sessionUuid,
-    double similarityThreshold = 0.6,
+    double similarityThreshold = 0.70,
   }) async {
     try {
       final requestBody = {
@@ -1604,7 +1604,7 @@ class MediaApiClient {
   /// - similarity_score: Average similarity score (if available)
   Future<ApiResponse<Map<String, dynamic>>> mergeMVRPeople({
     required List<String> mvrUuids,
-    double similarityThreshold = 0.75,
+    double similarityThreshold = 0.70,
   }) async {
     try {
       if (mvrUuids.length < 2) {

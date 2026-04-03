@@ -203,7 +203,7 @@ class MergeIndividualsRequest(BaseModel):
     )
     session_uuid: str = Field(..., description="Tracking session UUID")
     similarity_threshold: Optional[float] = Field(
-        default=0.6,
+        default=0.70,
         ge=0.0,
         le=1.0,
         description="Minimum similarity threshold for merge validation"
@@ -2099,18 +2099,83 @@ async def merge_individuals_by_similarity(
         # B3: Identify merge candidates using connected components
         # This handles transitive similarity: if A~B and B~C, then A,B,C merge
         merge_groups = []  # [(keep_uuid, [merge_uuid1, merge_uuid2, ...])]
+
+        # Block automatic merges when both sides have confident but conflicting binary gender.
+        gender_conflict_min_confidence = 0.80
+
+        def _normalize_gender(value):
+            if value is None:
+                return None
+            normalized = str(value).strip().lower()
+            if normalized in {"male", "female"}:
+                return normalized
+            return None
+
+        def _safe_float(value):
+            try:
+                if value is None:
+                    return 0.0
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _can_auto_merge_by_gender(face_a, face_b):
+            demographics_a = face_a.get('demographics') or {}
+            demographics_b = face_b.get('demographics') or {}
+
+            gender_a = _normalize_gender(demographics_a.get('gender'))
+            gender_b = _normalize_gender(demographics_b.get('gender'))
+
+            if gender_a is None or gender_b is None:
+                return True
+            if gender_a == gender_b:
+                return True
+
+            confidence_a = _safe_float(demographics_a.get('gender_confidence'))
+            confidence_b = _safe_float(demographics_b.get('gender_confidence'))
+
+            if (
+                confidence_a >= gender_conflict_min_confidence
+                and confidence_b >= gender_conflict_min_confidence
+            ):
+                return False
+
+            return True
+
+        faces_by_uuid = {
+            face['individual_uuid']: face
+            for face in faces_with_embeddings
+            if face.get('individual_uuid')
+        }
+        blocked_gender_conflicts = 0
         
         # Build adjacency list of similar individuals
         similar_to = {uuid_val: [] for uuid_val in uuids}
         for i in range(len(uuids)):
             for j in range(i+1, len(uuids)):
                 if similarities[i][j] >= similarity_threshold:
+                    face_i = faces_by_uuid.get(uuids[i])
+                    face_j = faces_by_uuid.get(uuids[j])
+                    if face_i and face_j and not _can_auto_merge_by_gender(face_i, face_j):
+                        blocked_gender_conflicts += 1
+                        logger.info(
+                            f"[MERGE] Gender guard blocked edge: {uuids[i][:8]} ↔ "
+                            f"{uuids[j][:8]} (sim={similarities[i][j]:.4f})"
+                        )
+                        continue
+
                     similar_to[uuids[i]].append(uuids[j])
                     similar_to[uuids[j]].append(uuids[i])
                     logger.info(
                         f"[MERGE] Edge added: {uuids[i][:8]} ↔ "
                         f"{uuids[j][:8]} (sim={similarities[i][j]:.4f})"
                     )
+
+        if blocked_gender_conflicts:
+            logger.info(
+                f"[MERGE PHASE B] Gender guard blocked {blocked_gender_conflicts} "
+                "high-confidence cross-gender edges"
+            )
         
         # Find connected components using DFS
         visited = set()
@@ -3109,14 +3174,14 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
             
             # Debug: Log that all groups are done
             try:
-                    async with db_client.pool.acquire() as conn:
-                        await conn.execute("""
-                            UPDATE tracking_sessions
-                            SET failed_videos = array_append(failed_videos, $2)
-                            WHERE session_uuid = $1
-                        """, session_uuid, "all_groups_processed")
+                async with db_client.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE tracking_sessions
+                        SET failed_videos = array_append(failed_videos, $2)
+                        WHERE session_uuid = $1
+                    """, session_uuid, "all_groups_processed")
             except Exception:
-                    pass
+                pass
             
             # All groups processed - now merge across groups via embeddings
             logger.info(
@@ -4203,7 +4268,7 @@ async def merge_individuals_manual(
     **Parameters:**
     - individual_uuids: List of individual UUIDs to merge (minimum 2)
     - session_uuid: Tracking session UUID
-    - similarity_threshold: Optional threshold for validation (default: 0.75)
+    - similarity_threshold: Optional threshold for validation (default: 0.70)
     - triggered_by: Source that triggered merge (default: "manual")
     
     **Returns:**

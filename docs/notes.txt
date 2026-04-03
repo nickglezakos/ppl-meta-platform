@@ -339,3 +339,23 @@ Frame 132: mean= 115.2 std= 86.6 diff=24.39 haar=0
 Frame 134: mean= 120.4 std= 87.6 diff=31.01 haar=0
 (venv) (base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % 
 
+
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  PGPASSWORD=ppl_password psq
+l -h localhost -p 5432 -U ppl_user -d ppl_meta_vmeta -P pager=off -c "WITH vi AS (S
+ELECT DISTINCT individual_uuid FROM individual_video_appearances WHERE video_uuid='
+ddebfc22-2f6b-4110-8c05-b180ad8515da'::uuid) SELECT imm.individual_uuid, imm.mvr_pe
+ople_uuid, mp.is_orphaned, mp.gender, mp.age_min, mp.age_max, mp.merged_into_mvr_uu
+id, sup.is_orphaned AS parent_orphaned, sup.gender AS parent_gender, sup.age_min AS
+ parent_age_min, sup.age_max AS parent_age_max FROM vi JOIN individual_mvr_mapping 
+imm ON imm.individual_uuid=vi.individual_uuid JOIN mvr_people mp ON mp.mvr_people_u
+uid=imm.mvr_people_uuid LEFT JOIN mvr_people sup ON sup.mvr_people_uuid=mp.merged_i
+nto_mvr_uuid ORDER BY imm.individual_uuid;"
+           individual_uuid            |           mvr_people_uuid            | is_orphaned | gender | age_min | age_max |         merged_into_mvr_uuid         | parent_orphaned | parent_gender | parent_age_min | parent_age_max 
+--------------------------------------+--------------------------------------+-------------+--------+---------+---------+--------------------------------------+-----------------+---------------+----------------+----------------
+ 203c85b2-365c-4dbd-91ff-a87a5b623606 | fa31b785-0b25-4dda-be6e-447c95447ab0 | t           | female |      35 |      45 | 79bd6286-30b0-497b-afa8-39b06dbbeaf3 | f               | male          |             38 |             48
+ 4a01ad48-edf6-4817-b986-f3ad05572708 | 8f290225-4a5b-4980-9db3-a8357b602d70 | t           | female |      30 |      40 | f89e21a5-3113-415b-860c-d809f0a978d2 | t               | female        |             31 |             41
+ 636a23c4-707b-49b9-8aae-80c5e5f93d4e | b60db041-0041-4c98-9bdd-7d31c7bd180c | t           | female |      32 |      42 | f89e21a5-3113-415b-860c-d809f0a978d2 | t               | female        |             31 |             41
+ 945dac25-6b11-4ad9-bd67-5ed08b17c046 | 53129ddc-5ec5-4fcd-98c4-873dfdbd70cc | t           | female |      30 |      40 | 79bd6286-30b0-497b-afa8-39b06dbbeaf3 | f               | male          |             38 |             48
+ b267c423-0fdc-48f1-974a-ecce102b2502 | 6393ebe2-d9ee-475d-ba17-1365a560c907 | t           | female |      32 |      42 | f89e21a5-3113-415b-860c-d809f0a978d2 | t               | female        |             31 |             41
+(5 rows)
+

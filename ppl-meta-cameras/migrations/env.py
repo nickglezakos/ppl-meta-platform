@@ -8,33 +8,59 @@ from sqlalchemy import engine_from_config, pool
 # Add the src directory to the path so we can import our models
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
+
+def _is_truthy(value: str) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+ALLOW_SQLITE_FALLBACK = _is_truthy(
+    os.getenv("ALEMBIC_ALLOW_SQLITE_FALLBACK", "false")
+)
+FALLBACK_DATABASE_URL = os.getenv(
+    "ALEMBIC_FALLBACK_DATABASE_URL", "sqlite:///cameras.db"
+)
+
 # Import the database and models
 try:
     from src.database import Base, engine
     
     # Import all models to ensure they're registered with SQLAlchemy
-    from src.models.camera import Camera, CameraStatus, CameraType
-    from src.models.session import CameraSession
-    from src.models.capability import CameraCapability
-    from src.models.recording import RecordingSession, RecordingFile
+    from src.models.camera import Camera, CameraStatus, CameraType, CameraSession, CameraCapability
+    from src.models.recording_session import RecordingSession, RecordingFile
     
     # Try to get database URL from config
     try:
         from src.config import get_config
         app_config = get_config()
         database_url = app_config.DATABASE_URL
-    except:
-        # Fallback to cameras.db
-        database_url = "sqlite:///cameras.db"
+    except Exception as config_error:
+        # Fall back to explicit DATABASE_URL env var only.
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            raise RuntimeError(
+                "Alembic could not resolve DATABASE_URL from src.config or environment. "
+                "Set DATABASE_URL before running migrations."
+            ) from config_error
     
     use_existing_engine = True
 except ImportError as e:
+    if not ALLOW_SQLITE_FALLBACK:
+        raise RuntimeError(
+            "Alembic failed to import service models. Refusing to silently fall back "
+            "to sqlite. Fix imports or set ALEMBIC_ALLOW_SQLITE_FALLBACK=true "
+            "for explicit local fallback."
+        ) from e
+
     print(f"Warning: Could not import models: {e}")
-    # Fallback for when running from different contexts
-    database_url = "sqlite:///cameras.db"
-    
+    print(
+        "Warning: Using explicit fallback database URL "
+        f"{FALLBACK_DATABASE_URL} because ALEMBIC_ALLOW_SQLITE_FALLBACK=true"
+    )
+
+    database_url = FALLBACK_DATABASE_URL
+
     # Create a minimal Base for metadata
-    from sqlalchemy.ext.declarative import declarative_base
+    from sqlalchemy.orm import declarative_base
     Base = declarative_base()
     engine = None
     use_existing_engine = False
@@ -48,9 +74,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the database URL from our settings
-if use_existing_engine:
-    config.set_main_option("sqlalchemy.url", database_url)
+# Set the database URL from our settings.
+# Always set this for consistency across online/offline modes.
+config.set_main_option("sqlalchemy.url", database_url)
 
 # Add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata

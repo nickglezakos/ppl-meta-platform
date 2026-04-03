@@ -107,6 +107,9 @@ class Camera(Base):
     show_performance_indicators = Column(Boolean, default=True)
     default_playback_mode = Column(String(50), default='auto')
     mvr_quality_threshold = Column(Float, default=0.20)
+    mvr_periodic_scheduler_enabled = Column(Boolean, default=False)
+    mvr_periodic_scheduler_threshold = Column(Float, default=0.70)
+    mvr_periodic_scheduler_frequency_seconds = Column(Integer, default=300)
 
     # Hybrid Settings Support (Phase 3B)
     settings = Column(JSON)  # All camera settings in one JSON object

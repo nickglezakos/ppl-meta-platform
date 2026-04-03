@@ -20,7 +20,9 @@ import '../services/media_organization_service.dart';
 import '../services/media_api_client.dart';
 import '../services/vision_processing_service.dart';
 import '../providers/media_organization_providers.dart';
-import '../presentation/widgets/settings/workflow_settings_section.dart';
+import '../providers/settings_providers.dart';
+import '../presentation/widgets/settings/workflow_settings_section.dart'
+  as workflow_section;
 import 'person_objects_detail_screen.dart';
 import '../core/providers/features_providers.dart';
 import '../widgets/media_privacy_placeholder.dart';
@@ -928,6 +930,44 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
       print('📊 Starting hierarchical merge for ${mvrPersonUuids.length} MVR people...');
 
+      final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
+      final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
+      final mergeThreshold = generalSettings?.mergeIndividualsThreshold ?? 0.70;
+
+      if (mergeRule != 'auto') {
+        if (mounted) Navigator.pop(context);
+
+        if (mounted && mergeRule == 'semi') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Semi-automatic mode: showing individuals without auto-merge.',
+              ),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+
+        final updatedSessionData = Map<String, dynamic>.from(_trackingSessionData!);
+        updatedSessionData['merge_statistics'] = {
+          'total_mvr': mvrPersonUuids.length,
+          'super_individuals': mvrPersonUuids.length,
+          'merges_performed': 0,
+          'standalone_individuals': mvrPersonUuids.length,
+        };
+        updatedSessionData['pre_merge_count'] = mvrPersonUuids.length;
+        updatedSessionData['post_merge_count'] = mvrPersonUuids.length;
+        updatedSessionData['hierarchical_merge_applied'] = false;
+        updatedSessionData['merge_rule_applied'] = mergeRule;
+
+        _navigateToCrossVideoAnalysis(
+          individualUuids: mvrPersonUuids,
+          sessionUuid: 'mvr_search_${DateTime.now().millisecondsSinceEpoch}',
+          sessionData: updatedSessionData,
+        );
+        return;
+      }
+
       // NEW: Perform hierarchical merge to consolidate duplicates
       final apiClient = ref.read(apiClientProvider);
       
@@ -935,7 +975,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         '/api/v1/mvr-people/merge/hierarchical',
         data: {
           'mvr_uuids': mvrPersonUuids,
-          'similarity_threshold': 0.60, // Lowered threshold for better matching
+          'similarity_threshold': mergeThreshold,
           'min_similarity_check': 0.50,
         },
       );
@@ -1852,7 +1892,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       
       // Execute vision processing
       final mediaIds = _selectedItems.map((item) => item.uuid).toList();
-      final workflowSettings = ref.read(workflowSettingsProvider);
+      final workflowSettings = ref.read(workflow_section.workflowSettingsProvider);
       final result = await visionService.processSelectedMedia(
         mediaIds: mediaIds,
         minFaceQuality: workflowSettings.mvrQualityThreshold,

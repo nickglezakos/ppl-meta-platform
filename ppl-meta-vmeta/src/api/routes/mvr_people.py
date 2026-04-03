@@ -1827,9 +1827,47 @@ async def search_mvr_people_by_videos(
                 str(row['individual_uuid']) for row in individual_rows
             ]
             
-            # Find MVR people linked to these individuals
+            # Resolve each mapped MVR to its active root using merged_into_mvr_uuid chain.
+            # This keeps video search working even when individual mappings point to
+            # orphaned rows (common after hierarchical merges).
             mvr_query = """
-                SELECT DISTINCT
+                WITH RECURSIVE mvr_chain AS (
+                    SELECT
+                        imm.individual_uuid,
+                        mp.mvr_people_uuid AS current_mvr_uuid,
+                        mp.merged_into_mvr_uuid,
+                        0 AS depth
+                    FROM individual_mvr_mapping imm
+                    INNER JOIN mvr_people mp
+                        ON mp.mvr_people_uuid = imm.mvr_people_uuid
+                    WHERE imm.individual_uuid = ANY($1::uuid[])
+
+                    UNION ALL
+
+                    SELECT
+                        mc.individual_uuid,
+                        parent.mvr_people_uuid AS current_mvr_uuid,
+                        parent.merged_into_mvr_uuid,
+                        mc.depth + 1 AS depth
+                    FROM mvr_chain mc
+                    INNER JOIN mvr_people parent
+                        ON parent.mvr_people_uuid = mc.merged_into_mvr_uuid
+                    WHERE mc.merged_into_mvr_uuid IS NOT NULL
+                        AND mc.depth < 20
+                ),
+                individual_roots AS (
+                    SELECT DISTINCT ON (individual_uuid)
+                        individual_uuid,
+                        current_mvr_uuid AS root_mvr_uuid
+                    FROM mvr_chain
+                    WHERE merged_into_mvr_uuid IS NULL
+                    ORDER BY individual_uuid, depth DESC
+                ),
+                root_mvr AS (
+                    SELECT DISTINCT root_mvr_uuid
+                    FROM individual_roots
+                )
+                SELECT
                     mp.mvr_people_uuid,
                     mp.quality_score,
                     mp.confidence_score,
@@ -1839,10 +1877,9 @@ async def search_mvr_people_by_videos(
                     mp.created_at,
                     mp.updated_at
                 FROM mvr_people mp
-                INNER JOIN individual_mvr_mapping imm
-                  ON mp.mvr_people_uuid = imm.mvr_people_uuid
-                WHERE imm.individual_uuid = ANY($1::uuid[])
-                    AND mp.is_orphaned = false
+                INNER JOIN root_mvr rm
+                    ON rm.root_mvr_uuid = mp.mvr_people_uuid
+                WHERE mp.is_orphaned = false
                 ORDER BY mp.created_at DESC
                 LIMIT $2
             """
@@ -1859,22 +1896,29 @@ async def search_mvr_people_by_videos(
             for mvr_record in mvr_records:
                 mvr_uuid = str(mvr_record['mvr_people_uuid'])
                 
-                # Check if this MVR is a super-individual (has merged children)
-                merged_children_query = """
-                    SELECT merged_mvr_uuid
-                    FROM mvr_merge_hierarchy
-                    WHERE super_individual_uuid = $1
+                # Expand all descendants from this root MVR using merged_into_mvr_uuid.
+                # This replaces dependency on mvr_merge_hierarchy for search aggregation.
+                descendants_query = """
+                    WITH RECURSIVE descendants AS (
+                        SELECT mvr_people_uuid
+                        FROM mvr_people
+                        WHERE mvr_people_uuid = $1::uuid
+
+                        UNION
+
+                        SELECT child.mvr_people_uuid
+                        FROM mvr_people child
+                        INNER JOIN descendants d
+                            ON child.merged_into_mvr_uuid = d.mvr_people_uuid
+                    )
+                    SELECT mvr_people_uuid
+                    FROM descendants
                 """
-                merged_children_rows = await conn.fetch(
-                    merged_children_query, mvr_uuid
-                )
-                merged_mvr_uuids = [
-                    str(row['merged_mvr_uuid']) for row in merged_children_rows
-                ]
+                descendant_rows = await conn.fetch(descendants_query, mvr_uuid)
+                all_mvr_uuids = [str(row['mvr_people_uuid']) for row in descendant_rows]
+                merged_mvr_uuids = [uuid for uuid in all_mvr_uuids if uuid != mvr_uuid]
                 is_super_individual = len(merged_mvr_uuids) > 0
-                
-                # Get all MVR UUIDs to query (parent + merged children)
-                all_mvr_uuids = [mvr_uuid] + merged_mvr_uuids
+
                 logger.debug(
                     f"MVR {mvr_uuid[:8]}... is_super={is_super_individual}, "
                     f"checking {len(all_mvr_uuids)} MVR UUIDs"

@@ -50,6 +50,29 @@ class CrossVideoTrackingSection extends ConsumerWidget {
                   if (value != null) notifier.updateMergeIndividualsRule(value);
                 },
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Default Merge Threshold: '
+                '${(data.mergeIndividualsThreshold * 100).toStringAsFixed(0)}%',
+                style: AppTextStyles.labelMedium,
+              ),
+              Slider(
+                value: data.mergeIndividualsThreshold,
+                min: 0.30,
+                max: 0.95,
+                divisions: 13,
+                label:
+                    '${(data.mergeIndividualsThreshold * 100).toStringAsFixed(0)}%',
+                onChanged: (value) {
+                  notifier.updateMergeIndividualsThreshold(value);
+                },
+              ),
+              Text(
+                'Used as default threshold for MVR merge operations.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
             ],
           ),
         ),

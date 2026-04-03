@@ -45,6 +45,9 @@ class _CameraPipelineSettingsScreenState
   late bool _showPerformanceIndicators;
   late String _defaultPlaybackMode;
   late double _mvrQualityThreshold;
+  late bool _mvrPeriodicSchedulerEnabled;
+  late double _mvrPeriodicSchedulerThreshold;
+  late int _mvrPeriodicSchedulerFrequencySeconds;
 
   // Show advanced settings
   bool _showAdvanced = false;
@@ -70,6 +73,9 @@ class _CameraPipelineSettingsScreenState
     _showPerformanceIndicators = widget.camera.showPerformanceIndicators;
     _defaultPlaybackMode = widget.camera.defaultPlaybackMode;
     _mvrQualityThreshold = widget.camera.mvrQualityThreshold;
+    _mvrPeriodicSchedulerEnabled = widget.camera.mvrPeriodicSchedulerEnabled;
+    _mvrPeriodicSchedulerThreshold = widget.camera.mvrPeriodicSchedulerThreshold;
+    _mvrPeriodicSchedulerFrequencySeconds = widget.camera.mvrPeriodicSchedulerFrequencySeconds;
     
     // Load latest settings from server
     _loadSettings();
@@ -109,6 +115,9 @@ class _CameraPipelineSettingsScreenState
           _showPerformanceIndicators = workflowSettings['show_performance_indicators'] as bool? ?? true;
           _defaultPlaybackMode = workflowSettings['default_playback_mode'] as String? ?? 'auto';
           _mvrQualityThreshold = (workflowSettings['mvr_quality_threshold'] as num?)?.toDouble() ?? 0.20;
+          _mvrPeriodicSchedulerEnabled = workflowSettings['mvr_periodic_scheduler_enabled'] as bool? ?? false;
+          _mvrPeriodicSchedulerThreshold = (workflowSettings['mvr_periodic_scheduler_threshold'] as num?)?.toDouble() ?? 0.70;
+          _mvrPeriodicSchedulerFrequencySeconds = workflowSettings['mvr_periodic_scheduler_frequency_seconds'] as int? ?? 300;
           
           _isLoading = false;
         });
@@ -137,6 +146,12 @@ class _CameraPipelineSettingsScreenState
 
     if (_segmentDuration < 5 || _segmentDuration > 300) {
       _showError('Segment duration must be between 5 and 300 seconds');
+      return;
+    }
+
+    if (_mvrPeriodicSchedulerFrequencySeconds < 30 ||
+        _mvrPeriodicSchedulerFrequencySeconds > 86400) {
+      _showError('Periodic scheduler frequency must be between 30 and 86400 seconds');
       return;
     }
 
@@ -170,6 +185,9 @@ class _CameraPipelineSettingsScreenState
         showPerformanceIndicators: _showPerformanceIndicators,
         defaultPlaybackMode: _defaultPlaybackMode,
         mvrQualityThreshold: _mvrQualityThreshold,
+        mvrPeriodicSchedulerEnabled: _mvrPeriodicSchedulerEnabled,
+        mvrPeriodicSchedulerThreshold: _mvrPeriodicSchedulerThreshold,
+        mvrPeriodicSchedulerFrequencySeconds: _mvrPeriodicSchedulerFrequencySeconds,
       );
 
       // Refresh camera list to get updated settings
@@ -804,6 +822,103 @@ class _CameraPipelineSettingsScreenState
                   ),
                   Text(
                     'Minimum quality threshold for creating MVR people from detected faces',
+                    style: OfflineFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Periodic MVR scheduler controls
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Periodic MVR Merge Scheduler',
+                      style: OfflineFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Run scheduled MVR merge cycles for this camera',
+                      style: OfflineFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    value: _mvrPeriodicSchedulerEnabled,
+                    activeColor: AppColors.primary,
+                    onChanged: (value) {
+                      setState(() {
+                        _mvrPeriodicSchedulerEnabled = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Scheduler Merge Threshold: ${(_mvrPeriodicSchedulerThreshold * 100).toStringAsFixed(0)}%',
+                    style: OfflineFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _mvrPeriodicSchedulerEnabled
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Slider(
+                    value: _mvrPeriodicSchedulerThreshold,
+                    min: 0.30,
+                    max: 0.95,
+                    divisions: 13,
+                    label:
+                        '${(_mvrPeriodicSchedulerThreshold * 100).toStringAsFixed(0)}%',
+                    onChanged: _mvrPeriodicSchedulerEnabled
+                        ? (value) {
+                            setState(() {
+                              _mvrPeriodicSchedulerThreshold = value;
+                            });
+                          }
+                        : null,
+                    activeColor: AppColors.primary,
+                  ),
+                  Text(
+                    'Similarity threshold used by periodic merge runs',
+                    style: OfflineFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Scheduler Frequency: ${_mvrPeriodicSchedulerFrequencySeconds}s',
+                    style: OfflineFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _mvrPeriodicSchedulerEnabled
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Slider(
+                    value: _mvrPeriodicSchedulerFrequencySeconds.toDouble(),
+                    min: 30,
+                    max: 3600,
+                    divisions: 119,
+                    label: '${_mvrPeriodicSchedulerFrequencySeconds}s',
+                    onChanged: _mvrPeriodicSchedulerEnabled
+                        ? (value) {
+                            setState(() {
+                              _mvrPeriodicSchedulerFrequencySeconds =
+                                  (value / 30).round() * 30;
+                            });
+                          }
+                        : null,
+                    activeColor: AppColors.primary,
+                  ),
+                  Text(
+                    'How often the periodic scheduler runs for this camera',
                     style: OfflineFonts.inter(
                       fontSize: 12,
                       color: AppColors.textSecondary,

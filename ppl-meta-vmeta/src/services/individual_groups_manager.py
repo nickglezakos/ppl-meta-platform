@@ -1888,7 +1888,7 @@ class IndividualGroupsManager:
         self,
         group_id: str,
         candidate_mvr_uuid: str,
-        similarity_threshold: float = 0.75,
+        similarity_threshold: float = 0.70,
     ) -> CheckDuplicatesResponse:
         """
         Check if candidate MVR person matches existing group members.

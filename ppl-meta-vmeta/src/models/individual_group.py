@@ -357,7 +357,7 @@ class CheckDuplicatesRequest(BaseModel):
     
     candidate_mvr_uuid: str = Field(description="MVR person UUID to check")
     similarity_threshold: float = Field(
-        default=0.75,
+        default=0.70,
         ge=0.0,
         le=1.0,
         description="Minimum similarity to consider a match"

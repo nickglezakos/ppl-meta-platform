@@ -896,6 +896,9 @@ class CameraService {
     bool? showPerformanceIndicators,
     String? defaultPlaybackMode,
     double? mvrQualityThreshold,
+    bool? mvrPeriodicSchedulerEnabled,
+    double? mvrPeriodicSchedulerThreshold,
+    int? mvrPeriodicSchedulerFrequencySeconds,
   }) async {
     try {
       final body = <String, dynamic>{};
@@ -926,6 +929,16 @@ class CameraService {
       }
       if (mvrQualityThreshold != null) {
         body['mvr_quality_threshold'] = mvrQualityThreshold;
+      }
+      if (mvrPeriodicSchedulerEnabled != null) {
+        body['mvr_periodic_scheduler_enabled'] = mvrPeriodicSchedulerEnabled;
+      }
+      if (mvrPeriodicSchedulerThreshold != null) {
+        body['mvr_periodic_scheduler_threshold'] = mvrPeriodicSchedulerThreshold;
+      }
+      if (mvrPeriodicSchedulerFrequencySeconds != null) {
+        body['mvr_periodic_scheduler_frequency_seconds'] =
+            mvrPeriodicSchedulerFrequencySeconds;
       }
 
       final response = await _cameraApiClient.patch(
