@@ -428,7 +428,7 @@ async def get_analytics_summary(
         else:
             # Get all collections from Media service (where videos/collections are actually stored)
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.get(
                         f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
                         headers={"Authorization": f"Bearer {auth_token}"},
@@ -494,7 +494,7 @@ async def get_analytics_summary(
             try:
                 logger.info(f"🔄 [{idx}/{len(target_collection_ids)}] Fetching count for collection: {collection_id}, time_filter: {time_filter}")
                 
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=30.0) as client:
                     # Call the cached camera counter endpoint (reuses all caching logic)
                     counter_url = f"http://localhost:8080/api/v1/cameras/{collection_id}/mvr-count"
                     counter_params = {
@@ -1003,7 +1003,7 @@ async def get_cameras_list(
         auth_token = auth_header.replace("Bearer ", "") if auth_header else ""
         
         # Get collections from Media service (where videos/collections are actually stored)
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
                 headers={"Authorization": f"Bearer {auth_token}"},
@@ -1126,7 +1126,7 @@ async def get_time_series_analytics(
         else:
             # Get all collections
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.get(
                         f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
                         headers={"Authorization": f"Bearer {auth_token}"},
@@ -1195,7 +1195,7 @@ async def get_time_series_analytics(
         # Get current counts for each collection
         for collection_id in target_collection_ids:
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=30.0) as client:
                     # Use the appropriate time filter
                     if time_filter == "custom":
                         counter_time_filter = "custom"
@@ -1337,7 +1337,7 @@ async def get_demographics_breakdown(
             logger.info(f"📋 Demographics fetching ALL collections (no filter provided)")
         
         # Get all collections from Media service
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
                 headers={"Authorization": f"Bearer {auth_token}"},
@@ -1652,7 +1652,7 @@ async def get_behavioral_analytics(
             logger.info(f"📋 Behavioral fetching ALL collections (no filter provided)")
         
         # Get all collections from Media service (same pattern as demographics)
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
                 headers={"Authorization": f"Bearer {auth_token}"},
@@ -1939,7 +1939,7 @@ async def get_quality_metrics(
             logger.info(f"📋 Quality metrics fetching ALL collections (no filter provided)")
         
         # Get collections list from Media service
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
                 f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
                 headers={"Authorization": f"Bearer {auth_token}"},
@@ -2165,7 +2165,7 @@ async def get_mvr_quality_metrics(
         if collection_ids:
             selected_ids = [cid.strip() for cid in collection_ids.split(",") if cid.strip()]
 
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 collections_response = await client.get(
                     f"{MEDIA_SERVICE_URL}/api/v1/media/collections",
                     headers={"Authorization": request.headers.get("Authorization")},

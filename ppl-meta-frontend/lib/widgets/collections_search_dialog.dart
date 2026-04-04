@@ -76,9 +76,13 @@ class _CollectionsSearchDialogState extends State<CollectionsSearchDialog> {
   /// Set quick date range (last N days)
   void _setQuickDateRange(int days) {
     final now = DateTime.now();
+    // Use end-of-day so that appearances processed later the same day are
+    // not excluded by the routes time filter (which uses this value as its
+    // upper bound against appearance start_timestamps stored in UTC).
+    final endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59, 999);
     setState(() {
       _startDate = now.subtract(Duration(days: days));
-      _endDate = now;
+      _endDate = endOfToday;
     });
   }
 

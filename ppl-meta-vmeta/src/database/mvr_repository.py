@@ -1379,7 +1379,162 @@ class MVRRepository:
             row["camera_id"] = cam_id
             row["camera_name"] = cam_name
 
+        rows = await self._expand_with_orchestrator_route_points(rows, auth_header)
         return rows
+
+    @staticmethod
+    def _match_person_group_by_representative_face(
+        person_groups: List[Dict[str, Any]],
+        representative_faces: Any,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Match an appearance to its person_group using representative face data.
+
+        The Orchestrator regenerates person_uuid on every request so UUID
+        matching is unreliable.  Instead we match using the representative
+        face's frame_number + center_x coordinates against route_points:
+
+        Primary:   frame_number equality AND center_x within 2 px.
+        Secondary: closest route point by Euclidean distance (threshold 15 px).
+        """
+        if not person_groups:
+            return None
+
+        if isinstance(representative_faces, str):
+            try:
+                representative_faces = json.loads(representative_faces)
+            except (ValueError, TypeError):
+                representative_faces = {}
+
+        ref_frame: Optional[int] = None
+        ref_cx: Optional[float] = None
+        ref_cy: Optional[float] = None
+
+        if isinstance(representative_faces, dict):
+            faces = representative_faces.get("faces") or []
+            if faces and isinstance(faces, list):
+                face_data = (faces[0] or {}).get("face_data") or {}
+                try:
+                    ref_frame = int(face_data["frame_number"])
+                except (KeyError, TypeError, ValueError):
+                    pass
+                try:
+                    ref_cx = float(face_data["center_x"])
+                    ref_cy = float(face_data.get("center_y") or 0.0)
+                except (KeyError, TypeError, ValueError):
+                    pass
+
+        if ref_frame is None and ref_cx is None:
+            return None
+
+        # Primary: exact frame_number match with tight spatial tolerance.
+        if ref_frame is not None and ref_cx is not None:
+            for pg in person_groups:
+                route_pts = (pg.get("movement_tracking") or {}).get("route_points") or []
+                for rp in route_pts:
+                    if rp.get("frame_number") == ref_frame:
+                        if abs(float(rp.get("center_x", 0)) - ref_cx) <= 2.0:
+                            return route_pts
+
+        # Secondary: spatial proximity across all groups.
+        if ref_cx is not None and ref_cy is not None:
+            best_pts: Optional[List[Dict[str, Any]]] = None
+            best_dist = float("inf")
+            for pg in person_groups:
+                route_pts = (pg.get("movement_tracking") or {}).get("route_points") or []
+                for rp in route_pts:
+                    dx = float(rp.get("center_x", 0)) - ref_cx
+                    dy = float(rp.get("center_y", 0)) - ref_cy
+                    dist = (dx * dx + dy * dy) ** 0.5
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_pts = route_pts
+            if best_dist < 15.0:
+                return best_pts
+
+        return None
+
+    async def _expand_with_orchestrator_route_points(
+        self,
+        rows: List[Dict[str, Any]],
+        auth_header: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """
+        Expand appearance rows with per-frame route points from the orchestrator.
+
+        For each appearance row fetches movement_tracking.route_points via
+        GET /api/v1/orchestrator/person-objects/{video_uuid} and returns one
+        row per route point.  Falls back to the original single row per
+        appearance when the orchestrator is unreachable or has no matching
+        route points for a person.
+
+        Matching uses representative face frame_number + center coordinates
+        rather than person_uuid, because the Orchestrator regenerates UUIDs
+        on every processing call.
+        """
+        if not auth_header or not rows:
+            return rows
+
+        gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080").rstrip("/")
+        headers = {"Authorization": auth_header}
+
+        # Group by video_uuid to limit HTTP requests to one per video.
+        video_rows: Dict[str, List[Dict[str, Any]]] = {}
+        for row in rows:
+            vid = row.get("video_uuid") or ""
+            video_rows.setdefault(vid, []).append(row)
+
+        expanded: List[Dict[str, Any]] = []
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for video_uuid, appearance_rows in video_rows.items():
+                if not video_uuid:
+                    expanded.extend(appearance_rows)
+                    continue
+
+                person_groups: List[Dict] = []
+                try:
+                    response = await client.get(
+                        f"{gateway_url}/api/v1/orchestrator/person-objects/{video_uuid}",
+                        headers=headers,
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        person_groups = (
+                            data.get("group_tracking") or data.get("person_groups") or []
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Orchestrator route fetch failed for video %s: %s",
+                        video_uuid,
+                        exc,
+                    )
+
+                for row in appearance_rows:
+                    route_pts = self._match_person_group_by_representative_face(
+                        person_groups,
+                        row.get("representative_faces"),
+                    )
+                    if not route_pts:
+                        # No per-frame data — keep the original single-point row.
+                        expanded.append(row)
+                        continue
+
+                    base_ts_ms = int(row.get("timestamp_ms") or 0)
+                    for rp in route_pts:
+                        new_row = dict(row)
+                        new_row["precomputed_center_x"] = float(
+                            rp.get("center_x", rp.get("x", 0))
+                        )
+                        new_row["precomputed_center_y"] = float(
+                            rp.get("center_y", rp.get("y", 0))
+                        )
+                        rp_ts = rp.get("timestamp")
+                        if rp_ts is not None:
+                            new_row["timestamp_ms"] = base_ts_ms + int(float(rp_ts) * 1000)
+                        expanded.append(new_row)
+
+        return expanded
 
     def _build_individual_routes_where_clause(
         self,
@@ -1475,12 +1630,16 @@ class MVRRepository:
     def _appearance_to_route_point(row: dict, seq: int, camera_id: str) -> dict:
         """Convert an individual_video_appearances row to a route-point dict."""
         ts_ms = int(row["timestamp_ms"]) if row.get("timestamp_ms") is not None else 0
-        bbox = MVRRepository._extract_bbox_from_representative_faces(
-            row.get("representative_faces")
-        )
-        if not bbox:
-            bbox = row.get("entry_bbox") or row.get("exit_bbox")
-        center_x, center_y = MVRRepository._bbox_to_center(bbox)
+        if row.get("precomputed_center_x") is not None:
+            center_x = float(row["precomputed_center_x"])
+            center_y = float(row.get("precomputed_center_y") or 0.0)
+        else:
+            bbox = MVRRepository._extract_bbox_from_representative_faces(
+                row.get("representative_faces")
+            )
+            if not bbox:
+                bbox = row.get("entry_bbox") or row.get("exit_bbox")
+            center_x, center_y = MVRRepository._bbox_to_center(bbox)
         return {
             "sequence_number": seq,
             "timestamp_ms": ts_ms,
