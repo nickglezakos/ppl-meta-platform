@@ -270,7 +270,9 @@ class EmbeddingService:
 
             if config["enable_embedding_generation"] and DEEPFACE_AVAILABLE:
                 facial_embedding, embedding_confidence = (
-                    await self._generate_facial_embedding(frame, x, y, width, height)
+                    await self._generate_facial_embedding(
+                        frame, x, y, width, height, frame_number=frame_number
+                    )
                 )
 
             # Calculate center coordinates for routes
@@ -310,20 +312,25 @@ class EmbeddingService:
             return None
 
     async def _generate_facial_embedding(
-        self, frame: np.ndarray, x: int, y: int, width: int, height: int
+        self, frame: np.ndarray, x: int, y: int, width: int, height: int,
+        frame_number: Optional[int] = None
     ) -> Tuple[Optional[List[float]], Optional[float]]:
         """
         Generate 512-dimensional facial embedding using DeepFace.
 
+        Applies Fix 1 (multi-face crop rejection) and Fix 2 (facial_area
+        alignment) from docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md.
+
         Returns:
-            Tuple of (embedding_vector, confidence_score)
+            Tuple of (embedding_vector, confidence_score), or (None, None)
+            if the crop is rejected due to contamination risk.
         """
 
         if not DEEPFACE_AVAILABLE:
             return None, None
 
         try:
-            # Extract face region
+            # Extract face region from full frame using detection bbox
             face_img = frame[y : y + height, x : x + width]
 
             # Convert BGR to RGB for DeepFace
@@ -338,40 +345,65 @@ class EmbeddingService:
             )
 
             # DeepFace.represent may return different shapes depending on version:
-            # - a list of dicts: [{"embedding": [...]}, ...]
+            # - a list of dicts: [{"embedding": [...]}, ...]  <- modern, primary path
             # - a flat list of floats (the embedding vector)
             # - a numpy array
             embedding = None
 
-            # If it's a numpy array
+            # If it's a numpy array (legacy fallback)
             if isinstance(embedding_result, np.ndarray):
                 embedding = embedding_result.tolist()
 
-            # If it's a list
+            # If it's a list (modern DeepFace format)
             elif isinstance(embedding_result, list):
                 if len(embedding_result) == 0:
                     embedding = None
                 else:
                     first = embedding_result[0]
-                    # Case: list of dicts with 'embedding' key
+                    # Primary case: list of dicts with 'embedding' key
                     if isinstance(first, dict) and "embedding" in first:
+                        # FIX 1: Reject multi-face crops.
+                        # When > 1 face is detected in the crop, result[0] is the
+                        # most prominent/frontal face — which may be a *different*
+                        # person than the one whose bbox we are processing, causing
+                        # identity contamination in the stored MVR embedding.
+                        # See: docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md
+                        if len(embedding_result) > 1:
+                            logger.warning(
+                                f"Multi-face crop at frame={frame_number} "
+                                f"bbox=[{x},{y},{x + width},{y + height}]: "
+                                f"{len(embedding_result)} faces detected. "
+                                f"Rejecting embedding to prevent contamination."
+                            )
+                            return None, None
+
+                        # FIX 2: Refine the confidence calculation using the
+                        # face-aligned sub-region reported by the detector
+                        # (facial_area) rather than the raw bbox crop.
+                        facial_area = first.get("facial_area", {})
+                        if facial_area:
+                            fx = facial_area.get("x", 0)
+                            fy = facial_area.get("y", 0)
+                            fw = facial_area.get("w", face_img.shape[1])
+                            fh = facial_area.get("h", face_img.shape[0])
+                            aligned = face_img[fy : fy + fh, fx : fx + fw]
+                            if aligned.size > 0:
+                                face_img = aligned
+
                         embedding = first["embedding"]
                     else:
-                        # Case: flat list of floats
-                        if all(isinstance(x, (int, float)) for x in embedding_result):
+                        # Legacy: flat list of floats — cannot check face count
+                        if all(isinstance(v, (int, float)) for v in embedding_result):
                             embedding = embedding_result
-                        # Or list starting with numeric types
                         elif isinstance(first, (int, float)):
                             embedding = embedding_result
-                        # Or nested list/tuple
                         elif isinstance(first, (list, tuple, np.ndarray)):
-                            # Try to coerce the first element
                             try:
                                 embedding = list(first)
                             except Exception:
                                 embedding = None
 
-            # If we found an embedding, compute confidence and return
+            # If we found a clean embedding, compute confidence and return
             if embedding is not None and len(embedding) > 0:
                 confidence = self._calculate_embedding_confidence(face_img)
                 return embedding, confidence

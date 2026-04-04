@@ -128,6 +128,10 @@ class HierarchicalMVRMerger:
         self.repository = repository
         self.mvr_matcher = mvr_matcher
         self.gender_conflict_min_confidence = 0.80
+        # Similarity threshold above which an unknown-gender + known-gender
+        # pair is treated as a contamination suspect and blocked from merging.
+        # See: docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md
+        self.contamination_similarity_threshold = 0.70
         logger.info("HierarchicalMVRMerger initialized")
     
     async def merge_hierarchical(
@@ -427,6 +431,7 @@ class HierarchicalMVRMerger:
         uf = UnionFind(uuids)
         uuid_to_mvr = {mvr["mvr_people_uuid"]: mvr for mvr in mvr_people}
         blocked_gender_pairs = 0
+        contamination_blocked = 0
         
         # Union similar MVR people
         for (uuid1, uuid2), similarity in similarity_matrix.items():
@@ -437,6 +442,26 @@ class HierarchicalMVRMerger:
                 ):
                     blocked_gender_pairs += 1
                     continue
+                # Fix 4: block merges that show signs of embedding contamination
+                # (one unknown gender + one confident known gender at high similarity).
+                # See: docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md
+                if self._is_contamination_suspect(
+                    uuid_to_mvr[uuid1],
+                    uuid_to_mvr[uuid2],
+                    similarity
+                ):
+                    contamination_blocked += 1
+                    logger.warning(
+                        f"Blocked contamination-suspect merge: "
+                        f"{str(uuid1)[:8]} "
+                        f"(gender={uuid_to_mvr[uuid1].get('gender')}, "
+                        f"conf={uuid_to_mvr[uuid1].get('gender_confidence')}) ↔ "
+                        f"{str(uuid2)[:8]} "
+                        f"(gender={uuid_to_mvr[uuid2].get('gender')}, "
+                        f"conf={uuid_to_mvr[uuid2].get('gender_confidence')}) "
+                        f"similarity={similarity:.3f}"
+                    )
+                    continue
                 uf.union(uuid1, uuid2)
         
         # Get connected components
@@ -446,6 +471,12 @@ class HierarchicalMVRMerger:
             logger.info(
                 f"Blocked {blocked_gender_pairs} high-confidence cross-gender pair(s) "
                 f"from auto-merge"
+            )
+        if contamination_blocked > 0:
+            logger.info(
+                f"Blocked {contamination_blocked} contamination-suspect pair(s) "
+                f"(unknown gender + confident known gender at similarity "
+                f">= {self.contamination_similarity_threshold})"
             )
 
         # Map UUIDs back to full MVR people dicts
@@ -491,6 +522,46 @@ class HierarchicalMVRMerger:
             conf1 >= self.gender_conflict_min_confidence
             and conf2 >= self.gender_conflict_min_confidence
             and gender1 != gender2
+        )
+
+    def _is_contamination_suspect(
+        self,
+        mvr1: Dict[str, Any],
+        mvr2: Dict[str, Any],
+        similarity: float
+    ) -> bool:
+        """
+        Detect embedding pairs likely contaminated by a multi-face crop.
+
+        Triggers when one MVR has gender=unknown (a known symptom of crop
+        contamination — the gender classifier also saw the wrong face and
+        returned low confidence) and the other has a high-confidence known
+        gender, AND their embedding similarity is >= contamination_similarity_threshold.
+
+        This combination is the fingerprint of the bug described in:
+        docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md
+
+        Returns True to block the merge; False to allow it.
+        """
+        gender1 = self._normalize_gender(mvr1.get("gender"))
+        gender2 = self._normalize_gender(mvr2.get("gender"))
+
+        # Only suspect when exactly one is unknown and the other is known
+        one_unknown_one_known = (gender1 is None) != (gender2 is None)
+        if not one_unknown_one_known:
+            return False
+
+        known_conf = (
+            self._safe_float(mvr2.get("gender_confidence"))
+            if gender1 is None
+            else self._safe_float(mvr1.get("gender_confidence"))
+        )
+        if known_conf is None:
+            return False
+
+        return (
+            known_conf >= self.gender_conflict_min_confidence
+            and similarity >= self.contamination_similarity_threshold
         )
 
     def _normalize_gender(self, value: Any) -> Optional[str]:

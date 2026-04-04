@@ -79,25 +79,37 @@ class FaceNetProcessor:
                 detector_backend='opencv',
                 align=True
             )
-            
-            if result and len(result) > 0:
-                embedding = np.array(result[0]['embedding'])
-                
-                # Verify embedding size
-                if len(embedding) != self.embedding_size:
-                    logger.warning(
-                        f"Unexpected embedding size: {len(embedding)}"
-                    )
-                    return None
-                
-                # Normalize embedding
-                embedding = self._normalize_embedding(embedding)
-                
-                return embedding
-            else:
+
+            if not result:
                 logger.warning("No face detected in image")
                 return None
-                
+
+            # FIX 1: Reject crops that contain more than one detected face.
+            # result[0] is the most prominent/frontal face — not necessarily
+            # the intended subject — causing silent identity contamination in
+            # the stored MVR embedding when two people share a crop.
+            # See: docs/modules/MVR merge/EMBEDDING_CONTAMINATION.md
+            if isinstance(result, list) and len(result) > 1:
+                logger.warning(
+                    f"Multi-face crop: {len(result)} faces detected. "
+                    f"Rejecting embedding to prevent identity contamination."
+                )
+                return None
+
+            embedding = np.array(result[0]['embedding'])
+
+            # Verify embedding size
+            if len(embedding) != self.embedding_size:
+                logger.warning(
+                    f"Unexpected embedding size: {len(embedding)}"
+                )
+                return None
+
+            # Normalize embedding
+            embedding = self._normalize_embedding(embedding)
+
+            return embedding
+
         except Exception as e:
             logger.error(f"Failed to extract embedding: {e}")
             return None
