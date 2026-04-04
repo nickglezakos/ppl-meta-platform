@@ -47,10 +47,17 @@ class _CollectionsSearchDialogState extends State<CollectionsSearchDialog> {
 
     if (selectedDate == null) return;
 
-    // Then, show time picker
+    // Then, show time picker.
+    // Default start to 00:00 and end to 23:59 so that picking a single day
+    // includes all route points from that day (the user rarely wants a
+    // sub-day time slice, and defaulting to current-time would silently
+    // exclude recordings made earlier in the day).
+    final defaultTime = isStart
+        ? const TimeOfDay(hour: 0, minute: 0)
+        : const TimeOfDay(hour: 23, minute: 59);
     final selectedTime = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(initialDateTime),
+      initialTime: defaultTime,
     );
 
     if (selectedTime == null) return;

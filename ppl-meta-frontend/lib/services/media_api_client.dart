@@ -128,8 +128,8 @@ class MediaApiClient {
         if (type != null) 'type': type.name,
         if (search != null && search.isNotEmpty) 'search': search,
         if (collectionId != null) 'collection_id': collectionId,
-        if (startDate != null) 'start_date': startDate.toIso8601String(),
-        if (endDate != null) 'end_date': endDate.toIso8601String(),
+        if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
       };
 
       final response = await _apiClient.get('/api/v1/media/items', queryParameters: queryParams);
@@ -476,8 +476,8 @@ class MediaApiClient {
   }) async {
     try {
       final queryParams = <String, dynamic>{
-        if (startDate != null) 'start_date': startDate.toIso8601String(),
-        if (endDate != null) 'end_date': endDate.toIso8601String(),
+        if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
       };
 
       final response = await _apiClient.get('/api/v1/media/analytics', queryParameters: queryParams);
@@ -511,8 +511,8 @@ class MediaApiClient {
         'page_size': limit, // Backend uses page_size instead of limit
         if (query != null && query.isNotEmpty) 'query': query,
         if (mediaType != null) 'media_type': mediaType.apiValue,
-        if (startDate != null) 'start_date': startDate.toIso8601String(),
-        if (endDate != null) 'end_date': endDate.toIso8601String(),
+        if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
         if (tags != null && tags.isNotEmpty) 'tags': tags.join(','),
         if (collectionId != null) 'collection_id': collectionId,
         if (collectionIds != null && collectionIds.isNotEmpty) 
@@ -527,9 +527,9 @@ class MediaApiClient {
           if (filters.mediaType != null) 
             'media_type': filters.mediaType!.apiValue,
           if (filters.startDate != null) 
-            'start_date': filters.startDate!.toIso8601String(),
+            'start_date': filters.startDate!.toUtc().toIso8601String(),
           if (filters.endDate != null) 
-            'end_date': filters.endDate!.toIso8601String(),
+            'end_date': filters.endDate!.toUtc().toIso8601String(),
           if (filters.tags != null && filters.tags!.isNotEmpty) 
             'tags': filters.tags!.join(','),
           if (filters.collectionId != null) 
@@ -1015,8 +1015,8 @@ class MediaApiClient {
   }) async {
     try {
       final queryParams = <String, dynamic>{
-        if (startDate != null) 'start_date': startDate.toIso8601String(),
-        if (endDate != null) 'end_date': endDate.toIso8601String(),
+        if (startDate != null) 'start_date': startDate.toUtc().toIso8601String(),
+        if (endDate != null) 'end_date': endDate.toUtc().toIso8601String(),
       };
 
       final response = await _apiClient.get('/api/v1/media/device-analytics', queryParameters: queryParams);
@@ -1279,8 +1279,8 @@ class MediaApiClient {
     try {
       final requestBody = {
         'collections': [collectionName],
-        'start_time': startTime.toIso8601String(),
-        'end_time': endTime.toIso8601String(),
+        'start_time': startTime.toUtc().toIso8601String(),
+        'end_time': endTime.toUtc().toIso8601String(),
         'background_processing': true,
         'algorithm_config': {
           'max_gap_seconds': 10,
@@ -1677,10 +1677,10 @@ class MediaApiClient {
       };
       
       if (startTime != null) {
-        data['start_time'] = startTime.toIso8601String();
+        data['start_time'] = startTime.toUtc().toIso8601String();
       }
       if (endTime != null) {
-        data['end_time'] = endTime.toIso8601String();
+        data['end_time'] = endTime.toUtc().toIso8601String();
       }
 
       final response = await _apiClient.post(
@@ -1716,8 +1716,8 @@ class MediaApiClient {
         '/api/v1/mvr-people/search/by-collection',
         data: {
           'collection_name': collectionName,
-          'start_time': startTime.toIso8601String(),
-          'end_time': endTime.toIso8601String(),
+          'start_time': startTime.toUtc().toIso8601String(),
+          'end_time': endTime.toUtc().toIso8601String(),
           'limit': limit,
         },
       );
