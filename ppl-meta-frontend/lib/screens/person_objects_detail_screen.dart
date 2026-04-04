@@ -5635,7 +5635,18 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     if (params == null) return null;
     final endTime = params['end_time'] as String?;
     if (endTime == null) return null;
-    return DateTime.tryParse(endTime)?.millisecondsSinceEpoch;
+    final parsed = DateTime.tryParse(endTime);
+    if (parsed == null) return null;
+    // If the stored end-time is today (same local date), snap to end-of-day so
+    // videos processed after the user clicked the quick-filter are still included.
+    final now = DateTime.now();
+    if (parsed.year == now.year &&
+        parsed.month == now.month &&
+        parsed.day == now.day) {
+      return DateTime(parsed.year, parsed.month, parsed.day, 23, 59, 59, 999)
+          .millisecondsSinceEpoch;
+    }
+    return parsed.millisecondsSinceEpoch;
   }
 
   /// Returns the list of camera IDs that were selected for the search, or null
