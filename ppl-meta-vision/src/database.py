@@ -88,6 +88,8 @@ class VisionDatabase:
                 bbox_y2 INTEGER NOT NULL,
                 confidence REAL NOT NULL,
                 method TEXT NOT NULL,
+                frame_width INTEGER,
+                frame_height INTEGER,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """
@@ -185,30 +187,70 @@ class VisionDatabase:
 
         try:
             cursor = self.connection.cursor()
+
+            # Check if frame_width/frame_height columns exist (migration guard)
             cursor.execute(
                 """
-                INSERT INTO face_detections
-                (id, media_id, frame_number, timestamp,
-                 bbox_x1, bbox_y1, bbox_x2, bbox_y2,
-                 confidence, method)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (id) DO UPDATE SET
-                    confidence = EXCLUDED.confidence,
-                    method = EXCLUDED.method
-            """,
-                (
-                    detection.id,
-                    detection.media_id,
-                    detection.frame_number,
-                    detection.timestamp,
-                    detection.bbox[0],
-                    detection.bbox[1],
-                    detection.bbox[2],
-                    detection.bbox[3],
-                    detection.confidence,
-                    detection.method,
-                ),
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'face_detections' AND column_name = 'frame_width'
+            """
             )
+            has_frame_dims = cursor.fetchone() is not None
+
+            if has_frame_dims:
+                cursor.execute(
+                    """
+                    INSERT INTO face_detections
+                    (id, media_id, frame_number, timestamp,
+                     bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                     confidence, method, frame_width, frame_height)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        confidence = EXCLUDED.confidence,
+                        method = EXCLUDED.method,
+                        frame_width = EXCLUDED.frame_width,
+                        frame_height = EXCLUDED.frame_height
+                """,
+                    (
+                        detection.id,
+                        detection.media_id,
+                        detection.frame_number,
+                        detection.timestamp,
+                        detection.bbox[0],
+                        detection.bbox[1],
+                        detection.bbox[2],
+                        detection.bbox[3],
+                        detection.confidence,
+                        detection.method,
+                        detection.frame_width,
+                        detection.frame_height,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO face_detections
+                    (id, media_id, frame_number, timestamp,
+                     bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                     confidence, method)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        confidence = EXCLUDED.confidence,
+                        method = EXCLUDED.method
+                """,
+                    (
+                        detection.id,
+                        detection.media_id,
+                        detection.frame_number,
+                        detection.timestamp,
+                        detection.bbox[0],
+                        detection.bbox[1],
+                        detection.bbox[2],
+                        detection.bbox[3],
+                        detection.confidence,
+                        detection.method,
+                    ),
+                )
             cursor.close()
             return True
         except Exception as e:
@@ -225,17 +267,51 @@ class VisionDatabase:
         try:
             cursor = self.connection.cursor()
 
-            # Check if session_uuid column exists (migration may not be applied yet)
+            # Check which optional columns exist (migration guards)
             cursor.execute(
                 """
-                SELECT column_name FROM information_schema.columns 
-                WHERE table_name = 'face_detections' AND column_name = 'session_uuid'
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'face_detections'
+                AND column_name IN ('session_uuid', 'frame_width')
             """
             )
-            has_session_column = cursor.fetchone() is not None
+            existing_cols = {row[0] for row in cursor.fetchall()}
+            has_session_column = "session_uuid" in existing_cols
+            has_frame_dims = "frame_width" in existing_cols
 
-            if has_session_column:
-                # Use enhanced schema with session tracking
+            if has_session_column and has_frame_dims:
+                cursor.execute(
+                    """
+                    INSERT INTO face_detections
+                    (id, media_id, session_uuid, frame_number, timestamp,
+                     bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                     confidence, method, frame_width, frame_height)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        confidence = EXCLUDED.confidence,
+                        method = EXCLUDED.method,
+                        session_uuid = EXCLUDED.session_uuid,
+                        frame_width = EXCLUDED.frame_width,
+                        frame_height = EXCLUDED.frame_height
+                """,
+                    (
+                        detection.id,
+                        detection.media_id,
+                        session_uuid,
+                        detection.frame_number,
+                        detection.timestamp,
+                        detection.bbox[0],
+                        detection.bbox[1],
+                        detection.bbox[2],
+                        detection.bbox[3],
+                        detection.confidence,
+                        detection.method,
+                        detection.frame_width,
+                        detection.frame_height,
+                    ),
+                )
+            elif has_session_column:
+                # Use enhanced schema with session tracking (no frame dims)
                 cursor.execute(
                     """
                     INSERT INTO face_detections
@@ -357,6 +433,8 @@ class VisionDatabase:
                         ],
                         "confidence": row["confidence"],
                         "method": row["method"],
+                        "frame_width": row.get("frame_width"),
+                        "frame_height": row.get("frame_height"),
                         "created_at": row["created_at"],
                     }
                 )

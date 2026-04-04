@@ -1178,6 +1178,8 @@ async def get_all_media_faces(
                         "method": face["method"],
                         "timestamp": face.get("timestamp"),
                         "frame_number": frame_num,  # Required for person-objects workflow
+                        "frame_width": face.get("frame_width"),   # Detection-time frame dimensions
+                        "frame_height": face.get("frame_height"),  # for bbox alignment at crop time
                     }
                 )
 
@@ -2019,6 +2021,8 @@ async def bulk_process_video_faces(
                             bbox=bbox,
                             confidence=float(confidence),
                             method=face["method"],
+                            frame_width=int(frame.shape[1]),
+                            frame_height=int(frame.shape[0]),
                         )
 
                         # Store in database with session tracking if available

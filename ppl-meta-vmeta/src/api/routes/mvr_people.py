@@ -3453,8 +3453,24 @@ async def enrich_person_objects_with_face_crops(
                 x1, y1, x2, y2 = best_face_bbox
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
                 
-                # Validate bbox
+                # Align bbox to crop frame if detection and crop frames differ in resolution
                 frame_h, frame_w = frame_bgr.shape[:2]
+                detect_w = person_obj.get('detect_frame_width')
+                detect_h = person_obj.get('detect_frame_height')
+                if detect_w and detect_h and (detect_w != frame_w or detect_h != frame_h):
+                    scale_x = frame_w / detect_w
+                    scale_y = frame_h / detect_h
+                    x1 = int(round(x1 * scale_x))
+                    y1 = int(round(y1 * scale_y))
+                    x2 = int(round(x2 * scale_x))
+                    y2 = int(round(y2 * scale_y))
+                    logger.info(
+                        f"BBox aligned for person {person_obj.get('person_id')}: "
+                        f"detect={detect_w}x{detect_h} crop={frame_w}x{frame_h} "
+                        f"scale=({scale_x:.3f},{scale_y:.3f})"
+                    )
+                
+                # Validate bbox
                 if x1 < 0 or y1 < 0 or x2 > frame_w or y2 > frame_h or x1 >= x2 or y1 >= y2:
                     logger.warning(
                         f"Invalid bbox for person {person_obj.get('person_id')}: "
@@ -3731,6 +3747,9 @@ async def process_media_independently(
                     # Add fields needed for enrichment
                     'best_face_frame': frame_number,
                     'best_face_bbox': bbox if len(bbox) == 4 else None,
+                    # Detection-time frame dimensions for bbox alignment at crop time
+                    'detect_frame_width': best_face_data.get('frame_width'),
+                    'detect_frame_height': best_face_data.get('frame_height'),
                 }
                 person_objects_from_vision.append(person_obj)
             

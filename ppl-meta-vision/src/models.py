@@ -89,6 +89,8 @@ class FaceDetectionResult(BaseModel):
     bbox: List[int] = Field(..., description="Bounding box [x1, y1, x2, y2]")
     confidence: float = Field(..., description="Detection confidence")
     method: str = Field(..., description="Detection method used")
+    frame_width: Optional[int] = Field(default=None, description="Detection frame width in pixels")
+    frame_height: Optional[int] = Field(default=None, description="Detection frame height in pixels")
     frame_info: Optional[VideoFrame] = Field(default=None, description="Frame metadata")
     created_at: datetime = Field(default_factory=datetime.now)
 

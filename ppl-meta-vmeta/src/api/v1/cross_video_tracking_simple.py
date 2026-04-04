@@ -1241,6 +1241,22 @@ async def _create_single_mvr_person(
         x_max = int(bbox[2])
         y_max = int(bbox[3])
         
+        # Align bbox to crop frame dimensions if detection resolution differs
+        crop_h, crop_w = frame.shape[:2]
+        detect_w = best_face.get('frame_width')
+        detect_h = best_face.get('frame_height')
+        if detect_w and detect_h and (detect_w != crop_w or detect_h != crop_h):
+            scale_x = crop_w / detect_w
+            scale_y = crop_h / detect_h
+            x_min = int(round(x_min * scale_x))
+            y_min = int(round(y_min * scale_y))
+            x_max = int(round(x_max * scale_x))
+            y_max = int(round(y_max * scale_y))
+            logger.info(
+                f"[SINGLE MVR] BBox aligned: detect={detect_w}x{detect_h} "
+                f"crop={crop_w}x{crop_h} scale=({scale_x:.3f},{scale_y:.3f})"
+            )
+        
         # Ensure bbox is within frame bounds
         x_min = max(0, x_min)
         y_min = max(0, y_min)
@@ -1788,6 +1804,24 @@ async def merge_individuals_by_similarity(
                 y = int(bbox[1])
                 x2 = int(bbox[2])
                 y2 = int(bbox[3])
+                
+                # Align bbox to crop frame dimensions if detection resolution differs
+                frame_h, frame_w = frame_bgr.shape[:2]
+                detect_w = face_data.get('frame_width')
+                detect_h = face_data.get('frame_height')
+                if detect_w and detect_h and (detect_w != frame_w or detect_h != frame_h):
+                    scale_x = frame_w / detect_w
+                    scale_y = frame_h / detect_h
+                    x = int(round(x * scale_x))
+                    y = int(round(y * scale_y))
+                    x2 = int(round(x2 * scale_x))
+                    y2 = int(round(y2 * scale_y))
+                    logger.info(
+                        f"[MERGE] BBox aligned for {individual_uuid[:8]}: "
+                        f"detect={detect_w}x{detect_h} crop={frame_w}x{frame_h} "
+                        f"scale=({scale_x:.3f},{scale_y:.3f})"
+                    )
+                
                 w = x2 - x
                 h = y2 - y
                 
@@ -1813,8 +1847,7 @@ async def merge_individuals_by_similarity(
                     failure_stats['invalid_bbox'] += 1
                     continue
                 
-                # Validate bbox is within frame bounds
-                frame_h, frame_w = frame_bgr.shape[:2]
+                # Validate bbox is within frame bounds (frame_h/frame_w set above with alignment)
                 if x < 0 or y < 0 or x2 > frame_w or y2 > frame_h:
                     logger.warning(
                         f"[MERGE] bbox out of bounds for {individual_uuid[:8]}: "
@@ -4453,6 +4486,18 @@ async def merge_individuals_manual(
                                     # Crop and resize face
                                     x, y = int(bbox[0]), int(bbox[1])
                                     x2, y2 = int(bbox[2]), int(bbox[3])
+                                    
+                                    # Align bbox to crop frame if detection resolution differs
+                                    crop_h, crop_w = frame_bgr.shape[:2]
+                                    d_w = face_data.get('frame_width')
+                                    d_h = face_data.get('frame_height')
+                                    if d_w and d_h and (d_w != crop_w or d_h != crop_h):
+                                        sx = crop_w / d_w
+                                        sy = crop_h / d_h
+                                        x = int(round(x * sx))
+                                        y = int(round(y * sy))
+                                        x2 = int(round(x2 * sx))
+                                        y2 = int(round(y2 * sy))
                                     
                                     cropped = frame_bgr[y:y2, x:x2].copy()
                                     if cropped.size == 0:
