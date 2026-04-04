@@ -3565,53 +3565,46 @@ class _PersonObjectsDetailScreenState
   /// Build thumbnail for individual in cross-video analysis with cropped face
   Widget _buildIndividualThumbnail(String individualUuid, bool isSuperIndividual) {
     final bestImage = _bestImages[individualUuid];
-    
+
+    final fallbackIcon = Icon(
+      Icons.person,
+      size: 40,
+      color: isSuperIndividual ? Colors.blue : Colors.grey[600],
+    );
+
     if (bestImage == null || bestImage.bestFace == null) {
-      return Icon(
-        Icons.person,
-        size: 40,
-        color: isSuperIndividual ? Colors.blue : Colors.grey[600],
-      );
+      return fallbackIcon;
     }
-    
-    final faceData = bestImage.bestFace!.faceData;
-    if (faceData == null) {
-      return Icon(
-        Icons.person,
-        size: 40,
-        color: isSuperIndividual ? Colors.blue : Colors.grey[600],
-      );
+
+    final rawImageUrl = bestImage.bestFace!.imageUrl;
+    if (rawImageUrl.isEmpty) {
+      return fallbackIcon;
     }
-    
-    // Use the same cropping method as individual group detail screen
-    return FutureBuilder<Widget>(
-      future: _buildCroppedFaceForIndividual(faceData, bestImage.bestFace!.videoUuid),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            color: Colors.grey[300],
-            child: Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
-        } else if (snapshot.hasError) {
-          return Icon(
-            Icons.error,
-            size: 24,
-            color: Colors.red,
-          );
-        } else {
-          return snapshot.data ?? Icon(
-            Icons.person,
-            size: 40,
-            color: isSuperIndividual ? Colors.blue : Colors.grey[600],
-          );
-        }
+
+    // Resolve relative URLs (same logic as individual_group_detail_screen)
+    final uri = Uri.tryParse(rawImageUrl);
+    final resolvedUrl = (uri != null && uri.hasScheme)
+        ? rawImageUrl
+        : '${Config.gatewayServiceUrl}${rawImageUrl.startsWith('/') ? rawImageUrl : '/$rawImageUrl'}';
+
+    final apiClient = ref.read(apiClientProvider);
+
+    return Image.network(
+      resolvedUrl,
+      fit: BoxFit.cover,
+      headers: apiClient.authToken != null
+          ? {'Authorization': 'Bearer ${apiClient.authToken}'}
+          : const {},
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return Container(
+          color: Colors.grey[300],
+          child: const Center(
+            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+        );
       },
+      errorBuilder: (context, error, stackTrace) => fallbackIcon,
     );
   }
 
