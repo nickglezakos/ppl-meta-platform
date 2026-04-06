@@ -699,7 +699,9 @@ class HierarchicalMVRMerger:
     
     async def get_super_individual_hierarchy(
         self,
-        super_individual_uuid: UUID
+        super_individual_uuid: UUID,
+        merged_page: int = 1,
+        merged_page_size: int = 10,
     ) -> Dict[str, Any]:
         """
         Get full hierarchy for a super-individual.
@@ -707,8 +709,11 @@ class HierarchicalMVRMerger:
         Returns:
             Dict containing:
             - super_individual: Featured MVR person
-            - merged_mvr_people: List of merged MVR people
-            - all_individuals: All individuals across all MVR
+            - merged_mvr_people: Paginated list of merged MVR people for this page
+            - merged_children_total: Total count of all merged children
+            - merged_children_page: Current page number
+            - merged_children_page_size: Page size used
+            - all_individuals: All individuals across all MVR (not paginated)
             - total_person_objects: Total detection count
         """
         try:
@@ -722,17 +727,33 @@ class HierarchicalMVRMerger:
                     f"Super-individual {super_individual_uuid} not found"
                 )
             
-            # Get merged MVR people (those orphaned into this one)
-            merged_mvr = await self.repository.get_merged_mvr_people(
-                super_individual_uuid
+            # Get paginated merged MVR people (those orphaned into this one)
+            merged_result = await self.repository.get_merged_mvr_people(
+                super_individual_uuid,
+                page=merged_page,
+                page_size=merged_page_size,
             )
+            merged_mvr = merged_result["items"]
+            merged_children_total: int = merged_result["total"]
             
-            # Get all individuals from super-individual and merged MVR
-            all_mvr_uuids = [super_individual_uuid] + [
-                mvr["mvr_people_uuid"] for mvr in merged_mvr
-            ]
+            # For appearances/stats, we need ALL children UUIDs (not just this page).
+            # Build the full UUID list directly via a lightweight query.
+            all_mvr_uuids: List[UUID]
+            all_appearances = []
+            total_person_objects = 0
             
-            # Get all video appearances (not aggregated individuals)
+            async with self.repository.pool.acquire() as conn:
+                all_children_rows = await conn.fetch("""
+                    SELECT mvr_people_uuid
+                    FROM mvr_people
+                    WHERE merged_into_mvr_uuid = $1
+                        AND is_orphaned = TRUE
+                """, super_individual_uuid)
+                all_mvr_uuids = [super_individual_uuid] + [
+                    row["mvr_people_uuid"] for row in all_children_rows
+                ]
+            
+            # Get all video appearances (not paginated – needed for aggregate stats)
             all_appearances = []
             total_person_objects = 0
             
@@ -773,6 +794,13 @@ class HierarchicalMVRMerger:
             return {
                 "super_individual": super_individual,
                 "merged_mvr_people": merged_mvr,
+                # Pagination metadata for merged children
+                "merged_children_total": merged_children_total,
+                "merged_children_page": merged_page,
+                "merged_children_page_size": merged_page_size,
+                "merged_children_has_more": (
+                    merged_page * merged_page_size < merged_children_total
+                ),
                 "all_individuals": all_appearances,  # Now contains video_uuid for each appearance
                 "total_person_objects": total_person_objects,
                 "mvr_count": len(all_mvr_uuids),

@@ -4235,16 +4235,25 @@ async def hierarchical_merge_mvr_people(
     status_code=status.HTTP_200_OK,
     summary="Get Super-Individual Hierarchy",
     description="""
-    Retrieves the full 3-tier hierarchy for a super-individual (merged MVR person).
+    Retrieves the 3-tier hierarchy for a super-individual (merged MVR person).
     
     **Hierarchy Levels**:
     - **Level 1**: Super-individual (featured MVR person)
-    - **Level 2**: Merged MVR people (those orphaned into super-individual)
+    - **Level 2**: Merged MVR people (paginated – those orphaned into the super-individual)
     - **Level 3**: All individuals and person objects across all MVR
+    
+    **Pagination** (for merged children):
+    - Use `merged_page` and `merged_page_size` to page through Level 2 children.
+    - The response includes `merged_children_total`, `merged_children_page`,
+      `merged_children_page_size`, and `merged_children_has_more` for cursor navigation.
+    - `all_individuals` and aggregate stats always reflect the complete hierarchy
+      regardless of the current page.
     
     **Returns**:
     - `super_individual`: Featured MVR person data
-    - `merged_mvr_people`: List of merged MVR people with similarities
+    - `merged_mvr_people`: Paginated list of merged MVR people for the requested page
+    - `merged_children_total`: Total count of all merged children
+    - `merged_children_has_more`: Whether further pages exist
     - `all_individuals`: All individuals from all MVR in the hierarchy
     - `total_person_objects`: Total detection count across all levels
     - `mvr_count`: Total number of MVR people in hierarchy
@@ -4255,6 +4264,10 @@ async def hierarchical_merge_mvr_people(
 )
 async def get_super_individual_hierarchy(
     super_individual_uuid: UUID,
+    merged_page: int = Query(1, ge=1, description="Page number for merged-children list"),
+    merged_page_size: int = Query(
+        10, ge=1, le=50, description="Page size for merged-children list"
+    ),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
     mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
     current_user: dict = Depends(get_current_user),
@@ -4262,14 +4275,15 @@ async def get_super_individual_hierarchy(
     """
     Get full hierarchy for a super-individual.
     
-    Returns all merged MVR people and their constituent individuals/objects.
+    Merged MVR children are paginated; aggregate stats cover the full hierarchy.
     """
     try:
         from services.hierarchical_mvr_merger import HierarchicalMVRMerger
         
         logger.info(
             f"User {current_user.get('sub')} requesting hierarchy for "
-            f"super-individual {super_individual_uuid}"
+            f"super-individual {super_individual_uuid} "
+            f"(merged_page={merged_page}, merged_page_size={merged_page_size})"
         )
         
         # Initialize merger
@@ -4278,15 +4292,18 @@ async def get_super_individual_hierarchy(
             mvr_matcher=mvr_matcher
         )
         
-        # Get hierarchy
+        # Get hierarchy with paginated merged children
         hierarchy = await merger.get_super_individual_hierarchy(
-            super_individual_uuid
+            super_individual_uuid,
+            merged_page=merged_page,
+            merged_page_size=merged_page_size,
         )
         
         logger.info(
             f"Retrieved hierarchy: {hierarchy['mvr_count']} MVR people, "
             f"{len(hierarchy['all_individuals'])} individuals, "
-            f"{hierarchy['total_person_objects']} person objects"
+            f"{hierarchy['total_person_objects']} person objects, "
+            f"page {merged_page}/{max(1, -(-hierarchy['merged_children_total'] // merged_page_size))}"
         )
         
         return hierarchy

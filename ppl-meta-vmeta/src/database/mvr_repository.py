@@ -1252,19 +1252,33 @@ class MVRRepository:
 
     async def get_merged_mvr_people(
         self,
-        super_individual_uuid: UUID
-    ) -> List[Dict[str, Any]]:
+        super_individual_uuid: UUID,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> Dict[str, Any]:
         """
-        Get all MVR people merged into a super-individual.
-        
+        Get paginated MVR people merged into a super-individual.
+
         Args:
             super_individual_uuid: The super-individual (winner) UUID
-            
+            page: 1-based page number
+            page_size: Number of results per page
+
         Returns:
-            List of merged MVR people dicts
+            Dict with keys:
+              - ``items``: List of merged MVR people dicts for this page
+              - ``total``: Total count of merged children
         """
+        offset = (page - 1) * page_size
         async with self.pool.acquire() as conn:
             try:
+                total = await conn.fetchval("""
+                    SELECT COUNT(*)
+                    FROM mvr_people
+                    WHERE merged_into_mvr_uuid = $1
+                        AND is_orphaned = TRUE
+                """, super_individual_uuid)
+
                 results = await conn.fetch("""
                     SELECT 
                         mvr_people_uuid,
@@ -1281,10 +1295,14 @@ class MVRRepository:
                     WHERE merged_into_mvr_uuid = $1
                         AND is_orphaned = TRUE
                     ORDER BY quality_score DESC
-                """, super_individual_uuid)
-                
-                return [dict(r) for r in results]
-                
+                    LIMIT $2 OFFSET $3
+                """, super_individual_uuid, page_size, offset)
+
+                return {
+                    "items": [dict(r) for r in results],
+                    "total": total or 0,
+                }
+
             except Exception as e:
                 logger.error(f"Get merged MVR failed: {e}")
                 raise MVRRepositoryError(f"Get merged MVR failed: {e}")

@@ -97,6 +97,15 @@ class _PersonObjectsDetailScreenState
   // Best images for child (merged-in) MVR cards
   Map<String, BestImageResponse?> _childMvrImages = {};
 
+  // ── Merged-children pagination state ─────────────────────────────────────
+  // Keyed by super-individual UUID. Populated by _loadMoreMergedChildren().
+  static const int _mergedChildrenPageSize = 10;
+  final Map<String, List<MergedMVRPerson>> _pagedMergedChildren = {};
+  final Map<String, bool> _loadingMoreChildren = {};
+  final Map<String, bool> _hasMoreChildren = {};
+  final Map<String, int> _mergedChildrenNextPage = {};
+  // ─────────────────────────────────────────────────────────────────────────
+
   // Whether a hierarchical merge was applied during the last search
   bool _hierarchicalMergeWasApplied = false;
 
@@ -1805,11 +1814,21 @@ class _PersonObjectsDetailScreenState
                 );
                 
                 aggregatedAnalyses.add(analysis);
+
+                // Seed pagination state from page-1 response
+                _pagedMergedChildren[superIndividualUuid] =
+                    List.of(analysis.mergedMVRPeople);
+                _hasMoreChildren[superIndividualUuid] =
+                    analysis.mergedChildrenHasMore;
+                _mergedChildrenNextPage[superIndividualUuid] =
+                    analysis.mergedChildrenPage + 1;
                 
                 print('✅ Loaded super-individual with hierarchy:');
                 print('   - ${analysis.totalAppearances} total appearances');
                 print('   - ${analysis.uniqueVideos} unique videos');
-                print('   - ${mergedMVRList.length} merged MVR people');
+                print('   - ${mergedMVRList.length} merged MVR people '
+                    '(total=${analysis.mergedChildrenTotal}, '
+                    'has_more=${analysis.mergedChildrenHasMore})');
               } else {
                 // For standalone (not merged), use simple factory
                 final analysis = AggregatedIndividualAnalysis.fromSuperIndividual(
@@ -2011,6 +2030,74 @@ class _PersonObjectsDetailScreenState
         _isLoadingCrossVideoData = false;
       });
       print('❌ Error loading cross-video data: $e');
+    }
+  }
+
+  /// Load the next page of merged children for a super-individual.
+  ///
+  /// Calls `GET /api/v1/mvr-people/super-individual/{uuid}/hierarchy` with
+  /// `merged_page` incremented, then appends the new children to
+  /// [_pagedMergedChildren] and updates the has-more / next-page flags.
+  Future<void> _loadMoreMergedChildren(String superIndividualUuid) async {
+    if (_loadingMoreChildren[superIndividualUuid] == true) return;
+    if (_hasMoreChildren[superIndividualUuid] != true) return;
+
+    final nextPage = _mergedChildrenNextPage[superIndividualUuid] ?? 2;
+
+    setState(() {
+      _loadingMoreChildren[superIndividualUuid] = true;
+    });
+
+    try {
+      final apiClient = ref.read(apiClientProvider);
+      final response = await apiClient.get(
+        '/api/v1/mvr-people/super-individual/$superIndividualUuid/hierarchy',
+        queryParameters: {
+          'merged_page': nextPage,
+          'merged_page_size': _mergedChildrenPageSize,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final newItems = (data['merged_mvr_people'] as List?)
+                ?.map((m) =>
+                    MergedMVRPerson.fromJson(m as Map<String, dynamic>))
+                .toList() ??
+            [];
+        final hasMore = (data['merged_children_has_more'] as bool?) ?? false;
+
+        setState(() {
+          _pagedMergedChildren[superIndividualUuid] = [
+            ...(_pagedMergedChildren[superIndividualUuid] ?? []),
+            ...newItems,
+          ];
+          _hasMoreChildren[superIndividualUuid] = hasMore;
+          _mergedChildrenNextPage[superIndividualUuid] = nextPage + 1;
+          _loadingMoreChildren[superIndividualUuid] = false;
+        });
+
+        // Fetch thumbnails for the newly loaded children
+        if (newItems.isNotEmpty) {
+          final mvrImageService = ref.read(mvrImageServiceProvider);
+          final newUuids =
+              newItems.map((m) => m.mvrPeopleUuid).toList();
+          final childImages =
+              await mvrImageService.getBestImagesForMergedChildren(newUuids);
+          setState(() {
+            _childMvrImages.addAll(childImages);
+          });
+        }
+      } else {
+        setState(() {
+          _loadingMoreChildren[superIndividualUuid] = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading more merged children for $superIndividualUuid: $e');
+      setState(() {
+        _loadingMoreChildren[superIndividualUuid] = false;
+      });
     }
   }
 
@@ -5033,27 +5120,59 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           // Level 2: Merged MVR People (only if super-individual and expanded)
           if (isExpanded && isSuperIndividual && analysis.mergedMVRPeople.isNotEmpty) ...[
             const Divider(height: 1),
-            Container(
-              color: Colors.blue.withOpacity(0.05),
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Text(
-                      'Merged MVR People (${analysis.mergedMVRPeople.length})',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue[900],
+            Builder(builder: (context) {
+              final superUuid = analysis.individualUuid;
+              final displayList =
+                  _pagedMergedChildren[superUuid] ?? analysis.mergedMVRPeople;
+              final hasMore = _hasMoreChildren[superUuid] ?? false;
+              final isLoadingMore =
+                  _loadingMoreChildren[superUuid] ?? false;
+              final total = analysis.mergedChildrenTotal > 0
+                  ? analysis.mergedChildrenTotal
+                  : analysis.mergedMVRPeople.length;
+
+              return Container(
+                color: Colors.blue.withOpacity(0.05),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      child: Text(
+                        'Merged MVR People (${displayList.length}${hasMore ? ' of $total' : ''})',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[900],
+                        ),
                       ),
                     ),
-                  ),
-                  ...analysis.mergedMVRPeople.map((mvr) => _buildMergedMVRCard(mvr)),
-                ],
-              ),
-            ),
+                    ...displayList.map((mvr) => _buildMergedMVRCard(mvr)),
+                    if (isLoadingMore)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (hasMore)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Center(
+                          child: TextButton.icon(
+                            onPressed: () =>
+                                _loadMoreMergedChildren(superUuid),
+                            icon: const Icon(Icons.keyboard_arrow_down),
+                            label: Text(
+                              'Load more (${total - displayList.length} remaining)',
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
           ],
           
           // Level 2/3: Person Objects / Appearances

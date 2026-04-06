@@ -156,6 +156,12 @@ class AggregatedIndividualAnalysis {
   final int mergedMVRCount;
   final List<MergedMVRPerson> mergedMVRPeople;
   final String? bestFaceThumbnail;
+
+  // Merged-children pagination metadata (backend-driven paging)
+  final int mergedChildrenTotal;
+  final int mergedChildrenPage;
+  final int mergedChildrenPageSize;
+  final bool mergedChildrenHasMore;
   
   // Individual naming (v2.21.0)
   final String? name;
@@ -182,6 +188,10 @@ class AggregatedIndividualAnalysis {
     this.mergedMVRCount = 1,
     this.mergedMVRPeople = const [],
     this.bestFaceThumbnail,
+    this.mergedChildrenTotal = 0,
+    this.mergedChildrenPage = 1,
+    this.mergedChildrenPageSize = 10,
+    this.mergedChildrenHasMore = false,
     this.name,
     this.nameUpdatedAt,
     this.nameUpdatedBy,
@@ -353,6 +363,14 @@ class AggregatedIndividualAnalysis {
           ? DateTime.parse(superIndividual['name_updated_at'] as String)
           : null,
       nameUpdatedBy: superIndividual['name_updated_by'] as String?,
+      mergedChildrenTotal:
+          (hierarchyData['merged_children_total'] as int?) ?? mergedMVR.length,
+      mergedChildrenPage:
+          (hierarchyData['merged_children_page'] as int?) ?? 1,
+      mergedChildrenPageSize:
+          (hierarchyData['merged_children_page_size'] as int?) ?? 10,
+      mergedChildrenHasMore:
+          (hierarchyData['merged_children_has_more'] as bool?) ?? false,
     );
   }
   
