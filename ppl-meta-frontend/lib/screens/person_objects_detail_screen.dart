@@ -31,6 +31,8 @@ import '../providers/mvr_image_service_provider.dart';
 import '../providers/settings_providers.dart';
 import '../models/mvr_best_image.dart';
 import '../utils/platform_file_download.dart';
+import 'media_preview_screen.dart';
+import '../core/providers/provider_bridge.dart';
 
 /// Detailed screen for viewing person objects results and analysis
 /// 
@@ -5552,7 +5554,23 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         if (!mounted) {
           return;
         }
-        context.go('/media-preview/${appearance.videoUuid}');
+        final mediaItem = MediaItem(
+          mediaId: '0',
+          uuid: appearance.videoUuid,
+          originalFilename: 'Loading...',
+          mediaType: MediaType.video,
+          fileSize: 0,
+          filePath: '',
+          uploadedAt: DateTime.now(),
+          isPublic: false,
+        );
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ProviderScreenWrapper(
+              child: EnhancedMediaPreviewScreen(mediaItem: mediaItem),
+            ),
+          ),
+        );
       },
       child: Card(
         margin: EdgeInsets.zero,
