@@ -94,6 +94,19 @@ class _PersonObjectsDetailScreenState
   // Best images for individuals in cross-video mode
   Map<String, BestImageResponse?> _bestImages = {};
 
+  // Best images for child (merged-in) MVR cards
+  Map<String, BestImageResponse?> _childMvrImages = {};
+
+  // Whether a hierarchical merge was applied during the last search
+  bool _hierarchicalMergeWasApplied = false;
+
+  // Merge groups captured from the last cross-video load (for undo banner)
+  List<MergeGroupSummary> _mergeGroups = [];
+
+  // After a manual merge the winner UUID(s) replace the original list so
+  // the immediate reload shows the merged state instead of stale pre-merge UUIDs.
+  List<String>? _overrideIndividualUuids;
+
   // Cross-video paged route state (new route paging endpoints)
   // Keep initial payload small so route loading is visibly paged in the UI.
   final int _routePageSize = 100;
@@ -1687,7 +1700,8 @@ class _PersonObjectsDetailScreenState
       
       final aggregatedAnalyses = <AggregatedIndividualAnalysis>[];
       
-      print('📊 Loading analysis for ${context.individualUuids.length} individuals');
+      final List<String> activeUuids = _overrideIndividualUuids ?? context.individualUuids;
+      print('📊 Loading analysis for ${activeUuids.length} individuals');
       print('📊 Source: ${context.sessionData['source']}');
 
       // Check if this is a camera search from individual groups
@@ -1743,12 +1757,17 @@ class _PersonObjectsDetailScreenState
       // If search_results exists, we're loading MVR people (consolidated)
       final bool loadingMVRPeople = context.sessionData['search_results'] != null;
 
-      if (loadingMVRPeople && hierarchicalMergeApplied) {
-        print('📊 Loading super-individuals with hierarchical data');
-        print('📊 Context has ${context.individualUuids.length} MVR UUIDs to load');
+      if (loadingMVRPeople) {
+        // Always fetch the full hierarchy for every MVR UUID from search results.
+        // The hierarchy endpoint returns empty merged_mvr_people for truly standalone MVRs,
+        // so this handles both auto-merged super-individuals AND winners of prior manual merges
+        // without needing to track the hierarchicalMergeApplied flag per-search.
+        print('📊 Loading MVR people via hierarchy endpoint');
+        print('📊 Context has ${activeUuids.length} MVR UUIDs to load '
+            '(hierarchicalMergeApplied=$hierarchicalMergeApplied)');
         
-        // For each super-individual UUID, fetch full hierarchy
-        for (final superIndividualUuid in context.individualUuids) {
+        // For each MVR UUID, fetch full hierarchy
+        for (final superIndividualUuid in activeUuids) {
           try {
             // First, get the hierarchy to determine if this is a merged super-individual
             print('🔍 Fetching hierarchy for: $superIndividualUuid');
@@ -1830,23 +1849,10 @@ class _PersonObjectsDetailScreenState
             );
           }
         }
-      } else if (loadingMVRPeople) {
-        print('📊 Loading MVR person data (consolidated individuals)');
-        // For each MVR person UUID, call the MVR person endpoint (existing logic)
-        for (final mvrPersonUuid in context.individualUuids) {
-          await _loadSingleMVRPerson(
-            mvrPersonUuid,
-            mediaApiClient,
-            startTime,
-            endTime,
-            context.sessionUuid,
-            aggregatedAnalyses,
-          );
-        }
       } else {
         print('📊 Loading individual data');
         // For each individual UUID, call the session-less endpoint
-        for (final individualUuid in context.individualUuids) {
+        for (final individualUuid in activeUuids) {
           try {
             final response = await mediaApiClient.getIndividualAnalysisNoSession(
               individualUuid: individualUuid,
@@ -1974,8 +1980,21 @@ class _PersonObjectsDetailScreenState
         return;
       }
       
+      // Parse merge groups if the search applied a hierarchical merge
+      final rawMergeGroups = context.sessionData['merge_groups'];
+      final mergeGroups = <MergeGroupSummary>[];
+      if (rawMergeGroups is List) {
+        for (final g in rawMergeGroups) {
+          if (g is Map<String, dynamic>) {
+            mergeGroups.add(MergeGroupSummary.fromJson(g));
+          }
+        }
+      }
+
       setState(() {
         _aggregatedAnalyses = aggregatedAnalyses;
+        _hierarchicalMergeWasApplied = hierarchicalMergeApplied && mergeGroups.isNotEmpty;
+        _mergeGroups = mergeGroups;
         _isLoadingCrossVideoData = false;
       });
       
@@ -2024,6 +2043,22 @@ class _PersonObjectsDetailScreenState
           _bestImages = images;
           print('🖼️ State updated with ${_bestImages.length} images');
         });
+      }
+
+      // Load thumbnails for child (merged-in) MVR cards
+      final childUuids = _aggregatedAnalyses!
+          .expand((a) => a.mergedMVRPeople.map((m) => m.mvrPeopleUuid))
+          .toSet()
+          .toList();
+      if (childUuids.isNotEmpty) {
+        print('🖼️ Loading best images for ${childUuids.length} child MVR cards');
+        final childImages = await imageService.getBestImagesForMergedChildren(childUuids);
+        if (mounted) {
+          setState(() {
+            _childMvrImages = childImages;
+            print('🖼️ Loaded ${_childMvrImages.length} child MVR images');
+          });
+        }
       }
     } catch (e, stack) {
       print('❌ Error loading best images for cross-video analysis: $e');
@@ -2601,8 +2636,12 @@ class _PersonObjectsDetailScreenState
   Future<void> _executeMerge() async {
     if (_selectedIndividuals.isEmpty || widget.crossVideoContext == null) return;
     
-    // Check if this is a hierarchical merge (from Individual Groups)
-    final bool isHierarchicalMerge =
+    // Use MVR-People merge whenever the search returned MVR UUIDs (search_results present)
+    // — this covers both hierarchical merges and plain MVR searches.
+    // Only fall back to the legacy individuals/tracking/merge endpoint when the screen
+    // was loaded with raw individual UUIDs (no search_results key in sessionData).
+    final bool useMvrMerge =
+        widget.crossVideoContext!.sessionData['search_results'] != null ||
         widget.crossVideoContext!.sessionData['hierarchical_merge_applied'] == true;
     
     // Show loading indicator
@@ -2629,7 +2668,7 @@ class _PersonObjectsDetailScreenState
       final mediaApiClient = MediaApiClient(apiClient);
       
       // Use appropriate merge endpoint based on context
-      final response = isHierarchicalMerge
+      final response = useMvrMerge
           ? await mediaApiClient.mergeMVRPeople(
               mvrUuids: _selectedIndividuals.toList(),
               similarityThreshold: _similarityThreshold,
@@ -2663,9 +2702,13 @@ class _PersonObjectsDetailScreenState
           );
         }
         
-        // Clear selection and reload data
+        // Update the active UUID list to the winner so the immediate
+        // reload shows the merged state rather than stale pre-merge UUIDs.
         setState(() {
           _selectedIndividuals.clear();
+          if (useMvrMerge) {
+            _overrideIndividualUuids = [predominantUuid];
+          }
         });
         await _loadCrossVideoData();
         
@@ -4613,12 +4656,192 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _aggregatedAnalyses!.length,
-      itemBuilder: (context, index) {
-        final analysis = _aggregatedAnalyses![index];
-        return _buildIndividualCard(analysis, index);
+    return Column(
+      children: [
+        if (_hierarchicalMergeWasApplied) _buildMergeBanner(),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: _aggregatedAnalyses!.length,
+            itemBuilder: (context, index) {
+              final analysis = _aggregatedAnalyses![index];
+              return _buildIndividualCard(analysis, index);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Yellow banner shown when the last search applied automatic hierarchical merges
+  Widget _buildMergeBanner() {
+    final totalMerged = _mergeGroups.fold<int>(0, (sum, g) => sum + g.mergedCount);
+    return Container(
+      width: double.infinity,
+      color: Colors.amber.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(Icons.merge_type, color: Colors.amber[800]),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$totalMerged individual${totalMerged == 1 ? '' : 's'} were automatically merged',
+              style: TextStyle(color: Colors.amber[900], fontWeight: FontWeight.w500),
+            ),
+          ),
+          TextButton(
+            onPressed: _showMergeReviewSheet,
+            child: Text('Review', style: TextStyle(color: Colors.amber[900])),
+          ),
+          TextButton(
+            onPressed: () async {
+              for (final group in _mergeGroups) {
+                for (final childUuid in group.mergedMvrUuids) {
+                  await _performUnmerge(childUuid);
+                }
+              }
+            },
+            child: Text('Undo All', style: TextStyle(color: Colors.red[700])),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Bottom sheet listing each merge group with face thumbnails and per-child undo buttons
+  void _showMergeReviewSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          maxChildSize: 0.9,
+          minChildSize: 0.3,
+          builder: (_, scrollCtrl) {
+            return Column(
+              children: [
+                const SizedBox(height: 8),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Automatic Merges',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollCtrl,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _mergeGroups.length,
+                    itemBuilder: (_, i) {
+                      final group = _mergeGroups[i];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Super-individual header row
+                              Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: SizedBox(
+                                      width: 36,
+                                      height: 36,
+                                      child: _bestImages[group.superIndividualUuid]?.bestFace != null
+                                          ? _buildChildMvrThumbnail(group.superIndividualUuid)
+                                          : Icon(Icons.person, color: Colors.grey[600]),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Super: ${group.superIndividualUuid.length >= 8 ? group.superIndividualUuid.substring(0, 8) : group.superIndividualUuid}...',
+                                      style: const TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              // Child rows
+                              ...group.mergedMvrUuids.map((childUuid) {
+                                final sim = group.similarities[childUuid];
+                                final shortId = childUuid.length >= 8
+                                    ? childUuid.substring(0, 8)
+                                    : childUuid;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Row(
+                                    children: [
+                                      const SizedBox(width: 8),
+                                      Icon(Icons.subdirectory_arrow_right,
+                                          size: 16, color: Colors.grey[500]),
+                                      const SizedBox(width: 4),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: SizedBox(
+                                          width: 30,
+                                          height: 30,
+                                          child: _buildChildMvrThumbnail(childUuid),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('$shortId...',
+                                                style: const TextStyle(fontSize: 13)),
+                                            if (sim != null)
+                                              Text(
+                                                'Similarity: ${(sim * 100).toStringAsFixed(1)}%',
+                                                style: TextStyle(
+                                                    fontSize: 11, color: Colors.grey[600]),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                      TextButton(
+                                        onPressed: () {
+                                          Navigator.of(ctx).pop();
+                                          _performUnmerge(childUuid);
+                                        },
+                                        child: const Text('Undo',
+                                            style: TextStyle(color: Colors.orange)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        );
       },
     );
   }
@@ -4843,6 +5066,29 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     );
   }
   
+  /// Build child MVR thumbnail (falls back to badge icon if no image available).
+  /// Checks _childMvrImages first, then _bestImages (so super-individual UUIDs also work).
+  Widget _buildChildMvrThumbnail(String childMvrUuid) {
+    final bestImage = _childMvrImages[childMvrUuid] ?? _bestImages[childMvrUuid];
+    if (bestImage?.bestFace == null || bestImage!.bestFace!.imageUrl.isEmpty) {
+      return Icon(Icons.badge, size: 24, color: Colors.blue[700]);
+    }
+    final rawUrl = bestImage.bestFace!.imageUrl;
+    final uri = Uri.tryParse(rawUrl);
+    final resolvedUrl = (uri != null && uri.hasScheme)
+        ? rawUrl
+        : '${Config.gatewayServiceUrl}${rawUrl.startsWith('/') ? rawUrl : '/$rawUrl'}';
+    final apiClient = ref.read(apiClientProvider);
+    return Image.network(
+      resolvedUrl,
+      fit: BoxFit.cover,
+      headers: apiClient.authToken != null
+          ? {'Authorization': 'Bearer ${apiClient.authToken}'}
+          : const {},
+      errorBuilder: (_, __, ___) => Icon(Icons.badge, size: 24, color: Colors.blue[700]),
+    );
+  }
+
   /// Build merged MVR person card (Level 2 in hierarchy)
   Widget _buildMergedMVRCard(MergedMVRPerson mvr) {
     return Card(
@@ -4852,18 +5098,14 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            // MVR icon
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
+            // Child MVR thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                width: 40,
+                height: 40,
                 color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                Icons.badge,
-                size: 24,
-                color: Colors.blue[700],
+                child: _buildChildMvrThumbnail(mvr.mvrPeopleUuid),
               ),
             ),
             const SizedBox(width: 12),
@@ -4911,12 +5153,96 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                 ],
               ),
             ),
+            // Split (undo merge) button
+            IconButton(
+              icon: Icon(Icons.call_split, size: 20, color: Colors.orange[700]),
+              tooltip: 'Split — undo this merge',
+              onPressed: () => _confirmSplitMvr(mvr),
+            ),
           ],
         ),
       ),
     );
   }
-  
+
+  /// Confirm and perform unmerge for a single child MVR card
+  void _confirmSplitMvr(MergedMVRPerson mvr) {
+    final shortId = mvr.mvrPeopleUuid.length >= 8
+        ? mvr.mvrPeopleUuid.substring(0, 8)
+        : mvr.mvrPeopleUuid;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Split merged individual?'),
+        content: Text(
+          'This will restore MVR $shortId... as a separate individual '
+          'and reassign its person objects back to it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _performUnmerge(mvr.mvrPeopleUuid);
+            },
+            style: FilledButton.styleFrom(backgroundColor: Colors.orange[700]),
+            child: const Text('Split'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Call the unmerge API endpoint, then reload cross-video data
+  Future<void> _performUnmerge(String orphanedMvrUuid) async {
+    final mediaApiClient = MediaApiClient(ref.read(apiClientProvider));
+    try {
+      final response = await mediaApiClient.unmergeMvr(orphanedMvrUuid: orphanedMvrUuid);
+      if (response.success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Individual split successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          // After a split, reload with both the winner and the now-restored orphan
+          // so the detail screen shows them as two separate standalone MVRs.
+          final winnerUuid = response.data?['winner_mvr_uuid'] as String?;
+          setState(() {
+            if (winnerUuid != null && winnerUuid.isNotEmpty) {
+              _overrideIndividualUuids = [winnerUuid, orphanedMvrUuid];
+            } else {
+              _overrideIndividualUuids = null;
+            }
+          });
+          _loadCrossVideoData();
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Split failed: ${response.error ?? 'Unknown error'}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Split failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   /// Build small chip widget for compact info display
   Widget _buildSmallChip(String label, IconData icon) {
     return Container(
@@ -4997,14 +5323,105 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
               // Appearance cards for this camera
               ...List.generate(
                 appearances.length,
-                (index) => Padding(
-                  padding: EdgeInsets.only(bottom: index < appearances.length - 1 ? 8 : 0),
-                  child: _buildAppearanceCard(appearances[index], index),
-                ),
+                (index) {
+                  final appearance = appearances[index];
+                  // Look up child MVR for this appearance
+                  MergedMVRPerson? childMvr;
+                  if (analysis.isSuperIndividual && appearance.mvrPeopleUuid != null) {
+                    try {
+                      childMvr = analysis.mergedMVRPeople.firstWhere(
+                        (m) => m.mvrPeopleUuid == appearance.mvrPeopleUuid,
+                      );
+                    } catch (_) {}
+                  }
+                  final isLast = index == appearances.length - 1;
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: isLast ? 0 : 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildAppearanceCard(appearance, index),
+                        if (childMvr != null)
+                          _buildAppearanceMvrRow(childMvr),
+                      ],
+                    ),
+                  );
+                },
               ),
             ],
           );
         },
+      ),
+    );
+  }
+
+  /// Compact MVR attribution row shown directly below an appearance card
+  Widget _buildAppearanceMvrRow(MergedMVRPerson mvr) {
+    return Container(
+      margin: const EdgeInsets.only(left: 16, top: 2),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(8),
+          bottomRight: Radius.circular(8),
+        ),
+        border: Border.all(color: Colors.blue.shade100),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      child: Row(
+        children: [
+          // Thumbnail
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: SizedBox(
+              width: 34,
+              height: 34,
+              child: _buildChildMvrThumbnail(mvr.mvrPeopleUuid),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.badge, size: 13, color: Colors.blue[700]),
+                    const SizedBox(width: 4),
+                    Text(
+                      'MVR ${mvr.mvrPeopleUuid.length >= 8 ? mvr.mvrPeopleUuid.substring(0, 8) : mvr.mvrPeopleUuid}...',
+                      style: TextStyle(fontSize: 12, color: Colors.blue[800], fontWeight: FontWeight.w600),
+                    ),
+                    if (mvr.similarityToFeatured > 0) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        mvr.formattedSimilarity,
+                        style: TextStyle(fontSize: 11, color: Colors.blue[600]),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (mvr.gender != null) ...[
+                      _buildSmallChip(mvr.gender!, Icons.person),
+                      const SizedBox(width: 4),
+                    ],
+                    if (mvr.ageMin != null && mvr.ageMax != null) ...[
+                      _buildSmallChip(mvr.ageRange, Icons.cake),
+                      const SizedBox(width: 4),
+                    ],
+                    _buildSmallChip(
+                      'Q:${(mvr.qualityScore * 100).toStringAsFixed(0)}%',
+                      Icons.star,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

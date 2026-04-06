@@ -119,4 +119,11 @@ class MVRImageService {
 
     return results;
   }
+
+  /// Fetch best face images for child MVR records (merged children of a
+  /// super-individual). Keyed by child mvr_people_uuid.
+  Future<Map<String, BestImageResponse?>> getBestImagesForMergedChildren(
+    List<String> childMvrUuids,
+  ) =>
+      getBestImagesForMultiple(childMvrUuids, includeMerged: false, useCache: true);
 }

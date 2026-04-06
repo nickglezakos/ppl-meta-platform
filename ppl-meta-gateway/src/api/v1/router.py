@@ -2185,6 +2185,12 @@ async def hierarchical_merge_mvr_people(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/unmerge")
+async def unmerge_mvr_people(request: Request):
+    """Proxy MVR people unmerge (undo merge) request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.get("/mvr-people/super-individual/{uuid}/hierarchy")
 async def get_super_individual_hierarchy(request: Request):
     """Proxy super-individual hierarchy request to vmeta service."""

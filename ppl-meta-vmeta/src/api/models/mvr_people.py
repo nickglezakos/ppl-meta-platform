@@ -361,6 +361,26 @@ class MergeIndividualsResponse(BaseModel):
 
 
 # ============================================================================
+# ENDPOINT 10b: Unmerge MVR
+# ============================================================================
+
+class UnmergeMvrRequest(BaseModel):
+    """Request model for undoing a merge (unmerge)."""
+    orphaned_mvr_uuid: UUID = Field(
+        ..., description="UUID of the orphaned (child) MVR to restore"
+    )
+
+
+class UnmergeMvrResponse(BaseModel):
+    """Response model for unmerge operation."""
+    success: bool
+    restored_mvr_uuid: UUID
+    winner_mvr_uuid: UUID
+    individuals_reassigned: int
+    message: str
+
+
+# ============================================================================
 # ENDPOINT 11: Get Merge History
 # ============================================================================
 
@@ -570,7 +590,11 @@ __all__ = [
     # Endpoint 10: Merge
     "MergeIndividualsRequest",
     "MergeIndividualsResponse",
-    
+
+    # Endpoint 10b: Unmerge
+    "UnmergeMvrRequest",
+    "UnmergeMvrResponse",
+
     # Endpoint 11: Merge History
     "CurrentMVRPeople",
     "PreviousMVRPeople",

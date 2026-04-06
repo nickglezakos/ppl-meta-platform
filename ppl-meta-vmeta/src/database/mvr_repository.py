@@ -1049,7 +1049,207 @@ class MVRRepository:
             except Exception as e:
                 logger.error(f"Bulk orphan failed: {e}")
                 raise MVRRepositoryError(f"Bulk orphan failed: {e}")
-    
+
+    async def unmerge_mvr_people(
+        self,
+        orphaned_mvr_uuid: UUID,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Reverse a previous merge by restoring an orphaned MVR record.
+
+        Clears is_orphaned / merged_into_mvr_uuid on the child, restores
+        individual_mvr_mapping rows that were reassigned during that specific
+        merge (identified via mvr_merge_audit_log), removes the
+        mvr_merge_hierarchy row, and appends an audit entry.
+
+        Args:
+            orphaned_mvr_uuid: The child/loser MVR UUID to restore.
+            user_id: Optional user performing the undo.
+
+        Returns:
+            Dict with restored_mvr_uuid, winner_mvr_uuid,
+            individuals_reassigned count.
+
+        Raises:
+            MVRRepositoryError on failure.
+        """
+        async with self.pool.acquire() as conn:
+            try:
+                async with conn.transaction():
+                    # 1. Load current orphan row — verify it is actually orphaned
+                    orphan_row = await conn.fetchrow(
+                        """
+                        SELECT mvr_people_uuid, merged_into_mvr_uuid, quality_score
+                        FROM mvr_people
+                        WHERE mvr_people_uuid = $1
+                          AND is_orphaned = TRUE
+                        """,
+                        orphaned_mvr_uuid,
+                    )
+                    if not orphan_row:
+                        raise MVRRepositoryError(
+                            f"MVR {orphaned_mvr_uuid} is not orphaned or does not exist"
+                        )
+
+                    winner_uuid = orphan_row["merged_into_mvr_uuid"]
+
+                    # 2. Clear orphan status
+                    await conn.execute(
+                        """
+                        UPDATE mvr_people
+                        SET is_orphaned            = FALSE,
+                            orphaned_at            = NULL,
+                            merged_into_mvr_uuid   = NULL,
+                            updated_at             = NOW()
+                        WHERE mvr_people_uuid = $1
+                        """,
+                        orphaned_mvr_uuid,
+                    )
+
+                    # 3. Identify which individuals were reassigned during THIS merge
+                    #    using the audit log (most recent 'merged' row for this pair).
+                    audit_rows = await conn.fetch(
+                        """
+                        SELECT source_individual_uuid
+                        FROM mvr_merge_audit_log
+                        WHERE source_mvr_uuid = $1
+                          AND target_mvr_uuid = $2
+                          AND merge_action    = 'merged'
+                        ORDER BY merged_at DESC
+                        """,
+                        orphaned_mvr_uuid,
+                        winner_uuid,
+                    )
+                    individual_uuids = [r["source_individual_uuid"] for r in audit_rows]
+
+                    # 4. Restore individual_mvr_mapping rows back to the orphan
+                    reassigned_count = 0
+                    if individual_uuids:
+                        result = await conn.execute(
+                            """
+                            UPDATE individual_mvr_mapping
+                            SET mvr_people_uuid = $1,
+                                link_method     = 'unmerge_restored',
+                                linked_at       = NOW()
+                            WHERE mvr_people_uuid = $2
+                              AND individual_uuid = ANY($3::uuid[])
+                            """,
+                            orphaned_mvr_uuid,
+                            winner_uuid,
+                            individual_uuids,
+                        )
+                        reassigned_count = int(result.split()[-1])
+                    else:
+                        # Fallback: restore all current mappings that point to winner
+                        # which match previous_individual_uuids stored on the orphan
+                        prev_row = await conn.fetchrow(
+                            "SELECT previous_individual_uuids FROM mvr_people WHERE mvr_people_uuid = $1",
+                            orphaned_mvr_uuid,
+                        )
+                        prev_uuids_raw = prev_row["previous_individual_uuids"] if prev_row else None
+                        if prev_uuids_raw:
+                            prev_uuids = (
+                                json.loads(prev_uuids_raw)
+                                if isinstance(prev_uuids_raw, str)
+                                else list(prev_uuids_raw)
+                            )
+                            if prev_uuids:
+                                result = await conn.execute(
+                                    """
+                                    UPDATE individual_mvr_mapping
+                                    SET mvr_people_uuid = $1,
+                                        link_method     = 'unmerge_restored',
+                                        linked_at       = NOW()
+                                    WHERE mvr_people_uuid = $2
+                                      AND individual_uuid = ANY($3::uuid[])
+                                    """,
+                                    orphaned_mvr_uuid,
+                                    winner_uuid,
+                                    [UUID(u) for u in prev_uuids],
+                                )
+                                reassigned_count = int(result.split()[-1])
+
+                    # 5. Remove mvr_merge_hierarchy row
+                    await conn.execute(
+                        """
+                        DELETE FROM mvr_merge_hierarchy
+                        WHERE super_individual_uuid = $1
+                          AND merged_mvr_uuid       = $2
+                        """,
+                        winner_uuid,
+                        orphaned_mvr_uuid,
+                    )
+
+                    # 6. Audit log entry for the undo — one row per reassigned individual.
+                    # Query the mapping table which was just updated in step 4 so we
+                    # always get a valid, non-null individual UUID even when the
+                    # forward merge never wrote per-individual audit rows (e.g. force_merge).
+                    audit_individual_rows = await conn.fetch(
+                        """
+                        SELECT individual_uuid
+                        FROM individual_mvr_mapping
+                        WHERE mvr_people_uuid = $1
+                        """,
+                        orphaned_mvr_uuid,
+                    )
+                    audit_individual_uuids = [r["individual_uuid"] for r in audit_individual_rows]
+
+                    # Fallback: use featured_individual_uuid from mvr_people if mapping is empty
+                    if not audit_individual_uuids:
+                        feat_row = await conn.fetchrow(
+                            "SELECT featured_individual_uuid FROM mvr_people WHERE mvr_people_uuid = $1",
+                            orphaned_mvr_uuid,
+                        )
+                        if feat_row and feat_row["featured_individual_uuid"]:
+                            audit_individual_uuids = [feat_row["featured_individual_uuid"]]
+
+                    for ind_uuid in audit_individual_uuids:
+                        await conn.execute(
+                            """
+                            INSERT INTO mvr_merge_audit_log (
+                                source_mvr_uuid,
+                                target_mvr_uuid,
+                                source_individual_uuid,
+                                merge_action,
+                                merge_reason,
+                                similarity_score,
+                                matching_threshold,
+                                source_quality_score,
+                                target_quality_score,
+                                winner_mvr_uuid,
+                                user_id,
+                                system_mode,
+                                merged_at
+                            ) VALUES ($1, $2, $3, 'unmerged', 'user_undo',
+                                      0.0, 0.0,
+                                      $4, 0.0,
+                                      $1, $5, 'manual', NOW())
+                            """,
+                            orphaned_mvr_uuid,
+                            winner_uuid,
+                            ind_uuid,
+                            float(orphan_row["quality_score"] or 0),
+                            user_id,
+                        )
+
+                    logger.info(
+                        f"Unmerged MVR {orphaned_mvr_uuid} from {winner_uuid}; "
+                        f"reassigned {reassigned_count} individual(s)"
+                    )
+
+                    return {
+                        "restored_mvr_uuid": str(orphaned_mvr_uuid),
+                        "winner_mvr_uuid": str(winner_uuid),
+                        "individuals_reassigned": reassigned_count,
+                    }
+
+            except MVRRepositoryError:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to unmerge MVR {orphaned_mvr_uuid}: {e}")
+                raise MVRRepositoryError(f"Failed to unmerge MVR: {e}")
+
     async def get_merged_mvr_people(
         self,
         super_individual_uuid: UUID

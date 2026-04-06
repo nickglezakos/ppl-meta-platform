@@ -252,6 +252,44 @@ class MVRImageManager:
         
         logger.info(f"Query returned {len(rows)} video appearances")
         
+        # Fallback for orphaned (child) MVR people: their individuals were reassigned
+        # to the winner after a merge, so the normal join returns 0 rows.
+        # Look up the original individual UUIDs via mvr_merge_audit_log.
+        if not rows and len(mvr_uuids) == 1:
+            logger.info(
+                f"No appearances via current mapping for {mvr_uuids[0][:8]}..., "
+                "trying audit log fallback (orphaned MVR)"
+            )
+            audit_query = """
+                SELECT DISTINCT source_individual_uuid
+                FROM mvr_merge_audit_log
+                WHERE source_mvr_uuid = $1::uuid
+                  AND merge_action    = 'merged'
+            """
+            async with self.mvr_repo.pool.acquire() as conn:
+                audit_rows = await conn.fetch(audit_query, uuid_objects[0])
+            
+            if audit_rows:
+                individual_uuids = [r["source_individual_uuid"] for r in audit_rows]
+                logger.info(
+                    f"Audit log returned {len(individual_uuids)} original individuals "
+                    f"for orphaned MVR {mvr_uuids[0][:8]}..."
+                )
+                fallback_query = """
+                    SELECT DISTINCT
+                        iva.video_uuid,
+                        iva.confidence,
+                        iva.start_timestamp,
+                        iva.individual_uuid
+                    FROM individual_video_appearances iva
+                    WHERE iva.individual_uuid = ANY($1::uuid[])
+                    ORDER BY iva.confidence DESC
+                    LIMIT $2
+                """
+                async with self.mvr_repo.pool.acquire() as conn:
+                    rows = await conn.fetch(fallback_query, individual_uuids, limit)
+                logger.info(f"Fallback query returned {len(rows)} video appearances")
+        
         if rows:
             logger.info(f"Sample video UUIDs: {[str(row['video_uuid']) for row in rows[:3]]}")
         

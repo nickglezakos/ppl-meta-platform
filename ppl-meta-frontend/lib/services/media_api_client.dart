@@ -1611,7 +1611,7 @@ class MediaApiClient {
         return ApiResponse.error('At least 2 individuals required for merging');
       }
 
-      print('🔄 Merging ${mvrUuids.length} MVR people hierarchically...');
+      print('🔄 Merging ${mvrUuids.length} MVR people (force_merge=true)...');
 
       final response = await _apiClient.post(
         '/api/v1/mvr-people/merge/hierarchical',
@@ -1619,6 +1619,7 @@ class MediaApiClient {
           'mvr_uuids': mvrUuids,
           'similarity_threshold': similarityThreshold,
           'min_similarity_check': 0.50,
+          'force_merge': true,
         },
       );
 
@@ -1628,17 +1629,39 @@ class MediaApiClient {
       final data = response.data as Map<String, dynamic>;
       final superIndividuals = data['super_individuals'] as List?;
       final statistics = data['statistics'] as Map<String, dynamic>?;
+      final mergesPerformed = statistics?['merges_performed'] as int? ?? 0;
+
+      // Detect silent no-op: the backend returned 200 but performed 0 merges.
+      if (mergesPerformed == 0) {
+        return ApiResponse.error(
+          'Merge did not complete — the two individuals could not be combined. '
+          'They may be the same person already, or data is missing.',
+        );
+      }
+
+      // Compute the actual similarity from the first merge group when available.
+      final mergeGroups = data['merge_groups'] as List?;
+      double actualSimilarity = similarityThreshold;
+      if (mergeGroups != null && mergeGroups.isNotEmpty) {
+        final firstGroup = mergeGroups[0] as Map<String, dynamic>?;
+        final sims = firstGroup?['similarities'] as Map?;
+        if (sims != null && sims.isNotEmpty) {
+          final values = sims.values.whereType<num>().toList();
+          if (values.isNotEmpty) {
+            actualSimilarity = values.reduce((a, b) => a > b ? a : b).toDouble();
+          }
+        }
+      }
 
       // Return response in format matching tracking merge
       return ApiResponse.success({
-        'predominant_individual_uuid': superIndividuals?.isNotEmpty == true 
-            ? superIndividuals![0] 
+        'predominant_individual_uuid': superIndividuals?.isNotEmpty == true
+            ? superIndividuals![0]
             : mvrUuids[0],
         'merged_individual_uuids': mvrUuids.sublist(1),
-        'similarity_score': similarityThreshold,
-        'message': statistics != null
-            ? 'Merged ${statistics['merged_mvr']} individuals into ${statistics['super_individuals']} super-individual(s)'
-            : 'Successfully merged ${mvrUuids.length} individuals',
+        'similarity_score': actualSimilarity,
+        'message': 'Merged $mergesPerformed individual(s) into '
+            '${statistics?['super_individuals'] ?? 1} super-individual(s)',
         'statistics': statistics,
       });
     } on DioException catch (e) {
@@ -1646,6 +1669,29 @@ class MediaApiClient {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       print('❌ MVR merge unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Undo a previous MVR merge by restoring the orphaned (child) MVR record.
+  ///
+  /// Calls POST /api/v1/mvr-people/unmerge
+  Future<ApiResponse<Map<String, dynamic>>> unmergeMvr({
+    required String orphanedMvrUuid,
+  }) async {
+    try {
+      print('↩️ Unmerging MVR $orphanedMvrUuid...');
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/unmerge',
+        data: {'orphaned_mvr_uuid': orphanedMvrUuid},
+      );
+      print('✅ Unmerge response: ${response.data}');
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      print('❌ Unmerge failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('❌ Unmerge unexpected error: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }

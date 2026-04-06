@@ -229,11 +229,20 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       print('🎥 Initializing video player with URL: $videoUrl');
       print('🔑 Headers: ${widget.headers}');
 
-      _controller = VideoPlayerController.networkUrl(
+      // Use a local variable so dispose() can't null-out the controller
+      // while initialize() is still in-flight, causing a "used after disposed" crash.
+      final tempController = VideoPlayerController.networkUrl(
         Uri.parse(videoUrl),
         httpHeaders: httpHeaders,
       );
-      await _controller!.initialize();
+      await tempController.initialize();
+
+      // Widget may have been disposed while we were awaiting initialize()
+      if (_isDisposed || !mounted) {
+        try { tempController.dispose(); } catch (_) {}
+        return;
+      }
+      _controller = tempController;
 
       // Create and store the listener
       _controllerListener = () {

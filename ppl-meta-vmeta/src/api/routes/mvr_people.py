@@ -46,6 +46,8 @@ from api.models.mvr_people import (
     MatchIndividualResponse,
     MergeIndividualsRequest,
     MergeIndividualsResponse,
+    UnmergeMvrRequest,
+    UnmergeMvrResponse,
     MergeHistoryResponse,
     OrphanedMVRResponse,
     MatchingConfigUpdate,
@@ -824,6 +826,83 @@ async def merge_individuals(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to merge Individuals: {str(e)}"
+        )
+
+
+# ============================================================================
+# ENDPOINT 10b: Unmerge MVR — reverse a previous merge
+# ============================================================================
+
+@router.post(
+    "/unmerge",
+    response_model=UnmergeMvrResponse,
+    summary="Undo MVR Merge",
+    description="Restore an orphaned (child) MVR record, reversing a previous merge.",
+)
+async def unmerge_mvr(
+    request: UnmergeMvrRequest,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    current_user: dict = Depends(get_current_user),
+    cache_client=Depends(get_cache_client),
+):
+    """
+    Reverse a merge by restoring the orphaned MVR record.
+
+    **What this does:**
+    - Clears is_orphaned / merged_into_mvr_uuid on the child MVR
+    - Restores individual_mvr_mapping rows back to the child
+    - Removes the mvr_merge_hierarchy row
+    - Appends an audit log entry with merge_action='unmerged'
+
+    **Note:** The winner's face_embedding and demographics are NOT reverted.
+
+    **Authentication:** Requires valid JWT token
+    """
+    user_email = current_user.get("email", "unknown")
+    user_id = current_user.get("user_id") or current_user.get("sub")
+    logger.info(
+        f"Unmerge MVR {request.orphaned_mvr_uuid} requested by {user_email}"
+    )
+
+    try:
+        result = await mvr_repository.unmerge_mvr_people(
+            orphaned_mvr_uuid=request.orphaned_mvr_uuid,
+            user_id=str(user_id) if user_id else None,
+        )
+
+        # Invalidate ALL cached MVR search results so the next search reflects
+        # the split state. The per-video-hash approach fails because the cache key
+        # is derived from ALL videos in the user's collection, not just the
+        # affected subset — so partial-list hashes never match. Wipe everything.
+        try:
+            invalidated = await cache_client.invalidate_mvr_search(
+                pattern="mvr_search:*"
+            )
+            logger.info(
+                f"🗑️  Invalidated {invalidated} MVR search cache key(s) after unmerge "
+                f"of {request.orphaned_mvr_uuid}"
+            )
+        except Exception as _inv_err:
+            logger.warning(f"Cache invalidation after unmerge failed (non-fatal): {_inv_err}")
+
+        return UnmergeMvrResponse(
+            success=True,
+            restored_mvr_uuid=result["restored_mvr_uuid"],
+            winner_mvr_uuid=result["winner_mvr_uuid"],
+            individuals_reassigned=result["individuals_reassigned"],
+            message=(
+                f"MVR {result['restored_mvr_uuid']} restored; "
+                f"{result['individuals_reassigned']} individual(s) reassigned."
+            ),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unmerge failed for {request.orphaned_mvr_uuid}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unmerge MVR: {str(e)}",
         )
 
 
@@ -4053,8 +4132,13 @@ async def hierarchical_merge_mvr_people(
         le=0.80,
         description="Skip comparisons below this (optimization)"
     ),
+    force_merge: bool = Body(
+        False,
+        description="Bypass similarity checks and merge all provided UUIDs unconditionally. Use for manual user-initiated merges."
+    ),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
     mvr_matcher: MVRMatcher = Depends(get_mvr_matcher),
+    cache_client = Depends(get_cache_client),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -4094,7 +4178,8 @@ async def hierarchical_merge_mvr_people(
         result = await merger.merge_hierarchical(
             mvr_uuids=mvr_uuids,
             similarity_threshold=similarity_threshold,
-            min_similarity_check=min_similarity_check
+            min_similarity_check=min_similarity_check,
+            force_merge=force_merge,
         )
         
         logger.info(
@@ -4102,6 +4187,32 @@ async def hierarchical_merge_mvr_people(
             f"{result['statistics']['super_individuals']} super-individuals"
         )
         
+        # Invalidate cached search results for all videos these MVR people appeared in,
+        # so the next search reflects the merged state instead of returning stale data.
+        try:
+            async with mvr_repository.pool.acquire() as _inv_conn:
+                video_rows = await _inv_conn.fetch(
+                    """
+                    SELECT DISTINCT iva.video_uuid::text
+                    FROM individual_video_appearances iva
+                    JOIN individual_mvr_mapping imm
+                        ON iva.individual_uuid = imm.individual_uuid
+                    WHERE imm.mvr_people_uuid = ANY($1::uuid[])
+                    """,
+                    mvr_uuids,
+                )
+            affected_videos = [str(r["video_uuid"]) for r in video_rows]
+            if affected_videos:
+                invalidated = await cache_client.invalidate_mvr_search(
+                    video_uuids=affected_videos
+                )
+                logger.info(
+                    f"🗑️  Invalidated cache for {invalidated} key(s) "
+                    f"covering {len(affected_videos)} affected videos after merge"
+                )
+        except Exception as _inv_err:
+            logger.warning(f"Cache invalidation after merge failed (non-fatal): {_inv_err}")
+
         return result
         
     except HTTPException:

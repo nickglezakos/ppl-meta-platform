@@ -393,6 +393,7 @@ class IndividualAppearance {
   final double confidenceScore;
   final String? cameraId;  // Camera/collection ID
   final String? cameraName;  // Camera/collection name
+  final String? mvrPeopleUuid;  // Child MVR person this appearance belongs to
   
   IndividualAppearance({
     required this.individualUuid,
@@ -405,6 +406,7 @@ class IndividualAppearance {
     required this.confidenceScore,
     this.cameraId,
     this.cameraName,
+    this.mvrPeopleUuid,
   });
   
   factory IndividualAppearance.fromJson(Map<String, dynamic> json) {
@@ -412,6 +414,7 @@ class IndividualAppearance {
       individualUuid: json['individual_uuid'] as String,
       videoUuid: json['video_uuid'] as String,
       personObjectUuid: json['person_object_uuid'] as String,
+      mvrPeopleUuid: json['mvr_people_uuid'] as String?,
       startTimestamp: DateTime.parse(json['start_timestamp'] as String),
       endTimestamp: DateTime.parse(json['end_timestamp'] as String),
       entryBbox: (json['entry_bbox'] as List?)?.map((e) => (e as num).toDouble()).toList(),
@@ -428,6 +431,7 @@ class IndividualAppearance {
       individualUuid: json['individual_uuid'] as String,
       videoUuid: json['video_uuid'] as String? ?? '',
       personObjectUuid: json['individual_uuid'] as String, // Use individual_uuid if person_object not available
+      mvrPeopleUuid: json['mvr_people_uuid'] as String?,
       startTimestamp: json['first_seen_timestamp'] != null 
           ? DateTime.parse(json['first_seen_timestamp'] as String)
           : DateTime.now(),
@@ -760,5 +764,39 @@ class MergedMVRPerson {
       if (mergedIntoMvrUuid != null) 'merged_into_mvr_uuid': mergedIntoMvrUuid,
       'similarity_to_featured': similarityToFeatured,
     };
+  }
+}
+
+/// Summary of one merge group returned by the hierarchical merge endpoint.
+/// Used to populate the post-search merge-undo banner and review sheet.
+class MergeGroupSummary {
+  /// The winning super-individual UUID.
+  final String superIndividualUuid;
+
+  /// UUIDs of the orphaned (child) MVR records merged into the super-individual.
+  final List<String> mergedMvrUuids;
+
+  /// Similarity score used to justify each child's merge, keyed by child UUID.
+  final Map<String, double> similarities;
+
+  MergeGroupSummary({
+    required this.superIndividualUuid,
+    required this.mergedMvrUuids,
+    required this.similarities,
+  });
+
+  int get mergedCount => mergedMvrUuids.length;
+
+  factory MergeGroupSummary.fromJson(Map<String, dynamic> json) {
+    final rawSims = json['similarities'] as Map<String, dynamic>? ?? {};
+    return MergeGroupSummary(
+      superIndividualUuid: json['super_individual_uuid'] as String,
+      mergedMvrUuids: (json['merged_mvr_uuids'] as List<dynamic>? ?? [])
+          .map((e) => e.toString())
+          .toList(),
+      similarities: rawSims.map(
+        (k, v) => MapEntry(k, (v as num).toDouble()),
+      ),
+    );
   }
 }

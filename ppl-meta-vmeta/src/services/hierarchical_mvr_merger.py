@@ -138,7 +138,8 @@ class HierarchicalMVRMerger:
         self,
         mvr_uuids: List[UUID],
         similarity_threshold: float = 0.70,
-        min_similarity_check: float = 0.50
+        min_similarity_check: float = 0.50,
+        force_merge: bool = False
     ) -> Dict[str, Any]:
         """
         Perform hierarchical merging of MVR People.
@@ -147,6 +148,9 @@ class HierarchicalMVRMerger:
             mvr_uuids: List of MVR UUIDs to merge
             similarity_threshold: Minimum similarity to merge (default 0.70)
             min_similarity_check: Skip comparisons below this (optimization)
+            force_merge: When True, bypass similarity checks and merge all
+                         provided UUIDs into one group unconditionally.
+                         Intended for user-initiated manual merges.
             
         Returns:
             Dict containing:
@@ -157,7 +161,7 @@ class HierarchicalMVRMerger:
         try:
             logger.info(
                 f"Starting hierarchical merge of {len(mvr_uuids)} MVR people "
-                f"(threshold: {similarity_threshold})"
+                f"(threshold: {similarity_threshold}, force_merge: {force_merge})"
             )
             
             # Step 1: Fetch all MVR people with embeddings
@@ -175,18 +179,33 @@ class HierarchicalMVRMerger:
                     }
                 }
             
-            # Step 2: Calculate similarity matrix
-            similarity_matrix = await self._calculate_similarity_matrix(
-                mvr_people,
-                min_similarity=min_similarity_check
-            )
-            
-            # Step 3: Find merge groups using Union-Find
-            merge_groups = self._find_merge_groups(
-                mvr_people,
-                similarity_matrix,
-                similarity_threshold
-            )
+            if force_merge:
+                # User-initiated manual merge: skip similarity checks entirely
+                # and treat all provided MVRs as one group.
+                logger.info(
+                    f"force_merge=True — bypassing similarity matrix; "
+                    f"treating all {len(mvr_people)} MVR people as one group"
+                )
+                mvr_people_sorted = sorted(
+                    mvr_people, key=lambda x: x["quality_score"], reverse=True
+                )
+                merge_groups = [mvr_people_sorted] if len(mvr_people_sorted) > 1 else [[mvr_people_sorted[0]]]
+                # Provide a dummy similarity matrix so _merge_group can still
+                # attach similarities to the metadata (use 0.0 for all pairs).
+                similarity_matrix: Dict = {}
+            else:
+                # Step 2: Calculate similarity matrix
+                similarity_matrix = await self._calculate_similarity_matrix(
+                    mvr_people,
+                    min_similarity=min_similarity_check
+                )
+                
+                # Step 3: Find merge groups using Union-Find
+                merge_groups = self._find_merge_groups(
+                    mvr_people,
+                    similarity_matrix,
+                    similarity_threshold
+                )
             
             logger.info(
                 f"Found {len(merge_groups)} merge groups from "
