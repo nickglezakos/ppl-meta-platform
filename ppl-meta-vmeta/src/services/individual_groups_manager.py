@@ -152,10 +152,16 @@ class IndividualGroupsManager:
             IndividualGroup if found, None otherwise
         """
         query = """
-        SELECT id, name, description, created_by, created_at, updated_at,
-               member_count, member_ids, visibility, tags, cover_individual_id, metadata
-        FROM individual_groups
-        WHERE id = $1
+        SELECT ig.id, ig.name, ig.description, ig.created_by, ig.created_at, ig.updated_at,
+               COALESCE(gm.cnt, 0) AS member_count,
+               ig.member_ids, ig.visibility, ig.tags, ig.cover_individual_id, ig.metadata
+        FROM individual_groups ig
+        LEFT JOIN (
+            SELECT group_id, COUNT(*) AS cnt
+            FROM group_memberships
+            GROUP BY group_id
+        ) gm ON gm.group_id = ig.id
+        WHERE ig.id = $1
         """
         
         async with self.db.pool.acquire() as conn:
@@ -243,11 +249,17 @@ class IndividualGroupsManager:
         
         # Main query
         query = f"""
-        SELECT id, name, description, created_by, created_at, updated_at,
-               member_count, member_ids, visibility, tags, cover_individual_id, metadata
-        FROM individual_groups
+        SELECT ig.id, ig.name, ig.description, ig.created_by, ig.created_at, ig.updated_at,
+               COALESCE(gm.cnt, 0) AS member_count,
+               ig.member_ids, ig.visibility, ig.tags, ig.cover_individual_id, ig.metadata
+        FROM individual_groups ig
+        LEFT JOIN (
+            SELECT group_id, COUNT(*) AS cnt
+            FROM group_memberships
+            GROUP BY group_id
+        ) gm ON gm.group_id = ig.id
         {where_clause}
-        ORDER BY updated_at DESC
+        ORDER BY ig.updated_at DESC
         LIMIT ${param_counter} OFFSET ${param_counter + 1}
         """
         params.extend([limit, skip])
@@ -599,7 +611,9 @@ class IndividualGroupsManager:
                 
                 removed_count = int(result.split()[-1])
                 
-                # Update group member_ids
+                # Update group member_ids and recompute member_count from
+                # group_memberships (the source of truth) rather than using a
+                # relative decrement, so any prior desync is corrected here.
                 await conn.execute(
                     """
                     UPDATE individual_groups
@@ -608,12 +622,13 @@ class IndividualGroupsManager:
                         EXCEPT
                         SELECT unnest($1::text[])
                     ),
-                    member_count = member_count - $2,
-                    updated_at = $3
-                    WHERE id = $4
+                    member_count = (
+                        SELECT COUNT(*) FROM group_memberships WHERE group_id = $3
+                    ),
+                    updated_at = $2
+                    WHERE id = $3
                     """,
                     individual_ids,
-                    removed_count,
                     datetime.utcnow(),
                     group_id,
                 )
@@ -898,7 +913,29 @@ class IndividualGroupsManager:
                     logger.info(
                         f"Replaced orphaned member {orphaned_id[:8]} with "
                         f"super-individual {super_id[:8]} in group {group_id}"
-                    )    
+                    )
+
+            # Recompute member_ids and member_count from group_memberships so
+            # both deletions and replacements above are reflected in the group record.
+            await conn.execute(
+                """
+                UPDATE individual_groups
+                SET member_ids = COALESCE(
+                    (SELECT array_agg(individual_id) FROM group_memberships WHERE group_id = $1),
+                    '{}'
+                ),
+                member_count = (
+                    SELECT COUNT(*) FROM group_memberships WHERE group_id = $1
+                ),
+                updated_at = NOW()
+                WHERE id = $1
+                """,
+                group_id,
+            )
+            logger.info(
+                f"Resynced member_count/member_ids for group {group_id} after orphan cleanup"
+            )
+
     async def _persist_individual_appearances(self, conn, individual_uuid: str):
         """
         Persist individual appearance data from person objects to the database.
