@@ -360,6 +360,13 @@ class MediaService:
                     )
                     print(f"🔍 DEBUG: Collection filter applied successfully")
 
+        # Apply archive filter
+        if search_request.is_archived is not None:
+            query = query.filter(Media.is_archived == search_request.is_archived)
+        else:
+            # Default behavior: exclude archived items
+            query = query.filter(Media.is_archived.is_(False))
+
         # Apply sorting
         query = query.order_by(desc(Media.created_at))
 
@@ -530,6 +537,38 @@ class MediaService:
         )
 
         return media
+
+    async def bulk_restore_media(self, media_ids: List[str], user_id: UUID) -> dict:
+        """Bulk restore archived media items with per-item result tracking."""
+
+        restored_ids = []
+        failed_ids = []
+
+        for media_id in media_ids:
+            try:
+                result = await self.restore_archived_media(media_id, user_id)
+                if result:
+                    restored_ids.append(media_id)
+                else:
+                    failed_ids.append(media_id)
+            except Exception:
+                failed_ids.append(media_id)
+
+        logger.info(
+            "Bulk media restore completed",
+            requested_count=len(media_ids),
+            restored_count=len(restored_ids),
+            failed_count=len(failed_ids),
+            user_id=str(user_id),
+        )
+
+        return {
+            "success": len(failed_ids) == 0,
+            "restored": len(restored_ids),
+            "failed": len(failed_ids),
+            "restored_ids": restored_ids,
+            "failed_ids": failed_ids,
+        }
 
     async def bulk_delete_media(self, media_ids: List[str], user_id: UUID) -> dict:
         """Bulk soft delete media items with per-item result tracking."""

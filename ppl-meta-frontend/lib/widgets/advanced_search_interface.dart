@@ -430,6 +430,11 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
           
           // Sort options
           _buildSortOptions(),
+          
+          const SizedBox(height: AppSpacing.md),
+          
+          // Archive filter
+          _buildArchiveFilter(),
         ],
       ),
     );
@@ -846,6 +851,40 @@ class _AdvancedSearchInterfaceState extends State<AdvancedSearchInterface>
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+
+  /// Build archive filter toggle
+  Widget _buildArchiveFilter() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Archive',
+          style: AppTextStyles.labelLarge,
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        FilterChip(
+          label: const Text('Show Archived'),
+          selected: _filters.isArchived == true,
+          onSelected: (selected) {
+            setState(() {
+              _filters = _filters.copyWith(
+                isArchived: selected ? true : null,
+              );
+            });
+          },
+          selectedColor: Colors.orange.withOpacity(0.2),
+          checkmarkColor: Colors.orange,
+          avatar: Icon(
+            Icons.archive_outlined,
+            size: 16,
+            color: _filters.isArchived == true
+                ? Colors.orange
+                : AppColors.textSecondary,
+          ),
         ),
       ],
     );

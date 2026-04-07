@@ -364,6 +364,9 @@ class MediaSearchFilters {
   @JsonKey(name: 'has_thumbnail')
   final bool? hasThumbnail;
 
+  @JsonKey(name: 'is_archived')
+  final bool? isArchived;
+
   const MediaSearchFilters({
     this.query,
     this.mediaType,
@@ -377,6 +380,7 @@ class MediaSearchFilters {
     this.minFileSize,
     this.maxFileSize,
     this.hasThumbnail,
+    this.isArchived,
   });
 
   factory MediaSearchFilters.fromJson(Map<String, dynamic> json) => _$MediaSearchFiltersFromJson(json);
@@ -396,6 +400,7 @@ class MediaSearchFilters {
     int? minFileSize,
     int? maxFileSize,
     bool? hasThumbnail,
+    bool? isArchived,
   }) {
     return MediaSearchFilters(
       query: query ?? this.query,
@@ -410,6 +415,7 @@ class MediaSearchFilters {
       minFileSize: minFileSize ?? this.minFileSize,
       maxFileSize: maxFileSize ?? this.maxFileSize,
       hasThumbnail: hasThumbnail ?? this.hasThumbnail,
+      isArchived: isArchived ?? this.isArchived,
     );
   }
 
@@ -424,7 +430,8 @@ class MediaSearchFilters {
            collectionIds != null && collectionIds!.isNotEmpty ||
            minFileSize != null ||
            maxFileSize != null ||
-           hasThumbnail != null;
+           hasThumbnail != null ||
+           isArchived != null;
   }
 
   /// Clear all filters

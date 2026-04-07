@@ -250,6 +250,53 @@ class MediaApiClient {
     }
   }
 
+  /// Restore a single archived media item
+  Future<ApiResponse<MediaItem>> restoreMedia(String mediaId) async {
+    try {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      final response = await _apiClient.post(
+        '/api/v1/media/$mediaId/restore',
+        data: FormData.fromMap({'user_id': userId}),
+      );
+
+      return ApiResponse.success(MediaItem.fromJson(response.data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  /// Bulk restore multiple archived media items
+  Future<ApiResponse<Map<String, dynamic>>> bulkRestoreMedia(
+    List<String> mediaIds,
+  ) async {
+    try {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      final response = await _apiClient.post(
+        '/api/v1/media/bulk-restore',
+        data: FormData.fromMap({
+          'media_ids': mediaIds.join(','),
+          'user_id': userId,
+        }),
+      );
+
+      return ApiResponse.success(Map<String, dynamic>.from(response.data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   /// Download media file
   Future<ApiResponse<void>> downloadMedia(String mediaId, String filename) async {
     try {
@@ -540,6 +587,8 @@ class MediaApiClient {
             'sort_by': filters.sortBy,
           if (filters.sortOrder != null) 
             'sort_order': filters.sortOrder,
+          if (filters.isArchived != null)
+            'is_archived': filters.isArchived.toString(),
         },
       };
 
@@ -552,7 +601,6 @@ class MediaApiClient {
       // The backend returns a list directly, not wrapped in a response object
       final items = (response.data as List)
           .map((json) => MediaItem.fromJson(json))
-          .where((item) => !item.isArchived) // Filter out archived (deleted) items
           .toList();
       
       // Create MediaListResponse with the items (simplified without JSON serialization)
@@ -603,7 +651,6 @@ class MediaApiClient {
             print('DEBUG: Parsing collection MediaItem from: ${json['original_filename']}');
             return MediaItem.fromJson(json);
           })
-          .where((item) => !item.isArchived) // Filter out archived (deleted) items
           .toList();
       
       print('DEBUG: MediaApiClient _getCollectionItems - parsed ${items.length} items for collection $collectionId');

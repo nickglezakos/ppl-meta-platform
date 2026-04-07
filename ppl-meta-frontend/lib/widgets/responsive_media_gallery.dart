@@ -118,6 +118,7 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
         collectionIds: widget.filters?.collectionIds,
         sortBy: widget.filters?.sortBy ?? 'created_at',
         sortOrder: widget.filters?.sortOrder ?? 'desc',
+        filters: widget.filters,
         page: _currentPage,
         limit: widget.itemsPerPage,
       );
@@ -238,6 +239,44 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
     widget.onSelectionChanged?.call(_items);
   }
 
+  /// Restore selected archived items
+  Future<void> _restoreSelected() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Restore Media'),
+        content: Text('Restore ${_selectedItems.length} item(s) from archive?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final result = await _apiClient.bulkRestoreMedia(_selectedItems.toList());
+    if (result.success && result.data != null) {
+      final restoredCount = result.data!['restored'] ?? 0;
+      _clearSelection();
+      await _refreshItems();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$restoredCount item(s) restored')),
+        );
+      }
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Failed to restore items')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -246,6 +285,29 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
         
         return Column(
           children: [
+            // Archive view banner
+            if (widget.filters?.isArchived == true)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: AppSpacing.sm,
+                ),
+                color: Colors.orange.withOpacity(0.15),
+                child: Row(
+                  children: [
+                    const Icon(Icons.archive_outlined, size: 18, color: Colors.orange),
+                    const SizedBox(width: AppSpacing.sm),
+                    Text(
+                      'Viewing archived items',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // Selection bar
             if (widget.enableSelection && _selectedItems.isNotEmpty)
               _buildSelectionBar(),
@@ -262,6 +324,8 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
 
   /// Build selection bar
   Widget _buildSelectionBar() {
+    final isArchiveView = widget.filters?.isArchived == true;
+
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: const BoxDecoration(
@@ -280,6 +344,20 @@ class ResponsiveMediaGalleryState extends State<ResponsiveMediaGallery> {
             ),
           ),
           const Spacer(),
+          if (isArchiveView)
+            TextButton.icon(
+              onPressed: _selectedItems.isNotEmpty ? _restoreSelected : null,
+              icon: Icon(
+                Icons.restore,
+                color: AppColors.textOnPrimary,
+              ),
+              label: Text(
+                'Restore',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textOnPrimary,
+                ),
+              ),
+            ),
           TextButton(
             onPressed: _selectAll,
             child: Text(

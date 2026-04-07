@@ -1475,14 +1475,19 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   }
 
   /// Open item details
-  void _openItemDetails(MediaItem item) {
-    showDialog(
+  void _openItemDetails(MediaItem item) async {
+    final result = await showDialog(
       context: context,
       builder: (context) => MediaDetailsDialog(
         item: item,
         collectionId: _selectedCollection?.uuid, // Pass collection ID
       ),
     );
+    if (result == 'deleted' && mounted) {
+      setState(() {
+        _mediaGallery = null; // Force gallery rebuild to reflect deletion
+      });
+    }
   }
 
   /// Remove selected items from collection

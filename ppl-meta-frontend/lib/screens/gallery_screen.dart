@@ -241,11 +241,14 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
   }
 
   /// Open item details
-  void _openItemDetails(MediaItem item) {
-    showDialog(
+  void _openItemDetails(MediaItem item) async {
+    final result = await showDialog(
       context: context,
       builder: (context) => MediaDetailsDialog(item: item),
     );
+    if (result == 'deleted') {
+      _galleryKey.currentState?.refresh();
+    }
   }
 
   /// Share selected items

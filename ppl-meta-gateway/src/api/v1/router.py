@@ -564,9 +564,27 @@ async def get_media_analytics(request: Request):
         }
 
 
+@api_router.post("/media/bulk-restore")
+async def bulk_restore_media(request: Request):
+    """Proxy bulk restore archived media to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/media/{media_id}")
 async def get_media(request: Request):
     """Proxy get media to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/media/{media_id}/archive")
+async def archive_media(request: Request):
+    """Proxy archive media to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/media/{media_id}/restore")
+async def restore_media(request: Request):
+    """Proxy restore archived media to Media service."""
     return await _proxy_to_media_service(request)
 
 

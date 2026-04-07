@@ -27,9 +27,11 @@ http://192.168.21.253:8000
 fresh.user@example.com
 NewPassword234!
 
+
 curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!' 
+
 
 192.168.1.68
 8006
@@ -358,3 +360,26 @@ nto_mvr_uuid ORDER BY imm.individual_uuid;"
  b267c423-0fdc-48f1-974a-ecce102b2502 | 6393ebe2-d9ee-475d-ba17-1365a560c907 | t           | female |      32 |      42 | f89e21a5-3113-415b-860c-d809f0a978d2 | t               | female        |             31 |             41
 (5 rows)
 
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  TOKEN=$(curl -s -X POST 'http://local
+host:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'userna
+me=fresh.user@example.com&password=NewPassword234!' | python3 -c "import sys,json; print(json
+.load(sys.stdin)['access_token'])" 2>/dev/null)
+(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % curl -s "http://localhost:8002/person-
+objects/95ab35ff-0cd7-4923-95d5-db758f1726b9" -H "Authorization: Bearer $TOKEN" | python3 -c 
+"
+pipe dquote> import sys,json
+pipe dquote> d=json.load(sys.stdin)
+pipe dquote> print('success:', d.get('success'))
+pipe dquote> groups = d.get('person_groups', [])
+pipe dquote> print('groups:', len(groups))
+pipe dquote> for g in groups:
+pipe dquote>     pts = g.get('movement_tracking',{}).get('route_points',[])
+pipe dquote>     print(f'  group person_uuid={g.get(\"person_uuid\",\"?\")} route_points={len
+(pts)}')
+pipe dquote> " 2>&1
+success: True
+groups: 2
+  group person_uuid=af637a87-5cc9-42b0-a8a5-5ca723de8573 route_points=81
+  group person_uuid=6562aae3-d37d-46e6-a1b5-695347001bcc route_points=1
+
+  

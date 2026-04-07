@@ -519,6 +519,7 @@ async def search_media(
     device_name: Optional[str] = None,
     device_manufacturer: Optional[str] = None,
     is_public: Optional[bool] = None,
+    is_archived: Optional[bool] = None,
     start_date: Optional[str] = None,  # ISO 8601 date string
     end_date: Optional[str] = None,  # ISO 8601 date string
     start_time: Optional[str] = None,  # Alias for start_date (vmeta compatibility)
@@ -599,6 +600,7 @@ async def search_media(
             tags=tags.split(",") if tags else None,
             categories=categories.split(",") if categories else None,
             is_public=is_public,
+            is_archived=is_archived,
             date_from=parsed_start_date,
             date_to=parsed_end_date,
             collection_id=effective_collection_id,
@@ -1125,6 +1127,24 @@ async def reorder_collection_items(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
+@router.post("/bulk-restore")
+async def bulk_restore_media(
+    media_ids: str = Form(...),
+    user_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Bulk restore archived media items."""
+    try:
+        media_service = MediaService(db)
+        parsed_ids = [mid.strip() for mid in media_ids.split(",") if mid.strip()]
+
+        result = await media_service.bulk_restore_media(parsed_ids, UUID(user_id))
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.get("/{media_id}", response_model=MediaResponse)
 async def get_media(
     media_id: str,
@@ -1175,6 +1195,62 @@ async def delete_media(
             )
 
         return {"message": "Media deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{media_id}/archive")
+async def archive_media(
+    media_id: str,
+    user_id: str = Form(...),
+    archive_reason: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Archive a media item."""
+    try:
+        media_service = MediaService(db)
+        media = await media_service.archive_media(
+            media_id, UUID(user_id), archive_reason=archive_reason
+        )
+
+        if not media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        return {"message": "Media archived successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.post("/{media_id}/restore", response_model=MediaResponse)
+async def restore_archived_media(
+    media_id: str,
+    user_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Restore archived media back to live state."""
+    try:
+        media_service = MediaService(db)
+        media = await media_service.restore_archived_media(media_id, UUID(user_id))
+
+        if not media:
+            raise HTTPException(
+                status_code=404, detail="Media not found or access denied"
+            )
+
+        media_response = MediaResponse.model_validate(media)
+        urls = media_service.generate_media_urls(media)
+        media_response.thumbnail_url = urls["thumbnail_url"]
+        media_response.url = urls["url"]
+
+        return media_response
 
     except HTTPException:
         raise

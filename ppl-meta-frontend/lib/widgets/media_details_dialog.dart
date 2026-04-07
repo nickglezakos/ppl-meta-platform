@@ -814,7 +814,7 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
       
       if (response.success) {
         _showSuccessSnackBar('Media deleted successfully!');
-        Navigator.of(context).pop(); // Close dialog
+        Navigator.of(context).pop('deleted'); // Signal deletion to caller
       } else {
         _showErrorSnackBar('Delete failed: ${response.error}');
       }
