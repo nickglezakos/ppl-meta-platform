@@ -9,6 +9,7 @@ from .collection_storage import (
     MediaArchiveStatus,
     UserStoragePreferences,
 )
+from .storage_location import LocationType, StorageLocation, StorageTier
 from .media import (
     Media,
     MediaCollection,
@@ -56,6 +57,9 @@ __all__ = [
     "CollectionStorageUsage",
     "MediaArchiveStatus",
     "UserStoragePreferences",
+    "StorageLocation",
+    "LocationType",
+    "StorageTier",
     "MediaWorkflow",
     "LoopMode",
     "PlaybackCommand",

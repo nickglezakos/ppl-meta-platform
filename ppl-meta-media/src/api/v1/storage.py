@@ -9,16 +9,23 @@ from sqlalchemy.orm import Session
 
 from ...auth import AuthUser, get_current_user
 from ...database import get_db
+from ...models.storage_location import LocationType, StorageTier
 from ...schemas.storage import (
     CollectionStorageConfigResponse,
     StorageCleanupRequest,
     StorageCleanupResponse,
+    StorageDashboardResponse,
+    StorageLocationCreate,
+    StorageLocationResponse,
+    StorageLocationUpdate,
+    StorageLocationVerifyResponse,
     StorageRecommendationResponse,
     StorageUsageSummaryResponse,
     UserStoragePreferencesResponse,
     UserStoragePreferencesUpdate,
 )
 from ...services.collection_storage_service import CollectionStorageConfigService
+from ...services.storage_location_service import StorageLocationService
 from ...services.user_storage_preferences_service import UserStoragePreferencesService
 
 router = APIRouter(prefix="/users", tags=["storage"])
@@ -305,3 +312,241 @@ async def dismiss_storage_notification(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to dismiss notification: {str(e)}",
         )
+
+
+# ── Storage Location Endpoints ───────────────────────────────────────
+
+
+@router.get("/storage/locations", response_model=List[StorageLocationResponse])
+async def list_storage_locations(
+    current_user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """List all storage locations for the current user."""
+    service = StorageLocationService(db)
+    locations = await service.list_locations(UUID(current_user.user_id))
+
+    return [
+        StorageLocationResponse(
+            uuid=loc.uuid,
+            user_id=loc.user_id,
+            name=loc.name,
+            location_type=loc.location_type.value,
+            base_path=loc.base_path,
+            tier=loc.tier.value,
+            is_active=loc.is_active,
+            is_default=loc.is_default,
+            total_capacity_bytes=loc.total_capacity_bytes,
+            used_bytes=loc.used_bytes,
+            file_count=loc.file_count,
+            usage_percentage=loc.usage_percentage,
+            used_gb=loc.used_gb,
+            total_capacity_gb=loc.total_capacity_gb,
+            free_gb=loc.free_gb,
+            mount_verified=loc.mount_verified,
+            last_verified_at=loc.last_verified_at,
+            created_at=loc.created_at,
+            updated_at=loc.updated_at,
+        )
+        for loc in locations
+    ]
+
+
+@router.post("/storage/locations", response_model=StorageLocationResponse, status_code=201)
+async def create_storage_location(
+    body: StorageLocationCreate,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Add a new storage location."""
+    service = StorageLocationService(db)
+
+    try:
+        location = await service.create_location(
+            user_id=UUID(current_user.user_id),
+            name=body.name,
+            location_type=LocationType(body.location_type),
+            base_path=body.base_path,
+            tier=StorageTier(body.tier),
+            is_default=body.is_default,
+            cloud_config=body.cloud_config,
+        )
+        return StorageLocationResponse(
+            uuid=location.uuid,
+            user_id=location.user_id,
+            name=location.name,
+            location_type=location.location_type.value,
+            base_path=location.base_path,
+            tier=location.tier.value,
+            is_active=location.is_active,
+            is_default=location.is_default,
+            total_capacity_bytes=location.total_capacity_bytes,
+            used_bytes=location.used_bytes,
+            file_count=location.file_count,
+            usage_percentage=location.usage_percentage,
+            used_gb=location.used_gb,
+            total_capacity_gb=location.total_capacity_gb,
+            free_gb=location.free_gb,
+            mount_verified=location.mount_verified,
+            last_verified_at=location.last_verified_at,
+            created_at=location.created_at,
+            updated_at=location.updated_at,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create storage location: {str(e)}",
+        )
+
+
+@router.get("/storage/locations/summary", response_model=StorageDashboardResponse)
+async def get_storage_dashboard(
+    current_user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Get full storage dashboard with all locations, usage, and alerts."""
+    service = StorageLocationService(db)
+    user_id = UUID(current_user.user_id)
+
+    summary = await service.get_summary(user_id)
+    alerts = await service.get_alerts(user_id)
+    summary["alerts"] = alerts
+
+    return StorageDashboardResponse(**summary)
+
+
+@router.get("/storage/locations/{location_id}", response_model=StorageLocationResponse)
+async def get_storage_location(
+    location_id: UUID,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get details for a single storage location."""
+    service = StorageLocationService(db)
+    location = await service.get_location(UUID(current_user.user_id), location_id)
+
+    if not location:
+        raise HTTPException(status_code=404, detail="Storage location not found")
+
+    return StorageLocationResponse(
+        uuid=location.uuid,
+        user_id=location.user_id,
+        name=location.name,
+        location_type=location.location_type.value,
+        base_path=location.base_path,
+        tier=location.tier.value,
+        is_active=location.is_active,
+        is_default=location.is_default,
+        total_capacity_bytes=location.total_capacity_bytes,
+        used_bytes=location.used_bytes,
+        file_count=location.file_count,
+        usage_percentage=location.usage_percentage,
+        used_gb=location.used_gb,
+        total_capacity_gb=location.total_capacity_gb,
+        free_gb=location.free_gb,
+        mount_verified=location.mount_verified,
+        last_verified_at=location.last_verified_at,
+        created_at=location.created_at,
+        updated_at=location.updated_at,
+    )
+
+
+@router.put("/storage/locations/{location_id}", response_model=StorageLocationResponse)
+async def update_storage_location(
+    location_id: UUID,
+    body: StorageLocationUpdate,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update a storage location."""
+    service = StorageLocationService(db)
+    updates = body.dict(exclude_unset=True)
+
+    location = await service.update_location(
+        UUID(current_user.user_id), location_id, updates
+    )
+    if not location:
+        raise HTTPException(status_code=404, detail="Storage location not found")
+
+    return StorageLocationResponse(
+        uuid=location.uuid,
+        user_id=location.user_id,
+        name=location.name,
+        location_type=location.location_type.value,
+        base_path=location.base_path,
+        tier=location.tier.value,
+        is_active=location.is_active,
+        is_default=location.is_default,
+        total_capacity_bytes=location.total_capacity_bytes,
+        used_bytes=location.used_bytes,
+        file_count=location.file_count,
+        usage_percentage=location.usage_percentage,
+        used_gb=location.used_gb,
+        total_capacity_gb=location.total_capacity_gb,
+        free_gb=location.free_gb,
+        mount_verified=location.mount_verified,
+        last_verified_at=location.last_verified_at,
+        created_at=location.created_at,
+        updated_at=location.updated_at,
+    )
+
+
+@router.delete("/storage/locations/{location_id}")
+async def delete_storage_location(
+    location_id: UUID,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a storage location. Fails if files still reference it."""
+    service = StorageLocationService(db)
+
+    try:
+        deleted = await service.delete_location(UUID(current_user.user_id), location_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Storage location not found")
+        return {"message": "Storage location deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@router.post(
+    "/storage/locations/{location_id}/verify",
+    response_model=StorageLocationVerifyResponse,
+)
+async def verify_storage_location(
+    location_id: UUID,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Verify a storage location is accessible and update capacity."""
+    service = StorageLocationService(db)
+    result = await service.verify_location(UUID(current_user.user_id), location_id)
+
+    if "error" in result and result.get("error") == "Location not found":
+        raise HTTPException(status_code=404, detail="Storage location not found")
+
+    return StorageLocationVerifyResponse(**result)
+
+
+@router.post("/storage/locations/{location_id}/set-default")
+async def set_default_storage_location(
+    location_id: UUID,
+    current_user: AuthUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Set a storage location as the default for its tier."""
+    service = StorageLocationService(db)
+    location = await service.set_default(UUID(current_user.user_id), location_id)
+
+    if not location:
+        raise HTTPException(status_code=404, detail="Storage location not found")
+
+    return {"message": f"'{location.name}' set as default {location.tier.value} location"}
+
+
+@router.get("/storage/alerts")
+async def get_storage_alerts(
+    current_user: AuthUser = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """Get active storage alerts/warnings."""
+    service = StorageLocationService(db)
+    alerts = await service.get_alerts(UUID(current_user.user_id))
+    return {"alerts": alerts}

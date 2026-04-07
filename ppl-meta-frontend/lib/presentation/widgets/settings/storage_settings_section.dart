@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/storage_service.dart';
 import '../../../models/storage_preferences.dart';
 import '../../../core/theme/app_theme.dart';
+import 'storage_dashboard_section.dart';
 
 /// Provider for fetching storage preferences
 final storagePreferencesProvider = FutureProvider<UserStoragePreferences>((ref) async {
@@ -42,6 +43,8 @@ class _StorageSettingsSectionState extends ConsumerState<StorageSettingsSection>
         children: [
           _buildSectionHeader(),
           const SizedBox(height: 16),
+          const StorageDashboardSection(),
+          const SizedBox(height: 24),
           _buildStorageSettings(context, storageState),
         ],
       ),

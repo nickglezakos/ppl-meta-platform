@@ -27,6 +27,7 @@ from ..models.media import (
     MediaVariant,
     ProcessingStatus,
 )
+from ..models.storage_location import StorageTier
 from ..schemas.media import MediaSearchRequest, MediaUploadRequest
 from .exif_extractor import ExifExtractor
 from .video_metadata_extractor import VideoMetadataExtractor
@@ -125,6 +126,22 @@ class MediaService:
             location_data=location_data,
             capture_timestamp=capture_timestamp,
         )
+
+        # Resolve storage location and set storage_uri
+        try:
+            from .storage_location_service import StorageLocationService
+            loc_service = StorageLocationService(self.db)
+            import asyncio
+            default_loc = await loc_service.get_default_location(
+                upload_request.user_id, StorageTier.ACTIVE
+            )
+            if default_loc:
+                media.storage_location_id = default_loc.uuid
+                media.storage_uri = f"{default_loc.uri_scheme}{default_loc.base_path}/{storage_path}"
+            else:
+                media.storage_uri = f"file://{storage_path}"
+        except Exception:
+            media.storage_uri = f"file://{storage_path}"
 
         self.db.add(media)
         self.db.commit()

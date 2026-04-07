@@ -61,6 +61,10 @@ class Media(BaseModel):
     # File properties
     file_size = Column(Integer, nullable=False)  # bytes
     file_path = Column(String(500), nullable=False)  # relative path
+    storage_uri = Column(String(1000), nullable=True)  # full URI (file://, s3://, etc.)
+    storage_location_id = Column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )  # FK to storage_locations
     checksum = Column(String(64), nullable=False, index=True)  # SHA256 hash
     storage_provider = Column(SQLEnum(StorageProvider), default=StorageProvider.LOCAL)
 

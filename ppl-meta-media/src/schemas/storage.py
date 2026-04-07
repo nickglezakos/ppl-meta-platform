@@ -353,3 +353,105 @@ class StorageUsageSummaryResponse(BaseModel):
     """Response containing storage usage summary."""
 
     summary: StorageUsageSummary
+
+
+# ── Storage Location Schemas ──────────────────────────────────────────
+
+
+class StorageLocationCreate(BaseModel):
+    """Schema for creating a storage location."""
+
+    name: str = Field(..., min_length=1, max_length=255)
+    location_type: str = Field(
+        ..., description="local_disk | external_drive | cloud_s3 | cloud_azure | cloud_gcp"
+    )
+    base_path: str = Field(..., min_length=1, max_length=1000)
+    tier: str = Field(default="active", description="active | archive")
+    is_default: bool = Field(default=False)
+    cloud_config: Optional[Dict[str, Any]] = None
+
+    @validator("location_type")
+    def validate_location_type(cls, v):
+        allowed = ["local_disk", "external_drive", "cloud_s3", "cloud_azure", "cloud_gcp"]
+        if v not in allowed:
+            raise ValueError(f"location_type must be one of: {allowed}")
+        return v
+
+    @validator("tier")
+    def validate_tier(cls, v):
+        if v not in ("active", "archive"):
+            raise ValueError("tier must be 'active' or 'archive'")
+        return v
+
+
+class StorageLocationUpdate(BaseModel):
+    """Schema for updating a storage location."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    base_path: Optional[str] = Field(None, min_length=1, max_length=1000)
+    tier: Optional[str] = None
+    is_default: Optional[bool] = None
+    cloud_config: Optional[Dict[str, Any]] = None
+
+    @validator("tier")
+    def validate_tier(cls, v):
+        if v is not None and v not in ("active", "archive"):
+            raise ValueError("tier must be 'active' or 'archive'")
+        return v
+
+
+class StorageLocationResponse(BaseModel):
+    """Schema for returning a storage location."""
+
+    uuid: UUID
+    user_id: UUID
+    name: str
+    location_type: str
+    base_path: str
+    tier: str
+    is_active: bool
+    is_default: bool
+    total_capacity_bytes: Optional[int] = None
+    used_bytes: int = 0
+    file_count: int = 0
+    usage_percentage: float = 0.0
+    used_gb: float = 0.0
+    total_capacity_gb: Optional[float] = None
+    free_gb: Optional[float] = None
+    mount_verified: bool = False
+    last_verified_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class StorageLocationVerifyResponse(BaseModel):
+    """Response from verifying a storage location."""
+
+    location_id: str
+    name: str
+    is_accessible: bool
+    total_bytes: Optional[int] = None
+    free_bytes: Optional[int] = None
+    error: Optional[str] = None
+
+
+class StorageDashboardResponse(BaseModel):
+    """Full storage dashboard data."""
+
+    total_capacity_bytes: Optional[int] = None
+    total_used_bytes: int = 0
+    total_files: int = 0
+    usage_percentage: float = 0.0
+    active_used_bytes: int = 0
+    active_files: int = 0
+    archive_used_bytes: int = 0
+    archive_files: int = 0
+    total_capacity_gb: Optional[float] = None
+    total_used_gb: float = 0.0
+    free_gb: Optional[float] = None
+    location_count: int = 0
+    locations: List[Dict[str, Any]] = []
+    alerts: List[Dict[str, Any]] = []

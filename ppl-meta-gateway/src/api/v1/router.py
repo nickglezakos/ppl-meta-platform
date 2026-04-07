@@ -334,6 +334,61 @@ async def update_user_storage_preferences(request: Request):
     return await _proxy_to_media_service(request)
 
 
+# Storage Location Routes (proxied to Media service)
+@api_router.get("/users/storage/locations/summary")
+async def get_storage_dashboard(request: Request):
+    """Proxy storage dashboard summary to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/users/storage/locations")
+async def list_storage_locations(request: Request):
+    """Proxy list storage locations to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/users/storage/locations")
+async def create_storage_location(request: Request):
+    """Proxy create storage location to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/users/storage/locations/{location_id}")
+async def get_storage_location(request: Request, location_id: str):
+    """Proxy get storage location to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.put("/users/storage/locations/{location_id}")
+async def update_storage_location(request: Request, location_id: str):
+    """Proxy update storage location to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.delete("/users/storage/locations/{location_id}")
+async def delete_storage_location(request: Request, location_id: str):
+    """Proxy delete storage location to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/users/storage/locations/{location_id}/verify")
+async def verify_storage_location(request: Request, location_id: str):
+    """Proxy verify storage location to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.post("/users/storage/locations/{location_id}/set-default")
+async def set_default_storage_location(request: Request, location_id: str):
+    """Proxy set default storage location to Media service."""
+    return await _proxy_to_media_service(request)
+
+
+@api_router.get("/users/storage/alerts")
+async def get_storage_alerts(request: Request):
+    """Proxy storage alerts to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.get("/test-profile")
 async def test_profile_endpoint():
     """Test endpoint to verify routing is working."""

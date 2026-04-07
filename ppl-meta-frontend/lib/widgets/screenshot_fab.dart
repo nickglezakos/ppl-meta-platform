@@ -43,9 +43,7 @@ class ScreenshotFAB extends StatelessWidget {
               ),
             ),
           );
-        );
-      },
-        } else if (context.mounted) {
+            } else if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('❌ Failed to capture screenshot'),
@@ -56,6 +54,8 @@ class ScreenshotFAB extends StatelessWidget {
       },
       tooltip: 'Capture Screenshot',
       child: const Icon(Icons.camera_alt),
+    );
+      },
     );
   }
 }
