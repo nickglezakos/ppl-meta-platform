@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/monitoring_providers.dart';
+import 'monitoring_charts_widget.dart';
 
 /// Unified monitoring summary widget for the dashboard overview tab.
 /// Displays aggregated metrics with manual refresh control.
@@ -52,6 +53,18 @@ class MonitoringSummaryWidget extends ConsumerWidget {
               ),
             ],
           ),
+          
+          const SizedBox(height: 24),
+          
+          // Charts Section
+          Text(
+            'Analytics',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          const MonitoringChartsWidget(),
         ],
       ),
     );
@@ -287,8 +300,6 @@ class MonitoringSummaryWidget extends ConsumerWidget {
   }
 
   Widget _buildHighLevelCard(BuildContext context, HighLevelWorkflows data) {
-    final isPlaceholder = data.note != null;
-    
     return Card(
       elevation: 1,
       child: Padding(
@@ -320,66 +331,45 @@ class MonitoringSummaryWidget extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 20),
-            if (isPlaceholder) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceVariant,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: AppColors.textSecondary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        data.note!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppColors.textSecondary,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ] else ...[
-              _buildMetricRow(
-                context,
-                'Active MVR Sessions',
-                data.activeMvrSessions.toString(),
-                Icons.play_arrow,
-                AppColors.secondary,
-              ),
-              const SizedBox(height: 12),
-              _buildMetricRow(
-                context,
-                'Total Individuals',
-                data.totalIndividuals.toString(),
-                Icons.person,
-                AppColors.textPrimary,
-              ),
-              const SizedBox(height: 12),
-              _buildMetricRow(
-                context,
-                'Person Objects (Today)',
-                data.personObjectsToday.toString(),
-                Icons.face_retouching_natural,
-                AppColors.success,
-              ),
-              const SizedBox(height: 12),
-              _buildMetricRow(
-                context,
-                'Cross-Video Matches',
-                data.crossVideoMatchesToday.toString(),
-                Icons.compare_arrows,
-                AppColors.primary,
-              ),
-            ],
+            _buildMetricRow(
+              context,
+              'Active MVR People',
+              data.totalIndividuals.toString(),
+              Icons.person,
+              AppColors.textPrimary,
+            ),
+            const SizedBox(height: 12),
+            _buildMetricRow(
+              context,
+              'MVR Created (Today)',
+              data.personObjectsToday.toString(),
+              Icons.face_retouching_natural,
+              AppColors.success,
+            ),
+            const SizedBox(height: 12),
+            _buildMetricRow(
+              context,
+              'Cross-Video Matches (Today)',
+              data.crossVideoMatchesToday.toString(),
+              Icons.compare_arrows,
+              AppColors.primary,
+            ),
+            const SizedBox(height: 12),
+            _buildMetricRow(
+              context,
+              'Total Merges (7d)',
+              data.totalMerges.toString(),
+              Icons.merge_type,
+              AppColors.secondary,
+            ),
+            const SizedBox(height: 12),
+            _buildMetricRow(
+              context,
+              'Total Mappings (7d)',
+              data.totalMappings.toString(),
+              Icons.link,
+              AppColors.info,
+            ),
           ],
         ),
       ),

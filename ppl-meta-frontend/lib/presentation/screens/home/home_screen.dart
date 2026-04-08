@@ -240,24 +240,6 @@ class HomeScreen extends ConsumerWidget {
                     childAspectRatio: childAspectRatio,
                     children: [
                       _ActionCard(
-                        icon: Icons.cloud_upload,
-                        iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Upload Media',
-                        subtitle: 'Upload photos and videos',
-                        onTap: () {
-                          context.go('/upload');
-                        },
-                      ),
-                      _ActionCard(
-                        icon: Icons.photo_library,
-                        iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'My Media',
-                        subtitle: 'View your uploads',
-                        onTap: () {
-                          context.go('/gallery');
-                        },
-                      ),
-                      _ActionCard(
                         icon: Icons.videocam,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Cameras',
@@ -276,12 +258,30 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
+                        icon: Icons.groups,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Individual Groups',
+                        subtitle: 'Organize people by groups',
+                        onTap: () {
+                          context.go('/individual-groups');
+                        },
+                      ),
+                      _ActionCard(
                         icon: Icons.analytics,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Analytics',
                         subtitle: 'View statistics',
                         onTap: () {
                           context.go('/analytics');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.precision_manufacturing,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Automation',
+                        subtitle: 'Manage automated triggers & actions',
+                        onTap: () {
+                          context.go('/triggers');
                         },
                       ),
                       _ActionCard(
@@ -303,21 +303,39 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.precision_manufacturing,
+                        icon: Icons.storage,
                         iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Automation',
-                        subtitle: 'Manage automated triggers & actions',
+                        title: 'Storage',
+                        subtitle: 'Manage storage locations & usage',
                         onTap: () {
-                          context.go('/triggers');
+                          context.go('/storage');
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.groups,
+                        icon: Icons.dns,
                         iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Individual Groups',
-                        subtitle: 'Organize people by groups',
+                        title: 'Network',
+                        subtitle: 'Network & service connections',
                         onTap: () {
-                          context.go('/individual-groups');
+                          context.go('/network');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.photo_library,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'My Media',
+                        subtitle: 'View your uploads',
+                        onTap: () {
+                          context.go('/gallery');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.cloud_upload,
+                        iconColor: AppColors.secondary, // Unified cyan color
+                        title: 'Upload Media',
+                        subtitle: 'Upload photos and videos',
+                        onTap: () {
+                          context.go('/upload');
                         },
                       ),
                     ],

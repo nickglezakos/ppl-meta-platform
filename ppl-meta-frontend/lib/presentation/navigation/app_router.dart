@@ -30,6 +30,8 @@ import '../../screens/signage_management_screen.dart';
 import '../../screens/triggers_screen.dart';
 import '../../screens/individual_groups_screen.dart';
 import '../../screens/individual_group_detail_screen.dart';
+import '../../screens/storage_screen.dart';
+import '../../screens/network_screen.dart';
 // ARCHIVED: import '../../features/cameras/pages/multi_camera_page.dart';
 import '../../models/media_models.dart';
 import '../../pages/workflow_widget_test_page.dart';
@@ -306,6 +308,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: IndividualGroupDetailScreen(groupId: groupId),
           );
         },
+      ),
+      GoRoute(
+        path: '/storage',
+        name: 'storage',
+        builder: (context, state) => const StorageScreen(),
+      ),
+      GoRoute(
+        path: '/network',
+        name: 'network',
+        builder: (context, state) => const NetworkScreen(),
       ),
       GoRoute(
         path: '/settings',

@@ -4855,6 +4855,86 @@ async def update_mvr_person_gender(
 
 
 # ============================================================================
+# ENDPOINT: Daily MVR Activity Stats (internal, no auth)
+# ============================================================================
+
+@router.get(
+    "/stats/daily",
+    response_class=JSONResponse,
+    summary="Daily MVR activity stats for monitoring",
+    description="Returns daily counts of MVR people created, merges, and cross-video matches over the last N days. Intended for internal service-to-service calls.",
+)
+async def get_mvr_daily_stats(
+    days: int = Query(default=7, ge=1, le=90, description="Number of days to look back"),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+):
+    """Internal stats endpoint for the monitoring dashboard."""
+    try:
+        async with mvr_repository.pool.acquire() as conn:
+            # MVR people created per day
+            created_rows = await conn.fetch("""
+                SELECT date_trunc('day', created_at)::date AS day,
+                       COUNT(*) AS count
+                FROM mvr_people
+                WHERE created_at >= NOW() - ($1 || ' days')::interval
+                  AND merged_into_mvr_uuid IS NULL
+                GROUP BY day
+                ORDER BY day
+            """, str(days))
+
+            # Merges per day (from merge hierarchy)
+            merge_rows = await conn.fetch("""
+                SELECT date_trunc('day', merge_timestamp)::date AS day,
+                       COUNT(*) AS count
+                FROM mvr_merge_hierarchy
+                WHERE merge_timestamp >= NOW() - ($1 || ' days')::interval
+                GROUP BY day
+                ORDER BY day
+            """, str(days))
+
+            # Cross-video individual appearances linked per day
+            mapping_rows = await conn.fetch("""
+                SELECT date_trunc('day', linked_at)::date AS day,
+                       COUNT(*) AS count
+                FROM individual_mvr_mapping
+                WHERE linked_at >= NOW() - ($1 || ' days')::interval
+                GROUP BY day
+                ORDER BY day
+            """, str(days))
+
+            # Total active MVR people
+            total_active = await conn.fetchval("""
+                SELECT COUNT(*) FROM mvr_people
+                WHERE merged_into_mvr_uuid IS NULL
+                  AND is_orphaned = FALSE
+            """) or 0
+
+        return {
+            "days": days,
+            "total_active_mvr_people": total_active,
+            "mvr_created_per_day": [
+                {"date": str(row["day"]), "count": row["count"]}
+                for row in created_rows
+            ],
+            "merges_per_day": [
+                {"date": str(row["day"]), "count": row["count"]}
+                for row in merge_rows
+            ],
+            "mappings_per_day": [
+                {"date": str(row["day"]), "count": row["count"]}
+                for row in mapping_rows
+            ],
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get MVR daily stats: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get MVR stats: {str(e)}"
+        )
+
+
+# ============================================================================
 # Router Export
 # ============================================================================
 

@@ -87,6 +87,8 @@ class HighLevelWorkflows {
   final int totalIndividuals;
   final int personObjectsToday;
   final int crossVideoMatchesToday;
+  final int totalMerges;
+  final int totalMappings;
   final String? note;
 
   HighLevelWorkflows({
@@ -94,6 +96,8 @@ class HighLevelWorkflows {
     required this.totalIndividuals,
     required this.personObjectsToday,
     required this.crossVideoMatchesToday,
+    this.totalMerges = 0,
+    this.totalMappings = 0,
     this.note,
   });
 
@@ -103,6 +107,8 @@ class HighLevelWorkflows {
       totalIndividuals: json['total_individuals'] ?? 0,
       personObjectsToday: json['person_objects_today'] ?? 0,
       crossVideoMatchesToday: json['cross_video_matches_today'] ?? 0,
+      totalMerges: json['total_merges'] ?? 0,
+      totalMappings: json['total_mappings'] ?? 0,
       note: json['note'],
     );
   }
@@ -328,4 +334,129 @@ final clearMonitoringCacheProvider = Provider<Future<void> Function()>((ref) {
       throw Exception('Failed to clear cache: $e');
     }
   };
+});
+
+// =============================================================================
+// CHART DATA MODELS & PROVIDERS
+// =============================================================================
+
+/// A single time-value data point for line/area charts
+class TimeValuePoint {
+  final DateTime timestamp;
+  final double value;
+
+  TimeValuePoint({required this.timestamp, required this.value});
+}
+
+/// Daily success rate data point
+class SuccessRatePoint {
+  final DateTime date;
+  final double rate;
+  final int completed;
+  final int failed;
+
+  SuccessRatePoint({
+    required this.date,
+    required this.rate,
+    required this.completed,
+    required this.failed,
+  });
+}
+
+/// Processing time bucket
+class ProcessingTimeBucket {
+  final String bucket;
+  final int count;
+
+  ProcessingTimeBucket({required this.bucket, required this.count});
+}
+
+/// MVR match data point
+class MvrMatchPoint {
+  final DateTime date;
+  final int matches;
+  final int mvrCreated;
+  final int merges;
+  final int mappings;
+
+  MvrMatchPoint({
+    required this.date,
+    required this.matches,
+    this.mvrCreated = 0,
+    this.merges = 0,
+    this.mappings = 0,
+  });
+}
+
+/// All chart data combined
+class MonitoringChartData {
+  final List<TimeValuePoint> detectionThroughput;
+  final List<SuccessRatePoint> successRateTrend;
+  final List<TimeValuePoint> activeSessionsTrend;
+  final List<ProcessingTimeBucket> processingTimeDistribution;
+  final List<MvrMatchPoint> mvrMatchTrend;
+
+  MonitoringChartData({
+    required this.detectionThroughput,
+    required this.successRateTrend,
+    required this.activeSessionsTrend,
+    required this.processingTimeDistribution,
+    required this.mvrMatchTrend,
+  });
+
+  factory MonitoringChartData.fromJson(Map<String, dynamic> json) {
+    return MonitoringChartData(
+      detectionThroughput: (json['detection_throughput'] as List<dynamic>? ?? [])
+          .where((e) => e['timestamp'] != null)
+          .map((e) => TimeValuePoint(
+                timestamp: DateTime.parse(e['timestamp']),
+                value: (e['value'] ?? 0).toDouble(),
+              ))
+          .toList(),
+      successRateTrend: (json['success_rate_trend'] as List<dynamic>? ?? [])
+          .map((e) => SuccessRatePoint(
+                date: DateTime.parse(e['date']),
+                rate: (e['rate'] ?? 100.0).toDouble(),
+                completed: e['completed'] ?? 0,
+                failed: e['failed'] ?? 0,
+              ))
+          .toList(),
+      activeSessionsTrend: (json['active_sessions_trend'] as List<dynamic>? ?? [])
+          .where((e) => e['timestamp'] != null)
+          .map((e) => TimeValuePoint(
+                timestamp: DateTime.parse(e['timestamp']),
+                value: (e['value'] ?? 0).toDouble(),
+              ))
+          .toList(),
+      processingTimeDistribution: (json['processing_time_distribution'] as List<dynamic>? ?? [])
+          .map((e) => ProcessingTimeBucket(
+                bucket: e['bucket'] ?? '',
+                count: e['count'] ?? 0,
+              ))
+          .toList(),
+      mvrMatchTrend: (json['mvr_match_trend'] as List<dynamic>? ?? [])
+          .map((e) => MvrMatchPoint(
+                date: DateTime.parse(e['date']),
+                matches: e['matches'] ?? 0,
+                mvrCreated: e['mvr_created'] ?? 0,
+                merges: e['merges'] ?? 0,
+                mappings: e['mappings'] ?? 0,
+              ))
+          .toList(),
+    );
+  }
+}
+
+/// Provider for monitoring chart data
+final monitoringChartDataProvider = FutureProvider<MonitoringChartData>((ref) async {
+  final dio = ref.watch(monitoringDioProvider);
+  // Re-fetch when refresh is triggered
+  ref.watch(monitoringRefreshProvider);
+
+  try {
+    final response = await dio.get('/api/v1/monitoring/charts');
+    return MonitoringChartData.fromJson(response.data);
+  } catch (e) {
+    throw Exception('Failed to load monitoring charts: $e');
+  }
 });

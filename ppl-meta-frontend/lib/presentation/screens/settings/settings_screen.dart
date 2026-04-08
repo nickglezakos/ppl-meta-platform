@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../widgets/settings/network_settings_section.dart';
-import '../../widgets/settings/storage_settings_section.dart';
 import '../../widgets/settings/communications_settings_section.dart';
 import 'cross_video_tracking_section.dart';
 import '../setup/platform_connection_setup_screen.dart';
@@ -33,16 +31,6 @@ class SettingsScreen extends ConsumerWidget {
 
             // Platform Connection Section (Android)
             _PlatformConnectionSection(),
-            
-            SizedBox(height: 24),
-            
-            // Network Settings Section
-            NetworkSettingsSection(),
-            
-            SizedBox(height: 24),
-            
-            // Storage Settings Section
-            StorageSettingsSection(),
             
             SizedBox(height: 24),
             
