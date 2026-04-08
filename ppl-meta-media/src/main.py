@@ -195,6 +195,15 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to start Redis subscriber: {e}")
         logger.info("Redis-based trigger evaluation will be unavailable")
 
+    # Start search trigger scheduler
+    try:
+        from src.services.search_trigger_scheduler import start_search_scheduler
+        await start_search_scheduler()
+        logger.info("Search trigger scheduler started")
+    except Exception as e:
+        logger.error(f"Failed to start search trigger scheduler: {e}")
+        logger.info("Search trigger scheduling will be unavailable")
+
     logger.info("Service startup completed successfully")
 
     yield
@@ -208,6 +217,14 @@ async def lifespan(_app: FastAPI):
         logger.info("Redis subscriber stopped")
     except Exception as e:
         logger.error(f"Error stopping Redis subscriber: {e}")
+
+    # Stop search trigger scheduler
+    try:
+        from src.services.search_trigger_scheduler import stop_search_scheduler
+        await stop_search_scheduler()
+        logger.info("Search trigger scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error stopping search trigger scheduler: {e}")
 
     # Stop ETL worker
     try:

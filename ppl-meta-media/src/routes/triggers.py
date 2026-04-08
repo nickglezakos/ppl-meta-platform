@@ -50,6 +50,38 @@ def _get_communications_client() -> CommunicationsClient:
     return _communications_client
 
 
+def _resolve_action_names(db: Session, trigger) -> Optional[List[str]]:
+    """Resolve action_uuids JSON column to a list of action names."""
+    raw = getattr(trigger, 'action_uuids', None)
+    if not raw:
+        # Fallback to legacy single action
+        if trigger.user_action:
+            return [trigger.user_action.name]
+        return None
+    try:
+        uuids = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not uuids:
+        return None
+    actions = db.query(UserTriggerAction).filter(
+        UserTriggerAction.uuid.in_(uuids)
+    ).all()
+    # Preserve ordering
+    name_map = {str(a.uuid): a.name for a in actions}
+    return [name_map[u] for u in uuids if u in name_map]
+
+
+def _build_trigger_response_dict(db: Session, trigger) -> dict:
+    """Build a response dict for a trigger, resolving action names."""
+    trigger_dict = {
+        **{c.name: getattr(trigger, c.name) for c in trigger.__table__.columns},
+        'action_name': trigger.user_action.name if trigger.user_action else None,
+        'action_names': _resolve_action_names(db, trigger),
+    }
+    return trigger_dict
+
+
 def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
     similarity_score = best_match.get("similarity_score")
     matched_member_uuid = best_match.get("matched_member_uuid")
@@ -104,11 +136,39 @@ async def create_trigger(
                 for cond in trigger_data['demographic_conditions']
             ])
         
+        # Convert search_camera_device_ids list to JSON string for storage
+        if 'search_camera_device_ids' in trigger_data and trigger_data['search_camera_device_ids'] is not None:
+            trigger_data['search_camera_device_ids'] = json.dumps(trigger_data['search_camera_device_ids'])
+        
+        # Convert action_uuids list to JSON string for storage
+        action_uuids_list = trigger_data.get('action_uuids')
+        if action_uuids_list is not None:
+            trigger_data['action_uuids'] = json.dumps([str(u) for u in action_uuids_list])
+            # Set legacy action_uuid to first action for backward compat
+            if action_uuids_list and not trigger_data.get('action_uuid'):
+                trigger_data['action_uuid'] = action_uuids_list[0]
+        elif trigger_data.get('action_uuid'):
+            # Single action_uuid provided → sync to action_uuids
+            trigger_data['action_uuids'] = json.dumps([str(trigger_data['action_uuid'])])
+        
+        # For search triggers, generate UUID upfront and set camera_device_id
+        if trigger_data.get('trigger_mode') in ('search', 'search_demographic') and not trigger_data.get('camera_device_id'):
+            from uuid import uuid4
+            trigger_uuid = uuid4()
+            trigger_data['uuid'] = trigger_uuid
+            trigger_data['camera_device_id'] = f"search:{trigger_uuid}"
+        
         db_trigger = Trigger(**trigger_data)
         db.add(db_trigger)
         db.commit()
         db.refresh(db_trigger)
-        return db_trigger
+        
+        trigger_dict = {
+            **{c.name: getattr(db_trigger, c.name) for c in db_trigger.__table__.columns},
+            'action_name': None,
+            'action_names': _resolve_action_names(db, db_trigger),
+        }
+        return TriggerResponse(**trigger_dict)
     except Exception as e:
         db.rollback()
         import logging
@@ -147,14 +207,10 @@ async def list_triggers(
     # Get page results
     triggers = query.order_by(Trigger.created_at.desc()).offset(offset).limit(page_size).all()
     
-    # Populate action_name from user_action relationship
+    # Populate action_name and action_names from relationships / JSON
     trigger_responses = []
     for trigger in triggers:
-        trigger_dict = {
-            **{c.name: getattr(trigger, c.name) for c in trigger.__table__.columns},
-            'action_name': trigger.user_action.name if trigger.user_action else None
-        }
-        trigger_responses.append(TriggerResponse(**trigger_dict))
+        trigger_responses.append(TriggerResponse(**_build_trigger_response_dict(db, trigger)))
     
     return TriggerListResponse(
         triggers=trigger_responses,
@@ -177,12 +233,7 @@ async def get_trigger(
     if not trigger:
         raise HTTPException(status_code=404, detail="Trigger not found")
     
-    # Populate action_name from user_action relationship
-    trigger_dict = {
-        **{c.name: getattr(trigger, c.name) for c in trigger.__table__.columns},
-        'action_name': trigger.user_action.name if trigger.user_action else None
-    }
-    return TriggerResponse(**trigger_dict)
+    return TriggerResponse(**_build_trigger_response_dict(db, trigger))
 
 
 @router.put("/{trigger_uuid}", response_model=TriggerResponse)
@@ -219,6 +270,25 @@ async def update_trigger(
             for cond in update_data['demographic_conditions']
         ])
     
+    # Convert search_camera_device_ids list to JSON string for storage
+    if 'search_camera_device_ids' in update_data and update_data['search_camera_device_ids'] is not None:
+        update_data['search_camera_device_ids'] = json.dumps(update_data['search_camera_device_ids'])
+    
+    # Convert action_uuids list to JSON string for storage and sync legacy field
+    if 'action_uuids' in update_data:
+        action_uuids_list = update_data['action_uuids']
+        if action_uuids_list is not None:
+            update_data['action_uuids'] = json.dumps([str(u) for u in action_uuids_list])
+            # Sync legacy action_uuid to first action
+            update_data['action_uuid'] = action_uuids_list[0] if action_uuids_list else None
+        else:
+            update_data['action_uuids'] = None
+            update_data['action_uuid'] = None
+    elif 'action_uuid' in update_data:
+        # Single action_uuid update → sync to action_uuids
+        au = update_data['action_uuid']
+        update_data['action_uuids'] = json.dumps([str(au)]) if au else None
+    
     for field, value in update_data.items():
         setattr(db_trigger, field, value)
     
@@ -228,12 +298,7 @@ async def update_trigger(
     # Reload to ensure relationship is fresh
     db_trigger = db.query(Trigger).options(joinedload(Trigger.user_action)).filter(Trigger.uuid == trigger_uuid).first()
     
-    # Populate action_name from user_action relationship
-    trigger_dict = {
-        **{c.name: getattr(db_trigger, c.name) for c in db_trigger.__table__.columns},
-        'action_name': db_trigger.user_action.name if db_trigger.user_action else None
-    }
-    return TriggerResponse(**trigger_dict)
+    return TriggerResponse(**_build_trigger_response_dict(db, db_trigger))
 
 
 @router.patch("/{trigger_uuid}/toggle", response_model=TriggerResponse)
@@ -254,6 +319,43 @@ async def toggle_trigger(
     db.commit()
     db.refresh(db_trigger)
     return db_trigger
+
+
+@router.post("/{trigger_uuid}/execute-now")
+async def execute_trigger_now(
+    trigger_uuid: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Manually execute a search trigger immediately, bypassing the interval schedule.
+    
+    Only works for triggers with trigger_mode='search' or 'search_demographic'. The search is executed
+    and results are published to Redis for evaluation by the existing subscriber.
+    """
+    db_trigger = db.query(Trigger).filter(Trigger.uuid == trigger_uuid).first()
+    if not db_trigger:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    
+    if db_trigger.trigger_mode not in ("search", "search_demographic"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"execute-now is only available for search triggers (this trigger is '{db_trigger.trigger_mode}')"
+        )
+    
+    from ..services.search_trigger_scheduler import get_search_scheduler
+    scheduler = get_search_scheduler()
+    if scheduler is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Search trigger scheduler is not running"
+        )
+    
+    result = await scheduler.execute_now(str(trigger_uuid))
+    
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    
+    return result
 
 
 @router.delete("/{trigger_uuid}", status_code=204)
@@ -292,11 +394,18 @@ async def get_trigger_stats(
         func.count(Trigger.id)
     ).group_by(Trigger.action).all()
     
+    # Count by trigger mode
+    mode_counts = db.query(
+        Trigger.trigger_mode,
+        func.count(Trigger.id)
+    ).group_by(Trigger.trigger_mode).all()
+    
     return {
         "total": total,
         "active": active,
         "inactive": inactive,
-        "by_action": {action: count for action, count in action_counts}
+        "by_action": {action: count for action, count in action_counts},
+        "by_mode": {mode: count for mode, count in mode_counts}
     }
 
 

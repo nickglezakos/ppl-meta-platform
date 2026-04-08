@@ -27,6 +27,10 @@ class TriggerExecutionLog(BaseModel):
     threshold = Column(Float, nullable=True)
     match_details_json = Column(Text, nullable=True)
 
+    # Search trigger fields
+    search_cameras_queried = Column(Text, nullable=True, comment='JSON array of camera device IDs queried by search trigger')
+    search_session_uuid = Column(String(255), nullable=True, index=True, comment='Search session UUID returned by vmeta camera-search')
+
     passed = Column(Boolean, nullable=False, default=False, index=True)
     reason = Column(String(500), nullable=True)
     action_executed = Column(Boolean, nullable=False, default=False)

@@ -3,14 +3,43 @@ vmeta Service Analytics API
 Person movement analytics and spatial analysis.
 """
 
+import logging
+import os
+import uuid as uuid_mod
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from api.dependencies import get_current_user, get_db_connection
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+MEDIA_SERVICE_URL = os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000")
+
+
+# ---------------------------------------------------------------------------
+# Camera Demographics Search models
+# ---------------------------------------------------------------------------
+
+class CameraDemographicsSearchRequest(BaseModel):
+    """Request model for searching demographics across cameras."""
+    camera_ids: List[str] = Field(..., min_length=1, description="Camera / collection IDs to query")
+    start_time: datetime = Field(..., description="Search window start (ISO 8601)")
+    end_time: datetime = Field(..., description="Search window end (ISO 8601)")
+
+
+class CameraDemographicsSearchResponse(BaseModel):
+    """Aggregated demographics for the requested cameras and time window."""
+    camera_ids: List[str]
+    search_window: Dict[str, str]
+    people_count: int
+    demographics: Dict[str, float]
+    search_session_uuid: str
 
 
 @router.get("/demographics")
@@ -137,6 +166,192 @@ async def get_demographics_breakdown(
             )
         }
     }
+
+
+@router.post(
+    "/cameras/demographics-search",
+    response_model=CameraDemographicsSearchResponse,
+    summary="Aggregate demographics for cameras over a time window",
+)
+async def camera_demographics_search(
+    body: CameraDemographicsSearchRequest,
+    request: Request,
+    db_connection=Depends(get_db_connection),
+    current_user: dict = Depends(get_current_user),
+) -> CameraDemographicsSearchResponse:
+    """
+    Return aggregated demographics (gender %, age %) for all unique individuals
+    detected by the specified cameras within a time window.
+
+    Does NOT require an individual group or face matching — works on raw MVR
+    people data linked through video appearances.
+    """
+    auth_token = request.headers.get("Authorization")
+    start_time = body.start_time.replace(tzinfo=None) if body.start_time.tzinfo else body.start_time
+    end_time = body.end_time.replace(tzinfo=None) if body.end_time.tzinfo else body.end_time
+
+    # Step 1: Collect video UUIDs from the media service for each camera/collection
+    all_video_uuids: List[str] = []
+    headers: Dict[str, str] = {}
+    if auth_token:
+        token_value = auth_token.replace("Bearer ", "").strip() if auth_token.startswith("Bearer ") else auth_token
+        headers["Authorization"] = f"Bearer {token_value}"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for camera_id in body.camera_ids:
+            params = {
+                "collection": camera_id,
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "page_size": 500,
+            }
+            try:
+                resp = await client.get(
+                    f"{MEDIA_SERVICE_URL}/api/v1/media/search",
+                    params=params,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                videos = resp.json()
+                if isinstance(videos, list):
+                    all_video_uuids.extend(str(v["uuid"]) for v in videos)
+            except Exception as exc:
+                logger.warning("Failed to fetch videos for camera %s: %s", camera_id, exc)
+
+    if not all_video_uuids:
+        return CameraDemographicsSearchResponse(
+            camera_ids=body.camera_ids,
+            search_window={"start_time": start_time.isoformat(), "end_time": end_time.isoformat()},
+            people_count=0,
+            demographics={
+                "percent_male": 0.0,
+                "percent_female": 0.0,
+                "percent_age_0_12": 0.0,
+                "percent_age_13_17": 0.0,
+                "percent_age_18_24": 0.0,
+                "percent_age_25_34": 0.0,
+                "percent_age_35_44": 0.0,
+                "percent_age_45_54": 0.0,
+                "percent_age_55_64": 0.0,
+                "percent_age_65_plus": 0.0,
+            },
+            search_session_uuid=str(uuid_mod.uuid4()),
+        )
+
+    # Step 2: Find distinct super-individuals from those videos and get demographics
+    query = """
+    WITH video_individuals AS (
+        SELECT DISTINCT iva.individual_uuid
+        FROM individual_video_appearances iva
+        WHERE iva.video_uuid = ANY($1::uuid[])
+    ),
+    mapped_mvr AS (
+        SELECT DISTINCT imm.mvr_people_uuid
+        FROM video_individuals vi
+        JOIN individual_mvr_mapping imm ON imm.individual_uuid = vi.individual_uuid
+    ),
+    resolved AS (
+        -- Non-orphaned / non-merged
+        SELECT mm.mvr_people_uuid
+        FROM mapped_mvr mm
+        JOIN mvr_people mp ON mp.mvr_people_uuid = mm.mvr_people_uuid
+        WHERE mp.is_orphaned = false AND mp.merged_into_mvr_uuid IS NULL
+        UNION
+        -- Orphaned → follow merge
+        SELECT mp.merged_into_mvr_uuid AS mvr_people_uuid
+        FROM mapped_mvr mm
+        JOIN mvr_people mp ON mp.mvr_people_uuid = mm.mvr_people_uuid
+        WHERE mp.merged_into_mvr_uuid IS NOT NULL
+    )
+    SELECT DISTINCT sp.gender, sp.age_min, sp.age_max
+    FROM resolved r
+    JOIN mvr_people sp ON sp.mvr_people_uuid = r.mvr_people_uuid
+    """
+
+    rows = await db_connection.fetch(query, all_video_uuids)
+    total = len(rows)
+
+    if total == 0:
+        return CameraDemographicsSearchResponse(
+            camera_ids=body.camera_ids,
+            search_window={"start_time": start_time.isoformat(), "end_time": end_time.isoformat()},
+            people_count=0,
+            demographics={
+                "percent_male": 0.0,
+                "percent_female": 0.0,
+                "percent_age_0_12": 0.0,
+                "percent_age_13_17": 0.0,
+                "percent_age_18_24": 0.0,
+                "percent_age_25_34": 0.0,
+                "percent_age_35_44": 0.0,
+                "percent_age_45_54": 0.0,
+                "percent_age_55_64": 0.0,
+                "percent_age_65_plus": 0.0,
+            },
+            search_session_uuid=str(uuid_mod.uuid4()),
+        )
+
+    # Step 3: Aggregate demographics
+    male = female = 0
+    age_buckets = {
+        "percent_age_0_12": 0,
+        "percent_age_13_17": 0,
+        "percent_age_18_24": 0,
+        "percent_age_25_34": 0,
+        "percent_age_35_44": 0,
+        "percent_age_45_54": 0,
+        "percent_age_55_64": 0,
+        "percent_age_65_plus": 0,
+    }
+
+    for row in rows:
+        gender = (row["gender"] or "").strip()
+        if gender == "Male":
+            male += 1
+        elif gender == "Female":
+            female += 1
+
+        age_min = row["age_min"]
+        age_max = row["age_max"]
+        if age_min is not None and age_max is not None:
+            avg = (age_min + age_max) / 2
+            if avg < 13:
+                age_buckets["percent_age_0_12"] += 1
+            elif avg < 18:
+                age_buckets["percent_age_13_17"] += 1
+            elif avg < 25:
+                age_buckets["percent_age_18_24"] += 1
+            elif avg < 35:
+                age_buckets["percent_age_25_34"] += 1
+            elif avg < 45:
+                age_buckets["percent_age_35_44"] += 1
+            elif avg < 55:
+                age_buckets["percent_age_45_54"] += 1
+            elif avg < 65:
+                age_buckets["percent_age_55_64"] += 1
+            else:
+                age_buckets["percent_age_65_plus"] += 1
+
+    demographics: Dict[str, float] = {
+        "percent_male": round(male / total * 100, 1),
+        "percent_female": round(female / total * 100, 1),
+    }
+    for bucket, count in age_buckets.items():
+        demographics[bucket] = round(count / total * 100, 1)
+
+    session_uuid = str(uuid_mod.uuid4())
+    logger.info(
+        "Camera demographics search: cameras=%s people=%d session=%s",
+        body.camera_ids, total, session_uuid,
+    )
+
+    return CameraDemographicsSearchResponse(
+        camera_ids=body.camera_ids,
+        search_window={"start_time": start_time.isoformat(), "end_time": end_time.isoformat()},
+        people_count=total,
+        demographics=demographics,
+        search_session_uuid=session_uuid,
+    )
 
 
 @router.post("/person-routes")

@@ -86,16 +86,23 @@ class Trigger(BaseModel):
         comment="Friendly name of the camera (e.g., 'Front Door', 'Main Entrance')"
     )
     
-    # Link to user-defined action (required)
+    # Link to user-defined action (legacy single-action, kept for backward compat)
     action_uuid = Column(
         UUID(as_uuid=True),
         ForeignKey('user_trigger_actions.uuid', ondelete='SET NULL'),
         nullable=True,
         index=True,
-        comment="UUID of the linked user action (supports alert, webhook, email, digital_signage, etc.)"
+        comment="UUID of the linked user action (legacy single-action field)"
     )
     
-    # Relationship to user action
+    # Multi-action support: JSON array of action UUIDs
+    action_uuids = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of action UUIDs assigned to this trigger (e.g., ["uuid1", "uuid2"])'
+    )
+    
+    # Relationship to user action (legacy single-action)
     user_action = relationship("UserTriggerAction", foreign_keys=[action_uuid])
 
     # Trigger mode configuration
@@ -104,7 +111,7 @@ class Trigger(BaseModel):
         nullable=False,
         default="demographic",
         index=True,
-        comment="Trigger mode: demographic | ppl_match"
+        comment="Trigger mode: demographic | ppl_match | search"
     )
     ppl_match_group_id = Column(
         String(255),
@@ -125,13 +132,26 @@ class Trigger(BaseModel):
         comment="Maximum number of top matches to keep for ppl_match mode"
     )
     
+    # Search trigger configuration
+    search_camera_device_ids = Column(
+        Text,
+        nullable=True,
+        comment='JSON array of camera device IDs for search trigger mode (e.g., ["usb_camera_0", "rtsp_192.168.1.76_554"])'
+    )
+    search_interval_seconds = Column(
+        Integer,
+        nullable=True,
+        default=300,
+        comment="How often (in seconds) a search trigger executes. Minimum 30."
+    )
+
     # Tracking configuration
     tracking_duration = Column(
         String(50),
         nullable=False,
         default="10 minutes",
         index=True,
-        comment='Time window for MVR search (e.g., "5 seconds", "10 minutes", "2 hours", "1 day")'
+        comment='Time window for MVR search (e.g., "5 seconds", "10 minutes", "2 hours", "1 day"). Used as lookback window by search triggers.'
     )
     
     # Trigger state and behavior

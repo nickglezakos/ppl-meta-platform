@@ -273,22 +273,25 @@ class InstantDetectionSubscriber:
         people_count = data.get("people_count", 0)
         demographics = data.get("demographics", {})
         timestamp = data.get("timestamp")
+        is_search_trigger = data.get("source") == "search_trigger"
         
         # Validate message freshness - ignore messages older than 10 seconds
-        message_time = self._parse_event_timestamp_utc(timestamp)
-        if message_time is None:
-            logger.warning(f"⚠️ Could not parse timestamp '{timestamp}'")
-            # Continue processing even if timestamp parsing fails
-        else:
-            now = datetime.now(timezone.utc)
-            age_seconds = (now - message_time).total_seconds()
+        # Skip freshness check for search trigger events (they are generated on-demand)
+        if not is_search_trigger:
+            message_time = self._parse_event_timestamp_utc(timestamp)
+            if message_time is None:
+                logger.warning(f"⚠️ Could not parse timestamp '{timestamp}'")
+                # Continue processing even if timestamp parsing fails
+            else:
+                now = datetime.now(timezone.utc)
+                age_seconds = (now - message_time).total_seconds()
 
-            if age_seconds > 10:
-                logger.warning(
-                    f"⏰ Skipping stale message: {camera_id} "
-                    f"(age: {age_seconds:.1f}s, threshold: 10s)"
-                )
-                return
+                if age_seconds > 10:
+                    logger.warning(
+                        f"⏰ Skipping stale message: {camera_id} "
+                        f"(age: {age_seconds:.1f}s, threshold: 10s)"
+                    )
+                    return
         
         logger.info(f"\n{'='*80}")
         logger.info(f"🔔 INSTANT DETECTION EVENT (Redis Pub/Sub)")
@@ -318,19 +321,31 @@ class InstantDetectionSubscriber:
             "timestamp": timestamp,
             "camera_id": camera_id,
             "source_mvr_uuids": source_mvr_uuids,
+            "source": data.get("source"),
+            "metadata": data.get("metadata"),
         }
         
         db: Session = SessionLocal()
         
         try:
-            # Find active triggers for this camera
-            triggers = db.query(Trigger).filter(
-                Trigger.is_active == True,
-                Trigger.camera_device_id == camera_id
-            ).all()
+            # Find active triggers for this camera.
+            # For search triggers, camera_id is "search:<trigger_uuid>" — match by
+            # camera_device_id directly (set during trigger creation) or by UUID suffix.
+            if is_search_trigger and camera_id and camera_id.startswith("search:"):
+                search_trigger_uuid = camera_id.split(":", 1)[1]
+                triggers = db.query(Trigger).filter(
+                    Trigger.is_active == True,
+                    Trigger.trigger_mode.in_(["search", "search_demographic"]),
+                    Trigger.uuid == search_trigger_uuid,
+                ).all()
+            else:
+                triggers = db.query(Trigger).filter(
+                    Trigger.is_active == True,
+                    Trigger.camera_device_id == camera_id
+                ).all()
             
             if not triggers:
-                logger.info(f"  ℹ️  No active demographic triggers for camera {camera_id}")
+                logger.info(f"  ℹ️  No active triggers for camera {camera_id}")
                 return
             
             logger.info(f"  🔍 Found {len(triggers)} active trigger(s) to evaluate")
@@ -408,14 +423,27 @@ class InstantDetectionSubscriber:
 
                 success_reason = reason if trigger_mode == "ppl_match" else "Demographic conditions met"
                 
-                # Execute action if configured
+                # Execute action(s) if configured
                 action_executed = False
-                if trigger.action_uuid:
+                action_uuids_raw = getattr(trigger, 'action_uuids', None)
+                action_uuid_list = []
+                if action_uuids_raw:
+                    try:
+                        action_uuid_list = json.loads(action_uuids_raw) if isinstance(action_uuids_raw, str) else action_uuids_raw
+                    except (json.JSONDecodeError, TypeError):
+                        action_uuid_list = []
+                
+                # Fallback to legacy single action_uuid
+                if not action_uuid_list and trigger.action_uuid:
+                    action_uuid_list = [str(trigger.action_uuid)]
+                
+                for action_uuid_str in action_uuid_list:
                     await self._execute_trigger_action(
                         trigger,
                         db,
                         evaluation_reason=success_reason,
                         match_info=match_info,
+                        action_uuid_override=action_uuid_str,
                     )
                     action_executed = True
 
@@ -490,6 +518,15 @@ class InstantDetectionSubscriber:
             action_executed=action_executed,
             evaluated_at=datetime.now(timezone.utc),
         )
+
+        # Populate search trigger fields from metadata
+        metadata = detection_data.get("metadata") if isinstance(detection_data.get("metadata"), dict) else {}
+        if detection_data.get("source") == "search_trigger" or metadata.get("search_session_uuid"):
+            search_cameras = metadata.get("search_cameras")
+            if search_cameras:
+                log_row.search_cameras_queried = json.dumps(search_cameras)
+            log_row.search_session_uuid = metadata.get("search_session_uuid")
+
         db.add(log_row)
 
     async def _evaluate_ppl_match(self, trigger: Trigger, detection_data: Dict):
@@ -668,20 +705,26 @@ class InstantDetectionSubscriber:
         db: Session,
         evaluation_reason: Optional[str] = None,
         match_info: Optional[Dict[str, Any]] = None,
+        action_uuid_override: Optional[str] = None,
     ):
-        """Execute the action associated with this trigger"""
+        """Execute a single action associated with this trigger.
+        
+        If action_uuid_override is provided, use that UUID instead of trigger.action_uuid.
+        This supports multi-action execution where the caller iterates over action_uuids.
+        """
         from src.models.user_trigger_action import UserTriggerAction
         
+        target_uuid = action_uuid_override or str(trigger.action_uuid)
         logger.info(f"  🎬 Executing trigger action...")
-        logger.info(f"     Action UUID: {trigger.action_uuid}")
+        logger.info(f"     Action UUID: {target_uuid}")
         
         # Look up the action
         action = db.query(UserTriggerAction).filter(
-            UserTriggerAction.uuid == trigger.action_uuid
+            UserTriggerAction.uuid == target_uuid
         ).first()
         
         if not action:
-            logger.error(f"     ❌ Action not found: {trigger.action_uuid}")
+            logger.error(f"     ❌ Action not found: {target_uuid}")
             return
         
         logger.info(f"     Action Type: {action.action_type}")

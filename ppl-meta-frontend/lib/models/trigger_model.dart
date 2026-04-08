@@ -33,7 +33,7 @@ class TriggerModel {
   final String timeSpan;
   
   @JsonKey(name: 'camera_device_id')
-  final String cameraDeviceId;
+  final String? cameraDeviceId;
   
   @JsonKey(name: 'camera_name')
   final String? cameraName;
@@ -43,6 +43,12 @@ class TriggerModel {
   
   @JsonKey(name: 'action_name')
   final String? actionName;
+
+  @JsonKey(name: 'action_uuids')
+  final List<String>? actionUuids;
+
+  @JsonKey(name: 'action_names')
+  final List<String>? actionNames;
   
   @JsonKey(name: 'tracking_duration')
   final String trackingDuration;
@@ -68,6 +74,12 @@ class TriggerModel {
   @JsonKey(name: 'ppl_match_top_k')
   final int pplMatchTopK;
 
+  @JsonKey(name: 'search_camera_device_ids')
+  final List<String>? searchCameraDeviceIds;
+
+  @JsonKey(name: 'search_interval_seconds')
+  final int? searchIntervalSeconds;
+
   @JsonKey(name: 'last_match_info')
   final Map<String, dynamic>? lastMatchInfo;
 
@@ -88,10 +100,12 @@ class TriggerModel {
     required this.uuid,
     required this.demographicConditions,
     required this.timeSpan,
-    required this.cameraDeviceId,
+    this.cameraDeviceId,
     this.cameraName,
     this.actionUuid,
     this.actionName,
+    this.actionUuids,
+    this.actionNames,
     this.trackingDuration = '10 minutes',
     required this.isActive,
     this.cooldownSeconds = 60,
@@ -100,6 +114,8 @@ class TriggerModel {
     this.pplMatchGroupId,
     this.pplMatchSimilarityThreshold = 0.75,
     this.pplMatchTopK = 1,
+    this.searchCameraDeviceIds,
+    this.searchIntervalSeconds,
     this.lastMatchInfo,
     this.lastMatchedAt,
     this.name,
@@ -119,6 +135,15 @@ class TriggerModel {
     if (triggerMode == 'ppl_match') {
       return 'Group: ${pplMatchGroupId ?? 'Not set'}';
     }
+    if (triggerMode == 'search') {
+      final cameraCount = searchCameraDeviceIds?.length ?? 0;
+      return 'Search: $cameraCount camera(s), every ${searchIntervalSeconds ?? 300}s';
+    }
+    if (triggerMode == 'search_demographic') {
+      final cameraCount = searchCameraDeviceIds?.length ?? 0;
+      final condCount = demographicConditions.length;
+      return 'Demo Search: $cameraCount cam(s), $condCount cond(s), every ${searchIntervalSeconds ?? 300}s';
+    }
     if (demographicConditions.isEmpty) return 'No conditions';
     return '${demographicConditions.length} condition(s)';
   }
@@ -133,13 +158,16 @@ class TriggerCreateRequest {
   final String timeSpan;
   
   @JsonKey(name: 'camera_device_id')
-  final String cameraDeviceId;
+  final String? cameraDeviceId;
   
   @JsonKey(name: 'camera_name')
   final String? cameraName;
   
   @JsonKey(name: 'action_uuid')
   final String? actionUuid;
+
+  @JsonKey(name: 'action_uuids')
+  final List<String>? actionUuids;
   
   @JsonKey(name: 'tracking_duration')
   final String trackingDuration;
@@ -161,6 +189,12 @@ class TriggerCreateRequest {
 
   @JsonKey(name: 'ppl_match_top_k')
   final int? pplMatchTopK;
+
+  @JsonKey(name: 'search_camera_device_ids')
+  final List<String>? searchCameraDeviceIds;
+
+  @JsonKey(name: 'search_interval_seconds')
+  final int? searchIntervalSeconds;
   
   final String? name;
   final String? description;
@@ -168,9 +202,10 @@ class TriggerCreateRequest {
   TriggerCreateRequest({
     required this.demographicConditions,
     required this.timeSpan,
-    required this.cameraDeviceId,
+    this.cameraDeviceId,
     this.cameraName,
     this.actionUuid,
+    this.actionUuids,
     this.trackingDuration = '10 minutes',
     this.isActive = true,
     this.cooldownSeconds = 60,
@@ -178,6 +213,8 @@ class TriggerCreateRequest {
     this.pplMatchGroupId,
     this.pplMatchSimilarityThreshold,
     this.pplMatchTopK,
+    this.searchCameraDeviceIds,
+    this.searchIntervalSeconds,
     this.name,
     this.description,
   });

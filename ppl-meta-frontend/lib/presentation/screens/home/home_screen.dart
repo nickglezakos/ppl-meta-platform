@@ -303,16 +303,16 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.notifications_active,
+                        icon: Icons.precision_manufacturing,
                         iconColor: AppColors.secondary, // Unified cyan color
-                        title: 'Triggers',
-                        subtitle: 'Manage automated alerts',
+                        title: 'Automation',
+                        subtitle: 'Manage automated triggers & actions',
                         onTap: () {
                           context.go('/triggers');
                         },
                       ),
                       _ActionCard(
-                        icon: Icons.group_work,
+                        icon: Icons.groups,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Individual Groups',
                         subtitle: 'Organize people by groups',

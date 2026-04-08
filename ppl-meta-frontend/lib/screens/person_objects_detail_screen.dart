@@ -7201,8 +7201,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                 text: 'Attendance',
               ),
               Tab(
-                icon: Icon(Icons.notifications_active),
-                text: 'Triggers',
+                icon: Icon(Icons.precision_manufacturing),
+                text: 'Automation',
               ),
             ],
           ),

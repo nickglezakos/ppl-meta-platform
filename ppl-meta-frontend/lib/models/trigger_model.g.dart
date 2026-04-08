@@ -29,10 +29,16 @@ TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
           .map((e) => DemographicCondition.fromJson(e as Map<String, dynamic>))
           .toList(),
       timeSpan: json['time_span'] as String,
-      cameraDeviceId: json['camera_device_id'] as String,
+      cameraDeviceId: json['camera_device_id'] as String?,
       cameraName: json['camera_name'] as String?,
       actionUuid: json['action_uuid'] as String?,
       actionName: json['action_name'] as String?,
+      actionUuids: (json['action_uuids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
+      actionNames: (json['action_names'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
       trackingDuration: json['tracking_duration'] as String? ?? '10 minutes',
       isActive: json['is_active'] as bool,
       cooldownSeconds: (json['cooldown_seconds'] as num?)?.toInt() ?? 60,
@@ -44,6 +50,11 @@ TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
       pplMatchSimilarityThreshold:
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble() ?? 0.75,
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt() ?? 1,
+      searchCameraDeviceIds:
+          (json['search_camera_device_ids'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList(),
+      searchIntervalSeconds: (json['search_interval_seconds'] as num?)?.toInt(),
       lastMatchInfo: json['last_match_info'] as Map<String, dynamic>?,
       lastMatchedAt: json['last_matched_at'] == null
           ? null
@@ -66,6 +77,8 @@ Map<String, dynamic> _$TriggerModelToJson(TriggerModel instance) =>
       'camera_name': instance.cameraName,
       'action_uuid': instance.actionUuid,
       'action_name': instance.actionName,
+      'action_uuids': instance.actionUuids,
+      'action_names': instance.actionNames,
       'tracking_duration': instance.trackingDuration,
       'is_active': instance.isActive,
       'cooldown_seconds': instance.cooldownSeconds,
@@ -74,6 +87,8 @@ Map<String, dynamic> _$TriggerModelToJson(TriggerModel instance) =>
       'ppl_match_group_id': instance.pplMatchGroupId,
       'ppl_match_similarity_threshold': instance.pplMatchSimilarityThreshold,
       'ppl_match_top_k': instance.pplMatchTopK,
+      'search_camera_device_ids': instance.searchCameraDeviceIds,
+      'search_interval_seconds': instance.searchIntervalSeconds,
       'last_match_info': instance.lastMatchInfo,
       'last_matched_at': instance.lastMatchedAt?.toIso8601String(),
       'name': instance.name,
@@ -89,9 +104,12 @@ TriggerCreateRequest _$TriggerCreateRequestFromJson(
           .map((e) => DemographicCondition.fromJson(e as Map<String, dynamic>))
           .toList(),
       timeSpan: json['time_span'] as String,
-      cameraDeviceId: json['camera_device_id'] as String,
+      cameraDeviceId: json['camera_device_id'] as String?,
       cameraName: json['camera_name'] as String?,
       actionUuid: json['action_uuid'] as String?,
+      actionUuids: (json['action_uuids'] as List<dynamic>?)
+          ?.map((e) => e as String)
+          .toList(),
       trackingDuration: json['tracking_duration'] as String? ?? '10 minutes',
       isActive: json['is_active'] as bool? ?? true,
       cooldownSeconds: (json['cooldown_seconds'] as num?)?.toInt() ?? 60,
@@ -100,6 +118,11 @@ TriggerCreateRequest _$TriggerCreateRequestFromJson(
       pplMatchSimilarityThreshold:
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble(),
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt(),
+      searchCameraDeviceIds:
+          (json['search_camera_device_ids'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList(),
+      searchIntervalSeconds: (json['search_interval_seconds'] as num?)?.toInt(),
       name: json['name'] as String?,
       description: json['description'] as String?,
     );
@@ -112,6 +135,7 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
       'camera_device_id': instance.cameraDeviceId,
       'camera_name': instance.cameraName,
       'action_uuid': instance.actionUuid,
+      'action_uuids': instance.actionUuids,
       'tracking_duration': instance.trackingDuration,
       'is_active': instance.isActive,
       'cooldown_seconds': instance.cooldownSeconds,
@@ -119,6 +143,8 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
       'ppl_match_group_id': instance.pplMatchGroupId,
       'ppl_match_similarity_threshold': instance.pplMatchSimilarityThreshold,
       'ppl_match_top_k': instance.pplMatchTopK,
+      'search_camera_device_ids': instance.searchCameraDeviceIds,
+      'search_interval_seconds': instance.searchIntervalSeconds,
       'name': instance.name,
       'description': instance.description,
     };

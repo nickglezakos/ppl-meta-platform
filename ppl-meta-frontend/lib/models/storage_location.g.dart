@@ -66,12 +66,13 @@ StorageDashboard _$StorageDashboardFromJson(Map<String, dynamic> json) =>
       totalUsedGb: (json['total_used_gb'] as num?)?.toDouble() ?? 0.0,
       freeGb: (json['free_gb'] as num?)?.toDouble(),
       locationCount: (json['location_count'] as num?)?.toInt() ?? 0,
-      locations: json['locations'] as List<dynamic>? ?? [],
-      alerts: json['alerts'] as List<dynamic>? ?? [],
+      locations: json['locations'] as List<dynamic>? ?? const [],
+      alerts: json['alerts'] as List<dynamic>? ?? const [],
       mediaRealUsedBytes: (json['media_real_used_bytes'] as num?)?.toInt() ?? 0,
       mediaRealFiles: (json['media_real_files'] as num?)?.toInt() ?? 0,
       mediaRealUsedGb: (json['media_real_used_gb'] as num?)?.toDouble() ?? 0.0,
-      defaultActiveLocation: json['default_active_location'] as Map<String, dynamic>?,
+      defaultActiveLocation:
+          json['default_active_location'] as Map<String, dynamic>?,
     );
 
 Map<String, dynamic> _$StorageDashboardToJson(StorageDashboard instance) =>

@@ -106,7 +106,7 @@ class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProvid
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(
-        title: 'Triggers & Actions',
+        title: 'Automation',
         showBackButton: true,
         actions: [
           IconButton(
@@ -127,7 +127,7 @@ class _TriggersScreenState extends State<TriggersScreen> with SingleTickerProvid
           controller: _tabController,
           tabs: const [
             Tab(
-              icon: Icon(Icons.notifications_active),
+              icon: Icon(Icons.precision_manufacturing),
               text: 'Triggers',
             ),
             Tab(
