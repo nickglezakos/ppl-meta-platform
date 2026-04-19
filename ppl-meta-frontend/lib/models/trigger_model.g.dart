@@ -132,21 +132,25 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
     <String, dynamic>{
       'demographic_conditions': instance.demographicConditions,
       'time_span': instance.timeSpan,
-      'camera_device_id': instance.cameraDeviceId,
-      'camera_name': instance.cameraName,
-      'action_uuid': instance.actionUuid,
-      'action_uuids': instance.actionUuids,
+      if (instance.cameraDeviceId case final value?) 'camera_device_id': value,
+      if (instance.cameraName case final value?) 'camera_name': value,
+      if (instance.actionUuid case final value?) 'action_uuid': value,
+      if (instance.actionUuids case final value?) 'action_uuids': value,
       'tracking_duration': instance.trackingDuration,
       'is_active': instance.isActive,
       'cooldown_seconds': instance.cooldownSeconds,
       'trigger_mode': instance.triggerMode,
-      'ppl_match_group_id': instance.pplMatchGroupId,
-      'ppl_match_similarity_threshold': instance.pplMatchSimilarityThreshold,
-      'ppl_match_top_k': instance.pplMatchTopK,
-      'search_camera_device_ids': instance.searchCameraDeviceIds,
-      'search_interval_seconds': instance.searchIntervalSeconds,
-      'name': instance.name,
-      'description': instance.description,
+      if (instance.pplMatchGroupId case final value?)
+        'ppl_match_group_id': value,
+      if (instance.pplMatchSimilarityThreshold case final value?)
+        'ppl_match_similarity_threshold': value,
+      if (instance.pplMatchTopK case final value?) 'ppl_match_top_k': value,
+      if (instance.searchCameraDeviceIds case final value?)
+        'search_camera_device_ids': value,
+      if (instance.searchIntervalSeconds case final value?)
+        'search_interval_seconds': value,
+      if (instance.name case final value?) 'name': value,
+      if (instance.description case final value?) 'description': value,
     };
 
 TriggerListResponse _$TriggerListResponseFromJson(Map<String, dynamic> json) =>

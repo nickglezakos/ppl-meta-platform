@@ -267,7 +267,7 @@ async def _get_instant_detection_summary(
     age_adult = vmeta_demographics.get("total_adult", 0)
     age_elderly = vmeta_demographics.get("total_elderly", 0)
 
-    total_people = data.get("total_mvr_people", 0)
+    total_people = data.get("total_individuals", 0) or data.get("total_mvr_people", 0)
 
     # Apply demographic filters
     if selected_genders:
@@ -314,7 +314,7 @@ async def _get_instant_detection_summary(
         camera_breakdown.append({
             "camera_id": cam.get("camera_device_id", ""),
             "camera_name": cam.get("camera_device_id", ""),
-            "count": cam.get("total_mvr_people", 0),
+            "count": cam.get("individuals", 0) or cam.get("mvr_people", 0),
             "video_count": 0,  # Not applicable for instant detection
             "demographics": None,
             "last_detection": cam.get("last_detection"),

@@ -149,7 +149,7 @@ class TriggerModel {
   }
 }
 
-@JsonSerializable()
+@JsonSerializable(includeIfNull: false)
 class TriggerCreateRequest {
   @JsonKey(name: 'demographic_conditions')
   final List<DemographicCondition> demographicConditions;

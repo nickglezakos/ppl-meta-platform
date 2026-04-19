@@ -90,14 +90,14 @@ async def get_tracking_session_summary(
         demo_query = """
         SELECT
             COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE i.demographics->>'gender' = 'Male') AS total_male,
-            COUNT(*) FILTER (WHERE i.demographics->>'gender' = 'Female') AS total_female,
-            COUNT(*) FILTER (WHERE (i.demographics->>'age_min')::int < 25) AS total_young,
-            COUNT(*) FILTER (WHERE (i.demographics->>'age_min')::int >= 25
-                              AND (i.demographics->>'age_min')::int < 65) AS total_adult,
-            COUNT(*) FILTER (WHERE (i.demographics->>'age_min')::int >= 65) AS total_elderly
+            COUNT(*) FILTER (WHERE i.gender_estimate = 'male') AS total_male,
+            COUNT(*) FILTER (WHERE i.gender_estimate = 'female') AS total_female,
+            COUNT(*) FILTER (WHERE i.age_estimate IS NOT NULL AND i.age_estimate < 25) AS total_young,
+            COUNT(*) FILTER (WHERE i.age_estimate IS NOT NULL AND i.age_estimate >= 25
+                              AND i.age_estimate < 65) AS total_adult,
+            COUNT(*) FILTER (WHERE i.age_estimate IS NOT NULL AND i.age_estimate >= 65) AS total_elderly
         FROM individuals i
-        JOIN tracking_sessions ts ON i.session_uuid = ts.session_uuid
+        JOIN tracking_sessions ts ON i.created_by_session = ts.session_uuid
         WHERE ts.source_type = $1
           AND ts.created_at >= $2
           AND ts.created_at <= $3

@@ -926,6 +926,12 @@ async def update_user_action(request: Request):
     return await _proxy_to_media_service(request)
 
 
+@api_router.patch("/user-actions/{action_id}/toggle")
+async def toggle_user_action(request: Request):
+    """Proxy toggle user action to Media service."""
+    return await _proxy_to_media_service(request)
+
+
 @api_router.delete("/user-actions/{action_id}")
 async def delete_user_action(request: Request):
     """Proxy delete user action to Media service."""

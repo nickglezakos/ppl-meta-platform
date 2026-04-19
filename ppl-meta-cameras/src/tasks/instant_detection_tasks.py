@@ -255,6 +255,8 @@ def persist_instant_detection_results(
     cached and broadcast.  Never blocks the detection loop.
     """
     import requests as http_requests
+    import jwt as _jwt
+    from datetime import datetime, timedelta
 
     vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
     endpoint = f"{vmeta_url}/api/v1/instant-detection/persist"
@@ -267,9 +269,17 @@ def persist_instant_detection_results(
         "demographics": demographics,
     }
 
-    headers = {"Content-Type": "application/json"}
-    if auth_token:
-        headers["Authorization"] = f"Bearer {auth_token}"
+    # Always generate a fresh service token to avoid expiry issues
+    node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+    fresh_token = _jwt.encode(
+        {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
+        node_secret,
+        algorithm="HS256",
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {fresh_token}",
+    }
 
     try:
         resp = http_requests.post(endpoint, json=payload, headers=headers, timeout=10)

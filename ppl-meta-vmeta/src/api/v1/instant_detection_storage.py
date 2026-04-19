@@ -9,7 +9,7 @@ Called by the Cameras service Celery task after each persisted detection cycle.
 import json
 import logging
 import uuid as _uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -94,7 +94,7 @@ async def create_instant_detection_session(
     try:
         pool = mvr_service.repository.pool
         async with pool.acquire() as conn:
-            now = datetime.now(timezone.utc)
+            now = datetime.utcnow()
             await conn.execute(
                 """
                 INSERT INTO tracking_sessions (
@@ -115,10 +115,16 @@ async def create_instant_detection_session(
                 request.user_id,
                 [request.camera_id],
                 now,
-                now,
+                now + timedelta(seconds=1),
                 "running",
                 "instant_detection",
-                json.dumps({"source": "instant_detection", "camera_id": request.camera_id}),
+                json.dumps({
+                    "source": "instant_detection",
+                    "camera_id": request.camera_id,
+                    "max_gap_seconds": 5,
+                    "iou_threshold": 0.5,
+                    "min_overlap_confidence": 0.3,
+                }),
                 request.source_type,
                 request.camera_id,
                 now,
@@ -149,7 +155,7 @@ async def complete_instant_detection_session(
     try:
         pool = mvr_service.repository.pool
         async with pool.acquire() as conn:
-            now = datetime.now(timezone.utc)
+            now = datetime.utcnow()
             await conn.execute(
                 """
                 UPDATE tracking_sessions
@@ -203,9 +209,9 @@ async def persist_instant_detection(
     try:
         cycle_ts = datetime.fromisoformat(
             request.cycle_timestamp.replace("Z", "+00:00")
-        )
+        ).replace(tzinfo=None)
     except Exception:
-        cycle_ts = datetime.now(timezone.utc)
+        cycle_ts = datetime.utcnow()
 
     # Deterministic synthetic video UUID per cycle
     synthetic_video_uuid = _uuid.uuid5(
@@ -378,6 +384,10 @@ async def _create_individual(
 
     person_objects_json = json.dumps([po.person_object_uuid])
 
+    # Extract demographics from age_gender if available
+    gender_est = po.age_gender.gender if po.age_gender and po.age_gender.gender else None
+    age_est = po.age_gender.age_min if po.age_gender and po.age_gender.age_min is not None else None
+
     await conn.execute(
         """
         INSERT INTO individuals (
@@ -386,14 +396,16 @@ async def _create_individual(
             source_type, created_by_session,
             total_appearances, first_seen, last_seen,
             created_at, updated_at,
-            person_objects
+            person_objects,
+            gender_estimate, age_estimate
         ) VALUES (
             $1, $2, $3,
             $4, $5,
             $6, $7,
             $8, $9, $10,
             $11, $12,
-            $13
+            $13,
+            $14, $15
         )
         """,
         individual_uuid,
@@ -409,6 +421,8 @@ async def _create_individual(
         cycle_ts,
         cycle_ts,
         person_objects_json,
+        gender_est,
+        age_est,
     )
 
     # Session-individual relationship

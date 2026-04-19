@@ -11,8 +11,9 @@ import logging
 import time
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
+import jwt
 import requests as http_requests
 
 from src.services.instant_detection import InstantDetectionSampler
@@ -235,8 +236,19 @@ async def start_instant_detection(
         # Create tracking session in VMeta for this detection run
         session_uuid = str(uuid.uuid4())
         vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        # Build service-to-service auth token
+        node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+        svc_token = jwt.encode(
+            {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
+            node_secret,
+            algorithm="HS256",
+        )
+        svc_headers = {
+            "Authorization": f"Bearer {svc_token}",
+            "Content-Type": "application/json",
+        }
         try:
-            http_requests.post(
+            resp = http_requests.post(
                 f"{vmeta_url}/api/v1/instant-detection/create-session",
                 json={
                     "session_uuid": session_uuid,
@@ -244,10 +256,13 @@ async def start_instant_detection(
                     "source_type": "instant_detection",
                     "user_id": "system",
                 },
-                headers={"Content-Type": "application/json"},
+                headers=svc_headers,
                 timeout=5,
             )
-            logger.info(f"✅ Created tracking session {session_uuid[:8]}... for {camera_id}")
+            if resp.status_code == 200:
+                logger.info(f"✅ Created tracking session {session_uuid[:8]}... for {camera_id}")
+            else:
+                logger.warning(f"⚠️ VMeta create-session returned {resp.status_code}: {resp.text[:200]}")
         except Exception as e:
             logger.warning(f"⚠️ Could not create tracking session in VMeta: {e}")
 
@@ -263,7 +278,7 @@ async def start_instant_detection(
                 state.storage_multiple = storage_multiple
                 state.session_duration_minutes = session_duration
                 state.cycle_counter = 0
-                state.auth_token = getattr(manager, '_auth_token', None)
+                state.auth_token = svc_token
         
         return {
             "success": True,
@@ -297,16 +312,26 @@ async def stop_instant_detection(
     try:
         # Complete tracking sessions for all active cameras in VMeta before stopping
         vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+        svc_token = jwt.encode(
+            {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
+            node_secret, algorithm="HS256"
+        )
+        svc_headers = {"Authorization": f"Bearer {svc_token}", "Content-Type": "application/json"}
         with manager._lock:
             active_states = list(manager._samplers.values())
         for state in active_states:
             if state.session_uuid:
                 try:
-                    http_requests.post(
+                    resp = http_requests.post(
                         f"{vmeta_url}/api/v1/instant-detection/complete-session/{state.session_uuid}",
+                        headers=svc_headers,
                         timeout=5,
                     )
-                    logger.info(f"✅ Completed tracking session {state.session_uuid[:8]}... for {state.camera_id}")
+                    if resp.status_code == 200:
+                        logger.info(f"✅ Completed tracking session {state.session_uuid[:8]}... for {state.camera_id}")
+                    else:
+                        logger.warning(f"⚠️ Complete-session returned {resp.status_code}: {resp.text[:200]}")
                 except Exception as e:
                     logger.warning(f"⚠️ Could not complete tracking session for {state.camera_id}: {e}")
 
@@ -348,12 +373,22 @@ async def stop_instant_detection_for_camera(
             # Complete tracking session in VMeta before stopping
             if state.session_uuid:
                 vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+                node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+                svc_token = jwt.encode(
+                    {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
+                    node_secret, algorithm="HS256"
+                )
+                svc_headers = {"Authorization": f"Bearer {svc_token}", "Content-Type": "application/json"}
                 try:
-                    http_requests.post(
+                    resp = http_requests.post(
                         f"{vmeta_url}/api/v1/instant-detection/complete-session/{state.session_uuid}",
+                        headers=svc_headers,
                         timeout=5,
                     )
-                    logger.info(f"✅ Completed tracking session {state.session_uuid[:8]}...")
+                    if resp.status_code == 200:
+                        logger.info(f"✅ Completed tracking session {state.session_uuid[:8]}...")
+                    else:
+                        logger.warning(f"⚠️ Complete-session returned {resp.status_code}: {resp.text[:200]}")
                 except Exception as e:
                     logger.warning(f"⚠️ Could not complete tracking session: {e}")
 

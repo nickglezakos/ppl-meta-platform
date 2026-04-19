@@ -345,6 +345,60 @@ class InstantDetectionSampler:
             )
             time.sleep(state.stagger_offset)
 
+        # Ensure a tracking session exists for persistence.
+        # The API endpoint may set session_uuid after start_sampling() returns,
+        # but due to a race condition the thread may start before that happens.
+        # Wait briefly for external config, then create a session if still missing.
+        for _ in range(10):
+            if state.session_uuid:
+                break
+            time.sleep(0.1)
+
+        if not state.session_uuid:
+            import requests as _requests
+            import jwt as _jwt
+            from datetime import timedelta
+            new_uuid = str(uuid.uuid4())
+            vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+            # Generate service-to-service auth token
+            node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+            svc_token = _jwt.encode(
+                {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=30)},
+                node_secret,
+                algorithm="HS256",
+            )
+            state.auth_token = svc_token
+            headers = {
+                "Authorization": f"Bearer {svc_token}",
+                "Content-Type": "application/json",
+            }
+            try:
+                resp = _requests.post(
+                    f"{vmeta_url}/api/v1/instant-detection/create-session",
+                    json={
+                        "session_uuid": new_uuid,
+                        "camera_id": camera_id,
+                        "source_type": "instant_detection",
+                        "user_id": "system",
+                    },
+                    headers=headers,
+                    timeout=5,
+                )
+                if resp.status_code == 200:
+                    state.session_uuid = new_uuid
+                    state.session_started_at = datetime.utcnow()
+                    logger.info(
+                        f"✅ [SESSION] Auto-created tracking session for {camera_id}: {new_uuid[:8]}..."
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️ [SESSION] VMeta create-session returned {resp.status_code}: {resp.text[:200]}"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ [SESSION] Failed to auto-create tracking session for {camera_id}: {e}"
+                )
+
         consecutive_failures = 0
         max_failures = 3
         
@@ -1791,14 +1845,19 @@ class InstantDetectionSampler:
             
             # Decode base64 frames back to numpy arrays
             frames = []
-            for frame_b64 in frames_data:
+            frame_spacing = self.temporal_window / 2  # 0.5s for 1.0s window
+            for i, frame_b64 in enumerate(frames_data):
                 # Decode base64 to bytes
                 frame_bytes = base64.b64decode(frame_b64)
                 # Convert to numpy array
                 nparr = np.frombuffer(frame_bytes, np.uint8)
                 # Decode JPEG to image
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                frames.append({"frame": frame})
+                frames.append({
+                    "frame": frame,
+                    "frame_index": i,
+                    "timestamp": i * frame_spacing,
+                })
             
             if len(frames) != 3:
                 logger.error(f"❌ [CELERY] Expected 3 frames, got {len(frames)}")
