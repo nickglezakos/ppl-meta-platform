@@ -44,8 +44,22 @@ class AuthenticationService {
     return platformServices?['mobile_camera_config']?['recommended_endpoint'];
   }
 
-  /// Get camera service endpoint for registration
+  /// Get camera service endpoint for registration and frame sending.
+  /// Routes through the gateway (port 8080) on the same host as the node
+  /// service the user authenticated against. This ensures connectivity
+  /// on mobile hotspots where the cameras service port (8005) may not
+  /// be directly reachable.
   String? get cameraServiceEndpoint {
+    // Use gateway URL derived from the node server URL the user connected to.
+    // The gateway proxies all /api/v1/streaming/mobile/* routes to cameras.
+    if (_serverUrl.isNotEmpty) {
+      final uri = Uri.tryParse(_serverUrl);
+      if (uri != null) {
+        return 'http://${uri.host}:8080';
+      }
+    }
+
+    // Fallback to discovery endpoints (works on same-subnet networks)
     final services = platformServices?['microservices']?['cameras'];
     return services?['endpoints']?['local'] ?? services?['endpoints']?['tailscale'];
   }

@@ -353,18 +353,15 @@ class AuthenticationProvider extends ChangeNotifier {
     _setLoading(true);
 
     try {
-      // Initialize streaming service
+      // Initialize streaming service (sets server URL and auth headers)
       await _initializeStreamingService();
 
-      // Connect to streaming server
-      final connected = await _streamingService.connect();
-      
-      if (!connected) {
-        _setError('Failed to connect to streaming server');
-      }
+      // Mobile cameras use HTTP POST for frames, not WebSocket.
+      // Just report success after initialization.
+      print('ℹ️ Streaming service initialized (HTTP mode, no WebSocket needed)');
 
       notifyListeners();
-      return connected;
+      return true;
     } catch (e) {
       _setError('Streaming connection error: ${e.toString()}');
       return false;
@@ -426,20 +423,27 @@ class AuthenticationProvider extends ChangeNotifier {
   Future<void> _initializeStreamingService() async {
     if (_serverUrl == null) return;
 
-    // Get cameras service URL from platform services data instead of node service URL
-    final platformServices = _authService.platformServices;
-    String streamingServerUrl = _serverUrl!; // fallback to node service
+    // Route streaming through the gateway (port 8080) on the same host.
+    // This ensures connectivity on mobile hotspots where the cameras
+    // service port (8005) may not be directly reachable.
+    final uri = Uri.tryParse(_serverUrl!);
+    String streamingServerUrl = _serverUrl!; // fallback
     
-    if (platformServices != null) {
-      final microservices = platformServices['microservices'] as Map<String, dynamic>?;
-      final camerasService = microservices?['cameras'] as Map<String, dynamic>?;
-      final camerasEndpoint = camerasService?['endpoints']?['local'] as String?;
-      
-      if (camerasEndpoint != null) {
-        streamingServerUrl = camerasEndpoint;
-        print('🎯 [STREAMING_INIT] Using cameras service URL: $streamingServerUrl');
-      } else {
-        print('⚠️ [STREAMING_INIT] Cameras service not found, using fallback: $streamingServerUrl');
+    if (uri != null) {
+      streamingServerUrl = 'http://${uri.host}:8080';
+      print('🎯 [STREAMING_INIT] Using gateway URL for streaming: $streamingServerUrl');
+    } else {
+      // Legacy fallback: try cameras service from platform services
+      final platformServices = _authService.platformServices;
+      if (platformServices != null) {
+        final microservices = platformServices['microservices'] as Map<String, dynamic>?;
+        final camerasService = microservices?['cameras'] as Map<String, dynamic>?;
+        final camerasEndpoint = camerasService?['endpoints']?['local'] as String?;
+        
+        if (camerasEndpoint != null) {
+          streamingServerUrl = camerasEndpoint;
+          print('⚠️ [STREAMING_INIT] Fallback to cameras service URL: $streamingServerUrl');
+        }
       }
     }
 

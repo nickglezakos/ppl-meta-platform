@@ -41,9 +41,20 @@ class EnhancedAuthenticationService {
     return _deviceData?['platform_services'];
   }
 
-  /// Get camera service endpoint for registration
+  /// Get camera service endpoint for registration and frame sending.
+  /// Routes through the gateway (port 8080) on the same host the user
+  /// connected to. This ensures connectivity on mobile hotspots where
+  /// the cameras service port (8005) may not be directly reachable.
   String? get cameraServiceEndpoint {
-    // First try from platform services
+    // Use gateway URL derived from the server URL the user connected to.
+    if (_serverUrl.isNotEmpty) {
+      final uri = Uri.tryParse(_serverUrl);
+      if (uri != null) {
+        return 'http://${uri.host}:8080';
+      }
+    }
+
+    // Fallback: try from platform services
     final services = platformServices?['microservices']?['cameras'];
     final endpoint = services?['endpoints']?['local'] ?? services?['endpoints']?['tailscale'];
     

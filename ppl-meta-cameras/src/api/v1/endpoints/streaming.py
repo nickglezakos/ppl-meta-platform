@@ -169,6 +169,21 @@ async def video_stream(
                     else:
                         # Get frame from queue worker (USB/RTSP/MOBILE)
                         frame = await queue_service.get_latest_frame(device_id)
+
+                        # Fallback for mobile cameras: read directly from mobile streaming service
+                        if frame is None and is_mobile:
+                            from src.services.mobile_streaming import mobile_streaming_service
+                            frame_data = mobile_streaming_service.get_latest_mobile_frame_data(device_id)
+                            if frame_data and frame_data.get("frame") is not None:
+                                frame = frame_data["frame"]
+                                rotation_angle = frame_data.get("rotation_angle", 0)
+                                if rotation_angle != 0:
+                                    if rotation_angle == 90:
+                                        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                                    elif rotation_angle == 180:
+                                        frame = cv2.rotate(frame, cv2.ROTATE_180)
+                                    elif rotation_angle == 270:
+                                        frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
                     
                     if frame is None:
                         consecutive_failures += 1
@@ -414,6 +429,25 @@ async def capture_snapshot(request: Request, device_id: str) -> Dict:
         else:
             queue_service = get_camera_service()
             frame = await queue_service.get_latest_frame(device_id)
+
+            # Fallback for mobile cameras: read directly from mobile streaming service
+            # The worker_manager may not have a CameraWorker registered if the camera
+            # was not explicitly "connected" via the connect flow (mobile cameras
+            # auto-register and start sending frames without a connect step).
+            if frame is None and is_mobile:
+                from src.services.mobile_streaming import mobile_streaming_service
+                frame_data = mobile_streaming_service.get_latest_mobile_frame_data(device_id)
+                if frame_data and frame_data.get("frame") is not None:
+                    frame = frame_data["frame"]
+                    rotation_angle = frame_data.get("rotation_angle", 0)
+                    if rotation_angle != 0:
+                        if rotation_angle == 90:
+                            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                        elif rotation_angle == 180:
+                            frame = cv2.rotate(frame, cv2.ROTATE_180)
+                        elif rotation_angle == 270:
+                            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                    logger.info(f"📱 [SNAPSHOT] Used mobile streaming fallback for {device_id}")
 
         if frame is None:
             raise HTTPException(

@@ -138,8 +138,9 @@ class _CameraStreamPlayerSimpleState extends ConsumerState<CameraStreamPlayerSim
         return null;
       }
       
-      // Create backend streaming URL with token
-      final baseUrl = AppConfig.instance.cameraServiceUrl;
+      // Route stream through the gateway so it works on mobile hotspots
+      // (direct cameraServiceUrl port may not be reachable across NAT)
+      final baseUrl = AppConfig.instance.apiBaseUrl;
       final authenticatedUrl = '$baseUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
       
       debugPrint('🎥 [SIMPLE_STREAMING] Backend stream URL: ${authenticatedUrl.replaceAll(token, "***")}');

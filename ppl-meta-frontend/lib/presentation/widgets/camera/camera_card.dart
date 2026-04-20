@@ -996,8 +996,8 @@ class _StreamThumbnail extends ConsumerWidget {
         }
         
         final token = snapshot.data!;
-        final cameraServiceUrl = AppConfig.instance.cameraServiceUrl;
-        final streamUrl = '$cameraServiceUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
+        final gatewayUrl = AppConfig.instance.apiBaseUrl;
+        final streamUrl = '$gatewayUrl/api/v1/streaming/${camera.deviceId}/video?token=$token';
         
         return InkWell(
           onTap: () {

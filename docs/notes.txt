@@ -12,6 +12,9 @@ production profiling: pyspy
 https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-finish-f20516db1d02?source=friends_link&sk=3a1bcf9cca420e102bd2a432d040addb
 
 *************************************************
+custom camera modules
+https://sunex.com/
+*************************************************
 
 
 
@@ -76,10 +79,6 @@ white_balance_automatic=1  # Keep auto white balance
 
 
 
-
-
-
-
  TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | jq -r '.access_token') && curl -s "http://localhost:8008/api/v1/mvr/quality-metrics?session_uuid=ea34327a-d595-4cb3-bd29-e079e2c70e2f&start_time=2026-01-12T00:00:00&end_time=2026-01-12T23:59:59" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 
   TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | jq -r '.access_token') && curl -s "http://localhost:8008/api/v1/mvr/quality-metrics?session_uuid=ea34327a-d595-4cb3-bd29-e079e2c70e2f&start_time=2026-01-12T00:00:00&end_time=2026-01-12T23:59:59" -H "Authorization: Bearer $TOKEN" | jq '{demographics, data_completeness}'
@@ -89,30 +88,6 @@ white_balance_automatic=1  # Keep auto white balance
 /Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-vmeta.log
  
 b24ad688-26f0-4e1e-9484-4fecec18df9c (that's your "Nick" MVR person!)
-
-
-cd /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-signage-simple-player
-
-adb logcat | grep -i "flutter\|signage\|ppl"
-
-flutter logs
-
-same cyan color (AppColors.secondary)
-
-
-summary token budget is running low
-
-ppl-meta-cameras/logs/ppl-meta-cameras.log 
-
- 
-Backend Queue Infrastructure Validation - Verify CameraWorker implementation
-Backend Recording Implementation - Recording endpoints + service layer
-Backend Streaming Implementation - MJPEG streaming endpoint
-Frontend Recording Integration - Wire up UI to recording APIs
-Frontend Streaming Integration - Connect stream player to backend
-Testing & Validation - Unit, integration, and performance tests
-Documentation & Cleanup - API docs, user guides, code cleanup
-
 
 
 PPL meta mini
@@ -136,27 +111,129 @@ rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.76:554/stream1
 http://192.168.1.68:8001
 
 
-at the flutter project there are multiple methods that were built for camera recording but just one is active:
-
-Start Ollama: brew services start ollama
-Stop Ollama: brew services stop ollama
-Chat with models: Use: ollama run llama3.1 or ollama run codellama:7b in terminal
-List models: ollama list
-Remove models: ollama rm <model_name> if you need to free up space
-
-NAME                       ID              SIZE      MODIFIED   
-nomic-embed-text:latest    0a109f422b47    274 MB    3 days ago    
-qwen2.5-coder:1.5b-base    02e0f2817a89    986 MB    3 days ago    
-llama3.1:8b                46e0c10c039e    4.9 GB    3 days ago    
-codellama:7b               8fdf8f752f6e    3.8 GB    3 days ago    
-llama3.1:latest            46e0c10c039e    4.9 GB    3 days ago    
 
 
+************************************************************************
 
-************************************************************************************************************
+
+The need for eyenet in everyday life for a company/organisation/family:
+  High value inventory/storage/safe.
+    Company safe.
+    Warehouse storage facility.
+    Restricted areas.
+  Entry / exit points monitoring and access control.
+  People activity monitoring at a specific area.
+    
 
 
-**************************************************************************
+
+
+
+A computer vision platform that consists of the following:
+
+Components (devices):
+  Computing unit (any linux, windows PC, laptop, server)
+  USB cameras
+  Mobile cameras on phones both android and iphones
+  WIFI cameras (RTSP on any router)
+  Edge devices: RPIs, mini PCs
+  Edge cameras on Edge devices
+  Edge TV/ Digital displays on Edge devices
+  Any mobile device for use and managment of the platform.
+
+Network:
+  The platform works on local networks.
+  It supports remote networking for any of the compnents via VPN.
+  The only connection to the public internet needed is once a month/year for licencing.
+
+Eyenet is full automatic and it offers automation in the following use cases:
+
+Persons
+  Counting
+  Demographics with routes in 3d space
+  Match
+Automatic rules on any of the above that triggers:
+  On screen alerts
+  emails
+  third party system API calls
+  digital signage playlists
+
+
+
+
+
+
+Boost Moderate Cameras to Powerful Machine Vision Nodes
+
+Cameras
+  Present Camera types
+  Explain live stream and recordings > dual funnel modes.
+  For recordings:
+      Face rects > explain face detection sampling
+      Details > explain the MVR data: unique individuals and routes (with distance)
+      Outline the computations involved for one video and for more (automations for more)
+  
+  Explain:
+    Cameras can operate in both modes or just on one (recordings / instant detection)
+  
+  Instant detection
+    Instant detection does not keep media files (videos) and also does not keep
+    the individuals data objects but just the aggragate results.
+      Privacy
+      Speed / alerts
+      Full analytics
+
+Strong points:
+  Unlimited cameras: computations in pipelines, the results will come sooner or later.
+  Any computing unit would do.
+  In the product pipeline: how to have a local computing cluster.  ???
+  Network agnostic with rapid deployment.
+  VPN for security and global reach.
+
+Show recordings from:
+  usb camera 04
+  mcam treble droid
+  RTSP camera 01
+  Edge camera rpi5 01
+
+Demo live stream from:
+  usb camera 04
+  mcam treble droid
+  RTSP camera 01      ???
+  Edge camera rpi5 01   ???
+
+Demo live stream components:
+  Person track (single / two / many)
+    Video details
+    MVR search results
+    Analytics results
+  
+  Attendance
+    Individual groups
+      Management
+      Search / Attandance with download Reports
+
+  Automation
+    Notifications
+      logs
+      on screen
+      Email
+      external systems
+    Digital Signage
+      one person video
+      two person video
+      one female video
+      people match video
+
+
+
+
+
+
+
+************************************************************************
+
+
 
 Functionalities
 
@@ -178,8 +255,6 @@ recording
           for a stream snapshot (a single video)
           for a product template session preset
           for a unresctricted time frame (MVR uniqueness on the MVR level)
-
-
 
 basic person detection
   indoviduals counter
@@ -233,153 +308,5 @@ Underage Detector
   Audience Insights
 
 
-
 ********************
 
-
-The issue with the ppl-meta-signage-simple-player is that when the app does not sych with the platform to connect it pops the expected dialogue for the user to enter the correct ip and port details and when the user submits those the app correctly stores the details but then it shuts off. When it is executede on egain it gets the stored connection details and connects witn no problems. The shut off is an issue that needs to be resolved.
-
-50621:2026-03-17 12:10:33,126 - face_detection_endpoints - INFO - 🔍 Vision URL: http://localhost:8003/faces/media/77729f23-f016-4475-99ea-dda2fec1b73d
-50623:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 RAW Vision response text (first 200 chars): {"success":true,"media_id":"77729f23-f016-4475-99ea-dda2fec1b73d","has_stored_faces":true,"total_faces":3,"faces_by_frame":{"4":[{"id":"d66a1413-bd6d-482a-a7a1-589682a2ef8c","bbox":[94,200,351,457],"b
-50624:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 IMMEDIATELY after json.loads, media_id: 77729f23-f016-4475-99ea-dda2fec1b73d
-50626:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 Vision response media_id: 77729f23-f016-4475-99ea-dda2fec1b73d
-50627:2026-03-17 12:10:33,131 - face_detection_endpoints - INFO - 🔍 Expected media_id: 77729f23-f016-4475-99ea-dda2fec1b73d
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  grep -n "Real-time detection com
-pleted" ppl-meta-orchestrator/logs/ppl-meta-orchestrator.log | tail -30
-44605:2026-03-16 17:57:20,262 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '1f0df640-7b95-4223-a836-766601092cc5', 'video_info': {'total_frames': 8, 'fps': 30.0, 'duration': 0.26666666666666666, 'processed_frames': 1, 'frame_interval': 10}, 'faces_by_frame': {'0': []}, 'total_faces': 0, 'processing_time': 0.454272985458374, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 1 frames, found 0 faces total'}
-44642:2026-03-16 17:57:20,515 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '1f0df640-7b95-4223-a836-766601092cc5', 'video_info': {'total_frames': 8, 'fps': 30.0, 'duration': 0.26666666666666666, 'processed_frames': 1, 'frame_interval': 10}, 'faces_by_frame': {'0': []}, 'total_faces': 0, 'processing_time': 0.1676321029663086, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 1 frames, found 0 faces total'}
-44682:2026-03-16 17:57:27,347 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '1f0df640-7b95-4223-a836-766601092cc5', 'video_info': {'total_frames': 8, 'fps': 30.0, 'duration': 0.26666666666666666, 'processed_frames': 1, 'frame_interval': 10}, 'faces_by_frame': {'0': []}, 'total_faces': 0, 'processing_time': 0.22639894485473633, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 1 frames, found 0 faces total'}
-44721:2026-03-16 17:57:36,429 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': 'ba8e5ea6-5bd3-4f9a-b15c-e44f2259bfda', 'video_info': {'total_frames': 13, 'fps': 30.0, 'duration': 0.43333333333333335, 'processed_frames': 2, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': []}, 'total_faces': 0, 'processing_time': 0.38042712211608887, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 2 frames, found 0 faces total'}
-44758:2026-03-16 17:57:36,704 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': 'ba8e5ea6-5bd3-4f9a-b15c-e44f2259bfda', 'video_info': {'total_frames': 13, 'fps': 30.0, 'duration': 0.43333333333333335, 'processed_frames': 2, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': []}, 'total_faces': 0, 'processing_time': 0.21088504791259766, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 2 frames, found 0 faces total'}
-44798:2026-03-16 17:57:37,872 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': 'ba8e5ea6-5bd3-4f9a-b15c-e44f2259bfda', 'video_info': {'total_frames': 13, 'fps': 30.0, 'duration': 0.43333333333333335, 'processed_frames': 2, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': []}, 'total_faces': 0, 'processing_time': 0.2710139751434326, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 2 frames, found 0 faces total'}
-45515:2026-03-17 07:16:35,885 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '5e75f5f0-405e-4acc-8bea-3d7e28d5ad4c', 'video_info': {'total_frames': 65, 'fps': 9.64, 'duration': 6.742738589211618, 'processed_frames': 7, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': [], '20': [], '30': [], '40': [], '50': [], '60': []}, 'total_faces': 0, 'processing_time': 2.084796905517578, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 7 frames, found 0 faces total'}
-45552:2026-03-17 07:16:37,672 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '5e75f5f0-405e-4acc-8bea-3d7e28d5ad4c', 'video_info': {'total_frames': 65, 'fps': 9.64, 'duration': 6.742738589211618, 'processed_frames': 7, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': [], '20': [], '30': [], '40': [], '50': [], '60': []}, 'total_faces': 0, 'processing_time': 1.763160228729248, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 7 frames, found 0 faces total'}
-45592:2026-03-17 07:16:39,388 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '5e75f5f0-405e-4acc-8bea-3d7e28d5ad4c', 'video_info': {'total_frames': 65, 'fps': 9.64, 'duration': 6.742738589211618, 'processed_frames': 7, 'frame_interval': 10}, 'faces_by_frame': {'0': [], '10': [], '20': [], '30': [], '40': [], '50': [], '60': []}, 'total_faces': 0, 'processing_time': 1.6584467887878418, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 7 frames, found 0 faces total'}
-50485:2026-03-17 12:08:30,016 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '64d89c45-7c48-42a8-8a42-07652b76ef56', 'video_info': {'total_frames': 135, 'fps': 5.67, 'duration': 23.80952380952381, 'processed_frames': 68, 'frame_interval_requested': 10, 'frame_interval_effective': 2}, 'faces_by_frame': {'0': [], '2': [], '4': [], '6': [], '8': [], '10': [{'bbox': [130, 162, 356, 388], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '12': [{'bbox': [154, 208, 360, 414], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '14': [], '16': [], '18': [], '20': [], '22': [], '24': [], '26': [], '28': [], '30': [{'bbox': [111, 164, 326, 379], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '32': [{'bbox': [70, 171, 296, 397], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '34': [], '36': [], '38': [], '40': [], '42': [], '44': [], '46': [], '48': [], '50': [], '52': [], '54': [], '56': [], '58': [], '60': [], '62': [], '64': [], '66': [], '68': [], '70': [], '72': [], '74': [], '76': [], '78': [], '80': [], '82': [], '84': [], '86': [], '88': [], '90': [], '92': [], '94': [], '96': [], '98': [], '100': [], '102': [], '104': [], '106': [], '108': [], '110': [], '112': [], '114': [], '116': [], '118': [], '120': [], '122': [], '124': [], '126': [], '128': [], '130': [], '132': [], '134': []}, 'total_faces': 4, 'processing_time': 4.19882607460022, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 68 frames, found 4 faces total'}
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  grep "Real-time detection comple
-ted" ppl-meta-orchestrator/logs/ppl-meta-orchestrator.log | grep -v "total_faces': 0" | 
-tail -20
-2026-03-17 12:08:30,016 - face_detection_endpoints - INFO - ✅ Real-time detection completed: {'success': True, 'media_id': '64d89c45-7c48-42a8-8a42-07652b76ef56', 'video_info': {'total_frames': 135, 'fps': 5.67, 'duration': 23.80952380952381, 'processed_frames': 68, 'frame_interval_requested': 10, 'frame_interval_effective': 2}, 'faces_by_frame': {'0': [], '2': [], '4': [], '6': [], '8': [], '10': [{'bbox': [130, 162, 356, 388], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '12': [{'bbox': [154, 208, 360, 414], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '14': [], '16': [], '18': [], '20': [], '22': [], '24': [], '26': [], '28': [], '30': [{'bbox': [111, 164, 326, 379], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '32': [{'bbox': [70, 171, 296, 397], 'confidence': 0.5, 'method': 'two_stage_haar_dlib'}], '34': [], '36': [], '38': [], '40': [], '42': [], '44': [], '46': [], '48': [], '50': [], '52': [], '54': [], '56': [], '58': [], '60': [], '62': [], '64': [], '66': [], '68': [], '70': [], '72': [], '74': [], '76': [], '78': [], '80': [], '82': [], '84': [], '86': [], '88': [], '90': [], '92': [], '94': [], '96': [], '98': [], '100': [], '102': [], '104': [], '106': [], '108': [], '110': [], '112': [], '114': [], '116': [], '118': [], '120': [], '122': [], '124': [], '126': [], '128': [], '130': [], '132': [], '134': []}, 'total_faces': 4, 'processing_time': 4.19882607460022, 'confidence_threshold': 0.5, 'session_uuid': None, 'message': 'Bulk processed 68 frames, found 4 faces total'}
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % 
-
-
-(.venv) (base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  source /Users/nickgkleza
-kos/Documents/ppl-meta-code/ppl-meta-vision/venv/bin/activate && python3 /Users/nickgkle
-zakos/Documents/ppl-meta-code/tools/analyze_video_frames.py /Users/nickgklezakos/Documen
-ts/ppl-meta-code/ppl-meta-media/media/4cf362b1-3e05-4e85-81c7-c08a98c7e41b/video/2026/03
-/c25db3e914666ee9f9059b3605bc7ab6.mp4
-Video: fps=5.67, total_frames=135, size=480x640, duration=23.8s
-
-Frame   0: mean= 106.7 std= 88.9 diff=N/A   haar=0
-Frame   2: mean= 103.9 std= 88.7 diff=22.27 haar=0
-Frame   4: mean= 102.6 std= 87.9 diff=29.82 haar=1 FACES=1
-Frame   6: mean=  96.8 std= 83.2 diff=32.65 haar=0
-Frame   8: mean= 109.2 std= 87.8 diff=38.43 haar=0
-Frame  10: mean= 113.7 std= 88.7 diff=27.02 haar=1 FACES=1
-Frame  12: mean= 110.1 std= 84.5 diff=37.00 haar=1 FACES=1
-Frame  14: mean= 110.7 std= 82.7 diff=24.19 haar=1 FACES=1
-Frame  16: mean= 108.7 std= 83.5 diff=18.97 haar=1 FACES=1
-Frame  18: mean= 100.4 std= 80.2 diff=36.83 haar=0
-Frame  20: mean= 102.9 std= 82.8 diff=37.64 haar=1 FACES=1
-Frame  22: mean= 111.5 std= 87.0 diff=32.88 haar=1 FACES=1
-Frame  24: mean= 107.9 std= 87.0 diff=26.58 haar=1 FACES=1
-Frame  26: mean= 101.8 std= 86.0 diff=30.39 haar=0
-Frame  28: mean= 118.6 std= 90.5 diff=37.43 haar=1 FACES=1
-Frame  30: mean= 108.7 std= 88.3 diff=23.97 haar=1 FACES=1
-Frame  32: mean= 107.3 std= 86.0 diff=27.45 haar=1 FACES=1
-Frame  34: mean= 109.6 std= 85.8 diff=22.09 haar=0
-Frame  36: mean= 104.8 std= 84.4 diff=36.17 haar=1 FACES=1
-Frame  38: mean= 111.7 std= 87.3 diff=43.20 haar=2 FACES=2
-Frame  40: mean= 115.3 std= 87.3 diff=29.72 haar=1 FACES=1
-Frame  42: mean= 107.2 std= 84.9 diff=43.77 haar=0
-Frame  44: mean= 113.0 std= 82.7 diff=32.37 haar=0
-Frame  46: mean= 106.7 std= 81.4 diff=43.14 haar=0
-Frame  48: mean= 112.6 std= 82.1 diff=38.96 haar=0
-Frame  50: mean= 104.8 std= 82.1 diff=45.53 haar=0
-Frame  52: mean= 101.9 std= 83.7 diff=31.60 haar=0
-Frame  54: mean= 114.0 std= 87.0 diff=37.52 haar=0
-Frame  56: mean= 110.8 std= 87.1 diff=24.94 haar=0
-Frame  58: mean= 114.4 std= 88.7 diff=37.90 haar=0
-Frame  60: mean= 111.1 std= 87.6 diff=31.59 haar=0
-Frame  62: mean= 104.2 std= 85.7 diff=32.54 haar=0
-Frame  64: mean= 101.7 std= 83.1 diff=26.32 haar=0
-Frame  66: mean= 105.4 std= 82.6 diff=27.27 haar=0
-Frame  68: mean= 106.1 std= 83.0 diff=14.51 haar=1 FACES=1
-Frame  70: mean= 106.8 std= 84.0 diff=17.28 haar=0
-Frame  72: mean= 110.9 std= 87.2 diff=31.36 haar=0
-Frame  74: mean= 116.4 std= 88.2 diff=31.83 haar=0
-Frame  76: mean= 118.7 std= 88.6 diff=20.07 haar=0
-Frame  78: mean= 115.6 std= 88.0 diff=24.92 haar=0
-Frame  80: mean= 116.6 std= 88.3 diff=15.40 haar=0
-Frame  82: mean= 104.9 std= 89.3 diff=26.73 haar=0
-Frame  84: mean= 107.1 std= 88.0 diff=10.97 haar=0
-Frame  86: mean= 111.6 std= 86.4 diff=22.73 haar=0
-Frame  88: mean= 111.2 std= 87.1 diff=24.78 haar=0
-Frame  90: mean= 109.6 std= 85.0 diff=24.97 haar=0
-Frame  92: mean= 111.0 std= 85.1 diff=15.10 haar=0
-Frame  94: mean= 100.8 std= 82.0 diff=32.82 haar=0
-Frame  96: mean= 109.6 std= 84.1 diff=33.09 haar=0
-Frame  98: mean= 112.7 std= 88.9 diff=38.57 haar=0
-Frame 100: mean= 112.5 std= 86.1 diff=25.52 haar=0
-Frame 102: mean= 113.7 std= 86.4 diff=18.36 haar=0
-Frame 104: mean= 110.9 std= 85.7 diff=22.65 haar=0
-Frame 106: mean= 101.4 std= 83.4 diff=34.55 haar=1 FACES=1
-Frame 108: mean= 107.8 std= 83.0 diff=26.94 haar=0
-Frame 110: mean= 108.8 std= 85.2 diff=28.82 haar=0
-Frame 112: mean= 105.7 std= 84.9 diff=25.37 haar=0
-Frame 114: mean=  97.8 std= 83.2 diff=35.28 haar=0
-Frame 116: mean= 100.5 std= 83.9 diff=20.20 haar=0
-Frame 118: mean= 103.8 std= 83.6 diff=27.03 haar=1 FACES=1
-Frame 120: mean=  97.3 std= 81.4 diff=31.96 haar=1 FACES=1
-Frame 122: mean= 106.4 std= 84.6 diff=26.53 haar=1 FACES=1
-Frame 124: mean= 109.3 std= 85.9 diff=26.24 haar=0
-Frame 126: mean= 109.7 std= 85.9 diff= 8.22 haar=0
-Frame 128: mean= 112.1 std= 86.1 diff=20.35 haar=0
-Frame 130: mean= 114.0 std= 86.5 diff=19.50 haar=0
-Frame 132: mean= 115.2 std= 86.6 diff=24.39 haar=0
-Frame 134: mean= 120.4 std= 87.6 diff=31.01 haar=0
-(venv) (base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % 
-
-
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  PGPASSWORD=ppl_password psq
-l -h localhost -p 5432 -U ppl_user -d ppl_meta_vmeta -P pager=off -c "WITH vi AS (S
-ELECT DISTINCT individual_uuid FROM individual_video_appearances WHERE video_uuid='
-ddebfc22-2f6b-4110-8c05-b180ad8515da'::uuid) SELECT imm.individual_uuid, imm.mvr_pe
-ople_uuid, mp.is_orphaned, mp.gender, mp.age_min, mp.age_max, mp.merged_into_mvr_uu
-id, sup.is_orphaned AS parent_orphaned, sup.gender AS parent_gender, sup.age_min AS
- parent_age_min, sup.age_max AS parent_age_max FROM vi JOIN individual_mvr_mapping 
-imm ON imm.individual_uuid=vi.individual_uuid JOIN mvr_people mp ON mp.mvr_people_u
-uid=imm.mvr_people_uuid LEFT JOIN mvr_people sup ON sup.mvr_people_uuid=mp.merged_i
-nto_mvr_uuid ORDER BY imm.individual_uuid;"
-           individual_uuid            |           mvr_people_uuid            | is_orphaned | gender | age_min | age_max |         merged_into_mvr_uuid         | parent_orphaned | parent_gender | parent_age_min | parent_age_max 
---------------------------------------+--------------------------------------+-------------+--------+---------+---------+--------------------------------------+-----------------+---------------+----------------+----------------
- 203c85b2-365c-4dbd-91ff-a87a5b623606 | fa31b785-0b25-4dda-be6e-447c95447ab0 | t           | female |      35 |      45 | 79bd6286-30b0-497b-afa8-39b06dbbeaf3 | f               | male          |             38 |             48
- 4a01ad48-edf6-4817-b986-f3ad05572708 | 8f290225-4a5b-4980-9db3-a8357b602d70 | t           | female |      30 |      40 | f89e21a5-3113-415b-860c-d809f0a978d2 | t               | female        |             31 |             41
- 636a23c4-707b-49b9-8aae-80c5e5f93d4e | b60db041-0041-4c98-9bdd-7d31c7bd180c | t           | female |      32 |      42 | f89e21a5-3113-415b-860c-d809f0a978d2 | t               | female        |             31 |             41
- 945dac25-6b11-4ad9-bd67-5ed08b17c046 | 53129ddc-5ec5-4fcd-98c4-873dfdbd70cc | t           | female |      30 |      40 | 79bd6286-30b0-497b-afa8-39b06dbbeaf3 | f               | male          |             38 |             48
- b267c423-0fdc-48f1-974a-ecce102b2502 | 6393ebe2-d9ee-475d-ba17-1365a560c907 | t           | female |      32 |      42 | f89e21a5-3113-415b-860c-d809f0a978d2 | t               | female        |             31 |             41
-(5 rows)
-
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code %  TOKEN=$(curl -s -X POST 'http://local
-host:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'userna
-me=fresh.user@example.com&password=NewPassword234!' | python3 -c "import sys,json; print(json
-.load(sys.stdin)['access_token'])" 2>/dev/null)
-(base) nickgklezakos@Nicks-MacBook-Air ppl-meta-code % curl -s "http://localhost:8002/person-
-objects/95ab35ff-0cd7-4923-95d5-db758f1726b9" -H "Authorization: Bearer $TOKEN" | python3 -c 
-"
-pipe dquote> import sys,json
-pipe dquote> d=json.load(sys.stdin)
-pipe dquote> print('success:', d.get('success'))
-pipe dquote> groups = d.get('person_groups', [])
-pipe dquote> print('groups:', len(groups))
-pipe dquote> for g in groups:
-pipe dquote>     pts = g.get('movement_tracking',{}).get('route_points',[])
-pipe dquote>     print(f'  group person_uuid={g.get(\"person_uuid\",\"?\")} route_points={len
-(pts)}')
-pipe dquote> " 2>&1
-success: True
-groups: 2
-  group person_uuid=af637a87-5cc9-42b0-a8a5-5ca723de8573 route_points=81
-  group person_uuid=6562aae3-d37d-46e6-a1b5-695347001bcc route_points=1
-
-  

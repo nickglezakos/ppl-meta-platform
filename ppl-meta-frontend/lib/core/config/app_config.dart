@@ -70,9 +70,9 @@ class AppConfig {
   String get mediaEndpoint => '$apiBaseUrl/api/v1/media';
   String get healthEndpoint => '$apiBaseUrl/api/v1/health';
   
-  // Camera Service Endpoints  
-  String get cameraStreamEndpoint => '$cameraServiceUrl/api/v1/streaming';
-  String get cameraSnapshotEndpoint => '$cameraServiceUrl/api/v1/streaming';
+  // Camera Service Endpoints (routed through gateway for NAT/hotspot compatibility)
+  String get cameraStreamEndpoint => '$apiBaseUrl/api/v1/streaming';
+  String get cameraSnapshotEndpoint => '$apiBaseUrl/api/v1/streaming';
   
   bool get isDevelopment => environment == 'development';
   bool get isStaging => environment == 'staging';

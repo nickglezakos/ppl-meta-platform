@@ -96,7 +96,8 @@ class _CameraStreamPlayerSimpleState
         _latestFrame = imageBytes;
         _error = null;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('❌ [IO_STREAM] Snapshot poll error for ${widget.cameraId}: $e');
       if (!mounted || !_isStreaming) return;
       setState(() {
         _error = 'Waiting for camera frames...';

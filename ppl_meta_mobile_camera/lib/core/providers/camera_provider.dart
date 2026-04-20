@@ -212,13 +212,10 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
         if (streamingInitialized) {
           print('✅ Streaming service initialized successfully');
           
-          // Try to connect to streaming server
-          final connected = await _streamingService.connect();
-          if (connected) {
-            print('✅ Connected to streaming server');
-          } else {
-            print('⚠️ Could not connect to streaming server initially');
-          }
+          // Note: WebSocket streaming is not used for mobile cameras.
+          // Frames are sent via HTTP POST through MobileStreamingService.
+          // Skipping WebSocket connect to avoid error spam on gateway.
+          print('ℹ️ Skipping WebSocket connect - mobile cameras use HTTP frame posting');
         } else {
           print('❌ Failed to initialize streaming service');
         }
@@ -240,12 +237,10 @@ class CameraProvider extends ChangeNotifier implements ICameraOperations {
       print('🔄 [CAMERA_PROVIDER] Updating streaming service with device ID: $deviceId');
       
       if (_streamingService != null) {
-        final reconnected = await _streamingService.updateDeviceIdAndReconnect(deviceId);
-        if (reconnected) {
-          print('✅ [CAMERA_PROVIDER] Streaming service reconnected with new device ID');
-        } else {
-          print('⚠️ [CAMERA_PROVIDER] Streaming service failed to reconnect with new device ID');
-        }
+        // Only update the device ID without attempting WebSocket reconnect.
+        // Mobile cameras use HTTP POST for frames, not WebSocket.
+        _streamingService.updateDeviceId(deviceId);
+        print('✅ [CAMERA_PROVIDER] Streaming service device ID updated (HTTP mode)');
       } else {
         print('⚠️ [CAMERA_PROVIDER] Streaming service not available for device ID update');
       }

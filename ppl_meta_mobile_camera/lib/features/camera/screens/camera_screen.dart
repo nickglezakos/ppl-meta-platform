@@ -714,12 +714,15 @@ class _CameraScreenState extends State<CameraScreen>
       // Start the local camera streaming using standard approach
       CameraLogger.info('Starting local mobile camera streaming');
       
-      await cameraProvider.startStreaming(
-        streamTitle: 'PPL Meta Mobile Camera Stream',
-        quality: StreamQuality.medium,
-      );
-      
-      CameraLogger.success('Mobile camera streaming started - frontend can now view via session URL');
+      // Start camera frame capture directly. MobileStreamingService (HTTP POST)
+      // is already configured above via setBackendConnection + enableFrameSending.
+      // Frames flow: camera -> _onImageStreamData -> MobileStreamingService.sendFrameToBackend
+      final cameraStarted = await CameraService.instance.startStreaming();
+      if (cameraStarted) {
+        CameraLogger.success('Mobile camera streaming started - frontend can now view via session URL');
+      } else {
+        CameraLogger.warning('Camera startStreaming returned false - frames may not be sending');
+      }
     } catch (e) {
       CameraLogger.error('Failed to start streaming: $e');
       throw e;

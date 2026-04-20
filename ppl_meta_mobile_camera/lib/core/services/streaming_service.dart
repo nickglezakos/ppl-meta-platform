@@ -182,6 +182,12 @@ class StreamingService {
     }
   }
 
+  /// Update device ID without reconnecting (used for HTTP-based mobile streaming)
+  void updateDeviceId(String newDeviceId) {
+    print('🔄 [STREAMING_DEBUG] Updating device ID: $_deviceId -> $newDeviceId');
+    _deviceId = newDeviceId;
+  }
+
   /// Update device ID and reconnect to streaming server
   Future<bool> updateDeviceIdAndReconnect(String newDeviceId) async {
     print('🔄 [STREAMING_DEBUG] Updating device ID and reconnecting...');

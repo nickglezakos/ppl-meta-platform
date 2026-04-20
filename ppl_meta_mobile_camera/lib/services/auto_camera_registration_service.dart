@@ -15,10 +15,24 @@ class AutoCameraRegistrationService {
   final DeviceIdentifierService _deviceService = DeviceIdentifierService();
   final DiscoveryConfigService _discoveryConfig = DiscoveryConfigService.instance;
 
-  /// Get cameras service URL from discovery service or fallback to direct URL
+  /// Get cameras service URL, preferring the gateway (port 8080) to ensure
+  /// connectivity on mobile hotspots where port 8005 may not be reachable.
   Future<String?> _getCamerasServiceUrl() async {
     try {
-      // First try discovery service
+      // Prefer gateway URL derived from the node server URL the user connected to.
+      // The gateway proxies /api/v1/cameras/* routes to the cameras service.
+      final prefs = await SharedPreferences.getInstance();
+      final serverConfig = prefs.getString('ppl_meta_server_config');
+      if (serverConfig != null) {
+        final uri = Uri.tryParse(serverConfig);
+        if (uri != null) {
+          final gatewayUrl = 'http://${uri.host}:8080';
+          AutoRegistrationLogger.debug('Using gateway URL for cameras: $gatewayUrl');
+          return gatewayUrl;
+        }
+      }
+
+      // Fallback: try discovery service
       final camerasService = await _discoveryConfig.findService('ppl-meta-cameras');
       if (camerasService != null) {
         AutoRegistrationLogger.debug('Found cameras service at: ${camerasService.baseUrl}');
@@ -28,7 +42,6 @@ class AutoCameraRegistrationService {
       AutoRegistrationLogger.warning('Cameras service not found in discovery service - trying fallback');
       
       // Fallback: try to get direct URL from platform services data
-      final prefs = await SharedPreferences.getInstance();
       final servicesJson = prefs.getString('ppl_meta_platform_services');
       if (servicesJson != null) {
         final platformData = json.decode(servicesJson);
@@ -36,8 +49,8 @@ class AutoCameraRegistrationService {
         if (cameraEndpoints != null && cameraEndpoints['register'] != null) {
           // Extract base URL from register endpoint
           final registerUrl = cameraEndpoints['register'] as String;
-          final uri = Uri.parse(registerUrl);
-          final baseUrl = '${uri.scheme}://${uri.host}:${uri.port}';
+          final regUri = Uri.parse(registerUrl);
+          final baseUrl = '${regUri.scheme}://${regUri.host}:${regUri.port}';
           AutoRegistrationLogger.debug('Using fallback cameras service URL: $baseUrl');
           return baseUrl;
         }

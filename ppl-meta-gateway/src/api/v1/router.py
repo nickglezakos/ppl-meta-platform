@@ -1264,6 +1264,84 @@ async def get_cameras_with_slash(request: Request):
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 
+# Mobile Camera Routes (registration, heartbeat, settings)
+@api_router.post("/cameras/mobile")
+async def register_mobile_camera(request: Request):
+    """Proxy mobile camera registration to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/mobile")
+async def list_mobile_cameras(request: Request):
+    """Proxy list mobile cameras to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.put("/cameras/mobile/{device_id}")
+async def update_mobile_camera(request: Request):
+    """Proxy update mobile camera to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.patch("/cameras/mobile/{device_id}/name")
+async def update_mobile_camera_name(request: Request):
+    """Proxy update mobile camera name to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.delete("/cameras/mobile/{device_id}")
+async def delete_mobile_camera(request: Request):
+    """Proxy delete mobile camera to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/mobile/{device_id}/update-ip")
+async def update_mobile_camera_ip(request: Request):
+    """Proxy update mobile camera IP to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/mobile/{device_id}/heartbeat")
+async def mobile_camera_heartbeat(request: Request):
+    """Proxy mobile camera heartbeat to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.patch("/cameras/mobile/{uuid}/settings")
+async def update_mobile_camera_settings(request: Request):
+    """Proxy update mobile camera settings to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/mobile/{uuid}/settings")
+async def get_mobile_camera_settings(request: Request):
+    """Proxy get mobile camera settings to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/cameras/mobile/{uuid}/pending-settings")
+async def get_mobile_camera_pending_settings(request: Request):
+    """Proxy get mobile camera pending settings to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/cameras/mobile/cleanup-stale")
+async def cleanup_stale_mobile_cameras(request: Request):
+    """Proxy cleanup stale mobile cameras to Cameras service."""
+    extract_user_from_token(request)
+    return await _proxy_to_cameras_service(request)
+
+
 @api_router.post("/cameras/detect")
 async def detect_cameras_post(request: Request):
     """Proxy camera detection to Cameras service (POST method)."""
@@ -1463,8 +1541,22 @@ async def post_streaming_snapshot(request: Request):
 
 @api_router.get("/streaming/{device_id}/video")
 async def get_streaming_video(request: Request):
-    """Proxy get streaming video to Cameras service."""
-    return await _proxy_to_cameras_service(request)
+    """Proxy MJPEG video streaming to Cameras service using streaming proxy."""
+    # MJPEG streams are long-lived connections; use _stream_proxy_response
+    # instead of _proxy_to_cameras_service which buffers the full response.
+    import logging
+    logger = logging.getLogger(__name__)
+
+    path = str(request.url.path)
+    target_url = f"{SERVICES['cameras']}{path}"
+
+    headers = dict(request.headers)
+    headers.pop("host", None)
+
+    auth_header = headers.get("authorization", "MISSING")
+    logger.info(f"🎥 [CAMERA-STREAM-PROXY] Streaming {path} - Auth: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
+
+    return await _stream_proxy_response(target_url, headers, request.query_params)
 
 
 @api_router.get("/streaming/{device_id}/video-session/{session_id}")
@@ -1477,6 +1569,43 @@ async def get_streaming_video_session(request: Request):
 @api_router.post("/auth/streaming-session/{device_id}")
 async def create_streaming_session(request: Request):
     """Proxy create streaming session to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+# Mobile Camera Streaming Routes (frame ingestion from mobile camera app)
+@api_router.post("/streaming/mobile/{device_id}/frame")
+async def receive_mobile_frame(request: Request):
+    """Proxy mobile camera frame ingestion to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/streaming/mobile/{device_id}/setup")
+async def setup_mobile_streaming(request: Request):
+    """Proxy mobile camera streaming setup to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/streaming/mobile/{device_id}/status")
+async def get_mobile_streaming_status(request: Request):
+    """Proxy mobile camera streaming status to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/streaming/mobile/{device_id}/stop")
+async def stop_mobile_streaming(request: Request):
+    """Proxy mobile camera streaming stop to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.get("/streaming/mobile/{device_id}/current-frame")
+async def get_mobile_current_frame(request: Request):
+    """Proxy mobile camera current frame to Cameras service."""
+    return await _proxy_to_cameras_service(request)
+
+
+@api_router.post("/streaming/mobile/{device_id}/streaming-session")
+async def create_mobile_streaming_session(request: Request):
+    """Proxy mobile camera streaming session to Cameras service."""
     return await _proxy_to_cameras_service(request)
 
 

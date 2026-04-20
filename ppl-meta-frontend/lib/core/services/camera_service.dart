@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../config/app_config.dart';
 import '../models/camera.dart';
@@ -44,9 +45,9 @@ class CameraService {
     print('Camera service using authenticated API client through gateway');
     _cameraApiClient = _apiClient.dio;
     
-    // Create a direct client to cameras service for streaming/recording operations
+    // Route camera streaming/recording through gateway for NAT/hotspot compatibility
     _directCameraClient = Dio(BaseOptions(
-      baseUrl: AppConfig.instance.cameraServiceUrl,
+      baseUrl: AppConfig.instance.apiBaseUrl,
       connectTimeout: const Duration(seconds: 60),  // Increased for stop recording which processes video
       receiveTimeout: const Duration(seconds: 120),
       sendTimeout: const Duration(seconds: 30),
@@ -59,7 +60,7 @@ class CameraService {
       }
     }
     
-    print('Direct camera client configured for: ${AppConfig.instance.cameraServiceUrl}');
+    print('Direct camera client configured for: ${AppConfig.instance.apiBaseUrl}');
   }
 
   /// Detect available cameras
@@ -176,8 +177,8 @@ class CameraService {
 
   /// Get the MJPEG video stream URL for a camera
   String getVideoStreamUrl(String cameraId) {
-    // This follows the pattern from the API guide: /api/v1/streaming/{device_id}/video
-    return '${AppConfig.instance.cameraServiceUrl}/api/v1/streaming/$cameraId/video';
+    // Route through gateway so streaming works across NAT/hotspot networks
+    return '${AppConfig.instance.apiBaseUrl}/api/v1/streaming/$cameraId/video';
   }
 
   /// Create a streaming session for browser-compatible authentication
@@ -247,7 +248,8 @@ class CameraService {
     /// Capture snapshot from a camera
   Future<SnapshotResult> captureSnapshot(String deviceId) async {
     try {
-      final response = await _directCameraClient.get<Map<String, dynamic>>(
+      debugPrint('📸 [CameraService] captureSnapshot for $deviceId using gateway: ${AppConfig.instance.apiBaseUrl}');
+      final response = await _cameraApiClient.get<Map<String, dynamic>>(
         '/api/v1/streaming/$deviceId/snapshot',
       );
 
@@ -510,11 +512,11 @@ class CameraService {
   /// Get camera capabilities including supported resolutions
   Future<CameraCapabilities> getCameraCapabilities(String cameraId) async {
     try {
-      final fullUrl = '${AppConfig.instance.cameraServiceUrl}/api/v1/streaming/$cameraId/capabilities';
+      final fullUrl = '${AppConfig.instance.apiBaseUrl}/api/v1/streaming/$cameraId/capabilities';
       print('Requesting capabilities from: $fullUrl');
       
       final response = await _directCameraClient.get<Map<String, dynamic>>(
-        '/api/v1/streaming/$cameraId/capabilities', // Direct to cameras service
+        '/api/v1/streaming/$cameraId/capabilities',
       );
 
       if (response.data == null) {
