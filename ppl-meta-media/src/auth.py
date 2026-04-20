@@ -3,7 +3,8 @@ Authentication and authorization dependencies for FastAPI.
 """
 
 import logging
-from typing import Any, Dict, Optional
+import time
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -13,6 +14,12 @@ logger = logging.getLogger(__name__)
 
 # Security scheme for JWT tokens
 security = HTTPBearer()
+
+# In-memory cache: token -> (AuthUser, expiry_timestamp)
+# Avoids re-validating the same token via gateway on every request
+_token_cache: Dict[str, Tuple["AuthUser", float]] = {}
+_TOKEN_CACHE_TTL = 60  # seconds
+_TOKEN_CACHE_MAX_SIZE = 200
 
 
 class AuthUser:
@@ -28,12 +35,42 @@ class AuthUser:
         self.permissions = permissions
 
 
+def _get_cached_user(token: str) -> Optional["AuthUser"]:
+    """Return cached AuthUser if token was recently validated, else None."""
+    entry = _token_cache.get(token)
+    if entry is None:
+        return None
+    user, expiry = entry
+    if time.monotonic() > expiry:
+        _token_cache.pop(token, None)
+        return None
+    return user
+
+
+def _set_cached_user(token: str, user: "AuthUser") -> None:
+    """Cache a validated AuthUser for a short TTL."""
+    # Evict oldest entries if cache is too large
+    if len(_token_cache) >= _TOKEN_CACHE_MAX_SIZE:
+        now = time.monotonic()
+        expired = [k for k, (_, exp) in _token_cache.items() if now > exp]
+        for k in expired:
+            _token_cache.pop(k, None)
+        # If still too large, clear half
+        if len(_token_cache) >= _TOKEN_CACHE_MAX_SIZE:
+            keys = list(_token_cache.keys())
+            for k in keys[: len(keys) // 2]:
+                _token_cache.pop(k, None)
+    _token_cache[token] = (user, time.monotonic() + _TOKEN_CACHE_TTL)
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> AuthUser:
     """
     Dependency to get the current authenticated user.
     Validates JWT token by calling the user profile endpoint.
+    Uses a short-lived in-memory cache to avoid hitting the gateway
+    on every request (prevents circular-call bottleneck under load).
     
     Also supports internal service-to-service authentication using
     INTERNAL_SERVICE_TOKEN for microservice communication.
@@ -58,6 +95,11 @@ async def get_current_user(
             permissions=["all"],
         )
 
+    # Check cache first
+    cached = _get_cached_user(token)
+    if cached is not None:
+        return cached
+
     try:
         # Call user profile endpoint through gateway to get user data
         import httpx
@@ -71,13 +113,15 @@ async def get_current_user(
             if response.status_code == 200:
                 user_data = response.json()
                 # Use UUID (guid) as user_id for media access control
-                return AuthUser(
+                user = AuthUser(
                     user_id=user_data.get("guid"),  # Use UUID instead of integer ID
                     username=user_data.get("username"),
                     email=user_data.get("email"),
                     roles=user_data.get("roles", []),
                     permissions=user_data.get("capabilities", []),
                 )
+                _set_cached_user(token, user)
+                return user
             else:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -85,7 +129,10 @@ async def get_current_user(
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.warning(f"Token validation failed (gateway unreachable?): {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Failed to validate token",

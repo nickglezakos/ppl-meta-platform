@@ -8,6 +8,9 @@ from .config import config
 # Set up logging
 logger = logging.getLogger(__name__)
 
+# Suppress verbose SQLAlchemy SQL logging (BEGIN/SELECT/ROLLBACK every poll cycle)
+logging.getLogger("sqlalchemy.engine.Engine").setLevel(logging.WARNING)
+
 # Create SQLAlchemy engine
 engine = create_engine(
     config.get_database_url(),
@@ -15,7 +18,7 @@ engine = create_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
-    echo=config.DEBUG  # Log SQL queries in debug mode
+    echo=False,
 )
 
 # Create SessionLocal class

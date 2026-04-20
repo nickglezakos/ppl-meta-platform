@@ -32,7 +32,7 @@ from sqlalchemy.orm import Session
 # Add shared modules to path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 
-from src.auth import AuthUser, get_current_user, get_user_from_token, require_media_view
+from src.auth import AuthUser, get_current_user, get_optional_user, get_user_from_token, require_media_view
 from src.database import get_db
 from src.models.media import Media
 from src.schemas.media import (  # Variant schemas; Issue #016 - Advanced Metadata Management
@@ -1149,7 +1149,7 @@ async def bulk_restore_media(
 async def get_media(
     media_id: str,
     user_id: Optional[str] = None,
-    current_user: Optional[AuthUser] = Depends(get_current_user),
+    current_user: Optional[AuthUser] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ):
     """Get media by ID with access control."""
