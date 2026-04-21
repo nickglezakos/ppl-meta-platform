@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:excel/excel.dart' as excel;
 import 'package:path_provider/path_provider.dart';
@@ -6094,35 +6095,63 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     final apiClient = ref.read(apiClientProvider);
     final routesClient = IndividualGroupsApiClient(apiClient);
 
+    developer.log('🗺️ ROUTES DEBUG: Starting route fetch for ${_aggregatedAnalyses!.length} analyses');
+    developer.log('🗺️ ROUTES DEBUG: hasRouteSearchScopeFilter=${_hasRouteSearchScopeFilter()}');
+    developer.log('🗺️ ROUTES DEBUG: sessionData source=${widget.crossVideoContext?.sessionData['source']}');
+    final searchParams = _getRouteSearchParams();
+    if (searchParams != null) {
+      developer.log('🗺️ ROUTES DEBUG: search_parameters keys=${searchParams.keys.toList()}');
+      developer.log('🗺️ ROUTES DEBUG: camera_uuids=${searchParams['camera_uuids']}');
+      developer.log('🗺️ ROUTES DEBUG: camera_ids=${searchParams['camera_ids']}');
+    }
+
     for (final analysis in _aggregatedAnalyses!) {
       _routeDisplayPersonIdByUuid[analysis.individualUuid] = analysis.individualId;
 
       final sourceIndividualUuids = _resolveRouteSourceIndividualUuids(analysis);
+      developer.log('🗺️ ROUTES DEBUG: analysis.individualUuid=${analysis.individualUuid}');
+      developer.log('🗺️ ROUTES DEBUG: analysis.individualId=${analysis.individualId}');
+      developer.log('🗺️ ROUTES DEBUG: sourceUuids=$sourceIndividualUuids');
 
       for (final sourceUuid in sourceIndividualUuids) {
         if (_loadedRouteSourceIndividuals.contains(sourceUuid)) {
           continue;
         }
 
+        developer.log('🗺️ ROUTES DEBUG: Fetching metadata for sourceUuid=$sourceUuid');
+        // Do NOT pass time filters here.  The routes tab shows the
+        // super-individual's complete movement history.  The search window
+        // determined which individuals to analyse, but must not restrict which
+        // of their appearances are included in the routes visualisation.  The
+        // MVR path works because its search_parameters often has null
+        // start/end time (no date filter); the individual-groups path always
+        // has a non-null window, which caused the metadata call to return 0
+        // points for appearances that straddle the search boundary.
+        developer.log('🗺️ ROUTES DEBUG: fetching metadata with no time filter (complete history)');
         final metadataResp = await routesClient.getIndividualRoutesMetadataByCamera(
           individualUuid: sourceUuid,
-          startTimeMs: _getRouteSearchStartTimeMs(),
-          endTimeMs: _getRouteSearchEndTimeMs(),
         );
+        developer.log('🗺️ ROUTES DEBUG: metadata success=${metadataResp.success}');
         if (metadataResp.success && metadataResp.data != null) {
+          developer.log('🗺️ ROUTES DEBUG: metadata raw=${metadataResp.data}');
           final allMetadataCameras =
               (metadataResp.data!['cameras'] as List<dynamic>? ?? [])
                   .whereType<Map<String, dynamic>>()
                   .toList();
-          // Filter to only cameras that were selected in the original search.
-          final metadataCameras = _hasRouteSearchScopeFilter()
-              ? allMetadataCameras
-                  .where((c) => _isCameraInSearchScope(
-                        (c['camera_id'] ?? '').toString(),
-                        (c['camera_name'] ?? '').toString(),
-                      ))
-                  .toList()
-              : allMetadataCameras;
+          developer.log('🗺️ ROUTES DEBUG: allMetadataCameras count=${allMetadataCameras.length}');
+          for (final c in allMetadataCameras) {
+            developer.log('🗺️ ROUTES DEBUG:   camera_id=${c['camera_id']}, camera_name=${c['camera_name']}, total_points=${c['total_points']}');
+            developer.log('🗺️ ROUTES DEBUG:   inScope=${_isCameraInSearchScope((c['camera_id'] ?? '').toString(), (c['camera_name'] ?? '').toString())}');
+          }
+          // Do NOT scope-filter cameras here.  The routes tab is an analysis
+          // of the super-individual's complete movement history and must
+          // include all appearances, including those from cameras that have
+          // since been deleted, renamed, or are otherwise inactive.  A scope
+          // filter based on collection UUIDs would silently discard any
+          // appearance whose originating collection can no longer be resolved
+          // by the media-search API (it falls back to a raw video UUID that
+          // never matches a stored collection UUID).
+          final metadataCameras = allMetadataCameras;
           _registerCameraMetadata(
             analysis: analysis,
             sourceIndividualUuid: sourceUuid,
@@ -6141,6 +6170,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     }
 
     final cameraIds = _getRouteCameraIds();
+    developer.log('🗺️ ROUTES DEBUG: Final cameraIds=$cameraIds');
+    developer.log('🗺️ ROUTES DEBUG: hasAnyRouteData=${_hasAnyRouteDataInSelection()}');
+    developer.log('🗺️ ROUTES DEBUG: _routeHasMoreByCameraSource=$_routeHasMoreByCameraSource');
+    developer.log('🗺️ ROUTES DEBUG: _routeTotalPointsByCameraSource=$_routeTotalPointsByCameraSource');
+    for (final camId in _routePointsByCamera.keys) {
+      for (final indvId in _routePointsByCamera[camId]!.keys) {
+        developer.log('🗺️ ROUTES DEBUG: cam=$camId indv=$indvId pointCount=${_routePointsByCamera[camId]![indvId]!.length}');
+      }
+    }
     if (cameraIds.isNotEmpty &&
         (_selectedRouteCameraId == null ||
             !_getRouteCameraIds().contains(_selectedRouteCameraId))) {
@@ -6241,8 +6279,14 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     if (sessionData == null) return true; // no context → no restriction
 
     // Helper: compare value against both cameraId and cameraName
-    bool matches(String v) =>
-        v == cameraId || v.toLowerCase() == cameraName.toLowerCase();
+    // Use case-insensitive comparison for both to handle UUID case differences
+    // between the collections API and media search API (route data resolution).
+    final cameraIdLower = cameraId.toLowerCase();
+    final cameraNameLower = cameraName.toLowerCase();
+    bool matches(String v) {
+      final vLower = v.toLowerCase();
+      return vLower == cameraIdLower || vLower == cameraNameLower;
+    }
 
     // 1. Single collection (collection-based search, top-level sessionData)
     final collectionId = sessionData['collection_id']?.toString() ?? '';
@@ -6314,19 +6358,64 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         .map((entry) => entry.key)
         .toList();
 
+    developer.log('🗺️ BOOTSTRAP DEBUG: sourceUuid=$sourceIndividualUuid, candidateCameraIds=$candidateCameraIds');
+    developer.log('🗺️ BOOTSTRAP DEBUG: _routeDisplayIndividualByCameraSource=${_routeDisplayIndividualByCameraSource}');
+
     if (candidateCameraIds.isEmpty) {
+      developer.log('🗺️ BOOTSTRAP DEBUG: No candidates! Falling back to generic fetch');
       final firstPageResp = await routesClient.getIndividualRoutesByCamera(
         individualUuid: sourceIndividualUuid,
         pageIndex: 0,
         pageSize: _routePageSize,
-        startTimeMs: _getRouteSearchStartTimeMs(),
-        endTimeMs: _getRouteSearchEndTimeMs(),
+        // No time filter — complete history (see metadata call comment above).
       );
       if (!firstPageResp.success || firstPageResp.data == null) {
         return;
       }
 
       final cameras = (firstPageResp.data!['cameras'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      developer.log('🗺️ BOOTSTRAP DEBUG: Generic fetch returned ${cameras.length} camera groups');
+      for (final cameraGroup in cameras) {
+        developer.log('🗺️ BOOTSTRAP DEBUG: camera_id=${cameraGroup['camera_id']}, has individuals=${(cameraGroup['individuals'] as List?)?.length}');
+        _appendCameraGroupedRoutePage(
+          analysis: analysis,
+          sourceIndividualUuid: sourceIndividualUuid,
+          cameraGroup: cameraGroup,
+        );
+      }
+      developer.log('🗺️ BOOTSTRAP DEBUG: After generic fetch: _routeHasMoreByCameraSource=$_routeHasMoreByCameraSource');
+      developer.log('🗺️ BOOTSTRAP DEBUG: After generic fetch: _routeTotalPointsByCameraSource=$_routeTotalPointsByCameraSource');
+      developer.log('🗺️ BOOTSTRAP DEBUG: After generic fetch: _routePointsByCamera keys=${_routePointsByCamera.keys.toList()}');
+      return;
+    }
+
+    for (final cameraId in candidateCameraIds) {
+      final totalPoints =
+          _routeTotalPointsByCameraSource[cameraId]?[sourceIndividualUuid] ?? 0;
+      developer.log('🗺️ BOOTSTRAP DEBUG: Per-camera fetch: cameraId=$cameraId, totalPoints=$totalPoints');
+      if (totalPoints <= 0) {
+        continue;
+      }
+
+      // Only fetch page 0.  Subsequent pages are loaded on demand via the
+      // "Load more routes" button.  The old loop over maxPageIndex was causing
+      // a request flood: with 4 800 total points and pageSize=100 it fired
+      // 47 sequential requests — each of which made the backend re-fetch the
+      // entire dataset and re-run per-video orchestrator calls.
+      final pageResp = await routesClient.getIndividualRoutesByCamera(
+        individualUuid: sourceIndividualUuid,
+        cameraId: cameraId,
+        pageIndex: 0,
+        pageSize: _routePageSize,
+        // No time filter — complete history (see metadata call comment above).
+      );
+      if (!pageResp.success || pageResp.data == null) {
+        continue;
+      }
+
+      final cameras = (pageResp.data!['cameras'] as List<dynamic>? ?? [])
           .whereType<Map<String, dynamic>>()
           .toList();
       for (final cameraGroup in cameras) {
@@ -6336,69 +6425,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           cameraGroup: cameraGroup,
         );
       }
-      return;
-    }
-
-    for (final cameraId in candidateCameraIds) {
-      final totalPoints =
-          _routeTotalPointsByCameraSource[cameraId]?[sourceIndividualUuid] ?? 0;
-      if (totalPoints <= 0) {
-        continue;
-      }
-
-      final maxPageIndex = ((totalPoints - 1) / _routePageSize).floor();
-      var foundPoints = false;
-
-      for (var pageIndex = 0; pageIndex <= maxPageIndex; pageIndex++) {
-        final pageResp = await routesClient.getIndividualRoutesByCamera(
-          individualUuid: sourceIndividualUuid,
-          cameraId: cameraId,
-          pageIndex: pageIndex,
-          pageSize: _routePageSize,
-          startTimeMs: _getRouteSearchStartTimeMs(),
-          endTimeMs: _getRouteSearchEndTimeMs(),
-        );
-        if (!pageResp.success || pageResp.data == null) {
-          break;
-        }
-
-        final cameras = (pageResp.data!['cameras'] as List<dynamic>? ?? [])
-            .whereType<Map<String, dynamic>>()
-            .toList();
-        if (cameras.isEmpty) {
-          continue;
-        }
-
-        var appendedPointsForPage = false;
-        for (final cameraGroup in cameras) {
-          final individuals = (cameraGroup['individuals'] as List<dynamic>? ?? [])
-              .whereType<Map<String, dynamic>>()
-              .toList();
-          final pointsCount = individuals.fold<int>(
-            0,
-            (sum, individualGroup) =>
-                sum +
-                ((individualGroup['points'] as List<dynamic>? ?? []).length),
-          );
-          _appendCameraGroupedRoutePage(
-            analysis: analysis,
-            sourceIndividualUuid: sourceIndividualUuid,
-            cameraGroup: cameraGroup,
-          );
-          if (pointsCount > 0) {
-            appendedPointsForPage = true;
-          }
-        }
-
-        if (appendedPointsForPage) {
-          foundPoints = true;
-          break;
-        }
-      }
-
-      if (!foundPoints) {
-        _routeHasMoreByCameraSource[cameraId]?[sourceIndividualUuid] = false;
-      }
+      developer.log('🗺️ BOOTSTRAP DEBUG: page-0 fetch done for cameraId=$cameraId, cameras=${cameras.length}');
     }
   }
 
@@ -6412,13 +6439,12 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return;
     }
 
-    // Respect the camera filter from the original search.
-    // If the user searched specific cameras, discard route data for any other camera.
-    if (_hasRouteSearchScopeFilter() &&
-        !_isCameraInSearchScope(cameraId,
-            (cameraGroup['camera_name'] ?? '').toString())) {
-      return;
-    }
+    // No camera-scope filter applied.  The routes analysis covers the
+    // super-individual's full appearance history.  Appearances captured by
+    // cameras that no longer exist are still valid route data and must not
+    // be discarded (their camera_id falls back to a raw video UUID when the
+    // originating collection cannot be resolved, so collection-UUID matching
+    // would always reject them).
 
     final cameraName = (cameraGroup['camera_name'] ?? cameraId).toString();
     _routeCameraNamesById[cameraId] = cameraName;
@@ -6633,8 +6659,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             cameraId: cameraId,
             pageIndex: nextPage,
             pageSize: _routePageSize,
-            startTimeMs: _getRouteSearchStartTimeMs(),
-            endTimeMs: _getRouteSearchEndTimeMs(),
+            // No time filter — complete history (see metadata call comment above).
           );
 
           if (!pageResp.success || pageResp.data == null) {

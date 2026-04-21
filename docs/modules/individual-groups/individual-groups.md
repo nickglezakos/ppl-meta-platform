@@ -88,6 +88,51 @@
 - Search path: group + camera/time window -> vmeta camera-search endpoint -> matched group members + appearance summary.
 - Hygiene path: duplicate check -> explicit merge request -> super-individual membership update.
 
+### Routes tab lazy loading
+
+When a user opens the `PersonObjectsDetailScreen` for an individual that originated from the individual-groups flow, the **Routes** tab loads route points on demand rather than all at once. This section describes the full pipeline.
+
+#### Step 1 — Metadata fetch
+`_fetchCrossVideoRoutesDataInternal()` calls `GET /api/v1/individuals/{uuid}/routes/metadata/by-camera` once per individual to retrieve the `total_points` count per camera. No time filter is applied; the complete detection history is used. The response populates `_routeTotalPointsByCameraSource` and `_routeHasMoreByCameraSource`.
+
+#### Step 2 — Bootstrap (page 0 only)
+`_bootstrapRoutePagesForSource()` iterates the candidate camera IDs from the metadata response. For each camera with `total_points > 0` it fires **exactly one** request:
+
+```
+GET /api/v1/individuals/{uuid}/routes/by-camera?camera_id=…&page_index=0&page_size=100
+```
+
+Only page 0 is fetched during bootstrap. The `has_more` flag returned by the backend determines whether the "Load more routes" button is shown. No loop over page indexes is performed.
+
+#### Step 3 — Backend dataset caching
+`MVRRepository.get_individual_routes_by_camera_paged()` calls `_build_route_dataset()` internally. That method:
+1. Queries `individual_video_appearances` joined to `tracking_sessions` for camera identity.
+2. Calls `_resolve_route_camera_ids()` to map video UUIDs → collection UUIDs (camera IDs).
+3. Calls `_expand_with_orchestrator_route_points()` — one HTTP call per distinct video UUID — to expand each appearance into per-frame route points.
+
+The result is **cached in-process** for 5 minutes (keyed by `individual_uuid + auth_header_hash + time_window`). All subsequent page requests for the same individual within the TTL return from cache instantly, avoiding repeated DB queries and orchestrator HTTP calls.
+
+#### Step 4 — Load more (user-triggered)
+The "Load more routes" button is rendered when `_cameraHasMoreRoutes(selectedCameraId)` returns `true`. Pressing it calls `_loadMoreCrossVideoRoutes()`, which increments `_routePageIndexByCameraSource` and fires the next page request:
+
+```
+GET /api/v1/individuals/{uuid}/routes/by-camera?camera_id=…&page_index=N&page_size=100
+```
+
+The backend slices the cached dataset at `page_start = N * 100` and returns `has_more = (page_end < total_points)`. Returned points are appended to `_routePointsByCamera` and the button disappears once `has_more` is false.
+
+#### Key files
+| Layer | File | Relevant symbols |
+|---|---|---|
+| Flutter UI | [ppl-meta-frontend/lib/screens/person_objects_detail_screen.dart](ppl-meta-frontend/lib/screens/person_objects_detail_screen.dart) | `_fetchCrossVideoRoutesDataInternal`, `_bootstrapRoutePagesForSource`, `_appendCameraGroupedRoutePage`, `_loadMoreCrossVideoRoutes` |
+| Backend repository | [ppl-meta-vmeta/src/database/mvr_repository.py](ppl-meta-vmeta/src/database/mvr_repository.py) | `get_individual_routes_by_camera_paged`, `_build_route_dataset`, `_route_dataset_cache`, `_expand_with_orchestrator_route_points` |
+
+#### Design constraints
+- `_routePageSize` is fixed at `100` in the Flutter client.
+- The backend caps `page_size` at `2000` as a safety limit.
+- The in-process cache is per-process (not shared across uvicorn workers). Each worker maintains its own cache; the first request to a fresh worker will still pay the full build cost.
+- Cache TTL is 5 minutes (`_ROUTE_CACHE_TTL_S = 300.0`). Stale entries are evicted lazily on the next call to `_build_route_dataset`.
+
 ### Technical analysis (concise)
 - Strength: clear CRUD + membership API surface with explicit pagination/filtering semantics.
 - Strength: separation of list/detail UI keeps the primary workflow straightforward.

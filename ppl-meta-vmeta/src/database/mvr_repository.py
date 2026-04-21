@@ -10,9 +10,11 @@ Author: PPL Meta Platform Team
 """
 
 import asyncpg
+import hashlib
 import httpx
 import logging
 import os
+import time
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple
 from uuid import UUID
@@ -38,6 +40,13 @@ class MVRRepository:
             connection_pool: asyncpg connection pool
         """
         self.pool = connection_pool
+        # Short-lived in-process cache for the expensive route dataset build
+        # (DB fetch + per-video orchestrator expansion).  Keyed by a hash of
+        # (individual_uuid, auth_header, start_time_ms, end_time_ms); entries
+        # expire after _ROUTE_CACHE_TTL_S seconds so stale data is not served
+        # across user sessions.
+        self._route_dataset_cache: Dict[str, Any] = {}
+        self._ROUTE_CACHE_TTL_S: float = 300.0  # 5 minutes
         logger.info("MVRRepository initialized")
     
     # ========================================================================
@@ -1568,7 +1577,31 @@ class MVRRepository:
         start_time_ms: Optional[int] = None,
         end_time_ms: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Fetch route rows and annotate each row with a UUID-only camera/group id."""
+        """Fetch route rows and annotate each row with a UUID-only camera/group id.
+
+        Results are cached in-process for _ROUTE_CACHE_TTL_S seconds so that
+        the N paginated requests fired for the same individual all reuse the
+        same expensive DB + orchestrator-expansion work rather than repeating
+        it on every call.
+        """
+        # Build a stable, order-independent cache key.
+        auth_hash = hashlib.sha256((auth_header or "").encode()).hexdigest()[:16]
+        cache_key = f"{requested_uuid}:{auth_hash}:{start_time_ms}:{end_time_ms}"
+
+        now = time.monotonic()
+        entry = self._route_dataset_cache.get(cache_key)
+        if entry is not None and (now - entry["ts"]) < self._ROUTE_CACHE_TTL_S:
+            logger.debug("_build_route_dataset cache hit for %s", requested_uuid)
+            return entry["rows"]  # return cached rows (already expanded)
+
+        # Evict stale entries to keep the dict from growing unbounded.
+        stale = [
+            k for k, v in self._route_dataset_cache.items()
+            if (now - v["ts"]) >= self._ROUTE_CACHE_TTL_S
+        ]
+        for k in stale:
+            del self._route_dataset_cache[k]
+
         async with self.pool.acquire() as conn:
             rows = await self._fetch_route_source_rows(
                 conn,
@@ -1584,11 +1617,14 @@ class MVRRepository:
                 if row.get("video_uuid")
             }
         )
+        # Intentionally do NOT pass start_time_ms/end_time_ms here.
+        # Videos are often uploaded/processed outside the search window while
+        # still containing footage within it.  Filtering the media search by
+        # time causes those videos to fall back to video-UUID camera_ids, which
+        # then fail the collection-UUID scope filter on the Flutter side.
         video_camera_map = await self._resolve_route_camera_ids(
             video_uuids,
             auth_header=auth_header,
-            start_time_ms=start_time_ms,
-            end_time_ms=end_time_ms,
         )
 
         for row in rows:
@@ -1598,6 +1634,13 @@ class MVRRepository:
             row["camera_name"] = cam_name
 
         rows = await self._expand_with_orchestrator_route_points(rows, auth_header)
+
+        self._route_dataset_cache[cache_key] = {"ts": now, "rows": rows}
+        logger.debug(
+            "_build_route_dataset cache stored for %s (%d rows)",
+            requested_uuid,
+            len(rows),
+        )
         return rows
 
     @staticmethod
