@@ -6143,15 +6143,25 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             developer.log('🗺️ ROUTES DEBUG:   camera_id=${c['camera_id']}, camera_name=${c['camera_name']}, total_points=${c['total_points']}');
             developer.log('🗺️ ROUTES DEBUG:   inScope=${_isCameraInSearchScope((c['camera_id'] ?? '').toString(), (c['camera_name'] ?? '').toString())}');
           }
-          // Do NOT scope-filter cameras here.  The routes tab is an analysis
-          // of the super-individual's complete movement history and must
-          // include all appearances, including those from cameras that have
-          // since been deleted, renamed, or are otherwise inactive.  A scope
-          // filter based on collection UUIDs would silently discard any
-          // appearance whose originating collection can no longer be resolved
-          // by the media-search API (it falls back to a raw video UUID that
-          // never matches a stored collection UUID).
-          final metadataCameras = allMetadataCameras;
+          // For individual-group searches, show the super-individual's complete
+          // movement history across all cameras (no scope filter).  For
+          // collection-based searches the user explicitly searched within a
+          // specific camera collection, so we restrict route data to that
+          // collection only.
+          final bool isIndividualGroupSearch =
+              widget.crossVideoContext?.sessionData['source'] ==
+              'individual_group_camera_search';
+          final metadataCameras =
+              (!isIndividualGroupSearch && _hasRouteSearchScopeFilter())
+                  ? allMetadataCameras
+                      .where(
+                        (c) => _isCameraInSearchScope(
+                          (c['camera_id'] ?? '').toString(),
+                          (c['camera_name'] ?? '').toString(),
+                        ),
+                      )
+                      .toList()
+                  : allMetadataCameras;
           _registerCameraMetadata(
             analysis: analysis,
             sourceIndividualUuid: sourceUuid,
