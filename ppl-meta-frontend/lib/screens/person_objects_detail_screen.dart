@@ -6372,6 +6372,30 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     developer.log('🗺️ BOOTSTRAP DEBUG: _routeDisplayIndividualByCameraSource=${_routeDisplayIndividualByCameraSource}');
 
     if (candidateCameraIds.isEmpty) {
+      // If a scope filter is active (collection-based search), the metadata
+      // call above already returned cameras but none matched the collection.
+      // This most commonly happens when the backend route dataset cache was
+      // populated by a different search (e.g. an individual-group search) and
+      // video→collection resolution fell back to raw video UUIDs that don't
+      // match the stored collection_id.  In that case we must NOT fall back to
+      // an unscoped generic fetch — doing so would return route data from every
+      // camera the individual ever appeared in, which is exactly the bug.
+      //
+      // The generic fetch is only safe for individual-group searches (no scope
+      // restriction) and for any search where no scope filter is configured.
+      final bool isScopeRestricted =
+          widget.crossVideoContext?.sessionData['source'] !=
+              'individual_group_camera_search' &&
+          _hasRouteSearchScopeFilter();
+
+      if (isScopeRestricted) {
+        developer.log(
+          '🗺️ BOOTSTRAP DEBUG: No candidates under scope filter — '
+          'skipping generic fallback to prevent cross-camera data leak.',
+        );
+        return;
+      }
+
       developer.log('🗺️ BOOTSTRAP DEBUG: No candidates! Falling back to generic fetch');
       final firstPageResp = await routesClient.getIndividualRoutesByCamera(
         individualUuid: sourceIndividualUuid,
