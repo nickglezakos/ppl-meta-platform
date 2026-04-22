@@ -6094,6 +6094,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
 
     final apiClient = ref.read(apiClientProvider);
     final routesClient = IndividualGroupsApiClient(apiClient);
+    final bool isIndividualGroupSearch =
+      widget.crossVideoContext?.sessionData['source'] ==
+      'individual_group_camera_search';
+    final bool applyTimeFilter =
+      !isIndividualGroupSearch && _hasRouteSearchScopeFilter();
+    final int? routeStartTimeMs =
+      applyTimeFilter ? _getRouteSearchStartTimeMs() : null;
+    final int? routeEndTimeMs =
+      applyTimeFilter ? _getRouteSearchEndTimeMs() : null;
 
     developer.log('🗺️ ROUTES DEBUG: Starting route fetch for ${_aggregatedAnalyses!.length} analyses');
     developer.log('🗺️ ROUTES DEBUG: hasRouteSearchScopeFilter=${_hasRouteSearchScopeFilter()}');
@@ -6119,17 +6128,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         }
 
         developer.log('🗺️ ROUTES DEBUG: Fetching metadata for sourceUuid=$sourceUuid');
-        // Do NOT pass time filters here.  The routes tab shows the
-        // super-individual's complete movement history.  The search window
-        // determined which individuals to analyse, but must not restrict which
-        // of their appearances are included in the routes visualisation.  The
-        // MVR path works because its search_parameters often has null
-        // start/end time (no date filter); the individual-groups path always
-        // has a non-null window, which caused the metadata call to return 0
-        // points for appearances that straddle the search boundary.
-        developer.log('🗺️ ROUTES DEBUG: fetching metadata with no time filter (complete history)');
+        developer.log(
+          applyTimeFilter
+              ? '🗺️ ROUTES DEBUG: fetching metadata with collection time filter'
+              : '🗺️ ROUTES DEBUG: fetching metadata with no time filter (complete history)',
+        );
         final metadataResp = await routesClient.getIndividualRoutesMetadataByCamera(
           individualUuid: sourceUuid,
+          startTimeMs: routeStartTimeMs,
+          endTimeMs: routeEndTimeMs,
         );
         developer.log('🗺️ ROUTES DEBUG: metadata success=${metadataResp.success}');
         if (metadataResp.success && metadataResp.data != null) {
@@ -6143,14 +6150,11 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             developer.log('🗺️ ROUTES DEBUG:   camera_id=${c['camera_id']}, camera_name=${c['camera_name']}, total_points=${c['total_points']}');
             developer.log('🗺️ ROUTES DEBUG:   inScope=${_isCameraInSearchScope((c['camera_id'] ?? '').toString(), (c['camera_name'] ?? '').toString())}');
           }
-          // For individual-group searches, show the super-individual's complete
+            // For individual-group searches, show the super-individual's complete
           // movement history across all cameras (no scope filter).  For
           // collection-based searches the user explicitly searched within a
           // specific camera collection, so we restrict route data to that
           // collection only.
-          final bool isIndividualGroupSearch =
-              widget.crossVideoContext?.sessionData['source'] ==
-              'individual_group_camera_search';
           final metadataCameras =
               (!isIndividualGroupSearch && _hasRouteSearchScopeFilter())
                   ? allMetadataCameras
@@ -6173,6 +6177,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           routesClient: routesClient,
           analysis: analysis,
           sourceIndividualUuid: sourceUuid,
+          startTimeMs: routeStartTimeMs,
+          endTimeMs: routeEndTimeMs,
         );
 
         _loadedRouteSourceIndividuals.add(sourceUuid);
@@ -6362,6 +6368,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     required IndividualGroupsApiClient routesClient,
     required AggregatedIndividualAnalysis analysis,
     required String sourceIndividualUuid,
+    int? startTimeMs,
+    int? endTimeMs,
   }) async {
     final candidateCameraIds = _routeDisplayIndividualByCameraSource.entries
         .where((entry) => entry.value.containsKey(sourceIndividualUuid))
@@ -6401,7 +6409,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         individualUuid: sourceIndividualUuid,
         pageIndex: 0,
         pageSize: _routePageSize,
-        // No time filter — complete history (see metadata call comment above).
+        startTimeMs: startTimeMs,
+        endTimeMs: endTimeMs,
       );
       if (!firstPageResp.success || firstPageResp.data == null) {
         return;
@@ -6443,7 +6452,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         cameraId: cameraId,
         pageIndex: 0,
         pageSize: _routePageSize,
-        // No time filter — complete history (see metadata call comment above).
+        startTimeMs: startTimeMs,
+        endTimeMs: endTimeMs,
       );
       if (!pageResp.success || pageResp.data == null) {
         continue;
@@ -6674,6 +6684,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     try {
       final apiClient = ref.read(apiClientProvider);
       final routesClient = IndividualGroupsApiClient(apiClient);
+      final bool isIndividualGroupSearch =
+        widget.crossVideoContext?.sessionData['source'] ==
+        'individual_group_camera_search';
+      final bool applyTimeFilter =
+        !isIndividualGroupSearch && _hasRouteSearchScopeFilter();
+      final int? routeStartTimeMs =
+        applyTimeFilter ? _getRouteSearchStartTimeMs() : null;
+      final int? routeEndTimeMs =
+        applyTimeFilter ? _getRouteSearchEndTimeMs() : null;
 
       for (final analysis in _aggregatedAnalyses!) {
         final sourceIndividualUuids = _resolveRouteSourceIndividualUuids(analysis);
@@ -6693,7 +6712,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             cameraId: cameraId,
             pageIndex: nextPage,
             pageSize: _routePageSize,
-            // No time filter — complete history (see metadata call comment above).
+            startTimeMs: routeStartTimeMs,
+            endTimeMs: routeEndTimeMs,
           );
 
           if (!pageResp.success || pageResp.data == null) {
