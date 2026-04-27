@@ -33,11 +33,38 @@ from ..schemas.trigger import (
 )
 from ..services.trigger_evaluation import DemographicData, TriggerEvaluationService
 from ..services.communications_client import CommunicationsClient
+from ..services.signage_service import SignagePlaybackService
+from ..schemas.signage import PlaybackControlRequest, PlaybackCommand, PlaybackParameters
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/triggers", tags=["triggers"])
 
 _communications_client: Optional[CommunicationsClient] = None
+
+AGE_COUNT_TO_PERCENT_FIELD = {
+    'age_count_0_12': 'percent_age_0_12',
+    'age_count_13_17': 'percent_age_13_17',
+    'age_count_18_24': 'percent_age_18_24',
+    'age_count_25_34': 'percent_age_25_34',
+    'age_count_35_44': 'percent_age_35_44',
+    'age_count_45_54': 'percent_age_45_54',
+    'age_count_55_64': 'percent_age_55_64',
+    'age_count_65_plus': 'percent_age_65_plus',
+}
+
+LEGACY_PERCENT_AGE_FIELDS = set(AGE_COUNT_TO_PERCENT_FIELD.values())
+
+# Midpoint ages used for computing weighted-average age from bracket percentages
+AGE_BRACKET_MIDPOINTS = {
+    'percent_age_0_12': 6.0,
+    'percent_age_13_17': 15.0,
+    'percent_age_18_24': 21.0,
+    'percent_age_25_34': 29.5,
+    'percent_age_35_44': 39.5,
+    'percent_age_45_54': 49.5,
+    'percent_age_55_64': 59.5,
+    'percent_age_65_plus': 70.0,
+}
 
 
 def _get_communications_client() -> CommunicationsClient:
@@ -264,7 +291,6 @@ async def update_trigger(
     
     # Convert demographic_conditions list to JSON string for storage
     if 'demographic_conditions' in update_data and update_data['demographic_conditions'] is not None:
-        import json
         update_data['demographic_conditions'] = json.dumps([
             cond.model_dump() if hasattr(cond, 'model_dump') else cond
             for cond in update_data['demographic_conditions']
@@ -661,18 +687,18 @@ async def process_instant_detection_webhook(
                     logger.info(f"Demographics: {payload.demographics}")
                     logger.info("="*80)
                     
-                    # Execute signage action
+                    # Dispatch all linked actions via action_uuids
                     action_executed = False
-                    logger.info(f"▶️ Calling signage action execution...")
-                    await _execute_signage_action(
+                    logger.info(f"▶️ Dispatching trigger actions...")
+                    action_executed = await _dispatch_trigger_actions(
                         trigger=trigger,
+                        db=db,
                         camera_id=payload.camera_id,
                         detection_payload=payload,
                         evaluation_reason=reason if trigger_mode == "ppl_match" else "All demographic conditions met",
                         match_info=match_info,
                     )
-                    action_executed = True
-                    logger.info(f"✅ Signage action execution completed")
+                    logger.info(f"✅ Trigger action dispatch completed (executed={action_executed})")
                     
                     # Update last_fired_at
                     old_last_fired = trigger.last_fired_at
@@ -929,6 +955,25 @@ async def _evaluate_demographic_conditions(
         # Get actual value from demographics or people_count
         if field == "people_count":
             actual_value = people_count
+        elif field == "age_threshold":
+            # Compute weighted-average age from bracket percentages
+            actual_value = sum(
+                float(demographics.get(k, 0)) * mid / 100.0
+                for k, mid in AGE_BRACKET_MIDPOINTS.items()
+            )
+        elif isinstance(field, str) and (
+            field in AGE_COUNT_TO_PERCENT_FIELD or field in LEGACY_PERCENT_AGE_FIELDS
+        ):
+            percent_field = AGE_COUNT_TO_PERCENT_FIELD.get(field, field)
+            age_count_value = demographics.get(field) if field in AGE_COUNT_TO_PERCENT_FIELD else None
+            age_percent_value = demographics.get(percent_field)
+            if age_count_value is not None:
+                actual_value = float(age_count_value)
+            elif age_percent_value is not None:
+                actual_value = (float(people_count) * float(age_percent_value)) / 100.0
+            else:
+                logger.warning(f"Field '{field}' not found in demographics")
+                return False
         else:
             actual_value = demographics.get(field)
             
@@ -971,6 +1016,111 @@ async def _evaluate_demographic_conditions(
     return True  # All conditions passed
 
 
+async def _dispatch_trigger_actions(
+    trigger: Trigger,
+    db: Session,
+    camera_id: str,
+    detection_payload: Optional[InstantDetectionPayload] = None,
+    evaluation_reason: Optional[str] = None,
+    match_info: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Dispatch all actions linked to a trigger via action_uuids / action_uuid.
+
+    Reads UserTriggerAction records and routes each to the appropriate handler.
+    Returns True if at least one action was attempted.
+    """
+    # Resolve action UUIDs list
+    action_uuid_list: List[str] = []
+    if trigger.action_uuids:
+        try:
+            parsed = json.loads(trigger.action_uuids)
+            if isinstance(parsed, list):
+                action_uuid_list = [str(u) for u in parsed if u]
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if not action_uuid_list and trigger.action_uuid:
+        action_uuid_list = [str(trigger.action_uuid)]
+
+    if not action_uuid_list:
+        logger.warning(f"Trigger '{trigger.name}' fired but has no linked actions")
+        return False
+
+    attempted = False
+    for action_uuid_str in action_uuid_list:
+        action = db.query(UserTriggerAction).filter(
+            UserTriggerAction.uuid == action_uuid_str
+        ).first()
+        if not action:
+            logger.warning(f"Action {action_uuid_str} not found, skipping")
+            continue
+
+        logger.info(f"  ▶️ Executing action '{action.name}' (type={action.action_type})")
+        attempted = True
+
+        try:
+            config = json.loads(action.action_config) if action.action_config else {}
+        except (json.JSONDecodeError, TypeError):
+            config = {}
+
+        try:
+            if action.action_type == "digital_signage":
+                device_ids = config.get("device_ids", [])
+                playlist_id = config.get("playlist_id")
+                transition_mode = config.get("transition_mode", "immediate")
+                fade_duration_ms = config.get("fade_duration_ms", 1000)
+
+                if not device_ids or not playlist_id:
+                    logger.error(
+                        f"  ❌ digital_signage action '{action.name}' missing device_ids or playlist_id"
+                    )
+                    continue
+
+                from uuid import UUID as _UUID
+                playback_service = SignagePlaybackService(db)
+                control_request = PlaybackControlRequest(
+                    device_ids=[_UUID(d) for d in device_ids],
+                    command=PlaybackCommand.START,
+                    video_list_id=_UUID(playlist_id),
+                    parameters=PlaybackParameters(),
+                )
+                result = await playback_service.control_playback(control_request)
+                logger.info(f"  ✅ digital_signage action sent: {result}")
+
+            elif action.action_type in ("alert", "log", "email", "webhook", "messaging_app"):
+                # These action types are fully handled by the Redis subscriber path.
+                # When the /instant-detection HTTP endpoint is used, delegate to
+                # the communications client for best-effort execution.
+                comms_client = _get_communications_client()
+                if action.action_type == "log":
+                    message = config.get("message", f"Trigger '{trigger.name}' fired")
+                    await comms_client.log_audit_event(
+                        event_type="trigger_fired",
+                        event_source="media_service_http",
+                        event_data={
+                            "trigger_id": str(trigger.uuid),
+                            "trigger_name": trigger.name,
+                            "action_name": action.name,
+                            "message": message,
+                            "reason": evaluation_reason,
+                        },
+                        severity=config.get("level", "info"),
+                    )
+                    logger.info(f"  ✅ log action dispatched")
+                else:
+                    logger.info(
+                        f"  ℹ️ Action type '{action.action_type}' is handled by the Redis subscriber "
+                        f"in real-time mode; skipped in HTTP fallback path."
+                    )
+            else:
+                logger.warning(f"  ⚠️ Unsupported action type: {action.action_type}")
+
+        except Exception as exc:
+            logger.error(f"  ❌ Error executing action '{action.name}': {exc}", exc_info=True)
+
+    return attempted
+
+
 async def _execute_signage_action(
     trigger: Trigger,
     camera_id: str,
@@ -979,14 +1129,9 @@ async def _execute_signage_action(
     match_info: Optional[Dict[str, Any]] = None,
 ):
     """
-    Execute signage action using EXISTING playback control API.
-    
-    Calls the existing /api/v1/signage/playback/control endpoint
-    to switch playlists on registered signage devices.
-    
-    Args:
-        trigger: Trigger with signage configuration
-        camera_id: Camera that triggered the action
+    DEPRECATED — kept for reference only. Do not call.
+    This function read trigger.signage_playlist_id / signage_device_ids which were
+    removed from the Trigger model. Use _dispatch_trigger_actions() instead.
     """
     logger.info("="*80)
     logger.info(f"🎬 EXECUTING SIGNAGE ACTION")

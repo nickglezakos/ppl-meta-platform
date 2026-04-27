@@ -15,7 +15,7 @@ from jose import JWTError, jwt
 parent_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 sys.path.append(parent_dir)
 
-api_router = APIRouter()
+api_router = APIRouter(redirect_slashes=False)
 
 # JWT Configuration
 JWT_SECRET_KEY = os.getenv("SECRET_KEY", "ppl-meta-secret-key-development-only-change-in-production")
@@ -865,7 +865,7 @@ async def get_etl_job_status(request: Request):
 
 
 # Trigger Routes - Proxy to Media service
-@api_router.get("/triggers/")
+@api_router.get("/triggers")
 async def list_triggers(request: Request):
     """Proxy list triggers to Media service."""
     return await _proxy_to_media_service(request)
@@ -877,7 +877,7 @@ async def get_trigger(request: Request):
     return await _proxy_to_media_service(request)
 
 
-@api_router.post("/triggers/")
+@api_router.post("/triggers")
 async def create_trigger(request: Request):
     """Proxy create trigger to Media service."""
     return await _proxy_to_media_service(request)
@@ -902,7 +902,7 @@ async def toggle_trigger(request: Request):
 
 
 # User Actions Routes - Proxy to Media service
-@api_router.get("/user-actions/")
+@api_router.get("/user-actions")
 async def list_user_actions(request: Request):
     """Proxy list user actions to Media service."""
     return await _proxy_to_media_service(request)
@@ -914,7 +914,7 @@ async def get_user_action(request: Request):
     return await _proxy_to_media_service(request)
 
 
-@api_router.post("/user-actions/")
+@api_router.post("/user-actions")
 async def create_user_action(request: Request):
     """Proxy create user action to Media service."""
     return await _proxy_to_media_service(request)

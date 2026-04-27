@@ -849,6 +849,13 @@ class _UserActionDialogState extends State<_UserActionDialog> {
   String _alertSeverity = 'warning';
   int _alertDuration = 30;
 
+  // Messaging app action specific fields
+  late TextEditingController _messagingWebhookUrlController;
+  late TextEditingController _messagingMessageController;
+  late TextEditingController _messagingTitleController;
+  late TextEditingController _messagingMentionController;
+  String _messagingPlatform = 'slack';
+
   @override
   void initState() {
     super.initState();
@@ -874,6 +881,12 @@ class _UserActionDialogState extends State<_UserActionDialog> {
     
     // Initialize alert fields
     _alertMessageController = TextEditingController();
+    
+    // Initialize messaging app fields
+    _messagingWebhookUrlController = TextEditingController();
+    _messagingMessageController = TextEditingController();
+    _messagingTitleController = TextEditingController();
+    _messagingMentionController = TextEditingController();
     
     // Parse existing config if editing
     if (widget.action?.actionConfig != null) {
@@ -906,6 +919,12 @@ class _UserActionDialogState extends State<_UserActionDialog> {
           _alertMessageController.text = config['message'] ?? '';
           _alertSeverity = config['severity'] ?? 'warning';
           _alertDuration = config['duration_seconds'] ?? 30;
+        } else if (widget.action!.actionType == 'messaging_app') {
+          _messagingPlatform = config['platform'] ?? 'slack';
+          _messagingWebhookUrlController.text = config['webhook_url'] ?? '';
+          _messagingMessageController.text = config['message_template'] ?? '';
+          _messagingTitleController.text = config['title'] ?? '';
+          _messagingMentionController.text = config['mention'] ?? '';
         }
       } catch (e) {
         print('Error parsing action config: $e');
@@ -932,6 +951,10 @@ class _UserActionDialogState extends State<_UserActionDialog> {
     _webhookPayloadController.dispose();
     _logMessageController.dispose();
     _alertMessageController.dispose();
+    _messagingWebhookUrlController.dispose();
+    _messagingMessageController.dispose();
+    _messagingTitleController.dispose();
+    _messagingMentionController.dispose();
     super.dispose();
   }
 
@@ -1077,6 +1100,26 @@ class _UserActionDialogState extends State<_UserActionDialog> {
           'severity': _alertSeverity,
           'duration_seconds': _alertDuration,
         });
+      } else if (_selectedActionType == 'messaging_app') {
+        if (_messagingWebhookUrlController.text.isEmpty) {
+          throw Exception('Webhook URL is required');
+        }
+        if (_messagingMessageController.text.isEmpty) {
+          throw Exception('Message template is required');
+        }
+
+        final messagingConfig = <String, dynamic>{
+          'platform': _messagingPlatform,
+          'webhook_url': _messagingWebhookUrlController.text,
+          'message_template': _messagingMessageController.text,
+        };
+        if (_messagingTitleController.text.isNotEmpty) {
+          messagingConfig['title'] = _messagingTitleController.text;
+        }
+        if (_messagingPlatform == 'slack' && _messagingMentionController.text.isNotEmpty) {
+          messagingConfig['mention'] = _messagingMentionController.text;
+        }
+        actionConfig = jsonEncode(messagingConfig);
       } else {
         // Use the raw config controller for other action types
         actionConfig = _configController.text.isEmpty ? null : _configController.text;
@@ -1228,7 +1271,9 @@ class _UserActionDialogState extends State<_UserActionDialog> {
         
         // Playlist selection
         DropdownButtonFormField<String>(
-          value: _selectedPlaylistId,
+          value: _availablePlaylists.any((p) => p.id == _selectedPlaylistId)
+              ? _selectedPlaylistId
+              : null,
           decoration: const InputDecoration(
             labelText: 'Playlist *',
             hintText: 'Select a playlist',
@@ -1418,6 +1463,82 @@ class _UserActionDialogState extends State<_UserActionDialog> {
     );
   }
   
+  Widget _buildMessagingAppConfig() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Platform selector
+        DropdownButtonFormField<String>(
+          value: _messagingPlatform,
+          decoration: const InputDecoration(
+            labelText: 'Platform *',
+            prefixIcon: Icon(Icons.chat_bubble),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'slack', child: Text('Slack')),
+            DropdownMenuItem(value: 'teams', child: Text('Microsoft Teams')),
+          ],
+          onChanged: (value) => setState(() => _messagingPlatform = value!),
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _messagingWebhookUrlController,
+          decoration: InputDecoration(
+            labelText: 'Webhook URL *',
+            hintText: _messagingPlatform == 'slack'
+                ? 'https://hooks.slack.com/services/T.../B.../...'
+                : 'https://prod-xx.logic.azure.com/workflows/...',
+            prefixIcon: const Icon(Icons.link),
+            helperText: _messagingPlatform == 'slack'
+                ? 'From Slack App → Incoming Webhooks'
+                : 'From Teams channel → Apps → Workflows',
+          ),
+          keyboardType: TextInputType.url,
+          validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _messagingMessageController,
+          decoration: const InputDecoration(
+            labelText: 'Message Template *',
+            hintText: '\ud83d\udd14 *{trigger_name}* fired\n>{reason}\nScore: {similarity_score}',
+            helperText:
+                'Variables: {trigger_name}, {reason}, {match_reason}, {similarity_score}, {matched_member_name}',
+            alignLabelWithHint: true,
+          ),
+          maxLines: 4,
+          validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _messagingTitleController,
+          decoration: InputDecoration(
+            labelText: _messagingPlatform == 'teams'
+                ? 'Card Title (Optional)'
+                : 'Title (Optional)',
+            hintText: 'Detection Alert',
+            helperText: _messagingPlatform == 'teams'
+                ? 'When set, message is sent as an Adaptive Card with this title'
+                : 'Not used for Slack — title is part of the message template',
+            prefixIcon: const Icon(Icons.title),
+          ),
+        ),
+        if (_messagingPlatform == 'slack') ...[
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _messagingMentionController,
+            decoration: const InputDecoration(
+              labelText: 'Mention (Optional)',
+              hintText: '@channel or @here',
+              helperText: 'Prepended to the message to notify channel members',
+              prefixIcon: Icon(Icons.alternate_email),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildAlertConfig() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1516,6 +1637,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                   DropdownMenuItem(value: 'webhook', child: Text('Webhook')),
                   DropdownMenuItem(value: 'log', child: Text('Log')),
                   DropdownMenuItem(value: 'digital_signage', child: Text('Digital Signage')),
+                  DropdownMenuItem(value: 'messaging_app', child: Text('Messaging App (Slack / Teams)')),
                 ],
                 onChanged: (value) {
                   setState(() => _selectedActionType = value!);
@@ -1538,6 +1660,8 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                 _buildLogConfig()
               else if (_selectedActionType == 'alert')
                 _buildAlertConfig()
+              else if (_selectedActionType == 'messaging_app')
+                _buildMessagingAppConfig()
               else
                 TextFormField(
                   controller: _configController,

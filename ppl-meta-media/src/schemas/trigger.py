@@ -3,7 +3,7 @@ Pydantic schemas for Trigger API.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -11,9 +11,20 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class DemographicCondition(BaseModel):
     """Single demographic condition."""
+    LEGACY_AGE_FIELD_MAP: ClassVar[Dict[str, str]] = {
+        'percent_age_0_12': 'age_count_0_12',
+        'percent_age_13_17': 'age_count_13_17',
+        'percent_age_18_24': 'age_count_18_24',
+        'percent_age_25_34': 'age_count_25_34',
+        'percent_age_35_44': 'age_count_35_44',
+        'percent_age_45_54': 'age_count_45_54',
+        'percent_age_55_64': 'age_count_55_64',
+        'percent_age_65_plus': 'age_count_65_plus',
+    }
+
     field: str = Field(
         ...,
-        description="Demographic field: people_count, percent_male, percent_female, percent_age_0_12, percent_age_13_17, percent_age_18_24, percent_age_25_34, percent_age_35_44, percent_age_45_54, percent_age_55_64, percent_age_65_plus"
+        description="Demographic field: people_count, percent_male, percent_female, age_count_0_12, age_count_13_17, age_count_18_24, age_count_25_34, age_count_35_44, age_count_45_54, age_count_55_64, age_count_65_plus"
     )
     operator: str = Field(
         ...,
@@ -27,11 +38,15 @@ class DemographicCondition(BaseModel):
     @field_validator('field')
     @classmethod
     def validate_field(cls, v: str) -> str:
+        if v in cls.LEGACY_AGE_FIELD_MAP:
+            v = cls.LEGACY_AGE_FIELD_MAP[v]
+
         valid = [
             'people_count', 'percent_male', 'percent_female',
-            'percent_age_0_12', 'percent_age_13_17', 'percent_age_18_24',
-            'percent_age_25_34', 'percent_age_35_44', 'percent_age_45_54',
-            'percent_age_55_64', 'percent_age_65_plus'
+            'age_threshold',
+            'age_count_0_12', 'age_count_13_17', 'age_count_18_24',
+            'age_count_25_34', 'age_count_35_44', 'age_count_45_54',
+            'age_count_55_64', 'age_count_65_plus'
         ]
         if v not in valid:
             raise ValueError(f'field must be one of {valid}')
@@ -121,6 +136,10 @@ class TriggerBase(BaseModel):
         ge=1,
         description="Maximum number of top candidates to keep in ppl_match mode"
     )
+    ppl_match_negate: bool = Field(
+        default=False,
+        description="When True, trigger fires when NO group members are matched (NOT mode). Applies to ppl_match and search modes."
+    )
     search_camera_device_ids: Optional[List[str]] = Field(
         None,
         description="JSON array of camera device IDs to search (required for search mode)"
@@ -183,6 +202,7 @@ class TriggerUpdate(BaseModel):
     ppl_match_group_id: Optional[str] = None
     ppl_match_similarity_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     ppl_match_top_k: Optional[int] = Field(default=None, ge=1)
+    ppl_match_negate: Optional[bool] = None
     search_camera_device_ids: Optional[List[str]] = None
     search_interval_seconds: Optional[int] = Field(default=None, ge=30)
 
@@ -232,6 +252,7 @@ class TriggerResponse(BaseModel):
     ppl_match_group_id: Optional[str]
     ppl_match_similarity_threshold: float
     ppl_match_top_k: int
+    ppl_match_negate: bool = False
     last_match_info: Optional[Dict[str, Any]] = None
     last_matched_at: Optional[datetime] = None
     search_camera_device_ids: Optional[List[str]] = None

@@ -17,6 +17,31 @@ from ..models.trigger import Trigger
 
 logger = logging.getLogger(__name__)
 
+AGE_COUNT_TO_PERCENT_FIELD = {
+    'age_count_0_12': 'percent_age_0_12',
+    'age_count_13_17': 'percent_age_13_17',
+    'age_count_18_24': 'percent_age_18_24',
+    'age_count_25_34': 'percent_age_25_34',
+    'age_count_35_44': 'percent_age_35_44',
+    'age_count_45_54': 'percent_age_45_54',
+    'age_count_55_64': 'percent_age_55_64',
+    'age_count_65_plus': 'percent_age_65_plus',
+}
+
+LEGACY_PERCENT_AGE_FIELDS = set(AGE_COUNT_TO_PERCENT_FIELD.values())
+
+# Midpoint ages used for computing weighted-average age from bracket percentages
+AGE_BRACKET_MIDPOINTS = {
+    'percent_age_0_12': 6.0,
+    'percent_age_13_17': 15.0,
+    'percent_age_18_24': 21.0,
+    'percent_age_25_34': 29.5,
+    'percent_age_35_44': 39.5,
+    'percent_age_45_54': 49.5,
+    'percent_age_55_64': 59.5,
+    'percent_age_65_plus': 70.0,
+}
+
 
 class DemographicData:
     """Data structure for camera demographic results."""
@@ -35,14 +60,8 @@ class DemographicData:
             demographics: Dictionary containing demographic data with keys:
                 - percent_male: Percentage of males (0-100)
                 - percent_female: Percentage of females (0-100)
-                - percent_age_0_12: Percentage in age range 0-12
-                - percent_age_13_17: Percentage in age range 13-17
-                - percent_age_18_24: Percentage in age range 18-24
-                - percent_age_25_34: Percentage in age range 25-34
-                - percent_age_35_44: Percentage in age range 35-44
-                - percent_age_45_54: Percentage in age range 45-54
-                - percent_age_55_64: Percentage in age range 55-64
-                - percent_age_65_plus: Percentage in age range 65+
+                - percent_age_0_12 ... percent_age_65_plus: Legacy age percentages
+                - age_count_0_12 ... age_count_65_plus: Canonical age bucket counts
             timestamp: When the data was captured
         """
         self.camera_device_id = camera_device_id
@@ -54,6 +73,26 @@ class DemographicData:
         """Get value for a demographic field."""
         if field == 'people_count':
             return float(self.people_count)
+
+        if field == 'age_threshold':
+            # Compute weighted-average age from bracket percentages
+            avg_age = sum(
+                float(self.demographics.get(k, 0)) * mid / 100.0
+                for k, mid in AGE_BRACKET_MIDPOINTS.items()
+            )
+            return avg_age
+
+        if field in AGE_COUNT_TO_PERCENT_FIELD or field in LEGACY_PERCENT_AGE_FIELDS:
+            percent_field = AGE_COUNT_TO_PERCENT_FIELD.get(field, field)
+            age_count_value = self.demographics.get(field) if field in AGE_COUNT_TO_PERCENT_FIELD else None
+            age_percent_value = self.demographics.get(percent_field)
+
+            if age_count_value is not None:
+                return float(age_count_value)
+            if age_percent_value is not None:
+                return (float(self.people_count) * float(age_percent_value)) / 100.0
+            return None
+
         return self.demographics.get(field)
         
     def __repr__(self):

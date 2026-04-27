@@ -7,7 +7,7 @@ https://www.cleanpng.com/png-pixel-art-stock-photography-halo-1228277/
 Speed optimization
 computational loops: numba
 distributed processing :  ray
-larger than memory datasets: dask
+larger than memory datasets: dask 
 production profiling: pyspy
 https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-finish-f20516db1d02?source=friends_link&sk=3a1bcf9cca420e102bd2a432d040addb
 

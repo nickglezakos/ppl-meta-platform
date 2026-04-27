@@ -63,7 +63,7 @@ class Trigger(BaseModel):
     demographic_conditions = Column(
         Text,
         nullable=False,
-        comment='JSON array of demographic conditions: [{"field": "people_count|percent_male|percent_age_18_24|...", "operator": "gt|gte|lt|lte|eq", "value": number}]'
+        comment='JSON array of demographic conditions: [{"field": "people_count|percent_male|age_count_18_24|...", "operator": "gt|gte|lt|lte|eq", "value": number}]'
     )
     
     # Time conditions
@@ -130,6 +130,12 @@ class Trigger(BaseModel):
         nullable=False,
         default=1,
         comment="Maximum number of top matches to keep for ppl_match mode"
+    )
+    ppl_match_negate = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="When True, the trigger fires when NO group members are matched (NOT mode)"
     )
     
     # Search trigger configuration

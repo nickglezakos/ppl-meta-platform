@@ -89,6 +89,8 @@ class UserActionModel {
         return 'Log';
       case 'digital_signage':
         return 'Digital Signage';
+      case 'messaging_app':
+        return 'Messaging App';
       default:
         return actionType.toUpperCase();
     }
@@ -107,6 +109,8 @@ class UserActionModel {
         return Icons.description;
       case 'digital_signage':
         return Icons.smart_display;
+      case 'messaging_app':
+        return Icons.chat_bubble;
       default:
         return Icons.settings;
     }
@@ -125,6 +129,8 @@ class UserActionModel {
         return Colors.grey;
       case 'digital_signage':
         return Colors.green;
+      case 'messaging_app':
+        return Colors.teal;
       default:
         return Colors.white;
     }

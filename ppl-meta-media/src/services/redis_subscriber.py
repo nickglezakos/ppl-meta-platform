@@ -26,6 +26,31 @@ from src.config import get_config
 
 logger = logging.getLogger(__name__)
 
+AGE_COUNT_TO_PERCENT_FIELD = {
+    'age_count_0_12': 'percent_age_0_12',
+    'age_count_13_17': 'percent_age_13_17',
+    'age_count_18_24': 'percent_age_18_24',
+    'age_count_25_34': 'percent_age_25_34',
+    'age_count_35_44': 'percent_age_35_44',
+    'age_count_45_54': 'percent_age_45_54',
+    'age_count_55_64': 'percent_age_55_64',
+    'age_count_65_plus': 'percent_age_65_plus',
+}
+
+LEGACY_PERCENT_AGE_FIELDS = set(AGE_COUNT_TO_PERCENT_FIELD.values())
+
+# Midpoint ages used for computing weighted-average age from bracket percentages
+AGE_BRACKET_MIDPOINTS = {
+    'percent_age_0_12': 6.0,
+    'percent_age_13_17': 15.0,
+    'percent_age_18_24': 21.0,
+    'percent_age_25_34': 29.5,
+    'percent_age_35_44': 39.5,
+    'percent_age_45_54': 49.5,
+    'percent_age_55_64': 59.5,
+    'percent_age_65_plus': 70.0,
+}
+
 # Module-level communications client singleton
 _communications_client = None
 
@@ -581,6 +606,20 @@ class InstantDetectionSubscriber:
             return False, f"ppl_match evaluation error: {str(e)}", None
 
         if not all_candidates:
+            # Check if negate mode is active: fire when NO matches found
+            negate = bool(getattr(trigger, "ppl_match_negate", False))
+            if negate:
+                no_match_info = {
+                    "mode": "ppl_match",
+                    "group_id": group_id,
+                    "threshold": threshold,
+                    "top_k": top_k,
+                    "matched": False,
+                    "negated": True,
+                    "evaluated_source_count": len(source_mvr_uuids),
+                    "evaluated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                return True, "No group members matched (NOT mode)", no_match_info
             return False, "No group matches above threshold", None
 
         all_candidates = sorted(
@@ -590,6 +629,11 @@ class InstantDetectionSubscriber:
         )
         top_candidates = all_candidates[:top_k]
         best = top_candidates[0]
+
+        # In negate mode, matches found means the trigger should NOT fire
+        negate = bool(getattr(trigger, "ppl_match_negate", False))
+        if negate:
+            return False, "Group member(s) matched — trigger skipped (NOT mode)", None
 
         match_info = {
             "mode": "ppl_match",
@@ -665,6 +709,31 @@ class InstantDetectionSubscriber:
             if field == 'people_count':
                 actual_value = people_count
                 logger.info(f"       Actual people_count: {actual_value}")
+            elif field == 'age_threshold':
+                # Compute weighted-average age from bracket percentages
+                actual_value = sum(
+                    float(demographics.get(k, 0)) * mid / 100.0
+                    for k, mid in AGE_BRACKET_MIDPOINTS.items()
+                )
+                logger.info(f"       Computed weighted avg age: {actual_value}")
+            elif isinstance(field, str) and (
+                field in AGE_COUNT_TO_PERCENT_FIELD or field in LEGACY_PERCENT_AGE_FIELDS
+            ):
+                percent_field = AGE_COUNT_TO_PERCENT_FIELD.get(field, field)
+                age_count_value = demographics.get(field) if field in AGE_COUNT_TO_PERCENT_FIELD else None
+                age_percent_value = demographics.get(percent_field)
+
+                if age_count_value is not None:
+                    actual_value = float(age_count_value)
+                    logger.info(f"       Actual {field}: {actual_value}")
+                elif age_percent_value is not None:
+                    actual_value = (float(people_count) * float(age_percent_value)) / 100.0
+                    logger.info(
+                        f"       Actual {percent_field}: {age_percent_value}% -> derived age_count: {actual_value}"
+                    )
+                else:
+                    logger.info(f"       ❌ FAIL: Field '{field}' not in data")
+                    return False
             else:
                 actual_value = demographics.get(field)
                 logger.info(f"       Actual {field}: {actual_value}")
@@ -743,6 +812,8 @@ class InstantDetectionSubscriber:
             await self._execute_email_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "webhook":
             await self._execute_webhook_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
+        elif action.action_type == "messaging_app":
+            await self._execute_messaging_app_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "log":
             await self._execute_log_action(action, trigger, db, evaluation_reason=evaluation_reason, match_info=match_info)
         elif action.action_type == "alert":
@@ -1000,7 +1071,103 @@ class InstantDetectionSubscriber:
         
         except Exception as e:
             logger.error(f"     ❌ Error executing webhook action: {e}", exc_info=True)
-    
+
+    async def _execute_messaging_app_action(
+        self,
+        action,
+        trigger: Trigger,
+        db: Session,
+        evaluation_reason: Optional[str] = None,
+        match_info: Optional[Dict[str, Any]] = None,
+    ):
+        """Execute messaging app action (Slack or Teams) via a platform-formatted webhook."""
+        logger.info(f"  💬 Executing messaging app action...")
+
+        try:
+            config = json.loads(action.action_config) if isinstance(action.action_config, str) else action.action_config
+
+            platform = (config.get("platform") or "slack").lower()
+            webhook_url = config.get("webhook_url")
+            message_template = config.get("message_template", "")
+            title = config.get("title", "")
+            mention = config.get("mention", "")
+
+            if not webhook_url:
+                logger.error(f"     ❌ Missing webhook_url in messaging app action config")
+                return
+
+            message = _interpolate_action_message(
+                base_message=message_template,
+                trigger=trigger,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
+
+            if platform == "slack":
+                text = f"{mention} {message}".strip() if mention else message
+                payload = {"text": text}
+
+            elif platform == "teams":
+                interpolated_title = _interpolate_action_message(
+                    base_message=title,
+                    trigger=trigger,
+                    evaluation_reason=evaluation_reason,
+                    match_info=match_info,
+                ) if title else ""
+
+                if interpolated_title:
+                    payload = {
+                        "type": "message",
+                        "attachments": [{
+                            "contentType": "application/vnd.microsoft.card.adaptive",
+                            "content": {
+                                "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                                "type": "AdaptiveCard",
+                                "version": "1.4",
+                                "body": [
+                                    {
+                                        "type": "TextBlock",
+                                        "size": "Medium",
+                                        "weight": "Bolder",
+                                        "text": interpolated_title,
+                                    },
+                                    {
+                                        "type": "TextBlock",
+                                        "text": message,
+                                        "wrap": True,
+                                    },
+                                ],
+                            },
+                        }],
+                    }
+                else:
+                    payload = {"text": message}
+
+            else:
+                logger.warning(f"     ⚠️ Unknown messaging platform '{platform}', sending as plain text")
+                payload = {"text": message}
+
+            logger.info(f"     Platform: {platform}")
+            logger.info(f"     Webhook URL: {webhook_url}")
+
+            comms_client = get_communications_client()
+            result = await comms_client.send_webhook(
+                url=webhook_url,
+                payload=payload,
+                method="POST",
+                triggered_by="media_service",
+                trigger_type="trigger_action",
+                trigger_id=str(trigger.uuid),
+            )
+
+            if result.get("success"):
+                logger.info(f"     ✅ {platform.capitalize()} message sent. Log UUID: {result.get('log_uuid')}")
+            else:
+                logger.error(f"     ❌ {platform.capitalize()} message failed: {result.get('message')}")
+
+        except Exception as e:
+            logger.error(f"     ❌ Error executing messaging app action: {e}", exc_info=True)
+
     async def _execute_log_action(
         self,
         action,

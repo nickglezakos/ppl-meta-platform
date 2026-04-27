@@ -74,6 +74,9 @@ class TriggerModel {
   @JsonKey(name: 'ppl_match_top_k')
   final int pplMatchTopK;
 
+  @JsonKey(name: 'ppl_match_negate')
+  final bool pplMatchNegate;
+
   @JsonKey(name: 'search_camera_device_ids')
   final List<String>? searchCameraDeviceIds;
 
@@ -114,6 +117,7 @@ class TriggerModel {
     this.pplMatchGroupId,
     this.pplMatchSimilarityThreshold = 0.75,
     this.pplMatchTopK = 1,
+    this.pplMatchNegate = false,
     this.searchCameraDeviceIds,
     this.searchIntervalSeconds,
     this.lastMatchInfo,
@@ -190,6 +194,9 @@ class TriggerCreateRequest {
   @JsonKey(name: 'ppl_match_top_k')
   final int? pplMatchTopK;
 
+  @JsonKey(name: 'ppl_match_negate')
+  final bool? pplMatchNegate;
+
   @JsonKey(name: 'search_camera_device_ids')
   final List<String>? searchCameraDeviceIds;
 
@@ -213,6 +220,7 @@ class TriggerCreateRequest {
     this.pplMatchGroupId,
     this.pplMatchSimilarityThreshold,
     this.pplMatchTopK,
+    this.pplMatchNegate,
     this.searchCameraDeviceIds,
     this.searchIntervalSeconds,
     this.name,

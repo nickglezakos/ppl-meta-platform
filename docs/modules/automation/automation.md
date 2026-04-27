@@ -22,9 +22,9 @@ Routing is wired from [ppl-meta-frontend/lib/presentation/navigation/app_router.
 
 | Mode | UI Label | Family | Description |
 |------|----------|--------|-------------|
-| `demographic` | Instant Demographic | Instant | Evaluates demographic percentage conditions (age ranges, gender ratios, people count) from real-time Redis events. At least one condition is required. |
-| `ppl_match` | Instant People Match | Instant | Matches detected faces against a known individual group via the vmeta service. Requires a `ppl_match_group_id`. Similarity threshold and top-k are configurable per trigger. |
-| `search` | Search People Match | Search | Periodically queries the vmeta camera-search endpoint across multiple cameras to find matches against an individual group. Requires `search_camera_device_ids`, `ppl_match_group_id`, and `search_interval_seconds` (min 30). |
+| `demographic` | Instant Demographic | Instant | Evaluates demographic conditions from real-time Redis events. `people_count` and age buckets are numeric counts; gender fields are percentages. At least one condition is required.
+| `ppl_match` | Instant People Match | Instant | Matches detected faces against a known individual group via the vmeta service. Requires a `ppl_match_group_id`. Similarity threshold and top-k are configurable per trigger. Supports NOT mode (`ppl_match_negate`) to fire when no group member is matched. |
+| `search` | Search People Match | Search | Periodically queries the vmeta camera-search endpoint across multiple cameras to find matches against an individual group. Requires `search_camera_device_ids`, `ppl_match_group_id`, and `search_interval_seconds` (min 30). Supports NOT mode (`ppl_match_negate`) to fire when no group member is found in recordings. |
 | `search_demographic` | Search Demographic | Search | Periodically queries the vmeta demographics-search endpoint across multiple cameras, then evaluates demographic conditions against aggregated results. Requires `search_camera_device_ids`, at least one demographic condition, and `search_interval_seconds` (min 30). |
 
 ### Runtime Flow
@@ -87,6 +87,7 @@ Routing is wired from [ppl-meta-frontend/lib/presentation/navigation/app_router.
 | `ppl_match_group_id` | String(255) | null | Target individual group for `ppl_match` and `search` modes |
 | `ppl_match_similarity_threshold` | Float | `0.75` | Minimum similarity for `ppl_match` and `search` |
 | `ppl_match_top_k` | Integer | `1` | Max top matches to keep |
+| `ppl_match_negate` | Boolean | `False` | When `True`, the trigger fires when **no** group members are matched (NOT mode). Applies to `ppl_match` and `search` modes. |
 | `search_camera_device_ids` | Text (JSON) | null | JSON array of camera device IDs for `search` and `search_demographic` modes |
 | `search_interval_seconds` | Integer | `300` | How often (in seconds) a search trigger executes. Minimum 30. |
 | `tracking_duration` | String(50) | `"10 minutes"` | MVR search time window / lookback window for search triggers |
@@ -105,7 +106,7 @@ Routing is wired from [ppl-meta-frontend/lib/presentation/navigation/app_router.
 | `uuid` | UUID | auto | |
 | `name` | String(255) | — | Action name |
 | `description` | Text | null | |
-| `action_type` | String(50) | `"alert"` | One of: `alert`, `email`, `webhook`, `log`, `digital_signage` |
+| `action_type` | String(50) | `"alert"` | One of: `alert`, `email`, `webhook`, `log`, `digital_signage`, `messaging_app` |
 | `action_config` | Text (JSON) | null | Type-specific configuration (see Action Types) |
 | `is_active` | Boolean | `True` | |
 | `created_at` | DateTime(tz) | `now()` | |
@@ -142,7 +143,9 @@ Every evaluation (pass or fail) is recorded here for auditing.
 
 ### Valid Fields
 
-`people_count`, `percent_male`, `percent_female`, `percent_age_0_12`, `percent_age_13_17`, `percent_age_18_24`, `percent_age_25_34`, `percent_age_35_44`, `percent_age_45_54`, `percent_age_55_64`, `percent_age_65_plus`
+`people_count`, `percent_male`, `percent_female`, `age_count_0_12`, `age_count_13_17`, `age_count_18_24`, `age_count_25_34`, `age_count_35_44`, `age_count_45_54`, `age_count_55_64`, `age_count_65_plus`
+
+Legacy aliases accepted for backward compatibility: `percent_age_0_12`, `percent_age_13_17`, `percent_age_18_24`, `percent_age_25_34`, `percent_age_35_44`, `percent_age_45_54`, `percent_age_55_64`, `percent_age_65_plus`.
 
 ### Valid Operators
 
@@ -156,7 +159,7 @@ Every evaluation (pass or fail) is recorded here for auditing.
 
 ### Evaluation Logic
 
-All conditions are evaluated with **AND** semantics — every condition must pass for the trigger to fire. The `_evaluate_conditions()` method in [redis_subscriber.py](ppl-meta-media/src/services/redis_subscriber.py) extracts the actual value from the demographics dict (or `people_count` directly), casts it to float, and compares per operator. If any single condition fails, the entire trigger fails.
+All conditions are evaluated with **AND** semantics — every condition must pass for the trigger to fire. The `_evaluate_conditions()` method in [redis_subscriber.py](ppl-meta-media/src/services/redis_subscriber.py) extracts the actual value from the demographics dict (or `people_count` directly), casts it to float, and compares per operator. Age-count fields are evaluated as numeric counts (derived from age percentages when only `percent_age_*` is present in the payload). If any single condition fails, the entire trigger fails.
 
 ### Validation Rules (Pydantic)
 
@@ -176,6 +179,7 @@ All conditions are evaluated with **AND** semantics — every condition must pas
 | **`webhook`** | `{"url": "https://...", "method": "POST", "payload_data": {...}}` | POSTs to the specified URL via Communications Service (`POST /api/v1/webhook/send`). Payload includes trigger and detection metadata. |
 | **`log`** | `{"message": "...", "severity": "info", "data": {"category": "...", "tags": [...]}}` | Creates an audit log entry via Communications Service. |
 | **`digital_signage`** | `{"device_ids": [...], "playlist_id": "uuid", "transition_mode": "immediate\|after_current\|fade", "fade_duration_ms": 2000}` | Sends a `START` playback command to signage devices to switch playlist. |
+| **`messaging_app`** | `{"platform": "slack\|teams", "webhook_url": "https://...", "message_template": "...", "title": "...", "mention": "@channel"}` | Sends a formatted message to Slack or Microsoft Teams. Slack sends `{"text": "..."}` natively. Teams sends an Adaptive Card when `title` is set, otherwise plain `{"text": "..."}`. `mention` (Slack only) is prepended to the message. All fields support template variables. |
 
 ### Template Variables (for message/subject/body fields)
 

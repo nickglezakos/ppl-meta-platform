@@ -24,6 +24,31 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/triggers", tags=["triggers"])
 
+AGE_COUNT_TO_PERCENT_FIELD = {
+    'age_count_0_12': 'percent_age_0_12',
+    'age_count_13_17': 'percent_age_13_17',
+    'age_count_18_24': 'percent_age_18_24',
+    'age_count_25_34': 'percent_age_25_34',
+    'age_count_35_44': 'percent_age_35_44',
+    'age_count_45_54': 'percent_age_45_54',
+    'age_count_55_64': 'percent_age_55_64',
+    'age_count_65_plus': 'percent_age_65_plus',
+}
+
+LEGACY_PERCENT_AGE_FIELDS = set(AGE_COUNT_TO_PERCENT_FIELD.values())
+
+# Midpoint ages used for computing weighted-average age from bracket percentages
+AGE_BRACKET_MIDPOINTS = {
+    'percent_age_0_12': 6.0,
+    'percent_age_13_17': 15.0,
+    'percent_age_18_24': 21.0,
+    'percent_age_25_34': 29.5,
+    'percent_age_35_44': 39.5,
+    'percent_age_45_54': 49.5,
+    'percent_age_55_64': 59.5,
+    'percent_age_65_plus': 70.0,
+}
+
 
 async def _execute_signage_action(trigger_id: int, device_ids: List[str], playlist_id: str):
     """
@@ -177,6 +202,29 @@ def evaluate_demographic_conditions(
         if field == 'people_count':
             actual_value = people_count
             logger.info(f"       Actual people_count: {actual_value}")
+        elif field == 'age_threshold':
+            # Compute weighted-average age from bracket percentages
+            actual_value = sum(
+                float(demographics.get(k, 0)) * mid / 100.0
+                for k, mid in AGE_BRACKET_MIDPOINTS.items()
+            )
+            logger.info(f"       Computed weighted avg age: {actual_value}")
+        elif field in AGE_COUNT_TO_PERCENT_FIELD or field in LEGACY_PERCENT_AGE_FIELDS:
+            percent_field = AGE_COUNT_TO_PERCENT_FIELD.get(field, field)
+            age_count_value = demographics.get(field) if field in AGE_COUNT_TO_PERCENT_FIELD else None
+            age_percent_value = demographics.get(percent_field)
+
+            if age_count_value is not None:
+                actual_value = float(age_count_value)
+                logger.info(f"       Actual {field}: {actual_value}")
+            elif age_percent_value is not None:
+                actual_value = (float(people_count) * float(age_percent_value)) / 100.0
+                logger.info(
+                    f"       Actual {percent_field}: {age_percent_value}% -> derived age_count: {actual_value}"
+                )
+            else:
+                logger.warning(f"       ❌ Field {field} not found in demographics")
+                return False
         else:
             actual_value = demographics.get(field)
             logger.info(f"       Actual {field}: {actual_value}")

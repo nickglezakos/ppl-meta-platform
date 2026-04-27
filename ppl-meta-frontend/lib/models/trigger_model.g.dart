@@ -50,6 +50,7 @@ TriggerModel _$TriggerModelFromJson(Map<String, dynamic> json) => TriggerModel(
       pplMatchSimilarityThreshold:
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble() ?? 0.75,
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt() ?? 1,
+      pplMatchNegate: json['ppl_match_negate'] as bool? ?? false,
       searchCameraDeviceIds:
           (json['search_camera_device_ids'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -87,6 +88,7 @@ Map<String, dynamic> _$TriggerModelToJson(TriggerModel instance) =>
       'ppl_match_group_id': instance.pplMatchGroupId,
       'ppl_match_similarity_threshold': instance.pplMatchSimilarityThreshold,
       'ppl_match_top_k': instance.pplMatchTopK,
+      'ppl_match_negate': instance.pplMatchNegate,
       'search_camera_device_ids': instance.searchCameraDeviceIds,
       'search_interval_seconds': instance.searchIntervalSeconds,
       'last_match_info': instance.lastMatchInfo,
@@ -118,6 +120,7 @@ TriggerCreateRequest _$TriggerCreateRequestFromJson(
       pplMatchSimilarityThreshold:
           (json['ppl_match_similarity_threshold'] as num?)?.toDouble(),
       pplMatchTopK: (json['ppl_match_top_k'] as num?)?.toInt(),
+      pplMatchNegate: json['ppl_match_negate'] as bool?,
       searchCameraDeviceIds:
           (json['search_camera_device_ids'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -145,6 +148,7 @@ Map<String, dynamic> _$TriggerCreateRequestToJson(
       if (instance.pplMatchSimilarityThreshold case final value?)
         'ppl_match_similarity_threshold': value,
       if (instance.pplMatchTopK case final value?) 'ppl_match_top_k': value,
+      if (instance.pplMatchNegate case final value?) 'ppl_match_negate': value,
       if (instance.searchCameraDeviceIds case final value?)
         'search_camera_device_ids': value,
       if (instance.searchIntervalSeconds case final value?)

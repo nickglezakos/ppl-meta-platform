@@ -209,6 +209,7 @@ class SearchTriggerScheduler:
                     "ppl_match_group_id": trigger.ppl_match_group_id,
                     "ppl_match_similarity_threshold": trigger.ppl_match_similarity_threshold,
                     "ppl_match_top_k": trigger.ppl_match_top_k,
+                    "ppl_match_negate": bool(getattr(trigger, "ppl_match_negate", False)),
                     "is_active": trigger.is_active,
                 }
 
@@ -466,6 +467,23 @@ class SearchTriggerScheduler:
         demographics = _aggregate_demographics(matched_individuals)
         processing_time = round(time.monotonic() - start_time_perf, 2)
 
+        negate = trigger_data.get("ppl_match_negate", False)
+
+        # Negate mode: fire only when NO members are matched; skip when matches exist
+        if negate and people_count > 0:
+            logger.info(
+                "Search trigger %s (NOT mode): %d match(es) found — skipping publish",
+                trigger_uuid, people_count,
+            )
+            return
+        # Normal mode: fire only when at least one match found
+        if not negate and people_count == 0:
+            logger.info(
+                "Search trigger %s: no matches found — skipping publish",
+                trigger_uuid,
+            )
+            return
+
         event = {
             "camera_id": f"search:{trigger_uuid}",
             "timestamp": now.isoformat(),
@@ -483,6 +501,7 @@ class SearchTriggerScheduler:
                 "total_group_members": search_result.get("total_group_members", 0),
                 "search_session_uuid": search_result.get("search_session_uuid"),
                 "processing_time": processing_time,
+                "negated": negate,
             },
         }
 
@@ -524,6 +543,7 @@ class SearchTriggerScheduler:
                 "ppl_match_group_id": trigger.ppl_match_group_id,
                 "ppl_match_similarity_threshold": trigger.ppl_match_similarity_threshold,
                 "ppl_match_top_k": trigger.ppl_match_top_k,
+                "ppl_match_negate": bool(getattr(trigger, "ppl_match_negate", False)),
                 "is_active": trigger.is_active,
             }
         finally:

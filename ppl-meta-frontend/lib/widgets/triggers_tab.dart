@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/trigger_model.dart';
 import '../services/trigger_service.dart';
@@ -18,6 +19,30 @@ class TriggersTab extends ConsumerStatefulWidget {
 class _TriggersTabState extends ConsumerState<TriggersTab> {
   final TriggerService _triggerService = TriggerService();
   final Map<String, String> _groupNameById = {};
+  // Legacy age bracket fields migrate to age_threshold on edit.
+  // Maps field name → age threshold value (start of bracket).
+  static const Map<String, double> _legacyAgeFieldToThreshold = {
+    'age_count_0_12': 6,
+    'age_count_13_17': 13,
+    'age_count_18_24': 18,
+    'age_count_25_34': 25,
+    'age_count_35_44': 35,
+    'age_count_45_54': 45,
+    'age_count_55_64': 55,
+    'age_count_65_plus': 65,
+    'percent_age_0_12': 6,
+    'percent_age_13_17': 13,
+    'percent_age_18_24': 18,
+    'percent_age_25_34': 25,
+    'percent_age_35_44': 35,
+    'percent_age_45_54': 45,
+    'percent_age_55_64': 55,
+    'percent_age_65_plus': 65,
+  };
+  static const Set<String> _percentageConditionFields = {
+    'percent_male',
+    'percent_female',
+  };
   
   bool _isLoading = true;
   String? _errorMessage;
@@ -27,6 +52,64 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
   int _currentPage = 1;
   int _totalPages = 1;
   bool? _filterIsActive;
+
+  bool _isPercentageConditionField(String field) {
+    return _percentageConditionFields.contains(field);
+  }
+
+  bool _isAgeThresholdField(String field) => field == 'age_threshold';
+
+  /// Migrates legacy age bracket / percent_age fields to age_threshold.
+  DemographicCondition _normalizeConditionForEdit(DemographicCondition condition) {
+    final thresholdAge = _legacyAgeFieldToThreshold[condition.field];
+    if (thresholdAge != null) {
+      return DemographicCondition(
+        field: 'age_threshold',
+        operator: condition.operator,
+        value: thresholdAge,
+      );
+    }
+    return condition;
+  }
+
+  String _canonicalConditionField(String field) {
+    // age_count_* and percent_age_* are migrated at load time; nothing to remap here.
+    return field;
+  }
+
+  double _defaultConditionValueForField(String field) {
+    if (_isPercentageConditionField(field)) return 50.0;
+    if (_isAgeThresholdField(field)) return 18.0;
+    return 1.0;
+  }
+
+  double _normalizedConditionValueForField({
+    required String previousField,
+    required String nextField,
+    required double currentValue,
+  }) {
+    if (previousField == nextField) return currentValue;
+    return _defaultConditionValueForField(nextField);
+  }
+
+  String _conditionValueLabel(String field) {
+    if (_isPercentageConditionField(field)) return 'Percent';
+    if (_isAgeThresholdField(field)) return 'Age';
+    return 'Count';
+  }
+
+  String? _conditionValueSuffix(String field) {
+    if (_isPercentageConditionField(field)) return '%';
+    if (_isAgeThresholdField(field)) return 'yrs';
+    return null;
+  }
+
+  String _formatConditionInputValue(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    return value.toString();
+  }
 
   @override
   void initState() {
@@ -552,6 +635,8 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: ConstrainedBox(
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
@@ -663,6 +748,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                 }).toList(),
               ),
             ),
+            ),
           ),
         );
       },
@@ -722,6 +808,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     String? selectedPplMatchGroupId = trigger?.pplMatchGroupId;
     List<String> selectedSearchCameraIds = trigger?.searchCameraDeviceIds ?? [];
     int searchIntervalSeconds = trigger?.searchIntervalSeconds ?? 300;
+    bool pplMatchNegate = trigger?.pplMatchNegate ?? false;
     final searchIntervalController = TextEditingController(
       text: (trigger?.searchIntervalSeconds ?? 300).toString(),
     );
@@ -749,10 +836,10 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
       ];
     }
     
-    // Demographic conditions
-    List<DemographicCondition> demographicConditions = trigger?.demographicConditions ?? [
+    // Demographic conditions — migrate legacy age bracket fields to age_threshold
+    List<DemographicCondition> demographicConditions = (trigger?.demographicConditions ?? [
       DemographicCondition(field: 'people_count', operator: 'gte', value: 1),
-    ];
+    ]).map(_normalizeConditionForEdit).toList();
     
     // Parse tracking duration
     int trackingNumber = 10;
@@ -864,6 +951,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
 
                               ...List.generate(demographicConditions.length, (index) {
                                 final condition = demographicConditions[index];
+                                final canonicalField = _canonicalConditionField(condition.field);
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: Row(
@@ -871,7 +959,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                       Expanded(
                                         flex: 3,
                                         child: DropdownButtonFormField<String>(
-                                          value: condition.field,
+                                          value: canonicalField,
                                           decoration: const InputDecoration(
                                             labelText: 'Field',
                                             border: OutlineInputBorder(),
@@ -881,21 +969,19 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                             DropdownMenuItem(value: 'people_count', child: Text('People Count')),
                                             DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
                                             DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
-                                            DropdownMenuItem(value: 'percent_age_0_12', child: Text('Age 0-12 %')),
-                                            DropdownMenuItem(value: 'percent_age_13_17', child: Text('Age 13-17 %')),
-                                            DropdownMenuItem(value: 'percent_age_18_24', child: Text('Age 18-24 %')),
-                                            DropdownMenuItem(value: 'percent_age_25_34', child: Text('Age 25-34 %')),
-                                            DropdownMenuItem(value: 'percent_age_35_44', child: Text('Age 35-44 %')),
-                                            DropdownMenuItem(value: 'percent_age_45_54', child: Text('Age 45-54 %')),
-                                            DropdownMenuItem(value: 'percent_age_55_64', child: Text('Age 55-64 %')),
-                                            DropdownMenuItem(value: 'percent_age_65_plus', child: Text('Age 65+ %')),
+                                            DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
                                           ],
                                           onChanged: (value) {
                                             setDialogState(() {
+                                              final nextField = value!;
                                               demographicConditions[index] = DemographicCondition(
-                                                field: value!,
+                                                field: nextField,
                                                 operator: condition.operator,
-                                                value: condition.value,
+                                                value: _normalizedConditionValueForField(
+                                                  previousField: canonicalField,
+                                                  nextField: nextField,
+                                                  currentValue: condition.value,
+                                                ),
                                               );
                                             });
                                           },
@@ -921,7 +1007,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                           onChanged: (value) {
                                             setDialogState(() {
                                               demographicConditions[index] = DemographicCondition(
-                                                field: condition.field,
+                                                field: canonicalField,
                                                 operator: value!,
                                                 value: condition.value,
                                               );
@@ -932,22 +1018,32 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         flex: 2,
-                                        child: TextField(
-                                          controller: TextEditingController(text: condition.value.toString()),
-                                          decoration: const InputDecoration(
-                                            labelText: 'Value',
-                                            border: OutlineInputBorder(),
+                                        child: TextFormField(
+                                          key: ValueKey('demographic-condition-$index-${condition.field}'),
+                                          initialValue: _formatConditionInputValue(condition.value),
+                                          decoration: InputDecoration(
+                                            labelText: _conditionValueLabel(canonicalField),
+                                            suffixText: _conditionValueSuffix(canonicalField),
+                                            border: const OutlineInputBorder(),
                                             isDense: true,
                                           ),
                                           keyboardType: TextInputType.number,
+                                          inputFormatters: _isAgeThresholdField(canonicalField)
+                                              ? [FilteringTextInputFormatter.digitsOnly]
+                                              : _isPercentageConditionField(canonicalField)
+                                                  ? [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))]
+                                                  : [FilteringTextInputFormatter.digitsOnly],
                                           onChanged: (value) {
-                                            final numValue = double.tryParse(value);
+                                            var numValue = double.tryParse(value);
                                             if (numValue != null) {
+                                              if (_isAgeThresholdField(canonicalField)) {
+                                                numValue = numValue.clamp(1, 100);
+                                              }
                                               setDialogState(() {
                                                 demographicConditions[index] = DemographicCondition(
-                                                  field: condition.field,
+                                                  field: canonicalField,
                                                   operator: condition.operator,
-                                                  value: numValue,
+                                                  value: numValue!,
                                                 );
                                               });
                                             }
@@ -1032,6 +1128,18 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                     ),
                                   ),
                                 ],
+                              ),
+                              const SizedBox(height: 12),
+                              SwitchListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('NOT mode'),
+                                subtitle: const Text(
+                                  'Fire when NO group members are matched',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                value: pplMatchNegate,
+                                onChanged: (v) => setDialogState(() => pplMatchNegate = v),
                               ),
                             ],
                           ),
@@ -1155,6 +1263,18 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: 4),
+                              SwitchListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: const Text('NOT mode'),
+                                subtitle: const Text(
+                                  'Fire when NO group members are found in camera recordings',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                value: pplMatchNegate,
+                                onChanged: (v) => setDialogState(() => pplMatchNegate = v),
+                              ),
                             ],
                           ),
                         ),
@@ -1272,6 +1392,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               const SizedBox(height: 12),
                               ...List.generate(demographicConditions.length, (index) {
                                 final condition = demographicConditions[index];
+                                final canonicalField = _canonicalConditionField(condition.field);
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: Row(
@@ -1279,7 +1400,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                       Expanded(
                                         flex: 3,
                                         child: DropdownButtonFormField<String>(
-                                          value: condition.field,
+                                          value: canonicalField,
                                           decoration: const InputDecoration(
                                             labelText: 'Field',
                                             border: OutlineInputBorder(),
@@ -1289,21 +1410,19 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                             DropdownMenuItem(value: 'people_count', child: Text('People Count')),
                                             DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
                                             DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
-                                            DropdownMenuItem(value: 'percent_age_0_12', child: Text('Age 0-12 %')),
-                                            DropdownMenuItem(value: 'percent_age_13_17', child: Text('Age 13-17 %')),
-                                            DropdownMenuItem(value: 'percent_age_18_24', child: Text('Age 18-24 %')),
-                                            DropdownMenuItem(value: 'percent_age_25_34', child: Text('Age 25-34 %')),
-                                            DropdownMenuItem(value: 'percent_age_35_44', child: Text('Age 35-44 %')),
-                                            DropdownMenuItem(value: 'percent_age_45_54', child: Text('Age 45-54 %')),
-                                            DropdownMenuItem(value: 'percent_age_55_64', child: Text('Age 55-64 %')),
-                                            DropdownMenuItem(value: 'percent_age_65_plus', child: Text('Age 65+ %')),
+                                            DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
                                           ],
                                           onChanged: (value) {
                                             setDialogState(() {
+                                              final nextField = value!;
                                               demographicConditions[index] = DemographicCondition(
-                                                field: value!,
+                                                field: nextField,
                                                 operator: condition.operator,
-                                                value: condition.value,
+                                                value: _normalizedConditionValueForField(
+                                                  previousField: canonicalField,
+                                                  nextField: nextField,
+                                                  currentValue: condition.value,
+                                                ),
                                               );
                                             });
                                           },
@@ -1329,7 +1448,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                           onChanged: (value) {
                                             setDialogState(() {
                                               demographicConditions[index] = DemographicCondition(
-                                                field: condition.field,
+                                                field: canonicalField,
                                                 operator: value!,
                                                 value: condition.value,
                                               );
@@ -1340,22 +1459,32 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         flex: 2,
-                                        child: TextField(
-                                          controller: TextEditingController(text: condition.value.toString()),
-                                          decoration: const InputDecoration(
-                                            labelText: 'Value',
-                                            border: OutlineInputBorder(),
+                                        child: TextFormField(
+                                          key: ValueKey('search-demographic-condition-$index-${condition.field}'),
+                                          initialValue: _formatConditionInputValue(condition.value),
+                                          decoration: InputDecoration(
+                                            labelText: _conditionValueLabel(canonicalField),
+                                            suffixText: _conditionValueSuffix(canonicalField),
+                                            border: const OutlineInputBorder(),
                                             isDense: true,
                                           ),
                                           keyboardType: TextInputType.number,
+                                          inputFormatters: _isAgeThresholdField(canonicalField)
+                                              ? [FilteringTextInputFormatter.digitsOnly]
+                                              : _isPercentageConditionField(canonicalField)
+                                                  ? [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))]
+                                                  : [FilteringTextInputFormatter.digitsOnly],
                                           onChanged: (value) {
-                                            final numValue = double.tryParse(value);
+                                            var numValue = double.tryParse(value);
                                             if (numValue != null) {
+                                              if (_isAgeThresholdField(canonicalField)) {
+                                                numValue = numValue.clamp(1, 100);
+                                              }
                                               setDialogState(() {
                                                 demographicConditions[index] = DemographicCondition(
-                                                  field: condition.field,
+                                                  field: canonicalField,
                                                   operator: condition.operator,
-                                                  value: numValue,
+                                                  value: numValue!,
                                                 );
                                               });
                                             }
@@ -1724,6 +1853,8 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
         pplMatchTopK: triggerMode == 'ppl_match'
           ? (int.tryParse(topKController.text) ?? 1)
           : null,
+        pplMatchNegate: (triggerMode == 'ppl_match' || triggerMode == 'search')
+          ? pplMatchNegate : null,
         searchCameraDeviceIds: (triggerMode == 'search' || triggerMode == 'search_demographic') ? selectedSearchCameraIds : null,
         searchIntervalSeconds: (triggerMode == 'search' || triggerMode == 'search_demographic')
           ? (int.tryParse(searchIntervalController.text) ?? 300)
