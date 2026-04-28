@@ -305,17 +305,7 @@ class _ActionsTabState extends State<ActionsTab> {
           ),
         
         if (!_isLoadingUser && _errorMessageUser == null && _userActions.isNotEmpty)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWideScreen = constraints.maxWidth > 900;
-              
-              if (isWideScreen) {
-                return _buildUserActionsTable();
-              } else {
-                return _buildUserActionsCardList();
-              }
-            },
-          ),
+          _buildUserActionsCards(),
       ],
     );
   }
@@ -402,278 +392,391 @@ class _ActionsTabState extends State<ActionsTab> {
           ),
         
         if (!_isLoadingSystem && _errorMessageSystem == null && _systemWorkflows.isNotEmpty)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWideScreen = constraints.maxWidth > 900;
-              
-              if (isWideScreen) {
-                return _buildSystemWorkflowsTable();
-              } else {
-                return _buildSystemWorkflowsCardList();
-              }
-            },
-          ),
+          _buildSystemWorkflowsCards(),
       ],
     );
   }
 
-  Widget _buildUserActionsTable() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            border: Border.all(color: Colors.grey.shade700),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: DataTable(
-                columnSpacing: 16,
-                horizontalMargin: 16,
-          headingRowColor: MaterialStateProperty.all(Colors.grey.shade800),
-          dataRowColor: MaterialStateProperty.all(Colors.grey.shade900),
-          columns: const [
-            DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Description', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-          ],
-          rows: _userActions.map((action) {
-            return DataRow(cells: [
-              DataCell(Text(action.name, style: const TextStyle(color: Colors.white70))),
-              DataCell(
-                SizedBox(
-                  width: 200,
-                  child: Text(
-                    action.description ?? '-',
-                    style: const TextStyle(color: Colors.white70),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              DataCell(Text(action.actionTypeDisplay, style: const TextStyle(color: Colors.white70))),
-              DataCell(
-                InkWell(
-                  onTap: () => _toggleUserAction(action),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+  // ─────────────────────────────────────────────────
+  // User action cards
+  // ─────────────────────────────────────────────────
+
+  Widget _buildUserActionsCards() {
+    return LayoutBuilder(builder: (context, constraints) {
+      final crossAxisCount = constraints.maxWidth > 1200
+          ? 3
+          : constraints.maxWidth > 700
+              ? 2
+              : 1;
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.7,
+        ),
+        itemCount: _userActions.length,
+        itemBuilder: (context, index) =>
+            _buildUserActionCard(_userActions[index]),
+      );
+    });
+  }
+
+  Widget _buildUserActionCard(UserActionModel action) {
+    final typeColor = action.actionTypeColor;
+    final typeIcon = action.actionTypeIcon;
+    final configSummary = _actionConfigSummary(action);
+
+    return Card(
+      color: Colors.grey.shade900,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: action.isActive
+              ? typeColor.withOpacity(0.45)
+              : Colors.grey.shade700,
+          width: 1,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _showCreateEditUserActionDialog(action: action),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header ──────────────────────────────
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: action.isActive ? Colors.green.shade900 : Colors.red.shade900,
-                      borderRadius: BorderRadius.circular(12),
+                      color: typeColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
                     ),
+                    child: Icon(typeIcon, color: typeColor, size: 16),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
                     child: Text(
-                      action.isActive ? 'Active' : 'Inactive',
-                      style: TextStyle(
-                        color: action.isActive ? Colors.green.shade300 : Colors.red.shade300,
-                        fontSize: 12,
+                      action.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => _toggleUserAction(action),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: action.isActive
+                            ? Colors.green.shade900
+                            : Colors.red.shade900,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        action.isActive ? 'Active' : 'Inactive',
+                        style: TextStyle(
+                          color: action.isActive
+                              ? Colors.green.shade300
+                              : Colors.red.shade300,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 4),
+
+              // Type pill
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: typeColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  action.actionTypeDisplay,
+                  style: TextStyle(
+                      color: typeColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600),
                 ),
               ),
-              DataCell(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+
+              const SizedBox(height: 8),
+              const Divider(height: 1, thickness: 1),
+              const SizedBox(height: 8),
+
+              // ── Body ────────────────────────────────
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                      onPressed: () => _showCreateEditUserActionDialog(action: action),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                      onPressed: () => _deleteUserAction(action),
-                    ),
+                    if ((action.description ?? '').isNotEmpty)
+                      _actionInfoRow(
+                        icon: Icons.notes_outlined,
+                        text: action.description!,
+                      ),
+                    if (configSummary != null) ...[  
+                      const SizedBox(height: 4),
+                      _actionInfoRow(
+                        icon: Icons.tune_outlined,
+                        text: configSummary,
+                        color: Colors.white54,
+                      ),
+                    ],
                   ],
                 ),
               ),
-            ]);
-          }).toList(),
+
+              // ── Footer ──────────────────────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.edit_outlined,
+                          size: 18, color: Colors.blue),
+                      onPressed: () =>
+                          _showCreateEditUserActionDialog(action: action),
+                      tooltip: 'Edit',
+                    ),
+                  ),
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.delete_outline,
+                          size: 18, color: Colors.red),
+                      onPressed: () => _deleteUserAction(action),
+                      tooltip: 'Delete',
+                    ),
+                  ),
+                ],
               ),
-            ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _buildSystemWorkflowsTable() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            border: Border.all(color: Colors.grey.shade700),
-            borderRadius: BorderRadius.circular(8),
+  /// Returns a short human-readable summary of the action config, or null.
+  String? _actionConfigSummary(UserActionModel action) {
+    if (action.actionConfig == null || action.actionConfig!.isEmpty) return null;
+    try {
+      final cfg = jsonDecode(action.actionConfig!) as Map<String, dynamic>;
+      switch (action.actionType) {
+        case 'alert':
+          final msg = cfg['message']?.toString() ?? '';
+          return msg.isEmpty ? null : msg;
+        case 'email':
+          final to = cfg['to']?.toString() ?? '';
+          return to.isEmpty ? null : 'To: $to';
+        case 'webhook':
+          final url = cfg['url']?.toString() ?? '';
+          return url.isEmpty ? null : url;
+        case 'log':
+          final msg = cfg['message']?.toString() ?? '';
+          final level = cfg['level']?.toString() ?? cfg['severity']?.toString() ?? '';
+          if (msg.isEmpty) return null;
+          return level.isEmpty ? msg : '[$level] $msg';
+        case 'digital_signage':
+          final count = (cfg['device_ids'] as List?)?.length ?? 0;
+          return '$count device${count == 1 ? '' : 's'}';
+        case 'messaging_app':
+          final platform = cfg['platform']?.toString() ?? '';
+          return platform.isEmpty ? null : platform[0].toUpperCase() + platform.substring(1);
+        default:
+          return null;
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _actionInfoRow({
+    required IconData icon,
+    required String text,
+    Color? color,
+  }) {
+    final textColor = color ?? Colors.white60;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 13, color: textColor),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: 11.5, color: textColor),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: DataTable(
-                columnSpacing: 16,
-                horizontalMargin: 16,
-                headingRowColor: MaterialStateProperty.all(Colors.grey.shade800),
-                dataRowColor: MaterialStateProperty.all(Colors.grey.shade900),
-          columns: const [
-            DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Description', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Type', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-            DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-          ],
-          rows: _systemWorkflows.map((workflow) {
-            return DataRow(cells: [
-              DataCell(Text(workflow.name, style: const TextStyle(color: Colors.white70))),
-              DataCell(
-                SizedBox(
-                  width: 200,
+        ),
+      ],
+    );
+  }
+
+  // ─────────────────────────────────────────────────
+  // System workflow cards (read-only)
+  // ─────────────────────────────────────────────────
+
+  Widget _buildSystemWorkflowsCards() {
+    return LayoutBuilder(builder: (context, constraints) {
+      final crossAxisCount = constraints.maxWidth > 1200
+          ? 3
+          : constraints.maxWidth > 700
+              ? 2
+              : 1;
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.8,
+        ),
+        itemCount: _systemWorkflows.length,
+        itemBuilder: (context, index) =>
+            _buildSystemWorkflowCard(_systemWorkflows[index]),
+      );
+    });
+  }
+
+  Widget _buildSystemWorkflowCard(WorkflowAction workflow) {
+    const typeColor = Colors.grey;
+    return Card(
+      color: Colors.grey.shade900,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: Colors.grey.shade700, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header ──────────────────────────────
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.settings_outlined,
+                      color: typeColor, size: 16),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
                   child: Text(
-                    workflow.description,
-                    style: const TextStyle(color: Colors.white70),
-                    maxLines: 2,
+                    workflow.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Colors.white,
+                    ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-              DataCell(Text(workflow.workflowType.toUpperCase(), style: const TextStyle(color: Colors.white70))),
-              DataCell(
+                const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: workflow.isActive ? Colors.green.shade900 : Colors.red.shade900,
-                    borderRadius: BorderRadius.circular(12),
+                    color: workflow.isActive
+                        ? Colors.green.shade900
+                        : Colors.red.shade900,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     workflow.isActive ? 'Active' : 'Inactive',
                     style: TextStyle(
-                      color: workflow.isActive ? Colors.green.shade300 : Colors.red.shade300,
-                      fontSize: 12,
+                      color: workflow.isActive
+                          ? Colors.green.shade300
+                          : Colors.red.shade300,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-              ),
-              DataCell(
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.edit, color: Colors.grey.shade700, size: 20),
-                      onPressed: null, // Disabled
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.delete, color: Colors.grey.shade700, size: 20),
-                      onPressed: null, // Disabled
-                    ),
-                  ],
-                ),
-              ),
-            ]);
-          }).toList(),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildUserActionsCardList() {
-    return Column(
-      children: _userActions.map((action) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            border: Border.all(color: Colors.grey.shade700),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header: name + status badge
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        action.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () => _toggleUserAction(action),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: action.isActive ? Colors.green.shade900 : Colors.grey.shade800,
-                          border: Border.all(
-                            color: action.isActive ? Colors.green.shade700 : Colors.grey.shade600,
-                          ),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          action.isActive ? 'Active' : 'Inactive',
-                          style: TextStyle(
-                            color: action.isActive ? Colors.green.shade300 : Colors.grey.shade400,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 24),
-                // Detail rows
-                _buildDetailRow('Description', action.description ?? '-'),
-                _buildDetailRow('Type', action.actionTypeDisplay),
-                _buildDetailRow('Created', _formatDate(action.createdAt)),
-                const SizedBox(height: 16),
-                // Action buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => _showCreateEditUserActionDialog(action: action),
-                      icon: const Icon(Icons.edit, size: 16),
-                      label: const Text('Edit'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blue.shade300,
-                        side: BorderSide(color: Colors.blue.shade700),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: () => _deleteUserAction(action),
-                      icon: const Icon(Icons.delete, size: 16),
-                      label: const Text('Delete'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red.shade300,
-                        side: BorderSide(color: Colors.red.shade700),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
-          ),
-        );
-      }).toList(),
+            const SizedBox(height: 4),
+
+            // Type pill
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                workflow.workflowType.replaceAll('_', ' ').toUpperCase(),
+                style: TextStyle(
+                    color: Colors.grey.shade400,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+            const Divider(height: 1, thickness: 1),
+            const SizedBox(height: 8),
+
+            // ── Body ────────────────────────────────
+            Expanded(
+              child: Text(
+                workflow.description,
+                style:
+                    TextStyle(fontSize: 11.5, color: Colors.grey.shade400),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+
+            // Read-only label in footer
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'Read-only',
+                style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade600,
+                    fontStyle: FontStyle.italic),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildSystemWorkflowsCardList() {
+
+
+  // _buildSystemWorkflowsCardList removed — superseded by _buildSystemWorkflowsCards()
+  // ignore: unused_element
+  Widget _buildSystemWorkflowsCardList_REMOVED() {
     return Column(
       children: _systemWorkflows.map((workflow) {
         return Container(

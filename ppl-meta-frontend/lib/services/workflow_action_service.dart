@@ -4,14 +4,17 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/workflow_action_model.dart';
-import '../core/config.dart';
+import '../core/config/app_config.dart';
 
 class WorkflowActionService {
-  final String baseUrl;
+  /// Optional override — if null, falls back to AppConfig.instance.apiBaseUrl
+  /// (resolved lazily so the mobile host override is respected).
+  final String? _baseUrlOverride;
   String? _authToken;
 
-  WorkflowActionService({String? baseUrl})
-      : baseUrl = baseUrl ?? Config.orchestratorServiceUrl;
+  WorkflowActionService({String? baseUrl}) : _baseUrlOverride = baseUrl;
+
+  String get baseUrl => _baseUrlOverride ?? AppConfig.instance.apiBaseUrl;
 
   /// Set authentication token for API requests
   void setAuthToken(String token) {

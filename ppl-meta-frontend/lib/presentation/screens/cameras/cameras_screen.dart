@@ -237,28 +237,66 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
       onRefresh: () async {
         ref.read(cameraListProvider.notifier).loadCameras(includeArchived: _showArchivedCameras);
       },
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            'Cameras',
-            style: OfflineFonts.inter(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...cameras.map((camera) => Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: CameraCard(
-              camera: camera,
-              onTap: () {
-                context.go('/cameras/${camera.deviceId}');
-              },
-            ),
-          )),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 700;
+          return CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Text(
+                    'Cameras',
+                    style: OfflineFonts.inter(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+              if (isWide)
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverGrid(
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 1.6,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => CameraCard(
+                        camera: cameras[index],
+                        onTap: () {
+                          context.go('/cameras/${cameras[index].deviceId}');
+                        },
+                      ),
+                      childCount: cameras.length,
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: CameraCard(
+                          camera: cameras[index],
+                          onTap: () {
+                            context.go('/cameras/${cameras[index].deviceId}');
+                          },
+                        ),
+                      ),
+                      childCount: cameras.length,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

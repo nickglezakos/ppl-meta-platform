@@ -1,12 +1,15 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/user_action_model.dart';
-import '../core/config.dart';
+import '../core/config/app_config.dart';
 
 /// Service for managing user-defined trigger actions
 class UserActionService {
   String? _authToken;
-  final String baseUrl = Config.mediaServiceUrl;
+
+  /// Resolved lazily so AppConfig's host override (from PlatformConnectivityService)
+  /// is always used — critical for mobile where `localhost` ≠ the dev machine.
+  String get baseUrl => AppConfig.instance.apiBaseUrl;
 
   void setAuthToken(String token) {
     _authToken = token;

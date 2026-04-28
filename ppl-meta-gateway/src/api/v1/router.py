@@ -197,7 +197,7 @@ async def _proxy_to_node_service(request: Request) -> JSONResponse:
         headers.pop("host", None)
 
         # Make the proxy request
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.request(
                 method=method,
                 url=target_url,
@@ -408,7 +408,7 @@ async def get_user_profile_singular(request: Request):
         headers.pop("host", None)
 
         # Make the proxy request to Node service
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.request(
                 method=request.method,
                 url=target_url,
@@ -476,7 +476,7 @@ async def _proxy_to_media_service(request: Request) -> Response:
             )
         else:
             # Handle regular media responses
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 response = await client.request(
                     method=method,
                     url=target_url,
@@ -546,7 +546,7 @@ async def get_media_analytics(request: Request):
         headers = dict(request.headers)
         headers.pop("host", None)
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             profile_response = await client.get(profile_url, headers=headers)
 
             if profile_response.status_code != 200:
@@ -1208,7 +1208,7 @@ async def _proxy_to_cameras_service(request: Request) -> Response:
         logger.info(f"🔐 [CAMERAS-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Make the proxy request
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.request(
                 method=method,
                 url=target_url,
@@ -2123,7 +2123,7 @@ async def _proxy_to_vmeta_service(request: Request) -> Response:
         logger.info(f"🔐 [VMETA-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}")
 
         # Make the proxy request
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
             response = await client.request(
                 method=method,
                 url=target_url,

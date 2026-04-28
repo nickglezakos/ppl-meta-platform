@@ -174,18 +174,46 @@ All conditions are evaluated with **AND** semantics — every condition must pas
 
 | Type | `action_config` Schema | Execution |
 |------|----------------------|-----------|
-| **`alert`** | `{"message": "...", "severity": "warning\|error\|info", "duration_seconds": 30}` | Logs an audit event via Communications Service with the specified severity. Displayed as an on-screen alert. |
-| **`email`** | `{"recipients": ["email@..."], "to": "email1,email2", "cc": [...], "subject": "...", "body": "..."}` | Sends email via Communications Service (`POST /api/v1/email/send`). Subject and body support template variables. |
-| **`webhook`** | `{"url": "https://...", "method": "POST", "payload_data": {...}}` | POSTs to the specified URL via Communications Service (`POST /api/v1/webhook/send`). Payload includes trigger and detection metadata. |
-| **`log`** | `{"message": "...", "severity": "info", "data": {"category": "...", "tags": [...]}}` | Creates an audit log entry via Communications Service. |
-| **`digital_signage`** | `{"device_ids": [...], "playlist_id": "uuid", "transition_mode": "immediate\|after_current\|fade", "fade_duration_ms": 2000}` | Sends a `START` playback command to signage devices to switch playlist. |
-| **`messaging_app`** | `{"platform": "slack\|teams", "webhook_url": "https://...", "message_template": "...", "title": "...", "mention": "@channel"}` | Sends a formatted message to Slack or Microsoft Teams. Slack sends `{"text": "..."}` natively. Teams sends an Adaptive Card when `title` is set, otherwise plain `{"text": "..."}`. `mention` (Slack only) is prepended to the message. All fields support template variables. |
+| **`alert`** | `{"message": "...", "severity": "warning\|error\|info", "duration_seconds": 30}` | Logs an audit event via Communications Service with the specified severity. Displayed as an on-screen alert. `message` supports template variables. |
+| **`email`** | `{"recipients": ["email@..."], "to": "email1,email2", "cc": [...], "subject": "...", "body": "..."}` | Sends email via Communications Service (`POST /api/v1/email/send`). `body` supports template variables. `subject` is sent as-is (no interpolation). |
+| **`webhook`** | `{"url": "https://...", "method": "POST", "payload_data": {...}}` | POSTs to the specified URL via Communications Service (`POST /api/v1/webhook/send`). Payload is built programmatically (template variables are not interpolated in `payload_data`). |
+| **`log`** | `{"message": "...", "severity": "info", "data": {"category": "...", "tags": [...]}}` | Creates an audit log entry via Communications Service. `message` supports template variables. |
+| **`digital_signage`** | `{"device_ids": [...], "playlist_id": "uuid", "transition_mode": "immediate\|after_current\|fade", "fade_duration_ms": 2000}` | Sends a `START` playback command to signage devices to switch playlist. No text fields; template variables do not apply. |
+| **`messaging_app`** | `{"platform": "slack\|teams", "webhook_url": "https://...", "message_template": "...", "title": "...", "mention": "@channel"}` | Sends a formatted message to Slack or Microsoft Teams. Slack sends `{"text": "..."}` natively. Teams sends an Adaptive Card when `title` is set, otherwise plain `{"text": "..."}`. `mention` (Slack only) is prepended to the message. `message_template` and `title` (Teams only) support template variables. |
 
-### Template Variables (for message/subject/body fields)
+### Template Variables
 
-`{trigger_name}`, `{trigger_id}`, `{reason}`, `{match_reason}`, `{matched_member_uuid}`, `{matched_member_name}`, `{group_member_number}`, `{similarity_score}`
+Template variables are substituted at fire time in supported text fields. They use `{variable_name}` syntax.
 
-If no template variables are used and a `ppl_match` result exists, the match reason is auto-appended.
+#### Available Variables
+
+| Variable | Description | Available when |
+|----------|-------------|----------------|
+| `{trigger_name}` | The name of the trigger that fired | Always |
+| `{trigger_id}` | The UUID of the trigger | Always |
+| `{reason}` | Human-readable explanation of why the trigger passed (e.g. condition values, match details) | Always |
+| `{match_reason}` | Formatted description of the best face match (e.g. "Matched John Doe — 89.3% similarity") | `ppl_match` / `search` triggers only; empty string otherwise |
+| `{matched_member_uuid}` | UUID of the matched individual-group member | `ppl_match` / `search` triggers with a match; empty string otherwise |
+| `{matched_member_name}` | Display name of the matched individual-group member | `ppl_match` / `search` triggers with a named match; empty string otherwise |
+| `{group_member_number}` | Position/number of the matched member within the group | `ppl_match` / `search` triggers with a match; empty string otherwise |
+| `{similarity_score}` | Numeric similarity score of the best match (0.0 – 1.0) | `ppl_match` / `search` triggers with a match; empty string otherwise |
+
+#### Supported Fields by Action Type
+
+| Action type | Fields that support interpolation |
+|-------------|-----------------------------------|
+| `alert` | `message` |
+| `email` | `body` |
+| `log` | `message` |
+| `messaging_app` | `message_template`, `title` (Teams only) |
+| `webhook` | _(none — payload is built programmatically)_ |
+| `digital_signage` | _(none — no text fields)_ |
+
+#### Auto-Append Behaviour
+
+If a `ppl_match` or `search` trigger fires and the configured message text contains **no** template variables, the `{match_reason}` string is automatically appended to the message (separated by ` - `). This ensures match context always appears in notifications even when plain messages are used.
+
+Example: `"Motion detected"` → `"Motion detected - Matched John Doe — 89.3% similarity"`
 
 ---
 

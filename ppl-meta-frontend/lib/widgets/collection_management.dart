@@ -661,6 +661,44 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
     );
   }
 
+  /// Build a single collection list item widget
+  Widget _buildCollectionItem(int index) {
+    final collection = _filteredCollections[index];
+    return _CollectionListItem(
+      collection: collection,
+      isSelected: _selectedCollection?.id == collection.id,
+      isDragTarget: _dragTargetCollection?.id == collection.id,
+      canAcceptDrop: widget.selectedItems?.isNotEmpty ?? false,
+      isCameraCollection: _isCameraCollection(collection),
+      onTap: () {
+        setState(() {
+          _selectedCollection = collection;
+        });
+        widget.onCollectionSelected?.call(collection);
+      },
+      onRename: () => _renameCollection(collection),
+      onDelete: () => _deleteCollection(collection),
+      onDragEnter: () {
+        if (widget.selectedItems?.isNotEmpty ?? false) {
+          setState(() {
+            _dragTargetCollection = collection;
+          });
+        }
+      },
+      onDragLeave: () {
+        setState(() {
+          _dragTargetCollection = null;
+        });
+      },
+      onDragAccept: (items) {
+        _addItemsToCollection(items, collection);
+        setState(() {
+          _dragTargetCollection = null;
+        });
+      },
+    );
+  }
+
   /// Build collections list
   Widget _buildCollectionsList() {
     if (_isLoading) {
@@ -677,44 +715,26 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
       return _buildEmptyState();
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      itemCount: _filteredCollections.length,
-      itemBuilder: (context, index) {
-        final collection = _filteredCollections[index];
-        
-        return _CollectionListItem(
-          collection: collection,
-          isSelected: _selectedCollection?.id == collection.id,
-          isDragTarget: _dragTargetCollection?.id == collection.id,
-          canAcceptDrop: widget.selectedItems?.isNotEmpty ?? false,
-          isCameraCollection: _isCameraCollection(collection),
-          onTap: () {
-            setState(() {
-              _selectedCollection = collection;
-            });
-            widget.onCollectionSelected?.call(collection);
-          },
-          onRename: () => _renameCollection(collection),
-          onDelete: () => _deleteCollection(collection),
-          onDragEnter: () {
-            if (widget.selectedItems?.isNotEmpty ?? false) {
-              setState(() {
-                _dragTargetCollection = collection;
-              });
-            }
-          },
-          onDragLeave: () {
-            setState(() {
-              _dragTargetCollection = null;
-            });
-          },
-          onDragAccept: (items) {
-            _addItemsToCollection(items, collection);
-            setState(() {
-              _dragTargetCollection = null;
-            });
-          },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 700;
+        if (isWide) {
+          return GridView.builder(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: AppSpacing.sm,
+              crossAxisSpacing: AppSpacing.sm,
+              mainAxisExtent: 160,
+            ),
+            itemCount: _filteredCollections.length,
+            itemBuilder: (context, index) => _buildCollectionItem(index),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          itemCount: _filteredCollections.length,
+          itemBuilder: (context, index) => _buildCollectionItem(index),
         );
       },
     );

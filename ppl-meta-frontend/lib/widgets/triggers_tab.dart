@@ -147,11 +147,11 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
       
       debugPrint('🔍 [DEBUG] Loading available actions...');
       debugPrint('🔍 [DEBUG] ApiClient baseUrl: ${apiClient.dio.options.baseUrl}');
-      debugPrint('🔍 [DEBUG] Request path: /api/v1/user-actions/');
-      debugPrint('🔍 [DEBUG] Full URL will be: ${apiClient.dio.options.baseUrl}/api/v1/user-actions/');
+      debugPrint('🔍 [DEBUG] Request path: /api/v1/user-actions');
+      debugPrint('🔍 [DEBUG] Full URL will be: ${apiClient.dio.options.baseUrl}/api/v1/user-actions');
       
       final response = await apiClient.get(
-        '/api/v1/user-actions/',
+        '/api/v1/user-actions',
         queryParameters: {'page': '1', 'page_size': '100'},
       );
       
@@ -586,7 +586,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                                 ],
                               ),
                             )
-                          : _buildDataTable(),
+                          : _buildTriggerCards(),
             ),
             
             // Pagination
@@ -624,134 +624,263 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     );
   }
 
-  Widget _buildDataTable() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            border: Border.all(color: Colors.grey.shade700),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: DataTable(
-                columnSpacing: 16,
-                horizontalMargin: 16,
-                headingRowColor: WidgetStatePropertyAll(Colors.grey.shade800),
-                dataRowColor: WidgetStatePropertyAll(Colors.grey.shade900),
-                columns: const [
-                  DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Mode', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Conditions', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Latest Match', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Camera', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Time Span', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Tracking', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Action', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
-                  DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70))),
+  // ─────────────────────────────────────────────────
+  // Card grid
+  // ─────────────────────────────────────────────────
+
+  static const _modeLabels = {
+    'demographic': 'Instant Demographic',
+    'ppl_match': 'Instant People Match',
+    'search': 'Search People Match',
+    'search_demographic': 'Search Demographic',
+  };
+
+  static const _modeIcons = {
+    'demographic': Icons.tune,
+    'ppl_match': Icons.psychology,
+    'search': Icons.search,
+    'search_demographic': Icons.analytics,
+  };
+
+  static const _modeColors = {
+    'demographic': Colors.blue,
+    'ppl_match': Colors.purple,
+    'search': Colors.teal,
+    'search_demographic': Colors.deepOrange,
+  };
+
+  Widget _buildTriggerCards() {
+    return LayoutBuilder(builder: (context, constraints) {
+      // Responsive column count: 1 on narrow, 2 on medium, 3 on wide.
+      final crossAxisCount = constraints.maxWidth > 1200
+          ? 3
+          : constraints.maxWidth > 700
+              ? 2
+              : 1;
+
+      return GridView.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.55,
+        ),
+        itemCount: _triggers.length,
+        itemBuilder: (context, index) => _buildTriggerCard(_triggers[index]),
+      );
+    });
+  }
+
+  Widget _buildTriggerCard(TriggerModel trigger) {
+    final mode = trigger.triggerMode;
+    final modeLabel = _modeLabels[mode] ?? mode;
+    final modeIcon = _modeIcons[mode] ?? Icons.bolt;
+    final modeColor = _modeColors[mode] ?? Colors.grey;
+
+    final isPplOrSearch = mode == 'ppl_match' || mode == 'search';
+    final isSearchMode = mode == 'search' || mode == 'search_demographic';
+
+    final groupId = trigger.pplMatchGroupId;
+    final groupName = groupId == null ? null : _groupNameById[groupId];
+
+    final conditionsLabel = isPplOrSearch
+        ? 'Group: ${groupName ?? groupId ?? 'Not set'}'
+        : trigger.conditionsDisplay;
+
+    final cameraLabel = isSearchMode
+        ? '${trigger.searchCameraDeviceIds?.length ?? 0} camera(s)'
+        : (trigger.cameraName ?? trigger.cameraDeviceId ?? '—');
+
+    final latestMatchSummary = _latestMatchSummary(trigger);
+    final latestMatchTime = _latestMatchTime(trigger);
+    final hasMatch = latestMatchSummary != '—' && latestMatchSummary != 'No match yet';
+
+    return Card(
+      color: Colors.grey.shade900,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(
+          color: trigger.isActive
+              ? modeColor.withOpacity(0.45)
+              : Colors.grey.shade700,
+          width: 1,
+        ),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => _showCreateEditDialog(trigger: trigger),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header row ──────────────────────────
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: modeColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(modeIcon, color: modeColor, size: 16),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      trigger.name ?? 'Unnamed',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // Active badge + toggle
+                  GestureDetector(
+                    onTap: () => _toggleTrigger(trigger),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: trigger.isActive
+                            ? Colors.green.shade900
+                            : Colors.red.shade900,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        trigger.isActive ? 'Active' : 'Inactive',
+                        style: TextStyle(
+                          color: trigger.isActive
+                              ? Colors.green.shade300
+                              : Colors.red.shade300,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
-                rows: _triggers.map((trigger) {
-                  final isPplMatch = trigger.triggerMode == 'ppl_match';
-                  final modeLabel = {
-                    'demographic': 'Instant Demographic',
-                    'ppl_match': 'Instant People Match',
-                    'search': 'Search People Match',
-                    'search_demographic': 'Search Demographic',
-                  }[trigger.triggerMode] ?? trigger.triggerMode;
-                  final groupId = trigger.pplMatchGroupId;
-                  final groupName = groupId == null ? null : _groupNameById[groupId];
-                  final conditionsLabel = isPplMatch
-                      ? 'Group: ${groupName ?? groupId ?? 'Not set'}'
-                      : trigger.conditionsDisplay;
-                  final latestMatchSummary = _latestMatchSummary(trigger);
-                  final latestMatchTime = _latestMatchTime(trigger);
-                  return DataRow(cells: [
-                    DataCell(Text(trigger.name ?? 'Unnamed', style: const TextStyle(color: Colors.white70))),
-                    DataCell(Text(modeLabel, style: const TextStyle(color: Colors.white70))),
-                    DataCell(
-                      Text(
-                        conditionsLabel,
-                        style: const TextStyle(color: Colors.white70),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        latestMatchTime.isEmpty
-                            ? latestMatchSummary
-                            : '$latestMatchSummary\n$latestMatchTime',
-                        style: const TextStyle(color: Colors.white70),
-                      ),
-                    ),
-                    DataCell(Text(
-                      (trigger.triggerMode == 'search' || trigger.triggerMode == 'search_demographic')
-                          ? '${trigger.searchCameraDeviceIds?.length ?? 0} camera(s)'
-                          : (trigger.cameraName ?? trigger.cameraDeviceId ?? ''),
-                      style: const TextStyle(color: Colors.white70),
-                    )),
-                    DataCell(Text(trigger.timeSpan, style: const TextStyle(color: Colors.white70))),
-                    DataCell(Text(trigger.trackingDuration, style: const TextStyle(color: Colors.white70))),
-                    DataCell(
-                      Container(
-                        constraints: const BoxConstraints(minWidth: 150, maxWidth: 250),
-                        child: InkWell(
-                          onTap: () => _showMultiActionPicker(trigger),
-                          child: _buildActionChips(trigger),
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      InkWell(
-                        onTap: () => _toggleTrigger(trigger),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: trigger.isActive
-                                ? Colors.green.shade900
-                                : Colors.red.shade900,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            trigger.isActive ? 'Active' : 'Inactive',
-                            style: TextStyle(
-                              color: trigger.isActive
-                                  ? Colors.green.shade300
-                                  : Colors.red.shade300,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
-                            onPressed: () => _showCreateEditDialog(trigger: trigger),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                            onPressed: () => _deleteTrigger(trigger),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ]);
-                }).toList(),
               ),
-            ),
-            ),
+              const SizedBox(height: 4),
+
+              // Mode pill
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: modeColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  modeLabel,
+                  style: TextStyle(color: modeColor, fontSize: 10, fontWeight: FontWeight.w600),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+              const Divider(height: 1, thickness: 1),
+              const SizedBox(height: 8),
+
+              // ── Info grid ───────────────────────────
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _cardInfoRow(
+                      icon: isSearchMode ? Icons.videocam_outlined : Icons.camera_alt_outlined,
+                      text: cameraLabel,
+                    ),
+                    const SizedBox(height: 4),
+                    _cardInfoRow(
+                      icon: Icons.rule_outlined,
+                      text: conditionsLabel,
+                    ),
+                    if (trigger.timeSpan.isNotEmpty && trigger.timeSpan != 'any') ...[
+                      const SizedBox(height: 4),
+                      _cardInfoRow(
+                        icon: Icons.schedule_outlined,
+                        text: trigger.timeSpan,
+                      ),
+                    ],
+                    if (hasMatch) ...[
+                      const SizedBox(height: 4),
+                      _cardInfoRow(
+                        icon: Icons.person_search_outlined,
+                        text: latestMatchTime.isEmpty
+                            ? latestMatchSummary
+                            : '$latestMatchSummary  ·  $latestMatchTime',
+                        color: Colors.amber.shade300,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              // ── Footer: actions + edit/delete ───────
+              Row(
+                children: [
+                  // Action chips (tappable)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _showMultiActionPicker(trigger),
+                      child: _buildActionChips(trigger),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  // Edit button
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.blue),
+                      onPressed: () => _showCreateEditDialog(trigger: trigger),
+                      tooltip: 'Edit',
+                    ),
+                  ),
+                  // Delete button
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                      onPressed: () => _deleteTrigger(trigger),
+                      tooltip: 'Delete',
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  Widget _cardInfoRow({
+    required IconData icon,
+    required String text,
+    Color? color,
+  }) {
+    final textColor = color ?? Colors.white60;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 13, color: textColor),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(fontSize: 11.5, color: textColor),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 

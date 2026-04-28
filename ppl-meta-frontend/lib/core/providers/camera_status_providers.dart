@@ -11,7 +11,7 @@ final cameraStatusServiceProvider = Provider<CameraStatusService>((ref) {
   final authService = ref.watch(authServiceProvider);
   
   final service = CameraStatusService(
-    baseUrl: AppConfig.instance.apiBaseUrl,
+    baseUrl: AppConfig.instance.cameraServiceUrl,
     authService: authService,
   );
   
