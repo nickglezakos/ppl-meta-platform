@@ -75,7 +75,10 @@ class DemographicData:
             return float(self.people_count)
 
         if field == 'age_threshold':
-            # Compute weighted-average age from bracket percentages
+            # Prefer direct average_age (published by instant-detection pipeline)
+            if self.demographics.get('average_age') is not None:
+                return float(self.demographics['average_age'])
+            # Fallback: compute weighted-average age from bracket percentages
             avg_age = sum(
                 float(self.demographics.get(k, 0)) * mid / 100.0
                 for k, mid in AGE_BRACKET_MIDPOINTS.items()

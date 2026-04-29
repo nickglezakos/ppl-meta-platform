@@ -710,12 +710,17 @@ class InstantDetectionSubscriber:
                 actual_value = people_count
                 logger.info(f"       Actual people_count: {actual_value}")
             elif field == 'age_threshold':
-                # Compute weighted-average age from bracket percentages
-                actual_value = sum(
-                    float(demographics.get(k, 0)) * mid / 100.0
-                    for k, mid in AGE_BRACKET_MIDPOINTS.items()
-                )
-                logger.info(f"       Computed weighted avg age: {actual_value}")
+                # Prefer direct average_age (published by instant-detection pipeline)
+                if demographics.get('average_age') is not None:
+                    actual_value = float(demographics['average_age'])
+                    logger.info(f"       Using average_age from demographics: {actual_value}")
+                else:
+                    # Fallback: compute weighted-average from bracket percentages
+                    actual_value = sum(
+                        float(demographics.get(k, 0)) * mid / 100.0
+                        for k, mid in AGE_BRACKET_MIDPOINTS.items()
+                    )
+                    logger.info(f"       Computed weighted avg age from brackets: {actual_value}")
             elif isinstance(field, str) and (
                 field in AGE_COUNT_TO_PERCENT_FIELD or field in LEGACY_PERCENT_AGE_FIELDS
             ):

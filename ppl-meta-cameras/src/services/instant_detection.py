@@ -1078,7 +1078,8 @@ class InstantDetectionSampler:
         young_count = 0
         adult_count = 0
         unknown_age_count = 0
-        
+        collected_ages = []
+
         for person in person_objects:
             age_gender = person.get("age_gender", {})
             
@@ -1094,17 +1095,23 @@ class InstantDetectionSampler:
             # Count age (parse age_range like "(25-35)")
             age_range = age_gender.get("age_range", "(0-100)")
             try:
-                # Extract min age from range "(25-35)" -> 25
-                age_min_str = age_range.strip("()").split("-")[0]
-                age_min = int(age_min_str)
-                
+                # Extract min and max age from range "(25-35)" -> 25, 35
+                parts = age_range.strip("()").split("-")
+                age_min = int(parts[0])
+                age_max = int(parts[1]) if len(parts) > 1 else age_min
+                midpoint = (age_min + age_max) / 2.0
+                collected_ages.append(midpoint)
+
                 if age_min < 21:
                     young_count += 1
                 else:
                     adult_count += 1
             except (ValueError, IndexError):
                 unknown_age_count += 1
-        
+
+        # Calculate average age across all detected people
+        average_age = round(sum(collected_ages) / len(collected_ages), 1) if collected_ages else 0.0
+
         # Calculate percentages
         percent_male = round((male_count / total_people) * 100, 1)
         percent_female = round((female_count / total_people) * 100, 1)
@@ -1126,7 +1133,8 @@ class InstantDetectionSampler:
             "total_unknown_age": unknown_age_count,
             "percent_young": percent_young,
             "percent_adult": percent_adult,
-            "percent_unknown_age": percent_unknown_age
+            "percent_unknown_age": percent_unknown_age,
+            "average_age": average_age,
         }
 
     def _extract_source_identity_uuids(self, person_objects: List[Dict]) -> List[str]:
