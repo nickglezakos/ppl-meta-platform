@@ -3268,12 +3268,30 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                     mvr_processor = main.mvr_background_processor
                     
                     if mvr_processor:
+                        # Fetch similarity threshold from orchestrator settings
+                        # (user-configured via frontend Settings > MVR Settings)
+                        merge_similarity_threshold = 0.70  # fallback default
+                        try:
+                            import httpx as _httpx
+                            async with _httpx.AsyncClient(timeout=5.0) as _hc:
+                                _resp = await _hc.get(
+                                    "http://localhost:8002/api/v1/settings/workflow/mvr-merge",
+                                    headers={"Authorization": "Bearer internal-service-token-ppl-meta-frontend"},
+                                )
+                                if _resp.status_code == 200:
+                                    _data = _resp.json()
+                                    merge_similarity_threshold = float(_data.get("merge_threshold", 0.70))
+                        except Exception as _e:
+                            logger.warning(f"Could not fetch MVR merge threshold from orchestrator, using default 0.70: {_e}")
+
+                        logger.info(f"[Queue B] Using similarity_threshold={merge_similarity_threshold} from orchestrator settings")
+
                         # Queue MVR creation (non-blocking)
                         queue_result = await mvr_processor.queue_session_mvr_creation(
                             session_uuid=session_uuid,
                             individual_uuids=[UUID(uid) for uid in created_individual_uuids],
                             auth_token=auth_token,
-                            similarity_threshold=0.70
+                            similarity_threshold=merge_similarity_threshold
                         )
                         
                         logger.info(
@@ -3304,7 +3322,7 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                             session_uuid=session_uuid,
                             matched_individuals=all_matched_individuals,
                             auth_token=auth_token,
-                            similarity_threshold=0.70
+                            similarity_threshold=merge_similarity_threshold
                         )
                         logger.info(
                             f"Merged {merged_count} duplicate individuals (synchronous fallback)."

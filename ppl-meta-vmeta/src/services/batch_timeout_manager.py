@@ -473,9 +473,8 @@ class PollingFallbackManager:
         """
         Handle recording stopped event - trigger final batch and stop polling.
         
-        Waits for a grace period to catch videos still being processed (upload + face detection)
-        before triggering the final batch. This ensures videos that were recorded but still
-        processing when stop was called get included in the final batch.
+        Returns immediately and schedules the grace period + final flush as a
+        background asyncio task so that HTTP clients (5s timeout) don't time out.
         
         Args:
             collection_id: Camera collection ID
@@ -483,7 +482,7 @@ class PollingFallbackManager:
             grace_period_seconds: Time to wait for delayed videos (default 120s/2min)
             
         Returns:
-            Dict with processing results
+            Dict acknowledging the event (final batch is scheduled in background)
         """
         logger.info(
             f"🛑 Recording stopped: {collection_id}, session: {session_uuid}"
@@ -506,65 +505,75 @@ class PollingFallbackManager:
         recording_info['grace_period_until'] = datetime.utcnow() + timedelta(seconds=grace_period_seconds)
         
         logger.info(
-            f"⏰ Keeping polling active for {grace_period_seconds}s grace period "
+            f"⏰ Scheduling final batch after {grace_period_seconds}s grace period "
             f"to catch videos still being processed"
         )
         
         self._stats['recordings_stopped'] += 1
         
-        # Wait for grace period while continuing to poll for new videos with faces
-        logger.info(f"⏳ Waiting {grace_period_seconds}s for delayed video processing...")
-        await asyncio.sleep(grace_period_seconds)
-        
-        # Now remove from active recordings and trigger final batch
-        recording_info = self._active_recordings.pop(collection_id, None)
-
-        if not recording_info:
-            logger.warning(
-                f"Recording {collection_id} already processed by concurrent call, skipping final batch"
-            )
-            return {
-                'videos_processed': 0,
-                'message': 'Already processed by concurrent stop'
-            }
-        
-        # Trigger final batch for all remaining pending videos in THIS collection
-        videos_processed = 0
-        if not hasattr(self, '_pending_videos_by_collection'):
-            self._pending_videos_by_collection = {}
-        
-        if collection_id in self._pending_videos_by_collection:
-            pending_videos = self._pending_videos_by_collection[collection_id]
-            
-            if pending_videos:
-                logger.info(
-                    f"Processing final batch for {collection_id}: {len(pending_videos)} "
-                    f"remaining videos (after {grace_period_seconds}s grace period)"
-                )
-                
-                await self._trigger_batch_processing(
-                    pending_videos,
-                    is_final=True
-                )
-                
-                videos_processed = len(pending_videos)
-                self._pending_videos_by_collection[collection_id] = []
-        
-        logger.info(
-            f"✅ Recording {collection_id} stopped. "
-            f"Final batch processed {videos_processed} videos. "
-            f"Total batches: {recording_info.get('batches_triggered', 0)}"
+        # Schedule the grace period + final flush as a background task so we can
+        # return immediately (camera service only waits 5 seconds for a response).
+        asyncio.create_task(
+            self._delayed_final_flush(collection_id, session_uuid, grace_period_seconds)
         )
         
         return {
-            'videos_processed': videos_processed,
+            'videos_processed': 0,
             'total_batches': recording_info.get('batches_triggered', 0),
             'session_duration': (
                 datetime.utcnow() - recording_info['started_at']
             ).total_seconds(),
             'grace_period_seconds': grace_period_seconds,
-            'message': 'Final batch triggered after grace period'
+            'message': 'Final batch scheduled in background after grace period'
         }
+
+    async def _delayed_final_flush(
+        self,
+        collection_id: str,
+        session_uuid: str,
+        grace_period_seconds: int
+    ) -> None:
+        """
+        Background task: wait grace_period_seconds then trigger the final batch.
+        Runs after stop_recording() returns so the HTTP response is immediate.
+        """
+        logger.info(
+            f"⏳ [delayed flush] Waiting {grace_period_seconds}s before final batch for {collection_id}"
+        )
+        await asyncio.sleep(grace_period_seconds)
+
+        # Remove from active recordings
+        recording_info = self._active_recordings.pop(collection_id, None)
+
+        if not recording_info:
+            logger.warning(
+                f"[delayed flush] Recording {collection_id} already removed, skipping final batch"
+            )
+            return
+
+        if not hasattr(self, '_pending_videos_by_collection'):
+            self._pending_videos_by_collection = {}
+
+        pending_videos = self._pending_videos_by_collection.get(collection_id, [])
+
+        if pending_videos:
+            logger.info(
+                f"[delayed flush] Triggering final batch for {collection_id}: "
+                f"{len(pending_videos)} remaining videos"
+            )
+            await self._trigger_batch_processing(
+                pending_videos,
+                is_final=True,
+                collection_id=collection_id
+            )
+            self._pending_videos_by_collection[collection_id] = []
+        else:
+            logger.info(f"[delayed flush] No pending videos for {collection_id} after grace period")
+
+        logger.info(
+            f"✅ [delayed flush] Final batch done for {collection_id}. "
+            f"Total batches: {recording_info.get('batches_triggered', 0)}"
+        )
 
     
     async def stop(self, timeout: float = 10.0):
@@ -767,7 +776,7 @@ class PollingFallbackManager:
                             logger.info(
                                 f"🚀 Triggering batch for collection {coll_id}: {len(videos_to_process)} videos"
                             )
-                            await self._trigger_batch_processing(videos_to_process)
+                            await self._trigger_batch_processing(videos_to_process, collection_id=coll_id)
                             
                             # Check if this collection has another batch ready
                             if len(self._pending_videos_by_collection[coll_id]) >= self.batch_size:
@@ -852,7 +861,8 @@ class PollingFallbackManager:
     async def _trigger_batch_processing(
         self,
         videos_to_process: list,
-        is_final: bool = False
+        is_final: bool = False,
+        collection_id: str = None
     ):
         """
         Trigger cross-video tracking for specified videos.
@@ -889,8 +899,10 @@ class PollingFallbackManager:
             end_time = (now + timedelta(microseconds=1)).isoformat().replace('+00:00', 'Z')
             
             # Create tracking session with explicit video_uuids
+            # Use the actual collection_id passed in (or fall back to self.collection_id if set)
+            effective_collection_id = collection_id or self.collection_id or "unknown"
             session_data = {
-                "collections": [f"{self.collection_id} Collection"],
+                "collections": [effective_collection_id],
                 "start_time": start_time.replace(
                     "+02:00", "Z"
                 ).replace("+00:00", "Z"),
@@ -1017,7 +1029,7 @@ class PollingFallbackManager:
                 }
             
             video_count = len(pending_videos)
-            await self._trigger_batch_processing(pending_videos, is_final=False)
+            await self._trigger_batch_processing(pending_videos, is_final=False, collection_id=collection_id)
             self._pending_videos_by_collection[collection_id] = []
             
             return {
@@ -1034,8 +1046,7 @@ class PollingFallbackManager:
         for coll_id, pending_videos in list(self._pending_videos_by_collection.items()):
             if pending_videos:
                 video_count = len(pending_videos)
-                await self._trigger_batch_processing(pending_videos, is_final=False)
-                self._pending_videos_by_collection[coll_id] = []
+                await self._trigger_batch_processing(pending_videos, is_final=False, collection_id=coll_id)
                 total_videos += video_count
                 collections_triggered.append(coll_id)
         
