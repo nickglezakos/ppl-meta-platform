@@ -304,12 +304,27 @@ class CameraService:
         """
         Disconnect camera.
         
+        If a session recording is active, stop it first so vmeta receives the
+        recording/stopped event and the final MVR batch fires correctly.
+        
         Args:
             device_id: Camera identifier
             
         Returns:
             True if disconnection successful
         """
+        # Stop any active recording before disconnecting (covers all camera types)
+        try:
+            from src.services.camera_detection import camera_service as _cam_svc
+            if device_id in _cam_svc.active_recordings:
+                recording_info = _cam_svc.active_recordings.get(device_id)
+                user_id = recording_info.get("user_id", "") if recording_info else ""
+                logger.info(f"🛑 [DISCONNECT] Camera {device_id} is recording — stopping recording before disconnect")
+                await _cam_svc.stop_recording(device_id, user_id, auto_stop_instant_detection=False)
+                logger.info(f"✅ [DISCONNECT] Recording stopped for {device_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ [DISCONNECT] Could not stop recording for {device_id} before disconnect: {e}")
+
         worker = self.worker_manager.get_worker(device_id)
         if not worker:
             logger.warning(f"⚠️ Worker not found for {device_id}")
