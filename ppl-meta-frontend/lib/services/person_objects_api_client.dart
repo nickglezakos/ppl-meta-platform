@@ -172,6 +172,10 @@ class PersonObjectsApiClient {
           ),
           bestQualityFaces: {},
           classifiedFaces: _extractClassifiedFaces(data),
+          rawPersonGroups: (data['person_groups'] as List? ?? [])
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item as Map))
+              .toList(),
           processingTimestamp: DateTime.now().toIso8601String(),
           workflowType: status == 'completed' ? 'bulk_processing_complete' : 'processing',
         );

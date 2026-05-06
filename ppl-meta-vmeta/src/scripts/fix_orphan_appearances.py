@@ -17,7 +17,6 @@ import sys
 import asyncio
 import asyncpg
 import aiohttp
-import uuid
 from datetime import timezone
 
 VMETA_DB = "postgresql://postgres:localdevpass@localhost:5432/ppl_meta_vmeta"
@@ -124,7 +123,9 @@ async def backfill(session_uuid: str):
                 person_object_uuid = None
 
             if not person_object_uuid:
-                person_object_uuid = str(uuid.uuid4())
+                print('Skipping appearance for', ind_uuid, '-> video', video_uuid,
+                      'because no persisted person_object/person_id was found')
+                continue
 
             # Use video timestamp if available
             start_ts = video.get('timestamp')

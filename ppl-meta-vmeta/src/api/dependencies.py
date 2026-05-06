@@ -9,8 +9,9 @@ Version: 1.0.0
 """
 
 import logging
+import os
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncpg
 
@@ -34,6 +35,10 @@ logger = logging.getLogger(__name__)
 
 # HTTP Bearer token scheme
 security = HTTPBearer()
+INTERNAL_SERVICE_TOKEN = os.getenv(
+    "INTERNAL_SERVICE_TOKEN",
+    "ppl-meta-internal-service-secret-key-change-in-production",
+)
 
 
 # ============================================================================
@@ -115,6 +120,34 @@ async def get_optional_user(
         return await get_current_user(credentials)
     except HTTPException:
         return None
+
+
+async def get_current_user_or_internal_service(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(
+        HTTPBearer(auto_error=False)
+    ),
+    x_service_name: Optional[str] = Header(None, alias="X-Service-Name"),
+) -> dict:
+    """Allow either a normal user JWT or the shared internal service token."""
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    if token == INTERNAL_SERVICE_TOKEN:
+        return {
+            "email": f"{x_service_name or 'internal-service'}@internal",
+            "user_uuid": None,
+            "is_admin": True,
+            "service_name": x_service_name or "unknown",
+            "auth_type": "internal_service",
+            "token": token,
+        }
+
+    return await get_current_user(credentials)
 
 
 # ============================================================================

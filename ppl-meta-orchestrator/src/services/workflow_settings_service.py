@@ -189,6 +189,13 @@ class WorkflowSettingsService:
             max_value=0.95,
             description="Default threshold for MVR merge operations",
         )
+        await self._ensure_setting_exists(
+            key="mvr_stored_comparison_enabled",
+            default_value=0.0,
+            min_value=0.0,
+            max_value=1.0,
+            description="Use stored super-individual hierarchy when building MVR search analysis: 0=false, 1=true",
+        )
 
     async def get_mvr_merge_settings(self) -> Dict[str, Any]:
         """Get MVR merge settings with defaults ensured."""
@@ -196,6 +203,9 @@ class WorkflowSettingsService:
 
         rule_code = await self.get_setting("mvr_merge_rule")
         threshold = await self.get_setting("mvr_merge_threshold")
+        stored_comparison_enabled = await self.get_setting(
+            "mvr_stored_comparison_enabled"
+        )
 
         rule_int = int(round(rule_code if rule_code is not None else 1.0))
         merge_rule = self.MERGE_CODE_TO_RULE.get(rule_int, "semi")
@@ -203,6 +213,13 @@ class WorkflowSettingsService:
         return {
             "merge_rule": merge_rule,
             "merge_threshold": float(threshold if threshold is not None else 0.70),
+            "stored_comparison_enabled": bool(
+                round(
+                    stored_comparison_enabled
+                    if stored_comparison_enabled is not None
+                    else 0.0
+                )
+            ),
             "min_threshold": 0.30,
             "max_threshold": 0.95,
         }
@@ -211,6 +228,7 @@ class WorkflowSettingsService:
         self,
         merge_rule: Optional[str] = None,
         merge_threshold: Optional[float] = None,
+        stored_comparison_enabled: Optional[bool] = None,
         updated_by: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Update one or both MVR merge settings."""
@@ -234,6 +252,15 @@ class WorkflowSettingsService:
             result = await self.update_setting(
                 key="mvr_merge_threshold",
                 value=float(merge_threshold),
+                updated_by=updated_by,
+            )
+            if not result.get("success"):
+                return result
+
+        if stored_comparison_enabled is not None:
+            result = await self.update_setting(
+                key="mvr_stored_comparison_enabled",
+                value=1.0 if stored_comparison_enabled else 0.0,
                 updated_by=updated_by,
             )
             if not result.get("success"):

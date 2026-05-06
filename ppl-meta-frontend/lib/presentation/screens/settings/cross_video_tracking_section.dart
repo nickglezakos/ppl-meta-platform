@@ -73,6 +73,16 @@ class CrossVideoTrackingSection extends ConsumerWidget {
                   color: AppColors.textSecondary,
                 ),
               ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                secondary: const Icon(Icons.storage),
+                title: const Text('MVR stored comparison'),
+                subtitle: const Text(
+                  'When enabled, backend-owned MVR analysis resolves through stored super-individual hierarchy.',
+                ),
+                value: data.mvrStoredComparison,
+                onChanged: notifier.updateMvrStoredComparison,
+              ),
             ],
           ),
         ),

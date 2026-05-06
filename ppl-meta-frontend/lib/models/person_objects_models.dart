@@ -24,6 +24,7 @@ class PersonObjectsData {
   final PersonObjectsStatistics statistics;
   final Map<String, BestQualityFace> bestQualityFaces;
   final List<ClassifiedFace> classifiedFaces;
+  final List<Map<String, dynamic>> rawPersonGroups;
   final String processingTimestamp;
   final String workflowType;
 
@@ -38,6 +39,7 @@ class PersonObjectsData {
     required this.statistics,
     required this.bestQualityFaces,
     required this.classifiedFaces,
+    this.rawPersonGroups = const [],
     required this.processingTimestamp,
     required this.workflowType,
   });
@@ -59,6 +61,10 @@ class PersonObjectsData {
       classifiedFaces: (json['classified_faces'] as List? ?? [])
           .map((item) => ClassifiedFace.fromJson(item))
           .toList(),
+        rawPersonGroups: (json['person_groups'] as List? ?? [])
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList(),
       processingTimestamp: json['processing_timestamp'] ?? '',
       workflowType: json['workflow_type'] ?? '',
     );
@@ -75,6 +81,7 @@ class PersonObjectsData {
       'statistics': statistics.toJson(),
       'best_quality_faces': bestQualityFaces.map((k, v) => MapEntry(k, v.toJson())),
       'classified_faces': classifiedFaces.map((f) => f.toJson()).toList(),
+      'person_groups': rawPersonGroups,
       'processing_timestamp': processingTimestamp,
       'workflow_type': workflowType,
     };

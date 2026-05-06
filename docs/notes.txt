@@ -1,51 +1,89 @@
 
-logo
-https://www.cleanpng.com/png-pixel-art-stock-photography-halo-1228277/
-
-*************************************************
-
-Speed optimization
-computational loops: numba
-distributed processing :  ray
-larger than memory datasets: dask 
-production profiling: pyspy
-https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-finish-f20516db1d02?source=friends_link&sk=3a1bcf9cca420e102bd2a432d040addb
-
-*************************************************
-custom camera modules
-https://sunex.com/
-*************************************************
-
-
-
-- **Email**: `fresh.user@example.com`
-- **Password**: `NewPassword234!`
-
-
-android-TKQ1.221114.001
-
-
-http://192.168.21.253:8000
+*** Test User
 
 fresh.user@example.com
 NewPassword234!
-
 
 curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!' 
 
+*************************************************
 
-192.168.1.68
-8006
+*** Logs
 
- 
- 
+/Users/nickgklezakos/Documents/ppl-meta-code/logs
 
-+++++++++++
+*************************************************
 
-2026-02-01 12:53:03,159 - platform.websocket_client - INFO - Connecting to platform WebSocket: ws://localhost:8005/api/v1/cameras/edge/edge-camera-001/ws
-++++++++++
+[LOAD FACES] ❌ Enhanced Logic V2 request failed: Request timeout after 30 seconds
+
+*** Known bugs
+
+persistent read write for media endpoints
+/Users/nickgklezakos/Documents/ppl-meta-code/docs/proposals/persisted-read-after-write-consistency-for-media-endpoints.md
+
+
+Be aware that unmerge does not revert the winner MVR’s embedding or demographics.
+
+*************************************************
+
+*** Legal
+
+US company
+  provide passport documents plus revolut bank statement
+  provide AFM
+  provide MindFWD company details plus online proof of company status
+  provide MindFWD contract template
+MindFwd contract with US company
+Legal documents for MindFWD referring to the US company
+Office 365 emails for everyone
+
+
+
+*** Deployment tasks
+
+MVRpeople testing and status
+Instant detection analytics
+Instant detection possible merging (inlcuding "intale" automerging tasks)
+Teams action type setup and testing
+Multiple digital signage scenarios testing
+  More than on triggers
+  More than one digital signage devices
+  Marketing user account
+Alpha test the local storage options and possible extent the local storage module
+Clarify the analytics module / screen.
+Edge camera test and upgrades (inlcuding possible auto network discovery) until stable with a USB camera on the RPI.
+APKs UX cleanup
+APKs branding including logos and thumbnails
+Front end and APKs UI cleanup
+
+Verify Hetzner status
+Headscale implementation using Hetzner
+  This should include the way to provide support
+ppl-meta online software licences
+ppl-meta online operation services
+ppl-meta-online website embedding of operations
+Users onborading (access to ppl-meta VPN)
+Users verification
+Users acceess rights / capabilities
+Intallation uuid (check if this is the application key)
+
+Finalise the products
+Align software pipeline and licences with the finalized products
+Upgrade eyenet vision website to be operation ready
+
+Upgrade documentation
+  Eyenet analytical brochure
+  Eyenet short broshure
+  Eyenet online tutorial
+  
+
+
+
+*************************************************
+
+*** ppl-meta edge camera
  
 
 sudo shutdown -h now
@@ -65,9 +103,6 @@ cd /Users/nickgklezakos/Documents/ppl-meta-code
 
 ssh pi@192.168.1.77 "v4l2-ctl --device=/dev/video0 --set-ctrl=brightness=145,contrast=55,saturation=75,sharpness=5"
 
-++++++++++++
-
-
 # High Quality Settings (balanced)
 brightness=135          # Keep current (good for indoor)
 contrast=55             # Increase slightly for more definition
@@ -77,20 +112,13 @@ focus_automatic_continuous=0  # Disable auto-focus to avoid lag
 focus_absolute=205      # Keep manual focus at current setting
 white_balance_automatic=1  # Keep auto white balance
 
+*************************************************
 
 
- TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | jq -r '.access_token') && curl -s "http://localhost:8008/api/v1/mvr/quality-metrics?session_uuid=ea34327a-d595-4cb3-bd29-e079e2c70e2f&start_time=2026-01-12T00:00:00&end_time=2026-01-12T23:59:59" -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+  
+*************************************************
 
-  TOKEN=$(curl -s -X POST 'http://localhost:8001/api/v1/users/login' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=fresh.user@example.com&password=NewPassword234!' | jq -r '.access_token') && curl -s "http://localhost:8008/api/v1/mvr/quality-metrics?session_uuid=ea34327a-d595-4cb3-bd29-e079e2c70e2f&start_time=2026-01-12T00:00:00&end_time=2026-01-12T23:59:59" -H "Authorization: Bearer $TOKEN" | jq '{demographics, data_completeness}'
-
-++++++++++++
-
-/Users/nickgklezakos/Documents/ppl-meta-code/logs/ppl-meta-vmeta.log
- 
-b24ad688-26f0-4e1e-9484-4fecec18df9c (that's your "Nick" MVR person!)
-
-
-PPL meta mini
+*** PPL meta mini
 
 cd /Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-mini
 source venv/bin/activate
@@ -110,203 +138,16 @@ rtsp://nick.glezakos@gmail.com:Kkkkodikos234@192.168.1.76:554/stream1
 
 http://192.168.1.68:8001
 
+************************************************************************
 
+*** Speed optimization
+
+computational loops: numba
+distributed processing :  ray
+larger than memory datasets: dask 
+production profiling: pyspy
+https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-finish-f20516db1d02?source=friends_link&sk=3a1bcf9cca420e102bd2a432d040addb
 
 
 ************************************************************************
-
-
-The need for eyenet in everyday life for a company/organisation/family:
-  High value inventory/storage/safe.
-    Company safe.
-    Warehouse storage facility.
-    Restricted areas.
-  Entry / exit points monitoring and access control.
-  People activity monitoring at a specific area.
-    
-
-
-
-
-
-A computer vision platform that consists of the following:
-
-Components (devices):
-  Computing unit (any linux, windows PC, laptop, server)
-  USB cameras
-  Mobile cameras on phones both android and iphones
-  WIFI cameras (RTSP on any router)
-  Edge devices: RPIs, mini PCs
-  Edge cameras on Edge devices
-  Edge TV/ Digital displays on Edge devices
-  Any mobile device for use and managment of the platform.
-
-Network:
-  The platform works on local networks.
-  It supports remote networking for any of the compnents via VPN.
-  The only connection to the public internet needed is once a month/year for licencing.
-
-Eyenet is full automatic and it offers automation in the following use cases:
-
-Persons
-  Counting
-  Demographics with routes in 3d space
-  Match
-Automatic rules on any of the above that triggers:
-  On screen alerts
-  emails
-  third party system API calls
-  digital signage playlists
-
-
-
-
-
-
-Boost Moderate Cameras to Powerful Machine Vision Nodes
-
-Cameras
-  Present Camera types
-  Explain live stream and recordings > dual funnel modes.
-  For recordings:
-      Face rects > explain face detection sampling
-      Details > explain the MVR data: unique individuals and routes (with distance)
-      Outline the computations involved for one video and for more (automations for more)
-  
-  Explain:
-    Cameras can operate in both modes or just on one (recordings / instant detection)
-  
-  Instant detection
-    Instant detection does not keep media files (videos) and also does not keep
-    the individuals data objects but just the aggragate results.
-      Privacy
-      Speed / alerts
-      Full analytics
-
-Strong points:
-  Unlimited cameras: computations in pipelines, the results will come sooner or later.
-  Any computing unit would do.
-  In the product pipeline: how to have a local computing cluster.  ???
-  Network agnostic with rapid deployment.
-  VPN for security and global reach.
-
-Show recordings from:
-  usb camera 04
-  mcam treble droid
-  RTSP camera 01
-  Edge camera rpi5 01
-
-Demo live stream from:
-  usb camera 04
-  mcam treble droid
-  RTSP camera 01      ???
-  Edge camera rpi5 01   ???
-
-Demo live stream components:
-  Person track (single / two / many)
-    Video details
-    MVR search results
-    Analytics results
-  
-  Attendance
-    Individual groups
-      Management
-      Search / Attandance with download Reports
-
-  Automation
-    Notifications
-      logs
-      on screen
-      Email
-      external systems
-    Digital Signage
-      one person video
-      two person video
-      one female video
-      people match video
-
-
-
-
-
-
-
-************************************************************************
-
-
-
-Functionalities
-
-recording
-  snapshot
-  stream
-
-------> get from media service the video saving settings per camera
-                stream snapshot
-                stream
-                  video segments
-                    duration
-                    intervals
-------> individuals: counter, routes / heatmap, activity derivatives (velocity, energy)
-          for a stream snapshot (a single video)
-          for a product template session preset
-          for a unresctricted time frame (avg. for counter for the total video segments)
-------> person counter
-          for a stream snapshot (a single video)
-          for a product template session preset
-          for a unresctricted time frame (MVR uniqueness on the MVR level)
-
-basic person detection
-  indoviduals counter
-  age | gender
-  position | route
-  activity 
-
-
-advanced person detection
-  everything in basic person detection
-  persons counter
-  Machine Vision ID
-  Attendance control
-  Unauthorized access
-  Person of Interest Collections
-  Schedule rules
-  Appearance tracking
-  Video Playback
-
-modules
-  Cameras
-  Collections
-    Camera
-    User
-  Reports
-  Insights
-
-Product Templates
-
-Intelligent Signage
-  Personalized Video Playlists
-  Marketing Campaings
-  Audience Insights
-  Contractor account
-
-Gate Activity
-  People Counter
-  Audience Insights
-
-Room & Gate Protection 
-  Attendance control
-  Unauthorized Activity Warnings
-  Person of Interest Warnings
-  Person of Interest Search
-  Activity Warnings
-  Activity Insights
-  Forensics
-
-Underage Detector
-  Instant Underage Warnings
-  Audience Insights
-
-
-********************
 

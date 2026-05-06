@@ -7,7 +7,9 @@ Enhanced with detailed person groups, quality scoring, and route tracking.
 import logging
 import math
 import uuid
+import json
 from datetime import datetime
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -65,6 +67,9 @@ class PPLThreadPersonGroup(BaseModel):
     quality_metrics: Dict[str, Any] = Field(
         default_factory=dict
     )  # selection criteria and scoring
+    demographics: Dict[str, Any] = Field(
+        default_factory=dict
+    )  # normalized age/gender evidence for the single-video group
 
 
 class PPLThreadWorkflowResponse(BaseModel):
@@ -216,6 +221,231 @@ class PPLThreadEndpoints:
 
         return groups
 
+    def _build_person_group_from_stored_object(
+        self,
+        stored_person: Dict[str, Any],
+    ) -> PPLThreadPersonGroup:
+        """Map a persisted Vision person object into the Orchestrator response shape."""
+        representative_faces = stored_person.get("representative_faces") or []
+        if isinstance(representative_faces, str):
+            try:
+                representative_faces = json.loads(representative_faces)
+            except (TypeError, ValueError):
+                representative_faces = []
+
+        movement_tracking = stored_person.get("movement_tracking") or {}
+        route_points = movement_tracking.get("route_points") or []
+        movement_statistics = movement_tracking.get("movement_statistics") or {}
+
+        demographics = stored_person.get("demographics") or {}
+        tracking_metadata = stored_person.get("tracking_metadata") or {}
+        if tracking_metadata:
+            demographics = {**demographics, "tracking_metadata": tracking_metadata}
+
+        quality_score = float(stored_person.get("quality_score") or 0.0)
+
+        return PPLThreadPersonGroup(
+            person_uuid=stored_person.get("person_id", ""),
+            person_id=stored_person.get("person_id", ""),
+            face_count=int(stored_person.get("face_count") or 0),
+            representative_faces=representative_faces,
+            all_face_ids=stored_person.get("face_ids") or [],
+            average_confidence=quality_score,
+            spatial_bounds=stored_person.get("spatial_bounds") or {},
+            temporal_span=stored_person.get("temporal_span") or {},
+            movement_tracking={
+                "route_points": route_points,
+                "movement_statistics": movement_statistics,
+            },
+            quality_metrics={"quality_score": quality_score},
+            demographics=demographics,
+        )
+
+    async def _build_person_objects_from_live_faces(
+        self,
+        media_id: str,
+        auth_token: str,
+        session_uuid: str,
+    ) -> PPLThreadWorkflowResponse:
+        """Fallback for media that do not yet have persisted person-object sessions."""
+        from face_detection_endpoints import FaceDetectionSessionManager
+
+        start_time = datetime.now()
+        session_manager = FaceDetectionSessionManager()
+
+        logger.info(
+            "🔄 Falling back to live person-object grouping for media %s",
+            media_id,
+        )
+
+        face_result = await session_manager.enhanced_logic_v2_session_based(
+            media_id=media_id,
+            auth_token=auth_token,
+            frame_interval=10,
+            session_uuid=session_uuid or None,
+        )
+
+        if not face_result.get("success", False):
+            error_msg = face_result.get("error", "Enhanced Logic V2 failed")
+            logger.error("❌ Enhanced Logic V2 failed: %s", error_msg)
+            return PPLThreadWorkflowResponse(
+                success=False,
+                media_id=media_id,
+                total_persons=0,
+                total_faces=0,
+                status="error",
+                message=f"Enhanced Logic V2 failed: {error_msg}",
+                session_uuid=session_uuid,
+            )
+
+        persisted_session_uuid = face_result.get("session_uuid") or session_uuid
+        persisted_response = await self._load_persisted_person_objects_response(
+            media_id=media_id,
+            auth_token=auth_token,
+            session_uuid=persisted_session_uuid,
+            start_time=start_time,
+            attempts=3,
+        )
+        if persisted_response:
+            logger.info(
+                "✅ Fallback materialized readable persisted person objects for session %s",
+                persisted_session_uuid,
+            )
+            return persisted_response
+
+        total_faces = face_result.get("total_faces", 0)
+        faces_data = face_result.get("faces", [])
+
+        if total_faces == 0:
+            person_groups = []
+            total_persons = 0
+        else:
+            face_bboxes = []
+            valid_faces = []
+
+            for face in faces_data:
+                bbox = face.get("bbox", [])
+                if len(bbox) == 4:
+                    face_bboxes.append(bbox)
+                    valid_faces.append(face)
+
+            if face_bboxes:
+                person_groups = self._group_faces_by_rectangle_overlap_detailed(
+                    face_bboxes, valid_faces
+                )
+                total_persons = len(person_groups)
+            else:
+                person_groups = []
+                total_persons = 1 if total_faces > 0 else 0
+
+        routes_data = []
+        for person_group in person_groups:
+            routes_data.append(
+                {
+                    "person_uuid": person_group.person_uuid,
+                    "person_id": person_group.person_id,
+                    "route_points": person_group.movement_tracking.get("route_points", []),
+                    "movement_statistics": person_group.movement_tracking.get(
+                        "movement_statistics", {}
+                    ),
+                }
+            )
+
+        processing_time = (datetime.now() - start_time).total_seconds() * 1000
+        return PPLThreadWorkflowResponse(
+            success=True,
+            media_id=media_id,
+            total_persons=total_persons,
+            total_faces=total_faces,
+            status="completed",
+            message=f"Rectangle overlap detection with detailed person objects: {total_faces} faces → {total_persons} persons",
+            person_groups=person_groups,
+            session_uuid=session_uuid,
+            routes_data=routes_data,
+            processing_time_ms=round(processing_time, 2),
+        )
+
+    async def _load_persisted_person_objects_response(
+        self,
+        media_id: str,
+        auth_token: str,
+        session_uuid: str,
+        start_time: datetime,
+        attempts: int = 1,
+    ) -> Optional[PPLThreadWorkflowResponse]:
+        """Load persisted person objects for a session and format the response."""
+        if not session_uuid:
+            return None
+
+        trace_ctx = TraceabilityContext(
+            workflow_id=str(uuid.uuid4()),
+            request_id=str(uuid.uuid4()),
+            source_service="orchestrator",
+            operation="get_person_objects_for_media_persisted_session",
+            metadata={"media_id": media_id, "session_uuid": session_uuid},
+        )
+
+        last_error = None
+        for attempt in range(attempts):
+            session_details = (
+                await self.service_manager.vision.get_person_objects_for_session_details(
+                    trace_ctx=trace_ctx,
+                    session_uuid=session_uuid,
+                    auth_token=auth_token,
+                )
+            )
+
+            if session_details.success and session_details.data:
+                stored_person_objects = session_details.data.get("person_objects") or []
+                person_groups = [
+                    self._build_person_group_from_stored_object(person)
+                    for person in stored_person_objects
+                ]
+                total_persons = len(person_groups)
+                total_faces = sum(person.face_count for person in person_groups)
+
+                routes_data = []
+                for person_group in person_groups:
+                    routes_data.append(
+                        {
+                            "person_uuid": person_group.person_uuid,
+                            "person_id": person_group.person_id,
+                            "route_points": person_group.movement_tracking.get(
+                                "route_points", []
+                            ),
+                            "movement_statistics": person_group.movement_tracking.get(
+                                "movement_statistics", {}
+                            ),
+                        }
+                    )
+
+                processing_time = (
+                    datetime.now() - start_time
+                ).total_seconds() * 1000
+                return PPLThreadWorkflowResponse(
+                    success=True,
+                    media_id=media_id,
+                    total_persons=total_persons,
+                    total_faces=total_faces,
+                    status="completed",
+                    message=f"Retrieved {total_persons} persisted person groups",
+                    person_groups=person_groups,
+                    session_uuid=session_uuid,
+                    routes_data=routes_data,
+                    processing_time_ms=round(processing_time, 2),
+                )
+
+            last_error = session_details.error_message or "Persisted person objects unavailable"
+            if attempt < attempts - 1:
+                await asyncio.sleep(0.1)
+
+        logger.warning(
+            "⚠️ Persisted person objects still unavailable for session %s after fallback write: %s",
+            session_uuid,
+            last_error,
+        )
+        return None
+
     def _select_best_faces(self, group_faces, count=3):
         """Select best faces using PPL Meta quality criteria."""
         if not group_faces:
@@ -280,6 +510,146 @@ class PPLThreadEndpoints:
         )
 
         return round(composite_score, 3)
+
+    def _parse_estimated_age(self, face: Dict[str, Any]) -> Optional[int]:
+        """Extract a normalized estimated age from a face payload."""
+        age_detection = face.get("age_detection")
+        if isinstance(age_detection, dict):
+            estimated_age = age_detection.get("estimated_age")
+            if isinstance(estimated_age, int) and estimated_age > 0:
+                return estimated_age
+            if isinstance(estimated_age, str):
+                parsed_age = int(estimated_age) if estimated_age.isdigit() else None
+                if parsed_age and parsed_age > 0:
+                    return parsed_age
+
+        age_estimate = face.get("age_estimate")
+        if isinstance(age_estimate, dict):
+            estimated_age = age_estimate.get("estimated_age")
+            if isinstance(estimated_age, int) and estimated_age > 0:
+                return estimated_age
+            if isinstance(estimated_age, str):
+                parsed_age = int(estimated_age) if estimated_age.isdigit() else None
+                if parsed_age and parsed_age > 0:
+                    return parsed_age
+
+            min_age = age_estimate.get("min_age")
+            max_age = age_estimate.get("max_age")
+            if isinstance(min_age, int) and isinstance(max_age, int) and min_age > 0 and max_age > 0:
+                return round((min_age + max_age) / 2)
+
+        estimated_age = face.get("estimated_age")
+        if isinstance(estimated_age, int) and estimated_age > 0:
+            return estimated_age
+
+        return None
+
+    def _parse_age_confidence(self, face: Dict[str, Any]) -> Optional[float]:
+        """Extract age confidence when present."""
+        age_detection = face.get("age_detection")
+        if isinstance(age_detection, dict):
+            confidence = age_detection.get("confidence")
+            if isinstance(confidence, (int, float)):
+                return float(confidence)
+
+        age_estimate = face.get("age_estimate")
+        if isinstance(age_estimate, dict):
+            confidence = age_estimate.get("confidence")
+            if isinstance(confidence, (int, float)):
+                return float(confidence)
+
+        return None
+
+    def _parse_gender_evidence(self, face: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract normalized gender evidence from a face payload when available."""
+        candidates = [
+            face.get("gender_detection"),
+            face.get("gender_estimate"),
+        ]
+
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+
+            gender = candidate.get("gender") or candidate.get("estimated_gender")
+            if isinstance(gender, str):
+                normalized_gender = gender.strip().lower()
+                if normalized_gender in {"male", "female", "unknown"}:
+                    confidence = candidate.get("confidence")
+                    return {
+                        "gender": normalized_gender,
+                        "confidence": float(confidence) if isinstance(confidence, (int, float)) else None,
+                    }
+
+        gender = face.get("gender") or face.get("estimated_gender")
+        if isinstance(gender, str):
+            normalized_gender = gender.strip().lower()
+            if normalized_gender in {"male", "female", "unknown"}:
+                confidence = face.get("gender_confidence")
+                return {
+                    "gender": normalized_gender,
+                    "confidence": float(confidence) if isinstance(confidence, (int, float)) else None,
+                }
+
+        return None
+
+    def _build_group_demographics(self, group_faces: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate age and gender evidence for a single-video person group."""
+        ages: List[int] = []
+        age_confidences: List[float] = []
+        gender_weights = {"male": 0.0, "female": 0.0, "unknown": 0.0}
+        gender_best_confidence: Dict[str, float] = {}
+
+        for face in group_faces:
+            estimated_age = self._parse_estimated_age(face)
+            if estimated_age is not None:
+                ages.append(estimated_age)
+                age_confidence = self._parse_age_confidence(face)
+                if age_confidence is not None:
+                    age_confidences.append(age_confidence)
+
+            gender_evidence = self._parse_gender_evidence(face)
+            if gender_evidence is not None:
+                gender = gender_evidence["gender"]
+                confidence = gender_evidence.get("confidence")
+                weight = confidence if confidence is not None else 1.0
+                gender_weights[gender] += weight
+                previous_best = gender_best_confidence.get(gender)
+                if previous_best is None or (confidence is not None and confidence > previous_best):
+                    gender_best_confidence[gender] = confidence if confidence is not None else 1.0
+
+        demographics: Dict[str, Any] = {}
+
+        if ages:
+            demographics.update(
+                {
+                    "age_min": min(ages),
+                    "age_max": max(ages),
+                    "age_mean": round(sum(ages) / len(ages), 2),
+                    "age_confidence": round(sum(age_confidences) / len(age_confidences), 3)
+                    if age_confidences
+                    else None,
+                }
+            )
+
+        winning_gender = max(gender_weights, key=gender_weights.get)
+        if gender_weights[winning_gender] > 0:
+            demographics.update(
+                {
+                    "gender": winning_gender,
+                    "gender_confidence": gender_best_confidence.get(winning_gender),
+                }
+            )
+
+        if demographics:
+            demographics.update(
+                {
+                    "demographics_source": "single_video_person_group",
+                    "face_sample_count": len(group_faces),
+                }
+            )
+
+        return demographics
 
     def _generate_movement_tracking(self, group_faces):
         """Generate route tracking data for person group."""
@@ -406,7 +776,7 @@ class PPLThreadEndpoints:
 
         person_groups = []
 
-        for group_id, group_faces in groups.items():
+        for group_faces in groups.values():
             # Generate person UUID and ID
             person_uuid = str(uuid.uuid4())
             person_id = f"person_{len(person_groups) + 1}"
@@ -446,6 +816,7 @@ class PPLThreadEndpoints:
                 f"face_{face.get('frame_number', i)}"
                 for i, face in enumerate(group_faces)
             ]
+            demographics = self._build_group_demographics(group_faces)
 
             person_group = PPLThreadPersonGroup(
                 person_uuid=person_uuid,
@@ -458,6 +829,7 @@ class PPLThreadEndpoints:
                 temporal_span=temporal_span,
                 movement_tracking=movement_tracking,
                 quality_metrics=quality_metrics,
+                demographics=demographics,
             )
 
             person_groups.append(person_group)
@@ -554,39 +926,55 @@ class PPLThreadEndpoints:
             auth_token: str = Depends(get_auth_token),
         ):
             """
-            🎯 Get detailed person objects data for media UUID using Enhanced Logic V2.
+            🎯 Get detailed persisted person objects data for media UUID.
 
-            This enhanced endpoint:
-            1. Uses Enhanced Logic V2 to get face detection data with distance calculations
-            2. Applies sophisticated grouping logic to create detailed person objects
-            3. Returns person groups with representative faces, quality scoring, and route tracking
+            This endpoint retrieves previously materialized person groups from Vision storage
+            so person UUIDs remain stable across reads.
             """
             logger.info(
                 f"🎯 PPL THREAD: Getting detailed person objects for media {media_id}"
             )
 
             start_time = datetime.now()
-            session_uuid = str(uuid.uuid4())
+            session_uuid = ""
 
             try:
-                # Import the session manager to use Enhanced Logic V2 directly
-                from face_detection_endpoints import FaceDetectionSessionManager
-
-                session_manager = FaceDetectionSessionManager()
-
-                # Step 1: Use Enhanced Logic V2 to get face detection data with distance
-                logger.info(
-                    "🔄 Step 1: Calling Enhanced Logic V2 for face detection with distance data"
+                trace_ctx = TraceabilityContext(
+                    workflow_id=str(uuid.uuid4()),
+                    request_id=str(uuid.uuid4()),
+                    source_service="orchestrator",
+                    operation="get_person_objects_for_media_persisted",
+                    metadata={"media_id": media_id},
                 )
-                face_result = await session_manager.enhanced_logic_v2_session_based(
+
+                media_summary = await self.service_manager.vision.get_person_objects_for_media(
+                    trace_ctx=trace_ctx,
                     media_id=media_id,
                     auth_token=auth_token,
-                    frame_interval=10,  # Use default frame sampling
                 )
 
-                if not face_result.get("success", False):
-                    error_msg = face_result.get("error", "Enhanced Logic V2 failed")
-                    logger.error(f"❌ Enhanced Logic V2 failed: {error_msg}")
+                summary_data = media_summary.data or {}
+                session_uuid = summary_data.get("session_uuid", "")
+
+                if not media_summary.success or not session_uuid:
+                    return await self._build_person_objects_from_live_faces(
+                        media_id=media_id,
+                        auth_token=auth_token,
+                        session_uuid=session_uuid,
+                    )
+
+                session_details = await self.service_manager.vision.get_person_objects_for_session_details(
+                    trace_ctx=trace_ctx,
+                    session_uuid=session_uuid,
+                    auth_token=auth_token,
+                )
+
+                if not session_details.success or not session_details.data:
+                    error_msg = (
+                        session_details.error_message
+                        or "Failed to retrieve persisted person objects"
+                    )
+                    logger.error("❌ Persisted person object retrieval failed: %s", error_msg)
 
                     return PPLThreadWorkflowResponse(
                         success=False,
@@ -594,56 +982,18 @@ class PPLThreadEndpoints:
                         total_persons=0,
                         total_faces=0,
                         status="error",
-                        message=f"Enhanced Logic V2 failed: {error_msg}",
+                        message=error_msg,
                         session_uuid=session_uuid,
                     )
 
-                # Step 2: Extract face data and validate distance enhancement
-                total_faces = face_result.get("total_faces", 0)
-                faces_data = face_result.get("faces", [])
+                stored_person_objects = session_details.data.get("person_objects") or []
+                person_groups = [
+                    self._build_person_group_from_stored_object(person)
+                    for person in stored_person_objects
+                ]
+                total_persons = len(person_groups)
+                total_faces = sum(person.face_count for person in person_groups)
 
-                logger.info(
-                    f"✅ Enhanced Logic V2 returned {total_faces} faces with distance data"
-                )
-
-                # Step 3: Apply detailed rectangle overlap grouping algorithm
-                logger.info(
-                    "🔄 Step 3: Creating detailed person groups with quality scoring"
-                )
-
-                if total_faces == 0:
-                    person_groups = []
-                    total_persons = 0
-                else:
-                    # Extract bounding boxes from Enhanced Logic V2 face data
-                    face_bboxes = []
-                    valid_faces = []
-
-                    for face in faces_data:
-                        bbox = face.get("bbox", [])
-                        if len(bbox) == 4:  # [x1, y1, x2, y2] format
-                            face_bboxes.append(bbox)
-                            valid_faces.append(face)
-
-                    if face_bboxes:
-                        # Apply detailed rectangle overlap detection with person group creation
-                        person_groups = self._group_faces_by_rectangle_overlap_detailed(
-                            face_bboxes, valid_faces
-                        )
-                        total_persons = len(person_groups)
-
-                        logger.info(
-                            f"🎯 Detailed grouping: {total_faces} faces → {total_persons} person groups with analytics"
-                        )
-                    else:
-                        # Fallback: create single person group if no bbox data
-                        person_groups = []
-                        total_persons = 1 if total_faces > 0 else 0
-                        logger.warning(
-                            f"⚠️ No bbox data, using fallback: {total_faces} faces → {total_persons} persons"
-                        )
-
-                # Step 4: Generate routes data from person groups
                 routes_data = []
                 for person_group in person_groups:
                     route_data = {
@@ -662,7 +1012,7 @@ class PPLThreadEndpoints:
                 processing_time = (datetime.now() - start_time).total_seconds() * 1000
 
                 logger.info(
-                    f"🎯 PPL THREAD: ✅ Created {total_persons} detailed person groups from {total_faces} faces"
+                    f"🎯 PPL THREAD: ✅ Retrieved {total_persons} persisted person groups from session {session_uuid}"
                 )
 
                 return PPLThreadWorkflowResponse(
@@ -671,7 +1021,7 @@ class PPLThreadEndpoints:
                     total_persons=total_persons,
                     total_faces=total_faces,
                     status="completed",
-                    message=f"Rectangle overlap detection with detailed person objects: {total_faces} faces → {total_persons} persons",
+                    message=f"Retrieved {total_persons} persisted person groups",
                     person_groups=person_groups,
                     session_uuid=session_uuid,
                     routes_data=routes_data,

@@ -1320,21 +1320,33 @@ class MediaApiClient {
   /// Create cross-video individual tracking session with vmeta service
   Future<ApiResponse<Map<String, dynamic>>> createCrossVideoTrackingSession({
     required String collectionName,
-    required DateTime startTime,
-    required DateTime endTime,
+    DateTime? startTime,
+    DateTime? endTime,
+    List<String>? videoUuids,
   }) async {
     try {
       final requestBody = {
         'collections': [collectionName],
-        'start_time': startTime.toUtc().toIso8601String(),
-        'end_time': endTime.toUtc().toIso8601String(),
         'background_processing': true,
+        'force_reprocess': true,
         'algorithm_config': {
           'max_gap_seconds': 10,
           'iou_threshold': 0.3,
           'min_overlap_confidence': 0.5,
         },
       };
+
+      if (videoUuids != null && videoUuids.isNotEmpty) {
+        requestBody['video_uuids'] = videoUuids;
+      } else {
+        if (startTime == null || endTime == null) {
+          return ApiResponse.error(
+            'startTime and endTime are required when videoUuids are not provided',
+          );
+        }
+        requestBody['start_time'] = startTime.toUtc().toIso8601String();
+        requestBody['end_time'] = endTime.toUtc().toIso8601String();
+      }
 
       print('DEBUG: Creating cross-video tracking session with: $requestBody');
       
@@ -1402,14 +1414,36 @@ class MediaApiClient {
   /// Get individuals from cross-video tracking session (Phase 5)
   Future<ApiResponse<Map<String, dynamic>>> getCrossVideoIndividuals({
     required String sessionUuid,
+    String view = 'auto',
   }) async {
     try {
       final response = await _apiClient.get(
         '/api/v1/cross-video/individuals/tracking/sessions/$sessionUuid/individuals',
+        queryParameters: {'view': view},
       );
 
       print('DEBUG: Cross-video individuals: ${response.data}');
       
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> getCrossVideoSessionAnalysis({
+    required String sessionUuid,
+    String view = 'auto',
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '/api/v1/cross-video/individuals/tracking/sessions/$sessionUuid/analysis',
+        queryParameters: {'view': view},
+      );
+
+      print('DEBUG: Cross-video session analysis: ${response.data}');
+
       return ApiResponse.success(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
@@ -1762,11 +1796,14 @@ class MediaApiClient {
     DateTime? startTime,
     DateTime? endTime,
     int limit = 100,
+    bool autoMerge = false,
+    double? similarityThreshold,
   }) async {
     try {
       final data = {
         'video_uuids': videoUuids,
         'limit': limit,
+        'auto_merge': autoMerge,
       };
       
       if (startTime != null) {
@@ -1774,6 +1811,9 @@ class MediaApiClient {
       }
       if (endTime != null) {
         data['end_time'] = endTime.toUtc().toIso8601String();
+      }
+      if (similarityThreshold != null) {
+        data['similarity_threshold'] = similarityThreshold;
       }
 
       final response = await _apiClient.post(
@@ -1789,6 +1829,47 @@ class MediaApiClient {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
       debugPrint('❌ Search MVR people by videos unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
+  Future<ApiResponse<Map<String, dynamic>>> getMvrSearchAnalysis({
+    required List<String> mvrUuids,
+    required String sessionUuid,
+    DateTime? startTime,
+    DateTime? endTime,
+    int mergedPage = 1,
+    int mergedPageSize = 10,
+    List<Map<String, dynamic>>? ephemeralGroups,
+  }) async {
+    try {
+      final data = {
+        'mvr_uuids': mvrUuids,
+        'session_uuid': sessionUuid,
+        'merged_page': mergedPage,
+        'merged_page_size': mergedPageSize,
+        if (ephemeralGroups != null) 'ephemeral_groups': ephemeralGroups,
+      };
+
+      if (startTime != null) {
+        data['start_time'] = startTime.toUtc().toIso8601String();
+      }
+      if (endTime != null) {
+        data['end_time'] = endTime.toUtc().toIso8601String();
+      }
+
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/analysis',
+        data: data,
+      );
+
+      debugPrint('🔍 Backend-owned MVR search analysis: ${response.data}');
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Backend-owned MVR search analysis failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Backend-owned MVR search analysis unexpected error: $e');
       return ApiResponse.error('Unexpected error: $e');
     }
   }

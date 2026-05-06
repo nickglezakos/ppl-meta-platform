@@ -199,6 +199,7 @@ class PersonObjectsQueue:
 
 # Global queue instance
 person_objects_queue = PersonObjectsQueue(batch_size=10, max_queue_size=100)
+VMETA_BASE_URL = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
 
 
 # ============================================================================
@@ -330,7 +331,11 @@ class FaceDetectionSessionManager:
             return None
 
     async def enhanced_logic_v2_session_based(
-        self, media_id: str, auth_token: str, frame_interval: int = 10
+        self,
+        media_id: str,
+        auth_token: str,
+        frame_interval: int = 10,
+        session_uuid: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Enhanced Logic V2: Session-based face detection with frame sampling.
@@ -352,7 +357,7 @@ class FaceDetectionSessionManager:
         import time
 
         start_time = time.time()
-        session_uuid = str(uuid.uuid4())
+        session_uuid = session_uuid or str(uuid.uuid4())
 
         logger.info(f"🆔 Starting Enhanced Logic V2 for media {media_id}")
         logger.info(f"   🎯 Session UUID: {session_uuid}")
@@ -447,11 +452,29 @@ class FaceDetectionSessionManager:
                     )
                     logger.info(f"✅ Session {session_uuid} completed")
 
-                    # ✨ STEP 1.7: Enqueue person objects for cross-video tracking
+                    # ✨ STEP 1.7: Materialize isolated VMeta rows from persisted person objects
                     person_objects_data = person_objects_result.get("person_objects", [])
                     if person_objects_data:
                         logger.info(
-                            f"📦 Step 1.7: Enqueueing {len(person_objects_data)} "
+                            f"🧬 Step 1.7: Materializing {len(person_objects_data)} "
+                            f"persisted person objects into VMeta for media {media_id}..."
+                        )
+                        vmeta_materialization = await self._materialize_vmeta_from_persisted_person_objects(
+                            media_id=media_id,
+                            session_uuid=session_uuid,
+                            auth_token=auth_token,
+                            person_objects=person_objects_data,
+                        )
+                        logger.info(
+                            "✅ VMeta materialization result for %s: %s",
+                            media_id,
+                            vmeta_materialization,
+                        )
+
+                    # ✨ STEP 1.8: Enqueue person objects for cross-video tracking
+                    if person_objects_data:
+                        logger.info(
+                            f"📦 Step 1.8: Enqueueing {len(person_objects_data)} "
                             f"person objects for cross-video tracking..."
                         )
                         await person_objects_queue.enqueue(
@@ -639,11 +662,29 @@ class FaceDetectionSessionManager:
                     )
                     logger.info(f"✅ Session {session_uuid} completed")
 
-                    # ✨ STEP 2.7: Enqueue person objects for cross-video tracking
+                    # ✨ STEP 2.7: Materialize isolated VMeta rows from persisted person objects
                     person_objects_data = person_objects_result.get("person_objects", [])
                     if person_objects_data:
                         logger.info(
-                            f"📦 Step 2.7: Enqueueing {len(person_objects_data)} "
+                            f"🧬 Step 2.7: Materializing {len(person_objects_data)} "
+                            f"persisted person objects into VMeta for media {media_id}..."
+                        )
+                        vmeta_materialization = await self._materialize_vmeta_from_persisted_person_objects(
+                            media_id=media_id,
+                            session_uuid=session_uuid,
+                            auth_token=auth_token,
+                            person_objects=person_objects_data,
+                        )
+                        logger.info(
+                            "✅ VMeta materialization result for %s: %s",
+                            media_id,
+                            vmeta_materialization,
+                        )
+
+                    # ✨ STEP 2.8: Enqueue person objects for cross-video tracking
+                    if person_objects_data:
+                        logger.info(
+                            f"📦 Step 2.8: Enqueueing {len(person_objects_data)} "
                             f"person objects for cross-video tracking..."
                         )
                         await person_objects_queue.enqueue(
@@ -782,7 +823,7 @@ class FaceDetectionSessionManager:
                 timeout=10,
             )
 
-            if response.status_code in [200, 201]:
+            if response.status_code in [200, 201, 409]:
                 logger.info(f"✅ Session {session_uuid} created successfully")
                 return {"success": True, "session_uuid": session_uuid}
             else:
@@ -984,6 +1025,90 @@ class FaceDetectionSessionManager:
                 "person_count": 0,
                 "error": str(e),
                 "session_uuid": session_uuid,
+            }
+
+    async def _materialize_vmeta_from_persisted_person_objects(
+        self,
+        media_id: str,
+        session_uuid: str,
+        auth_token: str,
+        person_objects: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Notify VMeta to materialize isolated single-media rows from persisted person objects."""
+        if not person_objects:
+            return {
+                "success": True,
+                "status": "no_person_objects",
+                "mvr_people_count": 0,
+            }
+
+        if auth_token and auth_token != INTERNAL_SERVICE_TOKEN:
+            headers = {"Authorization": f"Bearer {auth_token}"}
+        else:
+            headers = {
+                "Authorization": f"Bearer {INTERNAL_SERVICE_TOKEN}",
+                "X-Service-Name": "ppl-meta-orchestrator",
+            }
+
+        persisted_person_groups = person_objects
+        try:
+            persisted_response = requests.get(
+                f"http://localhost:8002/person-objects/{media_id}",
+                headers=headers,
+                timeout=30,
+            )
+            if persisted_response.status_code == 200:
+                persisted_data = persisted_response.json()
+                persisted_person_groups = persisted_data.get("person_groups") or person_objects
+            else:
+                logger.warning(
+                    "Failed to reload persisted person groups for media %s before VMeta materialization: %s",
+                    media_id,
+                    persisted_response.status_code,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Error reloading persisted person groups for media %s before VMeta materialization: %s",
+                media_id,
+                exc,
+            )
+
+        try:
+            response = requests.post(
+                f"{VMETA_BASE_URL}/api/v1/mvr-people/materialize/persisted-person-objects",
+                json={
+                    "media_uuid": media_id,
+                    "session_uuid": session_uuid,
+                    "person_objects": persisted_person_groups,
+                },
+                headers=headers,
+                timeout=60,
+            )
+
+            if response.status_code == 200:
+                return response.json()
+
+            logger.warning(
+                "VMeta materialization failed for media %s: %s %s",
+                media_id,
+                response.status_code,
+                response.text[:300],
+            )
+            return {
+                "success": False,
+                "status": "failed",
+                "error": f"VMeta materialization failed: {response.status_code}",
+            }
+        except Exception as exc:
+            logger.warning(
+                "VMeta materialization call failed for media %s: %s",
+                media_id,
+                exc,
+            )
+            return {
+                "success": False,
+                "status": "failed",
+                "error": str(exc),
             }
 
     # NOTE: Batch accumulation for cross-video tracking should be implemented

@@ -11,6 +11,9 @@ CORRECTED IMPLEMENTATION (Dec 18, 2025):
 
 import logging
 import asyncio
+import json
+import os
+import urllib.parse
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from uuid import UUID
@@ -119,6 +122,7 @@ class MVRImageManager:
     ):
         self.mvr_repo = mvr_repo
         self.orchestrator_url = orchestrator_url
+        self.vision_url = os.getenv("VISION_SERVICE_URL", "http://localhost:8003")
         self.service_token = service_token
         logger.info(f"MVRImageManager initialized (Orchestrator: {orchestrator_url})")
     
@@ -148,9 +152,29 @@ class MVRImageManager:
         is_super_individual = False
         
         if include_merged:
-            # TODO: Query mvr_merge_hierarchy for merged children
-            # For now, just use the single UUID
-            pass
+            descendant_query = """
+                WITH RECURSIVE descendants AS (
+                    SELECT mvr_people_uuid
+                    FROM mvr_people
+                    WHERE mvr_people_uuid = $1::uuid
+
+                    UNION
+
+                    SELECT child.mvr_people_uuid
+                    FROM mvr_people child
+                    INNER JOIN descendants parent
+                        ON child.merged_into_mvr_uuid = parent.mvr_people_uuid
+                )
+                SELECT mvr_people_uuid
+                FROM descendants
+            """
+            async with self.mvr_repo.pool.acquire() as conn:
+                descendant_rows = await conn.fetch(descendant_query, UUID(mvr_uuid))
+
+            expanded_mvr_uuids = [str(row['mvr_people_uuid']) for row in descendant_rows]
+            if expanded_mvr_uuids:
+                mvr_uuids = expanded_mvr_uuids
+            is_super_individual = len(mvr_uuids) > 1
         
         # Query video appearances
         logger.info(f"Querying video appearances for {len(mvr_uuids)} MVR UUIDs: {mvr_uuids}")
@@ -234,9 +258,11 @@ class MVRImageManager:
         query = """
             SELECT DISTINCT 
                 iva.video_uuid,
+                iva.person_object_uuid,
                 iva.confidence,
                 iva.start_timestamp,
-                iva.individual_uuid
+                iva.individual_uuid,
+                iva.representative_faces
             FROM individual_video_appearances iva
             JOIN individual_mvr_mapping imm 
                 ON iva.individual_uuid = imm.individual_uuid
@@ -278,9 +304,11 @@ class MVRImageManager:
                 fallback_query = """
                     SELECT DISTINCT
                         iva.video_uuid,
+                        iva.person_object_uuid,
                         iva.confidence,
                         iva.start_timestamp,
-                        iva.individual_uuid
+                        iva.individual_uuid,
+                        iva.representative_faces
                     FROM individual_video_appearances iva
                     WHERE iva.individual_uuid = ANY($1::uuid[])
                     ORDER BY iva.confidence DESC
@@ -296,9 +324,11 @@ class MVRImageManager:
         return [
             {
                 'video_uuid': str(row['video_uuid']),
+                'person_object_uuid': str(row['person_object_uuid']) if row['person_object_uuid'] else '',
                 'confidence': float(row['confidence']),
                 'start_timestamp': row['start_timestamp'],
-                'individual_uuid': str(row['individual_uuid'])
+                'individual_uuid': str(row['individual_uuid']),
+                'representative_faces': row['representative_faces'],
             }
             for row in rows
         ]
@@ -386,17 +416,55 @@ class MVRImageManager:
             f"frame={best_face_data.get('frame_number')}"
         )
         
-        # Convert to BestFaceData using stable video thumbnail URL.
-        # Keep bbox/face_data for consumers that still want face metadata.
+        frame_number = self._extract_frame_number(best_face_data)
+        bbox = best_face_data.get('bbox') or []
+        has_complete_bbox = len(bbox) == 4 and all(value is not None for value in bbox)
+        has_crop_params = frame_number is not None and has_complete_bbox
+        logger.info(
+            "Best face payload: video=%s frame=%s bbox=%s has_crop_params=%s face_meta_keys=%s",
+            best_face_data['video_uuid'],
+            frame_number,
+            bbox,
+            has_crop_params,
+            sorted((best_face_data.get('face_data') or {}).keys()),
+        )
+
+        best_face_params = {
+            'video_uuid': best_face_data['video_uuid'],
+            'frame_number': frame_number,
+            'x1': bbox[0] if len(bbox) == 4 else None,
+            'y1': bbox[1] if len(bbox) == 4 else None,
+            'x2': bbox[2] if len(bbox) == 4 else None,
+            'y2': bbox[3] if len(bbox) == 4 else None,
+        }
+        face_meta = best_face_data.get('face_data') or {}
+        if face_meta.get('frame_width') is not None:
+            best_face_params['detect_frame_width'] = face_meta.get('frame_width')
+        if face_meta.get('frame_height') is not None:
+            best_face_params['detect_frame_height'] = face_meta.get('frame_height')
+
+        crop_query = urllib.parse.urlencode({
+            key: value for key, value in best_face_params.items()
+            if value is not None
+        })
+
+        image_url = (
+            f"/api/v1/mvr-people/face-crop?{crop_query}"
+            if has_crop_params
+            else f"/api/v1/media/thumbnail/{best_face_data['video_uuid']}"
+        )
+
+        # Persisted person-groups can expose only face_id/quality_score without crop coordinates.
+        # Fall back to the video thumbnail instead of emitting a broken face-crop URL.
         best_face = BestFaceData(
-            image_url=f"/api/v1/media/thumbnail/{best_face_data['video_uuid']}",
+            image_url=image_url,
             quality_score=best_face_data['quality_score'] / 100.0,  # Convert 0-100 to 0-1
             person_object_uuid=best_face_data.get('person_uuid', ''),
             video_uuid=best_face_data['video_uuid'],
             timestamp=str(best_face_data.get('timestamp', '')),
             source_mvr_uuid='',  # Will be set by caller
-            bbox=best_face_data.get('bbox', []),
-            face_data=best_face_data.get('face_data', {})
+            bbox=bbox if has_crop_params else None,
+            face_data=face_meta if has_crop_params else None
         )
 
         return best_face, fallback_image_urls
@@ -469,41 +537,60 @@ class MVRImageManager:
                     logger.warning(f"Orchestrator returned success=false for video {video_uuid[:8]}")
                     return []
                 
-                # Extract best face from each person_group
+                # Extract faces only from person_groups that match the target
+                # appearance rows for this MVR. Without this filter, a different
+                # person from the same video can be selected as the "best" face.
                 faces = []
                 person_groups = data.get('person_groups', [])
+                face_details_by_id = await self._fetch_face_details_from_vision(video_uuid)
                 
                 logger.debug(f"Video {video_uuid[:8]} has {len(person_groups)} person_groups")
                 
-                for group in person_groups:
-                    representative_faces = group.get('representative_faces', [])
+                for appearance in appearances:
+                    appearance_representative_faces = self._parse_representative_faces(
+                        appearance.get('representative_faces')
+                    )
+                    matched_group = self._match_person_group_for_appearance(
+                        person_groups,
+                        appearance.get('person_object_uuid'),
+                        appearance_representative_faces,
+                    )
+                    if matched_group is None:
+                        logger.debug(
+                            "No matching person_group found for MVR appearance %s in video %s",
+                            appearance.get('person_object_uuid'),
+                            video_uuid[:8],
+                        )
+                        if appearance_representative_faces:
+                            faces.extend(
+                                self._build_face_candidates(
+                                    video_uuid,
+                                    appearance,
+                                    appearance_representative_faces,
+                                    appearance.get('person_object_uuid'),
+                                    appearance,
+                                    face_details_by_id,
+                                )
+                            )
+                        continue
+
+                    representative_faces = matched_group.get('representative_faces', [])
+                    if not self._representative_faces_have_face_data(representative_faces):
+                        representative_faces = appearance_representative_faces
+
                     if not representative_faces:
                         continue
 
-                    # Keep top ranked faces per person for robust fallback strategy
-                    for face in representative_faces[:3]:
-                        face_data = face.get('face_data', {})
-                        quality_score = face.get('quality_score', 0)
-
-                        logger.debug(
-                            f"  Person {group.get('person_uuid', 'unknown')[:8]}: "
-                            f"quality={quality_score:.2f}, "
-                            f"frame={face_data.get('frame_number')}, "
-                            f"bbox={face_data.get('bbox')}"
+                    faces.extend(
+                        self._build_face_candidates(
+                            video_uuid,
+                            appearance,
+                            representative_faces,
+                            matched_group.get('person_uuid'),
+                            matched_group,
+                            face_details_by_id,
                         )
-
-                        faces.append({
-                            'quality_score': quality_score,  # 0-100 scale from Orchestrator
-                            'bbox': face_data.get('bbox', []),
-                            'face_data': face_data,
-                            'video_uuid': video_uuid,
-                            'frame_number': face_data.get('frame_number'),
-                            'timestamp': face_data.get('timestamp'),
-                            'person_uuid': group.get('person_uuid'),
-                            'confidence': face_data.get('confidence'),
-                            'distance_from_camera': face_data.get('distance_from_camera'),
-                            'selection_rank': face.get('selection_rank', 1)
-                        })
+                    )
                 
                 logger.info(f"Extracted {len(faces)} faces from video {video_uuid[:8]}")
                 return faces
@@ -517,6 +604,292 @@ class MVRImageManager:
         except Exception as e:
             logger.error(f"Error fetching faces for video {video_uuid[:8]}: {e}")
             return []
+
+    def _build_face_candidates(
+        self,
+        video_uuid: str,
+        appearance: Dict[str, Any],
+        representative_faces: Any,
+        person_uuid: Optional[Any],
+        source_metadata: Optional[Dict[str, Any]] = None,
+        face_details_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        candidates: List[Dict[str, Any]] = []
+
+        for face in self._parse_representative_faces(representative_faces)[:3]:
+            face_data = self._normalize_face_data(face, source_metadata, face_details_by_id)
+            quality_score = face.get('quality_score', 0)
+
+            person_label = str(person_uuid or 'unknown')
+            logger.debug(
+                f"  Person {person_label[:8]}: "
+                f"quality={quality_score:.2f}, "
+                f"frame={face_data.get('frame_number')}, "
+                f"bbox={face_data.get('bbox')}"
+            )
+
+            candidates.append({
+                'quality_score': quality_score,
+                'bbox': face_data.get('bbox', []),
+                'face_data': face_data,
+                'video_uuid': video_uuid,
+                'frame_number': face_data.get('frame_number'),
+                'timestamp': face_data.get('timestamp'),
+                'person_uuid': str(person_uuid or appearance.get('person_object_uuid', '')),
+                'person_object_uuid': appearance.get('person_object_uuid', ''),
+                'confidence': face_data.get('confidence'),
+                'distance_from_camera': face_data.get('distance_from_camera'),
+                'selection_rank': face.get('selection_rank', face.get('rank', 1))
+            })
+
+        return candidates
+
+    def _normalize_face_data(
+        self,
+        face: Dict[str, Any],
+        source_metadata: Optional[Dict[str, Any]] = None,
+        face_details_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        face_data = dict(face.get('face_data') or {})
+        source_metadata = source_metadata or {}
+        face_details_by_id = face_details_by_id or {}
+        face_id = face.get('face_id') or face_data.get('id')
+        face_details = face_details_by_id.get(str(face_id)) if face_id else None
+
+        frame_number = face_data.get('frame_number')
+        if not self._is_valid_frame_number(frame_number):
+            frame_number = face.get('frame_number')
+            if not self._is_valid_frame_number(frame_number):
+                frame_number = source_metadata.get('best_face_frame')
+            if not self._is_valid_frame_number(frame_number) and face_details is not None:
+                frame_number = face_details.get('frame_number')
+            if self._is_valid_frame_number(frame_number):
+                face_data['frame_number'] = frame_number
+
+        if not face_data.get('bbox') or not self._is_valid_bbox(face_data.get('bbox')):
+            bbox = face.get('bbox')
+            if not bbox or not self._is_valid_bbox(bbox):
+                bbox = source_metadata.get('best_face_bbox')
+            if (not bbox or not self._is_valid_bbox(bbox)) and face_details is not None:
+                bbox = face_details.get('bbox')
+            if bbox and self._is_valid_bbox(bbox):
+                face_data['bbox'] = bbox
+
+        if face_data.get('frame_width') is None:
+            frame_width = face.get('frame_width')
+            if frame_width is None:
+                frame_width = source_metadata.get('detect_frame_width')
+            if frame_width is not None:
+                face_data['frame_width'] = frame_width
+
+        if face_data.get('frame_height') is None:
+            frame_height = face.get('frame_height')
+            if frame_height is None:
+                frame_height = source_metadata.get('detect_frame_height')
+            if frame_height is not None:
+                face_data['frame_height'] = frame_height
+
+        if face_data.get('timestamp') is None and face.get('timestamp') is not None:
+            face_data['timestamp'] = face.get('timestamp')
+
+        if face_data.get('confidence') is None and face.get('confidence') is not None:
+            face_data['confidence'] = face.get('confidence')
+        if face_data.get('confidence') is None and face_details is not None and face_details.get('confidence') is not None:
+            face_data['confidence'] = face_details.get('confidence')
+
+        if face_data.get('distance_from_camera') is None and face.get('distance_from_camera') is not None:
+            face_data['distance_from_camera'] = face.get('distance_from_camera')
+
+        if face_id and face_data.get('id') is None:
+            face_data['id'] = face_id
+
+        return face_data
+
+    @staticmethod
+    def _is_valid_bbox(bbox: Any) -> bool:
+        return (
+            isinstance(bbox, list)
+            and len(bbox) == 4
+            and all(value is not None for value in bbox)
+            and float(bbox[2]) > float(bbox[0])
+            and float(bbox[3]) > float(bbox[1])
+        )
+
+    @staticmethod
+    def _is_valid_frame_number(frame_number: Any) -> bool:
+        try:
+            return int(frame_number) > 0
+        except (TypeError, ValueError):
+            return False
+
+    async def _fetch_face_details_from_vision(self, video_uuid: str) -> Dict[str, Dict[str, Any]]:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {}
+                if self.service_token:
+                    headers['Authorization'] = f'Bearer {self.service_token}'
+
+                response = await client.get(
+                    f"{self.vision_url}/faces/media/{video_uuid}",
+                    headers=headers,
+                )
+                response.raise_for_status()
+                payload = response.json()
+        except Exception as exc:
+            logger.warning("Failed to fetch Vision face details for video %s: %s", video_uuid[:8], exc)
+            return {}
+
+        if isinstance(payload, list):
+            faces = payload
+        elif isinstance(payload, dict):
+            faces = payload.get('faces', []) or []
+            if not faces:
+                faces_by_frame = payload.get('faces_by_frame', {}) or {}
+                faces = []
+                for frame_faces in faces_by_frame.values():
+                    if isinstance(frame_faces, list):
+                        faces.extend(frame_faces)
+        else:
+            faces = []
+
+        face_details_by_id: Dict[str, Dict[str, Any]] = {}
+        for face in faces:
+            if not isinstance(face, dict):
+                continue
+            face_id = face.get('id') or face.get('face_id')
+            if not face_id:
+                continue
+            face_details_by_id[str(face_id)] = {
+                'frame_number': face.get('frame_number'),
+                'bbox': [
+                    face.get('bbox_x1'),
+                    face.get('bbox_y1'),
+                    face.get('bbox_x2'),
+                    face.get('bbox_y2'),
+                ],
+                'confidence': face.get('confidence'),
+            }
+        return face_details_by_id
+
+    def _match_person_group_for_appearance(
+        self,
+        person_groups: List[Dict[str, Any]],
+        person_object_uuid: Any,
+        representative_faces: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """Match an appearance row to its orchestrator person_group.
+
+        Prefer a direct persisted person UUID match when the orchestrator is
+        serving stored person groups. Fall back to representative-face
+        geometry when the response came from live regrouping.
+        """
+        if not person_groups:
+            return None
+
+        if person_object_uuid:
+            persisted_person_uuid = str(person_object_uuid)
+            for group in person_groups:
+                group_person_uuid = group.get('person_uuid')
+                group_person_id = group.get('person_id')
+                if group_person_uuid and str(group_person_uuid) == persisted_person_uuid:
+                    return group
+                if group_person_id and str(group_person_id) == persisted_person_uuid:
+                    return group
+
+        reference_face_ids = self._extract_face_ids_from_representative_faces(representative_faces)
+        if reference_face_ids:
+            for group in person_groups:
+                group_face_ids = {
+                    str(face_id)
+                    for face_id in (group.get('all_face_ids') or [])
+                    if face_id
+                }
+                if group_face_ids.intersection(reference_face_ids):
+                    return group
+
+        representative_faces = self._parse_representative_faces(representative_faces)
+
+        ref_frame: Optional[int] = None
+        ref_cx: Optional[float] = None
+        ref_cy: Optional[float] = None
+
+        faces = self._parse_representative_faces(representative_faces)
+        if faces:
+            face_data = (faces[0] or {}).get('face_data') or {}
+            try:
+                ref_frame = int(face_data['frame_number'])
+            except (KeyError, TypeError, ValueError):
+                pass
+            try:
+                ref_cx = float(face_data['center_x'])
+                ref_cy = float(face_data.get('center_y') or 0.0)
+            except (KeyError, TypeError, ValueError):
+                pass
+
+        if ref_frame is None and ref_cx is None:
+            return None
+
+        if ref_frame is not None and ref_cx is not None:
+            for group in person_groups:
+                route_points = (group.get('movement_tracking') or {}).get('route_points') or []
+                for route_point in route_points:
+                    if route_point.get('frame_number') == ref_frame:
+                        if abs(float(route_point.get('center_x', 0)) - ref_cx) <= 2.0:
+                            return group
+
+        if ref_cx is not None and ref_cy is not None:
+            best_group: Optional[Dict[str, Any]] = None
+            best_distance = float('inf')
+            for group in person_groups:
+                route_points = (group.get('movement_tracking') or {}).get('route_points') or []
+                for route_point in route_points:
+                    dx = float(route_point.get('center_x', 0)) - ref_cx
+                    dy = float(route_point.get('center_y', 0)) - ref_cy
+                    distance = (dx * dx + dy * dy) ** 0.5
+                    if distance < best_distance:
+                        best_distance = distance
+                        best_group = group
+            if best_distance < 15.0:
+                return best_group
+
+        return None
+
+    def _parse_representative_faces(self, representative_faces: Any) -> List[Dict[str, Any]]:
+        if isinstance(representative_faces, str):
+            try:
+                representative_faces = json.loads(representative_faces)
+            except (TypeError, ValueError):
+                representative_faces = {}
+
+        if isinstance(representative_faces, dict):
+            faces = representative_faces.get('faces') or []
+            if isinstance(faces, list):
+                return [face for face in faces if isinstance(face, dict)]
+
+        if isinstance(representative_faces, list):
+            return [face for face in representative_faces if isinstance(face, dict)]
+
+        return []
+
+    def _extract_face_ids_from_representative_faces(self, representative_faces: Any) -> set[str]:
+        face_ids: set[str] = set()
+        for face in self._parse_representative_faces(representative_faces):
+            face_id = face.get('face_id')
+            if face_id:
+                face_ids.add(str(face_id))
+
+            face_data = face.get('face_data') or {}
+            nested_face_id = face_data.get('id')
+            if nested_face_id:
+                face_ids.add(str(nested_face_id))
+
+        return face_ids
+
+    def _representative_faces_have_face_data(self, representative_faces: Any) -> bool:
+        for face in self._parse_representative_faces(representative_faces):
+            if isinstance(face.get('face_data'), dict) and face.get('face_data'):
+                return True
+        return False
     
     async def _fetch_frame_from_vision(
         self,

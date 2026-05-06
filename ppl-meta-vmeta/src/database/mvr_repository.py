@@ -1444,16 +1444,16 @@ class MVRRepository:
 
         if start_time_ms is not None:
             conditions.append(
-                f"iva.start_timestamp >= to_timestamp(${idx}::float8 / 1000.0)"
+                f"(EXTRACT(EPOCH FROM COALESCE(iva.end_timestamp, iva.start_timestamp)) * 1000)::bigint >= ${idx}"
             )
-            params.append(start_time_ms)
+            params.append(int(start_time_ms))
             idx += 1
 
         if end_time_ms is not None:
             conditions.append(
-                f"iva.start_timestamp <= to_timestamp(${idx}::float8 / 1000.0)"
+                f"(EXTRACT(EPOCH FROM iva.start_timestamp) * 1000)::bigint <= ${idx}"
             )
-            params.append(end_time_ms)
+            params.append(int(end_time_ms))
             idx += 1
 
         query = f"""
@@ -1646,14 +1646,18 @@ class MVRRepository:
     @staticmethod
     def _match_person_group_by_representative_face(
         person_groups: List[Dict[str, Any]],
+        person_object_uuid: Optional[str],
         representative_faces: Any,
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Match an appearance to its person_group using representative face data.
 
-        The Orchestrator regenerates person_uuid on every request so UUID
-        matching is unreliable.  Instead we match using the representative
-        face's frame_number + center_x coordinates against route_points:
+        Prefer a direct persisted person UUID match when the Orchestrator is
+        serving stored person groups. Fall back to representative-face
+        geometry when the response came from live regrouping.
+
+        Geometric fallback uses the representative face's frame_number +
+        center_x coordinates against route_points:
 
         Primary:   frame_number equality AND center_x within 2 px.
         Secondary: closest route point by Euclidean distance (threshold 15 px).
@@ -1661,35 +1665,60 @@ class MVRRepository:
         if not person_groups:
             return None
 
+        if person_object_uuid:
+            persisted_person_uuid = str(person_object_uuid)
+            for pg in person_groups:
+                group_person_uuid = pg.get("person_uuid")
+                group_person_id = pg.get("person_id")
+                if group_person_uuid and str(group_person_uuid) == persisted_person_uuid:
+                    return (pg.get("movement_tracking") or {}).get("route_points") or []
+                if group_person_id and str(group_person_id) == persisted_person_uuid:
+                    return (pg.get("movement_tracking") or {}).get("route_points") or []
+
         if isinstance(representative_faces, str):
             try:
                 representative_faces = json.loads(representative_faces)
             except (ValueError, TypeError):
                 representative_faces = {}
 
-        ref_frame: Optional[int] = None
-        ref_cx: Optional[float] = None
-        ref_cy: Optional[float] = None
+        face_refs: List[Tuple[Optional[int], Optional[float], Optional[float]]] = []
+
+        def _append_face_ref(face_payload: Any) -> None:
+            if not isinstance(face_payload, dict):
+                return
+            face_data = face_payload.get("face_data") or face_payload
+            ref_frame: Optional[int] = None
+            ref_cx: Optional[float] = None
+            ref_cy: Optional[float] = None
+            try:
+                ref_frame = int(face_data["frame_number"])
+            except (KeyError, TypeError, ValueError):
+                pass
+            try:
+                ref_cx = float(face_data["center_x"])
+                ref_cy = float(face_data.get("center_y") or 0.0)
+            except (KeyError, TypeError, ValueError):
+                pass
+            if ref_frame is not None or ref_cx is not None:
+                face_refs.append((ref_frame, ref_cx, ref_cy))
+
+        if isinstance(representative_faces, list):
+            for face_entry in representative_faces:
+                _append_face_ref(face_entry)
 
         if isinstance(representative_faces, dict):
             faces = representative_faces.get("faces") or []
-            if faces and isinstance(faces, list):
-                face_data = (faces[0] or {}).get("face_data") or {}
-                try:
-                    ref_frame = int(face_data["frame_number"])
-                except (KeyError, TypeError, ValueError):
-                    pass
-                try:
-                    ref_cx = float(face_data["center_x"])
-                    ref_cy = float(face_data.get("center_y") or 0.0)
-                except (KeyError, TypeError, ValueError):
-                    pass
+            if isinstance(faces, list):
+                for face_entry in faces:
+                    _append_face_ref(face_entry)
 
-        if ref_frame is None and ref_cx is None:
+        if not face_refs:
             return None
 
         # Primary: exact frame_number match with tight spatial tolerance.
-        if ref_frame is not None and ref_cx is not None:
+        for ref_frame, ref_cx, _ref_cy in face_refs:
+            if ref_frame is None or ref_cx is None:
+                continue
             for pg in person_groups:
                 route_pts = (pg.get("movement_tracking") or {}).get("route_points") or []
                 for rp in route_pts:
@@ -1698,9 +1727,11 @@ class MVRRepository:
                             return route_pts
 
         # Secondary: spatial proximity across all groups.
-        if ref_cx is not None and ref_cy is not None:
-            best_pts: Optional[List[Dict[str, Any]]] = None
-            best_dist = float("inf")
+        best_pts: Optional[List[Dict[str, Any]]] = None
+        best_dist = float("inf")
+        for _ref_frame, ref_cx, ref_cy in face_refs:
+            if ref_cx is None or ref_cy is None:
+                continue
             for pg in person_groups:
                 route_pts = (pg.get("movement_tracking") or {}).get("route_points") or []
                 for rp in route_pts:
@@ -1710,8 +1741,8 @@ class MVRRepository:
                     if dist < best_dist:
                         best_dist = dist
                         best_pts = route_pts
-            if best_dist < 15.0:
-                return best_pts
+        if best_dist < 15.0:
+            return best_pts
 
         return None
 
@@ -1774,6 +1805,7 @@ class MVRRepository:
                 for row in appearance_rows:
                     route_pts = self._match_person_group_by_representative_face(
                         person_groups,
+                        row.get("person_object_uuid"),
                         row.get("representative_faces"),
                     )
                     if not route_pts:
@@ -1784,12 +1816,20 @@ class MVRRepository:
                     base_ts_ms = int(row.get("timestamp_ms") or 0)
                     for rp in route_pts:
                         new_row = dict(row)
-                        new_row["precomputed_center_x"] = float(
-                            rp.get("center_x", rp.get("x", 0))
-                        )
-                        new_row["precomputed_center_y"] = float(
-                            rp.get("center_y", rp.get("y", 0))
-                        )
+
+                        position = rp.get("position")
+                        if isinstance(position, dict):
+                            center_x = float(position.get("x") or 0.0)
+                            center_y = float(position.get("y") or 0.0)
+                        elif rp.get("center_x") is not None or rp.get("x") is not None:
+                            center_x = float(rp.get("center_x", rp.get("x", 0.0)) or 0.0)
+                            center_y = float(rp.get("center_y", rp.get("y", 0.0)) or 0.0)
+                        else:
+                            center_x, center_y = self._bbox_to_center(rp.get("bbox"))
+
+                        new_row["precomputed_center_x"] = center_x
+                        new_row["precomputed_center_y"] = center_y
+
                         rp_ts = rp.get("timestamp")
                         if rp_ts is not None:
                             new_row["timestamp_ms"] = base_ts_ms + int(float(rp_ts) * 1000)

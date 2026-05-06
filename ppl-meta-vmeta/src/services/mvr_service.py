@@ -11,6 +11,7 @@ Author: PPL Meta Platform Team
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
 import numpy as np
@@ -54,7 +55,76 @@ class MVRService:
         self.repository = repository
         self.ml_processor = ml_processor
         self.orchestrator_client = orchestrator_client
+        self.gender_conflict_min_confidence = 0.80
+        self.contamination_similarity_threshold = 0.70
         logger.info("MVRService initialized")
+
+    def _normalize_gender(self, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        gender = str(value).strip().lower()
+        if gender in {"male", "female"}:
+            return gender
+        return None
+
+    def _safe_float(self, value: Any) -> Optional[float]:
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _can_auto_merge_by_gender(
+        self,
+        person1: Dict[str, Any],
+        person2: Dict[str, Any]
+    ) -> bool:
+        gender1 = self._normalize_gender(person1.get("gender"))
+        gender2 = self._normalize_gender(person2.get("gender"))
+
+        if gender1 is None or gender2 is None:
+            return True
+
+        if gender1 == gender2:
+            return True
+
+        conf1 = self._safe_float(person1.get("gender_confidence"))
+        conf2 = self._safe_float(person2.get("gender_confidence"))
+        if conf1 is None or conf2 is None:
+            return True
+
+        return not (
+            conf1 >= self.gender_conflict_min_confidence
+            and conf2 >= self.gender_conflict_min_confidence
+            and gender1 != gender2
+        )
+
+    def _is_contamination_suspect(
+        self,
+        person1: Dict[str, Any],
+        person2: Dict[str, Any],
+        similarity: float
+    ) -> bool:
+        gender1 = self._normalize_gender(person1.get("gender"))
+        gender2 = self._normalize_gender(person2.get("gender"))
+
+        one_unknown_one_known = (gender1 is None) != (gender2 is None)
+        if not one_unknown_one_known:
+            return False
+
+        known_conf = (
+            self._safe_float(person2.get("gender_confidence"))
+            if gender1 is None
+            else self._safe_float(person1.get("gender_confidence"))
+        )
+        if known_conf is None:
+            return False
+
+        return (
+            known_conf >= self.gender_conflict_min_confidence
+            and similarity >= self.contamination_similarity_threshold
+        )
     
     # ===================================================================
     # MVR-People Creation
@@ -391,10 +461,11 @@ class MVRService:
         media_uuid: UUID,
         media_type: str,
         person_objects: List[Dict[str, Any]],
-        similarity_threshold: float = 0.70,
-        min_face_quality: float = 0.20,
+        similarity_threshold: float = 0.7,
+        min_face_quality: float = 0.2,
         include_demographics: bool = True,
-        include_route_data: bool = True
+        include_route_data: bool = True,
+        media_timestamp: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
         Process a single media (photo or video) to generate MVR people independently.
@@ -561,11 +632,53 @@ class MVRService:
         # Step 3: Find connected components (merge groups)
         similar_to = {str(uuid_val): [] for uuid_val in uuids}
         
+        blocked_gender_pairs = 0
+        contamination_blocked = 0
+
         for i in range(len(uuids)):
             for j in range(i + 1, len(uuids)):
-                if similarities[i][j] >= similarity_threshold:
-                    similar_to[str(uuids[i])].append(str(uuids[j]))
-                    similar_to[str(uuids[j])].append(str(uuids[i]))
+                similarity = float(similarities[i][j])
+                if similarity < similarity_threshold:
+                    continue
+
+                if not self._can_auto_merge_by_gender(
+                    individuals_data[i],
+                    individuals_data[j]
+                ):
+                    blocked_gender_pairs += 1
+                    continue
+
+                if self._is_contamination_suspect(
+                    individuals_data[i],
+                    individuals_data[j],
+                    similarity
+                ):
+                    contamination_blocked += 1
+                    logger.warning(
+                        "Blocked contamination-suspect single-media merge: "
+                        f"{str(uuids[i])[:8]} "
+                        f"(gender={individuals_data[i].get('gender')}, "
+                        f"conf={individuals_data[i].get('gender_confidence')}) <-> "
+                        f"{str(uuids[j])[:8]} "
+                        f"(gender={individuals_data[j].get('gender')}, "
+                        f"conf={individuals_data[j].get('gender_confidence')}) "
+                        f"similarity={similarity:.3f}"
+                    )
+                    continue
+
+                similar_to[str(uuids[i])].append(str(uuids[j]))
+                similar_to[str(uuids[j])].append(str(uuids[i]))
+
+        if blocked_gender_pairs > 0:
+            logger.info(
+                f"Blocked {blocked_gender_pairs} high-confidence cross-gender "
+                f"pair(s) from single-media clustering"
+            )
+        if contamination_blocked > 0:
+            logger.info(
+                f"Blocked {contamination_blocked} contamination-suspect pair(s) "
+                f"from single-media clustering"
+            )
         
         # Find connected components using DFS
         visited = set()
@@ -637,6 +750,16 @@ class MVRService:
                 # This maintains the relationship chain: MVR → Individual → Person Objects → Routes
                 individual_uuid = uuid4()
                 individual_id = f"isolated_{individual_uuid.hex[:8]}"
+                persisted_age_estimate = None
+                if demographics and demographics.get('age_min') is not None:
+                    age_min = demographics.get('age_min')
+                    age_max = demographics.get('age_max', age_min)
+                    if age_max is None:
+                        age_max = age_min
+                    persisted_age_estimate = int(round((age_min + age_max) / 2))
+                persisted_gender_estimate = (
+                    demographics.get('gender') if demographics else None
+                )
                 
                 try:
                     # Use repository's pool connection
@@ -645,16 +768,24 @@ class MVRService:
                     await pool.execute("""
                         INSERT INTO individuals 
                         (individual_uuid, individual_id, confidence_score, 
-                         spatial_signature, temporal_signature)
-                        VALUES ($1, $2, $3, $4, $5)
+                         spatial_signature, temporal_signature, gender_estimate, age_estimate)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                     """,
                         individual_uuid,
                         individual_id,
                         float(avg_confidence),
                         json.dumps({}),  # Empty for single-media
-                        json.dumps({})   # Empty for single-media
+                        json.dumps({}),  # Empty for single-media
+                        persisted_gender_estimate,
+                        persisted_age_estimate,
                     )
                     
+                    appearance_timestamp = media_timestamp
+                    if appearance_timestamp is None:
+                        appearance_timestamp = datetime.utcnow()
+                    elif appearance_timestamp.tzinfo is not None:
+                        appearance_timestamp = appearance_timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+
                     # Link person objects to this individual via video appearances
                     for ind in cluster_individuals:
                         po_uuid = UUID(ind['person_object_uuid'])
@@ -662,12 +793,14 @@ class MVRService:
                             INSERT INTO individual_video_appearances 
                             (individual_uuid, video_uuid, person_object_uuid, 
                              start_timestamp, end_timestamp, confidence)
-                            VALUES ($1, $2, $3, NOW(), NOW(), $4)
+                            VALUES ($1, $2, $3, $4, $5, $6)
                             ON CONFLICT (individual_uuid, video_uuid, person_object_uuid) DO NOTHING
                         """,
                             individual_uuid,
                             media_uuid,
                             po_uuid,
+                            appearance_timestamp,
+                            appearance_timestamp,
                             float(ind['confidence_score'])
                         )
                     

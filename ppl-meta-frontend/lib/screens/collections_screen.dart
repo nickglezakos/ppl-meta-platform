@@ -786,6 +786,11 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   /// MODIFIED v2.19.84: Now displays hierarchical merge statistics when available.
   /// Shows original MVR count, post-merge super-individuals, and merge efficiency.
   Future<void> _showIndividualsDetails() async {
+    final bool showingExistingMvrSearchResults =
+        _trackingSessionData != null &&
+        _trackingSessionData!['search_results'] != null &&
+        _trackingSessionData!['hierarchical_merge_applied'] != true;
+
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -835,11 +840,22 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             // LEGACY: Display traditional MVR count (fallback)
             else if (_individualsCount != null || _uniqueMvrCount != null) ...[
               Text('• Original detections: ${_individualsCount ?? 0} individual${(_individualsCount ?? 0) == 1 ? '' : 's'}'),
-              Text('• Unique individuals (after MVR merging): ${_uniqueMvrCount ?? _individualsCount ?? 0}', 
+              Text(
+                showingExistingMvrSearchResults
+                    ? '• Existing MVR identities found: ${_uniqueMvrCount ?? _individualsCount ?? 0}'
+                    : '• Unique individuals (after MVR merging): ${_uniqueMvrCount ?? _individualsCount ?? 0}',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
-              if (_individualsCount != null && _uniqueMvrCount != null && _individualsCount! > _uniqueMvrCount!)
+              if (!showingExistingMvrSearchResults &&
+                  _individualsCount != null &&
+                  _uniqueMvrCount != null &&
+                  _individualsCount! > _uniqueMvrCount!)
                 Text('  (${_individualsCount! - _uniqueMvrCount!} duplicates merged)', 
                   style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic)),
+              if (showingExistingMvrSearchResults)
+                const Text(
+                  '  (These are existing persisted MVR identities, not a new merge from this search.)',
+                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                ),
             ] else
               const Text('• Loading individual count...'),
             
@@ -891,30 +907,29 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
     }
 
     try {
-      // Show loading indicator with merge status
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text(
-                'Merging similar individuals...',
-                style: TextStyle(color: Colors.white),
-              ),
-            ],
-          ),
-        ),
-      );
+      final sessionData = _trackingSessionData!;
+      final hasRawTrackingSession =
+          sessionData['search_results'] == null &&
+          _trackingSessionUuid != null &&
+          !_trackingSessionUuid!.startsWith('mvr_search_');
+
+      if (hasRawTrackingSession) {
+        final rawSessionData = Map<String, dynamic>.from(sessionData);
+        rawSessionData['hierarchical_merge_applied'] = false;
+        rawSessionData['merge_rule_applied'] = 'backend-owned';
+        rawSessionData['backend_owned_session_analysis'] = true;
+        _navigateToCrossVideoAnalysis(
+          individualUuids: const [],
+          sessionUuid: _trackingSessionUuid!,
+          sessionData: rawSessionData,
+        );
+        return;
+      }
 
       // Extract MVR people from search results
       final mvrPeople = _trackingSessionData!['search_results'] as List<dynamic>;
 
       if (mvrPeople.isEmpty) {
-        if (mounted) Navigator.pop(context);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('No MVR people found in search results')),
@@ -927,118 +942,30 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       final List<String> mvrPersonUuids = mvrPeople
           .map((mvr) => mvr['mvr_people_uuid'].toString())
           .toList();
-
-      print('📊 Starting hierarchical merge for ${mvrPersonUuids.length} MVR people...');
-
-      final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
-      final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
-      final mergeThreshold = generalSettings?.mergeIndividualsThreshold ?? 0.70;
-
-      if (mergeRule != 'auto') {
-        if (mounted) Navigator.pop(context);
-
-        if (mounted && mergeRule == 'semi') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Semi-automatic mode: showing individuals without auto-merge.',
-              ),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-
-        final updatedSessionData = Map<String, dynamic>.from(_trackingSessionData!);
-        updatedSessionData['merge_statistics'] = {
-          'total_mvr': mvrPersonUuids.length,
-          'super_individuals': mvrPersonUuids.length,
-          'merges_performed': 0,
-          'standalone_individuals': mvrPersonUuids.length,
-        };
-        updatedSessionData['pre_merge_count'] = mvrPersonUuids.length;
-        updatedSessionData['post_merge_count'] = mvrPersonUuids.length;
-        updatedSessionData['hierarchical_merge_applied'] = false;
-        updatedSessionData['merge_rule_applied'] = mergeRule;
-
-        _navigateToCrossVideoAnalysis(
-          individualUuids: mvrPersonUuids,
-          sessionUuid: 'mvr_search_${DateTime.now().millisecondsSinceEpoch}',
-          sessionData: updatedSessionData,
-        );
-        return;
-      }
-
-      // NEW: Perform hierarchical merge to consolidate duplicates
-      final apiClient = ref.read(apiClientProvider);
-      
-      final mergeResponse = await apiClient.post(
-        '/api/v1/mvr-people/merge/hierarchical',
-        data: {
-          'mvr_uuids': mvrPersonUuids,
-          'similarity_threshold': mergeThreshold,
-          'min_similarity_check': 0.50,
-        },
-      );
-
-      if (mergeResponse.statusCode != 200) {
-        throw Exception('Hierarchical merge failed: ${mergeResponse.statusMessage}');
-      }
-
-      final mergeData = mergeResponse.data as Map<String, dynamic>;
-      final superIndividuals = (mergeData['super_individuals'] as List)
-          .map((uuid) => uuid.toString())
-          .toList();
-      final mergeStatistics = mergeData['statistics'] as Map<String, dynamic>;
-
-      print('✅ Hierarchical merge complete:');
-      print('   ${mergeStatistics['total_mvr']} MVR people → ${mergeStatistics['super_individuals']} unique individuals');
-      print('   ${mergeStatistics['merges_performed']} merges performed');
-      print('   ${mergeStatistics['standalone_individuals']} standalone individuals');
-
-      // Dismiss loading
-      if (mounted) Navigator.pop(context);
-
-      // Update session data with merge statistics
       final updatedSessionData = Map<String, dynamic>.from(_trackingSessionData!);
-      updatedSessionData['merge_statistics'] = mergeStatistics;
+      updatedSessionData['merge_statistics'] = {
+        'total_mvr': mvrPersonUuids.length,
+        'super_individuals': mvrPersonUuids.length,
+        'merges_performed': 0,
+        'standalone_individuals': mvrPersonUuids.length,
+      };
       updatedSessionData['pre_merge_count'] = mvrPersonUuids.length;
-      updatedSessionData['post_merge_count'] = superIndividuals.length;
-      updatedSessionData['hierarchical_merge_applied'] = true;
+      updatedSessionData['post_merge_count'] = mvrPersonUuids.length;
+      updatedSessionData['hierarchical_merge_applied'] = false;
+      updatedSessionData['merge_rule_applied'] = 'backend-owned';
 
-      print('📊 Navigating to analysis with ${superIndividuals.length} super-individuals');
-
-      // Show merge success message
-      if (mounted && mergeStatistics['merges_performed'] > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Merged ${mergeStatistics['merges_performed']} duplicates → '
-              '${superIndividuals.length} unique individuals',
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-
-      // Navigate to person details screen with super-individual UUIDs
       _navigateToCrossVideoAnalysis(
-        individualUuids: superIndividuals,
+        individualUuids: mvrPersonUuids,
         sessionUuid: 'mvr_search_${DateTime.now().millisecondsSinceEpoch}',
         sessionData: updatedSessionData,
       );
     } catch (e) {
-      print('❌ Error during hierarchical merge: $e');
-      
-      // Dismiss loading if still showing
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
+      print('❌ Error preparing MVR search analysis: $e');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error performing merge: $e'),
+            content: Text('Error opening analysis: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1096,6 +1023,15 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       final collectionIdentifier = _selectedCollection!.uuid ??
                    _selectedCollection!.id ??
                    _selectedCollection!.cameraDeviceId;
+      if (collectionIdentifier == null || collectionIdentifier.isEmpty) {
+        print('ERROR: Collection identifier is missing, cannot search or materialize MVR data');
+        setState(() {
+          _individualsCount = 0;
+          _uniqueMvrCount = 0;
+          _isLoadingIndividuals = false;
+        });
+        return;
+      }
       
       print('🔍 Searching existing MVR people for collection: $collectionIdentifier');
       print('   Date range: ${_startDate!.toIso8601String()} to ${_endDate!.toIso8601String()}');
@@ -1121,6 +1057,16 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
       final videoUuids = mediaResponse.data!.items.map((media) => media.uuid).toList();
       print('   Found ${videoUuids.length} videos in collection');
+
+      final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
+      final mergeRule = generalSettings?.mergeIndividualsRule ?? 'semi';
+      final mergeThreshold =
+          generalSettings?.mergeIndividualsThreshold ?? 0.70;
+      final autoMerge = mergeRule == 'auto';
+      print(
+        '   Backend MVR search settings: mergeRule=$mergeRule, '
+        'autoMerge=$autoMerge, threshold=$mergeThreshold',
+      );
       
       // Step 2: Search for existing MVR people in these videos
       final searchResponse = await mediaApiClient.searchMVRPeopleByVideos(
@@ -1128,11 +1074,35 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         startTime: _startDate,
         endTime: _endDate,
         limit: 500,
+        autoMerge: autoMerge,
+        similarityThreshold: mergeThreshold,
       );
 
       if (searchResponse.success && searchResponse.data != null) {
         final mvrPeople = searchResponse.data!['mvr_people'] as List<dynamic>;
         final totalResults = searchResponse.data!['total_results'] as int;
+
+        if (totalResults == 0 && videoUuids.isNotEmpty) {
+          print('ℹ️ No persisted MVR rows found, triggering backend materialization session...');
+
+          final sessionResponse = await mediaApiClient.createCrossVideoTrackingSession(
+            collectionName: collectionIdentifier,
+            videoUuids: videoUuids,
+          );
+
+          if (sessionResponse.success && sessionResponse.data != null) {
+            final sessionUuid = sessionResponse.data!['session_uuid'] as String?;
+            if (sessionUuid != null && sessionUuid.isNotEmpty) {
+              setState(() {
+                _trackingSessionUuid = sessionUuid;
+              });
+              await _pollTrackingSessionStatus(mediaApiClient, sessionUuid);
+              return;
+            }
+          }
+
+          print('ERROR: Failed to trigger backend materialization session: ${sessionResponse.error}');
+        }
         
         print('✅ Found $totalResults existing MVR people');
         
@@ -1159,7 +1129,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             'total_appearances': totalAppearances,
             'search_parameters': searchResponse.data!['search_parameters'],
             'collection_name': _selectedCollection!.name, // Add collection name
-            'collection_id': _selectedCollection!.id,     // Add collection ID
+            'collection_id': collectionIdentifier,        // Keep route scope aligned with backend camera IDs
           };
         });
         

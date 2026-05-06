@@ -78,6 +78,7 @@ class _PersonObjectsDetailScreenState
   // Cache for routes data to prevent excessive API calls
   Map<String, dynamic>? _cachedRoutesData;
   bool _isLoadingRoutes = false;
+  Future<Map<String, dynamic>?>? _persistedVideoDemographicsFuture;
   
   // Cross-video analysis state
   bool _isCrossVideoMode = false;
@@ -152,6 +153,8 @@ class _PersonObjectsDetailScreenState
     // Load cross-video data if in that mode
     if (_isCrossVideoMode) {
       _loadCrossVideoData();
+    } else if (widget.mediaItem != null) {
+      _persistedVideoDemographicsFuture = _loadPersistedVideoDemographics();
     }
   }
 
@@ -769,13 +772,13 @@ class _PersonObjectsDetailScreenState
           );
         }
 
-        return ListView.builder(
+        return ListView(
           padding: const EdgeInsets.all(16.0),
-          itemCount: personGroups.length,
-          itemBuilder: (context, index) {
-            final group = personGroups[index];
-            return _buildPersonGroupCard(group, index);
-          },
+          children: [
+            _buildPersistedDemographicsBanner(),
+            for (var index = 0; index < personGroups.length; index++)
+              _buildPersonGroupCard(personGroups[index], index),
+          ],
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -799,6 +802,16 @@ class _PersonObjectsDetailScreenState
 
   /// Extract person groups from API response data
   List<Map<String, dynamic>> _extractPersonGroupsFromApiData(PersonObjectsData data) {
+    if (data.rawPersonGroups.isNotEmpty) {
+      return data.rawPersonGroups.map((group) {
+        final normalized = Map<String, dynamic>.from(group);
+        normalized['demographics'] ??= _extractDemographicsFromRepresentativeFaces(
+          (normalized['representative_faces'] as List?)?.cast<dynamic>() ?? const [],
+        );
+        return normalized;
+      }).toList();
+    }
+
     // Mock data structure based on what the API should return
     // In the future, this will come directly from data.personGroups when the API is enhanced
     
@@ -842,6 +855,15 @@ class _PersonObjectsDetailScreenState
           'person_uuid': 'uuid_$personId',
           'person_id': personId,
           'face_count': faces.length,
+          'demographics': _extractDemographicsFromRepresentativeFaces(
+            faces.map((face) => {
+              'face_data': {
+                'age_detection': {
+                  'estimated_age': largestFaceData?.ageDetection.estimatedAge,
+                },
+              },
+            }).toList(),
+          ),
           'representative_faces': faces.map((face) {
             // Use the largest face data for consistent cropping
             final bboxData = largestFaceData?.bbox ?? [
@@ -966,6 +988,7 @@ class _PersonObjectsDetailScreenState
     final temporalSpan = group['temporal_span'] as Map<String, dynamic>;
     final movementStats = group['movement_tracking']['movement_statistics'] as Map<String, dynamic>;
     final qualityMetrics = group['quality_metrics'] as Map<String, dynamic>;
+    final groupDemographics = _parseGroupDemographics(group['demographics']);
 
     // Get the best representative face for the cropped bounding box
     final bestFace = representativeFaces.isNotEmpty ? representativeFaces[0] : null;
@@ -1009,6 +1032,16 @@ class _PersonObjectsDetailScreenState
                 Text('${(temporalSpan['duration_seconds'] as double).toStringAsFixed(1)}s'),
               ],
             ),
+            if (groupDemographics != null && (groupDemographics.ageMin != null || groupDemographics.ageMax != null)) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.cake_outlined, size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text('Age: ${groupDemographics.ageMin ?? "?"}-${groupDemographics.ageMax ?? groupDemographics.ageMin ?? "?"}'),
+                ],
+              ),
+            ],
           ],
         ),
         // Add cropped bounding box on the right side
@@ -1043,6 +1076,172 @@ class _PersonObjectsDetailScreenState
           ),
         ],
       ),
+    );
+  }
+
+  Demographics? _parseGroupDemographics(dynamic raw) {
+    if (raw is Map<String, dynamic>) {
+      return Demographics.fromJson(raw);
+    }
+    if (raw is Map) {
+      return Demographics.fromJson(Map<String, dynamic>.from(raw));
+    }
+    return null;
+  }
+
+  Demographics? _extractDemographicsFromRepresentativeFaces(List<dynamic> representativeFaces) {
+    final ages = <int>[];
+
+    for (final entry in representativeFaces) {
+      if (entry is! Map) {
+        continue;
+      }
+
+      final faceData = entry['face_data'];
+      if (faceData is! Map) {
+        continue;
+      }
+
+      final ageDetection = faceData['age_detection'];
+      if (ageDetection is! Map) {
+        continue;
+      }
+
+      final estimatedAge = ageDetection['estimated_age'];
+      if (estimatedAge is int && estimatedAge > 0) {
+        ages.add(estimatedAge);
+      } else if (estimatedAge is String) {
+        final parsedAge = int.tryParse(estimatedAge);
+        if (parsedAge != null && parsedAge > 0) {
+          ages.add(parsedAge);
+        }
+      }
+    }
+
+    if (ages.isEmpty) {
+      return null;
+    }
+
+    final minAge = ages.reduce(math.min);
+    final maxAge = ages.reduce(math.max);
+    final meanAge = ages.reduce((left, right) => left + right) / ages.length;
+
+    return Demographics(
+      ageMin: minAge,
+      ageMax: maxAge,
+      ageMean: meanAge,
+    );
+  }
+
+  Future<Map<String, dynamic>?> _loadPersistedVideoDemographics() async {
+    if (widget.mediaItem == null) {
+      return null;
+    }
+
+    final mediaApiClient = ref.read(mediaApiClientProvider);
+    final response = await mediaApiClient.searchMVRPeopleByVideos(
+      videoUuids: [widget.mediaItem!.uuid],
+      limit: 100,
+    );
+
+    if (!response.success || response.data == null) {
+      return null;
+    }
+
+    final searchResults = (response.data!['results'] as List?)?.cast<dynamic>() ?? const [];
+    if (searchResults.isEmpty) {
+      return null;
+    }
+
+    int male = 0;
+    int female = 0;
+    int unknown = 0;
+    final ageRanges = <String>{};
+
+    for (final result in searchResults) {
+      if (result is! Map) {
+        continue;
+      }
+
+      final gender = (result['estimated_gender'] as String?)?.toLowerCase();
+      if (gender == 'male') {
+        male++;
+      } else if (gender == 'female') {
+        female++;
+      } else {
+        unknown++;
+      }
+
+      final age = result['estimated_age'] as String?;
+      if (age != null && age.isNotEmpty) {
+        ageRanges.add(age);
+      }
+    }
+
+    return {
+      'count': searchResults.length,
+      'male': male,
+      'female': female,
+      'unknown': unknown,
+      'age_ranges': ageRanges.toList()..sort(),
+    };
+  }
+
+  Widget _buildPersistedDemographicsBanner() {
+    final future = _persistedVideoDemographicsFuture;
+    if (future == null) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.only(bottom: 16.0),
+            child: Card(
+              child: ListTile(
+                leading: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                title: Text('Loading persisted MVR demographics...'),
+              ),
+            ),
+          );
+        }
+
+        final demographics = snapshot.data;
+        if (demographics == null) {
+          return const Padding(
+            padding: EdgeInsets.only(bottom: 16.0),
+            child: Card(
+              child: ListTile(
+                leading: Icon(Icons.storage_outlined),
+                title: Text('No persisted MVR demographics found for this video'),
+                subtitle: Text('Person cards below are based on stored person-object groupings only.'),
+              ),
+            ),
+          );
+        }
+
+        final ageRanges = (demographics['age_ranges'] as List?)?.cast<String>() ?? const [];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16.0),
+          child: Card(
+            color: Colors.blueGrey[50],
+            child: ListTile(
+              leading: const Icon(Icons.storage_outlined),
+              title: Text('Persisted MVR demographics for this video: ${demographics['count']} record(s)'),
+              subtitle: Text(
+                'male: ${demographics['male']}, female: ${demographics['female']}, unknown: ${demographics['unknown']}'
+                '${ageRanges.isNotEmpty ? ' | ages: ${ageRanges.join(', ')}' : ''}',
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1746,6 +1945,50 @@ class _PersonObjectsDetailScreenState
         return;
       }
 
+      final bool useUnifiedSessionAnalysis =
+          !context.sessionUuid.startsWith('mvr_search_') &&
+          context.sessionData['search_results'] == null;
+
+      if (useUnifiedSessionAnalysis) {
+        final analysisResponse = await mediaApiClient.getCrossVideoSessionAnalysis(
+          sessionUuid: context.sessionUuid,
+        );
+
+        if (!analysisResponse.success || analysisResponse.data == null) {
+          throw Exception(
+            'Failed to load session analysis: ${analysisResponse.error}',
+          );
+        }
+
+        final analysisItems =
+            analysisResponse.data!['analyses'] as List<dynamic>? ?? const [];
+
+        aggregatedAnalyses.addAll(
+          analysisItems
+              .whereType<Map<String, dynamic>>()
+              .map(AggregatedIndividualAnalysis.fromJson),
+        );
+
+        if (aggregatedAnalyses.isEmpty) {
+          setState(() {
+            _crossVideoError =
+                'No appearance data found for the selected session.';
+            _isLoadingCrossVideoData = false;
+          });
+          return;
+        }
+
+        setState(() {
+          _aggregatedAnalyses = aggregatedAnalyses;
+          _hierarchicalMergeWasApplied = false;
+          _mergeGroups = const [];
+          _isLoadingCrossVideoData = false;
+        });
+
+        _loadBestImagesForIndividuals();
+        return;
+      }
+
       // Extract date range from search parameters if available
       DateTime? startTime;
       DateTime? endTime;
@@ -1770,106 +2013,53 @@ class _PersonObjectsDetailScreenState
       final bool loadingMVRPeople = context.sessionData['search_results'] != null;
 
       if (loadingMVRPeople) {
-        // Always fetch the full hierarchy for every MVR UUID from search results.
-        // The hierarchy endpoint returns empty merged_mvr_people for truly standalone MVRs,
-        // so this handles both auto-merged super-individuals AND winners of prior manual merges
-        // without needing to track the hierarchicalMergeApplied flag per-search.
-        print('📊 Loading MVR people via hierarchy endpoint');
-        print('📊 Context has ${activeUuids.length} MVR UUIDs to load '
-            '(hierarchicalMergeApplied=$hierarchicalMergeApplied)');
-        
-        // For each MVR UUID, fetch full hierarchy
-        for (final superIndividualUuid in activeUuids) {
-          try {
-            // First, get the hierarchy to determine if this is a merged super-individual
-            print('🔍 Fetching hierarchy for: $superIndividualUuid');
-            final hierarchyResponse = await apiClient.get(
-              '/api/v1/mvr-people/super-individual/$superIndividualUuid/hierarchy',
-            );
-            
-            print('📡 Hierarchy response status: ${hierarchyResponse.statusCode}');
-            
-            if (hierarchyResponse.statusCode == 200) {
-              final hierarchyData = hierarchyResponse.data as Map<String, dynamic>;
-              final mergedMVRList = hierarchyData['merged_mvr_people'] as List;
-              final allIndividualsList = hierarchyData['all_individuals'] as List;
-              final isSuperIndividual = mergedMVRList.isNotEmpty;
-              
-              print('🔍 Super-individual $superIndividualUuid: '
-                  '${isSuperIndividual ? "MERGED" : "STANDALONE"}');
-              print('   MVR count: ${hierarchyData['mvr_count']}');
-              print('   Total person objects: ${hierarchyData['total_person_objects']}');
-              print('   All individuals count: ${allIndividualsList.length}');
-              print('   Merged MVR people: ${mergedMVRList.length}');
-              print('   Unique videos: ${hierarchyData['unique_videos']}');
-              
-              if (isSuperIndividual && mergedMVRList.isNotEmpty) {
-                // For merged super-individuals, use the hierarchy data directly
-                // DO NOT fetch each MVR separately - that would create 60 separate cards!
-                print('✅ Creating aggregated analysis from hierarchy data...');
-                
-                final analysis = AggregatedIndividualAnalysis.fromSuperIndividual(
-                  superIndividualUuid: superIndividualUuid,
-                  hierarchyData: hierarchyData,
-                  sessionUuid: context.sessionUuid,
-                  startTime: startTime,
-                  endTime: endTime,
-                );
-                
-                aggregatedAnalyses.add(analysis);
+        print('📊 Loading backend-owned MVR search analysis');
+        print('📊 Context has ${activeUuids.length} MVR UUIDs to load');
 
-                // Seed pagination state from page-1 response
-                _pagedMergedChildren[superIndividualUuid] =
-                    List.of(analysis.mergedMVRPeople);
-                _hasMoreChildren[superIndividualUuid] =
-                    analysis.mergedChildrenHasMore;
-                _mergedChildrenNextPage[superIndividualUuid] =
-                    analysis.mergedChildrenPage + 1;
-                
-                print('✅ Loaded super-individual with hierarchy:');
-                print('   - ${analysis.totalAppearances} total appearances');
-                print('   - ${analysis.uniqueVideos} unique videos');
-                print('   - ${mergedMVRList.length} merged MVR people '
-                    '(total=${analysis.mergedChildrenTotal}, '
-                    'has_more=${analysis.mergedChildrenHasMore})');
-              } else {
-                // For standalone (not merged), use simple factory
-                final analysis = AggregatedIndividualAnalysis.fromSuperIndividual(
-                  superIndividualUuid: superIndividualUuid,
-                  hierarchyData: hierarchyData,
-                  sessionUuid: context.sessionUuid,
-                  startTime: startTime,
-                  endTime: endTime,
-                );
-                
-                aggregatedAnalyses.add(analysis);
-                print('✅ Loaded standalone super-individual: '
-                    '${analysis.totalAppearances} appearances');
-              }
-            } else {
-              print('⚠️ Hierarchy not found, falling back to direct MVR load');
-              // Fallback to direct MVR loading
-              await _loadSingleMVRPerson(
-                superIndividualUuid,
-                mediaApiClient,
-                startTime,
-                endTime,
-                context.sessionUuid,
-                aggregatedAnalyses,
-              );
-            }
-          } catch (e) {
-            print('❌ Error loading super-individual $superIndividualUuid: $e');
-            // Fallback to direct MVR loading
-            await _loadSingleMVRPerson(
-              superIndividualUuid,
-              mediaApiClient,
-              startTime,
-              endTime,
-              context.sessionUuid,
-              aggregatedAnalyses,
-            );
-          }
+        final rawSearchResults =
+            context.sessionData['search_results'] as List<dynamic>? ?? const [];
+        final ephemeralGroups = rawSearchResults
+            .whereType<Map<String, dynamic>>()
+            .where((item) => (item['merged_mvr_uuids'] as List?)?.isNotEmpty == true)
+            .map(
+              (item) => {
+                'super_individual_uuid': item['mvr_people_uuid'],
+                'merged_mvr_uuids': item['merged_mvr_uuids'],
+                if (item['similarities'] != null) 'similarities': item['similarities'],
+              },
+            )
+            .toList();
+
+        final analysisResponse = await mediaApiClient.getMvrSearchAnalysis(
+          mvrUuids: activeUuids,
+          sessionUuid: context.sessionUuid,
+          startTime: startTime,
+          endTime: endTime,
+          ephemeralGroups: ephemeralGroups.isEmpty ? null : ephemeralGroups,
+        );
+
+        if (!analysisResponse.success || analysisResponse.data == null) {
+          throw Exception(
+            analysisResponse.error ?? 'Failed to load MVR search analysis',
+          );
+        }
+
+        final analysisItems =
+            analysisResponse.data!['analyses'] as List<dynamic>? ?? const [];
+
+        aggregatedAnalyses.addAll(
+          analysisItems
+              .whereType<Map<String, dynamic>>()
+              .map(AggregatedIndividualAnalysis.fromJson),
+        );
+
+        for (final analysis in aggregatedAnalyses) {
+          _pagedMergedChildren[analysis.individualUuid] =
+              List.of(analysis.mergedMVRPeople);
+          _hasMoreChildren[analysis.individualUuid] =
+              analysis.mergedChildrenHasMore;
+          _mergedChildrenNextPage[analysis.individualUuid] =
+              analysis.mergedChildrenPage + 1;
         }
       } else {
         print('📊 Loading individual data');
@@ -2116,7 +2306,7 @@ class _PersonObjectsDetailScreenState
       
       final images = await imageService.getBestImagesForMultiple(
         individualIds,
-        includeMerged: false,
+        includeMerged: true,
       );
       
       print('🖼️ Received ${images.length} image responses');
@@ -3709,7 +3899,13 @@ class _PersonObjectsDetailScreenState
       return fallbackIcon;
     }
 
-    final rawImageUrl = bestImage.bestFace!.imageUrl;
+    final bestFace = bestImage.bestFace!;
+    final faceData = bestFace.faceData;
+    if (faceData != null && bestFace.videoUuid.isNotEmpty) {
+      return _buildHighlightedFrameThumbnail(faceData, bestFace.videoUuid, fallbackIcon);
+    }
+
+    final rawImageUrl = bestFace.imageUrl;
     if (rawImageUrl.isEmpty) {
       return fallbackIcon;
     }
@@ -3738,6 +3934,60 @@ class _PersonObjectsDetailScreenState
         );
       },
       errorBuilder: (context, error, stackTrace) => fallbackIcon,
+    );
+  }
+
+  Widget _buildHighlightedFrameThumbnail(
+    Map<String, dynamic> faceData,
+    String videoUuid,
+    Widget fallbackWidget,
+  ) {
+    final frameNumber = faceData['frame_number'] ?? 0;
+    final frameUrl = '${Config.gatewayServiceUrl}/api/v1/media/$videoUuid/frame/$frameNumber?format=jpeg';
+
+    return FutureBuilder<Uint8List?>(
+      future: _fetchAuthenticatedFrameBytes(frameUrl),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            color: Colors.grey[300],
+            child: const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        final bytes = snapshot.data;
+        if (bytes == null || bytes.isEmpty) {
+          return fallbackWidget;
+        }
+
+        return FutureBuilder<ui.Image>(
+          future: _decodeImage(bytes),
+          builder: (context, imageSnapshot) {
+            final decodedImage = imageSnapshot.data;
+
+            return SizedBox.expand(
+              child: CustomPaint(
+                foregroundPainter: FaceBoundingBoxPainter(
+                  faceData: faceData,
+                  imageWidth: decodedImage?.width.toDouble(),
+                  imageHeight: decodedImage?.height.toDouble(),
+                ),
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -3853,6 +4103,12 @@ class _PersonObjectsDetailScreenState
     }
   }
 
+  Future<ui.Image> _decodeImage(Uint8List bytes) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(bytes, completer.complete);
+    return completer.future;
+  }
+
   Widget _buildAuthenticatedFrameImageWidget(
     String frameUrl, {
     BoxFit fit = BoxFit.cover,
@@ -3924,6 +4180,98 @@ class CroppedImagePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class FaceBoundingBoxPainter extends CustomPainter {
+  final Map<String, dynamic> faceData;
+  final double? imageWidth;
+  final double? imageHeight;
+
+  FaceBoundingBoxPainter({
+    required this.faceData,
+    this.imageWidth,
+    this.imageHeight,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bbox = faceData['bbox'] as List<dynamic>?;
+    if (bbox == null || bbox.length < 4) {
+      return;
+    }
+
+    final x1 = (bbox[0] as num?)?.toDouble();
+    final y1 = (bbox[1] as num?)?.toDouble();
+    final x2 = (bbox[2] as num?)?.toDouble();
+    final y2 = (bbox[3] as num?)?.toDouble();
+
+    if (x1 == null || y1 == null || x2 == null || y2 == null || x2 <= x1 || y2 <= y1) {
+      return;
+    }
+
+    final resolvedImageWidth =
+      imageWidth ??
+      (faceData['image_width'] as num?)?.toDouble() ??
+      (faceData['frame_width'] as num?)?.toDouble() ??
+        1920.0;
+    final resolvedImageHeight =
+      imageHeight ??
+      (faceData['image_height'] as num?)?.toDouble() ??
+      (faceData['frame_height'] as num?)?.toDouble() ??
+        1080.0;
+
+    if (resolvedImageWidth <= 0 || resolvedImageHeight <= 0) {
+      return;
+    }
+
+    // Match Image.memory(fit: BoxFit.cover) so the overlay tracks the cropped frame.
+    final imageAspectRatio = resolvedImageWidth / resolvedImageHeight;
+    final canvasAspectRatio = size.width / size.height;
+
+    double scale;
+    double offsetX;
+    double offsetY;
+
+    if (imageAspectRatio > canvasAspectRatio) {
+      scale = size.height / resolvedImageHeight;
+      final scaledWidth = resolvedImageWidth * scale;
+      offsetX = (size.width - scaledWidth) / 2;
+      offsetY = 0;
+    } else {
+      scale = size.width / resolvedImageWidth;
+      final scaledHeight = resolvedImageHeight * scale;
+      offsetX = 0;
+      offsetY = (size.height - scaledHeight) / 2;
+    }
+
+    final rect = Rect.fromLTRB(
+      x1 * scale + offsetX,
+      y1 * scale + offsetY,
+      x2 * scale + offsetX,
+      y2 * scale + offsetY,
+    ).intersect(Offset.zero & size);
+
+    if (rect.isEmpty) {
+      return;
+    }
+
+    final glowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: 0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    final boxPaint = Paint()
+      ..color = Colors.greenAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25;
+
+    canvas.drawRect(rect, glowPaint);
+    canvas.drawRect(rect, boxPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant FaceBoundingBoxPainter oldDelegate) {
+    return oldDelegate.faceData != faceData;
+  }
 }
 
 /// Custom painter for drawing movement routes
@@ -4939,7 +5287,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   /// Calculate aggregate statistics across all individuals
   /// Build individual card showing aggregated data with hierarchical merge support (v2.19.84)
   Widget _buildIndividualCard(AggregatedIndividualAnalysis analysis, int index) {
-    final isExpanded = _expandedIndividuals.contains(analysis.individualUuid);
+    final isExpanded = _expandedIndividuals.contains(analysis.individualUuid) ||
+      (widget.crossVideoContext != null && analysis.isSuperIndividual);
     final isSelected = _selectedIndividuals.contains(analysis.individualUuid);
     final isSuperIndividual = analysis.isSuperIndividual;
     final isStandalone = analysis.isStandalone;
@@ -4985,8 +5334,8 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                       Stack(
                         children: [
                           Container(
-                            width: 60,
-                            height: 60,
+                            width: 88,
+                            height: 88,
                             decoration: BoxDecoration(
                               color: isSuperIndividual 
                                   ? Colors.blue.shade100 
@@ -5195,7 +5544,34 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
     if (bestImage?.bestFace == null || bestImage!.bestFace!.imageUrl.isEmpty) {
       return Icon(Icons.badge, size: 24, color: Colors.blue[700]);
     }
-    final rawUrl = bestImage.bestFace!.imageUrl;
+
+    final bestFace = bestImage.bestFace!;
+    final faceData = bestFace.faceData;
+    if (faceData != null && bestFace.videoUuid.isNotEmpty) {
+      return FutureBuilder<Widget>(
+        future: _buildCroppedFaceForIndividual(faceData, bestFace.videoUuid),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done && snapshot.data != null) {
+            return snapshot.data!;
+          }
+          if (snapshot.hasError) {
+            return Icon(Icons.badge, size: 24, color: Colors.blue[700]);
+          }
+          return Container(
+            color: Colors.grey[300],
+            child: const Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    final rawUrl = bestFace.imageUrl;
     final uri = Uri.tryParse(rawUrl);
     final resolvedUrl = (uri != null && uri.hasScheme)
         ? rawUrl
@@ -6616,17 +6992,17 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
   List<String> _resolveRouteSourceIndividualUuids(
     AggregatedIndividualAnalysis analysis,
   ) {
-    // Always use individualId (the MVR/super UUID).
-    // - In camera-search results: individualUuid = raw individual, individualId = MVR/super UUID.
-    // - In hierarchy results: both are the super UUID.
-    // The backend expands the super UUID to all linked raw individuals via mvr_merge_hierarchy.
-    final resolvedUuid = analysis.individualId.isNotEmpty
-        ? analysis.individualId
-        : analysis.individualUuid;
+    final resolvedUuid = analysis.individualUuid.isNotEmpty
+        ? analysis.individualUuid
+        : analysis.individualId;
+    final mergedUuids = analysis.mergedMVRPeople
+        .map((child) => child.mvrPeopleUuid)
+        .where((uuid) => uuid.isNotEmpty && uuid != resolvedUuid);
+    final sourceUuids = [resolvedUuid, ...mergedUuids].toSet().toList();
     debugPrint('🗺️ Route UUID for ${analysis.individualUuid}: '
         'isSuperIndividual=${analysis.isSuperIndividual}, '
-        'individualId=${analysis.individualId} → using $resolvedUuid');
-    return [resolvedUuid];
+        'individualId=${analysis.individualId} → using $sourceUuids');
+    return sourceUuids;
   }
 
   Widget _buildRouteCameraSelector(List<String> cameraIds) {

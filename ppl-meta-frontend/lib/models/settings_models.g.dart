@@ -25,6 +25,8 @@ GeneralSettings _$GeneralSettingsFromJson(Map<String, dynamic> json) =>
       mergeIndividualsThreshold:
           (json['mergeIndividualsThreshold'] as num?)?.toDouble() ??
               0.70,
+      mvrStoredComparison:
+          json['mvrStoredComparison'] as bool? ?? false,
     );
 
 Map<String, dynamic> _$GeneralSettingsToJson(
@@ -40,6 +42,7 @@ Map<String, dynamic> _$GeneralSettingsToJson(
       'mergeIndividualsRule': instance.mergeIndividualsRule,
       'mergeIndividualsThreshold':
           instance.mergeIndividualsThreshold,
+    'mvrStoredComparison': instance.mvrStoredComparison,
     };
 
 DetectionSettings _$DetectionSettingsFromJson(

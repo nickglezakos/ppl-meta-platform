@@ -113,6 +113,7 @@ class MVRMergeSettingsResponse(BaseModel):
 
     merge_rule: str
     merge_threshold: float
+    stored_comparison_enabled: bool
     min_threshold: float
     max_threshold: float
 
@@ -129,6 +130,10 @@ class MVRMergeSettingsUpdate(BaseModel):
         ge=0.30,
         le=0.95,
         description="Default threshold for MVR merge operations",
+    )
+    stored_comparison_enabled: Optional[bool] = Field(
+        default=None,
+        description="Whether backend-owned MVR analysis resolves through stored super-individual hierarchy",
     )
     updated_by: str = Field(default="user", description="Who updated the setting")
 
@@ -311,16 +316,21 @@ async def update_mvr_merge_settings(
     auth_token: str = Depends(get_auth_token),
 ):
     try:
-        if request.merge_rule is None and request.merge_threshold is None:
+        if (
+            request.merge_rule is None
+            and request.merge_threshold is None
+            and request.stored_comparison_enabled is None
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Provide merge_rule and/or merge_threshold",
+                detail="Provide merge_rule, merge_threshold, and/or stored_comparison_enabled",
             )
 
         service = WorkflowSettingsService(db)
         result = await service.update_mvr_merge_settings(
             merge_rule=request.merge_rule,
             merge_threshold=request.merge_threshold,
+            stored_comparison_enabled=request.stored_comparison_enabled,
             updated_by=request.updated_by,
         )
 

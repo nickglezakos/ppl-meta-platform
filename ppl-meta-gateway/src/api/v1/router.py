@@ -2387,6 +2387,12 @@ async def merge_mvr_people(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/analysis")
+async def get_mvr_search_analysis(request: Request):
+    """Proxy backend-owned MVR search analysis request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.post("/mvr-people/merge/hierarchical")
 async def hierarchical_merge_mvr_people(request: Request):
     """Proxy hierarchical MVR people merge request to vmeta service."""
@@ -2411,6 +2417,12 @@ async def get_mvr_best_image(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.get("/mvr-people/face-crop")
+async def get_mvr_face_crop(request: Request):
+    """Proxy MVR face crop request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.patch("/mvr-people/{mvr_person_uuid}/name")
 async def update_mvr_person_name(request: Request):
     """Proxy MVR person name update request to vmeta service."""
@@ -2420,5 +2432,4 @@ async def update_mvr_person_name(request: Request):
 @api_router.patch("/mvr-people/{mvr_person_uuid}/gender")
 async def update_mvr_person_gender(request: Request):
     """Proxy MVR person gender update request to vmeta service."""
-    return await _proxy_to_vmeta_service(request)
     return await _proxy_to_vmeta_service(request)

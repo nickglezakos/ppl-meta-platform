@@ -872,6 +872,10 @@ class VisionServiceClient:
             )
 
             if not session_response.success:
+                session_response.data = {
+                    **(session_response.data or {}),
+                    "session_uuid": session_uuid,
+                }
                 return session_response
 
             # Step 3: Transform response to expected format
@@ -917,6 +921,27 @@ class VisionServiceClient:
                     "message": f"Error in person objects lookup: {str(e)}",
                 },
             )
+
+    async def get_person_objects_for_session_details(
+        self,
+        trace_ctx: TraceabilityContext,
+        session_uuid: str,
+        auth_token: Optional[str] = None,
+    ) -> ServiceResponse:
+        """Get full persisted person-objects payload for a session."""
+        trace_ctx.operation = "get_person_objects_for_session_details"
+        trace_ctx.metadata.update({"session_uuid": session_uuid})
+
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        return await self._make_request(
+            "GET",
+            f"/api/v1/person-objects/sessions/{session_uuid}",
+            trace_ctx,
+            additional_headers=headers,
+        )
 
     async def _process_legacy_media_directly(
         self,

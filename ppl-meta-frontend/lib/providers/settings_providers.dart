@@ -137,6 +137,9 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
         mergeIndividualsThreshold:
             (backendMergeSettings?['merge_threshold'] as num?)?.toDouble() ??
                 0.70,
+        mvrStoredComparison:
+          backendMergeSettings?['stored_comparison_enabled'] as bool? ??
+            false,
       );
       await _saveSettings(settings);
       
@@ -170,11 +173,14 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
   Future<bool> _updateBackendMvrMergeSettings({
     String? mergeRule,
     double? mergeThreshold,
+    bool? storedComparisonEnabled,
   }) async {
     try {
       final body = <String, dynamic>{
         if (mergeRule != null) 'merge_rule': mergeRule,
         if (mergeThreshold != null) 'merge_threshold': mergeThreshold,
+        if (storedComparisonEnabled != null)
+          'stored_comparison_enabled': storedComparisonEnabled,
         'updated_by': 'ppl-meta-frontend',
       };
 
@@ -200,6 +206,7 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
       final settingsMap = settings.toJson();
       settingsMap.remove('mergeIndividualsRule');
       settingsMap.remove('mergeIndividualsThreshold');
+      settingsMap.remove('mvrStoredComparison');
       await prefs.setString(_generalSettingsKey, jsonEncode(settingsMap));
       state = AsyncValue.data(settings);
     } catch (e, stack) {
@@ -278,6 +285,21 @@ class GeneralSettingsNotifier extends StateNotifier<AsyncValue<GeneralSettings>>
       }
       await _saveSettings(
         currentSettings.copyWith(mergeIndividualsThreshold: threshold),
+      );
+    }
+  }
+
+  Future<void> updateMvrStoredComparison(bool enabled) async {
+    final currentSettings = state.valueOrNull;
+    if (currentSettings != null) {
+      final updated = await _updateBackendMvrMergeSettings(
+        storedComparisonEnabled: enabled,
+      );
+      if (!updated) {
+        throw Exception('Failed to update backend stored comparison setting');
+      }
+      await _saveSettings(
+        currentSettings.copyWith(mvrStoredComparison: enabled),
       );
     }
   }

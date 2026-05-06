@@ -426,7 +426,8 @@ class MVRBackgroundProcessor:
         session_uuid: UUID,
         individual_uuids: List[UUID],
         auth_token: Optional[str] = None,
-        similarity_threshold: float = 0.70
+        similarity_threshold: float = 0.70,
+        queue_hierarchical_merge: bool = True,
     ) -> Dict:
         """
         Queue MVR creation for all individuals in a tracking session.
@@ -452,7 +453,8 @@ class MVRBackgroundProcessor:
                 session_uuid=session_uuid,
                 individual_uuids=individual_uuids,
                 auth_token=auth_token,
-                similarity_threshold=similarity_threshold
+                similarity_threshold=similarity_threshold,
+                queue_hierarchical_merge=queue_hierarchical_merge,
             )
         )
         
@@ -461,7 +463,8 @@ class MVRBackgroundProcessor:
         
         logger.info(
             f"🔄 [Queue B] Started MVR creation for session {session_uuid} "
-            f"({len(individual_uuids)} individuals, threshold={similarity_threshold})"
+            f"({len(individual_uuids)} individuals, threshold={similarity_threshold}, "
+            f"queue_hierarchical_merge={queue_hierarchical_merge})"
         )
         
         return {
@@ -476,7 +479,8 @@ class MVRBackgroundProcessor:
         session_uuid: UUID,
         individual_uuids: List[UUID],
         auth_token: Optional[str],
-        similarity_threshold: float
+        similarity_threshold: float,
+        queue_hierarchical_merge: bool,
     ) -> None:
         """
         Internal pipeline for session-level MVR creation with retries.
@@ -523,23 +527,37 @@ class MVRBackgroundProcessor:
                     auth_token=auth_token,
                     similarity_threshold=similarity_threshold
                 )
+
+                async with db_client.pool.acquire() as conn:
+                    actual_mvr_count = await conn.fetchval(
+                        """
+                        SELECT COUNT(DISTINCT imm.mvr_people_uuid)
+                        FROM session_individuals si
+                        JOIN individual_mvr_mapping imm
+                            ON imm.individual_uuid = si.individual_uuid
+                        WHERE si.session_uuid = $1
+                        """,
+                        session_uuid,
+                    )
+                actual_mvr_count = int(actual_mvr_count or 0)
                 
                 logger.info(
                     f"✅ [Queue B] MVR creation complete for session {session_uuid}: "
                     f"{len(matched_individuals)} individuals → "
-                    f"{len(matched_individuals) - merged_count} MVR people"
+                    f"{actual_mvr_count} persisted MVR people"
                 )
                 
-                # Stage 3: Update session MVR status
+                # Stage 3: Update session MVR status using persisted mappings,
+                # not the in-memory merge estimate.
                 await self._update_session_mvr_status(
                     session_uuid=session_uuid,
                     status="mvr_complete",
-                    mvr_count=len(matched_individuals) - merged_count
+                    mvr_count=actual_mvr_count,
                 )
                 
                 # Stage 4: Queue hierarchical merge (Queue C) if scheduler available
                 created_mvr_uuids = []
-                if self.hierarchical_scheduler:
+                if self.hierarchical_scheduler and queue_hierarchical_merge:
                     try:
                         # Get MVR UUIDs created in this session
                         from api.v1.cross_video_tracking_simple import get_database_client
@@ -576,6 +594,11 @@ class MVRBackgroundProcessor:
                             f"for session {session_uuid}: {queue_error}"
                         )
                         # Don't fail the entire pipeline if Queue C fails
+                elif not queue_hierarchical_merge:
+                    logger.info(
+                        "[Queue B→C] Hierarchical merge intentionally disabled for session %s",
+                        session_uuid,
+                    )
                 
                 # Stage 5: Mark success
                 end_time = datetime.utcnow()
@@ -584,7 +607,7 @@ class MVRBackgroundProcessor:
                 self._completed_tasks[session_uuid] = {
                     "session_uuid": str(session_uuid),
                     "individual_count": len(matched_individuals),
-                    "mvr_count": len(matched_individuals) - merged_count,
+                    "mvr_count": actual_mvr_count,
                     "merged_count": merged_count,
                     "hierarchical_merge_queued": len(created_mvr_uuids) > 0,
                     "processing_time_seconds": processing_time,
@@ -707,7 +730,9 @@ class MVRBackgroundProcessor:
                     'individual_uuid': str(individual_uuid),
                     'video_uuids': video_uuids,
                     'person_objects': person_objects_by_video,
-                    'temporal_score': float(individual_row['confidence_score'])
+                    'temporal_score': float(individual_row['confidence_score']),
+                    'first_seen': video_rows[0]['start_timestamp'] if video_rows else None,
+                    'last_seen': video_rows[-1]['end_timestamp'] if video_rows else None,
                 })
         
         return matched_individuals
@@ -735,6 +760,20 @@ class MVRBackgroundProcessor:
         try:
             async with db_client.pool.acquire() as conn:
                 if status == "mvr_complete" and mvr_count is not None:
+                    actual_mvr_count = mvr_count
+                elif status == "mvr_complete":
+                    actual_mvr_count = await conn.fetchval(
+                        """
+                        SELECT COUNT(DISTINCT imm.mvr_people_uuid)
+                        FROM session_individuals si
+                        JOIN individual_mvr_mapping imm
+                            ON imm.individual_uuid = si.individual_uuid
+                        WHERE si.session_uuid = $1
+                        """,
+                        session_uuid,
+                    )
+
+                if status == "mvr_complete":
                     await conn.execute("""
                         UPDATE tracking_sessions
                         SET unique_mvr_people_count = $2,
@@ -743,8 +782,8 @@ class MVRBackgroundProcessor:
                                 $3
                             )
                         WHERE session_uuid = $1
-                    """, session_uuid, mvr_count,
-                         f"mvr_status: {status}, mvr_count: {mvr_count}")
+                    """, session_uuid, actual_mvr_count,
+                         f"mvr_status: {status}, mvr_count: {actual_mvr_count}")
                 elif status == "mvr_failed" and error_message:
                     await conn.execute("""
                         UPDATE tracking_sessions

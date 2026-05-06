@@ -165,8 +165,10 @@ async def lifespan(app: FastAPI):
             )
 
             # Start periodic hierarchical merging (Queue C background task)
-            await hierarchical_merge_scheduler.start_periodic_merge()
-            logger.info("✅ Hierarchical merge scheduler started (Queue C)")
+            # DISABLED: autonomous periodic MVR merging must not run without an
+            # explicit MVR search/merge action.
+            # await hierarchical_merge_scheduler.start_periodic_merge()
+            # logger.info("✅ Hierarchical merge scheduler started (Queue C)")
 
             mvr_integration_hook = MVRIntegrationHook(
                 background_processor=mvr_background_processor

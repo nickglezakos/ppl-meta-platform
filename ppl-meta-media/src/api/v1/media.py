@@ -1784,13 +1784,20 @@ async def stream_media_with_token(
             )
 
     file_path = Path(access_info["file_path"])
+    effective_mime_type = access_info["mime_type"]
 
     # 🚀 Force transcode for ALL videos to ensure Android compatibility
     logger.info(f"📽️ /stream-token endpoint: media_id={media_id}, media_type={media.media_type}")
     if media.media_type == MediaType.VIDEO:
         logger.info(f"📽️ /stream-token: Forcing Android-compatible transcode for {media_id}")
-        file_path = _get_android_compatible_file(file_path, media_id)
-        logger.info(f"📽️ /stream-token: Transcode returned path={file_path}")
+        transcoded_path = _get_android_compatible_file(file_path, media_id)
+        if transcoded_path != file_path:
+            # Transcode succeeded — use the MP4 output with the correct MIME type
+            file_path = transcoded_path
+            effective_mime_type = "video/mp4"
+        else:
+            file_path = transcoded_path
+        logger.info(f"📽️ /stream-token: Transcode returned path={file_path}, mime={effective_mime_type}")
 
     # Verify file exists on disk
     if not file_path.exists():
@@ -1832,7 +1839,7 @@ async def stream_media_with_token(
                 headers={
                     "Content-Range": f"bytes {start}-{end}/{file_size}",
                     "Content-Length": str(content_length),
-                    "Content-Type": access_info["mime_type"],
+                    "Content-Type": effective_mime_type,
                     "Accept-Ranges": "bytes",
                     "Cache-Control": "private, max-age=3600",
                 },
@@ -1844,7 +1851,7 @@ async def stream_media_with_token(
     # Return full file if no range request or invalid range
     return StreamingResponse(
         generate_chunks(0, file_size - 1),
-        media_type=access_info["mime_type"],
+        media_type=effective_mime_type,
         headers={
             "Content-Length": str(file_size),
             "Accept-Ranges": "bytes",

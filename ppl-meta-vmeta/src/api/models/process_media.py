@@ -102,6 +102,61 @@ class ProcessMediaRequest(BaseModel):
         return v
 
 
+class PersistedPersonObjectsMaterializationRequest(BaseModel):
+    """Internal request to materialize single-media VMeta rows from persisted person objects."""
+
+    media_uuid: str = Field(
+        ...,
+        description="Media UUID whose persisted person objects should be materialized into VMeta",
+    )
+
+    session_uuid: Optional[str] = Field(
+        default=None,
+        description="Vision/Orchestrator session UUID that produced the persisted person objects",
+    )
+
+    media_type: Optional[str] = Field(
+        default=None,
+        description="Optional media type override; if omitted VMeta will resolve it from media metadata",
+    )
+
+    person_objects: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Persisted person objects produced by Vision/Orchestrator",
+    )
+
+    processing_options: Optional[ProcessingOptions] = Field(
+        default_factory=ProcessingOptions,
+        description="Materialization options reused by single-media MVR processing",
+    )
+
+
+class PersistedPersonObjectsMaterializationResponse(BaseModel):
+    """Response for internal persisted person-object materialization."""
+
+    success: bool = Field(..., description="Whether materialization completed successfully")
+    media_uuid: str = Field(..., description="Media UUID that was processed")
+    session_uuid: Optional[str] = Field(default=None, description="Source session UUID")
+    status: str = Field(..., description="completed, skipped_existing, or failed")
+    media_type: str = Field(..., description="Resolved media type")
+    existing_mvr_people_count: int = Field(
+        default=0,
+        description="Existing isolated MVR rows already present for this media before materialization",
+    )
+    mvr_people_count: int = Field(
+        default=0,
+        description="Number of isolated MVR people created or already present for this media",
+    )
+    total_faces_detected: int = Field(
+        default=0,
+        description="Number of face/person inputs included in materialization",
+    )
+    processing_time_ms: int = Field(
+        default=0,
+        description="Materialization processing time in milliseconds",
+    )
+
+
 # ============================================================================
 # Response Models - Route Data
 # ============================================================================

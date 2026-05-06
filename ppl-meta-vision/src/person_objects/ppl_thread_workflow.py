@@ -1637,6 +1637,8 @@ class PPLThreadWorkflowController:
                 po.best_face_id,
                 po.estimated_age,
                 po.distance_from_camera,
+                po.representative_faces,
+                po.all_faces_route_data,
                 po.tracking_algorithm,
                 po.tolerance_percent,
                 po.created_at,
@@ -1657,7 +1659,8 @@ class PPLThreadWorkflowController:
             )
             GROUP BY po.person_id, po.workflow_id, po.face_count, po.average_position_x,
                      po.average_position_y, po.quality_score, po.best_face_id,
-                     po.estimated_age, po.distance_from_camera, po.tracking_algorithm,
+                     po.estimated_age, po.distance_from_camera, po.representative_faces,
+                     po.all_faces_route_data, po.tracking_algorithm,
                      po.tolerance_percent, po.created_at, po.updated_at
             ORDER BY po.created_at DESC
             """
@@ -1708,6 +1711,7 @@ class PPLThreadWorkflowController:
             # Reconstruct group tracking and statistics
             group_tracking_list = []
             classified_faces = []
+            person_objects_formatted = []
             total_faces = 0
 
             for person_data in person_objects:
@@ -1715,6 +1719,59 @@ class PPLThreadWorkflowController:
                 face_ids = person_data["face_ids"]
                 face_count = len(face_ids) if face_ids else 0
                 total_faces += face_count
+
+                representative_faces = person_data.get("representative_faces") or []
+                if isinstance(representative_faces, str):
+                    try:
+                        representative_faces = json.loads(representative_faces)
+                    except (TypeError, ValueError):
+                        representative_faces = []
+                if representative_faces is None:
+                    representative_faces = []
+
+                all_faces_route_data = person_data.get("all_faces_route_data") or []
+                if isinstance(all_faces_route_data, str):
+                    try:
+                        all_faces_route_data = json.loads(all_faces_route_data)
+                    except (TypeError, ValueError):
+                        all_faces_route_data = []
+                if all_faces_route_data is None:
+                    all_faces_route_data = []
+
+                route_points = []
+                for route_face in all_faces_route_data:
+                    position = route_face.get("position") or {}
+                    route_points.append(
+                        {
+                            "face_id": route_face.get("face_id"),
+                            "frame_number": route_face.get("frame_number", 0),
+                            "center_x": float(position.get("x", 0.0)),
+                            "center_y": float(position.get("y", 0.0)),
+                            "bbox": route_face.get("bbox", []),
+                            "confidence": route_face.get("confidence", 0.0),
+                        }
+                    )
+
+                route_points.sort(key=lambda item: item.get("frame_number", 0))
+
+                if route_points:
+                    temporal_span = {
+                        "start_frame": route_points[0].get("frame_number", 0),
+                        "end_frame": route_points[-1].get("frame_number", 0),
+                        "duration_frames": route_points[-1].get("frame_number", 0)
+                        - route_points[0].get("frame_number", 0),
+                    }
+                    xs = [float(point.get("center_x", 0.0)) for point in route_points]
+                    ys = [float(point.get("center_y", 0.0)) for point in route_points]
+                    spatial_bounds = {
+                        "min_x": min(xs),
+                        "max_x": max(xs),
+                        "min_y": min(ys),
+                        "max_y": max(ys),
+                    }
+                else:
+                    temporal_span = {}
+                    spatial_bounds = {}
 
                 # Group tracking entry
                 group_tracking_list.append(
@@ -1794,6 +1851,105 @@ class PPLThreadWorkflowController:
                         "distance": float(person_data["distance_from_camera"] or 0.0),
                     }
 
+                representative_faces = person_data.get("representative_faces") or []
+                if isinstance(representative_faces, str):
+                    try:
+                        representative_faces = json.loads(representative_faces)
+                    except (TypeError, ValueError):
+                        representative_faces = []
+                if representative_faces is None:
+                    representative_faces = []
+
+                all_faces_route_data = person_data.get("all_faces_route_data") or []
+                if isinstance(all_faces_route_data, str):
+                    try:
+                        all_faces_route_data = json.loads(all_faces_route_data)
+                    except (TypeError, ValueError):
+                        all_faces_route_data = []
+                if all_faces_route_data is None:
+                    all_faces_route_data = []
+
+                route_by_face_id = {}
+                for route_face in all_faces_route_data:
+                    if not isinstance(route_face, dict):
+                        continue
+                    route_face_id = route_face.get("face_id")
+                    if route_face_id:
+                        route_by_face_id[str(route_face_id)] = route_face
+
+                enriched_representative_faces = []
+                for face in representative_faces:
+                    if not isinstance(face, dict):
+                        continue
+
+                    enriched_face = dict(face)
+                    face_data = dict(enriched_face.get("face_data") or {})
+                    if not face_data:
+                        route_face = route_by_face_id.get(str(enriched_face.get("face_id")))
+                        if route_face:
+                            position = route_face.get("position") or {}
+                            face_data = {
+                                "id": route_face.get("face_id"),
+                                "frame_number": route_face.get("frame_number"),
+                                "bbox": route_face.get("bbox") or [],
+                                "confidence": route_face.get("confidence"),
+                                "center_x": position.get("x"),
+                                "center_y": position.get("y"),
+                            }
+
+                    if face_data:
+                        enriched_face["face_data"] = face_data
+                    enriched_representative_faces.append(enriched_face)
+
+                representative_faces = enriched_representative_faces
+
+                best_face_frame = None
+                best_face_bbox = []
+                if representative_faces:
+                    first_face = representative_faces[0] or {}
+                    face_data = first_face.get("face_data") or {}
+                    best_face_frame = face_data.get("frame_number")
+                    best_face_bbox = face_data.get("bbox", [])
+
+                person_objects_formatted.append(
+                    {
+                        "person_id": person_data["person_id"],
+                        "workflow_id": person_data["workflow_id"],
+                        "session_uuid": session_uuid,
+                        "face_count": person_data["face_count"],
+                        "face_ids": face_ids or [],
+                        "average_position": {
+                            "x": float(person_data["average_position_x"]),
+                            "y": float(person_data["average_position_y"]),
+                        },
+                        "quality_score": float(person_data.get("quality_score") or 0.0),
+                        "best_face_id": person_data.get("best_face_id"),
+                        "best_face_frame": best_face_frame,
+                        "best_face_bbox": best_face_bbox,
+                        "representative_faces": representative_faces,
+                        "movement_tracking": {
+                            "route_points": all_faces_route_data,
+                            "movement_statistics": {
+                                "total_route_points": len(all_faces_route_data),
+                            },
+                        },
+                        "tracking_metadata": {
+                            "tolerance_percent": float(person_data["tolerance_percent"]),
+                            "tracking_algorithm": person_data.get(
+                                "tracking_algorithm", "percentage_based_tracking"
+                            ),
+                            "created_at": person_data["created_at"].isoformat()
+                            if person_data.get("created_at")
+                            else None,
+                        },
+                        "temporal_span": temporal_span,
+                        "spatial_bounds": spatial_bounds,
+                        "demographics": {
+                            "age_estimate": person_data.get("estimated_age"),
+                        },
+                    }
+                )
+
             return {
                 "workflow_id": person_objects[0]["workflow_id"],
                 "session_uuid": session_uuid,
@@ -1807,6 +1963,7 @@ class PPLThreadWorkflowController:
                 "statistics": summary,
                 "best_quality_faces": best_quality_faces,
                 "classified_faces": classified_faces,
+                "person_objects": person_objects_formatted,
                 "processing_timestamp": datetime.now().isoformat(),
                 "workflow_type": "ppl_thread_person_objects",
             }

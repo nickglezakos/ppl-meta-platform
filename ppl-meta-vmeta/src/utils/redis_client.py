@@ -91,7 +91,7 @@ class VMetaCacheClient:
         end_str = end_time.isoformat() if end_time else "none"
         
         # Build key
-        key = f"mvr_search:{videos_hash}:{start_str}:{end_str}:{limit}"
+        key = f"mvr_search:v2:{videos_hash}:{start_str}:{end_str}:{limit}"
         return key
     
     async def get_mvr_search_results(

@@ -1,3 +1,4 @@
+from fastapi import APIRouter, HTTPException, Query, Request
 """
 Cross-Video Individual Tracking - Simple Working Implementation
 PPL Meta Platform v2.19.13+
@@ -174,6 +175,27 @@ class TrackingSessionResponse(BaseModel):
     cache_hit_rate: float
     total_videos: int
 
+
+class ManualSessionMVRRequest(BaseModel):
+    """Request model for explicitly creating MVRs for a completed session."""
+    similarity_threshold: Optional[float] = Field(
+        default=0.70,
+        ge=0.0,
+        le=1.0,
+        description="Similarity threshold to use for explicit MVR creation"
+    )
+
+
+class ManualSessionMVRResponse(BaseModel):
+    """Response model for explicit session-level MVR creation."""
+    success: bool
+    session_uuid: str
+    status: str
+    queued_individual_count: int
+    task_id: Optional[str] = None
+    similarity_threshold: float
+    message: str
+
 class IndividualAppearance(BaseModel):
     """Response model for individual appearance in a video."""
     individual_uuid: str
@@ -236,9 +258,153 @@ def get_database_client() -> VmetaDatabaseClient:
     return main.db_client
 
 
-# ============================================================================
-# VIDEO-LEVEL INDIVIDUAL CACHING HELPER
-# ============================================================================
+def _normalize_gender_value(value):
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized in {"male", "female", "unknown"}:
+        return normalized
+    return None
+
+
+def _safe_float_value(value):
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int_value(value):
+    try:
+        if value is None:
+            return None
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_demographics_from_person_object(person_object: dict) -> dict:
+    """Extract the best available demographics from person-object payloads."""
+    demographics = {
+        'gender': None,
+        'gender_confidence': None,
+        'age_min': None,
+        'age_max': None,
+        'age_confidence': None,
+    }
+
+    if not isinstance(person_object, dict):
+        return demographics
+
+    raw_demographics = person_object.get('demographics')
+    if isinstance(raw_demographics, dict):
+        demographics['gender'] = _normalize_gender_value(raw_demographics.get('gender'))
+        demographics['gender_confidence'] = _safe_float_value(raw_demographics.get('gender_confidence'))
+        demographics['age_min'] = _safe_int_value(raw_demographics.get('age_min'))
+        demographics['age_max'] = _safe_int_value(raw_demographics.get('age_max'))
+        demographics['age_confidence'] = _safe_float_value(raw_demographics.get('age_confidence'))
+
+    representative_faces = person_object.get('representative_faces') or []
+    if isinstance(representative_faces, dict):
+        representative_faces = representative_faces.get('faces', []) or []
+
+    age_samples = []
+    age_confidences = []
+
+    for face_entry in representative_faces:
+        if not isinstance(face_entry, dict):
+            continue
+        face_data = face_entry.get('face_data') if isinstance(face_entry.get('face_data'), dict) else face_entry
+
+        age_detection = face_data.get('age_detection')
+        if isinstance(age_detection, dict):
+            estimated_age = _safe_int_value(age_detection.get('estimated_age'))
+            if estimated_age is not None:
+                age_samples.append(estimated_age)
+                confidence = _safe_float_value(age_detection.get('confidence'))
+                if confidence is not None:
+                    age_confidences.append(confidence)
+
+        for gender_key in ('gender_detection', 'gender_estimate'):
+            gender_block = face_data.get(gender_key)
+            if not isinstance(gender_block, dict):
+                continue
+            candidate_gender = _normalize_gender_value(
+                gender_block.get('gender') or gender_block.get('estimated_gender')
+            )
+            if candidate_gender is None:
+                continue
+            candidate_confidence = _safe_float_value(gender_block.get('confidence'))
+            current_confidence = _safe_float_value(demographics.get('gender_confidence'))
+            if demographics['gender'] is None or (
+                candidate_confidence is not None and
+                (current_confidence is None or candidate_confidence > current_confidence)
+            ):
+                demographics['gender'] = candidate_gender
+                demographics['gender_confidence'] = candidate_confidence
+
+        fallback_gender = _normalize_gender_value(
+            face_data.get('gender') or face_data.get('estimated_gender')
+        )
+        if fallback_gender is not None and demographics['gender'] is None:
+            demographics['gender'] = fallback_gender
+            demographics['gender_confidence'] = _safe_float_value(face_data.get('gender_confidence'))
+
+    if age_samples:
+        demographics['age_min'] = min(age_samples)
+        demographics['age_max'] = max(age_samples)
+        if age_confidences:
+            demographics['age_confidence'] = sum(age_confidences) / len(age_confidences)
+    return demographics
+
+
+def _select_preferred_demographics(*candidates: Optional[dict]) -> dict:
+    """Pick the best available demographics across candidate sources."""
+    preferred = {
+        'gender': None,
+        'gender_confidence': None,
+        'age_min': None,
+        'age_max': None,
+        'age_confidence': None,
+    }
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+
+        gender = _normalize_gender_value(candidate.get('gender'))
+        gender_confidence = _safe_float_value(candidate.get('gender_confidence'))
+        current_gender_confidence = _safe_float_value(preferred.get('gender_confidence'))
+        if gender is not None and (
+            preferred['gender'] is None or
+            (gender_confidence is not None and (
+                current_gender_confidence is None or
+                gender_confidence > current_gender_confidence
+            ))
+        ):
+            preferred['gender'] = gender
+            preferred['gender_confidence'] = gender_confidence
+
+        age_min = _safe_int_value(candidate.get('age_min'))
+        age_max = _safe_int_value(candidate.get('age_max'))
+        age_confidence = _safe_float_value(candidate.get('age_confidence'))
+        current_age_confidence = _safe_float_value(preferred.get('age_confidence'))
+        if (
+            (age_min is not None or age_max is not None) and
+            (preferred['age_min'] is None and preferred['age_max'] is None or
+             (age_confidence is not None and (
+                 current_age_confidence is None or age_confidence > current_age_confidence
+             )))
+        ):
+            preferred['age_min'] = age_min
+            preferred['age_max'] = age_max
+            preferred['age_confidence'] = age_confidence
+
+    return preferred
+
 
 async def get_or_create_individuals_for_video(
     video_uuid: str,
@@ -451,7 +617,7 @@ router = APIRouter(
 async def create_tracking_session(
     request: CreateTrackingSessionRequest,
     background_tasks: BackgroundTasks,
-    http_request: Request
+    http_request: Request,
 ):
     """
     Create new cross-video individual tracking session.
@@ -651,6 +817,112 @@ async def get_session_status(session_uuid: str):
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.post(
+    "/sessions/{session_uuid}/create-mvrs",
+    response_model=ManualSessionMVRResponse,
+)
+async def create_mvrs_for_session(
+    session_uuid: str,
+    request: ManualSessionMVRRequest,
+    http_request: Request,
+):
+    """
+    Explicitly queue MVR creation for a completed tracking session.
+
+    This endpoint is the manual path for session-level MVR creation when the
+    continuous pipeline is configured not to merge automatically.
+    """
+    try:
+        db_client = get_database_client()
+
+        async with db_client.pool.acquire() as conn:
+            session = await conn.fetchrow(
+                """
+                SELECT session_uuid, status
+                FROM tracking_sessions
+                WHERE session_uuid = $1
+                """,
+                session_uuid,
+            )
+
+            if not session:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Session {session_uuid} not found",
+                )
+
+            if session["status"].upper() != "COMPLETED":
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Session must be completed before explicit MVR creation. "
+                        f"Current status: {session['status']}"
+                    ),
+                )
+
+            individual_rows = await conn.fetch(
+                """
+                SELECT DISTINCT si.individual_uuid
+                FROM session_individuals si
+                WHERE si.session_uuid = $1
+                ORDER BY si.individual_uuid
+                """,
+                session_uuid,
+            )
+
+        individual_uuids = [row["individual_uuid"] for row in individual_rows]
+
+        if not individual_uuids:
+            return ManualSessionMVRResponse(
+                success=True,
+                session_uuid=session_uuid,
+                status="no-op",
+                queued_individual_count=0,
+                similarity_threshold=float(request.similarity_threshold or 0.70),
+                message="Session has no linked individuals to convert into MVRs",
+            )
+
+        import main
+
+        mvr_processor = getattr(main, "mvr_background_processor", None)
+        if not mvr_processor:
+            raise HTTPException(
+                status_code=503,
+                detail="MVR background processor is not available",
+            )
+
+        auth_header = (
+            http_request.headers.get("authorization")
+            or http_request.headers.get("Authorization")
+        )
+
+        queue_result = await mvr_processor.queue_session_mvr_creation(
+            session_uuid=UUID(session_uuid),
+            individual_uuids=individual_uuids,
+            auth_token=auth_header,
+            similarity_threshold=float(request.similarity_threshold or 0.70),
+        )
+
+        return ManualSessionMVRResponse(
+            success=True,
+            session_uuid=session_uuid,
+            status="queued",
+            queued_individual_count=len(individual_uuids),
+            task_id=queue_result.get("task_id"),
+            similarity_threshold=float(request.similarity_threshold or 0.70),
+            message="Explicit session MVR creation queued",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to queue manual session MVR creation: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}",
         )
 
 
@@ -1105,6 +1377,102 @@ async def _create_single_mvr_person(
     """
     from uuid import uuid4
     import numpy as np
+
+    async def _create_fallback_mvr_without_embedding(
+        reason: str,
+        person_object_payload: dict,
+        representative_video: str,
+        representative_face: Optional[dict] = None,
+    ) -> None:
+        confidence_value = 0.5
+        quality_value = 0.5
+
+        if isinstance(representative_face, dict):
+            confidence_value = representative_face.get('confidence', confidence_value)
+            quality_value = (
+                representative_face.get('quality')
+                or representative_face.get('quality_score')
+                or quality_value
+            )
+
+        if isinstance(person_object_payload, dict):
+            confidence_value = person_object_payload.get('confidence', confidence_value)
+            quality_value = (
+                person_object_payload.get('quality')
+                or person_object_payload.get('quality_score')
+                or quality_value
+            )
+
+        try:
+            confidence_value = max(0.0, min(1.0, float(confidence_value or 0.5)))
+        except (TypeError, ValueError):
+            confidence_value = 0.5
+
+        try:
+            quality_value = float(quality_value or 0.5)
+        except (TypeError, ValueError):
+            quality_value = 0.5
+        if quality_value > 1.0:
+            quality_value = quality_value / 100.0
+        quality_value = max(0.0, min(1.0, quality_value))
+
+        demographics = _extract_demographics_from_person_object(person_object_payload)
+        zero_embedding = '[' + ','.join(['0'] * 512) + ']'
+        mvr_people_uuid = str(uuid4())
+
+        async with db_client.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("""
+                    INSERT INTO mvr_people (
+                        mvr_people_uuid,
+                        featured_individual_uuid,
+                        featured_video_uuid,
+                        source_media_uuid,
+                        face_embedding,
+                        confidence_score,
+                        quality_score,
+                        face_quality,
+                        gender,
+                        gender_confidence,
+                        age_min,
+                        age_max,
+                        age_confidence,
+                        created_by_session,
+                        embedding_model,
+                        auto_created,
+                        is_isolated,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $3, $4::vector, $5, $6, $6,
+                        $7, $8, $9, $10, $11, $12, $13, TRUE, TRUE, NOW(), NOW()
+                    )
+                """, mvr_people_uuid, individual_uuid, representative_video,
+                    zero_embedding, confidence_value, quality_value,
+                    demographics.get('gender'), demographics.get('gender_confidence'),
+                    demographics.get('age_min'), demographics.get('age_max'), demographics.get('age_confidence'),
+                    session_uuid, 'fallback_zero')
+
+                await conn.execute("""
+                    INSERT INTO individual_mvr_mapping (
+                        individual_uuid,
+                        mvr_people_uuid,
+                        similarity_score,
+                        confidence_score,
+                        quality_score,
+                        is_representative,
+                        linked_by_session,
+                        link_method
+                    ) VALUES ($1, $2, 1.0, $3, $4, TRUE, $5, $6)
+                """, individual_uuid, mvr_people_uuid, confidence_value, quality_value,
+                    session_uuid, 'auto_create')
+
+        logger.warning(
+            "[SINGLE MVR] Created fallback MVR %s for individual %s without embedding (%s)",
+            mvr_people_uuid[:8],
+            individual_uuid[:8],
+            reason,
+        )
     
     individual_uuid = individual_data['individual_uuid']
     video_uuids = individual_data['video_uuids']
@@ -1133,7 +1501,12 @@ async def _create_single_mvr_person(
     logger.info(f"[SINGLE MVR DEBUG] representative_faces type: {type(representative_faces)}, value: {str(representative_faces)[:200]}")
     
     if not representative_faces:
-        logger.warning(f"[SINGLE MVR] No representative faces for individual {individual_uuid[:8]}, skipping")
+        logger.warning(f"[SINGLE MVR] No representative faces for individual {individual_uuid[:8]}, using fallback MVR creation")
+        await _create_fallback_mvr_without_embedding(
+            reason="no_representative_faces",
+            person_object_payload=person_object,
+            representative_video=representative_video_uuid,
+        )
         return
     
     # Parse representative_faces if it's a JSON string
@@ -1160,10 +1533,20 @@ async def _create_single_mvr_person(
                 representative_faces = [representative_faces]
         else:
             logger.error(f"[SINGLE MVR] Cannot convert representative_faces to list for individual {individual_uuid[:8]}")
+            await _create_fallback_mvr_without_embedding(
+                reason="invalid_representative_faces_shape",
+                person_object_payload=person_object,
+                representative_video=representative_video_uuid,
+            )
             return
     
     if not representative_faces:
-        logger.warning(f"[SINGLE MVR] Empty representative_faces list for individual {individual_uuid[:8]}")
+        logger.warning(f"[SINGLE MVR] Empty representative_faces list for individual {individual_uuid[:8]}, using fallback MVR creation")
+        await _create_fallback_mvr_without_embedding(
+            reason="empty_representative_faces",
+            person_object_payload=person_object,
+            representative_video=representative_video_uuid,
+        )
         return
     
     best_face = representative_faces[0]  # First is highest quality
@@ -1193,11 +1576,23 @@ async def _create_single_mvr_person(
         
         # Validate required fields
         if not bbox or not isinstance(bbox, list) or len(bbox) != 4:
-            logger.warning(f"[SINGLE MVR] Invalid bbox for individual {individual_uuid[:8]}: {bbox}")
+            logger.warning(f"[SINGLE MVR] Invalid bbox for individual {individual_uuid[:8]}: {bbox}; using fallback MVR creation")
+            await _create_fallback_mvr_without_embedding(
+                reason="invalid_bbox",
+                person_object_payload=person_object,
+                representative_video=representative_video_uuid,
+                representative_face=best_face,
+            )
             return
         
         if frame_number is None:
-            logger.warning(f"[SINGLE MVR] Missing frame_number for individual {individual_uuid[:8]}")
+            logger.warning(f"[SINGLE MVR] Missing frame_number for individual {individual_uuid[:8]}; using fallback MVR creation")
+            await _create_fallback_mvr_without_embedding(
+                reason="missing_frame_number",
+                person_object_payload=person_object,
+                representative_video=representative_video_uuid,
+                representative_face=best_face,
+            )
             return
         
         # Construct media URL for frame extraction
@@ -1222,7 +1617,13 @@ async def _create_single_mvr_person(
         async with aiohttp.ClientSession() as session:
             async with session.get(media_url, headers=headers) as response:
                 if response.status != 200:
-                    logger.warning(f"[SINGLE MVR] Failed to fetch frame: {response.status}")
+                    logger.warning(f"[SINGLE MVR] Failed to fetch frame: {response.status}; using fallback MVR creation")
+                    await _create_fallback_mvr_without_embedding(
+                        reason=f"frame_fetch_failed_{response.status}",
+                        person_object_payload=person_object,
+                        representative_video=representative_video_uuid,
+                        representative_face=best_face,
+                    )
                     return
                 
                 frame_bytes = await response.read()
@@ -1232,7 +1633,13 @@ async def _create_single_mvr_person(
         frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
         
         if frame is None:
-            logger.warning(f"[SINGLE MVR] Failed to decode frame")
+            logger.warning(f"[SINGLE MVR] Failed to decode frame; using fallback MVR creation")
+            await _create_fallback_mvr_without_embedding(
+                reason="frame_decode_failed",
+                person_object_payload=person_object,
+                representative_video=representative_video_uuid,
+                representative_face=best_face,
+            )
             return
         
         # Crop face using bbox (array format: [x1, y1, x2, y2])
@@ -1269,14 +1676,26 @@ async def _create_single_mvr_person(
         
         # Validate face crop
         if face_crop.size == 0:
-            logger.warning(f"[SINGLE MVR] Empty face crop for individual {individual_uuid[:8]}")
+            logger.warning(f"[SINGLE MVR] Empty face crop for individual {individual_uuid[:8]}; using fallback MVR creation")
+            await _create_fallback_mvr_without_embedding(
+                reason="empty_face_crop",
+                person_object_payload=person_object,
+                representative_video=representative_video_uuid,
+                representative_face=best_face,
+            )
             return
         
         # Generate embedding using FaceNetProcessor
         embedding = facenet_processor.extract_embedding(face_crop, enforce_detection=False)
         
         if embedding is None:
-            logger.warning(f"[SINGLE MVR] Failed to generate embedding for individual {individual_uuid[:8]}")
+            logger.warning(f"[SINGLE MVR] Failed to generate embedding for individual {individual_uuid[:8]}; using fallback MVR creation")
+            await _create_fallback_mvr_without_embedding(
+                reason="embedding_generation_failed",
+                person_object_payload=person_object,
+                representative_video=representative_video_uuid,
+                representative_face=best_face,
+            )
             return
         
         logger.info(f"[SINGLE MVR] Successfully generated embedding for individual {individual_uuid[:8]}, shape: {embedding.shape}")
@@ -1360,6 +1779,12 @@ async def _create_single_mvr_person(
         
     except Exception as e:
         logger.error(f"[SINGLE MVR] Failed to create MVR person: {e}", exc_info=True)
+        await _create_fallback_mvr_without_embedding(
+            reason=f"exception:{type(e).__name__}",
+            person_object_payload=person_object if isinstance(person_object, dict) else {},
+            representative_video=representative_video_uuid if 'representative_video_uuid' in locals() else None,
+            representative_face=best_face if 'best_face' in locals() and isinstance(best_face, dict) else None,
+        )
 
 
 async def merge_individuals_by_similarity(
@@ -1586,11 +2011,17 @@ async def merge_individuals_by_similarity(
                 person_object = person_objects_by_video.get(representative_video_uuid)
                 
                 if person_object:
+                    extracted_demographics = _extract_demographics_from_person_object(
+                        person_object
+                    )
                     individuals_data.append({
                         'individual_uuid': individual_uuid,
                         'video_uuid': representative_video_uuid,
                         'person_object': person_object,  # Full object in memory
-                        'all_video_uuids': video_uuids
+                        'all_video_uuids': video_uuids,
+                        'first_seen': individual.get('first_seen'),
+                        'last_seen': individual.get('last_seen'),
+                        'demographics': individual.get('demographics') or extracted_demographics,
                     })
         
         # DEBUG: Log extraction result
@@ -1902,7 +2333,7 @@ async def merge_individuals_by_similarity(
                 )
                 
                 # Extract demographics using ML models
-                demographics = {
+                ml_demographics = {
                     'gender': None,
                     'gender_confidence': None,
                     'age_min': None,
@@ -1918,9 +2349,9 @@ async def merge_individuals_by_similarity(
                         enforce_detection=False
                     )
                     if age_result:
-                        demographics['age_min'] = age_result.get('min_age')
-                        demographics['age_max'] = age_result.get('max_age')
-                        demographics['age_confidence'] = age_result.get('confidence')
+                        ml_demographics['age_min'] = age_result.get('min_age')
+                        ml_demographics['age_max'] = age_result.get('max_age')
+                        ml_demographics['age_confidence'] = age_result.get('confidence')
                     
                     # Gender classification (using singleton)
                     gender_classifier = get_gender_classifier()
@@ -1929,10 +2360,16 @@ async def merge_individuals_by_similarity(
                         enforce_detection=False
                     )
                     if gender_result:
-                        demographics['gender'] = gender_result.get('gender')
-                        demographics['gender_confidence'] = gender_result.get('confidence')
+                        ml_demographics['gender'] = gender_result.get('gender')
+                        ml_demographics['gender_confidence'] = gender_result.get('confidence')
                 except Exception as e:
                     logger.warning(f"[MERGE] Demographics extraction failed for {individual_uuid[:8]}: {e}")
+
+                demographics = _select_preferred_demographics(
+                    ind_data.get('demographics'),
+                    _extract_demographics_from_person_object(person_obj),
+                    ml_demographics,
+                )
                 
                 if embedding is not None:
                     faces_with_embeddings.append({
@@ -1940,6 +2377,8 @@ async def merge_individuals_by_similarity(
                         'embedding': np.array(embedding),
                         'confidence': confidence,
                         'video_uuid': video_uuid,
+                        'first_seen': ind_data.get('first_seen'),
+                        'last_seen': ind_data.get('last_seen'),
                         'demographics': demographics
                     })
                     logger.info(
@@ -2025,6 +2464,36 @@ async def merge_individuals_by_similarity(
                         f"merge_skipped: only_{len(faces_with_embeddings)}_embeddings")
             except Exception:
                 pass
+
+            # In no-merge materialization mode we still need one persisted MVR row per
+            # individual even when representative faces do not include enough geometry
+            # to generate embeddings. Fall back to single-person creation for every
+            # matched individual.
+            fallback_created = 0
+            for individual in matched_individuals:
+                await _create_single_mvr_person(
+                    db_client,
+                    individual,
+                    session_uuid,
+                    auth_token,
+                )
+                fallback_created += 1
+
+            async with db_client.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE tracking_sessions
+                    SET unique_mvr_people_count = (
+                        SELECT COUNT(DISTINCT mvr_people_uuid)
+                        FROM individual_mvr_mapping
+                        WHERE individual_uuid IN (
+                            SELECT individual_uuid
+                            FROM session_individuals
+                            WHERE session_uuid = $1
+                        )
+                    )
+                    WHERE session_uuid = $1
+                """, session_uuid)
+
             return 0
         
         # Phase A complete! We have all embeddings in memory.
@@ -2175,12 +2644,22 @@ async def merge_individuals_by_similarity(
 
             return True
 
+        def _can_auto_merge_by_time(face_a, face_b):
+            first_seen_a = face_a.get('first_seen')
+            first_seen_b = face_b.get('first_seen')
+
+            if not first_seen_a or not first_seen_b:
+                return True
+
+            return first_seen_a.date() == first_seen_b.date()
+
         faces_by_uuid = {
             face['individual_uuid']: face
             for face in faces_with_embeddings
             if face.get('individual_uuid')
         }
         blocked_gender_conflicts = 0
+        blocked_time_conflicts = 0
         
         # Build adjacency list of similar individuals
         similar_to = {uuid_val: [] for uuid_val in uuids}
@@ -2189,6 +2668,15 @@ async def merge_individuals_by_similarity(
                 if similarities[i][j] >= similarity_threshold:
                     face_i = faces_by_uuid.get(uuids[i])
                     face_j = faces_by_uuid.get(uuids[j])
+                    if face_i and face_j and not _can_auto_merge_by_time(face_i, face_j):
+                        blocked_time_conflicts += 1
+                        logger.info(
+                            f"[MERGE] Time guard blocked edge: {uuids[i][:8]} ↔ "
+                            f"{uuids[j][:8]} (sim={similarities[i][j]:.4f}, "
+                            f"dates={face_i.get('first_seen')} vs {face_j.get('first_seen')})"
+                        )
+                        continue
+
                     if face_i and face_j and not _can_auto_merge_by_gender(face_i, face_j):
                         blocked_gender_conflicts += 1
                         logger.info(
@@ -2208,6 +2696,11 @@ async def merge_individuals_by_similarity(
             logger.info(
                 f"[MERGE PHASE B] Gender guard blocked {blocked_gender_conflicts} "
                 "high-confidence cross-gender edges"
+            )
+        if blocked_time_conflicts:
+            logger.info(
+                f"[MERGE PHASE B] Time guard blocked {blocked_time_conflicts} "
+                "cross-day edges"
             )
         
         # Find connected components using DFS
@@ -2738,36 +3231,47 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
             except Exception:
                 pass
             
-            # CRITICAL STEP: Call Enhanced Logic V2 to create person_objects from stored_faces
-            logger.info(f"Calling Enhanced Logic V2 for {len(videos)} videos to create person_objects...")
             enhanced_v2_success = 0
             enhanced_v2_failed = 0
-            
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                for video in videos:
-                    video_uuid = video.get('uuid') or video.get('id')
-                    try:
-                        headers = {}
-                        if auth_token:
-                            headers['Authorization'] = f'Bearer {auth_token}' if not auth_token.startswith('Bearer ') else auth_token
-                        
-                        # Call Enhanced Logic V2 endpoint (GET method)
-                        response = await client.get(
-                            f"http://localhost:8002/api/v1/media/{video_uuid}/faces/enhanced-v2",
-                            headers=headers
-                        )
-                        
-                        if response.status_code in [200, 201]:
-                            result = response.json()
-                            person_count = result.get('person_groups_count', 0)
-                            logger.info(f"✅ Enhanced V2 for {video_uuid[:8]}: {person_count} person_objects created")
-                            enhanced_v2_success += 1
-                        else:
-                            logger.warning(f"Enhanced V2 failed for {video_uuid[:8]}: {response.status_code}")
+
+            # Explicit video_uuid sessions are commonly used for read-oriented or targeted
+            # reprocessing flows where person_objects already exist upstream. In that case,
+            # block-free progress is more important than re-triggering Orchestrator materialization.
+            if video_uuids_list:
+                logger.info(
+                    f"Skipping Enhanced Logic V2 for {len(videos)} explicit videos; "
+                    "using persisted Orchestrator person_objects during preload instead"
+                )
+                enhanced_v2_success = len(videos)
+            else:
+                # CRITICAL STEP: Call Enhanced Logic V2 to create person_objects from stored_faces
+                logger.info(f"Calling Enhanced Logic V2 for {len(videos)} videos to create person_objects...")
+
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    for video in videos:
+                        video_uuid = video.get('uuid') or video.get('id')
+                        try:
+                            headers = {}
+                            if auth_token:
+                                headers['Authorization'] = f'Bearer {auth_token}' if not auth_token.startswith('Bearer ') else auth_token
+
+                            # Call Enhanced Logic V2 endpoint (GET method)
+                            response = await client.get(
+                                f"http://localhost:8002/api/v1/media/{video_uuid}/faces/enhanced-v2",
+                                headers=headers
+                            )
+
+                            if response.status_code in [200, 201]:
+                                result = response.json()
+                                person_count = result.get('person_groups_count', 0)
+                                logger.info(f"✅ Enhanced V2 for {video_uuid[:8]}: {person_count} person_objects created")
+                                enhanced_v2_success += 1
+                            else:
+                                logger.warning(f"Enhanced V2 failed for {video_uuid[:8]}: {response.status_code}")
+                                enhanced_v2_failed += 1
+                        except Exception as e:
+                            logger.error(f"Enhanced V2 error for {video_uuid[:8]}: {e}")
                             enhanced_v2_failed += 1
-                    except Exception as e:
-                        logger.error(f"Enhanced V2 error for {video_uuid[:8]}: {e}")
-                        enhanced_v2_failed += 1
             
             logger.info(f"Enhanced Logic V2 completed: {enhanced_v2_success} success, {enhanced_v2_failed} failed")
             
@@ -3044,6 +3548,15 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                         individual_uuid = individual_data['individual_uuid']
                         individual_id = f"ind_{individual_uuid[:8]}"
                         video_uuids = individual_data['video_uuids']
+                        demographics = individual_data.get('demographics') or {}
+                        persisted_gender_estimate = _normalize_gender_value(
+                            demographics.get('gender')
+                        )
+                        persisted_age_estimate = None
+                        age_min = _safe_int_value(demographics.get('age_min'))
+                        age_max = _safe_int_value(demographics.get('age_max'))
+                        if age_min is not None:
+                            persisted_age_estimate = int(round((age_min + (age_max if age_max is not None else age_min)) / 2))
                         
                         # Prepare individual insert
                         db_operations.append(('individual', {
@@ -3052,7 +3565,9 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                             'confidence_score': individual_data['temporal_score'],
                             'spatial_signature': '{"type": "temporal_group_match"}',
                             'temporal_signature': '{"type": "consecutive_videos"}',
-                            'algorithm_version': '2.1'
+                            'algorithm_version': '2.1',
+                            'gender_estimate': persisted_gender_estimate,
+                            'age_estimate': persisted_age_estimate,
                         }))
                         
                         # Prepare session-individual link
@@ -3089,7 +3604,7 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                     start_ts = start_ts.astimezone(tz.utc).replace(tzinfo=None)
                                 
                                 end_ts = start_ts + timedelta(seconds=30)
-                                person_object_uuid = str(uuid4())
+                                person_object_uuid = None
                                 
                                 # Extract representative_faces from person_objects for quality metrics
                                 representative_faces = None
@@ -3097,11 +3612,25 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                 if video_uuid in person_objects_dict:
                                     person_obj = person_objects_dict[video_uuid]
                                     if isinstance(person_obj, dict):
+                                        person_object_uuid = (
+                                            person_obj.get('person_id')
+                                            or person_obj.get('person_uuid')
+                                            or person_obj.get('person_object_uuid')
+                                        )
                                         representative_faces = person_obj.get('representative_faces')
                                         if representative_faces:
                                             # Convert to JSON string for JSONB storage
                                             import json
                                             representative_faces = json.dumps({'faces': representative_faces})
+
+                                if not person_object_uuid:
+                                    logger.warning(
+                                        'Skipping appearance insert for individual %s video %s: '
+                                        'no persisted person identifier available',
+                                        individual_uuid,
+                                        video_uuid,
+                                    )
+                                    continue
                                 
                                 db_operations.append(('appearance', {
                                     'individual_uuid': individual_uuid,
@@ -3136,15 +3665,17 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                                 individual_uuid, individual_id,
                                                 confidence_score,
                                                 spatial_signature, temporal_signature,
-                                                algorithm_version
-                                            ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+                                                algorithm_version, gender_estimate, age_estimate
+                                            ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8)
                                         """,
                                             params['individual_uuid'],
                                             params['individual_id'],
                                             params['confidence_score'],
                                             params['spatial_signature'],
                                             params['temporal_signature'],
-                                            params['algorithm_version']
+                                            params['algorithm_version'],
+                                            params['gender_estimate'],
+                                            params['age_estimate']
                                         )
                                     elif op_type == 'session_individual':
                                         await conn.execute("""
@@ -3180,6 +3711,12 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                         )
                                 
                                 logger.info(f"✅ Transaction committed: {len(matched_individuals)} individuals created")
+                                logger.warning(
+                                    "[MVR PATH DEBUG] cross_video_tracking_simple committed %s individuals and %s appearances for session %s; Queue B decides whether any mvr_people rows are created afterwards",
+                                    len(matched_individuals),
+                                    sum(1 for op_type, _ in db_operations if op_type == 'appearance'),
+                                    session_uuid,
+                                )
                     except Exception as db_error:
                         logger.error(f"❌ Database transaction failed: {db_error}")
                         # Log to session
@@ -3268,8 +3805,10 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                     mvr_processor = main.mvr_background_processor
                     
                     if mvr_processor:
-                        # Fetch similarity threshold from orchestrator settings
-                        # (user-configured via frontend Settings > MVR Settings)
+                        # Fetch merge mode and threshold from orchestrator settings.
+                        # Continuous pipeline grouping must not perform session-wide
+                        # MVR merging when merge_rule is "none".
+                        merge_rule = "semi"
                         merge_similarity_threshold = 0.70  # fallback default
                         try:
                             import httpx as _httpx
@@ -3280,26 +3819,51 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                 )
                                 if _resp.status_code == 200:
                                     _data = _resp.json()
+                                    merge_rule = str(_data.get("merge_rule", "semi"))
                                     merge_similarity_threshold = float(_data.get("merge_threshold", 0.70))
                         except Exception as _e:
                             logger.warning(f"Could not fetch MVR merge threshold from orchestrator, using default 0.70: {_e}")
 
-                        logger.info(f"[Queue B] Using similarity_threshold={merge_similarity_threshold} from orchestrator settings")
+                        logger.info(
+                            f"[Queue B] Using merge_rule={merge_rule}, "
+                            f"similarity_threshold={merge_similarity_threshold} "
+                            f"from orchestrator settings"
+                        )
+
+                        if merge_rule == "none":
+                            logger.warning(
+                                "[MVR PATH DEBUG] Queue B will create base MVR rows without merging for session %s because merge_rule=none.",
+                                session_uuid,
+                            )
+                            queue_similarity_threshold = 1.01
+                            queue_hierarchical_merge = False
+                        else:
+                            logger.warning(
+                                "[MVR PATH DEBUG] Queue B proceeding with MVR creation for session %s using merge_rule=%s over %s individuals",
+                                session_uuid,
+                                merge_rule,
+                                len(created_individual_uuids),
+                            )
+                            queue_similarity_threshold = merge_similarity_threshold
+                            queue_hierarchical_merge = True
 
                         # Queue MVR creation (non-blocking)
                         queue_result = await mvr_processor.queue_session_mvr_creation(
                             session_uuid=session_uuid,
                             individual_uuids=[UUID(uid) for uid in created_individual_uuids],
                             auth_token=auth_token,
-                            similarity_threshold=merge_similarity_threshold
+                            similarity_threshold=queue_similarity_threshold,
+                            queue_hierarchical_merge=queue_hierarchical_merge,
                         )
-                        
+
                         logger.info(
                             f"✅ [Queue B] MVR creation queued for session {session_uuid}: "
                             f"{queue_result['individual_count']} individuals queued, "
-                            f"task_id={queue_result['task_id']}"
+                            f"task_id={queue_result['task_id']}, "
+                            f"threshold={queue_similarity_threshold}, "
+                            f"queue_hierarchical_merge={queue_hierarchical_merge}"
                         )
-                        
+
                         # DEBUG: Write queue success to database
                         try:
                             async with db_client.pool.acquire() as conn:
@@ -3374,8 +3938,9 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                 )
             """, session_uuid)
             
-            # If no MVR mappings exist yet, unique count equals individuals count
-            unique_count = unique_mvr_result['unique_count'] if unique_mvr_result and unique_mvr_result['unique_count'] > 0 else actual_individuals_count
+            # Keep the session counter aligned with actual persisted MVR rows.
+            # When merge_rule=none, Queue B is skipped and this count must stay 0.
+            unique_count = unique_mvr_result['unique_count'] if unique_mvr_result else 0
             
             await conn.execute("""
                 UPDATE tracking_sessions
@@ -3700,7 +4265,12 @@ async def discover_videos_in_collection(
 @router.get("/sessions/{session_uuid}/individuals")
 async def get_session_individuals(
     session_uuid: str,
-    http_request: Request
+    http_request: Request,
+    view: str = Query(
+        default="auto",
+        pattern="^(auto|raw|mvr)$",
+        description="Return raw session individuals, MVR people, or auto-select based on session state",
+    ),
 ):
     """
     Phase 5: Get list of unique individuals found in a completed
@@ -3757,12 +4327,13 @@ async def get_session_individuals(
             
             # Check if MVR people exist for this session
             mvr_count = session.get('unique_mvr_people_count', 0)
+            use_mvr_view = view == "mvr" or (view == "auto" and mvr_count and mvr_count > 0)
 
-            if mvr_count and mvr_count > 0:
+            if use_mvr_view:
                 # Return MVR people (merged individuals)
                 logger.info(
-                    f"Phase 5: Session has {mvr_count} MVR people, "
-                    f"returning aggregated data"
+                    f"Phase 5: Returning MVR view for session {session_uuid} "
+                    f"(stored mvr_count={mvr_count}, requested view={view})"
                 )
 
                 mvr_people = await conn.fetch(
@@ -3823,9 +4394,10 @@ async def get_session_individuals(
                 )
 
             else:
-                # No MVR people - return raw individuals (backwards compat)
+                # Return raw session individuals even if MVR mappings exist.
                 logger.info(
-                    "Phase 5: No MVR people, returning raw individuals"
+                    f"Phase 5: Returning raw individuals for session {session_uuid} "
+                    f"(requested view={view}, stored mvr_count={mvr_count})"
                 )
                 
                 individuals = await conn.fetch(
@@ -3885,12 +4457,195 @@ async def get_session_individuals(
                 "total_individuals": len(individuals_list),
                 "individuals": individuals_list
             }
-            
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Phase 5 error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/sessions/{session_uuid}/analysis")
+async def get_session_analysis(
+    session_uuid: str,
+    view: str = Query(
+        default="auto",
+        pattern="^(auto|raw|mvr)$",
+        description="Backend-owned session analysis view selector",
+    ),
+):
+    """
+    Return a canonical cross-video analysis response for a session.
+
+    This keeps merge/view routing in the backend so the frontend can render a
+    single response instead of deciding between raw individuals and MVR paths.
+    """
+    try:
+        db_client = get_database_client()
+
+        async with db_client.pool.acquire() as conn:
+            session = await conn.fetchrow(
+                """
+                SELECT session_uuid, status, total_videos,
+                       individuals_found, unique_mvr_people_count
+                FROM tracking_sessions
+                WHERE session_uuid = $1
+                """,
+                session_uuid,
+            )
+
+            if not session:
+                raise HTTPException(status_code=404, detail="Session not found")
+
+            if session["status"].upper() != "COMPLETED":
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Session is not completed. Current status: {session['status']}"
+                    ),
+                )
+
+            mvr_count = int(session.get("unique_mvr_people_count") or 0)
+            available_views = ["raw"]
+            if mvr_count > 0:
+                available_views.append("mvr")
+
+            resolved_view = "raw"
+            if view == "mvr" and mvr_count > 0:
+                resolved_view = "mvr"
+
+            analyses = []
+
+            if resolved_view == "raw":
+                rows = await conn.fetch(
+                    """
+                    SELECT
+                        i.individual_uuid,
+                        i.individual_id,
+                        i.confidence_score AS average_confidence,
+                        iva.video_uuid,
+                        iva.person_object_uuid,
+                        iva.start_timestamp,
+                        iva.end_timestamp,
+                        iva.entry_bbox,
+                        iva.exit_bbox,
+                        iva.confidence,
+                        imm.mvr_people_uuid,
+                        mvr.gender,
+                        mvr.gender_confidence,
+                        mvr.age_min,
+                        mvr.age_max,
+                        mvr.age_confidence,
+                        mvr.name,
+                        mvr.name_updated_at,
+                        mvr.name_updated_by
+                    FROM session_individuals si
+                    JOIN individuals i
+                        ON si.individual_uuid = i.individual_uuid
+                    LEFT JOIN individual_video_appearances iva
+                        ON i.individual_uuid = iva.individual_uuid
+                    LEFT JOIN individual_mvr_mapping imm
+                        ON i.individual_uuid = imm.individual_uuid
+                    LEFT JOIN mvr_people mvr
+                        ON imm.mvr_people_uuid = mvr.mvr_people_uuid
+                        AND mvr.is_orphaned = FALSE
+                    WHERE si.session_uuid = $1
+                    ORDER BY i.individual_uuid, iva.start_timestamp ASC
+                    """,
+                    session_uuid,
+                )
+
+                by_individual = {}
+                for row in rows:
+                    individual_uuid = str(row["individual_uuid"])
+                    entry = by_individual.setdefault(
+                        individual_uuid,
+                        {
+                            "individual_uuid": individual_uuid,
+                            "individual_id": row["individual_id"],
+                            "session_uuid": session_uuid,
+                            "total_appearances": 0,
+                            "unique_videos": set(),
+                            "first_seen": None,
+                            "last_seen": None,
+                            "total_duration_seconds": 0.0,
+                            "average_confidence": round(float(row["average_confidence"] or 0.0), 3),
+                            "average_route_velocity": None,
+                            "demographics": None,
+                            "aggregate_demographics": None,
+                            "appearances": [],
+                            "person_object_uuids": [],
+                            "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
+                            "is_super_individual": False,
+                            "merged_mvr_count": 1,
+                            "merged_mvr_people": [],
+                            "best_face_thumbnail": None,
+                            "name": row.get("name"),
+                            "name_updated_at": row["name_updated_at"].isoformat() if row.get("name_updated_at") else None,
+                            "name_updated_by": row.get("name_updated_by"),
+                        },
+                    )
+
+                    start_ts = row.get("start_timestamp")
+                    end_ts = row.get("end_timestamp")
+                    if start_ts and end_ts:
+                        entry["total_appearances"] += 1
+                        entry["unique_videos"].add(str(row["video_uuid"]))
+                        entry["appearances"].append(
+                            {
+                                "individual_uuid": individual_uuid,
+                                "video_uuid": str(row["video_uuid"]),
+                                "person_object_uuid": str(row["person_object_uuid"]),
+                                "mvr_people_uuid": str(row["mvr_people_uuid"]) if row.get("mvr_people_uuid") else None,
+                                "start_timestamp": start_ts.isoformat(),
+                                "end_timestamp": end_ts.isoformat(),
+                                "entry_bbox": list(row["entry_bbox"]) if row.get("entry_bbox") else None,
+                                "exit_bbox": list(row["exit_bbox"]) if row.get("exit_bbox") else None,
+                                "confidence_score": round(float(row.get("confidence") or 0.0), 3),
+                            }
+                        )
+                        entry["person_object_uuids"].append(str(row["person_object_uuid"]))
+                        if entry["first_seen"] is None or start_ts < entry["first_seen"]:
+                            entry["first_seen"] = start_ts
+                        if entry["last_seen"] is None or end_ts > entry["last_seen"]:
+                            entry["last_seen"] = end_ts
+
+                    if row.get("gender") is not None:
+                        entry["demographics"] = {
+                            "gender": row.get("gender"),
+                            "gender_confidence": round(float(row.get("gender_confidence") or 0.0), 3) if row.get("gender_confidence") is not None else None,
+                            "age_min": int(row["age_min"]) if row.get("age_min") is not None else None,
+                            "age_max": int(row["age_max"]) if row.get("age_max") is not None else None,
+                            "age_mean": round((int(row["age_min"]) + int(row["age_max"])) / 2, 1) if row.get("age_min") is not None and row.get("age_max") is not None else None,
+                            "age_confidence": round(float(row.get("age_confidence") or 0.0), 3) if row.get("age_confidence") is not None else None,
+                        }
+
+                for entry in by_individual.values():
+                    entry["unique_videos"] = len(entry["unique_videos"])
+                    entry["first_seen"] = entry["first_seen"].isoformat() if entry["first_seen"] else datetime.now(timezone.utc).isoformat()
+                    entry["last_seen"] = entry["last_seen"].isoformat() if entry["last_seen"] else datetime.now(timezone.utc).isoformat()
+                    analyses.append(entry)
+
+                analyses.sort(key=lambda item: (item["first_seen"], item["individual_uuid"]))
+
+            return {
+                "session_uuid": session_uuid,
+                "view_type": resolved_view,
+                "available_views": available_views,
+                "merge_state": {
+                    "unique_mvr_people_count": mvr_count,
+                    "individuals_found": int(session.get("individuals_found") or 0),
+                },
+                "analyses": analyses,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get session analysis: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}",
+        )
 
 
 @router.get("/individuals/{individual_uuid}/aggregated-analysis")

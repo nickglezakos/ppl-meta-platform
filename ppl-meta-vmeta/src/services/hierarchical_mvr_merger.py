@@ -268,6 +268,104 @@ class HierarchicalMVRMerger:
         except Exception as e:
             logger.error(f"Hierarchical merge failed: {e}", exc_info=True)
             raise HierarchicalMVRMergerError(f"Merge failed: {e}")
+
+    async def preview_hierarchical_merge(
+        self,
+        mvr_uuids: List[UUID],
+        similarity_threshold: float = 0.70,
+        min_similarity_check: float = 0.50,
+        force_merge: bool = False,
+    ) -> Dict[str, Any]:
+        """Build hierarchical merge groups without writing any persisted state."""
+        try:
+            logger.info(
+                f"Previewing hierarchical merge of {len(mvr_uuids)} MVR people "
+                f"(threshold: {similarity_threshold}, force_merge: {force_merge})"
+            )
+
+            mvr_people = await self._fetch_mvr_people(mvr_uuids)
+
+            if not mvr_people:
+                return {
+                    "super_individuals": [],
+                    "merge_groups": [],
+                    "statistics": {
+                        "total_mvr": 0,
+                        "super_individuals": 0,
+                        "merges_performed": 0,
+                        "standalone_individuals": 0,
+                        "merged_groups": 0,
+                    },
+                }
+
+            if force_merge:
+                mvr_people_sorted = sorted(
+                    mvr_people, key=lambda x: x["quality_score"], reverse=True
+                )
+                merge_groups = (
+                    [mvr_people_sorted]
+                    if len(mvr_people_sorted) > 1
+                    else [[mvr_people_sorted[0]]]
+                )
+                similarity_matrix: Dict = {}
+            else:
+                similarity_matrix = await self._calculate_similarity_matrix(
+                    mvr_people,
+                    min_similarity=min_similarity_check,
+                )
+                merge_groups = self._find_merge_groups(
+                    mvr_people,
+                    similarity_matrix,
+                    similarity_threshold,
+                )
+
+            merge_metadata = []
+            super_individuals = []
+
+            for group in merge_groups:
+                winner = group[0]
+                winner_uuid = winner["mvr_people_uuid"]
+                super_individuals.append(str(winner_uuid))
+
+                merged_mvr_uuids = [
+                    str(member["mvr_people_uuid"]) for member in group[1:]
+                ]
+                similarities = {
+                    str(member["mvr_people_uuid"]): similarity_matrix.get(
+                        (winner_uuid, member["mvr_people_uuid"]),
+                        0.0,
+                    )
+                    for member in group[1:]
+                }
+
+                merge_metadata.append(
+                    {
+                        "super_individual_uuid": str(winner_uuid),
+                        "merged_mvr_uuids": merged_mvr_uuids,
+                        "mvr_count": len(group),
+                        "is_standalone": len(group) == 1,
+                        "winner_quality": winner["quality_score"],
+                        "similarities": similarities,
+                        "demographics": self._select_best_demographics(group),
+                    }
+                )
+
+            statistics = {
+                "total_mvr": len(mvr_people),
+                "super_individuals": len(super_individuals),
+                "merges_performed": sum(max(len(group) - 1, 0) for group in merge_groups),
+                "standalone_individuals": sum(1 for group in merge_groups if len(group) == 1),
+                "merged_groups": sum(1 for group in merge_groups if len(group) > 1),
+            }
+
+            return {
+                "super_individuals": super_individuals,
+                "merge_groups": merge_metadata,
+                "statistics": statistics,
+            }
+        except Exception as e:
+            logger.error(f"Hierarchical merge preview failed: {e}", exc_info=True)
+            raise HierarchicalMVRMergerError(f"Merge preview failed: {e}")
     
     async def _fetch_mvr_people(
         self,
@@ -300,12 +398,62 @@ class HierarchicalMVRMerger:
                     AND NOT is_orphaned
                 ORDER BY quality_score DESC
             """, mvr_uuids)
+
+            individual_demographics_rows = await conn.fetch("""
+                SELECT
+                    imm.mvr_people_uuid,
+                    i.gender_estimate,
+                    i.age_estimate,
+                    i.confidence_score
+                FROM individual_mvr_mapping imm
+                INNER JOIN individuals i ON i.individual_uuid = imm.individual_uuid
+                WHERE imm.mvr_people_uuid = ANY($1::uuid[])
+            """, mvr_uuids)
+
+            demographics_by_mvr: Dict[UUID, Dict[str, Any]] = defaultdict(
+                lambda: {
+                    "genders": [],
+                    "ages": [],
+                }
+            )
+            for row in individual_demographics_rows:
+                bucket = demographics_by_mvr[row["mvr_people_uuid"]]
+                gender = self._normalize_gender(row["gender_estimate"])
+                if gender is not None:
+                    bucket["genders"].append(gender)
+                age_estimate = row["age_estimate"]
+                if isinstance(age_estimate, int) and age_estimate >= 0:
+                    bucket["ages"].append(age_estimate)
             
             mvr_people = []
             for row in results:
                 # Parse pgvector embedding
                 embedding_str = row["face_embedding"]
                 embedding = self._parse_pgvector(embedding_str)
+
+                linked_demo = demographics_by_mvr[row["mvr_people_uuid"]]
+                linked_genders = linked_demo["genders"]
+                linked_ages = linked_demo["ages"]
+                linked_gender_consensus = None
+                linked_gender_conflict = False
+                if linked_genders:
+                    distinct_genders = set(linked_genders)
+                    if len(distinct_genders) == 1:
+                        linked_gender_consensus = linked_genders[0]
+                    else:
+                        linked_gender_conflict = True
+
+                effective_gender = (
+                    linked_gender_consensus
+                    if linked_gender_consensus is not None
+                    else row["gender"]
+                )
+                effective_age_min = (
+                    min(linked_ages) if linked_ages else row["age_min"]
+                )
+                effective_age_max = (
+                    max(linked_ages) if linked_ages else row["age_max"]
+                )
                 
                 mvr_people.append({
                     "mvr_people_uuid": row["mvr_people_uuid"],
@@ -313,13 +461,23 @@ class HierarchicalMVRMerger:
                     "quality_score": row["quality_score"],
                     "confidence_score": row["confidence_score"],
                     "featured_individual_uuid": row["featured_individual_uuid"],
-                    "gender": row["gender"],
+                    "gender": effective_gender,
                     "gender_confidence": row["gender_confidence"],
-                    "age_min": row["age_min"],
-                    "age_max": row["age_max"]
+                    "age_min": effective_age_min,
+                    "age_max": effective_age_max,
+                    "linked_individual_gender": linked_gender_consensus,
+                    "linked_individual_gender_conflict": linked_gender_conflict,
+                    "linked_individual_gender_count": len(linked_genders),
+                    "linked_individual_age_count": len(linked_ages),
                 })
             
             return mvr_people
+
+    def _effective_gender_source(self, mvr: Dict[str, Any]) -> Optional[str]:
+        linked_gender = self._normalize_gender(mvr.get("linked_individual_gender"))
+        if linked_gender is not None:
+            return linked_gender
+        return self._normalize_gender(mvr.get("gender"))
     
     def _parse_pgvector(self, embedding_str: str) -> np.ndarray:
         """
@@ -504,7 +662,12 @@ class HierarchicalMVRMerger:
             group = [uuid_to_mvr[uuid] for uuid in uuid_group]
             # Sort by quality (best first)
             group.sort(key=lambda x: x["quality_score"], reverse=True)
-            merge_groups.append(group)
+            refined_groups = self._split_component_by_anchor_similarity(
+                group,
+                similarity_matrix,
+                threshold,
+            )
+            merge_groups.extend(refined_groups)
         
         # Sort groups by size (largest first) then quality
         merge_groups.sort(
@@ -514,14 +677,71 @@ class HierarchicalMVRMerger:
         
         return merge_groups
 
+    def _split_component_by_anchor_similarity(
+        self,
+        group: List[Dict[str, Any]],
+        similarity_matrix: Dict[Tuple[UUID, UUID], float],
+        threshold: float,
+    ) -> List[List[Dict[str, Any]]]:
+        """
+        Split a connected component into conservative anchor-based groups.
+
+        Union-Find connected components are too permissive for auto-merge
+        because a single bridge pair can chain many weakly related MVRs into one
+        winner. Before persisting merges, require every loser in a merged group
+        to have a direct similarity edge to the chosen anchor.
+        """
+        if len(group) < 2:
+            return [group]
+
+        remaining = list(group)
+        refined_groups: List[List[Dict[str, Any]]] = []
+
+        while remaining:
+            anchor = remaining.pop(0)
+            anchor_uuid = anchor["mvr_people_uuid"]
+            anchor_group = [anchor]
+            still_unassigned: List[Dict[str, Any]] = []
+
+            for candidate in remaining:
+                candidate_uuid = candidate["mvr_people_uuid"]
+                similarity = similarity_matrix.get((anchor_uuid, candidate_uuid))
+                if similarity is None or similarity < threshold:
+                    still_unassigned.append(candidate)
+                    continue
+                if not self._can_auto_merge_by_gender(anchor, candidate):
+                    still_unassigned.append(candidate)
+                    continue
+                if self._is_contamination_suspect(anchor, candidate, similarity):
+                    still_unassigned.append(candidate)
+                    continue
+                anchor_group.append(candidate)
+
+            anchor_group.sort(key=lambda x: x["quality_score"], reverse=True)
+            refined_groups.append(anchor_group)
+            remaining = still_unassigned
+
+        return refined_groups
+
     def _can_auto_merge_by_gender(
         self,
         mvr1: Dict[str, Any],
         mvr2: Dict[str, Any]
     ) -> bool:
         """Block only high-confidence male/female conflicts during automatic grouping."""
-        gender1 = self._normalize_gender(mvr1.get("gender"))
-        gender2 = self._normalize_gender(mvr2.get("gender"))
+        gender1 = self._effective_gender_source(mvr1)
+        gender2 = self._effective_gender_source(mvr2)
+
+        # When both MVRs have consistent linked-individual gender evidence,
+        # treat that upstream single-video evidence as authoritative enough to block.
+        if (
+            mvr1.get("linked_individual_gender") is not None
+            and mvr2.get("linked_individual_gender") is not None
+            and gender1 is not None
+            and gender2 is not None
+            and gender1 != gender2
+        ):
+            return False
 
         # Unknown or missing gender should not block merges.
         if gender1 is None or gender2 is None:
@@ -562,8 +782,8 @@ class HierarchicalMVRMerger:
 
         Returns True to block the merge; False to allow it.
         """
-        gender1 = self._normalize_gender(mvr1.get("gender"))
-        gender2 = self._normalize_gender(mvr2.get("gender"))
+        gender1 = self._effective_gender_source(mvr1)
+        gender2 = self._effective_gender_source(mvr2)
 
         # Only suspect when exactly one is unknown and the other is known
         one_unknown_one_known = (gender1 is None) != (gender2 is None)
@@ -717,15 +937,63 @@ class HierarchicalMVRMerger:
             - total_person_objects: Total detection count
         """
         try:
-            # Get super-individual (featured MVR)
+            requested_mvr_uuid = super_individual_uuid
+
+            # Get the requested row first. If it is an orphan, resolve it to the
+            # canonical root so callers do not accidentally treat a child UUID as an
+            # independent hierarchy head.
             super_individual = await self.repository.get_mvr_people_by_uuid(
-                super_individual_uuid
+                requested_mvr_uuid
             )
             
             if not super_individual:
                 raise HierarchicalMVRMergerError(
-                    f"Super-individual {super_individual_uuid} not found"
+                    f"Super-individual {requested_mvr_uuid} not found"
                 )
+
+            resolved_super_individual_uuid = requested_mvr_uuid
+            requested_mvr_was_orphaned = bool(
+                super_individual.get("is_orphaned")
+            )
+
+            if requested_mvr_was_orphaned and super_individual.get("merged_into_mvr_uuid"):
+                async with self.repository.pool.acquire() as conn:
+                    root_row = await conn.fetchrow(
+                        """
+                        WITH RECURSIVE root_chain AS (
+                            SELECT mvr_people_uuid, merged_into_mvr_uuid, 0 AS depth
+                            FROM mvr_people
+                            WHERE mvr_people_uuid = $1
+
+                            UNION ALL
+
+                            SELECT parent.mvr_people_uuid, parent.merged_into_mvr_uuid, rc.depth + 1
+                            FROM root_chain rc
+                            INNER JOIN mvr_people parent
+                                ON parent.mvr_people_uuid = rc.merged_into_mvr_uuid
+                            WHERE rc.merged_into_mvr_uuid IS NOT NULL
+                                AND rc.depth < 20
+                        )
+                        SELECT mvr_people_uuid
+                        FROM root_chain
+                        WHERE merged_into_mvr_uuid IS NULL
+                        ORDER BY depth DESC
+                        LIMIT 1
+                        """,
+                        requested_mvr_uuid,
+                    )
+
+                if root_row and root_row["mvr_people_uuid"] != requested_mvr_uuid:
+                    resolved_super_individual_uuid = root_row["mvr_people_uuid"]
+                    super_individual = await self.repository.get_mvr_people_by_uuid(
+                        resolved_super_individual_uuid
+                    )
+                    if not super_individual:
+                        raise HierarchicalMVRMergerError(
+                            f"Resolved root {resolved_super_individual_uuid} not found"
+                        )
+
+            super_individual_uuid = resolved_super_individual_uuid
             
             # Get paginated merged MVR people (those orphaned into this one)
             merged_result = await self.repository.get_merged_mvr_people(
@@ -793,6 +1061,9 @@ class HierarchicalMVRMerger:
             
             return {
                 "super_individual": super_individual,
+                "requested_mvr_uuid": str(requested_mvr_uuid),
+                "resolved_super_individual_uuid": str(resolved_super_individual_uuid),
+                "requested_mvr_was_orphaned": requested_mvr_was_orphaned,
                 "merged_mvr_people": merged_mvr,
                 # Pagination metadata for merged children
                 "merged_children_total": merged_children_total,

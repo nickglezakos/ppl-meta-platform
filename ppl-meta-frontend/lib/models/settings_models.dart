@@ -18,6 +18,7 @@ class GeneralSettings {
   final bool performanceMonitoring;
   final String mergeIndividualsRule; // 'none', 'semi', or 'auto'
   final double mergeIndividualsThreshold; // 0.0-1.0
+  final bool mvrStoredComparison;
 
   GeneralSettings({
     required this.darkTheme,
@@ -29,6 +30,7 @@ class GeneralSettings {
     required this.performanceMonitoring,
     required this.mergeIndividualsRule,
     required this.mergeIndividualsThreshold,
+    required this.mvrStoredComparison,
   });
 
   factory GeneralSettings.fromJson(Map<String, dynamic> json) =>
@@ -47,6 +49,7 @@ class GeneralSettings {
       performanceMonitoring: true,
       mergeIndividualsRule: 'semi',
       mergeIndividualsThreshold: 0.70,
+      mvrStoredComparison: false,
     );
   }
 
@@ -60,6 +63,7 @@ class GeneralSettings {
     bool? performanceMonitoring,
     String? mergeIndividualsRule,
     double? mergeIndividualsThreshold,
+    bool? mvrStoredComparison,
   }) {
     return GeneralSettings(
       darkTheme: darkTheme ?? this.darkTheme,
@@ -72,6 +76,7 @@ class GeneralSettings {
       mergeIndividualsRule: mergeIndividualsRule ?? this.mergeIndividualsRule,
       mergeIndividualsThreshold:
           mergeIndividualsThreshold ?? this.mergeIndividualsThreshold,
+      mvrStoredComparison: mvrStoredComparison ?? this.mvrStoredComparison,
     );
   }
 }
