@@ -24,6 +24,9 @@ class SmartVideoPlayerWidget extends ConsumerStatefulWidget {
   final String? collectionId;
   final Function(VideoPlayerController)? onControllerReady;
   final VoidCallback? onDetailsPressed;
+  final List<FaceDetection>? initialFaceData;
+  final String initialFaceDataSource;
+  final bool enableWorkflowIntegration;
 
   const SmartVideoPlayerWidget({
     super.key,
@@ -32,6 +35,9 @@ class SmartVideoPlayerWidget extends ConsumerStatefulWidget {
     this.collectionId,
     this.onControllerReady,
     this.onDetailsPressed,
+    this.initialFaceData,
+    this.initialFaceDataSource = 'external_mvr_data',
+    this.enableWorkflowIntegration = true,
   });
 
   @override
@@ -88,6 +94,12 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     // Also clear the MediaFaceDataProvider cache
     _faceDataCache.clear();
     debugPrint('🗑️ PROVIDER CACHE CLEARED: Invalidated MediaFaceDataProvider cache');
+
+    if (widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty) {
+      _storedFaceData = widget.initialFaceData;
+      _faceDataSource = widget.initialFaceDataSource;
+      debugPrint('🎯 EXTERNAL FACE DATA: Loaded ${widget.initialFaceData!.length} faces for ${widget.mediaItem.uuid}');
+    }
     
     // [FIX] DISABLED automatic provider face loading - the overlay now handles this directly
     // The overlay calls Enhanced Logic V2 API directly in _checkForStoredFaces()
@@ -99,7 +111,45 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     //   }
     // });
     
-    _initializeSmartPlayback();
+    if (!widget.enableWorkflowIntegration) {
+      _setFallbackPlaybackMode();
+      _isLoadingWorkflowData = false;
+    } else if (widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty) {
+      _setFallbackPlaybackMode();
+      _isLoadingWorkflowData = false;
+    } else {
+      _initializeSmartPlayback();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SmartVideoPlayerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final nextFaceData = widget.initialFaceData;
+    final previousFaceData = oldWidget.initialFaceData;
+    final hasNewExternalFaces = nextFaceData != null && nextFaceData.isNotEmpty;
+    final externalFacesChanged = !identical(nextFaceData, previousFaceData);
+
+    if (hasNewExternalFaces && externalFacesChanged) {
+      debugPrint('🔄 EXTERNAL FACE DATA UPDATED: Loaded ${nextFaceData.length} faces for ${widget.mediaItem.uuid}');
+
+      _storedFaceData = nextFaceData;
+      _faceDataSource = widget.initialFaceDataSource;
+
+      if (_videoController != null) {
+        _videoController!.removeListener(_onVideoFrameChanged);
+      }
+
+      _setupFaceFrameSync(nextFaceData, _faceDataSource);
+
+      if (_isLoadingWorkflowData || _workflowError != null) {
+        setState(() {
+          _isLoadingWorkflowData = false;
+          _workflowError = null;
+        });
+      }
+    }
   }
 
   /// Setup frame synchronization for face rectangles
@@ -442,9 +492,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
 
   @override
   void dispose() {
-    // Clean up video controller first
+    // VideoPlayerWidget owns the controller lifecycle; only detach our listener.
     _videoController?.removeListener(_onVideoFrameChanged);
-    _videoController?.dispose();
     _videoController = null;
     
     // Delay provider modifications to after widget tree finalization
@@ -499,7 +548,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       );
 
       // Load stored face data if using optimized mode
-      if (_currentPlaybackMode?.mode == 'stored_data' && _processingStatus?.faceDetectionProcessed == true) {
+      if (widget.initialFaceData == null &&
+          _currentPlaybackMode?.mode == 'stored_data' &&
+          _processingStatus?.faceDetectionProcessed == true) {
         await _loadStoredFaceData();
       }
 
@@ -790,6 +841,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     // If no faces available yet, we'll make the API call first
     
     if (facesToDisplay.isEmpty) {
+      if (widget.initialFaceData != null) {
+        return _buildBasicVideoPlayerForLoading(videoUrl);
+      }
       // No faces in cache yet - need to load them first
       debugPrint('[OVERLAY STRATEGY] No faces available, loading via Enhanced Logic V2...');
       _loadFacesViaEnhancedLogicV2();
@@ -1121,6 +1175,10 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
 
   /// Build details indicator
   Widget _buildPlaybackModeIndicator() {
+    if (widget.onDetailsPressed == null) {
+      return const SizedBox.shrink();
+    }
+
     return Positioned(
       top: 16,
       left: 16,

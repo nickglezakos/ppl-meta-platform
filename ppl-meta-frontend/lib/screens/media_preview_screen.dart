@@ -5,7 +5,9 @@ import 'package:video_player/video_player.dart';
 import '../core/config.dart';
 import '../core/theme/app_theme.dart';
 import '../models/media_models.dart';
+import '../models/cross_video_analysis_models.dart';
 import '../models/face_detection_models.dart';
+import '../services/media_api_client.dart' as media_api;
 import '../widgets/smart_video_player_widget.dart';
 import '../widgets/performance/performance_metrics_dialog.dart';
 import '../core/api/api_client.dart';
@@ -44,6 +46,14 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   MediaItem? _fullMediaItem; // Store the full media item details
   bool _isLoadingMedia = false;
   String? _mediaLoadError;
+  bool _isPreparingMvrPreview = false;
+  List<Map<String, dynamic>> _previewMvrPeople = const [];
+  List<media_api.FaceDetection> _previewMvrFaces = const [];
+  CrossVideoAnalysisContext? _previewAnalysisContext;
+
+  bool get _usesMvrPreviewMode =>
+      widget.mediaItem.mediaType == MediaType.video &&
+      (_isPreparingMvrPreview || _previewMvrFaces.isNotEmpty || _previewAnalysisContext != null);
 
   @override
   void initState() {
@@ -58,6 +68,12 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
     if (needsFullDetails) {
       _loadFullMediaDetails();
+    }
+
+    if (widget.mediaItem.mediaType == MediaType.video) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _preparePreviewMvrData();
+      });
     }
     
     // [FIX] DISABLED automatic face loading via provider - overlay handles this directly now
@@ -84,6 +100,10 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           _fullMediaItem = mediaDetails;
           _isLoadingMedia = false;
         });
+
+        if (mediaDetails.mediaType == MediaType.video) {
+          _preparePreviewMvrData();
+        }
       }
     } catch (e) {
       debugPrint('❌ Failed to load media details for UUID ${widget.mediaItem.uuid}: $e');
@@ -98,8 +118,8 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
   @override
   void dispose() {
-    // Clean up video controller
-    _videoController?.dispose();
+    // The underlying VideoPlayerWidget owns controller disposal.
+    _videoController = null;
     super.dispose();
   }
 
@@ -180,7 +200,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       body: Column(
         children: [
           // Enhanced performance status bar with overlay widgets
-          _buildPerformanceStatusBar(ref),
+          if (!_usesMvrPreviewMode) _buildPerformanceStatusBar(ref),
           
           // Main media content
           Expanded(
@@ -188,7 +208,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           ),
           
           // Bottom control bar with workflow controls
-          _buildBottomControlBar(ref),
+          if (!_usesMvrPreviewMode) _buildBottomControlBar(ref),
         ],
       ),
     );
@@ -314,16 +334,367 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               'Authorization': 'Bearer ${apiClient.authToken}',
           },
           collectionId: null, // TODO: Pass collection ID from route parameters
+          enableWorkflowIntegration: false,
+          initialFaceData: _previewMvrFaces,
+          initialFaceDataSource: 'mvr_preview_overlay',
           onControllerReady: (controller) {
             debugPrint('🎬 Smart video controller ready with workflow integration');
             setState(() {
               _videoController = controller;
             });
           },
-          onDetailsPressed: _navigateToPersonObjectsDetail,
+          onDetailsPressed: _previewAnalysisContext == null ? null : _navigateToCrossVideoAnalysis,
         ),
       ),
     );
+  }
+
+  Future<void> _preparePreviewMvrData() async {
+    if (_isPreparingMvrPreview || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _isPreparingMvrPreview = true;
+    });
+
+    try {
+      final mediaApiClient = ref.read(mediaApiClientProvider);
+      final personObjectsApiClient = ref.read(personObjectsApiClientProvider);
+      final mediaUuid = widget.mediaItem.uuid;
+      List<Map<String, dynamic>> personObjects = const <Map<String, dynamic>>[];
+
+      var mvrPeople = await _loadExistingMvrPeople(mediaApiClient, mediaUuid);
+
+      final hasPersonObjects = await personObjectsApiClient.hasPersonObjectsForMedia(mediaUuid);
+      if (hasPersonObjects) {
+        final personObjectsData = await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
+        personObjects = personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
+
+        if (mvrPeople.isEmpty && personObjects.isNotEmpty) {
+          final materializeResponse = await mediaApiClient.materializePersistedPersonObjects(
+            mediaUuid: mediaUuid,
+            sessionUuid: personObjectsData?.sessionUuid,
+            mediaType: 'video',
+            personObjects: personObjects,
+          );
+
+          if (materializeResponse.success) {
+            mvrPeople = await _loadExistingMvrPeople(mediaApiClient, mediaUuid);
+          }
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+        final overlayFaces = personObjects.isNotEmpty
+          ? _buildPersonObjectOverlayFaces(mediaUuid, personObjects)
+          : _buildMvrOverlayFaces(mediaUuid, mvrPeople);
+      final analysisContext = mvrPeople.isEmpty ? null : _buildPreviewAnalysisContext(mvrPeople);
+
+      setState(() {
+        _previewMvrPeople = mvrPeople;
+        _previewMvrFaces = overlayFaces;
+        _previewAnalysisContext = analysisContext;
+      });
+    } catch (e) {
+      debugPrint('❌ Failed to prepare preview MVR data for ${widget.mediaItem.uuid}: $e');
+      if (mounted) {
+        setState(() {
+          _previewMvrPeople = const [];
+          _previewMvrFaces = const [];
+          _previewAnalysisContext = null;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPreparingMvrPreview = false;
+        });
+      }
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadExistingMvrPeople(
+    dynamic mediaApiClient,
+    String mediaUuid,
+  ) async {
+    final countResponse = await mediaApiClient.getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
+    if (!countResponse.success) {
+      return const [];
+    }
+
+    final count = (countResponse.data?['count'] as num?)?.toInt() ?? 0;
+    if (count <= 0) {
+      return const [];
+    }
+
+    final searchResponse = await mediaApiClient.searchMVRPeopleByVideos(
+      videoUuids: [mediaUuid],
+      limit: 200,
+      autoMerge: false,
+    );
+
+    if (!searchResponse.success) {
+      return const [];
+    }
+
+    final people = (searchResponse.data?['mvr_people'] as List?) ?? const [];
+    return people.whereType<Map>().map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  CrossVideoAnalysisContext _buildPreviewAnalysisContext(List<Map<String, dynamic>> mvrPeople) {
+    final mvrPersonUuids = mvrPeople
+        .map((person) => person['mvr_people_uuid'] as String?)
+        .whereType<String>()
+        .toList();
+
+    final sessionData = {
+      'search_results': mvrPeople,
+      'total_mvr_people': mvrPeople.length,
+      'total_appearances': mvrPeople.fold<int>(
+        0,
+        (sum, person) => sum + ((person['total_appearances'] as int?) ?? 0),
+      ),
+      'search_parameters': {
+        'source': 'media_preview_screen',
+        'video_uuid': widget.mediaItem.uuid,
+      },
+      'total_videos': 1,
+      'individuals_found': mvrPeople.length,
+      'processing_timestamp': DateTime.now().toIso8601String(),
+    };
+
+    return CrossVideoAnalysisContext(
+      individualUuids: mvrPersonUuids,
+      sessionUuid: 'preview_${widget.mediaItem.uuid}',
+      sessionData: sessionData,
+    );
+  }
+
+  List<media_api.FaceDetection> _buildMvrOverlayFaces(String mediaUuid, List<Map<String, dynamic>> mvrPeople) {
+    final faces = <media_api.FaceDetection>[];
+    final seenFaceKeys = <String>{};
+
+    for (final person in mvrPeople) {
+      final personUuid = person['mvr_people_uuid'] as String?;
+      final personRepresentativeFaces = _extractRepresentativeFaces(person['representative_faces']);
+      final personBestFaceFrame = _extractFrameNumber(person);
+      final personBestFaceBbox = _extractBbox(person['best_face_bbox']) ?? _extractBbox(person);
+
+      for (final representativeFace in personRepresentativeFaces) {
+        _addOverlayFace(
+          faces: faces,
+          seenFaceKeys: seenFaceKeys,
+          mediaUuid: mediaUuid,
+          personUuid: personUuid,
+          source: 'mvr_person_representative_face',
+          representativeFace: representativeFace,
+          fallbackFrameNumber: personBestFaceFrame,
+          fallbackBbox: personBestFaceBbox,
+          fallbackConfidence: (person['confidence_score'] as num?)?.toDouble(),
+        );
+      }
+
+      if (personRepresentativeFaces.isEmpty &&
+          personBestFaceFrame != null &&
+          personBestFaceBbox != null) {
+        _addOverlayFace(
+          faces: faces,
+          seenFaceKeys: seenFaceKeys,
+          mediaUuid: mediaUuid,
+          personUuid: personUuid,
+          source: 'mvr_person_best_face',
+          representativeFace: person,
+          fallbackFrameNumber: personBestFaceFrame,
+          fallbackBbox: personBestFaceBbox,
+          fallbackConfidence: (person['confidence_score'] as num?)?.toDouble(),
+        );
+      }
+
+      final appearances = (person['appearances'] as List?) ?? const [];
+
+      for (final appearance in appearances.whereType<Map>()) {
+        final appearanceMap = Map<String, dynamic>.from(appearance as Map);
+        if (appearanceMap['video_uuid'] != mediaUuid) {
+          continue;
+        }
+
+        final representativeFaces = _extractRepresentativeFaces(appearanceMap['representative_faces']);
+        if (representativeFaces.isNotEmpty) {
+          for (final representativeFace in representativeFaces) {
+            _addOverlayFace(
+              faces: faces,
+              seenFaceKeys: seenFaceKeys,
+              mediaUuid: mediaUuid,
+              personUuid: personUuid,
+              source: 'mvr_appearance_representative_face',
+              representativeFace: representativeFace,
+              fallbackFrameNumber: _extractFrameNumber(appearanceMap) ?? personBestFaceFrame,
+              fallbackBbox: _extractBbox(appearanceMap['best_face_bbox']) ?? personBestFaceBbox,
+              fallbackConfidence: (appearanceMap['confidence_score'] as num?)?.toDouble() ??
+                  (person['confidence_score'] as num?)?.toDouble(),
+            );
+          }
+          continue;
+        }
+
+        final bbox = _extractBbox(appearanceMap['best_face_bbox']) ??
+            _extractBbox(appearanceMap['entry_bbox']) ??
+            _extractBbox(appearanceMap['exit_bbox']);
+        final frameNumber = _extractFrameNumber(appearanceMap) ?? personBestFaceFrame;
+        if (bbox != null && frameNumber != null) {
+          _addOverlayFace(
+            faces: faces,
+            seenFaceKeys: seenFaceKeys,
+            mediaUuid: mediaUuid,
+            personUuid: personUuid,
+            source: 'mvr_appearance_bbox',
+            representativeFace: appearanceMap,
+            fallbackFrameNumber: frameNumber,
+            fallbackBbox: bbox,
+            fallbackConfidence: (appearanceMap['confidence_score'] as num?)?.toDouble() ??
+                (person['confidence_score'] as num?)?.toDouble(),
+          );
+        }
+      }
+    }
+
+    return faces;
+  }
+
+  List<media_api.FaceDetection> _buildPersonObjectOverlayFaces(
+    String mediaUuid,
+    List<Map<String, dynamic>> personGroups,
+  ) {
+    final faces = <media_api.FaceDetection>[];
+    final seenFaceKeys = <String>{};
+
+    for (final group in personGroups) {
+      final personUuid = group['person_uuid'] as String? ?? group['person_id'] as String?;
+      final representativeFaces = _extractRepresentativeFaces(group['representative_faces']);
+
+      for (final representativeFace in representativeFaces) {
+        _addOverlayFace(
+          faces: faces,
+          seenFaceKeys: seenFaceKeys,
+          mediaUuid: mediaUuid,
+          personUuid: personUuid,
+          source: 'person_objects_representative_face',
+          representativeFace: representativeFace,
+          fallbackFrameNumber: _extractFrameNumber(group),
+          fallbackBbox: _extractBbox(group['best_face_bbox']) ?? _extractBbox(group),
+          fallbackConfidence: (group['confidence_score'] as num?)?.toDouble(),
+        );
+      }
+    }
+
+    return faces;
+  }
+
+  void _addOverlayFace({
+    required List<media_api.FaceDetection> faces,
+    required Set<String> seenFaceKeys,
+    required String mediaUuid,
+    required String? personUuid,
+    required String source,
+    required Map<String, dynamic> representativeFace,
+    int? fallbackFrameNumber,
+    List<dynamic>? fallbackBbox,
+    double? fallbackConfidence,
+  }) {
+    final bbox = _extractBbox(representativeFace) ?? fallbackBbox;
+    final frameNumber = _extractFrameNumber(representativeFace) ?? fallbackFrameNumber;
+    if (bbox == null || frameNumber == null) {
+      return;
+    }
+
+    final faceKey = '${personUuid ?? 'unknown'}::$frameNumber::${bbox.join('_')}';
+    if (!seenFaceKeys.add(faceKey)) {
+      return;
+    }
+
+    faces.add(
+      media_api.FaceDetection(
+        id: personUuid,
+        mediaId: mediaUuid,
+        boundingBox: media_api.FaceBoundingBox.fromJson(bbox),
+        confidence: ((representativeFace['confidence'] as num?)?.toDouble() ?? fallbackConfidence) ?? 0.9,
+        method: 'mvr',
+        metadata: {
+          'frame_number': frameNumber,
+          'source': source,
+          'mvr_people_uuid': personUuid,
+        },
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _extractRepresentativeFaces(dynamic rawValue) {
+    if (rawValue is List) {
+      return rawValue.whereType<Map>().map((item) => Map<String, dynamic>.from(item as Map)).toList();
+    }
+
+    if (rawValue is Map) {
+      final mapValue = Map<String, dynamic>.from(rawValue as Map);
+      final nestedFaces = mapValue['faces'];
+      if (nestedFaces is List) {
+        return nestedFaces.whereType<Map>().map((item) => Map<String, dynamic>.from(item as Map)).toList();
+      }
+    }
+
+    return const [];
+  }
+
+  List<dynamic>? _extractBbox(dynamic rawValue) {
+    if (rawValue is List && rawValue.length >= 4) {
+      return rawValue;
+    }
+
+    if (rawValue is Map) {
+      final mapValue = Map<String, dynamic>.from(rawValue as Map);
+      final faceData = mapValue['face_data'];
+      if (faceData is Map) {
+        return _extractBbox(faceData['bbox']);
+      }
+
+      if (mapValue.containsKey('bbox')) {
+        return _extractBbox(mapValue['bbox']);
+      }
+
+      if (mapValue.containsKey('x1') &&
+          mapValue.containsKey('y1') &&
+          mapValue.containsKey('x2') &&
+          mapValue.containsKey('y2')) {
+        return [mapValue['x1'], mapValue['y1'], mapValue['x2'], mapValue['y2']];
+      }
+    }
+
+    return null;
+  }
+
+  int? _extractFrameNumber(dynamic rawValue) {
+    if (rawValue is Map) {
+      final mapValue = Map<String, dynamic>.from(rawValue as Map);
+      final faceData = mapValue['face_data'];
+      final dynamic frameValue = faceData is Map
+          ? faceData['frame_number'] ?? faceData['frame'] ?? faceData['best_face_frame']
+          : mapValue['frame_number'] ?? mapValue['frame'] ?? mapValue['best_face_frame'];
+
+      if (frameValue is int) {
+        return frameValue;
+      }
+      if (frameValue is num) {
+        return frameValue.toInt();
+      }
+      if (frameValue is String) {
+        return int.tryParse(frameValue);
+      }
+    }
+
+    return null;
   }
 
   Widget _buildUnsupportedMediaPreview(BuildContext context, MediaItem mediaItem) {
@@ -1013,7 +1384,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           child: PersonObjectsInfoPanel(
             mediaUuid: widget.mediaItem.uuid,
             showTriggerButton: false, // Handled by button above
-            onViewDetails: () => _navigateToPersonObjectsDetail(),
+            onViewDetails: _previewAnalysisContext == null ? null : _navigateToCrossVideoAnalysis,
           ),
         ),
         
@@ -1294,12 +1665,17 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
     }
   }
 
-  /// Navigate to person objects detail screen
-  void _navigateToPersonObjectsDetail() {
+  /// Navigate to cross-video analysis screen with MVR-backed preview context
+  void _navigateToCrossVideoAnalysis() {
+    final analysisContext = _previewAnalysisContext;
+    if (analysisContext == null) {
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => PersonObjectsDetailScreen(
-          mediaItem: widget.mediaItem,
+          crossVideoContext: analysisContext,
         ),
       ),
     );

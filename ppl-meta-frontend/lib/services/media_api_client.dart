@@ -1986,6 +1986,34 @@ class MediaApiClient {
     }
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> materializePersistedPersonObjects({
+    required String mediaUuid,
+    required List<Map<String, dynamic>> personObjects,
+    String? sessionUuid,
+    String? mediaType,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/materialize/persisted-person-objects',
+        data: {
+          'media_uuid': mediaUuid,
+          'session_uuid': sessionUuid,
+          'media_type': mediaType,
+          'person_objects': personObjects,
+        },
+      );
+
+      debugPrint('🧱 Materialize persisted person objects result: ${response.data}');
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Materialize persisted person objects failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Materialize persisted person objects unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   /// Get MVR people count for a camera (DEPRECATED)
   /// 
   /// Returns count of unique MVR people detected today for the specified camera.

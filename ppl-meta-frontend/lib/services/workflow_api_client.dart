@@ -191,14 +191,34 @@ class WorkflowApiClient {
   // WORKFLOW 5 - PROCESSING STATUS & PLAYBACK
   // =====================================================
 
-  /// Get processing status with widget optimization for a media file
+  /// Get processing status for a media file.
+  ///
+  /// Use the stable plain endpoint here rather than the widget-optimized one.
+  /// The widget endpoint is not consistently available across local environments
+  /// and causes avoidable 404 noise in preview flows.
   Future<ApiResponse<ProcessingStatus>> getProcessingStatus(String mediaUuid) async {
     try {
       final response = await _apiClient.dio.get(
-        '$_workflowBaseUrl/api/v1/processing-status/$mediaUuid/widget',
+        '$_workflowBaseUrl/api/v1/processing-status/$mediaUuid',
       );
 
-      final status = ProcessingStatus.fromJson(response.data);
+      final fallbackData = Map<String, dynamic>.from(response.data as Map);
+      final normalizedData = <String, dynamic>{
+        'media_uuid': fallbackData['media_uuid'] ?? mediaUuid,
+        'status': _normalizeLegacyProcessingStatus(fallbackData['status'] as String?),
+        'face_detection_processed': fallbackData['face_detection_processed'] ?? false,
+        'current_session': fallbackData['current_session'] ?? fallbackData['face_detection_session_uuid'],
+        'processing_progress': fallbackData['processing_progress'],
+        'total_faces_detected': fallbackData['total_faces_detected'],
+        'total_frames_processed': fallbackData['total_frames_processed'],
+        'processing_method': fallbackData['processing_method'],
+        'optimal_playback_mode': fallbackData['optimal_playback_mode'],
+        'cache_available': fallbackData['cache_available'],
+        'last_updated': fallbackData['last_updated'],
+        'error_message': fallbackData['error_message'],
+      };
+
+      final status = ProcessingStatus.fromJson(normalizedData);
       return ApiResponse.success(status);
     } on DioException catch (e) {
       return _handleApiError<ProcessingStatus>(e);
@@ -511,6 +531,17 @@ class WorkflowApiClient {
     }
 
     return ApiResponse.error(message);
+  }
+
+  String _normalizeLegacyProcessingStatus(String? rawStatus) {
+    switch (rawStatus) {
+      case 'processed':
+        return 'completed';
+      case 'unprocessed':
+        return 'not_started';
+      default:
+        return rawStatus ?? 'not_started';
+    }
   }
 
   /// Get authentication token from the underlying API client
