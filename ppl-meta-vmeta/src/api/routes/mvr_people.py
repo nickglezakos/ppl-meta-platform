@@ -2705,8 +2705,18 @@ async def search_mvr_people_by_videos(
         
         # Convert string UUIDs to UUID objects
         video_uuid_objs = [UUID(vid) for vid in video_uuids]
+        logger.info(
+            'Search-by-videos request coverage start: requested_video_uuids=%s',
+            [str(video_uuid) for video_uuid in video_uuid_objs],
+        )
 
-        async def _materialize_missing_video_mvr_rows() -> int:
+        async def _materialize_missing_video_mvr_rows(
+            target_media_uuids: list[UUID],
+        ) -> int:
+            logger.info(
+                'Fallback materialization requested for video_uuids=%s',
+                [str(media_uuid) for media_uuid in target_media_uuids],
+            )
             auth_header = request.headers.get('Authorization', '')
             auth_token = (
                 auth_header.replace('Bearer ', '')
@@ -2727,7 +2737,7 @@ async def search_mvr_people_by_videos(
             materialized = 0
 
             async with httpx.AsyncClient(timeout=60.0) as client:
-                for media_uuid in video_uuid_objs:
+                for media_uuid in target_media_uuids:
                     try:
                         person_objects_response = await client.get(
                             f"{gateway_url}/api/v1/orchestrator/person-objects/{media_uuid}",
@@ -2743,6 +2753,11 @@ async def search_mvr_people_by_videos(
 
                         person_objects_payload = person_objects_response.json()
                         person_groups = person_objects_payload.get('person_groups') or []
+                        logger.info(
+                            'Fallback source for %s: person_groups=%s',
+                            media_uuid,
+                            len(person_groups),
+                        )
                         if not person_groups:
                             logger.info(
                                 'Materialization skipped for %s: no persisted person groups',
@@ -2791,7 +2806,22 @@ async def search_mvr_people_by_videos(
                                 'detect_frame_height': best_face_data.get('frame_height'),
                             })
 
+                        logger.info(
+                            'Fallback transform for %s: transformed_person_objects=%s sample_person_object_uuids=%s media_timestamp=%s',
+                            media_uuid,
+                            len(transformed_person_objects),
+                            [
+                                person_object.get('person_object_uuid')
+                                for person_object in transformed_person_objects[:3]
+                            ],
+                            (media_metadata or {}).get('timestamp'),
+                        )
+
                         if not transformed_person_objects:
+                            logger.warning(
+                                'Materialization skipped for %s: transformed person object list is empty after filtering',
+                                media_uuid,
+                            )
                             continue
 
                         try:
@@ -2855,15 +2885,71 @@ async def search_mvr_people_by_videos(
                 individuals_query,
                 video_uuid_objs
             )
+            logger.info(
+                'Initial persisted individual coverage: requested_videos=%s individual_count=%s',
+                len(video_uuid_objs),
+                len(individual_rows),
+            )
             
             if not individual_rows:
                 logger.info(
                     'No persisted individuals found in provided videos; attempting single-media materialization fallback'
                 )
-                await _materialize_missing_video_mvr_rows()
+                await _materialize_missing_video_mvr_rows(video_uuid_objs)
                 individual_rows = await conn.fetch(
                     individuals_query,
                     video_uuid_objs
+                )
+
+            coverage_query = """
+                SELECT DISTINCT video_uuid
+                FROM individual_video_appearances
+                WHERE video_uuid = ANY($1::uuid[])
+            """
+            covered_video_rows = await conn.fetch(
+                coverage_query,
+                video_uuid_objs,
+            )
+            covered_video_uuids = {
+                row['video_uuid']
+                for row in covered_video_rows
+                if row.get('video_uuid') is not None
+            }
+            logger.info(
+                'Current persisted video coverage: covered_video_uuids=%s',
+                [str(video_uuid) for video_uuid in sorted(covered_video_uuids)],
+            )
+            missing_video_uuids = [
+                video_uuid
+                for video_uuid in video_uuid_objs
+                if video_uuid not in covered_video_uuids
+            ]
+
+            if missing_video_uuids:
+                logger.info(
+                    'Found %s videos without persisted individuals; attempting single-media materialization fallback for missing_video_uuids=%s',
+                    len(missing_video_uuids),
+                    [str(video_uuid) for video_uuid in missing_video_uuids],
+                )
+                materialized_count = await _materialize_missing_video_mvr_rows(missing_video_uuids)
+                individual_rows = await conn.fetch(
+                    individuals_query,
+                    video_uuid_objs
+                )
+                covered_video_rows = await conn.fetch(
+                    coverage_query,
+                    video_uuid_objs,
+                )
+                covered_video_uuids = {
+                    row['video_uuid']
+                    for row in covered_video_rows
+                    if row.get('video_uuid') is not None
+                }
+                logger.info(
+                    'Post-fallback coverage: materialized_count=%s individual_count=%s covered_video_uuids=%s',
+                    materialized_count,
+                    len(individual_rows),
+                    [str(video_uuid) for video_uuid in sorted(covered_video_uuids)],
                 )
 
             if not individual_rows:

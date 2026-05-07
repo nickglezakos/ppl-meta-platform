@@ -752,6 +752,7 @@ class MediaApiClient {
   Future<ApiResponse<Map<String, dynamic>>> getAnalyticsSummary({
     String timeFilter = 'today',
     List<String>? cameraIds,
+    List<String>? videoUuids,
     bool forceRefresh = false,
     DateTime? startDate,
     DateTime? endDate,
@@ -769,6 +770,9 @@ class MediaApiClient {
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
         queryParams['camera_ids'] = cameraIds.join(',');
+      }
+      if (videoUuids != null && videoUuids.isNotEmpty) {
+        queryParams['video_uuids'] = videoUuids.join(',');
       }
       if (timeFilter == 'custom' && startDate != null && endDate != null) {
         queryParams['start_date'] = startDate.toUtc().toIso8601String();
@@ -820,6 +824,7 @@ class MediaApiClient {
   Future<ApiResponse<Map<String, dynamic>>> getTimeBasedAnalytics({
     String timeFilter = 'today',
     List<String>? cameraIds,
+    List<String>? videoUuids,
     String interval = 'hour',
     DateTime? startDate,
     DateTime? endDate,
@@ -835,6 +840,9 @@ class MediaApiClient {
       
       if (cameraIds != null && cameraIds.isNotEmpty) {
         queryParams['camera_ids'] = cameraIds.join(',');
+      }
+      if (videoUuids != null && videoUuids.isNotEmpty) {
+        queryParams['video_uuids'] = videoUuids.join(',');
       }
       if (timeFilter == 'custom' && startDate != null && endDate != null) {
         queryParams['start_date'] = startDate.toUtc().toIso8601String();
@@ -880,6 +888,7 @@ class MediaApiClient {
   Future<ApiResponse<Map<String, dynamic>>> getDemographicsBreakdown({
     String timeFilter = 'today',
     List<String>? cameraIds,
+    List<String>? videoUuids,
     DateTime? startDate,
     DateTime? endDate,
     List<String>? genders,
@@ -900,6 +909,10 @@ class MediaApiClient {
         debugPrint('   🎯 Camera IDs filter: ${cameraIds.join(", ")}');
       } else {
         debugPrint('   🌐 No camera filter - fetching all collections');
+      }
+      if (videoUuids != null && videoUuids.isNotEmpty) {
+        queryParams['video_uuids'] = videoUuids.join(',');
+        debugPrint('   🎬 Explicit video UUIDs: ${videoUuids.length}');
       }
       if (timeFilter == 'custom' && startDate != null && endDate != null) {
         queryParams['start_date'] = startDate.toUtc().toIso8601String();
@@ -955,6 +968,7 @@ class MediaApiClient {
   Future<ApiResponse<Map<String, dynamic>>> getBehavioralAnalytics({
     String timeFilter = 'last_week',
     List<String>? cameraIds,
+    List<String>? videoUuids,
     DateTime? startDate,
     DateTime? endDate,
     List<String>? genders,
@@ -975,6 +989,10 @@ class MediaApiClient {
         debugPrint('   🎯 Camera IDs filter: ${cameraIds.join(", ")}');
       } else {
         debugPrint('   🌐 No camera filter - analyzing all collections');
+      }
+      if (videoUuids != null && videoUuids.isNotEmpty) {
+        queryParams['video_uuids'] = videoUuids.join(',');
+        debugPrint('   🎬 Explicit video UUIDs: ${videoUuids.length}');
       }
       if (timeFilter == 'custom' && startDate != null && endDate != null) {
         queryParams['start_date'] = startDate.toUtc().toIso8601String();

@@ -19,6 +19,7 @@ class AnalyticsApiClient {
     String timeFilter = 'today', // today, last_3_days, last_week, last_month, custom
     String? collectionName,
     List<String>? cameraIds,
+    List<String>? videoUuids,
     DateTime? startDate,
     DateTime? endDate,
     List<String>? genders,
@@ -32,6 +33,8 @@ class AnalyticsApiClient {
           'collection_name': collectionName,
         if (cameraIds != null && cameraIds.isNotEmpty)
           'camera_ids': cameraIds.join(','),
+        if (videoUuids != null && videoUuids.isNotEmpty)
+          'video_uuids': videoUuids.join(','),
         if (timeFilter == 'custom' && startDate != null && endDate != null) ...{
           'start_date': startDate.toUtc().toIso8601String(),
           'end_date': endDate.toUtc().toIso8601String(),

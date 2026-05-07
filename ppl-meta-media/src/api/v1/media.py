@@ -1169,6 +1169,16 @@ async def get_media(
         urls = media_service.generate_media_urls(media)
         media_response.thumbnail_url = urls["thumbnail_url"]
         media_response.url = urls["url"]
+        collections = await media_service.get_media_collections(media.id)
+        media_response.collections = [
+            {
+                "id": col.id,
+                "uuid": str(col.uuid),
+                "name": col.name,
+                "description": col.description,
+            }
+            for col in collections
+        ]
 
         return media_response
 

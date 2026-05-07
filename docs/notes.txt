@@ -17,41 +17,6 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 *************************************************
 
 
-I need a proposal at /Users/nickgklezakos/Documents/ppl-meta-code/docs/modules/MVR merge 
-that will analyse an upgrade of the exisitng MVR search processes: 
-All MVR data objects that are produced by MVR searches will be stored 
-in the databse except for any super individual MVRs that may be produced by MVR searches 
-with merging activated. 
-Also, I need a new persistent data layer that records the results 
-of the MVR searches with merging activated. So when the user executes a search with merging 
-activated then the following results should be stored in that peristent layer: 
-a search session uuid,
-total individuals, total appearances, unique videos, average confidence, average quality, 
-total duration, search time span, first appearance, last appearance, total men, total women, 
-total unknown, average age. Theses results should also include the search input: cameras involved, 
-videos involved, start date, end date. Each time a search is executed the flow should be this:
-1.
-Check if a search with the same input has alerady produced results. The "same input" criteria
-are: same cameras involved, same vodeo uuids involved. Dates are not part of the "same "input" criteria
-since dates from identical searches as far as cameras anv videos are concerned can vary.
-First check existing sessions for the camera invloved in the a span around the one given andn then 
-is there are session drill down to the "same search" criteria which are cameras and videos involved.
-If a "same input" searcjh session is found just take the results of that and return them without 
-creating a new search session.
-If not "same input" search results are found then proceed with the following steps:
-2.
-Find the stored MVR data objects that are in the database for each video. If any video does not 
-have MVR objects then create them without merging regardless what it set in MVR settings at settings.
-3.
-Execute the merge for the found and any created MVRs to produce any ephemeral super individuals and standalone 
-individuals (like it is done now)
-3.
-Store the results of the search in the database with a session uuid.
-
-note: all the MVR searches above should ignore past stored super individual hierarchy.
-
-
-
 [LOAD FACES] ❌ Enhanced Logic V2 request failed: Request timeout after 30 seconds
 
 *** Known bugs

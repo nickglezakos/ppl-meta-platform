@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:excel/excel.dart' as excel;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -13,7 +11,6 @@ import '../core/theme/app_theme.dart';
 import '../widgets/custom_app_bar.dart';
 import '../models/analytics_models.dart';
 import '../services/media_api_client.dart';
-import '../services/analytics_api_client.dart';
 import '../core/providers/camera_providers.dart';
 import '../utils/platform_file_download.dart';
 
@@ -48,6 +45,82 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   Map<String, dynamic>? _demographicsData;
   Map<String, dynamic>? _behavioralData;
   List<Map<String, dynamic>> _cameras = [];
+  Future<(DateTime, DateTime)> _getEffectiveAnalyticsRange() async {
+    final now = DateTime.now().toUtc();
+
+    switch (_timeFilter) {
+      case 'custom':
+        return ((_startDate ?? now), (_endDate ?? now));
+      case 'today':
+        return (DateTime.utc(now.year, now.month, now.day), now);
+      case 'last_hour':
+        return (now.subtract(const Duration(hours: 1)), now);
+      case 'last_3_hours':
+        return (now.subtract(const Duration(hours: 3)), now);
+      case 'last_week':
+        return (now.subtract(const Duration(days: 7)), now);
+      case 'last_month':
+        return (now.subtract(const Duration(days: 30)), now);
+      default:
+        return (DateTime.utc(now.year, now.month, now.day), now);
+    }
+  }
+
+  Future<List<String>?> _resolveAnalyticsVideoUuids(MediaApiClient apiClient) async {
+    if (_dataSource != 'recording') {
+      return null;
+    }
+
+    if (_cameras.isEmpty) {
+      return null;
+    }
+
+    final selectedCameraIds = _selectedCollectionIds.isNotEmpty
+        ? _selectedCollectionIds
+        : _cameras
+            .map((camera) => (camera['id'] as String?)?.trim())
+            .whereType<String>()
+            .where((value) => value.isNotEmpty)
+            .toList();
+
+    if (selectedCameraIds.isEmpty) {
+      return null;
+    }
+
+    final (effectiveStartDate, effectiveEndDate) = await _getEffectiveAnalyticsRange();
+    final videoUuids = <String>[];
+    final seenVideoUuids = <String>{};
+
+    for (final selectedCameraId in selectedCameraIds) {
+      final matchingCamera = _cameras.cast<Map<String, dynamic>?>().firstWhere(
+        (camera) => camera?['id'] == selectedCameraId,
+        orElse: () => null,
+      );
+      final collectionUuid = (matchingCamera?['uuid'] as String?)?.trim();
+      final collectionId = collectionUuid != null && collectionUuid.isNotEmpty
+          ? collectionUuid
+          : selectedCameraId;
+
+      final mediaResponse = await apiClient.searchMedia(
+        collectionId: collectionId,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
+        limit: 500,
+      );
+
+      if (!mediaResponse.success || mediaResponse.data == null) {
+        continue;
+      }
+
+      for (final media in mediaResponse.data!.items) {
+        if (seenVideoUuids.add(media.uuid)) {
+          videoUuids.add(media.uuid);
+        }
+      }
+    }
+
+    return videoUuids;
+  }
 
   @override
   void initState() {
@@ -72,11 +145,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           _cameras = camerasResponse.data!;
         }
       }
+
+      final explicitVideoUuids = await _resolveAnalyticsVideoUuids(apiClient);
       
       // Load analytics summary from backend endpoint
       final response = await apiClient.getAnalyticsSummary(
         timeFilter: _timeFilter,
         cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+        videoUuids: explicitVideoUuids,
         forceRefresh: false,
         startDate: _startDate,
         endDate: _endDate,
@@ -106,6 +182,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           timeFilter: _timeFilter,
           collectionName: null, // null = all collections
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          videoUuids: explicitVideoUuids,
           startDate: _startDate,
           endDate: _endDate,
           genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
@@ -150,6 +227,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         final timeSeriesResponse = await apiClient.getTimeBasedAnalytics(
           timeFilter: _timeFilter,
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          videoUuids: explicitVideoUuids,
           interval: _timeFilter == 'today' || _timeFilter == 'last_hour' || _timeFilter == 'last_3_hours' 
               ? 'hour' 
               : 'day',
@@ -173,6 +251,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         final demographicsResponse = await apiClient.getDemographicsBreakdown(
           timeFilter: _timeFilter,
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          videoUuids: explicitVideoUuids,
           startDate: _startDate,
           endDate: _endDate,
           genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
@@ -195,6 +274,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         final behavioralResponse = await apiClient.getBehavioralAnalytics(
           timeFilter: _timeFilter,
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          videoUuids: explicitVideoUuids,
           startDate: _startDate,
           endDate: _endDate,
           genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
@@ -1818,6 +1898,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             const SizedBox(height: 16),
             ...comparison.map((cam) {
               final cameraId = cam['camera_id'] as String? ?? '';
+              final cameraName = (cam['camera_name'] as String?)?.trim();
+              final cameraLabel = (cameraName != null && cameraName.isNotEmpty) ? cameraName : cameraId;
               final totalPeople = cam['total_people'] as int? ?? 0;
               final barWidth = maxPeople > 0 ? (totalPeople / maxPeople) : 0.0;
               
@@ -1831,7 +1913,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            cameraId,
+                            cameraLabel,
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -2053,7 +2135,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           excel.TextCellValue('COLLECTION BREAKDOWN'),
         ]);
         sheet.appendRow([
-          excel.TextCellValue('Collection ID'),
+          excel.TextCellValue('Collection'),
           excel.TextCellValue('People'),
           excel.TextCellValue('Videos'),
           excel.TextCellValue('Male'),
@@ -2065,8 +2147,11 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
         for (final collection in _analyticsSummary!.cameraBreakdown) {
           final demo = collection.demographics;
+          final collectionLabel = (collection.cameraName != null && collection.cameraName!.trim().isNotEmpty)
+              ? collection.cameraName!.trim()
+              : collection.cameraId;
           sheet.appendRow([
-            excel.TextCellValue(collection.cameraId),
+            excel.TextCellValue(collectionLabel),
             excel.IntCellValue(collection.peopleCount),
             excel.IntCellValue(collection.videoCount),
             excel.IntCellValue(demo?.maleCount ?? 0),
@@ -2822,7 +2907,7 @@ class _FilterDialogState extends State<_FilterDialog> {
                 child: ListView(
                   shrinkWrap: true,
                   children: widget.cameras.map((camera) {
-                    final id = (camera['uuid'] ?? camera['id'] ?? camera['device_id'] ?? camera['collection_name'] ?? camera['name'])?.toString() ?? '';
+                    final id = (camera['id'] ?? camera['collection_name'] ?? camera['name'] ?? camera['uuid'] ?? camera['device_id'])?.toString() ?? '';
                     final name = (camera['name'] ?? camera['collection_name'] ?? camera['device_id'] ?? id).toString();
                     final isSelected = _selectedCollectionIds.contains(id);
                     
@@ -2833,7 +2918,9 @@ class _FilterDialogState extends State<_FilterDialog> {
                       onChanged: (checked) {
                         setState(() {
                           if (checked == true) {
-                            _selectedCollectionIds.add(id);
+                            if (!_selectedCollectionIds.contains(id)) {
+                              _selectedCollectionIds.add(id);
+                            }
                           } else {
                             _selectedCollectionIds.remove(id);
                           }

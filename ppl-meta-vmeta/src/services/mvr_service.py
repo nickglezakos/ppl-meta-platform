@@ -781,6 +781,19 @@ class MVRService:
                     )
                     
                     appearance_timestamp = media_timestamp
+                    if isinstance(appearance_timestamp, str):
+                        try:
+                            appearance_timestamp = datetime.fromisoformat(
+                                appearance_timestamp.replace('Z', '+00:00')
+                            )
+                        except ValueError:
+                            logger.warning(
+                                'Invalid media_timestamp string for %s: %s; falling back to now()',
+                                media_uuid,
+                                appearance_timestamp,
+                            )
+                            appearance_timestamp = None
+
                     if appearance_timestamp is None:
                         appearance_timestamp = datetime.utcnow()
                     elif appearance_timestamp.tzinfo is not None:
