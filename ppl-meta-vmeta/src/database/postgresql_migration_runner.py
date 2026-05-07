@@ -115,7 +115,10 @@ class PostgreSQLMigrationRunner:
             'individual_video_appearances',
             'video_processing_states',
             'cached_person_objects',
-            'session_individuals'
+            'session_individuals',
+            'mvr_search_sessions',
+            'mvr_search_session_cameras',
+            'mvr_search_session_videos'
         ]
         
         try:
@@ -406,23 +409,28 @@ async def main():
             if not await runner.apply_migration("003_cross_video_tracking_indexes.sql"):
                 logger.error("❌ Indexes migration failed")
                 sys.exit(1)
+
+            # 4. Apply MVR search sessions migration
+            if not await runner.apply_migration("007_mvr_search_sessions.sql"):
+                logger.error("❌ MVR search sessions migration failed")
+                sys.exit(1)
             
-            # 4. Test pgvector functionality
+            # 5. Test pgvector functionality
             if not await runner.test_pgvector_functionality():
                 logger.error("❌ pgvector functionality test failed")
                 sys.exit(1)
             
-            # 5. Validate schema
+            # 6. Validate schema
             if not await runner.validate_schema():
                 logger.error("❌ Schema validation failed")
                 sys.exit(1)
             
-            # 6. Insert default configurations
+            # 7. Insert default configurations
             if not await runner.insert_default_configurations():
                 logger.error("❌ Default configuration insertion failed")
                 sys.exit(1)
             
-            # 7. Show final statistics
+            # 8. Show final statistics
             stats = await runner.get_database_stats()
             if stats:
                 logger.info("📊 Final Database Statistics:")

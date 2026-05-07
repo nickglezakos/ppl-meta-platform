@@ -15,9 +15,9 @@ import httpx
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Tuple
-from uuid import UUID
+from uuid import UUID, uuid4
 import json
 import numpy as np
 
@@ -48,6 +48,283 @@ class MVRRepository:
         self._route_dataset_cache: Dict[str, Any] = {}
         self._ROUTE_CACHE_TTL_S: float = 300.0  # 5 minutes
         logger.info("MVRRepository initialized")
+
+    def _canonicalize_search_identity_values(self, values: List[str]) -> List[str]:
+        return sorted({str(value).strip() for value in values if str(value).strip()})
+
+    def build_same_input_key(
+        self,
+        camera_ids: List[str],
+        video_uuids: List[str],
+    ) -> str:
+        canonical_cameras = self._canonicalize_search_identity_values(camera_ids)
+        canonical_videos = self._canonicalize_search_identity_values(video_uuids)
+        raw_key = json.dumps(
+            {
+                "camera_ids": canonical_cameras,
+                "video_uuids": canonical_videos,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _normalize_db_timestamp(value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized.endswith("Z"):
+                normalized = normalized[:-1] + "+00:00"
+            try:
+                value = datetime.fromisoformat(normalized)
+            except ValueError:
+                return None
+
+        if not isinstance(value, datetime):
+            return None
+
+        if value.tzinfo is None:
+            return value
+
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+    async def get_search_session_by_same_input(
+        self,
+        camera_ids: List[str],
+        video_uuids: List[str],
+        requested_start_date: Optional[datetime] = None,
+        requested_end_date: Optional[datetime] = None,
+    ) -> Optional[Dict[str, Any]]:
+        requested_start_date = self._normalize_db_timestamp(requested_start_date)
+        requested_end_date = self._normalize_db_timestamp(requested_end_date)
+        same_input_key = self.build_same_input_key(camera_ids, video_uuids)
+        canonical_cameras = self._canonicalize_search_identity_values(camera_ids)
+
+        async with self.pool.acquire() as conn:
+            params: List[Any] = [canonical_cameras, same_input_key]
+            overlap_clause = ""
+            if requested_start_date is not None and requested_end_date is not None:
+                overlap_clause = """
+                  AND (
+                        ms.requested_start_date IS NULL
+                        OR ms.requested_end_date IS NULL
+                        OR (ms.requested_start_date <= $4 AND ms.requested_end_date >= $3)
+                  )
+                """
+                params.extend([requested_start_date, requested_end_date])
+
+            row = await conn.fetchrow(
+                f"""
+                WITH candidate_sessions AS (
+                    SELECT DISTINCT ms.search_session_uuid
+                    FROM mvr_search_sessions ms
+                    INNER JOIN mvr_search_session_cameras msc
+                        ON msc.search_session_uuid = ms.search_session_uuid
+                    WHERE msc.camera_id = ANY($1::text[])
+                    {overlap_clause}
+                )
+                SELECT
+                    ms.search_session_uuid,
+                    ms.search_mode,
+                    ms.same_input_key,
+                    ms.requested_start_date,
+                    ms.requested_end_date,
+                    ms.search_time_span_seconds,
+                    ms.total_individuals,
+                    ms.total_appearances,
+                    ms.unique_videos,
+                    ms.average_confidence,
+                    ms.average_quality,
+                    ms.total_duration_seconds,
+                    ms.first_appearance,
+                    ms.last_appearance,
+                    ms.total_men,
+                    ms.total_women,
+                    ms.total_unknown,
+                    ms.average_age,
+                    ms.result_payload,
+                    ms.summary_payload,
+                    ms.created_at,
+                    ms.updated_at
+                FROM mvr_search_sessions ms
+                INNER JOIN candidate_sessions cs
+                    ON cs.search_session_uuid = ms.search_session_uuid
+                WHERE ms.same_input_key = $2
+                ORDER BY ms.created_at DESC
+                LIMIT 1
+                """,
+                *params,
+            )
+
+            if not row:
+                return None
+
+            session = dict(row)
+            camera_rows = await conn.fetch(
+                """
+                SELECT camera_id
+                FROM mvr_search_session_cameras
+                WHERE search_session_uuid = $1
+                ORDER BY camera_id ASC
+                """,
+                session["search_session_uuid"],
+            )
+            video_rows = await conn.fetch(
+                """
+                SELECT video_uuid, camera_id, media_timestamp
+                FROM mvr_search_session_videos
+                WHERE search_session_uuid = $1
+                ORDER BY video_uuid ASC
+                """,
+                session["search_session_uuid"],
+            )
+
+            session["camera_ids"] = [row["camera_id"] for row in camera_rows]
+            session["video_uuids"] = [str(row["video_uuid"]) for row in video_rows]
+            session["videos"] = [
+                {
+                    "video_uuid": str(row["video_uuid"]),
+                    "camera_id": row["camera_id"],
+                    "media_timestamp": row["media_timestamp"],
+                }
+                for row in video_rows
+            ]
+            return session
+
+    async def create_search_session(
+        self,
+        camera_ids: List[str],
+        video_uuids: List[str],
+        requested_start_date: Optional[datetime],
+        requested_end_date: Optional[datetime],
+        summary_payload: Dict[str, Any],
+        result_payload: Dict[str, Any],
+        search_mode: str = "merge_preview",
+        video_details: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        search_session_uuid = uuid4()
+        requested_start_date = self._normalize_db_timestamp(requested_start_date)
+        requested_end_date = self._normalize_db_timestamp(requested_end_date)
+        same_input_key = self.build_same_input_key(camera_ids, video_uuids)
+        canonical_cameras = self._canonicalize_search_identity_values(camera_ids)
+        canonical_videos = self._canonicalize_search_identity_values(video_uuids)
+        summary = dict(summary_payload)
+        result = dict(result_payload)
+        first_appearance = self._normalize_db_timestamp(
+            summary.get("first_appearance")
+        )
+        last_appearance = self._normalize_db_timestamp(
+            summary.get("last_appearance")
+        )
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO mvr_search_sessions (
+                        search_session_uuid,
+                        search_mode,
+                        same_input_key,
+                        requested_start_date,
+                        requested_end_date,
+                        search_time_span_seconds,
+                        total_individuals,
+                        total_appearances,
+                        unique_videos,
+                        average_confidence,
+                        average_quality,
+                        total_duration_seconds,
+                        first_appearance,
+                        last_appearance,
+                        total_men,
+                        total_women,
+                        total_unknown,
+                        average_age,
+                        result_payload,
+                        summary_payload,
+                        created_at,
+                        updated_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                        $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb,
+                        NOW(), NOW()
+                    )
+                    """,
+                    search_session_uuid,
+                    search_mode,
+                    same_input_key,
+                    requested_start_date,
+                    requested_end_date,
+                    summary.get("search_time_span_seconds"),
+                    summary.get("total_individuals", 0),
+                    summary.get("total_appearances", 0),
+                    summary.get("unique_videos", 0),
+                    summary.get("average_confidence", 0.0),
+                    summary.get("average_quality", 0.0),
+                    summary.get("total_duration_seconds", 0.0),
+                    first_appearance,
+                    last_appearance,
+                    summary.get("total_men", 0),
+                    summary.get("total_women", 0),
+                    summary.get("total_unknown", 0),
+                    summary.get("average_age"),
+                    json.dumps(result, default=str),
+                    json.dumps(summary, default=str),
+                )
+
+                if canonical_cameras:
+                    await conn.executemany(
+                        """
+                        INSERT INTO mvr_search_session_cameras (
+                            search_session_uuid,
+                            camera_id
+                        ) VALUES ($1, $2)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        [(search_session_uuid, camera_id) for camera_id in canonical_cameras],
+                    )
+
+                video_detail_map = {
+                    str(detail.get("video_uuid")): detail
+                    for detail in (video_details or [])
+                    if detail.get("video_uuid")
+                }
+                if canonical_videos:
+                    await conn.executemany(
+                        """
+                        INSERT INTO mvr_search_session_videos (
+                            search_session_uuid,
+                            video_uuid,
+                            camera_id,
+                            media_timestamp
+                        ) VALUES ($1, $2::uuid, $3, $4)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        [
+                            (
+                                search_session_uuid,
+                                video_uuid,
+                                video_detail_map.get(video_uuid, {}).get("camera_id"),
+                                self._normalize_db_timestamp(
+                                    video_detail_map.get(video_uuid, {}).get("media_timestamp")
+                                ),
+                            )
+                            for video_uuid in canonical_videos
+                        ],
+                    )
+
+        created_session = await self.get_search_session_by_same_input(
+            camera_ids=canonical_cameras,
+            video_uuids=canonical_videos,
+            requested_start_date=requested_start_date,
+            requested_end_date=requested_end_date,
+        )
+        if not created_session:
+            raise MVRRepositoryError("Failed to load created MVR search session")
+        return created_session
     
     # ========================================================================
     # MVR-People CRUD Operations

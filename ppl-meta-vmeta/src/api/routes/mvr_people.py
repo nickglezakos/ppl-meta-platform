@@ -13,6 +13,7 @@ Version: 1.0.0
 """
 
 import asyncio
+import json
 import logging
 import os
 from typing import Optional, List, Dict, Any
@@ -476,6 +477,115 @@ def _normalize_datetime_for_comparison(value: Optional[datetime]) -> Optional[da
     return value.astimezone(timezone.utc)
 
 
+def _age_display_to_mean(age_display: Optional[str]) -> Optional[float]:
+    if not age_display:
+        return None
+    if "-" not in age_display:
+        try:
+            return float(age_display)
+        except (TypeError, ValueError):
+            return None
+
+    min_age_str, max_age_str = age_display.split("-", 1)
+    try:
+        min_age = float(min_age_str)
+        max_age = float(max_age_str)
+    except (TypeError, ValueError):
+        return None
+    return round((min_age + max_age) / 2.0, 3)
+
+
+def _build_persistent_search_summary(
+    search_response: MVRPeopleSearchResponse,
+    camera_ids: List[str],
+    video_uuids: List[str],
+    start_time: Optional[datetime],
+    end_time: Optional[datetime],
+) -> Dict[str, Any]:
+    results = search_response.mvr_people
+    total_appearances = sum(result.total_appearances for result in results)
+    unique_videos = len(
+        {
+            appearance.video_uuid
+            for result in results
+            for appearance in result.appearances
+        }
+    )
+    average_confidence = round(
+        sum(result.confidence_score for result in results) / len(results),
+        3,
+    ) if results else 0.0
+    average_quality = round(
+        sum(result.quality_score for result in results) / len(results),
+        3,
+    ) if results else 0.0
+
+    total_duration_seconds = 0.0
+    first_appearance = None
+    last_appearance = None
+    total_men = 0
+    total_women = 0
+    total_unknown = 0
+    ages = []
+
+    for result in results:
+        if first_appearance is None or result.first_seen < first_appearance:
+            first_appearance = result.first_seen
+        if last_appearance is None or result.last_seen > last_appearance:
+            last_appearance = result.last_seen
+
+        gender = (result.estimated_gender or "").strip().lower()
+        if gender == "male":
+            total_men += 1
+        elif gender == "female":
+            total_women += 1
+        else:
+            total_unknown += 1
+
+        age_mean = _age_display_to_mean(result.estimated_age)
+        if age_mean is not None:
+            ages.append(age_mean)
+
+        for appearance in result.appearances:
+            duration = (appearance.end_timestamp - appearance.start_timestamp).total_seconds()
+            if duration > 0:
+                total_duration_seconds += duration
+
+    search_time_span_seconds = None
+    if start_time is not None and end_time is not None:
+        search_time_span_seconds = max((end_time - start_time).total_seconds(), 0.0)
+
+    return {
+        "total_individuals": len(results),
+        "total_appearances": total_appearances,
+        "unique_videos": unique_videos,
+        "average_confidence": average_confidence,
+        "average_quality": average_quality,
+        "total_duration_seconds": round(total_duration_seconds, 3),
+        "search_time_span_seconds": round(search_time_span_seconds, 3) if search_time_span_seconds is not None else None,
+        "first_appearance": first_appearance,
+        "last_appearance": last_appearance,
+        "total_men": total_men,
+        "total_women": total_women,
+        "total_unknown": total_unknown,
+        "average_age": round(sum(ages) / len(ages), 3) if ages else None,
+        "search_input": {
+            "camera_ids": sorted({camera_id for camera_id in camera_ids if camera_id}),
+            "video_uuids": sorted({video_uuid for video_uuid in video_uuids if video_uuid}),
+            "start_date": start_time,
+            "end_date": end_time,
+        },
+    }
+
+
+def _normalize_session_payload(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        return json.loads(value)
+    return dict(value or {})
+
+
 def _build_analysis_from_hierarchy(
     hierarchy: Dict[str, Any],
     session_uuid: str,
@@ -493,6 +603,8 @@ def _build_analysis_from_hierarchy(
     unique_videos = set()
     appearances: List[Dict[str, Any]] = []
     person_object_uuids: List[str] = []
+    total_duration_seconds = 0.0
+    quality_scores: List[float] = []
 
     for item in all_individuals:
         item_start = item.get("first_seen_timestamp")
@@ -530,6 +642,18 @@ def _build_analysis_from_hierarchy(
         if video_uuid:
             unique_videos.add(str(video_uuid))
 
+        raw_quality_score = item.get("quality_score")
+        if raw_quality_score is not None:
+            try:
+                quality_scores.append(float(raw_quality_score))
+            except (TypeError, ValueError):
+                pass
+
+        if item_start_dt is not None and item_end_dt is not None:
+            duration_seconds = (item_end_dt - item_start_dt).total_seconds()
+            if duration_seconds > 0:
+                total_duration_seconds += duration_seconds
+
         appearances.append({
             "individual_uuid": str(item.get("individual_uuid")),
             "video_uuid": str(video_uuid) if video_uuid else "",
@@ -550,6 +674,22 @@ def _build_analysis_from_hierarchy(
     super_uuid = str(hierarchy.get("resolved_super_individual_uuid") or super_individual["mvr_people_uuid"])
     demographics = _build_demographics_payload(super_individual)
     merged_children = hierarchy.get("merged_mvr_people", [])
+    if not quality_scores:
+        merged_quality_scores = []
+        for child in merged_children:
+            raw_quality = child.get("quality_score")
+            if raw_quality is None:
+                continue
+            try:
+                merged_quality_scores.append(float(raw_quality))
+            except (TypeError, ValueError):
+                continue
+        quality_scores = merged_quality_scores
+
+    average_quality_score = round(
+        sum(quality_scores) / len(quality_scores),
+        3,
+    ) if quality_scores else round(float(super_individual.get("quality_score") or 0.0), 3)
 
     return {
         "individual_uuid": super_uuid,
@@ -567,8 +707,9 @@ def _build_analysis_from_hierarchy(
             if last_seen is not None
             else datetime.now(timezone.utc).isoformat()
         ),
-        "total_duration_seconds": 0.0,
+        "total_duration_seconds": round(total_duration_seconds, 3),
         "average_confidence": round(float(super_individual.get("confidence_score") or 0.0), 3),
+        "average_quality_score": average_quality_score,
         "average_route_velocity": None,
         "demographics": demographics,
         "aggregate_demographics": None,
@@ -663,6 +804,7 @@ async def _build_analysis_from_mvr_person(
     unique_videos = set()
     first_seen: Optional[datetime] = None
     last_seen: Optional[datetime] = None
+    total_duration_seconds = 0.0
 
     for row in appearance_rows:
         row_start = _normalize_datetime_for_comparison(row["start_timestamp"])
@@ -711,6 +853,11 @@ async def _build_analysis_from_mvr_person(
             }
         )
 
+        if row_start is not None and row_end is not None:
+            duration_seconds = (row_end - row_start).total_seconds()
+            if duration_seconds > 0:
+                total_duration_seconds += duration_seconds
+
     demographics = _build_demographics_payload(dict(mvr_row))
     similarity_map = {
         str(key): float(value)
@@ -744,6 +891,16 @@ async def _build_analysis_from_mvr_person(
         for row in mvr_rows[1:]
     ]
 
+    quality_scores = [
+        float(row["quality_score"] or 0.0)
+        for row in mvr_rows
+        if row["quality_score"] is not None
+    ]
+    average_quality_score = round(
+        sum(quality_scores) / len(quality_scores),
+        3,
+    ) if quality_scores else 0.0
+
     return {
         "individual_uuid": mvr_person_uuid,
         "individual_id": mvr_person_uuid,
@@ -760,8 +917,9 @@ async def _build_analysis_from_mvr_person(
             if last_seen is not None
             else datetime.now(timezone.utc).isoformat()
         ),
-        "total_duration_seconds": 0.0,
+        "total_duration_seconds": round(total_duration_seconds, 3),
         "average_confidence": round(float(mvr_row["confidence_score"] or 0.0), 3),
+        "average_quality_score": average_quality_score,
         "average_route_velocity": None,
         "demographics": demographics,
         "aggregate_demographics": None,
@@ -2461,6 +2619,7 @@ async def search_mvr_people_by_videos(
     force_refresh: bool = Body(False, description="Force cache refresh"),
     auto_merge: bool = Body(False, description="Automatically merge similar MVR people before returning results"),
     similarity_threshold: float = Body(0.70, ge=0.0, le=1.0, description="Similarity threshold for auto-merge (0-1)"),
+    ignore_existing_hierarchy: bool = Body(False, description="Ignore persisted MVR hierarchy and merge directly from base linked MVR rows"),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
     mvr_service: MVRService = Depends(get_mvr_service),
     mvr_matcher = Depends(get_mvr_matcher),
@@ -2506,7 +2665,7 @@ async def search_mvr_people_by_videos(
     logger.info(
         f"Searching existing MVR people for {len(video_uuids)} videos "
         f"(user: {current_user.get('email')}, force_refresh: {force_refresh}, "
-        f"auto_merge: {auto_merge})"
+        f"auto_merge: {auto_merge}, ignore_existing_hierarchy: {ignore_existing_hierarchy})"
     )
     
     # Check cache first (unless force_refresh or auto_merge)
@@ -2725,12 +2884,44 @@ async def search_mvr_people_by_videos(
                     },
                     message="No individuals found in videos"
                 )
+
+            async def _count_invalid_linked_mvr_rows() -> int:
+                return int(
+                    await conn.fetchval(
+                        """
+                        SELECT COUNT(DISTINCT mp.mvr_people_uuid)
+                        FROM individual_mvr_mapping imm
+                        INNER JOIN mvr_people mp
+                            ON mp.mvr_people_uuid = imm.mvr_people_uuid
+                        WHERE imm.individual_uuid = ANY($1::uuid[])
+                            AND (
+                                mp.face_embedding IS NULL
+                                OR (mp.face_embedding <#> mp.face_embedding) >= 0
+                            )
+                        """,
+                        [row['individual_uuid'] for row in individual_rows],
+                    )
+                    or 0
+                )
+
+            if auto_merge:
+                invalid_linked_mvr_rows = await _count_invalid_linked_mvr_rows()
+                if invalid_linked_mvr_rows:
+                    logger.warning(
+                        "Detected %s invalid linked MVR rows for merge search; rematerializing target videos",
+                        invalid_linked_mvr_rows,
+                    )
+                    await _materialize_missing_video_mvr_rows()
+                    individual_rows = await conn.fetch(
+                        individuals_query,
+                        video_uuid_objs
+                    )
             
             individual_uuids = [
                 str(row['individual_uuid']) for row in individual_rows
             ]
             
-            if auto_merge:
+            if auto_merge and not ignore_existing_hierarchy:
                 # When auto-merge is explicitly requested, resolve each mapped MVR to
                 # its active root so the response reflects the persisted hierarchy.
                 mvr_query = """
@@ -2783,6 +2974,8 @@ async def search_mvr_people_by_videos(
                     INNER JOIN root_mvr rm
                         ON rm.root_mvr_uuid = mp.mvr_people_uuid
                     WHERE mp.is_orphaned = false
+                        AND mp.face_embedding IS NOT NULL
+                        AND (mp.face_embedding <#> mp.face_embedding) < 0
                     ORDER BY mp.created_at DESC
                     LIMIT $2
                 """
@@ -2804,15 +2997,56 @@ async def search_mvr_people_by_videos(
                     INNER JOIN mvr_people mp
                         ON mp.mvr_people_uuid = imm.mvr_people_uuid
                     WHERE imm.individual_uuid = ANY($1::uuid[])
+                        AND (
+                            NOT $3
+                            OR (
+                                mp.face_embedding IS NOT NULL
+                                AND (mp.face_embedding <#> mp.face_embedding) < 0
+                            )
+                        )
                     ORDER BY mp.created_at DESC
                     LIMIT $2
                 """
             
-            mvr_records = await conn.fetch(
-                mvr_query,
-                individual_uuids,
-                limit
-            )
+            if auto_merge and not ignore_existing_hierarchy:
+                mvr_records = await conn.fetch(
+                    mvr_query,
+                    individual_uuids,
+                    limit,
+                )
+            else:
+                mvr_records = await conn.fetch(
+                    mvr_query,
+                    individual_uuids,
+                    limit,
+                    auto_merge,
+                )
+
+            if auto_merge and not mvr_records:
+                logger.warning(
+                    "No valid merge-ready MVR rows found after filtering invalid embeddings; retrying video materialization"
+                )
+                await _materialize_missing_video_mvr_rows()
+                individual_rows = await conn.fetch(
+                    individuals_query,
+                    video_uuid_objs
+                )
+                individual_uuids = [
+                    str(row['individual_uuid']) for row in individual_rows
+                ]
+                if auto_merge and not ignore_existing_hierarchy:
+                    mvr_records = await conn.fetch(
+                        mvr_query,
+                        individual_uuids,
+                        limit,
+                    )
+                else:
+                    mvr_records = await conn.fetch(
+                        mvr_query,
+                        individual_uuids,
+                        limit,
+                        auto_merge,
+                    )
             
             results = []
             
@@ -2820,7 +3054,7 @@ async def search_mvr_people_by_videos(
             for mvr_record in mvr_records:
                 mvr_uuid = str(mvr_record['mvr_people_uuid'])
                 
-                if auto_merge:
+                if auto_merge and not ignore_existing_hierarchy:
                     # Expand all descendants from this root MVR using merged_into_mvr_uuid.
                     descendants_query = """
                         WITH RECURSIVE descendants AS (
@@ -3072,7 +3306,8 @@ async def search_mvr_people_by_videos(
                     "end_time": end_time.isoformat() if end_time else None,
                     "limit": limit,
                     "auto_merge": auto_merge,
-                    "similarity_threshold": similarity_threshold if auto_merge else None
+                    "similarity_threshold": similarity_threshold if auto_merge else None,
+                    "ignore_existing_hierarchy": ignore_existing_hierarchy if auto_merge else None,
                 },
                 "message": f"Found {len(results)} existing MVR people"
             }
@@ -3099,6 +3334,112 @@ async def search_mvr_people_by_videos(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to search MVR people: {str(e)}"
         )
+
+
+@router.post(
+    "/search/by-videos/persisted-merge-session",
+    response_model=Dict[str, Any],
+    summary="Search MVR People by Videos With Persistent Merge Session",
+    description="Run merge-enabled MVR search against base persisted MVR rows, reuse stored sessions by same input, and persist a reusable session snapshot.",
+)
+async def search_mvr_people_by_videos_persisted_merge_session(
+    request: Request,
+    camera_ids: List[str] = Body(
+        ..., embed=True, description="List of camera identifiers participating in the search"
+    ),
+    video_uuids: List[str] = Body(
+        ..., embed=True, description="List of video UUIDs to search"
+    ),
+    start_time: Optional[datetime] = Body(
+        None, description="Requested start time for the search session"
+    ),
+    end_time: Optional[datetime] = Body(
+        None, description="Requested end time for the search session"
+    ),
+    limit: int = Body(100, description="Max results (default: 100, max: 500)"),
+    similarity_threshold: float = Body(0.70, ge=0.0, le=1.0, description="Similarity threshold for merge preview (0-1)"),
+    ignore_existing_session: bool = Body(False, description="Force a fresh session even if the same input was already stored"),
+    video_details: Optional[List[Dict[str, Any]]] = Body(None, description="Optional per-video metadata such as camera_id and media_timestamp"),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_service: MVRService = Depends(get_mvr_service),
+    mvr_matcher = Depends(get_mvr_matcher),
+    cache_client = Depends(get_cache_client),
+    current_user: dict = Depends(get_current_user),
+):
+    logger.info(
+        "Searching persistent merge session for %s cameras and %s videos (user: %s, ignore_existing_session: %s)",
+        len(camera_ids),
+        len(video_uuids),
+        current_user.get("email"),
+        ignore_existing_session,
+    )
+
+    if not ignore_existing_session:
+        existing_session = await mvr_repository.get_search_session_by_same_input(
+            camera_ids=camera_ids,
+            video_uuids=video_uuids,
+        )
+        if existing_session:
+            return {
+                "success": True,
+                "search_session_uuid": str(existing_session["search_session_uuid"]),
+                "reused_existing_session": True,
+                "summary": _normalize_session_payload(existing_session.get("summary_payload")),
+                "result_payload": _normalize_session_payload(existing_session.get("result_payload")),
+                "message": "Reused existing persisted merge session",
+            }
+
+    search_response = await search_mvr_people_by_videos(
+        request=request,
+        video_uuids=video_uuids,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+        force_refresh=True,
+        auto_merge=True,
+        similarity_threshold=similarity_threshold,
+        ignore_existing_hierarchy=True,
+        mvr_repository=mvr_repository,
+        mvr_service=mvr_service,
+        mvr_matcher=mvr_matcher,
+        cache_client=cache_client,
+        current_user=current_user,
+    )
+
+    result_payload = search_response.dict()
+    result_payload.setdefault("search_parameters", {})
+    result_payload["search_parameters"]["camera_ids"] = sorted(
+        {camera_id for camera_id in camera_ids if camera_id}
+    )
+    result_payload["search_parameters"]["persisted_merge_session"] = True
+
+    summary_payload = _build_persistent_search_summary(
+        search_response=search_response,
+        camera_ids=camera_ids,
+        video_uuids=video_uuids,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    created_session = await mvr_repository.create_search_session(
+        camera_ids=camera_ids,
+        video_uuids=video_uuids,
+        requested_start_date=start_time,
+        requested_end_date=end_time,
+        summary_payload=summary_payload,
+        result_payload=result_payload,
+        search_mode="merge_preview",
+        video_details=video_details,
+    )
+
+    return {
+        "success": True,
+        "search_session_uuid": str(created_session["search_session_uuid"]),
+        "reused_existing_session": False,
+        "summary": _normalize_session_payload(created_session.get("summary_payload")),
+        "result_payload": _normalize_session_payload(created_session.get("result_payload")),
+        "message": "Created persisted merge session",
+    }
 
 
 # ============================================================================
@@ -4383,20 +4724,123 @@ async def enrich_person_objects_with_face_crops(
     import numpy as np
     from PIL import Image
     from io import BytesIO
+
+    def _is_valid_bbox(bbox: Any) -> bool:
+        return (
+            isinstance(bbox, list)
+            and len(bbox) == 4
+            and all(value is not None for value in bbox)
+            and float(bbox[2]) > float(bbox[0])
+            and float(bbox[3]) > float(bbox[1])
+        )
+
+    def _is_valid_frame_number(frame_number: Any) -> bool:
+        try:
+            return int(frame_number) >= 0
+        except (TypeError, ValueError):
+            return False
+
+    async def _fetch_face_details_by_id() -> Dict[str, Dict[str, Any]]:
+        try:
+            response = await client.get(
+                f"{vision_url}/faces/media/{media_uuid}",
+                headers={'Authorization': f'Bearer {auth_token}'},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            logger.warning(
+                "Failed to fetch raw face details for media %s: %s",
+                media_uuid,
+                exc,
+            )
+            return {}
+
+        faces = []
+        if isinstance(payload, list):
+            faces = payload
+        elif isinstance(payload, dict):
+            faces = payload.get('faces', []) or []
+            if not faces:
+                faces_by_frame = payload.get('faces_by_frame', {}) or {}
+                for frame_faces in faces_by_frame.values():
+                    if isinstance(frame_faces, list):
+                        faces.extend(frame_faces)
+
+        face_details_by_id: Dict[str, Dict[str, Any]] = {}
+        for face in faces:
+            if not isinstance(face, dict):
+                continue
+            face_id = face.get('id') or face.get('face_id')
+            if not face_id:
+                continue
+            face_details_by_id[str(face_id)] = {
+                'frame_number': face.get('frame_number'),
+                'bbox': face.get('bbox') or [
+                    face.get('bbox_x1'),
+                    face.get('bbox_y1'),
+                    face.get('bbox_x2'),
+                    face.get('bbox_y2'),
+                ],
+                'confidence': face.get('confidence'),
+                'frame_width': face.get('frame_width'),
+                'frame_height': face.get('frame_height'),
+            }
+        return face_details_by_id
     
     enriched_objects = []
     
     async with httpx.AsyncClient(timeout=30.0) as client:
+        face_details_by_id: Optional[Dict[str, Dict[str, Any]]] = None
         for person_obj in person_objects:
             try:
                 # Get frame number and bbox directly from person_object
                 # Face Detection V2 already provides best_face_frame
                 frame_number = person_obj.get('best_face_frame')
                 best_face_bbox = person_obj.get('best_face_bbox')
+
+                representative_faces = person_obj.get('representative_faces') or []
+                best_face = representative_faces[0] if representative_faces else {}
+                face_data = best_face.get('face_data') or {}
+                best_face_id = (
+                    person_obj.get('best_face_id')
+                    or best_face.get('face_id')
+                    or face_data.get('id')
+                )
+
+                if not _is_valid_frame_number(frame_number):
+                    frame_number = face_data.get('frame_number')
+                if not _is_valid_bbox(best_face_bbox):
+                    best_face_bbox = face_data.get('bbox')
+
+                if (
+                    best_face_id
+                    and (
+                        not _is_valid_frame_number(frame_number)
+                        or not _is_valid_bbox(best_face_bbox)
+                    )
+                ):
+                    if face_details_by_id is None:
+                        face_details_by_id = await _fetch_face_details_by_id()
+                    face_details = face_details_by_id.get(str(best_face_id), {})
+                    raw_frame_number = face_details.get('frame_number')
+                    raw_bbox = face_details.get('bbox')
+                    if _is_valid_frame_number(raw_frame_number) and _is_valid_bbox(raw_bbox):
+                        frame_number = raw_frame_number
+                        best_face_bbox = raw_bbox
+                    else:
+                        if not _is_valid_frame_number(frame_number):
+                            frame_number = raw_frame_number
+                        if not _is_valid_bbox(best_face_bbox):
+                            best_face_bbox = raw_bbox
+                    if person_obj.get('detect_frame_width') is None:
+                        person_obj['detect_frame_width'] = face_details.get('frame_width')
+                    if person_obj.get('detect_frame_height') is None:
+                        person_obj['detect_frame_height'] = face_details.get('frame_height')
                 
-                if frame_number is None or not best_face_bbox:
+                if not _is_valid_frame_number(frame_number) or not _is_valid_bbox(best_face_bbox):
                     logger.warning(
-                        f"Person object missing best_face_frame or bbox: {person_obj.get('person_id')}"
+                        f"Person object missing valid best_face_frame or bbox: {person_obj.get('person_id')}"
                     )
                     enriched_objects.append(person_obj)
                     continue
@@ -4464,6 +4908,8 @@ async def enrich_person_objects_with_face_crops(
                 # Step 5: Add face_crop to person_object
                 enriched_obj = {
                     **person_obj,
+                    'best_face_frame': int(frame_number),
+                    'best_face_bbox': list(best_face_bbox),
                     'best_face_crop': face_crop  # numpy array for ML processing
                 }
                 enriched_objects.append(enriched_obj)

@@ -1833,6 +1833,53 @@ class MediaApiClient {
     }
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> searchPersistedMergedMVRPeopleByVideos({
+    required List<String> cameraIds,
+    required List<String> videoUuids,
+    DateTime? startTime,
+    DateTime? endTime,
+    int limit = 100,
+    double? similarityThreshold,
+    bool ignoreExistingSession = false,
+    List<Map<String, dynamic>>? videoDetails,
+  }) async {
+    try {
+      final data = {
+        'camera_ids': cameraIds,
+        'video_uuids': videoUuids,
+        'limit': limit,
+        'ignore_existing_session': ignoreExistingSession,
+      };
+
+      if (startTime != null) {
+        data['start_time'] = startTime.toUtc().toIso8601String();
+      }
+      if (endTime != null) {
+        data['end_time'] = endTime.toUtc().toIso8601String();
+      }
+      if (similarityThreshold != null) {
+        data['similarity_threshold'] = similarityThreshold;
+      }
+      if (videoDetails != null) {
+        data['video_details'] = videoDetails;
+      }
+
+      final response = await _apiClient.post(
+        '/api/v1/mvr-people/search/by-videos/persisted-merge-session',
+        data: data,
+      );
+
+      debugPrint('🔍 Search persisted merged MVR people result: ${response.data}');
+      return ApiResponse.success(response.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      debugPrint('❌ Search persisted merged MVR people failed: ${_handleDioError(e)}');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      debugPrint('❌ Search persisted merged MVR people unexpected error: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   Future<ApiResponse<Map<String, dynamic>>> getMvrSearchAnalysis({
     required List<String> mvrUuids,
     required String sessionUuid,

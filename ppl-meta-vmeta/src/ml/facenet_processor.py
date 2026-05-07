@@ -51,6 +51,13 @@ class FaceNetProcessor:
                 logger.error(f"Failed to load {self.model_name} model: {e}")
                 return False
         return True
+
+    def _is_valid_embedding(self, embedding: np.ndarray) -> bool:
+        if embedding is None or len(embedding) != self.embedding_size:
+            return False
+
+        norm = np.linalg.norm(embedding)
+        return np.isfinite(norm) and norm > 1e-8
     
     def extract_embedding(
         self,
@@ -107,6 +114,10 @@ class FaceNetProcessor:
 
             # Normalize embedding
             embedding = self._normalize_embedding(embedding)
+
+            if not self._is_valid_embedding(embedding):
+                logger.warning("Rejected invalid FaceNet embedding")
+                return None
 
             return embedding
 
@@ -175,8 +186,12 @@ class FaceNetProcessor:
             # Check if embedding already exists
             if 'face_embedding' in person_data:
                 embedding = np.array(person_data['face_embedding'])
-                if len(embedding) == self.embedding_size:
+                if self._is_valid_embedding(embedding):
                     return embedding
+                logger.warning(
+                    "Ignoring invalid cached embedding for person object %s",
+                    person_data.get('person_object_uuid', 'unknown'),
+                )
             
             # Extract from face crop if available
             if 'best_face_crop' in person_data:

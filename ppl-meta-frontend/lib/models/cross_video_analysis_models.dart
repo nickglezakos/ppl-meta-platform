@@ -144,6 +144,7 @@ class AggregatedIndividualAnalysis {
   final DateTime lastSeen;
   final double totalDurationSeconds;
   final double averageConfidence;
+  final double averageQualityScore;
   final double? averageRouteVelocity;
   final Demographics? demographics;
   final AggregateDemographics? aggregateDemographics;
@@ -178,6 +179,7 @@ class AggregatedIndividualAnalysis {
     required this.lastSeen,
     required this.totalDurationSeconds,
     required this.averageConfidence,
+    this.averageQualityScore = 0.0,
     this.averageRouteVelocity,
     this.demographics,
     this.aggregateDemographics,
@@ -216,6 +218,7 @@ class AggregatedIndividualAnalysis {
       lastSeen: DateTime.parse(json['last_seen'] as String),
       totalDurationSeconds: (json['total_duration_seconds'] as num).toDouble(),
       averageConfidence: (json['average_confidence'] as num).toDouble(),
+      averageQualityScore: (json['average_quality_score'] as num?)?.toDouble() ?? 0.0,
       averageRouteVelocity: (json['average_route_velocity'] as num?)?.toDouble(),
       demographics: json['demographics'] != null 
           ? Demographics.fromJson(json['demographics'] as Map<String, dynamic>)
@@ -346,8 +349,11 @@ class AggregatedIndividualAnalysis {
       uniqueVideos: uniqueVideoUuids,
       firstSeen: firstSeen ?? DateTime.parse(superIndividual['created_at'] as String),
       lastSeen: lastSeen ?? DateTime.now(),
-      totalDurationSeconds: 0.0, // Calculate from appearances if needed
+        totalDurationSeconds: (hierarchyData['total_duration_seconds'] as num?)?.toDouble() ?? 0.0,
       averageConfidence: (superIndividual['confidence_score'] as num?)?.toDouble() ?? 0.0,
+        averageQualityScore: (hierarchyData['average_quality_score'] as num?)?.toDouble() ??
+          (superIndividual['quality_score'] as num?)?.toDouble() ??
+          0.0,
       demographics: demographics,
       appearances: appearances,
       personObjectUuids: filteredIndividuals

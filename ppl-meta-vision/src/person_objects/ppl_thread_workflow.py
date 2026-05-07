@@ -441,6 +441,7 @@ class PPLThreadWorkflowController:
                 try:
                     self._store_quality_analysis_results(
                         workflow_id,
+                        session_uuid,
                         best_quality_faces,
                         person_id_mapping,
                         quality_rankings=quality_analysis_results.get("quality_rankings", {}),
@@ -617,6 +618,7 @@ class PPLThreadWorkflowController:
                 # Store quality analysis results with representative faces and route data
                 self._store_quality_analysis_results(
                     workflow_id,
+                    session_uuid,
                     best_quality_faces,
                     person_id_mapping,
                     quality_rankings=quality_analysis_results.get("quality_rankings", {}),
@@ -1255,6 +1257,7 @@ class PPLThreadWorkflowController:
     def _store_quality_analysis_results(
         self,
         workflow_id: str,
+        session_uuid: str,
         best_quality_faces: Dict,
         person_id_mapping: Dict[str, str],
         quality_rankings: Dict = None,  # NEW: Quality rankings for representative faces
@@ -1272,6 +1275,13 @@ class PPLThreadWorkflowController:
             )
 
             cursor = self.db.connection.cursor()
+
+            face_detections = self._get_session_face_detections(session_uuid)
+            face_detection_by_id = {
+                str(face.get("id")): face
+                for face in face_detections
+                if isinstance(face, dict) and face.get("id")
+            }
 
             # Update each person object with best face and quality score
             for person_id, quality_data in best_quality_faces.items():
@@ -1295,10 +1305,13 @@ class PPLThreadWorkflowController:
                 if face_mappings:
                     for mapping in face_mappings:
                         if mapping.get("person_id") == person_id:
-                            face_det = mapping.get("face_detection", {})
+                            face_det = face_detection_by_id.get(
+                                str(mapping.get("face_detection_id", "")),
+                                {},
+                            )
                             all_faces_route.append({
                                 "face_id": str(mapping.get("face_detection_id", "")),
-                                "frame_number": face_det.get("frame_number", 0),
+                                "frame_number": face_det.get("frame_number", mapping.get("frame_number", 0)),
                                 "bbox": [
                                     face_det.get("bbox_x1", 0),
                                     face_det.get("bbox_y1", 0),

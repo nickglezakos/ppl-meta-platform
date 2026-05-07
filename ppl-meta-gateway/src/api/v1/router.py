@@ -2351,6 +2351,12 @@ async def search_mvr_people_by_videos(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/search/by-videos/persisted-merge-session")
+async def search_mvr_people_by_videos_persisted_merge_session(request: Request):
+    """Proxy persisted merge-session MVR search request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.post("/mvr-people/count-by-videos")
 async def count_mvr_people_by_videos(request: Request):
     """Proxy MVR people count by videos request to vmeta service."""

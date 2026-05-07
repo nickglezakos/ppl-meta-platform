@@ -1067,20 +1067,44 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         '   Backend MVR search settings: mergeRule=$mergeRule, '
         'autoMerge=$autoMerge, threshold=$mergeThreshold',
       );
+
+      final videoDetails = mediaResponse.data!.items
+          .map((media) => {
+                'video_uuid': media.uuid,
+                'camera_id': collectionIdentifier,
+                'media_timestamp': media.createdAt.toUtc().toIso8601String(),
+              })
+          .toList();
       
       // Step 2: Search for existing MVR people in these videos
-      final searchResponse = await mediaApiClient.searchMVRPeopleByVideos(
-        videoUuids: videoUuids,
-        startTime: _startDate,
-        endTime: _endDate,
-        limit: 500,
-        autoMerge: autoMerge,
-        similarityThreshold: mergeThreshold,
-      );
+      final searchResponse = autoMerge
+          ? await mediaApiClient.searchPersistedMergedMVRPeopleByVideos(
+              cameraIds: [collectionIdentifier],
+              videoUuids: videoUuids,
+              startTime: _startDate,
+              endTime: _endDate,
+              limit: 500,
+              similarityThreshold: mergeThreshold,
+              videoDetails: videoDetails,
+            )
+          : await mediaApiClient.searchMVRPeopleByVideos(
+              videoUuids: videoUuids,
+              startTime: _startDate,
+              endTime: _endDate,
+              limit: 500,
+              autoMerge: autoMerge,
+              similarityThreshold: mergeThreshold,
+            );
 
       if (searchResponse.success && searchResponse.data != null) {
-        final mvrPeople = searchResponse.data!['mvr_people'] as List<dynamic>;
-        final totalResults = searchResponse.data!['total_results'] as int;
+        final payload = autoMerge
+            ? (searchResponse.data!['result_payload'] as Map<String, dynamic>? ?? const {})
+            : searchResponse.data!;
+        final mvrPeople = payload['mvr_people'] as List<dynamic>? ?? const [];
+        final totalResults = payload['total_results'] as int? ?? mvrPeople.length;
+        final persistedSessionUuid = autoMerge
+            ? searchResponse.data!['search_session_uuid'] as String?
+            : null;
 
         if (totalResults == 0 && videoUuids.isNotEmpty) {
           print('ℹ️ No persisted MVR rows found, triggering backend materialization session...');
@@ -1119,17 +1143,21 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
           _uniqueCountIsFallback = false;
           _isLoadingIndividuals = false;
           
-          // Set a dummy tracking session UUID so the Analysis button appears
-          _trackingSessionUuid = 'mvr_search_${DateTime.now().millisecondsSinceEpoch}';
+          // Reuse the persisted merge-session UUID when available, otherwise use a local placeholder.
+          _trackingSessionUuid = persistedSessionUuid ?? 'mvr_search_${DateTime.now().millisecondsSinceEpoch}';
           
           // Store MVR search results for navigation to analysis screen
           _trackingSessionData = {
             'search_results': mvrPeople,
             'total_mvr_people': totalResults,
             'total_appearances': totalAppearances,
-            'search_parameters': searchResponse.data!['search_parameters'],
+            'search_parameters': payload['search_parameters'],
             'collection_name': _selectedCollection!.name, // Add collection name
             'collection_id': collectionIdentifier,        // Keep route scope aligned with backend camera IDs
+            'persisted_merge_session_uuid': persistedSessionUuid,
+            'persisted_merge_session_reused': autoMerge
+                ? (searchResponse.data!['reused_existing_session'] as bool? ?? false)
+                : false,
           };
         });
         

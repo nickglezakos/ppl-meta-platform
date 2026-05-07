@@ -2130,8 +2130,9 @@ class _PersonObjectsDetailScreenState
               lastSeen: data['last_seen'] != null 
                   ? DateTime.parse(data['last_seen'] as String)
                   : DateTime.now(),
-              totalDurationSeconds: 0.0, // Not provided by session-less endpoint
-              averageConfidence: 0.0, // Calculate from appearances if needed
+              totalDurationSeconds: (data['total_duration_seconds'] as num?)?.toDouble() ?? 0.0,
+              averageConfidence: (data['average_confidence'] as num?)?.toDouble() ?? 0.0,
+              averageQualityScore: (data['average_quality_score'] as num?)?.toDouble() ?? 0.0,
               appearances: (data['appearances'] as List)
                   .where((app) {
                     // Filter out appearances with missing or invalid video UUIDs
@@ -2467,11 +2468,18 @@ class _PersonObjectsDetailScreenState
                 individualId: mvrPersonUuid, // Use MVR UUID as ID
                 sessionUuid: groupId, // Use group ID as session
                 totalAppearances: matched['total_appearances'] as int,
-                uniqueVideos: appearancesData?.length ?? 1, // Count unique videos from appearances
+                uniqueVideos: (matched['unique_videos'] as int?) ??
+                  appearances
+                    .map((appearance) => appearance.videoUuid)
+                    .where((videoUuid) => videoUuid.isNotEmpty)
+                    .toSet()
+                    .length,
                 firstSeen: appearances.first.startTimestamp,
                 lastSeen: appearances.last.endTimestamp,
-                totalDurationSeconds: 0.0,
-                averageConfidence: appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
+                totalDurationSeconds: (matched['total_duration_seconds'] as num?)?.toDouble() ?? 0.0,
+                averageConfidence: (matched['average_confidence'] as num?)?.toDouble() ??
+                  appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
+                averageQualityScore: (matched['average_quality_score'] as num?)?.toDouble() ?? 0.0,
                 demographics: demographics, // Use super-individual demographics
                 appearances: appearances,
                 personObjectUuids: [matched['individual_uuid'] as String],
@@ -2520,11 +2528,18 @@ class _PersonObjectsDetailScreenState
                 individualId: mvrPersonUuid,
                 sessionUuid: groupId,
                 totalAppearances: matched['total_appearances'] as int,
-                uniqueVideos: appearancesData?.length ?? 1,
+                uniqueVideos: (matched['unique_videos'] as int?) ??
+                  appearances
+                    .map((appearance) => appearance.videoUuid)
+                    .where((videoUuid) => videoUuid.isNotEmpty)
+                    .toSet()
+                    .length,
                 firstSeen: appearances.first.startTimestamp,
                 lastSeen: appearances.last.endTimestamp,
-                totalDurationSeconds: 0.0,
-                averageConfidence: appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
+                totalDurationSeconds: (matched['total_duration_seconds'] as num?)?.toDouble() ?? 0.0,
+                averageConfidence: (matched['average_confidence'] as num?)?.toDouble() ??
+                  appearances.map((a) => a.confidenceScore).reduce((a, b) => a + b) / appearances.length,
+                averageQualityScore: (matched['average_quality_score'] as num?)?.toDouble() ?? 0.0,
                 appearances: appearances,
                 personObjectUuids: [matched['individual_uuid'] as String],
                 analysisTimestamp: DateTime.now(),
@@ -2607,8 +2622,9 @@ class _PersonObjectsDetailScreenState
           lastSeen: data['last_seen'] != null 
               ? DateTime.parse(data['last_seen'] as String)
               : DateTime.now(),
-          totalDurationSeconds: 0.0,
-          averageConfidence: 0.0,
+          totalDurationSeconds: (data['total_duration_seconds'] as num?)?.toDouble() ?? 0.0,
+          averageConfidence: (data['average_confidence'] as num?)?.toDouble() ?? 0.0,
+          averageQualityScore: (data['average_quality_score'] as num?)?.toDouble() ?? 0.0,
           averageRouteVelocity: (data['average_route_velocity'] as num?)?.toDouble(),
           appearances: (data['appearances'] as List)
               .map((app) => IndividualAppearance(
@@ -7145,14 +7161,29 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       
       // Minute with leading zero
       final minute = dt.minute.toString().padLeft(2, '0');
+      final second = dt.second.toString().padLeft(2, '0');
       
       // AM/PM
       final period = dt.hour >= 12 ? 'pm' : 'am';
       
-      return '$dayOfWeek $day $month $year, $hour:$minute $period';
+      return '$dayOfWeek $day $month $year, $hour:$minute:$second $period';
     } catch (e) {
       return timestamp.toString();
     }
+  }
+
+  double _resolvedAverageConfidence(AggregatedIndividualAnalysis analysis) {
+    if (analysis.averageConfidence > 0) {
+      return analysis.averageConfidence;
+    }
+    if (analysis.appearances.isEmpty) {
+      return 0.0;
+    }
+
+    final confidenceSum = analysis.appearances
+        .map((appearance) => appearance.confidenceScore)
+        .reduce((left, right) => left + right);
+    return confidenceSum / analysis.appearances.length;
   }
 
   /// Get day of week abbreviation
@@ -7194,30 +7225,23 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       return const Center(child: Text('No statistics available'));
     }
 
-    // Calculate aggregate statistics across all individuals
     int totalAppearances = 0;
-    int totalUniqueVideos = 0;
+    final uniqueVideoUuids = <String>{};
     double sumConfidence = 0;
+    double sumQuality = 0;
     double totalDurationSeconds = 0;
-    double totalVelocity = 0;
-    int velocityCount = 0;
     DateTime? earliestSeen;
     DateTime? latestSeen;
-    
-    // Aggregate demographics and video data from search results (MVR people data)
+
     int totalMale = 0;
     int totalFemale = 0;
     int totalUnknown = 0;
-    List<double> ages = [];
-    List<double> confidenceScores = [];
+    final ages = <double>[];
     bool hasDemographics = false;
-    
-    // Extract video time span and duration from search results
+
     DateTime? searchStartTime;
     DateTime? searchEndTime;
-    double totalVideoDurationSeconds = 0;
-    
-    // Try to get search parameters from sessionData
+
     final searchParams = widget.crossVideoContext!.sessionData['search_parameters'];
     if (searchParams != null) {
       if (searchParams['start_time'] != null) {
@@ -7235,142 +7259,44 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         }
       }
     }
-    
-    // Calculate total video duration from MVR people appearances
-    // Use a Set to track unique video UUIDs to avoid double-counting
-    final Set<String> processedVideos = {};
-    
-    if (widget.crossVideoContext!.sessionData['search_results'] != null) {
-      final searchResults = widget.crossVideoContext!.sessionData['search_results'] as List<dynamic>;
-      
-      // For each MVR person, check their appearances
-      for (final mvrPerson in searchResults) {
-        final appearances = mvrPerson['appearances'] as List<dynamic>?;
-        if (appearances != null) {
-          for (final appearance in appearances) {
-            // Calculate duration from timestamps
-            final startStr = appearance['start_timestamp'] as String?;
-            final endStr = appearance['end_timestamp'] as String?;
-            final videoUuid = appearance['video_uuid'] as String?;
-            
-            if (startStr != null && endStr != null && videoUuid != null) {
-              try {
-                final start = DateTime.parse(startStr);
-                final end = DateTime.parse(endStr);
-                final durationSecs = end.difference(start).inSeconds.toDouble();
-                
-                // For total video duration, we want the sum of all unique video segments
-                // Track by video_uuid + start_timestamp to get unique segments
-                final segmentKey = '$videoUuid-$startStr';
-                if (!processedVideos.contains(segmentKey)) {
-                  totalVideoDurationSeconds += durationSecs;
-                  processedVideos.add(segmentKey);
-                }
-              } catch (e) {
-                print('Error parsing timestamps: $e');
-              }
-            }
-          }
+
+    final routeVelocities = <double>[];
+
+    for (final analysis in _aggregatedAnalyses!) {
+      totalAppearances += analysis.totalAppearances;
+      sumConfidence += _resolvedAverageConfidence(analysis);
+      sumQuality += analysis.averageQualityScore;
+      totalDurationSeconds += analysis.totalDurationSeconds;
+
+      for (final appearance in analysis.appearances) {
+        if (appearance.videoUuid.isNotEmpty) {
+          uniqueVideoUuids.add(appearance.videoUuid);
         }
       }
-    }
 
-    // Extract demographics from search results if available
-    if (widget.crossVideoContext!.sessionData['search_results'] != null) {
-      final searchResults = widget.crossVideoContext!.sessionData['search_results'] as List<dynamic>;
-      
-      for (final mvrPerson in searchResults) {
-        // Parse gender
-        final gender = mvrPerson['estimated_gender'] as String?;
-        if (gender != null) {
-          hasDemographics = true;
-          if (gender.toLowerCase() == 'male') {
-            totalMale++;
-          } else if (gender.toLowerCase() == 'female') {
-            totalFemale++;
-          } else {
-            totalUnknown++;
-          }
+      final demographics = analysis.demographics;
+      if (demographics != null) {
+        hasDemographics = true;
+        final gender = demographics.gender?.toLowerCase();
+        if (gender == 'male') {
+          totalMale++;
+        } else if (gender == 'female') {
+          totalFemale++;
         } else {
           totalUnknown++;
         }
-        
-        // Parse age (format: "33-43")
-        final ageStr = mvrPerson['estimated_age'] as String?;
-        if (ageStr != null && ageStr.contains('-')) {
-          final parts = ageStr.split('-');
-          if (parts.length == 2) {
-            final minAge = int.tryParse(parts[0]);
-            final maxAge = int.tryParse(parts[1]);
-            if (minAge != null && maxAge != null) {
-              ages.add((minAge + maxAge) / 2.0);
-            }
-          }
-        }
-        
-        // Parse confidence score
-        final confidenceScore = mvrPerson['confidence_score'] as num?;
-        if (confidenceScore != null) {
-          confidenceScores.add(confidenceScore.toDouble());
-        }
-        
-        // Calculate velocity for this MVR person (appearances per minute)
-        final totalAppearancesForPerson = mvrPerson['total_appearances'] as int?;
-        final appearances = mvrPerson['appearances'] as List<dynamic>?;
-        
-        if (totalAppearancesForPerson != null && appearances != null && appearances.isNotEmpty) {
-          // Calculate total time span for this person's appearances
-          DateTime? firstAppearance;
-          DateTime? lastAppearance;
-          
-          for (final appearance in appearances) {
-            final startStr = appearance['start_timestamp'] as String?;
-            final endStr = appearance['end_timestamp'] as String?;
-            
-            if (startStr != null && endStr != null) {
-              try {
-                final start = DateTime.parse(startStr);
-                final end = DateTime.parse(endStr);
-                
-                if (firstAppearance == null || start.isBefore(firstAppearance)) {
-                  firstAppearance = start;
-                }
-                if (lastAppearance == null || end.isAfter(lastAppearance)) {
-                  lastAppearance = end;
-                }
-              } catch (e) {
-                // Skip invalid timestamps
-              }
-            }
-          }
-          
-          // Calculate velocity: appearances per minute over the time span
-          if (firstAppearance != null && lastAppearance != null) {
-            final timeSpanMinutes = lastAppearance.difference(firstAppearance).inMinutes.toDouble();
-            if (timeSpanMinutes > 0 && totalAppearancesForPerson > 0) {
-              final velocity = totalAppearancesForPerson / timeSpanMinutes;
-              totalVelocity += velocity;
-              velocityCount++;
-            }
-          }
+
+        if (demographics.ageMean != null) {
+          ages.add(demographics.ageMean!);
+        } else if (demographics.ageMin != null && demographics.ageMax != null) {
+          ages.add((demographics.ageMin! + demographics.ageMax!) / 2.0);
         }
       }
-    }
 
-    // Track route velocities for average calculation
-    List<double> routeVelocities = [];
-    
-    for (final analysis in _aggregatedAnalyses!) {
-      totalAppearances += analysis.totalAppearances;
-      totalUniqueVideos = math.max(totalUniqueVideos, analysis.uniqueVideos);
-      sumConfidence += analysis.averageConfidence;
-      totalDurationSeconds += analysis.totalDurationSeconds;
-      
-      // Collect route velocity if available
       if (analysis.averageRouteVelocity != null) {
         routeVelocities.add(analysis.averageRouteVelocity!);
       }
-      
+
       if (earliestSeen == null || analysis.firstSeen.isBefore(earliestSeen)) {
         earliestSeen = analysis.firstSeen;
       }
@@ -7379,40 +7305,38 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
       }
     }
 
-    // Use confidence scores from search results if available, otherwise fall back to aggregated analyses
-    final avgConfidence = confidenceScores.isNotEmpty
-        ? confidenceScores.reduce((a, b) => a + b) / confidenceScores.length
-        : (_aggregatedAnalyses!.isNotEmpty 
-            ? sumConfidence / _aggregatedAnalyses!.length 
-            : 0.0);
-    
-    final avgVelocity = velocityCount > 0 ? totalVelocity / velocityCount : 0.0;
-    
-    // Calculate average route velocity (movement speed)
+    final avgConfidence = _aggregatedAnalyses!.isNotEmpty
+        ? sumConfidence / _aggregatedAnalyses!.length
+        : 0.0;
+
+    final avgQuality = _aggregatedAnalyses!.isNotEmpty
+      ? sumQuality / _aggregatedAnalyses!.length
+      : 0.0;
+
     final avgRouteVelocity = routeVelocities.isNotEmpty
         ? routeVelocities.reduce((a, b) => a + b) / routeVelocities.length
         : 0.0;
-    
-    // Use video duration if available, otherwise fall back to aggregated analyses duration
-    final actualDurationSeconds = totalVideoDurationSeconds > 0 
-        ? totalVideoDurationSeconds 
-        : totalDurationSeconds;
-    
-    final totalDurationDays = (actualDurationSeconds / 86400).floor();
-    final totalDurationHours = ((actualDurationSeconds % 86400) / 3600).floor();
-    final totalDurationMinutes = ((actualDurationSeconds % 3600) / 60).floor();
-    final totalDurationSecs = (actualDurationSeconds % 60).floor();
-    
-    // Calculate time span from search parameters
+
+    final totalUniqueVideos = uniqueVideoUuids.isNotEmpty
+        ? uniqueVideoUuids.length
+        : _aggregatedAnalyses!
+            .map((analysis) => analysis.uniqueVideos)
+            .fold<int>(0, math.max);
+
+    final totalDurationDays = (totalDurationSeconds / 86400).floor();
+    final totalDurationHours = ((totalDurationSeconds % 86400) / 3600).floor();
+    final totalDurationMinutes = ((totalDurationSeconds % 3600) / 60).floor();
+    final totalDurationSecs = (totalDurationSeconds % 60).floor();
+
     String timeSpanText = 'N/A';
     int timeSpanDays = 0;
-    
+
     if (searchStartTime != null && searchEndTime != null) {
       final duration = searchEndTime.difference(searchStartTime);
       timeSpanDays = duration.inDays;
       final hours = duration.inHours % 24;
       final minutes = duration.inMinutes % 60;
-      
+
       if (timeSpanDays > 0) {
         timeSpanText = '$timeSpanDays days, $hours hours';
       } else if (hours > 0) {
@@ -7421,20 +7345,19 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
         timeSpanText = '$minutes minutes';
       }
     } else if (earliestSeen != null && latestSeen != null) {
-      // Fallback to earliest/latest seen from aggregated analyses
       timeSpanDays = latestSeen.difference(earliestSeen).inDays;
       final hours = latestSeen.difference(earliestSeen).inHours % 24;
-      
+      final minutes = latestSeen.difference(earliestSeen).inMinutes % 60;
+
       if (timeSpanDays > 0) {
         timeSpanText = '$timeSpanDays days, $hours hours';
       } else if (hours > 0) {
-        timeSpanText = '$hours hours';
+        timeSpanText = '$hours hours, $minutes minutes';
       } else {
-        timeSpanText = '< 1 hour';
+        timeSpanText = '$minutes minutes';
       }
     }
-    
-    // Format duration string
+
     String durationText;
     if (totalDurationDays > 0) {
       durationText = '$totalDurationDays days, $totalDurationHours hours';
@@ -7473,12 +7396,15 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
           Icons.verified,
           Colors.amber,
         ),
-        _buildStatCard(
-          'Average Appearance Frequency',
-          '${avgVelocity.toStringAsFixed(2)} app/min',
-          Icons.speed,
-          Colors.lightGreen,
-        ),
+        if (avgQuality > 0)
+          _buildStatCard(
+            'Average Quality',
+            avgQuality > 1
+                ? avgQuality.toStringAsFixed(1)
+                : '${(avgQuality * 100).toStringAsFixed(1)}%',
+            Icons.high_quality,
+            Colors.deepOrange,
+          ),
         if (avgRouteVelocity > 0)
           _buildStatCard(
             'Average Movement Velocity',
@@ -7487,12 +7413,13 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             Colors.deepPurple,
             subtitle: 'Normalized movement speed',
           ),
-        _buildStatCard(
-          'Total Duration',
-          durationText,
-          Icons.timer,
-          Colors.orange,
-        ),
+        if (totalDurationSeconds > 0)
+          _buildStatCard(
+            'Total Duration',
+            durationText,
+            Icons.timer,
+            Colors.orange,
+          ),
         _buildStatCard(
           'Search Time Span',
           timeSpanText,
@@ -7513,7 +7440,6 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
             Colors.indigo,
           ),
         ],
-        // Demographics section
         if (hasDemographics) ...[
           const SizedBox(height: 16),
           const Divider(),
@@ -7528,7 +7454,6 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
               ),
             ),
           ),
-          // Gender breakdown
           _buildStatCard(
             'Men',
             '$totalMale',
@@ -7554,7 +7479,6 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
               Icons.help_outline,
               Colors.grey,
             ),
-          // Average age
           if (ages.isNotEmpty)
             _buildStatCard(
               'Average Age',
