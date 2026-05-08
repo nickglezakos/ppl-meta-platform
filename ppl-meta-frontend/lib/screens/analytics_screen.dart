@@ -132,6 +132,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _mvrQualityMetrics = null;
     });
 
     try {
@@ -182,7 +183,6 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           timeFilter: _timeFilter,
           collectionName: null, // null = all collections
           cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
-          videoUuids: explicitVideoUuids,
           startDate: _startDate,
           endDate: _endDate,
           genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
@@ -215,10 +215,20 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           if (!qualityResponse.success) {
             debugPrint('   - Error: ${qualityResponse.error}');
           }
+          if (mounted) {
+            setState(() {
+              _mvrQualityMetrics = null;
+            });
+          }
         }
       } catch (e, stackTrace) {
         debugPrint('❌ Analytics: Failed to load MVR quality metrics: $e');
         debugPrint('   Stack trace: $stackTrace');
+        if (mounted) {
+          setState(() {
+            _mvrQualityMetrics = null;
+          });
+        }
         // Don't fail the whole page if quality metrics fails
       }
       
@@ -985,17 +995,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 
     return LineChart(
       LineChartData(
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: 1,
-          getDrawingHorizontalLine: (value) {
-            return FlLine(
-              color: Colors.grey.shade200,
-              strokeWidth: 1,
-            );
-          },
-        ),
+        gridData: const FlGridData(show: false),
         titlesData: FlTitlesData(
           show: true,
           rightTitles: const AxisTitles(
@@ -1574,7 +1574,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           
           const SizedBox(height: 16),
           
-          // Peak times and visit frequency
+          // Peak times and detection occurrence
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1583,9 +1583,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                 child: _buildPeakTimesCard(),
               ),
               const SizedBox(width: 16),
-              // Visit frequency
+              // Detection occurrence / visit frequency
               Expanded(
-                child: _buildVisitFrequencyCard(),
+                child: _buildDetectionOccurrenceCard(),
               ),
             ],
           ),
@@ -1799,10 +1799,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     );
   }
 
-  /// Build visit frequency card
-  Widget _buildVisitFrequencyCard() {
+  /// Build detection occurrence card
+  Widget _buildDetectionOccurrenceCard() {
     final visitFreq = _behavioralData!['visit_frequency'] as Map<String, dynamic>?;
     if (visitFreq == null) return const SizedBox.shrink();
+
+    final isInstantDetection = _dataSource == 'instant_detection';
+    final title = isInstantDetection ? 'Visit Frequency' : 'Detection Occurence';
     
     final newVisitors = visitFreq['new_visitors'] as int? ?? 0;
     final returning = visitFreq['returning_visitors'] as int? ?? 0;
@@ -1820,8 +1823,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               children: [
                 Icon(Icons.repeat, color: Colors.purple.shade600, size: 20),
                 const SizedBox(width: 8),
-                const Text(
-                  'Visit Frequency',
+                Text(
+                  title,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -1830,14 +1833,35 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            _buildFrequencyRow('New', newVisitors, total, Colors.blue.shade400),
-            const SizedBox(height: 8),
-            _buildFrequencyRow('Returning', returning, total, Colors.green.shade400),
-            const SizedBox(height: 8),
-            _buildFrequencyRow('Frequent', frequent, total, Colors.orange.shade400),
+            if (isInstantDetection) ...[
+              _buildFrequencyUnavailableRow('New'),
+              const SizedBox(height: 8),
+              _buildFrequencyUnavailableRow('Returning'),
+              const SizedBox(height: 8),
+              _buildFrequencyUnavailableRow('Frequent'),
+            ] else ...[
+              _buildFrequencyRow('Single Pass', newVisitors, total, Colors.blue.shade400),
+              const SizedBox(height: 8),
+              _buildFrequencyRow('Double Pass', returning, total, Colors.green.shade400),
+              const SizedBox(height: 8),
+              _buildFrequencyRow('Frequent', frequent, total, Colors.orange.shade400),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildFrequencyUnavailableRow(String label) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12)),
+        const Text(
+          'N/A',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+      ],
     );
   }
 
@@ -2010,6 +2034,14 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     );
   }
 
+  int _exportCount(Map<String, dynamic>? data, String key) {
+    return (data?[key] as num?)?.toInt() ?? 0;
+  }
+
+  double _exportPercentage(Map<String, dynamic>? data, String key) {
+    return (data?[key] as num?)?.toDouble() ?? 0.0;
+  }
+
   /// Export analytics data to Excel file
   Future<void> _exportToExcel() async {
     if (_analyticsSummary == null) return;
@@ -2086,9 +2118,16 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       ]);
       sheet.appendRow([]);
 
+      final demographicsData = _demographicsData;
+      final genderData = demographicsData?['gender_distribution'] as Map<String, dynamic>?;
+      final ageData = demographicsData?['age_distribution'] as Map<String, dynamic>?;
+      final demographicsCameraBreakdown = (demographicsData?['camera_breakdown'] as List?)
+          ?.whereType<Map>()
+          .map((entry) => entry.cast<String, dynamic>())
+          .toList();
+
       // Demographics section
-      if (_analyticsSummary!.demographics != null) {
-        final demo = _analyticsSummary!.demographics!;
+      if (genderData != null || ageData != null) {
 
         sheet.appendRow([
           excel.TextCellValue('DEMOGRAPHICS'),
@@ -2098,13 +2137,18 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         ]);
         sheet.appendRow([
           excel.TextCellValue('Male'),
-          excel.IntCellValue(demo.maleCount),
-          excel.TextCellValue('${demo.malePercentage.toStringAsFixed(1)}%'),
+          excel.IntCellValue(_exportCount(genderData, 'male')),
+          excel.TextCellValue('${_exportPercentage(genderData, 'male_percentage').toStringAsFixed(1)}%'),
         ]);
         sheet.appendRow([
           excel.TextCellValue('Female'),
-          excel.IntCellValue(demo.femaleCount),
-          excel.TextCellValue('${demo.femalePercentage.toStringAsFixed(1)}%'),
+          excel.IntCellValue(_exportCount(genderData, 'female')),
+          excel.TextCellValue('${_exportPercentage(genderData, 'female_percentage').toStringAsFixed(1)}%'),
+        ]);
+        sheet.appendRow([
+          excel.TextCellValue('Unknown'),
+          excel.IntCellValue(_exportCount(genderData, 'unknown')),
+          excel.TextCellValue('${_exportPercentage(genderData, 'unknown_percentage').toStringAsFixed(1)}%'),
         ]);
         sheet.appendRow([]);
 
@@ -2112,54 +2156,92 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
           excel.TextCellValue('Age Distribution'),
         ]);
         sheet.appendRow([
-          excel.TextCellValue('Young (0-25)'),
-          excel.IntCellValue(demo.youngCount),
-          excel.TextCellValue('${demo.youngPercentage.toStringAsFixed(1)}%'),
+          excel.TextCellValue('Young'),
+          excel.IntCellValue(_exportCount(ageData, 'young')),
+          excel.TextCellValue('${_exportPercentage(ageData, 'young_percentage').toStringAsFixed(1)}%'),
         ]);
         sheet.appendRow([
-          excel.TextCellValue('Adult (26-65)'),
-          excel.IntCellValue(demo.adultCount),
-          excel.TextCellValue('${demo.adultPercentage.toStringAsFixed(1)}%'),
+          excel.TextCellValue('Adult'),
+          excel.IntCellValue(_exportCount(ageData, 'adult')),
+          excel.TextCellValue('${_exportPercentage(ageData, 'adult_percentage').toStringAsFixed(1)}%'),
         ]);
         sheet.appendRow([
-          excel.TextCellValue('Elderly (65+)'),
-          excel.IntCellValue(demo.elderlyCount),
-          excel.TextCellValue('${demo.elderlyPercentage.toStringAsFixed(1)}%'),
+          excel.TextCellValue('Middle Aged'),
+          excel.IntCellValue(_exportCount(ageData, 'middle_aged')),
+          excel.TextCellValue('${_exportPercentage(ageData, 'middle_aged_percentage').toStringAsFixed(1)}%'),
+        ]);
+        sheet.appendRow([
+          excel.TextCellValue('Elderly'),
+          excel.IntCellValue(_exportCount(ageData, 'elderly')),
+          excel.TextCellValue('${_exportPercentage(ageData, 'elderly_percentage').toStringAsFixed(1)}%'),
+        ]);
+        sheet.appendRow([
+          excel.TextCellValue('Unknown'),
+          excel.IntCellValue(_exportCount(ageData, 'unknown')),
+          excel.TextCellValue('${_exportPercentage(ageData, 'unknown_percentage').toStringAsFixed(1)}%'),
         ]);
         sheet.appendRow([]);
       }
 
       // Collection breakdown
-      if (_analyticsSummary!.cameraBreakdown.isNotEmpty) {
+      if ((demographicsCameraBreakdown != null && demographicsCameraBreakdown.isNotEmpty) ||
+          _analyticsSummary!.cameraBreakdown.isNotEmpty) {
         sheet.appendRow([
           excel.TextCellValue('COLLECTION BREAKDOWN'),
         ]);
         sheet.appendRow([
           excel.TextCellValue('Collection'),
           excel.TextCellValue('People'),
-          excel.TextCellValue('Videos'),
           excel.TextCellValue('Male'),
           excel.TextCellValue('Female'),
+          excel.TextCellValue('Unknown Gender'),
           excel.TextCellValue('Young'),
           excel.TextCellValue('Adult'),
+          excel.TextCellValue('Middle Aged'),
           excel.TextCellValue('Elderly'),
+          excel.TextCellValue('Unknown Age'),
         ]);
 
-        for (final collection in _analyticsSummary!.cameraBreakdown) {
-          final demo = collection.demographics;
-          final collectionLabel = (collection.cameraName != null && collection.cameraName!.trim().isNotEmpty)
-              ? collection.cameraName!.trim()
-              : collection.cameraId;
-          sheet.appendRow([
-            excel.TextCellValue(collectionLabel),
-            excel.IntCellValue(collection.peopleCount),
-            excel.IntCellValue(collection.videoCount),
-            excel.IntCellValue(demo?.maleCount ?? 0),
-            excel.IntCellValue(demo?.femaleCount ?? 0),
-            excel.IntCellValue(demo?.youngCount ?? 0),
-            excel.IntCellValue(demo?.adultCount ?? 0),
-            excel.IntCellValue(demo?.elderlyCount ?? 0),
-          ]);
+        if (demographicsCameraBreakdown != null && demographicsCameraBreakdown.isNotEmpty) {
+          for (final collection in demographicsCameraBreakdown) {
+            final collectionLabel = ((collection['camera_name'] as String?)?.trim().isNotEmpty ?? false)
+                ? (collection['camera_name'] as String).trim()
+                : (collection['camera_id'] as String? ?? 'Unknown');
+            final collectionGender = collection['gender'] as Map<String, dynamic>?;
+            final collectionAge = collection['age'] as Map<String, dynamic>?;
+
+            sheet.appendRow([
+              excel.TextCellValue(collectionLabel),
+              excel.IntCellValue(_exportCount(collection, 'total_people')),
+              excel.IntCellValue(_exportCount(collectionGender, 'male')),
+              excel.IntCellValue(_exportCount(collectionGender, 'female')),
+              excel.IntCellValue(_exportCount(collectionGender, 'unknown')),
+              excel.IntCellValue(_exportCount(collectionAge, 'young')),
+              excel.IntCellValue(_exportCount(collectionAge, 'adult')),
+              excel.IntCellValue(_exportCount(collectionAge, 'middle_aged')),
+              excel.IntCellValue(_exportCount(collectionAge, 'elderly')),
+              excel.IntCellValue(_exportCount(collectionAge, 'unknown')),
+            ]);
+          }
+        } else {
+          for (final collection in _analyticsSummary!.cameraBreakdown) {
+            final demo = collection.demographics;
+            final collectionLabel = (collection.cameraName != null && collection.cameraName!.trim().isNotEmpty)
+                ? collection.cameraName!.trim()
+                : collection.cameraId;
+            sheet.appendRow([
+              excel.TextCellValue(collectionLabel),
+              excel.IntCellValue(collection.peopleCount),
+              excel.IntCellValue(demo?.maleCount ?? 0),
+              excel.IntCellValue(demo?.femaleCount ?? 0),
+              const excel.IntCellValue(0),
+              excel.IntCellValue(demo?.youngCount ?? 0),
+              excel.IntCellValue(demo?.adultCount ?? 0),
+              const excel.IntCellValue(0),
+              excel.IntCellValue(demo?.elderlyCount ?? 0),
+              const excel.IntCellValue(0),
+            ]);
+          }
         }
       }
 
@@ -2172,6 +2254,8 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
       sheet.setColumnWidth(5, 12);
       sheet.setColumnWidth(6, 12);
       sheet.setColumnWidth(7, 12);
+      sheet.setColumnWidth(8, 12);
+      sheet.setColumnWidth(9, 12);
 
       // Generate file
       final fileBytes = excelFile.encode();
@@ -2319,7 +2403,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildQualityMetricTile(
-                        label: 'Individuals',
+                        label: 'Computed',
                         value: metrics.totalIndividuals.toString(),
                         icon: Icons.person,
                         color: Colors.green,
@@ -2328,7 +2412,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _buildQualityMetricTile(
-                        label: 'MVR People',
+                        label: 'Detected',
                         value: metrics.totalMvrPeople.toString(),
                         icon: Icons.people_alt,
                         color: Colors.orange,

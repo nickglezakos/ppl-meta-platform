@@ -336,6 +336,29 @@ def _extract_person_demographics(person: Dict[str, Any]) -> Dict[str, Any]:
         if demographics.get(key) is None and value is not None:
             demographics[key] = value
 
+    estimated_age = person.get("estimated_age")
+    if estimated_age is not None:
+        estimated_age_text = str(estimated_age).strip()
+        if demographics.get("age_group") is None and estimated_age_text:
+            demographics["age_group"] = estimated_age_text.lower()
+
+        if (
+            demographics.get("age_mean") is None
+            and demographics.get("age_min") is None
+            and demographics.get("age_max") is None
+            and "-" in estimated_age_text
+        ):
+            age_parts = [part.strip() for part in estimated_age_text.split("-", 1)]
+            try:
+                age_min = float(age_parts[0])
+                age_max = float(age_parts[1])
+            except (TypeError, ValueError):
+                pass
+            else:
+                demographics["age_min"] = age_min
+                demographics["age_max"] = age_max
+                demographics["age_mean"] = (age_min + age_max) / 2.0
+
     merged_people = person.get("merged_mvr_people") or []
     if isinstance(merged_people, list) and merged_people:
         gender_votes: Dict[str, int] = defaultdict(int)
@@ -931,12 +954,17 @@ def _build_time_series_from_search(
     seen_videos_by_bucket: Dict[str, Set[str]] = defaultdict(set)
 
     for person in filtered_people:
+        seen_buckets: Set[str] = set()
         for timestamp, video_uuid in _extract_person_event_timestamps(person, video_details_by_uuid):
             bucket_key = timestamp.strftime("%Y-%m-%d %H:00") if interval == "hour" else timestamp.strftime("%Y-%m-%d")
             bucket = time_buckets.get(bucket_key)
             if bucket is None:
                 continue
-            bucket["count"] += 1
+
+            if bucket_key not in seen_buckets:
+                bucket["count"] += 1
+                seen_buckets.add(bucket_key)
+
             if video_uuid and video_uuid not in seen_videos_by_bucket[bucket_key]:
                 seen_videos_by_bucket[bucket_key].add(video_uuid)
                 bucket["video_count"] += 1
@@ -1063,17 +1091,35 @@ def _build_behavioral_from_search(
 
     for person in filtered_people:
         person_identifier = str(person.get("mvr_people_uuid") or person.get("person_uuid") or id(person))
+        seen_cameras: Set[str] = set()
+        seen_hours: Set[int] = set()
+        seen_days: Set[str] = set()
+        seen_heatmap_cells: Set[Tuple[str, int]] = set()
         for timestamp, video_uuid in _extract_person_event_timestamps(person, video_details_by_uuid):
             hour = timestamp.hour
             day_name = days_of_week[timestamp.weekday()]
-            hourly_activity[hour] += 1
-            daily_activity[day_name] += 1
-            weekly_heatmap[day_name][hour] += 1
+
+            if hour not in seen_hours:
+                hourly_activity[hour] += 1
+                seen_hours.add(hour)
+
+            if day_name not in seen_days:
+                daily_activity[day_name] += 1
+                seen_days.add(day_name)
+
+            heatmap_cell = (day_name, hour)
+            if heatmap_cell not in seen_heatmap_cells:
+                weekly_heatmap[day_name][hour] += 1
+                seen_heatmap_cells.add(heatmap_cell)
+
             appearances_by_person[person_identifier] += 1
 
             camera_meta = video_details_by_uuid.get(video_uuid, {})
             camera_id = camera_meta.get("camera_id") or "unknown"
             camera_name = camera_meta.get("camera_name") or camera_id
+            if camera_id in seen_cameras:
+                continue
+            seen_cameras.add(camera_id)
             bucket = camera_totals.setdefault(
                 camera_id,
                 {"camera_id": camera_id, "camera_name": camera_name, "total_people": 0},

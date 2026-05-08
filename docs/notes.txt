@@ -16,9 +16,6 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
 
 *************************************************
 
-
-[LOAD FACES] ❌ Enhanced Logic V2 request failed: Request timeout after 30 seconds
-
 *** Known bugs
 
 persistent read write for media endpoints
