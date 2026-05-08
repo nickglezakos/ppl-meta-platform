@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/individual_group_models.dart';
 import '../../services/individual_groups_api_client.dart';
+import '../../services/media_api_client.dart';
 import '../../core/api/api_client.dart';
 import 'duplicate_detection_dialog.dart';
 
@@ -14,12 +15,14 @@ class AddToGroupDialog extends ConsumerStatefulWidget {
   final String individualId;
   final String? individualName;
   final String? thumbnailUrl;
+  final List<String>? mergeCandidateMvrUuids;
 
   const AddToGroupDialog({
     super.key,
     required this.individualId,
     this.individualName,
     this.thumbnailUrl,
+    this.mergeCandidateMvrUuids,
   });
 
   @override
@@ -32,6 +35,33 @@ class _AddToGroupDialogState extends ConsumerState<AddToGroupDialog> {
   bool _isLoading = true;
   String? _errorMessage;
   bool _isAdding = false;
+
+  Future<String?> _resolveAssignmentUuid() async {
+    final mergeCandidates = widget.mergeCandidateMvrUuids;
+    if (mergeCandidates == null || mergeCandidates.length <= 1) {
+      return widget.individualId;
+    }
+
+    final apiClient = ref.read(apiClientProvider);
+    final mediaApiClient = MediaApiClient(apiClient);
+    final response = await mediaApiClient.mergeMVRPeople(
+      mvrUuids: mergeCandidates,
+    );
+
+    if (!response.success || response.data == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response.error ?? 'Failed to persist merged MVR before group assignment'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return null;
+    }
+
+    return response.data!['predominant_individual_uuid'] as String?;
+  }
 
   @override
   void initState() {
@@ -74,13 +104,22 @@ class _AddToGroupDialogState extends ConsumerState<AddToGroupDialog> {
 
     setState(() => _isAdding = true);
 
-    final apiClient = IndividualGroupsApiClient();
+    final assignmentUuid = await _resolveAssignmentUuid();
+    if (assignmentUuid == null) {
+      if (mounted) {
+        setState(() => _isAdding = false);
+      }
+      return;
+    }
+
+    final apiClient = ref.read(apiClientProvider);
+    final groupsApiClient = IndividualGroupsApiClient(apiClient);
     
     // First, check for duplicates
-    final checkResponse = await apiClient.checkDuplicates(
+    final checkResponse = await groupsApiClient.checkDuplicates(
       _selectedGroupId!,
       CheckDuplicatesRequest(
-        candidateMvrUuid: widget.individualId,
+        candidateMvrUuid: assignmentUuid,
         similarityThreshold: 0.75, // Default threshold
       ),
     );
@@ -110,25 +149,26 @@ class _AddToGroupDialogState extends ConsumerState<AddToGroupDialog> {
             duplicateResponse: checkResponse.data!,
             candidateName: widget.individualName,
             candidateThumbnailUrl: widget.thumbnailUrl,
-            onAddAnyway: () => _performAdd(),
-            onMerge: (match) => _performMerge(match),
+            onAddAnyway: () => _performAdd(assignmentUuid),
+            onMerge: (match) => _performMerge(match, assignmentUuid),
           ),
         );
       }
     } else {
       // No duplicates, proceed with add
-      await _performAdd();
+      await _performAdd(assignmentUuid);
     }
   }
 
-  Future<void> _performAdd() async {
+  Future<void> _performAdd(String assignmentUuid) async {
     setState(() => _isAdding = true);
 
-    final apiClient = IndividualGroupsApiClient();
-    final response = await apiClient.addMembers(
+    final apiClient = ref.read(apiClientProvider);
+    final groupsApiClient = IndividualGroupsApiClient(apiClient);
+    final response = await groupsApiClient.addMembers(
       _selectedGroupId!,
       AddMembersRequest(
-        individualIds: [widget.individualId],
+        individualIds: [assignmentUuid],
         addedBy: 'current_user',
       ),
     );
@@ -158,14 +198,15 @@ class _AddToGroupDialogState extends ConsumerState<AddToGroupDialog> {
     }
   }
 
-  Future<void> _performMerge(DuplicateMatch match) async {
+  Future<void> _performMerge(DuplicateMatch match, String assignmentUuid) async {
     setState(() => _isAdding = true);
 
-    final apiClient = IndividualGroupsApiClient();
-    final response = await apiClient.mergeMembers(
+    final apiClient = ref.read(apiClientProvider);
+    final groupsApiClient = IndividualGroupsApiClient(apiClient);
+    final response = await groupsApiClient.mergeMembers(
       _selectedGroupId!,
       MergeMembersRequest(
-        sourceMvrUuid: widget.individualId, // New candidate
+        sourceMvrUuid: assignmentUuid, // New candidate
         targetMvrUuid: match.memberId, // Existing member
         userConfirmed: true,
       ),

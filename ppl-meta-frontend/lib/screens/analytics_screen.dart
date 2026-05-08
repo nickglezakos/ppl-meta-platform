@@ -178,7 +178,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         debugPrint('🔍 Analytics: Attempting to load MVR quality metrics...');
         final analyticsApiClient = ref.read(analyticsApiClientProvider);
         debugPrint('🔍 Analytics: Got analyticsApiClient: ${analyticsApiClient.runtimeType}');
-        
+
+        final filteredQualityResponse = await analyticsApiClient.getMvrQualityMetrics(
+          timeFilter: _timeFilter,
+          collectionName: null, // null = all collections
+          cameraIds: _selectedCollectionIds.isNotEmpty ? _selectedCollectionIds : null,
+          videoUuids: explicitVideoUuids,
+          startDate: _startDate,
+          endDate: _endDate,
+          genders: _selectedGenders.isNotEmpty ? _selectedGenders : null,
+          ageGroups: _selectedAgeGroups.isNotEmpty ? _selectedAgeGroups : null,
+          dataSource: _dataSource,
+        );
+
         final qualityResponse = await analyticsApiClient.getMvrQualityMetrics(
           timeFilter: _timeFilter,
           collectionName: null, // null = all collections
@@ -200,8 +212,33 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         }
         
         if (mounted && qualityResponse.success && qualityResponse.data != null) {
-          final metrics = MvrQualityMetrics.fromJson(qualityResponse.data!);
+          final qualityMetrics = MvrQualityMetrics.fromJson(qualityResponse.data!);
+          final overviewMetrics = filteredQualityResponse.success && filteredQualityResponse.data != null
+              ? MvrQualityMetrics.fromJson(filteredQualityResponse.data!)
+              : qualityMetrics;
+          final metrics = MvrQualityMetrics(
+            timeFilter: qualityMetrics.timeFilter,
+            collectionName: qualityMetrics.collectionName,
+            trackingSessionsCount: overviewMetrics.trackingSessionsCount,
+            totalIndividuals: overviewMetrics.totalIndividuals,
+            totalMvrPeople: overviewMetrics.totalMvrPeople,
+            totalVideosProcessed: overviewMetrics.totalVideosProcessed,
+            mvrWithQuality: qualityMetrics.mvrWithQuality,
+            mvrWithoutQuality: qualityMetrics.mvrWithoutQuality,
+            averageQuality: qualityMetrics.averageQuality,
+            minQuality: qualityMetrics.minQuality,
+            maxQuality: qualityMetrics.maxQuality,
+            qualityStdDev: qualityMetrics.qualityStdDev,
+            qualityGrade: qualityMetrics.qualityGrade,
+            dataCompleteness: qualityMetrics.dataCompleteness,
+            queryStartTime: qualityMetrics.queryStartTime,
+            queryEndTime: qualityMetrics.queryEndTime,
+            queriedAt: qualityMetrics.queriedAt,
+          );
           debugPrint('✅ Analytics: Successfully parsed MvrQualityMetrics');
+          debugPrint('   - Overview sessions: ${metrics.trackingSessionsCount}');
+          debugPrint('   - Overview computed: ${metrics.totalIndividuals}');
+          debugPrint('   - Overview detected: ${metrics.totalMvrPeople}');
           debugPrint('   - Has quality data: ${metrics.hasQualityData}');
           debugPrint('   - Average quality: ${metrics.averageQuality}');
           debugPrint('   - Quality grade: ${metrics.qualityGrade}');

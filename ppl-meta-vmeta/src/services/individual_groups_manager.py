@@ -68,6 +68,72 @@ class IndividualGroupsManager:
         values_str = embedding_str.strip('[]')
         values = [float(x) for x in values_str.split(',')]
         return np.array(values)
+
+    async def _resolve_active_group_member_uuid(self, conn, candidate_uuid: str) -> Optional[str]:
+        """Resolve any incoming identity to the active persisted MVR root UUID for group storage."""
+        try:
+            candidate_uuid_obj = UUID(candidate_uuid)
+        except ValueError:
+            logger.warning(f"Cannot resolve non-UUID group member candidate: {candidate_uuid}")
+            return None
+
+        direct_mvr_row = await conn.fetchrow(
+            """
+            SELECT mvr_people_uuid, is_orphaned
+            FROM mvr_people
+            WHERE mvr_people_uuid = $1
+            """,
+            candidate_uuid_obj,
+        )
+        if direct_mvr_row:
+            if not direct_mvr_row["is_orphaned"]:
+                return str(direct_mvr_row["mvr_people_uuid"])
+
+            super_row = await conn.fetchrow(
+                """
+                SELECT super_individual_uuid
+                FROM mvr_merge_hierarchy
+                WHERE merged_mvr_uuid = $1
+                ORDER BY merged_at DESC
+                LIMIT 1
+                """,
+                candidate_uuid_obj,
+            )
+            if super_row and super_row["super_individual_uuid"]:
+                return str(super_row["super_individual_uuid"])
+
+        mapped_row = await conn.fetchrow(
+            """
+            SELECT m.mvr_people_uuid
+            FROM individual_mvr_mapping imm
+            JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
+            WHERE imm.individual_uuid = $1
+              AND m.is_orphaned = FALSE
+            ORDER BY imm.is_representative DESC, imm.linked_at DESC
+            LIMIT 1
+            """,
+            candidate_uuid_obj,
+        )
+        if mapped_row:
+            return str(mapped_row["mvr_people_uuid"])
+
+        person_object_row = await conn.fetchrow(
+            """
+            SELECT m.mvr_people_uuid
+            FROM individual_video_appearances iva
+            JOIN individual_mvr_mapping imm ON iva.individual_uuid = imm.individual_uuid
+            JOIN mvr_people m ON imm.mvr_people_uuid = m.mvr_people_uuid
+            WHERE iva.person_object_uuid = $1
+              AND m.is_orphaned = FALSE
+            ORDER BY imm.is_representative DESC, iva.start_timestamp DESC, imm.linked_at DESC
+            LIMIT 1
+            """,
+            candidate_uuid_obj,
+        )
+        if person_object_row:
+            return str(person_object_row["mvr_people_uuid"])
+
+        return None
     
     # ================================================================
     # Group CRUD Operations
@@ -433,26 +499,33 @@ class IndividualGroupsManager:
                 
                 # Add new memberships
                 for individual_id in individual_ids:
-                    if individual_id in current_members_set:
+                    resolved_member_uuid = await self._resolve_active_group_member_uuid(
+                        conn, individual_id
+                    )
+                    if resolved_member_uuid is None:
+                        logger.error(
+                            f"UUID {individual_id} could not be resolved to an active MVR root. Skipping."
+                        )
+                        skipped_count += 1
+                        continue
+
+                    if resolved_member_uuid in current_members_set:
                         skipped_count += 1
                         continue
                     
-                    # Check if individual exists in the individuals table
+                    # Check if an individuals row already exists for the resolved MVR root UUID.
                     individual_exists = await conn.fetchval(
                         "SELECT EXISTS(SELECT 1 FROM individuals WHERE individual_uuid = $1)",
-                        individual_id
+                        resolved_member_uuid
                     )
                     
                     if not individual_exists:
-                        # Individual doesn't exist - the UUID is actually an MVR People UUID
-                        # (MVR People = "Individuals" in business logic)
                         logger.info(
-                            f"Individual {individual_id} does not exist in database. "
-                            f"Checking if this is an MVR People UUID..."
+                            f"Individual row for active MVR root {resolved_member_uuid} does not exist. "
+                            f"Creating a lightweight individual record for group membership."
                         )
                         
                         try:
-                            # Check if this UUID exists in mvr_people table
                             mvr_exists = await conn.fetchval(
                                 """
                                 SELECT EXISTS(
@@ -460,28 +533,23 @@ class IndividualGroupsManager:
                                     WHERE mvr_people_uuid = $1
                                 )
                                 """,
-                                individual_id
+                                resolved_member_uuid
                             )
                             
                             if mvr_exists:
-                                # This is an MVR People UUID - create individuals record
-                                # Generate individual_id for this UUID
-                                # Use format: ind_<first8chars>
-                                individual_id_str = f"ind_{str(individual_id).replace('-', '')[:8]}"
+                                individual_id_str = f"ind_{str(resolved_member_uuid).replace('-', '')[:8]}"
                                 
-                                # Get MVR People data for confidence score
                                 mvr_data = await conn.fetchrow(
                                     """
                                     SELECT confidence_score, quality_score
                                     FROM mvr_people
                                     WHERE mvr_people_uuid = $1
                                     """,
-                                    individual_id
+                                    resolved_member_uuid
                                 )
                                 
                                 confidence = mvr_data['confidence_score'] if mvr_data else 0.85
                                 
-                                # Create the individual record with required fields
                                 await conn.execute(
                                     """
                                     INSERT INTO individuals (
@@ -494,7 +562,7 @@ class IndividualGroupsManager:
                                     ) VALUES ($1, $2, $3, $4, $5, $6)
                                     ON CONFLICT (individual_uuid) DO NOTHING
                                     """,
-                                    individual_id,
+                                    resolved_member_uuid,
                                     individual_id_str,
                                     confidence,
                                     json.dumps({}),  # Empty spatial signature
@@ -502,42 +570,40 @@ class IndividualGroupsManager:
                                     datetime.utcnow()
                                 )
                                 logger.info(
-                                    f"Successfully created individual record for MVR People {individual_id} "
+                                    f"Successfully created individual record for MVR root {resolved_member_uuid} "
                                     f"with confidence {confidence}"
                                 )
                             else:
                                 logger.error(
-                                    f"UUID {individual_id} not found in mvr_people or individuals tables. "
+                                    f"Resolved UUID {resolved_member_uuid} not found in mvr_people or individuals tables. "
                                     f"Cannot create individual record. Skipping."
                                 )
                                 skipped_count += 1
                                 continue
                         except Exception as e:
                             logger.error(
-                                f"Failed to create individual record for {individual_id}: {e}",
+                                f"Failed to create individual record for {resolved_member_uuid}: {e}",
                                 exc_info=True
                             )
                             skipped_count += 1
                             continue
                     
-                    # Check if individual has appearances persisted
+                    # Check if the normalized MVR-root identity has persisted appearances.
                     has_appearances = await conn.fetchval(
                         "SELECT EXISTS(SELECT 1 FROM individual_video_appearances WHERE individual_uuid = $1)",
-                        individual_id
+                        resolved_member_uuid
                     )
                     
                     if not has_appearances:
-                        # For MVR People (Individuals in business logic), appearances should already exist
-                        # If they don't, we can still add to group - appearances may be linked via different UUIDs
                         logger.warning(
-                            f"Individual {individual_id} has no persisted appearances in individual_video_appearances. "
-                            f"This is normal for MVR People - appearances are linked via individual_mvr_mapping. "
+                            f"Individual {resolved_member_uuid} has no persisted appearances in individual_video_appearances. "
+                            f"This is normal for normalized MVR roots - appearances may be linked via child mappings. "
                             f"Proceeding with group membership."
                         )
                     
                     membership = GroupMembership(
                         group_id=group_id,
-                        individual_id=individual_id,
+                        individual_id=resolved_member_uuid,
                         added_by=added_by,
                         notes=notes,
                     )
@@ -557,7 +623,7 @@ class IndividualGroupsManager:
                         membership.notes,
                     )
                     
-                    current_members_set.add(individual_id)
+                    current_members_set.add(resolved_member_uuid)
                     added_count += 1
                 
                 # Update group
@@ -1021,7 +1087,10 @@ class IndividualGroupsManager:
         """
         
         async with self.db.pool.acquire() as conn:
-            rows = await conn.fetch(query, individual_id)
+            resolved_member_uuid = await self._resolve_active_group_member_uuid(conn, individual_id)
+            if resolved_member_uuid is None:
+                return []
+            rows = await conn.fetch(query, resolved_member_uuid)
         
         return [
             IndividualGroup(

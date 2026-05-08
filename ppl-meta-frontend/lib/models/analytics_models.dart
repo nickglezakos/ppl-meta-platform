@@ -289,10 +289,24 @@ class DataCompleteness {
   });
 
   factory DataCompleteness.fromJson(Map<String, dynamic> json) {
+    final total =
+        (json['total'] as num?)?.toInt() ??
+        (json['total_mvr_people'] as num?)?.toInt() ??
+        0;
+    final withData =
+        (json['with_data'] as num?)?.toInt() ??
+        (json['mvr_with_quality'] as num?)?.toInt() ??
+        (json['mvr_with_quality_scores'] as num?)?.toInt() ??
+        0;
+    final withoutData =
+        (json['without_data'] as num?)?.toInt() ??
+        (json['mvr_without_quality'] as num?)?.toInt() ??
+        (total - withData).clamp(0, total);
+
     return DataCompleteness(
-      total: json['total'] as int? ?? 0,
-      withData: json['with_data'] as int? ?? 0,
-      withoutData: json['without_data'] as int? ?? 0,
+      total: total,
+      withData: withData,
+      withoutData: withoutData,
       percentage: (json['percentage'] as num?)?.toDouble() ?? 0.0,
     );
   }

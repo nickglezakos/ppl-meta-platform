@@ -2746,11 +2746,44 @@ class _PersonObjectsDetailScreenState
   Future<void> _showAddToGroupDialog() async {
     // If only one individual selected, show the AddToGroupDialog directly
     if (_selectedIndividuals.length == 1) {
+      final selectedUuid = _selectedIndividuals.first;
+      final selectedAnalysis = _aggregatedAnalyses
+          ?.where((analysis) => analysis.individualUuid == selectedUuid)
+          .cast<AggregatedIndividualAnalysis?>()
+          .firstWhere(
+            (analysis) => analysis != null,
+            orElse: () => null,
+          );
+      final rawSearchResults = widget.crossVideoContext?.sessionData['search_results'] as List<dynamic>?;
+      final rawSelectedResult = rawSearchResults
+          ?.whereType<Map<String, dynamic>>()
+          .where((item) => item['mvr_people_uuid'] == selectedUuid)
+          .cast<Map<String, dynamic>?>()
+          .firstWhere(
+            (item) => item != null,
+            orElse: () => null,
+          );
+      final requiresMergePromotion =
+          widget.crossVideoContext?.sessionData['merge_groups'] != null &&
+          ((rawSelectedResult?['merged_mvr_uuids'] as List?)?.isNotEmpty ?? false);
+      final mergeCandidateMvrUuids = selectedAnalysis == null
+          ? null
+          : <String>{
+              selectedAnalysis.individualUuid,
+              ...selectedAnalysis.mergedMVRPeople.map((mvr) => mvr.mvrPeopleUuid),
+            }.toList();
+
       final result = await showDialog<bool>(
         context: context,
         builder: (context) => AddToGroupDialog(
-          individualId: _selectedIndividuals.first,
-          individualName: 'Individual',
+          individualId: selectedUuid,
+          individualName: selectedAnalysis?.name ?? 'Individual',
+          mergeCandidateMvrUuids:
+              requiresMergePromotion &&
+                      mergeCandidateMvrUuids != null &&
+                      mergeCandidateMvrUuids.length > 1
+                  ? mergeCandidateMvrUuids
+                  : null,
         ),
       );
       
