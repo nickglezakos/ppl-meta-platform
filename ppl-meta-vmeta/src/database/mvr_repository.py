@@ -316,6 +316,24 @@ class MVRRepository:
                         ],
                     )
 
+                # ----------------------------------------------------------------
+                # People-counters invalidation link (proposal §5.7)
+                # Record every mvr_people identity present in the result so we can
+                # later mark batches stale when the underlying identity is merged.
+                # ----------------------------------------------------------------
+                people_uuids = self._extract_mvr_people_uuids_from_result(result)
+                if people_uuids:
+                    await conn.executemany(
+                        """
+                        INSERT INTO mvr_search_session_people (
+                            search_session_uuid,
+                            mvr_people_uuid
+                        ) VALUES ($1, $2::uuid)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        [(search_session_uuid, people_uuid) for people_uuid in people_uuids],
+                    )
+
         created_session = await self.get_search_session_by_same_input(
             camera_ids=canonical_cameras,
             video_uuids=canonical_videos,
@@ -325,7 +343,263 @@ class MVRRepository:
         if not created_session:
             raise MVRRepositoryError("Failed to load created MVR search session")
         return created_session
-    
+
+    # ========================================================================
+    # People Counters — batch-tagged search sessions
+    # See: docs/proposals/people-counters.md §5.2
+    # ========================================================================
+
+    @staticmethod
+    def build_batch_key(camera_id: str, batch_start_utc: datetime, batch_end_utc: datetime) -> str:
+        """Deterministic batch identifier for a (camera, time-window) tuple."""
+        start = batch_start_utc.replace(tzinfo=None).isoformat()
+        end = batch_end_utc.replace(tzinfo=None).isoformat()
+        return f"{camera_id}|{start}|{end}"
+
+    async def tag_session_as_batch(
+        self,
+        search_session_uuid: UUID,
+        batch_key: str,
+        batch_camera_id: str,
+        batch_start_utc: datetime,
+        batch_end_utc: datetime,
+    ) -> bool:
+        """Mark an existing mvr_search_sessions row as a people-counters batch.
+
+        Idempotent — if the (batch_key) already maps to a different session row
+        (e.g. a stale duplicate), this UPDATE will fail the unique constraint
+        and the caller should treat that as "already done".
+        """
+        batch_start_utc = self._normalize_db_timestamp(batch_start_utc)
+        batch_end_utc = self._normalize_db_timestamp(batch_end_utc)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE mvr_search_sessions
+                   SET batch_key       = $2,
+                       batch_camera_id = $3,
+                       batch_start_utc = $4,
+                       batch_end_utc   = $5,
+                       is_stale        = FALSE,
+                       updated_at      = NOW()
+                 WHERE search_session_uuid = $1
+                 RETURNING search_session_uuid
+                """,
+                search_session_uuid,
+                batch_key,
+                batch_camera_id,
+                batch_start_utc,
+                batch_end_utc,
+            )
+            return row is not None
+
+    async def get_batch_by_key(self, batch_key: str) -> Optional[Dict[str, Any]]:
+        """Look up a single batch row by its deterministic key."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT search_session_uuid,
+                       batch_key,
+                       batch_camera_id,
+                       batch_start_utc,
+                       batch_end_utc,
+                       is_stale,
+                       total_individuals,
+                       total_appearances,
+                       unique_videos,
+                       summary_payload,
+                       result_payload,
+                       created_at,
+                       updated_at
+                  FROM mvr_search_sessions
+                 WHERE batch_key = $1
+                """,
+                batch_key,
+            )
+            return dict(row) if row else None
+
+    async def list_batches_for_camera(
+        self,
+        camera_id: str,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        include_stale: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """List people-counters batches for a camera (diagnostics + UI)."""
+        async with self.pool.acquire() as conn:
+            params: List[Any] = [camera_id]
+            extra = []
+            if date_from is not None:
+                params.append(self._normalize_db_timestamp(date_from))
+                extra.append(f"AND batch_start_utc >= ${len(params)}")
+            if date_to is not None:
+                params.append(self._normalize_db_timestamp(date_to))
+                extra.append(f"AND batch_end_utc <= ${len(params)}")
+            if not include_stale:
+                extra.append("AND is_stale = FALSE")
+            rows = await conn.fetch(
+                f"""
+                SELECT search_session_uuid,
+                       batch_key,
+                       batch_camera_id,
+                       batch_start_utc,
+                       batch_end_utc,
+                       is_stale,
+                       total_individuals,
+                       unique_videos,
+                       created_at,
+                       updated_at
+                  FROM mvr_search_sessions
+                 WHERE batch_camera_id = $1
+                   AND batch_key IS NOT NULL
+                   {' '.join(extra)}
+                 ORDER BY batch_start_utc DESC
+                """,
+                *params,
+            )
+            return [dict(r) for r in rows]
+
+    async def find_covering_batches(
+        self,
+        camera_id: str,
+        period_start_utc: datetime,
+        period_end_utc: datetime,
+    ) -> List[Dict[str, Any]]:
+        """Return non-stale batches fully contained inside [start, end] for a camera.
+
+        These rows can have their `result_payload` reused without recomputation
+        when serving a sub-period query. See proposal §5.6.
+        """
+        period_start_utc = self._normalize_db_timestamp(period_start_utc)
+        period_end_utc = self._normalize_db_timestamp(period_end_utc)
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT search_session_uuid,
+                       batch_key,
+                       batch_camera_id,
+                       batch_start_utc,
+                       batch_end_utc,
+                       total_individuals,
+                       result_payload,
+                       summary_payload
+                  FROM mvr_search_sessions
+                 WHERE batch_camera_id = $1
+                   AND batch_key IS NOT NULL
+                   AND is_stale = FALSE
+                   AND batch_start_utc >= $2
+                   AND batch_end_utc   <= $3
+                 ORDER BY batch_start_utc ASC
+                """,
+                camera_id,
+                period_start_utc,
+                period_end_utc,
+            )
+            return [dict(r) for r in rows]
+
+    async def mark_batches_stale_for_video(self, video_uuid: str) -> int:
+        """Invalidate every batch whose window covers the given video's timestamp.
+
+        Called from materialization / merge / deletion hooks (proposal §5.7).
+        Returns the number of batches marked stale.
+        """
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE mvr_search_sessions ms
+                   SET is_stale  = TRUE,
+                       updated_at = NOW()
+                  FROM mvr_search_session_videos v
+                 WHERE v.search_session_uuid = ms.search_session_uuid
+                   AND v.video_uuid = $1::uuid
+                   AND ms.batch_key IS NOT NULL
+                   AND ms.is_stale = FALSE
+                """,
+                video_uuid,
+            )
+            # asyncpg returns "UPDATE <n>" for execute()
+            try:
+                return int(result.split()[-1])
+            except (ValueError, IndexError):
+                return 0
+
+    async def mark_batch_stale(self, batch_key: str) -> bool:
+        """Manually flag a single batch for refresh (admin action / tests)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                UPDATE mvr_search_sessions
+                   SET is_stale = TRUE, updated_at = NOW()
+                 WHERE batch_key = $1 AND is_stale = FALSE
+                 RETURNING search_session_uuid
+                """,
+                batch_key,
+            )
+            return row is not None
+
+    async def mark_batches_stale_for_mvr_people(self, mvr_people_uuids: List[str]) -> int:
+        """Invalidate every batch whose result includes one of the given mvr_people identities.
+
+        Called whenever the canonical identity of an mvr_people row changes
+        (hierarchical merge, unmerge, identity reassignment). Proposal §5.7.
+        Returns the number of batches marked stale.
+        """
+        if not mvr_people_uuids:
+            return 0
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE mvr_search_sessions ms
+                   SET is_stale = TRUE,
+                       updated_at = NOW()
+                  FROM mvr_search_session_people p
+                 WHERE p.search_session_uuid = ms.search_session_uuid
+                   AND p.mvr_people_uuid = ANY($1::uuid[])
+                   AND ms.batch_key IS NOT NULL
+                   AND ms.is_stale = FALSE
+                """,
+                [str(u) for u in mvr_people_uuids],
+            )
+            try:
+                return int(result.split()[-1])
+            except (ValueError, IndexError):
+                return 0
+
+    @staticmethod
+    def _extract_mvr_people_uuids_from_result(result_payload: Dict[str, Any]) -> List[str]:
+        """Pull every distinct mvr_people_uuid out of a search-result payload.
+
+        Looks at both the top-level `people[]` entries and any nested
+        `appearances[]` rows so that merged children are also captured.
+        """
+        if not isinstance(result_payload, dict):
+            return []
+        seen: set = set()
+        out: List[str] = []
+
+        def _add(value: Any) -> None:
+            if value is None:
+                return
+            try:
+                key = str(value)
+            except Exception:  # pragma: no cover - defensive
+                return
+            if key and key not in seen:
+                seen.add(key)
+                out.append(key)
+
+        for person in (result_payload.get("people") or []):
+            if not isinstance(person, dict):
+                continue
+            _add(person.get("mvr_people_uuid"))
+            for appearance in (person.get("appearances") or []):
+                if isinstance(appearance, dict):
+                    _add(appearance.get("mvr_people_uuid"))
+            for child in (person.get("merged_mvr_people") or []):
+                if isinstance(child, dict):
+                    _add(child.get("mvr_people_uuid"))
+        return out
+
     # ========================================================================
     # MVR-People CRUD Operations
     # ========================================================================
@@ -1535,6 +1809,9 @@ class MVRRepository:
             except Exception as e:
                 logger.error(f"Failed to unmerge MVR {orphaned_mvr_uuid}: {e}")
                 raise MVRRepositoryError(f"Failed to unmerge MVR: {e}")
+        # Note: people-counters batch invalidation for unmerge is performed
+        # by the unmerge endpoint after the transaction commits, by calling
+        # mark_batches_stale_for_mvr_people([orphaned_mvr_uuid, winner_uuid]).
 
     async def get_merged_mvr_people(
         self,

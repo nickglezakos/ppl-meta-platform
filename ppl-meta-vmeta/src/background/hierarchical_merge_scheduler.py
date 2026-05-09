@@ -58,7 +58,7 @@ class HierarchicalMergeScheduler:
         periodic_interval_minutes: int = 30,
         lookback_minutes: int = 120,
         post_session_delay_seconds: int = 30,
-        similarity_threshold: float = 0.70,
+        similarity_threshold: float = 0.60,
         max_retries: int = 3,
         retry_delay_seconds: float = 10.0
     ):
@@ -72,7 +72,7 @@ class HierarchicalMergeScheduler:
             periodic_interval_minutes: Interval for periodic merges (default 30)
             lookback_minutes: How far back to look for MVR people (default 120)
             post_session_delay_seconds: Delay before post-session merge (default 30)
-            similarity_threshold: Similarity threshold for merging (default 0.70)
+            similarity_threshold: Similarity threshold for merging (default 0.60)
             max_retries: Maximum retry attempts (default 3)
             retry_delay_seconds: Delay between retries (default 10.0)
         """

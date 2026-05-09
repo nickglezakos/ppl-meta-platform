@@ -137,7 +137,7 @@ class HierarchicalMVRMerger:
     async def merge_hierarchical(
         self,
         mvr_uuids: List[UUID],
-        similarity_threshold: float = 0.70,
+        similarity_threshold: float = 0.60,
         min_similarity_check: float = 0.50,
         force_merge: bool = False
     ) -> Dict[str, Any]:
@@ -146,7 +146,7 @@ class HierarchicalMVRMerger:
         
         Args:
             mvr_uuids: List of MVR UUIDs to merge
-            similarity_threshold: Minimum similarity to merge (default 0.70)
+            similarity_threshold: Minimum similarity to merge (default 0.60)
             min_similarity_check: Skip comparisons below this (optimization)
             force_merge: When True, bypass similarity checks and merge all
                          provided UUIDs into one group unconditionally.
@@ -272,7 +272,7 @@ class HierarchicalMVRMerger:
     async def preview_hierarchical_merge(
         self,
         mvr_uuids: List[UUID],
-        similarity_threshold: float = 0.70,
+        similarity_threshold: float = 0.60,
         min_similarity_check: float = 0.50,
         force_merge: bool = False,
     ) -> Dict[str, Any]:

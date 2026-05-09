@@ -70,7 +70,7 @@ Phase 2: EMBEDDING-BASED MERGING (4-Phase Architecture)
 ────────────────────────────────────────────────────────
 A. FETCH & LOAD: Extract embeddings from person_objects (in-memory, no DB)
 B. COMPUTE: Calculate cosine similarity matrix between all individuals
-C. PREPARE: Group similar individuals (threshold: 0.70) into MVR people
+C. PREPARE: Group similar individuals (threshold: 0.60) into MVR people
 D. EXECUTE: Create MVR people records and mappings in single transaction
 
 MVR People Structure:
@@ -179,10 +179,10 @@ class TrackingSessionResponse(BaseModel):
 class ManualSessionMVRRequest(BaseModel):
     """Request model for explicitly creating MVRs for a completed session."""
     similarity_threshold: Optional[float] = Field(
-        default=0.70,
+        default=0.60,
         ge=0.0,
         le=1.0,
-        description="Similarity threshold to use for explicit MVR creation"
+        description="Similarity threshold to use for explicit MVR creation (default 0.60)"
     )
 
 
@@ -225,10 +225,10 @@ class MergeIndividualsRequest(BaseModel):
     )
     session_uuid: str = Field(..., description="Tracking session UUID")
     similarity_threshold: Optional[float] = Field(
-        default=0.70,
+        default=0.60,
         ge=0.0,
         le=1.0,
-        description="Minimum similarity threshold for merge validation"
+        description="Minimum similarity threshold for merge validation (default 0.60)"
     )
     triggered_by: Optional[str] = Field(
         default="manual",
@@ -881,7 +881,7 @@ async def create_mvrs_for_session(
                 session_uuid=session_uuid,
                 status="no-op",
                 queued_individual_count=0,
-                similarity_threshold=float(request.similarity_threshold or 0.70),
+                similarity_threshold=float(request.similarity_threshold or 0.60),
                 message="Session has no linked individuals to convert into MVRs",
             )
 
@@ -903,7 +903,7 @@ async def create_mvrs_for_session(
             session_uuid=UUID(session_uuid),
             individual_uuids=individual_uuids,
             auth_token=auth_header,
-            similarity_threshold=float(request.similarity_threshold or 0.70),
+            similarity_threshold=float(request.similarity_threshold or 0.60),
         )
 
         return ManualSessionMVRResponse(
@@ -912,7 +912,7 @@ async def create_mvrs_for_session(
             status="queued",
             queued_individual_count=len(individual_uuids),
             task_id=queue_result.get("task_id"),
-            similarity_threshold=float(request.similarity_threshold or 0.70),
+            similarity_threshold=float(request.similarity_threshold or 0.60),
             message="Explicit session MVR creation queued",
         )
 
@@ -1792,7 +1792,7 @@ async def merge_individuals_by_similarity(
     session_uuid: str,
     matched_individuals: List[dict],
     auth_token: str,
-    similarity_threshold: float = 0.70
+    similarity_threshold: float = 0.60
 ) -> int:
     """
     Merge individuals based on facial embedding similarity using 4-phase architecture.
@@ -1814,7 +1814,7 @@ async def merge_individuals_by_similarity(
                 'temporal_score': float
             }, ...]
         auth_token: Authorization token for media API
-        similarity_threshold: Minimum cosine similarity (0-1), default 0.70
+        similarity_threshold: Minimum cosine similarity (0-1), default 0.60
         
     Returns:
         Number of individuals merged (removed)
@@ -3843,7 +3843,7 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                         # Continuous pipeline grouping must not perform session-wide
                         # MVR merging when merge_rule is "none".
                         merge_rule = "semi"
-                        merge_similarity_threshold = 0.70  # fallback default
+                        merge_similarity_threshold = 0.60  # fallback default (settings-driven, see people-counters proposal §5.11)
                         try:
                             import httpx as _httpx
                             async with _httpx.AsyncClient(timeout=5.0) as _hc:
@@ -3854,9 +3854,9 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                 if _resp.status_code == 200:
                                     _data = _resp.json()
                                     merge_rule = str(_data.get("merge_rule", "semi"))
-                                    merge_similarity_threshold = float(_data.get("merge_threshold", 0.70))
+                                    merge_similarity_threshold = float(_data.get("merge_threshold", 0.60))
                         except Exception as _e:
-                            logger.warning(f"Could not fetch MVR merge threshold from orchestrator, using default 0.70: {_e}")
+                            logger.warning(f"Could not fetch MVR merge threshold from orchestrator, using default 0.60: {_e}")
 
                         logger.info(
                             f"[Queue B] Using merge_rule={merge_rule}, "
@@ -5108,7 +5108,7 @@ async def merge_individuals_manual(
     **Parameters:**
     - individual_uuids: List of individual UUIDs to merge (minimum 2)
     - session_uuid: Tracking session UUID
-    - similarity_threshold: Optional threshold for validation (default: 0.70)
+    - similarity_threshold: Optional threshold for validation (default: 0.60)
     - triggered_by: Source that triggered merge (default: "manual")
     
     **Returns:**

@@ -39,12 +39,16 @@ Office 365 emails for everyone
 
 
 *** Deployment tasks
-Single video upload MVR creation
-Investigate automatic counters functionality synched with MVR search action types from automation.
+
 Instant detection analytics
 Instant detection possible merging (inlcuding "intale" automerging tasks)
+
+RUser roles (and startup)
+
 Proposal for instant detection counters based on storage statistics (not embeddings).
 Propoasl for instant detection counters with a new option at settings to store embeddings.
+
+
 Wifi TAPO camera check local, mobile wifi.
 
 Teams action type setup and testing

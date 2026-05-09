@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
 
@@ -531,6 +531,24 @@ async def _materialize_single_media_from_persisted_person_objects(
         include_route_data=processing_options.include_route_data,
         media_timestamp=(media_metadata or {}).get("timestamp"),
     )
+
+    # People-counters invalidation (proposal §5.7): a freshly-materialized
+    # video may overlap one or more tagged batch windows. Mark them stale so
+    # the orchestrator worker recomputes them on the next quiet-hour pass.
+    try:
+        affected = await mvr_repository.mark_batches_stale_for_video(str(media_uuid))
+        if affected:
+            logger.info(
+                "people-counters: marked %d batch(es) stale after materializing media %s",
+                affected,
+                media_uuid,
+            )
+    except Exception as stale_err:
+        logger.warning(
+            "people-counters: failed to invalidate batches for media %s: %s",
+            media_uuid,
+            stale_err,
+        )
 
     return PersistedPersonObjectsMaterializationResponse(
         success=True,
@@ -1492,7 +1510,7 @@ async def search_similar_mvr_people(
     
     **Parameters:**
     - mvr_people_uuid OR face_embedding: Source for similarity search
-    - similarity_threshold: Minimum cosine similarity (0-1, default: 0.7)
+    - similarity_threshold: Minimum cosine similarity (0-1, default: 0.6)
     - max_results: Maximum results to return (default: 10)
     - include_demographics: Include age/gender filters (default: true)
     
@@ -1514,7 +1532,7 @@ async def search_similar_mvr_people(
         if request.mvr_people_uuid:
             results = await mvr_service.search_similar_mvr(
                 mvr_uuid=request.mvr_people_uuid,
-                threshold=request.similarity_threshold or 0.7,
+                threshold=request.similarity_threshold or 0.6,
                 limit=request.max_results or 10,
             )
         
@@ -1522,7 +1540,7 @@ async def search_similar_mvr_people(
         else:
             results = await mvr_service.search_similar_by_embedding(
                 face_embedding=request.face_embedding,
-                threshold=request.similarity_threshold or 0.7,
+                threshold=request.similarity_threshold or 0.6,
                 limit=request.max_results or 10,
             )
         
@@ -2015,6 +2033,23 @@ async def unmerge_mvr(
             )
         except Exception as _inv_err:
             logger.warning(f"Cache invalidation after unmerge failed (non-fatal): {_inv_err}")
+
+        # People-counters batch invalidation (proposal §5.7)
+        try:
+            stale_count = await mvr_repository.mark_batches_stale_for_mvr_people(
+                [str(result["restored_mvr_uuid"]), str(result["winner_mvr_uuid"])]
+            )
+            if stale_count:
+                logger.info(
+                    "people-counters: marked %d batch(es) stale after unmerge of %s",
+                    stale_count,
+                    result["restored_mvr_uuid"],
+                )
+        except Exception as _stale_err:
+            logger.warning(
+                "people-counters: failed to invalidate batches after unmerge: %s",
+                _stale_err,
+            )
 
         return UnmergeMvrResponse(
             success=True,
@@ -2910,7 +2945,7 @@ async def search_mvr_people_by_videos(
     limit: int = Body(100, description="Max results (default: 100, max: 500)"),
     force_refresh: bool = Body(False, description="Force cache refresh"),
     auto_merge: bool = Body(False, description="Automatically merge similar MVR people before returning results"),
-    similarity_threshold: float = Body(0.70, ge=0.0, le=1.0, description="Similarity threshold for auto-merge (0-1)"),
+    similarity_threshold: float = Body(0.60, ge=0.0, le=1.0, description="Similarity threshold for auto-merge (0-1, default 0.60)"),
     ignore_existing_hierarchy: bool = Body(False, description="Ignore persisted MVR hierarchy and merge directly from base linked MVR rows"),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
     mvr_service: MVRService = Depends(get_mvr_service),
@@ -2945,7 +2980,7 @@ async def search_mvr_people_by_videos(
     - limit: Maximum results to return (default: 100, max: 500)
     - force_refresh: Bypass cache and fetch fresh data
     - auto_merge: Run hierarchical merge before returning (default: false)
-    - similarity_threshold: Threshold for auto-merge (default: 0.70)
+    - similarity_threshold: Threshold for auto-merge (default: 0.60)
     
     **Returns:**
     - 200 OK: List of MVR people with aggregated data
@@ -3752,7 +3787,7 @@ async def search_mvr_people_by_videos_persisted_merge_session(
         None, description="Requested end time for the search session"
     ),
     limit: int = Body(100, description="Max results (default: 100, max: 500)"),
-    similarity_threshold: float = Body(0.70, ge=0.0, le=1.0, description="Similarity threshold for merge preview (0-1)"),
+    similarity_threshold: float = Body(0.60, ge=0.0, le=1.0, description="Similarity threshold for merge preview (0-1, default 0.60)"),
     ignore_existing_session: bool = Body(False, description="Force a fresh session even if the same input was already stored"),
     video_details: Optional[List[Dict[str, Any]]] = Body(None, description="Optional per-video metadata such as camera_id and media_timestamp"),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
@@ -3834,6 +3869,386 @@ async def search_mvr_people_by_videos_persisted_merge_session(
         "summary": _normalize_session_payload(created_session.get("summary_payload")),
         "result_payload": _normalize_session_payload(created_session.get("result_payload")),
         "message": "Created persisted merge session",
+    }
+
+
+# ============================================================================
+# ENDPOINT: People Counters Batch Merge
+# ----------------------------------------------------------------------------
+# Same persistent-merge-session pipeline as above, but additionally tags the
+# resulting mvr_search_sessions row with a deterministic batch_key so it can
+# be reused as a building block for sub-period analytics queries.
+#
+# Called by the orchestrator's people-counters worker (one call per
+# camera × hour-window batch). See docs/proposals/people-counters.md §5.5.
+# ============================================================================
+
+@router.post(
+    "/search/by-videos/persisted-merge-session-batch",
+    response_model=Dict[str, Any],
+    summary="People Counters: Persisted merge session tagged as a reusable batch",
+    description=(
+        "Wrapper around persisted-merge-session that additionally tags the "
+        "resulting search session with a deterministic batch_key "
+        "(camera|start|end) for the People Counters automation."
+    ),
+)
+async def search_mvr_people_by_videos_persisted_merge_session_batch(
+    request: Request,
+    batch_camera_id: str = Body(..., embed=True, description="The single camera id this batch belongs to"),
+    batch_start_utc: datetime = Body(..., embed=True, description="UTC start of the batch window"),
+    batch_end_utc: datetime = Body(..., embed=True, description="UTC end of the batch window"),
+    video_uuids: List[str] = Body(..., embed=True, description="Video UUIDs that fall inside the batch window"),
+    similarity_threshold: float = Body(0.60, ge=0.0, le=1.0),
+    ignore_existing_session: bool = Body(False, description="Force a fresh merge even if same-input session exists"),
+    video_details: Optional[List[Dict[str, Any]]] = Body(None),
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_service: MVRService = Depends(get_mvr_service),
+    mvr_matcher = Depends(get_mvr_matcher),
+    cache_client = Depends(get_cache_client),
+    current_user: dict = Depends(get_current_user),
+):
+    batch_key = MVRRepository.build_batch_key(
+        batch_camera_id, batch_start_utc, batch_end_utc
+    )
+
+    logger.info(
+        "people-counters batch merge: key=%s videos=%d (user=%s force=%s)",
+        batch_key, len(video_uuids), current_user.get("email"), ignore_existing_session,
+    )
+
+    # Fast path: batch already computed and not stale → return without recompute.
+    if not ignore_existing_session:
+        existing = await mvr_repository.get_batch_by_key(batch_key)
+        if existing and not existing.get("is_stale"):
+            return {
+                "success": True,
+                "batch_key": batch_key,
+                "search_session_uuid": str(existing["search_session_uuid"]),
+                "reused_existing_batch": True,
+                "is_stale": False,
+                "result_payload": _normalize_session_payload(existing.get("result_payload")),
+                "summary": _normalize_session_payload(existing.get("summary_payload")),
+                "message": "Reused existing non-stale batch",
+            }
+
+    # Empty-batch shortcut — still create a tagged session so the worker
+    # records "we looked at this window and it had no videos".
+    if not video_uuids:
+        empty_payload = {
+            "people": [],
+            "total_count": 0,
+            "search_parameters": {
+                "video_uuids": [],
+                "camera_ids": [batch_camera_id],
+                "persisted_merge_session": True,
+                "people_counters_batch": True,
+                "batch_key": batch_key,
+            },
+            "message": "Empty batch (no videos in window)",
+        }
+        empty_summary = _build_persistent_search_summary(
+            search_response=MVRPeopleSearchResponse(
+                success=True,
+                people=[],
+                total_count=0,
+                search_parameters={"camera_ids": [batch_camera_id]},
+                message="Empty batch",
+            ),
+            camera_ids=[batch_camera_id],
+            video_uuids=[],
+            start_time=batch_start_utc,
+            end_time=batch_end_utc,
+        )
+        created = await mvr_repository.create_search_session(
+            camera_ids=[batch_camera_id],
+            video_uuids=[],
+            requested_start_date=batch_start_utc,
+            requested_end_date=batch_end_utc,
+            summary_payload=empty_summary,
+            result_payload=empty_payload,
+            search_mode="merge_preview",
+            video_details=video_details,
+        )
+        await mvr_repository.tag_session_as_batch(
+            search_session_uuid=created["search_session_uuid"],
+            batch_key=batch_key,
+            batch_camera_id=batch_camera_id,
+            batch_start_utc=batch_start_utc,
+            batch_end_utc=batch_end_utc,
+        )
+        return {
+            "success": True,
+            "batch_key": batch_key,
+            "search_session_uuid": str(created["search_session_uuid"]),
+            "reused_existing_batch": False,
+            "is_stale": False,
+            "people_count": 0,
+            "result_payload": empty_payload,
+            "message": "Created empty batch session",
+        }
+
+    # Delegate to the existing persisted-merge-session endpoint, which handles
+    # same-input reuse and the merge pipeline. We pass ignore_existing_session
+    # through so a forced recompute also forces a fresh merge.
+    inner = await search_mvr_people_by_videos_persisted_merge_session(
+        request=request,
+        camera_ids=[batch_camera_id],
+        video_uuids=video_uuids,
+        start_time=batch_start_utc,
+        end_time=batch_end_utc,
+        limit=500,
+        similarity_threshold=similarity_threshold,
+        ignore_existing_session=ignore_existing_session,
+        video_details=video_details,
+        mvr_repository=mvr_repository,
+        mvr_service=mvr_service,
+        mvr_matcher=mvr_matcher,
+        cache_client=cache_client,
+        current_user=current_user,
+    )
+
+    session_uuid = inner["search_session_uuid"]
+    try:
+        session_uuid_typed = UUID(session_uuid) if isinstance(session_uuid, str) else session_uuid
+    except (ValueError, TypeError):
+        session_uuid_typed = session_uuid
+
+    tagged = False
+    try:
+        tagged = await mvr_repository.tag_session_as_batch(
+            search_session_uuid=session_uuid_typed,
+            batch_key=batch_key,
+            batch_camera_id=batch_camera_id,
+            batch_start_utc=batch_start_utc,
+            batch_end_utc=batch_end_utc,
+        )
+    except Exception as exc:  # unique-violation = batch_key already used by another row
+        logger.warning("tag_session_as_batch failed for %s: %s", batch_key, exc)
+
+    result_payload = inner.get("result_payload") or {}
+    people_count = 0
+    if isinstance(result_payload, dict):
+        people = result_payload.get("people") or []
+        if isinstance(people, list):
+            people_count = len(people)
+
+    return {
+        "success": True,
+        "batch_key": batch_key,
+        "search_session_uuid": str(session_uuid),
+        "reused_existing_batch": False,
+        "reused_existing_session": inner.get("reused_existing_session", False),
+        "tagged": tagged,
+        "is_stale": False,
+        "people_count": people_count,
+        "result_payload": result_payload,
+        "summary": inner.get("summary"),
+        "message": "Created people-counters batch session",
+    }
+
+
+# ============================================================================
+# ENDPOINT: People Counters Aggregate
+# ----------------------------------------------------------------------------
+# Sub-period query that composes its result from previously-computed batches
+# plus on-demand merges for any uncovered edge gaps. See proposal §5.6.
+#
+# Identity reconciliation across batches uses mvr_people_uuid (the canonical
+# persistent identity) — same person seen in two adjacent batches will share
+# a uuid because each batch's merge writes back to the same mvr_people rows.
+# ============================================================================
+
+import os as _pc_os  # local alias to avoid confusing other imports
+_PC_MEDIA_SERVICE_URL = _pc_os.getenv("MEDIA_SERVICE_URL", "http://localhost:8000")
+
+
+@router.get(
+    "/people-counters/aggregate",
+    response_model=Dict[str, Any],
+    summary="People Counters: aggregate unique people across an arbitrary sub-period",
+)
+async def people_counters_aggregate(
+    request: Request,
+    camera_id: str,
+    period_start: datetime,
+    period_end: datetime,
+    fill_gaps: bool = True,
+    similarity_threshold: float = 0.60,
+    mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    mvr_service: MVRService = Depends(get_mvr_service),
+    mvr_matcher = Depends(get_mvr_matcher),
+    cache_client = Depends(get_cache_client),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Compose a unique-people answer for [period_start, period_end] on a single
+    camera by reusing tagged batch sessions whenever possible.
+
+    Strategy (§5.6):
+    1. Find all non-stale batches fully contained inside the requested window.
+    2. If `fill_gaps` is true, run a one-off persisted-merge-session for each
+       remaining sub-window (head, gaps between batches, tail). These on-demand
+       sessions are persisted with `same_input_key` reuse — they are NOT tagged
+       as batches.
+    3. Union all `people` payloads, dedupe by `mvr_people_uuid`.
+
+    Returns the unique-people list plus a `coverage` block describing which
+    spans came from cached batches vs gap-fills.
+    """
+    if period_end <= period_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="period_end must be greater than period_start",
+        )
+
+    period_start = period_start.replace(tzinfo=None) if period_start.tzinfo else period_start
+    period_end = period_end.replace(tzinfo=None) if period_end.tzinfo else period_end
+
+    covering_batches = await mvr_repository.find_covering_batches(
+        camera_id=camera_id,
+        period_start_utc=period_start,
+        period_end_utc=period_end,
+    )
+
+    # Order batches and compute uncovered gaps.
+    covering_batches.sort(key=lambda b: b["batch_start_utc"])
+    gaps: List[Tuple[datetime, datetime]] = []  # type: ignore[name-defined]
+    cursor = period_start
+    for batch in covering_batches:
+        bstart = batch["batch_start_utc"]
+        bend = batch["batch_end_utc"]
+        if isinstance(bstart, str):
+            bstart = datetime.fromisoformat(bstart)
+        if isinstance(bend, str):
+            bend = datetime.fromisoformat(bend)
+        if bstart > cursor:
+            gaps.append((cursor, bstart))
+        if bend > cursor:
+            cursor = bend
+    if cursor < period_end:
+        gaps.append((cursor, period_end))
+
+    coverage_blocks: List[Dict[str, Any]] = []
+    people_by_uuid: Dict[str, Dict[str, Any]] = {}
+
+    def _absorb(payload: Any, source: str) -> int:
+        """Merge a result_payload's people list into the dedupe table."""
+        if not isinstance(payload, dict):
+            return 0
+        people = payload.get("people") or []
+        added = 0
+        for person in people:
+            if not isinstance(person, dict):
+                continue
+            key = person.get("mvr_people_uuid") or person.get("uuid")
+            if not key:
+                continue
+            key = str(key)
+            existing = people_by_uuid.get(key)
+            if existing is None:
+                people_by_uuid[key] = dict(person)
+                added += 1
+            else:
+                # Bump appearance counters where present.
+                for field in ("appearance_count", "video_appearance_count", "total_appearances"):
+                    if field in person and isinstance(person[field], (int, float)):
+                        existing[field] = (existing.get(field) or 0) + person[field]
+        coverage_blocks.append({"source": source, "added_unique": added, "people_in_block": len(people)})
+        return added
+
+    for batch in covering_batches:
+        _absorb(_normalize_session_payload(batch.get("result_payload")), source=f"batch:{batch['batch_key']}")
+
+    gap_fills_done = 0
+    if fill_gaps and gaps:
+        auth_token = request.headers.get("Authorization")
+        headers: Dict[str, str] = {}
+        if auth_token:
+            token_value = (
+                auth_token.replace("Bearer ", "").strip()
+                if auth_token.startswith("Bearer ") else auth_token
+            )
+            headers["Authorization"] = f"Bearer {token_value}"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for gap_start, gap_end in gaps:
+                params = {
+                    "collection": camera_id,
+                    "start_time": gap_start.isoformat(),
+                    "end_time": gap_end.isoformat(),
+                    "page_size": 500,
+                }
+                video_uuids: List[str] = []
+                try:
+                    resp = await client.get(
+                        f"{_PC_MEDIA_SERVICE_URL}/api/v1/media/search",
+                        params=params,
+                        headers=headers,
+                    )
+                    resp.raise_for_status()
+                    payload = resp.json()
+                    items = payload if isinstance(payload, list) else payload.get("results", [])
+                    video_uuids = [str(v["uuid"]) for v in items if v.get("uuid")]
+                except httpx.HTTPError as exc:
+                    logger.warning("aggregate gap-fill media lookup failed: %s", exc)
+                    coverage_blocks.append({
+                        "source": "gap-skip",
+                        "gap_start": gap_start.isoformat(),
+                        "gap_end": gap_end.isoformat(),
+                        "error": str(exc),
+                    })
+                    continue
+
+                if not video_uuids:
+                    coverage_blocks.append({
+                        "source": "gap-empty",
+                        "gap_start": gap_start.isoformat(),
+                        "gap_end": gap_end.isoformat(),
+                        "videos": 0,
+                    })
+                    continue
+
+                gap_result = await search_mvr_people_by_videos_persisted_merge_session(
+                    request=request,
+                    camera_ids=[camera_id],
+                    video_uuids=video_uuids,
+                    start_time=gap_start,
+                    end_time=gap_end,
+                    limit=500,
+                    similarity_threshold=similarity_threshold,
+                    ignore_existing_session=False,
+                    video_details=None,
+                    mvr_repository=mvr_repository,
+                    mvr_service=mvr_service,
+                    mvr_matcher=mvr_matcher,
+                    cache_client=cache_client,
+                    current_user=current_user,
+                )
+                _absorb(
+                    _normalize_session_payload(gap_result.get("result_payload")),
+                    source=f"gap:{gap_start.isoformat()}|{gap_end.isoformat()}",
+                )
+                gap_fills_done += 1
+
+    return {
+        "success": True,
+        "camera_id": camera_id,
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "people_count": len(people_by_uuid),
+        "people": list(people_by_uuid.values()),
+        "coverage": {
+            "covering_batches": len(covering_batches),
+            "gaps": len(gaps),
+            "gap_fills_done": gap_fills_done,
+            "fill_gaps": fill_gaps,
+            "blocks": coverage_blocks,
+        },
+        "message": (
+            "Aggregated from cached batches"
+            + (f" + {gap_fills_done} gap-fill(s)" if gap_fills_done else "")
+        ),
     }
 
 
@@ -5921,7 +6336,7 @@ async def process_media_independently(
     
     **Parameters**:
     - `mvr_uuids`: List of MVR UUIDs to merge
-    - `similarity_threshold`: Minimum similarity for merging (0.60-0.90, default 0.70)
+    - `similarity_threshold`: Minimum similarity for merging (0.50-0.90, default 0.60)
     - `min_similarity_check`: Skip comparisons below this (optimization, default 0.50)
     
     **Returns**:
@@ -5933,10 +6348,10 @@ async def process_media_independently(
 async def hierarchical_merge_mvr_people(
     mvr_uuids: List[UUID] = Body(..., description="List of MVR UUIDs to merge"),
     similarity_threshold: float = Body(
-        0.70,
-        ge=0.60,
+        0.60,
+        ge=0.50,
         le=0.90,
-        description="Minimum similarity threshold for merging"
+        description="Minimum similarity threshold for merging (default 0.60)"
     ),
     min_similarity_check: float = Body(
         0.50,

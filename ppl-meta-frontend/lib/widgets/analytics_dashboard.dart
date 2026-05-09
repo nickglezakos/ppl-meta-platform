@@ -6,6 +6,7 @@ import '../core/models/api_response.dart';
 import '../core/api/api_client.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
+import 'people_counters_tile.dart';
 
 /// Analytics dashboard showing usage metrics and insights
 class AnalyticsDashboard extends ConsumerStatefulWidget {
@@ -272,6 +273,9 @@ class _AnalyticsDashboardState extends ConsumerState<AnalyticsDashboard>
 
     return Column(
       children: [
+        // People Counters automation tile (admin-only)
+        const PeopleCountersTile(),
+
         // Summary cards
         _buildSummaryCards(),
         

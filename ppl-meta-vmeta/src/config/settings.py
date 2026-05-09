@@ -33,6 +33,24 @@ class VmetaSettings:
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "Facenet512")
     DISTANCE_MULTIPLIER = float(os.getenv("DISTANCE_MULTIPLIER", "1000000.0"))
     SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.8"))
+
+    # MVR-people merge default similarity threshold.
+    # Single source of truth consumed by every MVR auto-merge code path
+    # (search/by-videos, persisted-merge-session, hierarchical merge,
+    #  background processor, individual_groups_manager, cross_video_tracking, ...).
+    # Lowered from 0.70 -> 0.60 (see docs/proposals/people-counters.md §5.11).
+    MVR_MERGE_SIMILARITY_THRESHOLD = float(
+        os.getenv("MVR_MERGE_SIMILARITY_THRESHOLD", "0.60")
+    )
+
+    @classmethod
+    def get_mvr_similarity_threshold(cls) -> float:
+        """Return the configured default similarity threshold for MVR auto-merge.
+
+        Endpoint Body defaults and background workers should consult this rather
+        than hard-coding a literal so the value can be tuned in one place.
+        """
+        return cls.MVR_MERGE_SIMILARITY_THRESHOLD
     
     # Service discovery configuration
     DISCOVERY_SERVICE_URL = os.getenv("DISCOVERY_SERVICE_URL", "http://localhost:8006")

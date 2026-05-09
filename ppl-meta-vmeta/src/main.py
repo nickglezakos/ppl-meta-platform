@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
                 periodic_interval_minutes=30,  # Run every 30 minutes
                 lookback_minutes=120,  # Merge MVR created in last 2 hours
                 post_session_delay_seconds=30,  # Wait 30s after Queue B
-                similarity_threshold=0.70,
+                similarity_threshold=0.60,
                 max_retries=3,
                 retry_delay_seconds=10.0
             )

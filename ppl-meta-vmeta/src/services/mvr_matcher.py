@@ -305,7 +305,27 @@ class MVRMatcher:
             )
             
             logger.info(f"✅ Merge completed, audit log: {audit_uuid}")
-            
+
+            # People-counters invalidation (proposal §5.7): both winner and
+            # loser identities may appear in tagged batch results — flag those
+            # batches so the orchestrator worker recomputes them.
+            try:
+                stale_count = await self.repository.mark_batches_stale_for_mvr_people(
+                    [str(winner_uuid), str(loser_uuid)]
+                )
+                if stale_count:
+                    logger.info(
+                        "people-counters: marked %d batch(es) stale after merge %s→%s",
+                        stale_count,
+                        loser_uuid,
+                        winner_uuid,
+                    )
+            except Exception as stale_err:
+                logger.warning(
+                    "people-counters: failed to invalidate batches after merge: %s",
+                    stale_err,
+                )
+
             return {
                 'success': True,
                 'winner_mvr_uuid': winner_uuid,

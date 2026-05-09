@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers/auth_provider.dart';
 import 'developer_settings_page.dart';
+import 'people_counters_page.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authNotifierProvider);
+    final isAdmin = authState.user?.isAdmin ?? false;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
@@ -107,6 +111,27 @@ class ProfilePage extends ConsumerWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => const DeveloperSettingsPage(),
+                  ),
+                );
+              },
+            ),
+            _ProfileOption(
+              icon: Icons.groups,
+              title: 'People Counters',
+              subtitle: 'Automation pipeline & precomputed batches',
+              onTap: () {
+                if (!isAdmin) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Admin role required to manage People Counters'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const PeopleCountersPage(),
                   ),
                 );
               },

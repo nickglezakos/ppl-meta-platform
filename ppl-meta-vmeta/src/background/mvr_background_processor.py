@@ -426,7 +426,7 @@ class MVRBackgroundProcessor:
         session_uuid: UUID,
         individual_uuids: List[UUID],
         auth_token: Optional[str] = None,
-        similarity_threshold: float = 0.70,
+        similarity_threshold: float = 0.60,
         queue_hierarchical_merge: bool = True,
     ) -> Dict:
         """
@@ -442,7 +442,7 @@ class MVRBackgroundProcessor:
             session_uuid: Tracking session UUID
             individual_uuids: List of individual UUIDs to process
             auth_token: Optional auth token for API calls
-            similarity_threshold: Similarity threshold for merging (default 0.70)
+            similarity_threshold: Similarity threshold for merging (default 0.60)
         
         Returns:
             Task status dict with task_id and queued count

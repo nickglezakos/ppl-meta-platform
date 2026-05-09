@@ -8,6 +8,7 @@ import '../core/models/user.dart';
 import '../widgets/change_password_dialog.dart';
 import '../widgets/custom_app_bar.dart';
 import '../presentation/pages/developer_settings_page.dart';
+import '../presentation/pages/people_counters_page.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   final int? targetUserId;
@@ -295,6 +296,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => const DeveloperSettingsPage(),
+                  ),
+                );
+              },
+            ),
+            _SettingsOption(
+              icon: Icons.groups,
+              title: 'People Counters',
+              subtitle: 'Automation pipeline & precomputed batches',
+              onTap: () {
+                if (!user.isAdmin) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Admin role required to manage People Counters'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const PeopleCountersPage(),
                   ),
                 );
               },

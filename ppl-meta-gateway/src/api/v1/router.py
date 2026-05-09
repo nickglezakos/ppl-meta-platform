@@ -1840,6 +1840,67 @@ async def get_workflow_analytics(request: Request):
     return await _proxy_to_orchestrator_service(request)
 
 
+# ----------------------------------------------------------------------------
+# People Counters Routes (orchestrator-owned automation)
+# See docs/proposals/people-counters.md §5.9
+# Path is forwarded as-is — orchestrator exposes /api/v1/people-counters/*
+# ----------------------------------------------------------------------------
+
+@api_router.get("/people-counters/status")
+async def people_counters_status(request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/people-counters/pause")
+async def people_counters_pause(request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/people-counters/resume")
+async def people_counters_resume(request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/people-counters/settings")
+async def people_counters_get_settings(request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.put("/people-counters/settings/{key}")
+async def people_counters_update_setting(key: str, request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/people-counters/run-daily-batch")
+async def people_counters_run_daily_batch(request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/people-counters/jobs")
+async def people_counters_list_jobs(request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/people-counters/jobs/{batch_key:path}")
+async def people_counters_get_job(batch_key: str, request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/people-counters/dead-letter")
+async def people_counters_dead_letter(request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/people-counters/jobs/{batch_key:path}/retry")
+async def people_counters_retry_job(batch_key: str, request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.post("/people-counters/jobs/{batch_key:path}/invalidate")
+async def people_counters_invalidate_batch(batch_key: str, request: Request):
+    return await _proxy_to_orchestrator_service(request)
+
+
 @api_router.get("/orchestrator/workflows/health")
 async def get_workflows_health(request: Request):
     """Proxy workflows health to Orchestrator service."""

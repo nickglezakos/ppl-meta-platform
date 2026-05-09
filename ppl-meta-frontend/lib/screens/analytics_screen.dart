@@ -13,6 +13,7 @@ import '../models/analytics_models.dart';
 import '../services/media_api_client.dart';
 import '../core/providers/camera_providers.dart';
 import '../utils/platform_file_download.dart';
+import '../widgets/people_counters_tile.dart';
 
 /// MVR Analytics Dashboard - showing people detection insights from camera collections
 /// Based on MVRsearch cached results from camera cards endpoint
@@ -578,6 +579,9 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // People Counters automation tile (admin-only)
+            const PeopleCountersTile(),
+            const SizedBox(height: 8),
             // Section header
             Row(
               children: [

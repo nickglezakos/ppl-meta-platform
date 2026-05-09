@@ -333,3 +333,48 @@ class AutomationExecution(Base):
 
     # Execution metadata
     execution_metadata = Column(JSON, nullable=True)
+
+
+class PeopleCountersJob(Base):
+    """
+    Durable queue row for the People Counters automation worker.
+
+    See docs/proposals/people-counters.md §5.2 / §5.5.
+
+    Status state machine:
+        pending  -> running -> success
+                            \\-> failed -> dead_letter
+    Tier ordering for backlog selection (§5.5.2):
+        0 = today (current local day)
+        1 = yesterday
+        2 = stale refresh (re-merge after invalidation)
+        3 = older backfill
+    The successful result for a batch is stored in vmeta's mvr_search_sessions
+    (rows tagged with the same batch_key); this table only tracks the *job*.
+    """
+
+    __tablename__ = "people_counters_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_key = Column(String(255), nullable=False, unique=True, index=True)
+    camera_id = Column(String(100), nullable=False, index=True)
+    batch_start_utc = Column(DateTime, nullable=False)
+    batch_end_utc = Column(DateTime, nullable=False)
+
+    status = Column(String(20), nullable=False, default="pending")
+    priority_tier = Column(Integer, nullable=False, default=3)
+    is_stale_refresh = Column(Boolean, nullable=False, default=False)
+
+    attempts = Column(Integer, nullable=False, default=0)
+    last_error = Column(Text, nullable=True)
+    heartbeat_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # vmeta search_session_uuid that holds the merged person list on success.
+    search_session_uuid = Column(String(36), nullable=True)
+
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )

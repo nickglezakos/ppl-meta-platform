@@ -420,11 +420,38 @@ async def lifespan(_app: FastAPI):
         logger.error(f"Failed to register with discovery service: {e}")
         logger.info("Continuing without service discovery")
 
+    # People Counters automation worker (see docs/proposals/people-counters.md)
+    try:
+        from services.people_counters_worker import people_counters_worker
+
+        await people_counters_worker.start()
+        logger.info("✅ People Counters worker supervisor started")
+    except Exception as e:
+        logger.error(f"Failed to start People Counters worker: {e}")
+        logger.warning("Continuing without People Counters automation")
+
+    # People Counters REST endpoints
+    try:
+        from api.people_counters_endpoints import router as people_counters_router
+
+        app.include_router(people_counters_router)
+        logger.info("✅ People Counters endpoints registered")
+    except Exception as e:
+        logger.error(f"Failed to register People Counters endpoints: {e}")
+
     logger.info("🚀 Phase 1 service startup completed successfully")
 
     yield
 
     logger.info("Shutting down PPL Meta Orchestrator Service...")
+
+    # Stop People Counters worker first so in-flight batches can finish gracefully.
+    try:
+        from services.people_counters_worker import people_counters_worker
+
+        await people_counters_worker.stop()
+    except Exception as e:
+        logger.error(f"Failed to stop People Counters worker: {e}")
 
     # Cleanup Phase 2.4 automation engine
     if automation_engine:
