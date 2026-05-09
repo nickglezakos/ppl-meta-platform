@@ -86,6 +86,8 @@ class _InstantDetectionWidgetState
         _personObjects = null;
         _demographics = null;
         _isInstantDetectionRunning = false;
+        _cachedIteration = null;
+        _ageSeconds = null;
         _isLoading = false;
       });
     }
@@ -123,6 +125,8 @@ class _InstantDetectionWidgetState
         _personObjects = null;
         _demographics = null;
         _isInstantDetectionRunning = false;
+        _cachedIteration = null;
+        _ageSeconds = null;
         _isLoading = false;
       });
       
@@ -186,7 +190,10 @@ class _InstantDetectionWidgetState
         // Silently handle 404/no results - instant detection may not be started yet
         setState(() {
           _personObjects = null;
+          _demographics = null;
           _isInstantDetectionRunning = false;
+          _cachedIteration = null;
+          _ageSeconds = null;
           _isLoading = false;
         });
         
@@ -200,7 +207,10 @@ class _InstantDetectionWidgetState
       if (mounted) {
         setState(() {
           _personObjects = null;
+          _demographics = null;
           _isInstantDetectionRunning = false;
+          _cachedIteration = null;
+          _ageSeconds = null;
           _isLoading = false;
         });
         

@@ -1457,8 +1457,8 @@ class _UserActionDialogState extends State<_UserActionDialog> {
           controller: _emailSubjectController,
           decoration: const InputDecoration(
             labelText: 'Subject *',
-            hintText: 'Trigger Alert: {trigger_name}',
-            helperText: 'Available variables: {trigger_name}, {timestamp}',
+            hintText: 'Alert: *{trigger_name}* - {match_reason}',
+            helperText: 'Variables: {trigger_name}, {reason}, {match_reason}, {matched_member_uuid}, {matched_member_name}, {group_member_number}, {similarity_score}',
           ),
           validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
         ),

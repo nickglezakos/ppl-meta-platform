@@ -72,6 +72,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   static const bool _enableSmoothTransitions = false; // DISABLED for frame-based sync
   Map<FaceDetection, double> _faceOpacities = {}; // Track opacity for each face
   Map<FaceDetection, int> _faceFrameCounters = {}; // Track how long face has been visible
+  bool _isLoadingStoredFaces = false;
   
   // Cache provider references for safe disposal
   late final FaceDataCache _faceDataCache;
@@ -84,16 +85,6 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     // Cache provider references for safe disposal
     _faceDataCache = ref.read(faceDataCacheProvider);
     _mediaFaceDataNotifier = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid).notifier);
-    
-    // 🔥 CACHE INVALIDATION: Clear old cached face data (5 representative faces)
-    // This ensures we fetch fresh data using faces_by_frame (all 72 faces)
-    final globalManager = FaceDataMemoryManager.instance;
-    globalManager.clearMediaData(widget.mediaItem.uuid);
-    debugPrint('🗑️ CACHE CLEARED: Invalidated old face data for ${widget.mediaItem.uuid}');
-    
-    // Also clear the MediaFaceDataProvider cache
-    _faceDataCache.clear();
-    debugPrint('🗑️ PROVIDER CACHE CLEARED: Invalidated MediaFaceDataProvider cache');
 
     if (widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty) {
       _storedFaceData = widget.initialFaceData;
@@ -114,6 +105,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     if (!widget.enableWorkflowIntegration) {
       _setFallbackPlaybackMode();
       _isLoadingWorkflowData = false;
+      _startPreviewStoredFaceLoad();
     } else if (widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty) {
       _setFallbackPlaybackMode();
       _isLoadingWorkflowData = false;
@@ -150,6 +142,39 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         });
       }
     }
+
+    if (!widget.enableWorkflowIntegration &&
+        widget.initialFaceData == null &&
+        !identical(oldWidget.mediaItem.uuid, widget.mediaItem.uuid)) {
+      _startPreviewStoredFaceLoad();
+    }
+  }
+
+  void _startPreviewStoredFaceLoad() {
+    if (_isLoadingStoredFaces || widget.initialFaceData != null) {
+      return;
+    }
+
+    _isLoadingStoredFaces = true;
+    debugPrint('📦 PREVIEW FLOW: Starting direct stored face data load for ${widget.mediaItem.uuid}');
+    Future.microtask(() async {
+      if (!mounted || _storedFaceData?.isNotEmpty == true) {
+        _isLoadingStoredFaces = false;
+        return;
+      }
+
+      debugPrint('📦 PREVIEW FLOW: Queueing stored face data load for ${widget.mediaItem.uuid}');
+      await _loadStoredFaceData();
+
+      _isLoadingStoredFaces = false;
+
+      if (!mounted) {
+        return;
+      }
+
+      debugPrint('📦 PREVIEW FLOW: Stored face load complete for ${widget.mediaItem.uuid} -> ${_storedFaceData?.length ?? 0} faces from $_faceDataSource');
+      setState(() {});
+    });
   }
 
   /// Setup frame synchronization for face rectangles
@@ -495,23 +520,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     // VideoPlayerWidget owns the controller lifecycle; only detach our listener.
     _videoController?.removeListener(_onVideoFrameChanged);
     _videoController = null;
-    
-    // Delay provider modifications to after widget tree finalization
-    Future.microtask(() {
-      try {
-        _faceDataCache.clear();
-        debugPrint('DISPOSE: Cleared global FaceDataCache');
-      } catch (e) {
-        debugPrint('DISPOSE: Failed to clear global FaceDataCache: $e');
-      }
-      
-      try {
-        _mediaFaceDataNotifier.clearFaces();
-        debugPrint('DISPOSE: Cleared MediaFaceDataProvider cache for ${widget.mediaItem.uuid}');
-      } catch (e) {
-        debugPrint('DISPOSE: Failed to clear MediaFaceDataProvider cache: $e');
-      }
-    });
+
+    debugPrint('ACTIVE OVERLAY PATH: SMART_WIDGET_DISPOSE_PRESERVE_CACHE for ${widget.mediaItem.uuid}');
+    debugPrint('DISPOSE: Preserving face caches for ${widget.mediaItem.uuid} to avoid preview reload races');
     
     // Clear stored face data
     _storedFaceData?.clear();
@@ -610,17 +621,28 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   Future<void> _loadStoredFaceData() async {
     try {
       debugPrint('_loadStoredFaceData() called - ensuring MediaFaceDataProvider data is loaded...');
+      if (!mounted) {
+        return;
+      }
       
       // 🔧 LOADING FIX: Wait for MediaFaceDataProvider to load data instead of just reading current state
       // 🔥 CACHE FIX: Force refresh to bypass old cached data (5 representative faces) and fetch all faces
       final notifier = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid).notifier);
-      notifier.loadFaces(forceRefresh: true);  // Force refresh to get updated faces_by_frame data
+      await notifier.loadFaces(forceRefresh: true);  // Force refresh to get updated faces_by_frame data
+
+      if (!mounted) {
+        return;
+      }
       
       // Wait for the provider to have data (with timeout)
       var attempts = 0;
       const maxAttempts = 20; // 10 seconds total (500ms * 20)
       
       while (attempts < maxAttempts) {
+        if (!mounted) {
+          return;
+        }
+
         final faceDataState = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid));
         
         debugPrint('LOADING ATTEMPT $attempts: hasData=${faceDataState.hasData}, isLoading=${faceDataState.isLoading}, hasError=${faceDataState.hasError}, faces=${faceDataState.hasData ? faceDataState.faces.length : 0}');
@@ -652,32 +674,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
         attempts++;
       }
       
-      debugPrint('⏰ LOADING TIMEOUT: MediaFaceDataProvider did not load data within ${maxAttempts * 500}ms, falling back to direct API call');
-      
-      // Fallback to original stored face data provider if MediaFaceDataProvider failed
-      debugPrint('FALLBACK: Loading face data from Vision Service API (embedded endpoint)...');
-      debugPrint('YELLOW RECTANGLES DATA SOURCE: Vision Service API (embedded endpoint)');
-      final params = StoredFaceDataParams(
-        mediaUuid: widget.mediaItem.uuid,
-        startFrame: null,
-        endFrame: null,
-      );
-      
-      final storedDataAsync = ref.read(storedFaceDataProvider(params));
-      await storedDataAsync.when(
-        data: (data) async {
-          _storedFaceData = data;
-          _faceDataSource = 'VisionService_API_Fallback';
-          debugPrint('FALLBACK USED: Loaded ${_storedFaceData?.length ?? 0} face records from Vision Service (embedded endpoint)');
-          debugPrint('YELLOW RECTANGLES DATA SOURCE: Vision Service API (embedded endpoint)');
-          debugPrint('DATA SOURCE TAG: $_faceDataSource');
-        },
-        loading: () async {
-          _storedFaceData = null;
-        },
-        error: (error, stack) async {
-          throw error;
-        },
+      throw Exception(
+        'MediaFaceDataProvider did not return full Enhanced V2 per-frame detections within ${maxAttempts * 500}ms; refusing fallback data source',
       );
     } catch (e) {
       debugPrint('Failed to load stored face data: $e');
@@ -844,6 +842,15 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       if (widget.initialFaceData != null) {
         return _buildBasicVideoPlayerForLoading(videoUrl);
       }
+      if (!widget.enableWorkflowIntegration) {
+        if (!_isLoadingStoredFaces && _storedFaceData?.isNotEmpty != true) {
+          debugPrint('[OVERLAY STRATEGY] No stored faces yet in preview flow; starting direct stored-face load');
+          _startPreviewStoredFaceLoad();
+        } else {
+          debugPrint('[OVERLAY STRATEGY] No stored faces yet in preview flow; waiting for direct stored-face load');
+        }
+        return _buildBasicVideoPlayerForLoading(videoUrl);
+      }
       // No faces in cache yet - need to load them first
       debugPrint('[OVERLAY STRATEGY] No faces available, loading via Enhanced Logic V2...');
       _loadFacesViaEnhancedLogicV2();
@@ -851,8 +858,8 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       return _buildBasicVideoPlayerForLoading(videoUrl);
     }
     
-    // We have faces - use OptimizedFacePainter
-    debugPrint('[OVERLAY STRATEGY] Using OptimizedFacePainter with ${facesToDisplay.length} faces from $dataSource');
+    // We have faces - delegate to the simpler frame-based overlay path.
+    debugPrint('ACTIVE OVERLAY PATH: SMART_WIDGET -> OPTIMIZED_FACE_DATA_OVERLAY with ${facesToDisplay.length} faces from $dataSource');
     return _buildOptimizedVideoPlayer(videoUrl, facesToDisplay, dataSource);
   }
 
@@ -875,18 +882,12 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
             }
           },
         ),
-        // 🎯 FACE RECTANGLES OVERLAY - Using EXACT same approach as working yellow rectangles
-        if (_videoController != null && _videoController!.value.isInitialized && _currentSyncedFaces.isNotEmpty)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: OptimizedFacePainter(
-                  faces: _currentSyncedFaces,
-                  videoSize: _videoController!.value.size,
-                  dataSource: dataSource,
-                ),
-              ),
-            ),
+        if (_videoController != null)
+          OptimizedFaceDataOverlay(
+            videoController: _videoController,
+            storedFaceData: facesToDisplay,
+            dataSource: dataSource,
+            mediaItem: widget.mediaItem,
           ),
       ],
     );
@@ -1364,17 +1365,77 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     _setupVideoListener();
   }
 
-  /// Load frame-based face data from global cache
+  @override
+  void didUpdateWidget(OptimizedFaceDataOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Rebuild frame map when storedFaceData arrives/changes after initial mount.
+    // The overlay is often first mounted with empty storedFaceData (controller ready
+    // before face data load completes), so we must rebuild the tracking map when
+    // faces become available; otherwise _facesByFrame stays empty and painter draws nothing.
+    final oldLen = oldWidget.storedFaceData.length;
+    final newLen = widget.storedFaceData.length;
+    final identityChanged = !identical(oldWidget.storedFaceData, widget.storedFaceData);
+    if (oldLen != newLen || identityChanged) {
+      debugPrint('🔄 OptimizedFaceDataOverlay.didUpdateWidget: storedFaceData $oldLen -> $newLen, rebuilding frame map');
+      _faceFirstSeenFrame.clear();
+      _currentFrameFaces = const [];
+      _loadFrameBasedFaceData();
+    }
+    // If the underlying video controller instance changes, re-attach listener.
+    if (oldWidget.videoController != widget.videoController) {
+      oldWidget.videoController?.removeListener(_onVideoPositionChanged);
+      _setupVideoListener();
+    }
+  }
+
+  /// Load frame-based face data: prefer the per-frame map carried by widget.storedFaceData,
+  /// fall back to the global cache only as a secondary source.
   void _loadFrameBasedFaceData() {
+    final fromStored = _buildFrameMapFromStoredFaces(widget.storedFaceData);
+
+    if (fromStored.isNotEmpty) {
+      _facesByFrame = fromStored;
+      final keys = _facesByFrame!.keys.toList()..sort();
+      debugPrint('📦 FRAME DATA LOADED (from storedFaceData): ${keys.length} frames, '
+          'range ${keys.first}-${keys.last}, total faces=${widget.storedFaceData.length}');
+      return;
+    }
+
     final globalManager = FaceDataMemoryManager.instance;
     _facesByFrame = globalManager.getMemoryCache(widget.mediaItem.uuid);
-    
-    if (_facesByFrame != null) {
-      debugPrint('📦 FRAME DATA LOADED: ${_facesByFrame!.keys.length} frames with face data');
-      debugPrint('📦 Frame range: ${_facesByFrame!.keys.isEmpty ? "empty" : "${_facesByFrame!.keys.reduce((a, b) => a < b ? a : b)}-${_facesByFrame!.keys.reduce((a, b) => a > b ? a : b)}"}');
+
+    if (_facesByFrame != null && _facesByFrame!.isNotEmpty) {
+      final keys = _facesByFrame!.keys.toList()..sort();
+      debugPrint('📦 FRAME DATA LOADED (from global cache): ${keys.length} frames, '
+          'range ${keys.first}-${keys.last}');
     } else {
-      debugPrint('⚠️ NO FRAME DATA: Global cache doesn\'t have frame-based data for ${widget.mediaItem.uuid}');
+      debugPrint('⚠️ NO FRAME DATA: storedFaceData has ${widget.storedFaceData.length} faces '
+          'but no per-frame metadata, and global cache is empty for ${widget.mediaItem.uuid}');
     }
+  }
+
+  /// Build a frame_number -> List<FaceDetection> map from a flat list using
+  /// metadata['frame_number'] / metadata['frame'] as written by MediaFaceDataNotifier.
+  Map<int, List<FaceDetection>> _buildFrameMapFromStoredFaces(List<FaceDetection> faces) {
+    final Map<int, List<FaceDetection>> frameMap = {};
+    for (final face in faces) {
+      final metadata = face.metadata;
+      if (metadata == null) continue;
+
+      final dynamic raw = metadata['frame_number'] ?? metadata['frame'] ?? metadata['frameNumber'];
+      int? frameNumber;
+      if (raw is int) {
+        frameNumber = raw;
+      } else if (raw is num) {
+        frameNumber = raw.toInt();
+      } else if (raw is String) {
+        frameNumber = int.tryParse(raw);
+      }
+      if (frameNumber == null || frameNumber < 0) continue;
+
+      frameMap.putIfAbsent(frameNumber, () => <FaceDetection>[]).add(face);
+    }
+    return frameMap;
   }
 
   /// Setup video controller listener for frame-based face data display
@@ -1409,34 +1470,38 @@ class _OptimizedFaceDataOverlayState extends State<OptimizedFaceDataOverlay> {
     }
 
     final currentPosition = controller.value.position;
-    final duration = controller.value.duration;
     final fps = _getActualFpsForOverlay();
-    
-    // Calculate current frame number
-    final currentFrameNumber = duration.inMilliseconds > 0
-        ? (currentPosition.inMilliseconds / duration.inMilliseconds * (duration.inSeconds * fps)).floor()
-        : 0;
-    
+
+    // Calculate current frame number from elapsed time (NOT from a duration ratio,
+    // which truncates because duration.inSeconds is integer-rounded and breaks the scale).
+    final currentFrameNumber = (currentPosition.inMilliseconds / 1000.0 * fps).floor();
+
     _lastFrameNumber = currentFrameNumber;
-    
+
     // Collect faces that should be visible:
     // 1. Faces detected in current frame (add to tracking)
-    // 2. Faces from previous frames still within ~0.5s display window
+    // 2. Faces from previous frames still within the display window
     List<FaceDetection> visibleFaces = [];
-    
-    // Scale display window to actual FPS (~0.5s, matching USB camera timers)
-    final actualFps = _getActualFpsForOverlay();
-    final displayWindowFrames = (0.5 * actualFps).ceil().clamp(1, 30);
-    
+
+    // Display window scaled to actual FPS (~0.5s, matching USB camera timers).
+    final displayWindowFrames = (0.5 * fps).ceil().clamp(1, 30);
+
     if (_facesByFrame != null) {
-      // Check if new faces detected in current frame
-      if (_facesByFrame!.containsKey(currentFrameNumber)) {
-        final newFaces = _facesByFrame![currentFrameNumber]!;
-        for (final face in newFaces) {
-          // Record when this face was first seen
+      // Faces are stored at sparse frame keys (e.g. every ~10 frames from Enhanced V2 vision).
+      // Use a frame-range tolerance so the playhead doesn't have to land on the exact stored
+      // key for a face to register. Tolerance scales with FPS and matches the parent overlay.
+      final frameTolerance = (fps / 6).ceil().clamp(2, 10);
+      for (int checkFrame = currentFrameNumber - frameTolerance;
+           checkFrame <= currentFrameNumber + frameTolerance;
+           checkFrame++) {
+        final framesAtKey = _facesByFrame![checkFrame];
+        if (framesAtKey == null) continue;
+        for (final face in framesAtKey) {
+          // Record when this face was first seen (anchor on the actual detection frame so
+          // the display-window logic measures real on-screen lifetime).
           if (!_faceFirstSeenFrame.containsKey(face)) {
-            _faceFirstSeenFrame[face] = currentFrameNumber;
-            debugPrint('🆕 NEW FACE detected at frame $currentFrameNumber');
+            _faceFirstSeenFrame[face] = checkFrame;
+            debugPrint('🆕 NEW FACE picked up: detection frame=$checkFrame, playhead frame=$currentFrameNumber');
           }
         }
       }
@@ -1531,9 +1596,6 @@ class OptimizedFacePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (faces.isEmpty || videoSize.width == 0 || videoSize.height == 0) {
-      return;
-    }
 
     final textPainter = TextPainter(
       textDirection: TextDirection.ltr,

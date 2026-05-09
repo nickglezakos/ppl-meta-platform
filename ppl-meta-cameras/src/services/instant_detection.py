@@ -31,6 +31,23 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 
+def _delete_instant_detection_redis_cache(camera_id: Optional[str] = None) -> None:
+    """Remove cached instant-detection results from Redis."""
+    try:
+        import redis
+
+        redis_client = redis.Redis(host='localhost', port=6379, decode_responses=False)
+        if camera_id:
+            redis_client.delete(f"instant_detection:{camera_id}")
+            return
+
+        keys = redis_client.keys("instant_detection:*")
+        if keys:
+            redis_client.delete(*keys)
+    except Exception as exc:
+        logger.warning(f"⚠️ Failed to clear Redis instant detection cache: {exc}")
+
+
 # ---------------------------------------------------------------------------
 # Circuit Breaker — prevents cascading failures to downstream services
 # ---------------------------------------------------------------------------
@@ -259,6 +276,8 @@ class InstantDetectionSampler:
         Start instant detection for a camera. Multiple cameras can run in parallel
         when INSTANT_DETECTION_MULTI_CAMERA_ENABLED=true.
         """
+        self.clear_cache(camera_id)
+
         with self._lock:
             # If multi-camera is disabled, stop any other running cameras first
             if not self._multi_camera_enabled:
@@ -317,6 +336,7 @@ class InstantDetectionSampler:
                     if s.thread:
                         s.thread.join(timeout=2)
                 self._samplers.clear()
+        self.clear_cache(camera_id)
         if camera_id:
             logger.info(f"🛑 Instant detection stopped for {camera_id}")
         else:
@@ -1987,8 +2007,10 @@ class InstantDetectionSampler:
         if camera_id:
             if camera_id in self.results_cache:
                 del self.results_cache[camera_id]
+            _delete_instant_detection_redis_cache(camera_id)
         else:
             self.results_cache.clear()
+            _delete_instant_detection_redis_cache()
     
     def get_status(self) -> Dict:
         """

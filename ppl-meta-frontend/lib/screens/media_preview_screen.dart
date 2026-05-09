@@ -320,6 +320,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
 
   Widget _buildVideoPreview(BuildContext context, WidgetRef ref, MediaItem mediaItem) {
     final apiClient = ref.read(apiClientProvider);
+    debugPrint('🎬 Media preview using full per-frame face detections for ${mediaItem.uuid}');
     
     return Center(
       child: Container(
@@ -335,8 +336,6 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
           },
           collectionId: null, // TODO: Pass collection ID from route parameters
           enableWorkflowIntegration: false,
-          initialFaceData: _previewMvrFaces,
-          initialFaceDataSource: 'mvr_preview_overlay',
           onControllerReady: (controller) {
             debugPrint('🎬 Smart video controller ready with workflow integration');
             setState(() {

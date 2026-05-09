@@ -41,12 +41,18 @@ Office 365 emails for everyone
 
 *** Deployment tasks
 
-MVRpeople testing and status
+Check why face detection starts after stop recording.
+Check why the first MVR created taqkes so long for the emdedding to be created.
+Investigate automatic counters functionality synched with MVR search action types from automation.
+Proposal for instant detection counters based on storage statistics (not embeddings).
+Propoasl for instant detection counters with a new option at settings to store embeddings.
+Wifi TAPO camera check local, mobile wifi.
+Headscale scenario.
 Instant detection analytics
 Instant detection possible merging (inlcuding "intale" automerging tasks)
 Teams action type setup and testing
 Multiple digital signage scenarios testing
-  More than on triggers
+  More than one triggers
   More than one digital signage devices
   Marketing user account
 Alpha test the local storage options and possible extent the local storage module

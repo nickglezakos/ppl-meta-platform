@@ -191,10 +191,16 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
   /// Load face data for the current media item
   Future<void> loadFaces({bool forceRefresh = false}) async {
     print('🔍 PROVIDER: loadFaces called for media $mediaId (forceRefresh: $forceRefresh)');
-    
+
+    // KEEP-ALIVE FIX: This provider is autoDispose; without a listener it would be disposed
+    // during the awaited HTTP call, causing "Tried to use MediaFaceDataNotifier after dispose"
+    // when state is mutated after the response arrives. Pin it for the duration of the load.
+    final keepAliveLink = ref.keepAlive();
+
     // CACHE CHECK: Check if already loading to prevent duplicate requests
     if (!forceRefresh && _isLoadingInProgress(mediaId)) {
       print('⏳ CACHE: Face loading already in progress for media $mediaId, skipping duplicate request');
+      keepAliveLink.close();
       return;
     }
 
@@ -266,17 +272,16 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
           print('🔍 ENHANCED V2: top-level faces_by_frame has ${enhancedV2Data.facesByFrame.keys.length} frames');
           print('🔍 ENHANCED V2: detection_result available: ${enhancedV2Data.detectionResult != null}');
           
-          // Use detection_result.faces_by_frame if available (contains ALL faces)
-          Map<String, dynamic> facesSource = {};
-          if (enhancedV2Data.detectionResult != null && 
-              enhancedV2Data.detectionResult!.containsKey('faces_by_frame')) {
-            facesSource = enhancedV2Data.detectionResult!['faces_by_frame'] as Map<String, dynamic>;
-            print('✅ ENHANCED V2: Using detection_result.faces_by_frame with ${facesSource.keys.length} frames (ALL faces)');
-          } else {
-            // Fallback to top-level faces_by_frame (only representatives)
-            print('⚠️ ENHANCED V2: detection_result not available, using top-level faces_by_frame');
-            facesSource = enhancedV2Data.facesByFrame.map((k, v) => MapEntry(k, v));
+          if (enhancedV2Data.detectionResult == null ||
+              !enhancedV2Data.detectionResult!.containsKey('faces_by_frame')) {
+            throw Exception(
+              'Enhanced Logic V2 did not return detection_result.faces_by_frame; refusing to use representative or synthetic fallback data',
+            );
           }
+
+          final facesSource =
+              enhancedV2Data.detectionResult!['faces_by_frame'] as Map<String, dynamic>;
+          print('✅ ENHANCED V2: Using detection_result.faces_by_frame with ${facesSource.keys.length} frames (ALL faces)');
           
           // Flatten faces_by_frame into a single list of ALL faces
           int faceIndex = 0;
@@ -284,26 +289,18 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
             final frameNumber = int.parse(entry.key);
             final facesInFrame = entry.value;
             
-            // Handle both List<EnhancedLogicV2Face> and List<Map<String, dynamic>>
+            // detection_result.faces_by_frame must be raw backend frame data.
             for (final faceData in facesInFrame) {
-              // Extract bbox, confidence, method from either object or map
-              List<double> bbox;
-              double confidence;
-              String method;
-              
-              if (faceData is Map<String, dynamic>) {
-                // Raw map from detection_result
-                final bboxRaw = faceData['bbox'] as List;
-                bbox = bboxRaw.map((e) => (e as num).toDouble()).toList();
-                confidence = (faceData['confidence'] as num).toDouble();
-                method = faceData['method'] as String;
-              } else {
-                // EnhancedLogicV2Face object from top-level faces_by_frame
-                final face = faceData as EnhancedLogicV2Face;
-                bbox = face.bbox;
-                confidence = face.confidence;
-                method = face.method;
+              if (faceData is! Map<String, dynamic>) {
+                throw Exception(
+                  'Enhanced Logic V2 detection_result.faces_by_frame returned non-map face data; refusing fallback parsing',
+                );
               }
+
+              final bboxRaw = faceData['bbox'] as List;
+              final bbox = bboxRaw.map((e) => (e as num).toDouble()).toList();
+              final confidence = (faceData['confidence'] as num).toDouble();
+              final method = faceData['method'] as String;
               
               faces.add(FaceDetection(
                 id: 'enhanced_v2_face_$faceIndex',
@@ -360,6 +357,9 @@ class MediaFaceDataNotifier extends StateNotifier<MediaFaceDataState> {
     } finally {
       // Always mark loading as complete
       _markLoadingComplete(mediaId);
+      // Release the keep-alive pin so the provider can be disposed normally
+      // once no widget is listening anymore.
+      keepAliveLink.close();
     }
   }
 

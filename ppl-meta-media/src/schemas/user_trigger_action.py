@@ -19,7 +19,7 @@ class UserTriggerActionBase(BaseModel):
         description=(
             "JSON configuration for action.\n"
             "- digital_signage: {\"device_ids\": [...], \"playlist_id\": \"...\", \"transition_mode\": \"immediate|after_current|fade\", \"fade_duration_ms\": 2000}\n"
-            "- email: {\"recipients\": [\"email1@example.com\", \"email2@example.com\"], \"subject\": \"Alert: {trigger_name}\", \"body\": \"Trigger fired at {timestamp}\"}\n"
+            "- email: {\"recipients\": [\"email1@example.com\", \"email2@example.com\"], \"subject\": \"Alert: {trigger_name} - {match_reason}\", \"body\": \"Trigger fired: {reason}\"}\n"
             "- webhook: {\"url\": \"https://webhook.site/...\", \"method\": \"POST\", \"payload_data\": {\"custom_field\": \"value\"}}\n"
             "- log: {\"severity\": \"info|warning|error\", \"data\": {\"category\": \"trigger_events\", \"tags\": [\"marketing\"]}}\n"
             "- messaging_app: {\"platform\": \"slack|teams\", \"webhook_url\": \"https://hooks.slack.com/...\", \"message_template\": \"Alert: {trigger_name}\", \"mention\": \"@channel\"}"

@@ -3322,33 +3322,6 @@ class CameraDetectionService:
                                 media_id,
                             )
 
-                            # Check if automatic face detection on save is enabled
-                            # ✅ RE-ENABLED - November 20, 2025
-                            # Service-to-service authentication is working properly.
-                            # In-memory person-objects workflow now creates person_objects automatically.
-                            
-                            # 🎯 ROBUST FIX v2.21.7: Poll media service with exponential backoff
-                            # Verifies media is actually committed to database before proceeding
-                            # More reliable than Redis events - checks actual DB state
-                            media_exists = await self._wait_for_media_committed(
-                                media_uuid, headers
-                            )
-                            
-                            if media_exists:
-                                logger.info(
-                                    f"✅ [UPLOAD] Media {media_uuid} confirmed in database, "
-                                    f"triggering face detection"
-                                )
-                                await self._check_and_trigger_face_detection(
-                                    media_uuid, session, headers
-                                )
-                            else:
-                                logger.error(
-                                    f"❌ [UPLOAD] Media {media_uuid} never became available in database - "
-                                    f"SKIPPING face detection to prevent 404 errors"
-                                )
-                                # Don't trigger face detection if media not found
-
                             # Find or create camera collection and assign video
                             logger.info(
                                 f"🎬 [DEBUG] Finding/creating camera collection..."
@@ -3385,6 +3358,29 @@ class CameraDetectionService:
                             else:
                                 logger.warning(
                                     f"🎬 [DEBUG] ⚠️ Could not find or create collection for camera {device_id}"
+                                )
+
+                            # Trigger face detection only after the media is visible in the
+                            # database and assigned to its collection. VMeta's continuous
+                            # pipeline relies on collection_id on face-detection completion
+                            # events; firing before assignment causes those events to be
+                            # ignored until recording_stopped triggers the partial batch.
+                            media_exists = await self._wait_for_media_committed(
+                                media_uuid, headers
+                            )
+
+                            if media_exists:
+                                logger.info(
+                                    f"✅ [UPLOAD] Media {media_uuid} confirmed in database, "
+                                    f"triggering face detection after collection assignment"
+                                )
+                                await self._check_and_trigger_face_detection(
+                                    media_uuid, session, headers
+                                )
+                            else:
+                                logger.error(
+                                    f"❌ [UPLOAD] Media {media_uuid} never became available in database - "
+                                    f"SKIPPING face detection to prevent 404 errors"
                                 )
 
                             # TODO: Clean up local file after successful upload

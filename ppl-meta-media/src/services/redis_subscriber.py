@@ -970,6 +970,13 @@ class InstantDetectionSubscriber:
             
             subject = config.get("subject", "Trigger Alert")
             body_template = config.get("body", "Trigger '{trigger_name}' was fired.")
+
+            interpolated_subject = _interpolate_action_message(
+                base_message=subject,
+                trigger=trigger,
+                evaluation_reason=evaluation_reason,
+                match_info=match_info,
+            )
             
             # Substitute variables in template
             body = _interpolate_action_message(
@@ -981,7 +988,7 @@ class InstantDetectionSubscriber:
             
             logger.info(f"     Recipients: {recipients}")
             logger.info(f"     CC: {cc}")
-            logger.info(f"     Subject: {subject}")
+            logger.info(f"     Subject: {interpolated_subject}")
             
             if not recipients:
                 logger.error(f"     ❌ No recipients configured in action")
@@ -1008,7 +1015,7 @@ class InstantDetectionSubscriber:
             result = await comms_client.send_email(
                 to=recipients,
                 cc=cc if cc else None,
-                subject=subject,
+                subject=interpolated_subject,
                 text_body=body,
                 triggered_by="media_service",
                 trigger_type="trigger_action",

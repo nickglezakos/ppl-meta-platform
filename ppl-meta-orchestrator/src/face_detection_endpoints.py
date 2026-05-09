@@ -1050,28 +1050,14 @@ class FaceDetectionSessionManager:
                 "X-Service-Name": "ppl-meta-orchestrator",
             }
 
+        # Use the in-memory person_objects directly. A previous implementation
+        # made a synchronous requests.get to this same orchestrator
+        # (http://localhost:8002/person-objects/{media_id}) which deadlocked
+        # against the worker handling the current Enhanced Logic V2 request,
+        # timing out at 30s and causing gateway 503s on the preview overlay
+        # face-data fetch. The "reloaded" data was identical to the supplied
+        # person_objects, so the self-call is removed.
         persisted_person_groups = person_objects
-        try:
-            persisted_response = requests.get(
-                f"http://localhost:8002/person-objects/{media_id}",
-                headers=headers,
-                timeout=30,
-            )
-            if persisted_response.status_code == 200:
-                persisted_data = persisted_response.json()
-                persisted_person_groups = persisted_data.get("person_groups") or person_objects
-            else:
-                logger.warning(
-                    "Failed to reload persisted person groups for media %s before VMeta materialization: %s",
-                    media_id,
-                    persisted_response.status_code,
-                )
-        except Exception as exc:
-            logger.warning(
-                "Error reloading persisted person groups for media %s before VMeta materialization: %s",
-                media_id,
-                exc,
-            )
 
         try:
             response = requests.post(

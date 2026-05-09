@@ -141,7 +141,7 @@ class IndividualGroupsApiClient {
     UpdateGroupRequest request,
   ) async {
     try {
-      final response = await _apiClient.put(
+      final response = await _apiClient.patch(
         '/api/v1/individual-groups/$groupId',
         data: request.toJson(),
       );

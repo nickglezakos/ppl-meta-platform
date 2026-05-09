@@ -1101,6 +1101,12 @@ async def get_video_frame_faces(request: Request):
     return await _proxy_to_vision_service(request)
 
 
+@api_router.get("/vision/faces/media/{media_id}")
+async def get_media_faces(request: Request):
+    """Proxy media face detections to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
 # Person Objects API Routes
 @api_router.get("/person-objects/health")
 async def get_person_objects_health(request: Request):
@@ -1151,6 +1157,12 @@ async def find_session_by_media_uuid(request: Request):
 
 
 # Enhanced Workflow Widget API Routes for Vision Service
+@api_router.get("/processing-status/{media_uuid}")
+async def get_processing_status(request: Request):
+    """Proxy processing status to Vision service."""
+    return await _proxy_to_vision_service(request)
+
+
 @api_router.get("/processing-status/{media_uuid}/widget")
 async def get_widget_processing_status(request: Request):
     """Proxy widget-optimized processing status to Vision service."""
@@ -1763,6 +1775,12 @@ async def orchestrate_workflow(request: Request):
 @api_router.get("/orchestrator/validate")
 async def validate_orchestrator(request: Request):
     """Proxy validate to Orchestrator service."""
+    return await _proxy_to_orchestrator_service(request)
+
+
+@api_router.get("/media/{media_id}/faces/enhanced-v2")
+async def get_media_faces_enhanced_v2(request: Request):
+    """Proxy Enhanced Logic V2 media faces to Orchestrator service."""
     return await _proxy_to_orchestrator_service(request)
 
 
