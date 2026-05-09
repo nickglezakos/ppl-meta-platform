@@ -51,9 +51,14 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   List<media_api.FaceDetection> _previewMvrFaces = const [];
   CrossVideoAnalysisContext? _previewAnalysisContext;
 
+  /// Whether the new MVR-based preview UI (Details button, no workflow bar)
+  /// should be used. Videos always use this layout to avoid a race-flicker
+  /// where the legacy workflow bar shows up briefly while async data loads,
+  /// and to prevent the preview from reverting to the legacy chrome when no
+  /// MVR data is available yet (e.g. while a recording is still being
+  /// processed by the backend pipeline).
   bool get _usesMvrPreviewMode =>
-      widget.mediaItem.mediaType == MediaType.video &&
-      (_isPreparingMvrPreview || _previewMvrFaces.isNotEmpty || _previewAnalysisContext != null);
+      widget.mediaItem.mediaType == MediaType.video;
 
   @override
   void initState() {
@@ -369,20 +374,14 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       if (hasPersonObjects) {
         final personObjectsData = await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
         personObjects = personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
-
-        if (mvrPeople.isEmpty && personObjects.isNotEmpty) {
-          final materializeResponse = await mediaApiClient.materializePersistedPersonObjects(
-            mediaUuid: mediaUuid,
-            sessionUuid: personObjectsData?.sessionUuid,
-            mediaType: 'video',
-            personObjects: personObjects,
-          );
-
-          if (materializeResponse.success) {
-            mvrPeople = await _loadExistingMvrPeople(mediaApiClient, mediaUuid);
-          }
-        }
       }
+
+      // NOTE: We deliberately do NOT call materializePersistedPersonObjects
+      // here. MVR creation is owned by the backend pipeline (orchestrator
+      // STEP 1.7 / vmeta single-media materialization) and is triggered
+      // automatically when a recording finishes. Triggering it from the
+      // preview screen caused MVRs to be "fired by" UI navigation and
+      // produced the race-condition flicker between two preview layouts.
 
       if (!mounted) {
         return;

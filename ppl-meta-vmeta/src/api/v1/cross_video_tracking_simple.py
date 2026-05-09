@@ -3690,6 +3690,40 @@ async def process_tracking_session(session_uuid: str, auth_token: str = None):
                                             params['confidence_contribution']
                                         )
                                     elif op_type == 'appearance':
+                                        # Standalone-MVR contract: do NOT
+                                        # create a new iva row pointing to a
+                                        # merged individual when an iva row
+                                        # for (video_uuid, person_object_uuid)
+                                        # already exists from
+                                        # `process_single_media_for_mvr`.
+                                        # Inserting one would attach the same
+                                        # person to two individuals (the per-
+                                        # video standalone one and this merged
+                                        # one), which surfaces in the UI as
+                                        # phantom thumbnails / cross-video
+                                        # leakage. The PK includes
+                                        # individual_uuid so a plain ON
+                                        # CONFLICT does not catch this case.
+                                        existing_iva = await conn.fetchval(
+                                            """
+                                            SELECT 1
+                                            FROM individual_video_appearances
+                                            WHERE video_uuid = $1
+                                              AND person_object_uuid = $2
+                                            LIMIT 1
+                                            """,
+                                            params['video_uuid'],
+                                            params['person_object_uuid'],
+                                        )
+                                        if existing_iva:
+                                            logger.info(
+                                                "[CROSS-VIDEO] Skipping iva insert for "
+                                                "video=%s person_object=%s: row already "
+                                                "exists from single-media MVR path",
+                                                params['video_uuid'],
+                                                params['person_object_uuid'],
+                                            )
+                                            continue
                                         await conn.execute("""
                                             INSERT INTO individual_video_appearances (
                                                 individual_uuid, video_uuid, person_object_uuid,

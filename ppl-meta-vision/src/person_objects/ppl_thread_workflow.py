@@ -467,7 +467,8 @@ class PPLThreadWorkflowController:
 
             # Step 7: Format response to match PPL Meta Mini structure exactly
             response = self._format_ppl_mini_compatible_response(
-                grouping_results, best_quality_faces, workflow_id, session_uuid
+                grouping_results, best_quality_faces, workflow_id, session_uuid,
+                person_id_mapping=person_id_mapping,
             )
 
             logger.info(
@@ -636,7 +637,8 @@ class PPLThreadWorkflowController:
 
             # Step 8: Format response to match PPL Meta Mini structure exactly
             response = self._format_ppl_mini_compatible_response(
-                grouping_results, best_quality_faces, workflow_id, session_uuid
+                grouping_results, best_quality_faces, workflow_id, session_uuid,
+                person_id_mapping=person_id_mapping,
             )
 
             logger.info(
@@ -1477,6 +1479,7 @@ class PPLThreadWorkflowController:
         best_quality_faces: Dict,
         workflow_id: str,
         session_uuid: str,
+        person_id_mapping: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Format response to exactly match PPL Meta Mini FaceGroupingEngine output structure.
@@ -1588,6 +1591,12 @@ class PPLThreadWorkflowController:
             person_objects_formatted.append(
                 {
                     "person_id": person_id,
+                    # Real DB UUID minted by `_store_person_objects_and_mappings`.
+                    # Downstream consumers (orchestrator/vmeta) need this to keep
+                    # MVR rows linkable across recordings instead of generating a
+                    # fresh UUID every time the synthetic label is parsed.
+                    "person_uuid": (person_id_mapping or {}).get(person_id),
+                    "person_object_uuid": (person_id_mapping or {}).get(person_id),
                     "workflow_id": workflow_id,
                     "session_uuid": session_uuid,
                     "face_count": person["face_count"],

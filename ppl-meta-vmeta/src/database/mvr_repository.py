@@ -1743,7 +1743,8 @@ class MVRRepository:
                 iva.video_uuid::text AS video_uuid,
                 iva.person_object_uuid::text AS person_object_uuid,
                 iva.individual_uuid::text AS individual_uuid,
-                iva.confidence
+                iva.confidence,
+                iva.movement_pattern
             FROM individual_video_appearances iva
             WHERE {' AND '.join(conditions)}
             ORDER BY iva.start_timestamp ASC
@@ -2029,31 +2030,98 @@ class MVRRepository:
         auth_header: Optional[str],
     ) -> List[Dict[str, Any]]:
         """
-        Expand appearance rows with per-frame route points from the orchestrator.
+        Expand appearance rows with per-frame route points.
 
-        For each appearance row fetches movement_tracking.route_points via
-        GET /api/v1/orchestrator/person-objects/{video_uuid} and returns one
-        row per route point.  Falls back to the original single row per
-        appearance when the orchestrator is unreachable or has no matching
-        route points for a person.
+        Preferred path: when an appearance row already carries
+        ``movement_pattern.route_points`` (populated by the orchestrator
+        refresh background task after MVR materialization), fan that list
+        out into one expanded row per route point – no network call needed.
 
-        Matching uses representative face frame_number + center coordinates
-        rather than person_uuid, because the Orchestrator regenerates UUIDs
-        on every processing call.
+        Fallback: for rows without inline route_points, fetch movement
+        tracking via GET /api/v1/orchestrator/person-objects/{video_uuid}
+        and match by representative face geometry.
+
+        Falls back to the original single row per appearance when no route
+        points can be resolved for a person.
         """
-        if not auth_header or not rows:
+        if not rows:
             return rows
+
+        def _expand_row(row: Dict[str, Any], route_pts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            if not route_pts:
+                return [row]
+            base_ts_ms = int(row.get("timestamp_ms") or 0)
+            out: List[Dict[str, Any]] = []
+            for rp in route_pts:
+                new_row = dict(row)
+
+                position = rp.get("position")
+                if isinstance(position, dict):
+                    center_x = float(position.get("x") or 0.0)
+                    center_y = float(position.get("y") or 0.0)
+                elif rp.get("center_x") is not None or rp.get("x") is not None:
+                    center_x = float(rp.get("center_x", rp.get("x", 0.0)) or 0.0)
+                    center_y = float(rp.get("center_y", rp.get("y", 0.0)) or 0.0)
+                else:
+                    center_x, center_y = self._bbox_to_center(rp.get("bbox"))
+
+                new_row["precomputed_center_x"] = center_x
+                new_row["precomputed_center_y"] = center_y
+
+                rp_ts = rp.get("timestamp")
+                if rp_ts is not None:
+                    try:
+                        new_row["timestamp_ms"] = base_ts_ms + int(float(rp_ts) * 1000)
+                    except (TypeError, ValueError):
+                        pass
+                else:
+                    frame_no = rp.get("frame_number")
+                    if frame_no is not None:
+                        try:
+                            # Approximate timestamp at 30 fps so each route
+                            # point gets a unique, monotonically increasing ts.
+                            new_row["timestamp_ms"] = base_ts_ms + int(float(frame_no) * (1000.0 / 30.0))
+                        except (TypeError, ValueError):
+                            pass
+
+                out.append(new_row)
+            return out
+
+        # First pass: expand any rows that already carry inline route_points
+        # via iva.movement_pattern. These were populated by the orchestrator
+        # refresh background task and are authoritative.
+        expanded: List[Dict[str, Any]] = []
+        rows_needing_fetch: List[Dict[str, Any]] = []
+        for row in rows:
+            mp = row.get("movement_pattern")
+            if isinstance(mp, str):
+                try:
+                    mp = json.loads(mp)
+                except (ValueError, TypeError):
+                    mp = None
+            inline_pts: List[Dict[str, Any]] = []
+            if isinstance(mp, dict):
+                pts = mp.get("route_points")
+                if isinstance(pts, list):
+                    inline_pts = pts
+
+            if inline_pts:
+                expanded.extend(_expand_row(row, inline_pts))
+            else:
+                rows_needing_fetch.append(row)
+
+        if not rows_needing_fetch or not auth_header:
+            expanded.extend(rows_needing_fetch)
+            return expanded
 
         gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080").rstrip("/")
         headers = {"Authorization": auth_header}
 
         # Group by video_uuid to limit HTTP requests to one per video.
         video_rows: Dict[str, List[Dict[str, Any]]] = {}
-        for row in rows:
+        for row in rows_needing_fetch:
             vid = row.get("video_uuid") or ""
             video_rows.setdefault(vid, []).append(row)
-
-        expanded: List[Dict[str, Any]] = []
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             for video_uuid, appearance_rows in video_rows.items():
@@ -2086,31 +2154,9 @@ class MVRRepository:
                         row.get("representative_faces"),
                     )
                     if not route_pts:
-                        # No per-frame data — keep the original single-point row.
                         expanded.append(row)
                         continue
-
-                    base_ts_ms = int(row.get("timestamp_ms") or 0)
-                    for rp in route_pts:
-                        new_row = dict(row)
-
-                        position = rp.get("position")
-                        if isinstance(position, dict):
-                            center_x = float(position.get("x") or 0.0)
-                            center_y = float(position.get("y") or 0.0)
-                        elif rp.get("center_x") is not None or rp.get("x") is not None:
-                            center_x = float(rp.get("center_x", rp.get("x", 0.0)) or 0.0)
-                            center_y = float(rp.get("center_y", rp.get("y", 0.0)) or 0.0)
-                        else:
-                            center_x, center_y = self._bbox_to_center(rp.get("bbox"))
-
-                        new_row["precomputed_center_x"] = center_x
-                        new_row["precomputed_center_y"] = center_y
-
-                        rp_ts = rp.get("timestamp")
-                        if rp_ts is not None:
-                            new_row["timestamp_ms"] = base_ts_ms + int(float(rp_ts) * 1000)
-                        expanded.append(new_row)
+                    expanded.extend(_expand_row(row, route_pts))
 
         return expanded
 

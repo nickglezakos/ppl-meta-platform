@@ -17,11 +17,11 @@ import json
 import logging
 import os
 from typing import Optional, List, Dict, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Body, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -102,6 +102,257 @@ from api.dependencies import (
 
 logger = logging.getLogger(__name__)
 
+
+def _coerce_to_uuid_str(value: Any) -> Optional[str]:
+    """Return a valid UUID string for *value*, minting one when it isn't a UUID.
+
+    Upstream services occasionally pass synthetic identifiers (e.g. "person_1")
+    in place of the persisted person-object UUID. Without coercion, the call
+    to UUID(value) inside MVRService raises "badly formed hexadecimal UUID
+    string" and aborts single-media MVR creation, leaving no MVR rows for the
+    recording. Returning a freshly minted UUID keeps the pipeline moving.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return str(UUID(text))
+    except (ValueError, AttributeError):
+        minted = str(uuid4())
+        logger.warning(
+            "Coerced non-UUID person identifier %r to fresh UUID %s for MVR materialization",
+            text, minted,
+        )
+        return minted
+
+
+def _normalize_quality(raw: Any) -> float:
+    """Normalize quality scalar from orchestrator (0-100 or 0-1) to 0-1."""
+    try:
+        q = float(raw)
+    except (TypeError, ValueError):
+        return 0.85
+    if q <= 0.0:
+        return 0.85
+    return q / 100.0 if q > 1.0 else q
+
+
+def _coerce_uuid_or_none(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return str(UUID(text))
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _refresh_iva_from_orchestrator_task(
+    pool: Any,
+    media_uuid_str: str,
+    auth_token: Optional[str] = None,
+) -> None:
+    """Background task: rewrite iva rows for *media_uuid* with orchestrator's
+    authoritative person_groups (proper person_uuid + representative_faces +
+    movement_pattern).
+
+    This runs AFTER the materialization handler has returned its response,
+    which unblocks the orchestrator's synchronous `requests.post` and lets it
+    serve `/person-objects/{media_uuid}` without deadlocking. The handler-time
+    payload (synthetic person_id, no representative_faces) leaves iva rows
+    with NULL representative_faces and orphan person_object_uuids that the
+    frontend cannot match — this task replaces them with rows that match the
+    orchestrator's view of the video.
+    """
+    from datetime import datetime as _dt
+
+    media_uuid_str = str(media_uuid_str)
+    try:
+        media_uuid = UUID(media_uuid_str)
+    except (ValueError, TypeError):
+        logger.error("Background iva refresh: invalid media_uuid %r", media_uuid_str)
+        return
+
+    # Give the orchestrator a moment to complete its sync POST and become
+    # responsive. The synchronous requests.post on the orchestrator side
+    # returns as soon as we send the response, but a small delay further
+    # avoids racing the unwind of its handler.
+    await asyncio.sleep(2.0)
+
+    orchestrator_url = os.getenv("PPL_ORCHESTRATOR_URL", "http://localhost:8002")
+    internal_token = auth_token or os.getenv(
+        "INTERNAL_SERVICE_TOKEN",
+        "ppl-meta-internal-service-secret-key-change-in-production",
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.get(
+                f"{orchestrator_url}/person-objects/{media_uuid}",
+                headers={
+                    "Authorization": f"Bearer {internal_token}",
+                    "X-Service-Name": "ppl-meta-vmeta-bg-refresh",
+                },
+            )
+    except Exception as exc:
+        logger.warning(
+            "Background iva refresh: orchestrator GET failed for %s: %s",
+            media_uuid, exc,
+        )
+        return
+
+    if resp.status_code != 200:
+        logger.warning(
+            "Background iva refresh: orchestrator returned %s for %s; skipping",
+            resp.status_code, media_uuid,
+        )
+        return
+
+    try:
+        person_groups = list((resp.json() or {}).get("person_groups") or [])
+    except Exception as exc:
+        logger.warning(
+            "Background iva refresh: failed to parse orchestrator response for %s: %s",
+            media_uuid, exc,
+        )
+        return
+
+    if not person_groups:
+        logger.info(
+            "Background iva refresh: orchestrator returned 0 person_groups for %s; "
+            "leaving existing iva rows in place",
+            media_uuid,
+        )
+        return
+
+    appearance_ts = _dt.utcnow()
+    updated_rows = 0
+    skipped = 0
+    distinct_individuals: List[Any] = []
+
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # iva stores ONE row per raw person_object_uuid; multiple rows
+                # can share an individual_uuid (each row is a tracking segment
+                # the upstream clusterer grouped under one MVR/individual).
+                # The orchestrator's `person_groups` are MERGED groups — each
+                # carries a single `person_uuid` that is NOT in the same
+                # identifier space as any raw `person_object_uuid`. Therefore
+                # we must NOT overwrite iva.person_object_uuid; we only enrich
+                # the *data* columns (representative_faces, movement_pattern,
+                # entry/exit_bbox, confidence, quality_score) and replicate
+                # the same enrichment across every iva row that shares an
+                # individual_uuid (so downstream consumers reading any of
+                # those rows see the merged-group view).
+                rows = await conn.fetch(
+                    """
+                    SELECT individual_uuid, MIN(created_at) AS first_seen
+                      FROM individual_video_appearances
+                     WHERE video_uuid=$1
+                     GROUP BY individual_uuid
+                     ORDER BY MIN(created_at) NULLS LAST, individual_uuid
+                    """,
+                    media_uuid,
+                )
+                distinct_individuals = [r["individual_uuid"] for r in rows]
+                if not distinct_individuals:
+                    logger.info(
+                        "Background iva refresh: no existing iva rows for %s; "
+                        "skipping (initial materialization may have failed)",
+                        media_uuid,
+                    )
+                    return
+
+                pair_count = min(len(distinct_individuals), len(person_groups))
+                if pair_count == 0:
+                    logger.warning(
+                        "Background iva refresh: cannot pair (individuals=%d, "
+                        "person_groups=%d) for %s",
+                        len(distinct_individuals), len(person_groups), media_uuid,
+                    )
+                    return
+
+                for idx, individual_uuid in enumerate(distinct_individuals):
+                    if idx >= pair_count:
+                        # Extra individuals with no orchestrator counterpart;
+                        # leave their data columns untouched rather than
+                        # invent values.
+                        skipped += 1
+                        continue
+                    group = person_groups[idx]
+                    representative_faces = group.get("representative_faces") or []
+                    movement = group.get("movement_tracking") or {}
+                    route_points = movement.get("route_points") or []
+                    avg_conf = float(group.get("average_confidence") or 0.9)
+                    quality_metrics = group.get("quality_metrics") or {}
+                    avg_quality = _normalize_quality(
+                        quality_metrics.get("average_quality")
+                        or quality_metrics.get("best_quality")
+                        or 80.0
+                    )
+
+                    entry_bbox = None
+                    exit_bbox = None
+                    if route_points:
+                        first_bbox = route_points[0].get("bbox")
+                        last_bbox = route_points[-1].get("bbox")
+                        if isinstance(first_bbox, list) and len(first_bbox) == 4:
+                            entry_bbox = [float(x) for x in first_bbox]
+                        if isinstance(last_bbox, list) and len(last_bbox) == 4:
+                            exit_bbox = [float(x) for x in last_bbox]
+
+                    movement_pattern = {
+                        "route_points": route_points,
+                        "movement_statistics": movement.get("movement_statistics") or {},
+                    } if route_points else None
+
+                    res = await conn.execute(
+                        """
+                        UPDATE individual_video_appearances
+                           SET representative_faces = $1::jsonb,
+                               movement_pattern     = $2::jsonb,
+                               entry_bbox           = $3,
+                               exit_bbox            = $4,
+                               confidence           = $5,
+                               quality_score        = $6,
+                               processing_method    = 'orchestrator_refresh'
+                         WHERE individual_uuid=$7
+                           AND video_uuid=$8
+                        """,
+                        json.dumps(representative_faces),
+                        json.dumps(movement_pattern) if movement_pattern else None,
+                        entry_bbox,
+                        exit_bbox,
+                        avg_conf,
+                        float(avg_quality),
+                        individual_uuid,
+                        media_uuid,
+                    )
+                    # asyncpg returns "UPDATE n"
+                    try:
+                        updated_rows += int(res.split()[-1] or 0)
+                    except (ValueError, IndexError):
+                        pass
+    except Exception as exc:
+        logger.exception(
+            "Background iva refresh: DB rewrite failed for %s: %s",
+            media_uuid, exc,
+        )
+        return
+
+    logger.info(
+        "Background iva refresh: media=%s person_groups=%d distinct_individuals=%d "
+        "iva_rows_updated=%d skipped_individuals=%d",
+        media_uuid, len(person_groups), len(distinct_individuals),
+        updated_rows, skipped,
+    )
+
+
 # Initialize router
 router = APIRouter(
     prefix="/api/v1/mvr-people",
@@ -170,6 +421,20 @@ async def _materialize_single_media_from_persisted_person_objects(
     vision_url = os.getenv("PPL_VISION_URL", "http://localhost:8003")
     gateway_url = os.getenv("PPL_GATEWAY_URL", "http://localhost:8080")
 
+    # NOTE on enrichment: the orchestrator hands us a workflow payload with
+    # synthetic person identifiers ("person_1") and no `representative_faces`,
+    # which forces `_coerce_to_uuid_str` to mint random orphan UUIDs and writes
+    # NULL into iva.representative_faces. The authoritative data lives at
+    # orchestrator's /person-objects/{video_uuid}, but we cannot fetch it
+    # synchronously here: the orchestrator is blocked inside `requests.post`
+    # waiting for THIS handler's response, so the call would deadlock until
+    # timeout. The fix is two-stage:
+    #   1. Persist with the synthetic payload (so this handler returns fast).
+    #   2. After the response is sent, a background task re-fetches from
+    #      orchestrator (now unblocked) and rewrites the iva rows with proper
+    #      person_uuid + representative_faces + movement_pattern. See
+    #      `_refresh_iva_from_orchestrator_task` below.
+
     normalized_person_objects = []
     for person_obj in person_objects_payload:
         representative_faces = person_obj.get("representative_faces") or []
@@ -205,10 +470,14 @@ async def _materialize_single_media_from_persisted_person_objects(
     for person_obj in enriched_person_objects:
         effective_quality = _normalize_quality(person_obj.get("quality_score", 0.0))
 
-        persisted_person_object_uuid = (
-            person_obj.get("person_id")
+        # Prefer the real UUID fields. `person_id` is a synthetic label like
+        # "person_1" emitted by the orchestrator's grouping engine. Coerce
+        # whatever identifier we end up with into a valid UUID so mvr_service
+        # can persist it without aborting single-media MVR creation.
+        persisted_person_object_uuid = _coerce_to_uuid_str(
+            person_obj.get("person_object_uuid")
             or person_obj.get("person_uuid")
-            or person_obj.get("person_object_uuid")
+            or person_obj.get("person_id")
         )
         if not persisted_person_object_uuid:
             logger.warning(
@@ -220,7 +489,7 @@ async def _materialize_single_media_from_persisted_person_objects(
         materialization_inputs.append(
             {
                 **person_obj,
-                "person_object_uuid": str(persisted_person_object_uuid),
+                "person_object_uuid": persisted_person_object_uuid,
                 "media_uuid": str(media_uuid),
                 "video_uuid": str(media_uuid),
                 "face_quality": effective_quality,
@@ -279,6 +548,7 @@ async def _materialize_single_media_from_persisted_person_objects(
 async def materialize_persisted_person_objects(
     request: PersistedPersonObjectsMaterializationRequest,
     http_request: Request,
+    background_tasks: BackgroundTasks,
     mvr_service: MVRService = Depends(get_mvr_service),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
     _current_user: dict = Depends(get_current_user_or_internal_service),
@@ -303,7 +573,7 @@ async def materialize_persisted_person_objects(
             detail=f"Invalid media UUID: {request.media_uuid}",
         ) from exc
 
-    return await _materialize_single_media_from_persisted_person_objects(
+    response = await _materialize_single_media_from_persisted_person_objects(
         media_uuid=media_uuid,
         person_objects_payload=request.person_objects,
         auth_token=auth_token,
@@ -313,6 +583,18 @@ async def materialize_persisted_person_objects(
         media_type_override=request.media_type,
         session_uuid=request.session_uuid,
     )
+
+    # Schedule post-response refresh: re-fetch person_groups from orchestrator
+    # (now unblocked) and rewrite iva rows with proper person_uuid +
+    # representative_faces. See `_refresh_iva_from_orchestrator_task` docstring.
+    background_tasks.add_task(
+        _refresh_iva_from_orchestrator_task,
+        mvr_repository.pool,
+        str(media_uuid),
+        auth_token,
+    )
+
+    return response
 
 
 @router.get(
@@ -2774,9 +3056,13 @@ async def search_mvr_people_by_videos(
                             best_face_data = best_face.get('face_data', {}) if isinstance(best_face, dict) else {}
                             bbox = best_face_data.get('bbox', [])
                             frame_number = best_face_data.get('frame_number', 0)
-                            persisted_person_object_uuid = (
-                                person_group.get('person_id')
+                            # Prefer real UUID fields over the synthetic 'person_id'
+                            # label. Coerce to UUID to keep MVR creation alive even
+                            # if upstream emits a non-UUID label.
+                            persisted_person_object_uuid = _coerce_to_uuid_str(
+                                person_group.get('person_object_uuid')
                                 or person_group.get('person_uuid')
+                                or person_group.get('person_id')
                             )
                             if not persisted_person_object_uuid:
                                 continue
@@ -5336,10 +5622,13 @@ async def process_media_independently(
                     # Fallback quality (already in 0-1 range)
                     effective_quality = 0.85
                 
-                persisted_person_object_uuid = (
-                    po.get('person_id')
+                # Prefer real UUID fields and coerce non-UUID labels (e.g.
+                # 'person_1') so single-media MVR creation does not abort with
+                # a hex parse error.
+                persisted_person_object_uuid = _coerce_to_uuid_str(
+                    po.get('person_object_uuid')
                     or po.get('person_uuid')
-                    or po.get('person_object_uuid')
+                    or po.get('person_id')
                 )
                 if not persisted_person_object_uuid:
                     logger.warning(

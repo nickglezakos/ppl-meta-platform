@@ -41,15 +41,14 @@ Office 365 emails for everyone
 
 *** Deployment tasks
 
-Check why face detection starts after stop recording.
-Check why the first MVR created taqkes so long for the emdedding to be created.
+Check why the first MVR created takes so long for the emdedding to be created.
 Investigate automatic counters functionality synched with MVR search action types from automation.
+Instant detection analytics
+Instant detection possible merging (inlcuding "intale" automerging tasks)
 Proposal for instant detection counters based on storage statistics (not embeddings).
 Propoasl for instant detection counters with a new option at settings to store embeddings.
 Wifi TAPO camera check local, mobile wifi.
-Headscale scenario.
-Instant detection analytics
-Instant detection possible merging (inlcuding "intale" automerging tasks)
+
 Teams action type setup and testing
 Multiple digital signage scenarios testing
   More than one triggers
@@ -61,6 +60,7 @@ Edge camera test and upgrades (inlcuding possible auto network discovery) until 
 APKs UX cleanup
 APKs branding including logos and thumbnails
 Front end and APKs UI cleanup
+Headscale scenario.
 
 Verify Hetzner status
 Headscale implementation using Hetzner
@@ -72,6 +72,7 @@ Users onborading (access to ppl-meta VPN)
 Users verification
 Users acceess rights / capabilities
 Intallation uuid (check if this is the application key)
+Clean up documentation documents and ignore their directory at build.
 
 Finalise the products
 Align software pipeline and licences with the finalized products

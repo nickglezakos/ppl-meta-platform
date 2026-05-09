@@ -569,6 +569,13 @@ class MVRService:
                     'confidence_score': person_obj.get('confidence_score', 0.9),
                     'face_count': person_obj.get('face_count', 1),
                     'person_id': person_obj.get('person_id'),
+                    # Forward face metadata so it can be persisted into
+                    # individual_video_appearances.representative_faces. Both the
+                    # best-image (mvr_image_manager) and routes
+                    # (_expand_with_orchestrator_route_points) flows rely on this
+                    # column to match orchestrator person_groups; without it,
+                    # thumbnails and routes both render empty.
+                    'representative_faces': person_obj.get('representative_faces') or [],
                 }
                 
                 # Add demographics if included
@@ -802,11 +809,16 @@ class MVRService:
                     # Link person objects to this individual via video appearances
                     for ind in cluster_individuals:
                         po_uuid = UUID(ind['person_object_uuid'])
+                        rep_faces = ind.get('representative_faces') or []
+                        rep_faces_json = (
+                            json.dumps(rep_faces) if rep_faces else None
+                        )
                         await pool.execute("""
                             INSERT INTO individual_video_appearances 
                             (individual_uuid, video_uuid, person_object_uuid, 
-                             start_timestamp, end_timestamp, confidence)
-                            VALUES ($1, $2, $3, $4, $5, $6)
+                             start_timestamp, end_timestamp, confidence,
+                             representative_faces)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
                             ON CONFLICT (individual_uuid, video_uuid, person_object_uuid) DO NOTHING
                         """,
                             individual_uuid,
@@ -814,7 +826,8 @@ class MVRService:
                             po_uuid,
                             appearance_timestamp,
                             appearance_timestamp,
-                            float(ind['confidence_score'])
+                            float(ind['confidence_score']),
+                            rep_faces_json,
                         )
                     
                     logger.info(f"Created individual {individual_uuid} for single-media MVR with {len(cluster_individuals)} person objects")
