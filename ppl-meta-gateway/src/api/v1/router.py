@@ -2381,6 +2381,12 @@ async def count_mvr_people_by_videos(request: Request):
     return await _proxy_to_vmeta_service(request)
 
 
+@api_router.post("/mvr-people/materialize/persisted-person-objects")
+async def materialize_persisted_person_objects(request: Request):
+    """Proxy materialize persisted person objects request to vmeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 @api_router.get("/mvr-people/individuals/{individual_uuid}/analysis")
 async def get_individual_analysis_no_session(request: Request):
     """Proxy individual analysis without session to vmeta service."""

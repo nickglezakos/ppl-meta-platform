@@ -29,8 +29,6 @@ Be aware that unmerge does not revert the winner MVR’s embedding or demographi
 *** Legal
 
 US company
-  provide passport documents plus revolut bank statement
-  provide AFM
   provide MindFWD company details plus online proof of company status
   provide MindFWD contract template
 MindFwd contract with US company
@@ -39,9 +37,9 @@ Office 365 emails for everyone
 
 
 
-*** Deployment tasks
 
-Check why the first MVR created takes so long for the emdedding to be created.
+*** Deployment tasks
+Single video upload MVR creation
 Investigate automatic counters functionality synched with MVR search action types from automation.
 Instant detection analytics
 Instant detection possible merging (inlcuding "intale" automerging tasks)

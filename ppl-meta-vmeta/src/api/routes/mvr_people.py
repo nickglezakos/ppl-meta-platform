@@ -394,13 +394,23 @@ async def _materialize_single_media_from_persisted_person_objects(
         return quality / 100.0 if quality > 1.0 else quality
 
     async with mvr_repository.pool.acquire() as conn:
+        # Only consider an MVR "existing" for this media if it is actually
+        # reachable through the IVA -> mapping join (the same join used by
+        # /count-by-videos and /search/by-videos). Earlier pipeline runs left
+        # orphan mvr_people rows tagged with source_media_uuid but without
+        # any individual_video_appearances; those rows are invisible to the
+        # frontend, so they must NOT block re-materialization, otherwise
+        # Compute "skips" forever and the Details button never appears.
         existing_count = await conn.fetchval(
             """
-            SELECT COUNT(*)
-            FROM mvr_people
-            WHERE source_media_uuid = $1
-              AND is_isolated = TRUE
-              AND is_orphaned = FALSE
+            SELECT COUNT(DISTINCT mp.mvr_people_uuid)
+            FROM mvr_people mp
+            JOIN individual_mvr_mapping imm
+              ON imm.mvr_people_uuid = mp.mvr_people_uuid
+            JOIN individual_video_appearances iva
+              ON iva.individual_uuid = imm.individual_uuid
+            WHERE iva.video_uuid = $1
+              AND mp.is_orphaned = FALSE
             """,
             media_uuid,
         )
@@ -3090,6 +3100,19 @@ async def search_mvr_people_by_videos(
                                 'best_face_bbox': bbox if len(bbox) == 4 else None,
                                 'detect_frame_width': best_face_data.get('frame_width'),
                                 'detect_frame_height': best_face_data.get('frame_height'),
+                                # Forwarded so enrich_person_objects_with_face_crops can
+                                # fall back to scanning all face ids when the persisted
+                                # representative_faces / best_face_* fields are empty.
+                                'all_face_ids': (
+                                    person_group.get('all_face_ids')
+                                    or person_group.get('face_ids')
+                                    or []
+                                ),
+                                'best_face_id': (
+                                    person_group.get('best_face_id')
+                                    or best_face.get('face_id')
+                                    or best_face_data.get('id')
+                                ),
                             })
 
                         logger.info(
@@ -5209,7 +5232,64 @@ async def enrich_person_objects_with_face_crops(
                         person_obj['detect_frame_width'] = face_details.get('frame_width')
                     if person_obj.get('detect_frame_height') is None:
                         person_obj['detect_frame_height'] = face_details.get('frame_height')
-                
+
+                # Recompute fallback: when persisted representative_faces /
+                # best_face_* metadata are empty (typical for stored person
+                # objects whose pipelines did not populate quality rankings),
+                # scan the person's full face id list and pick the first face
+                # that has a valid frame + bbox in Vision's raw face details.
+                # Without this, ML enrichment silently produces 0 MVRs.
+                if not _is_valid_frame_number(frame_number) or not _is_valid_bbox(best_face_bbox):
+                    candidate_face_ids = (
+                        person_obj.get('all_face_ids')
+                        or person_obj.get('face_ids')
+                        or []
+                    )
+                    if candidate_face_ids:
+                        if face_details_by_id is None:
+                            face_details_by_id = await _fetch_face_details_by_id()
+                        # Prefer highest-confidence face for better embedding quality.
+                        scored_candidates = []
+                        for candidate_face_id in candidate_face_ids:
+                            details = face_details_by_id.get(str(candidate_face_id), {})
+                            cand_frame = details.get('frame_number')
+                            cand_bbox = details.get('bbox')
+                            if _is_valid_frame_number(cand_frame) and _is_valid_bbox(cand_bbox):
+                                scored_candidates.append(
+                                    (
+                                        float(details.get('confidence') or 0.0),
+                                        candidate_face_id,
+                                        cand_frame,
+                                        cand_bbox,
+                                        details,
+                                    )
+                                )
+                        if scored_candidates:
+                            scored_candidates.sort(key=lambda item: item[0], reverse=True)
+                            (
+                                _conf,
+                                chosen_face_id,
+                                chosen_frame,
+                                chosen_bbox,
+                                chosen_details,
+                            ) = scored_candidates[0]
+                            frame_number = chosen_frame
+                            best_face_bbox = chosen_bbox
+                            best_face_id = chosen_face_id
+                            if person_obj.get('detect_frame_width') is None:
+                                person_obj['detect_frame_width'] = chosen_details.get('frame_width')
+                            if person_obj.get('detect_frame_height') is None:
+                                person_obj['detect_frame_height'] = chosen_details.get('frame_height')
+                            logger.info(
+                                "Recovered face metadata for person %s via face_ids fallback: "
+                                "face_id=%s frame=%s bbox=%s (scanned %d candidates)",
+                                person_obj.get('person_id'),
+                                chosen_face_id,
+                                chosen_frame,
+                                chosen_bbox,
+                                len(candidate_face_ids),
+                            )
+
                 if not _is_valid_frame_number(frame_number) or not _is_valid_bbox(best_face_bbox):
                     logger.warning(
                         f"Person object missing valid best_face_frame or bbox: {person_obj.get('person_id')}"

@@ -7,6 +7,9 @@ import '../core/api/api_client.dart';
 import '../core/models/collection_models.dart';
 import '../models/media_models.dart';
 import '../services/media_api_client.dart';
+import '../services/orchestrator_api_client.dart';
+import '../services/person_objects_api_client.dart';
+import '../providers/person_objects_provider.dart';
 import 'video_player_widget.dart';
 
 /// Media details dialog with comprehensive information and actions
@@ -29,6 +32,7 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
   List<MediaCollection> _collections = [];
   bool _isLoadingCollections = false;
   bool _isAddingToCollection = false;
+  bool _isComputing = false;
 
   @override
   void initState() {
@@ -276,47 +280,73 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
   }
 
   Widget _buildActionsTab() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Available Actions',
-          style: AppTextStyles.h5,
-        ),
-        const SizedBox(height: AppSpacing.md),
-        
-        // Full Screen Preview action
-        ListTile(
-          leading: const Icon(Icons.fullscreen, color: AppColors.primary),
-          title: const Text('Full Screen Preview'),
-          subtitle: const Text('View this media in full screen'),
-          onTap: _openFullScreenPreview,
-        ),
-        
-        // Download action
-        ListTile(
-          leading: const Icon(Icons.download, color: AppColors.primary),
-          title: const Text('Download'),
-          subtitle: const Text('Download this file to your device'),
-          onTap: _downloadMedia,
-        ),
-        
-        // Share action
-        ListTile(
-          leading: const Icon(Icons.share, color: AppColors.secondary),
-          title: const Text('Share'),
-          subtitle: const Text('Share this media item'),
-          onTap: _shareMedia,
-        ),
-        
-        // Delete action
-        ListTile(
-          leading: const Icon(Icons.delete, color: AppColors.error),
-          title: const Text('Delete'),
-          subtitle: const Text('Remove this media item'),
-          onTap: _deleteMedia,
-        ),
-      ],
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Available Actions',
+            style: AppTextStyles.h5,
+          ),
+          const SizedBox(height: AppSpacing.md),
+
+          // Compute action (video only): runs the continuous pipeline
+          // (face detection → person objects → MVRs) for this media.
+          if (widget.item.mediaType == MediaType.video)
+            ListTile(
+              leading: Icon(
+                Icons.bolt,
+                color: _isComputing ? AppColors.textSecondary : Colors.amber,
+              ),
+              title: const Text('Compute'),
+              subtitle: Text(
+                _isComputing
+                    ? 'Running pipeline...'
+                    : 'Run continuous pipeline (person objects + MVRs)',
+              ),
+              trailing: _isComputing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : null,
+              onTap: _isComputing ? null : _triggerCompute,
+            ),
+
+          // Full Screen Preview action
+          ListTile(
+            leading: const Icon(Icons.fullscreen, color: AppColors.primary),
+            title: const Text('Full Screen Preview'),
+            subtitle: const Text('View this media in full screen'),
+            onTap: _openFullScreenPreview,
+          ),
+
+          // Download action
+          ListTile(
+            leading: const Icon(Icons.download, color: AppColors.primary),
+            title: const Text('Download'),
+            subtitle: const Text('Download this file to your device'),
+            onTap: _downloadMedia,
+          ),
+
+          // Share action
+          ListTile(
+            leading: const Icon(Icons.share, color: AppColors.secondary),
+            title: const Text('Share'),
+            subtitle: const Text('Share this media item'),
+            onTap: _shareMedia,
+          ),
+
+          // Delete action
+          ListTile(
+            leading: const Icon(Icons.delete, color: AppColors.error),
+            title: const Text('Delete'),
+            subtitle: const Text('Remove this media item'),
+            onTap: _deleteMedia,
+          ),
+        ],
+      ),
     );
   }
 
@@ -803,6 +833,209 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
   void _shareMedia() {
     // TODO: Implement sharing functionality
     _showErrorSnackBar('Sharing functionality not yet implemented');
+  }
+
+  /// Run the continuous pipeline (face detection → person objects → MVRs)
+  /// for this media item.
+  ///
+  /// Behavior:
+  /// - No person objects + no MVRs → run the full pipeline silently.
+  /// - Person objects exist but no MVRs → run the pipeline (will refresh
+  ///   person objects and create MVRs).
+  /// - Both exist → ask the user to confirm a recompute, then run the
+  ///   pipeline (will update both person objects and MVRs).
+  Future<void> _triggerCompute() async {
+    if (_isComputing) return;
+    setState(() => _isComputing = true);
+
+    try {
+      final mediaUuid = widget.item.uuid;
+      final orchestratorApiClient = ref.read(orchestratorApiClientProvider);
+      final personObjectsApiClient = ref.read(personObjectsApiClientProvider);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Compute: checking pipeline state...'),
+          backgroundColor: Colors.amber,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // 1. Check current pipeline state.
+      final hasPersonObjects =
+          await personObjectsApiClient.hasPersonObjectsForMedia(mediaUuid);
+      final mvrResponse = await _mediaApiClient
+          .getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
+
+      int mvrCount = 0;
+      if (mvrResponse.success) {
+        mvrCount = (mvrResponse.data?['count'] as num?)?.toInt() ?? 0;
+      }
+      final bool hasMvrs = mvrCount > 0;
+
+      if (!mounted) return;
+
+      String runMessage;
+      if (!hasPersonObjects && !hasMvrs) {
+        runMessage = 'Compute: nothing computed yet — running full pipeline';
+      } else if (hasPersonObjects && !hasMvrs) {
+        runMessage =
+            'Compute: person objects exist — running pipeline to create MVRs';
+      } else if (!hasPersonObjects && hasMvrs) {
+        runMessage =
+            'Compute: MVRs without person objects — re-running pipeline';
+      } else {
+        // Both exist → ask the user to confirm a recompute.
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) {
+            return AlertDialog(
+              title: const Text('Recompute video?'),
+              content: Text(
+                'This video already has $mvrCount MVR person'
+                '${mvrCount == 1 ? '' : 's'} and persisted person objects.\n\n'
+                'Recomputing will refresh person objects and update the '
+                'existing MVRs. Continue?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  child: const Text('Recompute'),
+                ),
+              ],
+            );
+          },
+        );
+
+        if (confirmed != true || !mounted) {
+          return;
+        }
+        runMessage =
+            'Compute: recomputing video — updating person objects and MVRs';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(runMessage),
+          backgroundColor: Colors.amber,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      // 2. Run the continuous pipeline.
+      // Enhanced Logic V2 always re-runs the person-objects workflow and
+      // re-materializes MVRs, regardless of whether stored faces already
+      // exist.
+      final response =
+          await orchestratorApiClient.getEnhancedLogicV2Response(mediaUuid);
+
+      if (!mounted) return;
+
+      if (response.isSuccess) {
+        final facesProcessed = response.data?.totalFaces ?? 0;
+        int mvrPeopleCreated = 0;
+
+        // Verify MVRs were created. If the orchestrator's STEP 1.7 was
+        // skipped (e.g. because the person-objects workflow returned an
+        // empty list when objects already exist), explicitly materialize
+        // MVRs from the persisted person objects.
+        final postMvrResponse = await _mediaApiClient
+            .getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
+        int postMvrCount = 0;
+        if (postMvrResponse.success) {
+          postMvrCount =
+              (postMvrResponse.data?['count'] as num?)?.toInt() ?? 0;
+        }
+
+        if (postMvrCount == 0) {
+          final personObjectsData =
+              await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
+          final persisted =
+              personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
+          if (persisted.isNotEmpty) {
+            debugPrint(
+              '🔁 Compute: MVRs missing after pipeline — explicitly '
+              'materializing ${persisted.length} persisted person objects',
+            );
+            final materializeResponse =
+                await _mediaApiClient.materializePersistedPersonObjects(
+              mediaUuid: mediaUuid,
+              personObjects: persisted,
+              sessionUuid: response.data?.sessionUuid,
+              mediaType: 'video',
+            );
+            if (!materializeResponse.success) {
+              _showErrorSnackBar(
+                'Compute: pipeline OK but MVR materialization failed: '
+                '${materializeResponse.error ?? 'unknown error'}',
+              );
+              return;
+            }
+
+            mvrPeopleCreated =
+                (materializeResponse.data?['mvr_people_count'] as num?)
+                        ?.toInt() ??
+                    0;
+            // If the backend reports it skipped because existing MVRs were
+            // already linked to this video, do not advertise those as
+            // "created" by this run.
+            final materializeStatus =
+                materializeResponse.data?['status'] as String?;
+            if (materializeStatus == 'skipped_existing') {
+              mvrPeopleCreated = 0;
+            }
+            debugPrint(
+              '🧱 Compute: materialize response mvr_people_count='
+              '$mvrPeopleCreated status=$materializeStatus',
+            );
+
+            // Re-confirm via count endpoint (helps catch race conditions
+            // where the response is returned before commit visibility).
+            final reCountResponse = await _mediaApiClient
+                .getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
+            if (reCountResponse.success) {
+              postMvrCount =
+                  (reCountResponse.data?['count'] as num?)?.toInt() ?? 0;
+              debugPrint(
+                '🧱 Compute: post-materialize count=$postMvrCount',
+              );
+            }
+          }
+        } else {
+          mvrPeopleCreated = postMvrCount;
+        }
+
+        if (postMvrCount > 0 || mvrPeopleCreated > 0) {
+          _showSuccessSnackBar(
+            'Compute complete: $postMvrCount MVR person'
+            '${postMvrCount == 1 ? '' : 's'} linked to this video '
+            '($facesProcessed face${facesProcessed == 1 ? '' : 's'} processed)',
+          );
+        } else {
+          _showErrorSnackBar(
+            'Compute: pipeline ran ($facesProcessed face'
+            '${facesProcessed == 1 ? '' : 's'}) but no MVR people were '
+            'created. Check vmeta logs for materialization errors.',
+          );
+        }
+      } else {
+        _showErrorSnackBar(
+          'Compute failed: ${response.error?.message ?? 'unknown error'}',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar('Compute failed: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isComputing = false);
+      }
+    }
   }
 
   Future<void> _deleteMedia() async {

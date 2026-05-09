@@ -572,6 +572,39 @@ class MVRImageManager:
                                     face_details_by_id,
                                 )
                             )
+                        else:
+                            # Fallback for appearances persisted with synthetic
+                            # person_uuid AND empty representative_faces (a
+                            # legacy materialization path). Without this we
+                            # would emit zero candidates and the MVR would
+                            # render the generic person icon. Use whatever
+                            # representative_faces the orchestrator has for
+                            # this video so the user at least sees a face.
+                            logger.info(
+                                "MVR appearance %s in video %s has no rep_faces "
+                                "and no group match; using all video person_groups "
+                                "as fallback candidates",
+                                appearance.get('person_object_uuid'),
+                                video_uuid[:8],
+                            )
+                            for fallback_group in person_groups:
+                                fallback_rep_faces = fallback_group.get(
+                                    'representative_faces', []
+                                )
+                                if not self._representative_faces_have_face_data(
+                                    fallback_rep_faces
+                                ):
+                                    continue
+                                faces.extend(
+                                    self._build_face_candidates(
+                                        video_uuid,
+                                        appearance,
+                                        fallback_rep_faces,
+                                        fallback_group.get('person_uuid'),
+                                        fallback_group,
+                                        face_details_by_id,
+                                    )
+                                )
                         continue
 
                     representative_faces = matched_group.get('representative_faces', [])

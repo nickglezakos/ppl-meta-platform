@@ -18,6 +18,7 @@ import '../providers/face_memory_manager.dart';
 import '../widgets/face_and_person_count_widget.dart';
 // Phase 6: Person Objects Integration
 import '../providers/person_objects_provider.dart';
+import '../services/orchestrator_api_client.dart';
 import '../widgets/person_objects_components.dart';
 import 'person_objects_detail_screen.dart';
 import '../core/providers/features_providers.dart';
@@ -47,6 +48,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   bool _isLoadingMedia = false;
   String? _mediaLoadError;
   bool _isPreparingMvrPreview = false;
+  bool _isComputing = false;
   List<Map<String, dynamic>> _previewMvrPeople = const [];
   List<media_api.FaceDetection> _previewMvrFaces = const [];
   CrossVideoAnalysisContext? _previewAnalysisContext;
@@ -1820,6 +1822,25 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         }
       },
       actions: [
+        // Compute action: re-runs continuous pipeline + MVR materialization
+        // for this video, then refreshes the preview so the Details button
+        // appears once MVR data is available. Hidden for non-video media.
+        if (widget.mediaItem.mediaType == MediaType.video)
+          IconButton(
+            icon: _isComputing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.amber),
+                    ),
+                  )
+                : const Icon(Icons.bolt, color: Colors.amber),
+            onPressed: _isComputing ? null : _triggerComputeFromPreview,
+            tooltip: 'Compute: run pipeline & create/update MVRs',
+          ),
         // Gallery button
         IconButton(
           icon: const Icon(Icons.photo_library),
@@ -1828,6 +1849,208 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         ),
       ],
     );
+  }
+
+  /// Run the continuous pipeline + MVR materialization for the current video
+  /// and refresh the preview MVR data so the Details button appears.
+  ///
+  /// Mirrors `MediaDetailsDialog._triggerCompute` but is invoked directly from
+  /// the preview app bar so the user does not have to leave this screen and
+  /// can immediately see the resulting Details button without re-navigation.
+  Future<void> _triggerComputeFromPreview() async {
+    if (_isComputing || !mounted) return;
+    setState(() => _isComputing = true);
+
+    final messenger = ScaffoldMessenger.of(context);
+    final mediaUuid = widget.mediaItem.uuid;
+    final mediaApiClient = ref.read(mediaApiClientProvider);
+    final orchestratorApiClient = ref.read(orchestratorApiClientProvider);
+    final personObjectsApiClient = ref.read(personObjectsApiClientProvider);
+
+    try {
+      // 1. Probe pipeline state.
+      final hasPersonObjects =
+          await personObjectsApiClient.hasPersonObjectsForMedia(mediaUuid);
+      final mvrResponse = await mediaApiClient
+          .getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
+      int mvrCount = 0;
+      if (mvrResponse.success) {
+        mvrCount = (mvrResponse.data?['count'] as num?)?.toInt() ?? 0;
+      }
+      final bool hasMvrs = mvrCount > 0;
+
+      if (!mounted) return;
+
+      String runMessage;
+      if (!hasPersonObjects && !hasMvrs) {
+        runMessage = 'Compute: nothing computed yet — running full pipeline';
+      } else if (hasPersonObjects && !hasMvrs) {
+        runMessage =
+            'Compute: person objects exist — running pipeline to create MVRs';
+      } else if (!hasPersonObjects && hasMvrs) {
+        runMessage =
+            'Compute: MVRs without person objects — re-running pipeline';
+      } else {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Recompute video?'),
+            content: Text(
+              'This video already has $mvrCount MVR person'
+              '${mvrCount == 1 ? '' : 's'} and persisted person objects.\n\n'
+              'Recomputing will refresh person objects and update the '
+              'existing MVRs. Continue?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Recompute'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) {
+          return;
+        }
+        runMessage =
+            'Compute: recomputing video — updating person objects and MVRs';
+      }
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(runMessage),
+          backgroundColor: Colors.amber,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      // 2. Run continuous pipeline.
+      final response =
+          await orchestratorApiClient.getEnhancedLogicV2Response(mediaUuid);
+
+      if (!mounted) return;
+
+      if (!response.isSuccess) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Compute failed: ${response.error?.message ?? 'unknown error'}',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final facesProcessed = response.data?.totalFaces ?? 0;
+      int mvrPeopleCreated = 0;
+
+      // 3. Verify MVRs; fall back to explicit materialization if pipeline
+      // skipped STEP 1.7 (e.g. when person objects already exist).
+      final postMvrResponse = await mediaApiClient
+          .getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
+      int postMvrCount = 0;
+      if (postMvrResponse.success) {
+        postMvrCount =
+            (postMvrResponse.data?['count'] as num?)?.toInt() ?? 0;
+      }
+
+      if (postMvrCount == 0) {
+        final personObjectsData = await personObjectsApiClient
+            .getPersonObjectsForMedia(mediaUuid);
+        final persisted = personObjectsData?.rawPersonGroups ??
+            const <Map<String, dynamic>>[];
+        if (persisted.isNotEmpty) {
+          final materializeResponse =
+              await mediaApiClient.materializePersistedPersonObjects(
+            mediaUuid: mediaUuid,
+            personObjects: persisted,
+            sessionUuid: response.data?.sessionUuid,
+            mediaType: 'video',
+          );
+          if (!materializeResponse.success) {
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Compute: pipeline OK but MVR materialization failed: '
+                  '${materializeResponse.error ?? 'unknown error'}',
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+            return;
+          }
+          mvrPeopleCreated =
+              (materializeResponse.data?['mvr_people_count'] as num?)
+                      ?.toInt() ??
+                  0;
+          // If the backend reports it skipped because existing MVRs were
+          // already linked to this video, do not advertise those as
+          // "created" by this run.
+          final materializeStatus =
+              materializeResponse.data?['status'] as String?;
+          if (materializeStatus == 'skipped_existing') {
+            mvrPeopleCreated = 0;
+          }
+          final reCount = await mediaApiClient
+              .getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
+          if (reCount.success) {
+            postMvrCount =
+                (reCount.data?['count'] as num?)?.toInt() ?? 0;
+          }
+        }
+      } else {
+        mvrPeopleCreated = postMvrCount;
+      }
+
+      if (!mounted) return;
+
+      if (postMvrCount > 0 || mvrPeopleCreated > 0) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Compute complete: $postMvrCount MVR person'
+              '${postMvrCount == 1 ? '' : 's'} linked to this video '
+              '($facesProcessed face${facesProcessed == 1 ? '' : 's'} processed)',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Compute: pipeline ran ($facesProcessed face'
+              '${facesProcessed == 1 ? '' : 's'}) but no MVR people were '
+              'created. Check vmeta logs.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      // 4. Refresh preview MVR data so the Details button appears without a
+      // manual page reload.
+      await _preparePreviewMvrData();
+    } catch (e) {
+      debugPrint('❌ Preview compute failed: $e');
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Compute failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isComputing = false);
+      }
+    }
   }
 
   /// Build performance status bar showing key metrics
