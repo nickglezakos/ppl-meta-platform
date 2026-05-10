@@ -66,6 +66,20 @@ class InstantDetectionPersistResponse(BaseModel):
     appearances_created: int = 0
 
 
+class InstantDetectionPersistBatchRequest(BaseModel):
+    items: List[InstantDetectionPersistRequest] = Field(default_factory=list)
+
+
+class InstantDetectionPersistBatchResponse(BaseModel):
+    success: bool = True
+    cycles_flushed: int = 0
+    stored_individuals: int = 0
+    new_individuals_created: int = 0
+    existing_individuals_updated: int = 0
+    mvr_records_promoted: int = 0
+    appearances_created: int = 0
+
+
 class TrackingSessionCreateRequest(BaseModel):
     session_uuid: str
     camera_id: str
@@ -91,6 +105,7 @@ async def create_instant_detection_session(
     current_user: dict = Depends(get_current_user),
 ):
     """Create a tracking session for an instant detection run."""
+    requester = current_user.get("email") or current_user.get("service_name") or "unknown"
     try:
         pool = mvr_service.repository.pool
         async with pool.acquire() as conn:
@@ -136,11 +151,16 @@ async def create_instant_detection_session(
             session_uuid=request.session_uuid,
         )
     except Exception as e:
-        logger.error(f"Failed to create instant detection session: {e}", exc_info=True)
+        logger.error(
+            "Failed to create instant detection session for %s: %s",
+            requester,
+            e,
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create session: {e}",
-        )
+        ) from e
 
 
 @router.post(
@@ -152,6 +172,7 @@ async def complete_instant_detection_session(
     current_user: dict = Depends(get_current_user),
 ):
     """Mark a tracking session as completed."""
+    requester = current_user.get("email") or current_user.get("service_name") or "unknown"
     try:
         pool = mvr_service.repository.pool
         async with pool.acquire() as conn:
@@ -171,11 +192,17 @@ async def complete_instant_detection_session(
 
         return {"success": True, "session_uuid": session_uuid}
     except Exception as e:
-        logger.error(f"Failed to complete session {session_uuid}: {e}", exc_info=True)
+        logger.error(
+            "Failed to complete session %s for %s: %s",
+            session_uuid,
+            requester,
+            e,
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to complete session: {e}",
-        )
+        ) from e
 
 
 @router.post(
@@ -198,178 +225,220 @@ async def persist_instant_detection(
       5. Increments session metrics.
     """
     pool = mvr_service.repository.pool
-
-    new_created = 0
-    existing_updated = 0
-    promoted = 0
-    appearances = 0
-
-    session_id = _uuid.UUID(request.session_uuid)
-
-    try:
-        cycle_ts = datetime.fromisoformat(
-            request.cycle_timestamp.replace("Z", "+00:00")
-        ).replace(tzinfo=None)
-    except Exception:
-        cycle_ts = datetime.utcnow()
-
-    # Deterministic synthetic video UUID per cycle
-    synthetic_video_uuid = _uuid.uuid5(
-        _uuid.NAMESPACE_URL,
-        f"instant-detection:{request.camera_id}:{request.cycle_timestamp}",
-    )
-
+    requester = current_user.get("email") or current_user.get("service_name") or "unknown"
     try:
         async with pool.acquire() as conn:
             async with conn.transaction():
-                for po in request.person_objects:
-                    individual_uuid: Optional[_uuid.UUID] = None
-                    is_new = False
-
-                    mvr_uuid = (
-                        _uuid.UUID(po.mvr_person_uuid)
-                        if po.mvr_person_uuid
-                        else None
-                    )
-
-                    # --- Resolve or create Individual ---
-                    if mvr_uuid:
-                        if po.mvr_created_new:
-                            # New MVR was just created — create a new Individual
-                            individual_uuid = await _create_individual(
-                                conn, session_id, po, cycle_ts
-                            )
-                            is_new = True
-
-                            # Link Individual ↔ MVR
-                            await _create_mvr_mapping(
-                                conn, individual_uuid, mvr_uuid, po.avg_confidence
-                            )
-
-                            # Promote MVR: set featured_individual, clear isolated flag
-                            await _promote_mvr(conn, mvr_uuid, individual_uuid)
-                            promoted += 1
-                        else:
-                            # Matched an existing MVR — try to reuse its Individual
-                            row = await conn.fetchrow(
-                                """
-                                SELECT featured_individual_uuid
-                                FROM mvr_people
-                                WHERE mvr_people_uuid = $1
-                                """,
-                                mvr_uuid,
-                            )
-                            featured = row["featured_individual_uuid"] if row else None
-
-                            if featured:
-                                individual_uuid = featured
-                                # Update stats on existing individual
-                                await conn.execute(
-                                    """
-                                    UPDATE individuals
-                                    SET total_appearances = COALESCE(total_appearances, 0) + 1,
-                                        last_seen = $1,
-                                        updated_at = $1
-                                    WHERE individual_uuid = $2
-                                    """,
-                                    cycle_ts,
-                                    individual_uuid,
-                                )
-                                existing_updated += 1
-                            else:
-                                # Legacy isolated MVR with no individual — backfill
-                                individual_uuid = await _create_individual(
-                                    conn, session_id, po, cycle_ts
-                                )
-                                is_new = True
-                                await _create_mvr_mapping(
-                                    conn, individual_uuid, mvr_uuid, po.avg_confidence
-                                )
-                                await _promote_mvr(conn, mvr_uuid, individual_uuid)
-                                promoted += 1
-                    else:
-                        # No MVR identity — create unlinked Individual
-                        individual_uuid = await _create_individual(
-                            conn, session_id, po, cycle_ts
-                        )
-                        is_new = True
-
-                    if is_new:
-                        new_created += 1
-
-                    # --- Create appearance record ---
-                    representative_faces = None
-                    if po.best_face:
-                        representative_faces = json.dumps(
-                            [{"bbox": po.best_face.bbox, "confidence": po.best_face.confidence}]
-                        )
-
-                    await conn.execute(
-                        """
-                        INSERT INTO individual_video_appearances (
-                            individual_uuid, video_uuid, person_object_uuid,
-                            start_timestamp, end_timestamp,
-                            confidence, quality_score,
-                            processing_method, source_session_uuid,
-                            representative_faces, created_at
-                        ) VALUES (
-                            $1, $2, $3,
-                            $4, $5,
-                            $6, $7,
-                            $8, $9,
-                            $10, $11
-                        )
-                        ON CONFLICT (individual_uuid, video_uuid, person_object_uuid)
-                        DO NOTHING
-                        """,
-                        individual_uuid,
-                        synthetic_video_uuid,
-                        _uuid.UUID(po.person_object_uuid),
-                        cycle_ts,
-                        cycle_ts,
-                        po.avg_confidence,
-                        po.avg_confidence,
-                        "instant_detection",
-                        session_id,
-                        representative_faces,
-                        cycle_ts,
-                    )
-                    appearances += 1
-
-                # Update session metrics
-                total_stored = new_created + existing_updated
-                await conn.execute(
-                    """
-                    UPDATE tracking_sessions
-                    SET individuals_found = COALESCE(individuals_found, 0) + $1,
-                        person_objects_processed = COALESCE(person_objects_processed, 0) + $2,
-                        completed_at = $3
-                    WHERE session_uuid = $4
-                    """,
-                    total_stored,
-                    len(request.person_objects),
-                    cycle_ts,
-                    session_id,
-                )
+                counts = await _persist_requests(conn, [request])
 
         return InstantDetectionPersistResponse(
             success=True,
-            stored_individuals=new_created + existing_updated,
-            new_individuals_created=new_created,
-            existing_individuals_updated=existing_updated,
-            mvr_records_promoted=promoted,
-            appearances_created=appearances,
+            stored_individuals=counts["stored_individuals"],
+            new_individuals_created=counts["new_individuals_created"],
+            existing_individuals_updated=counts["existing_individuals_updated"],
+            mvr_records_promoted=counts["mvr_records_promoted"],
+            appearances_created=counts["appearances_created"],
         )
 
     except Exception as e:
-        logger.error(f"Failed to persist instant detection results: {e}", exc_info=True)
+        logger.error(
+            "Failed to persist instant detection results for %s: %s",
+            requester,
+            e,
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Persistence failed: {e}",
+        ) from e
+
+
+@router.post(
+    "/instant-detection/persist-batch",
+    response_model=InstantDetectionPersistBatchResponse,
+)
+async def persist_instant_detection_batch(
+    request: InstantDetectionPersistBatchRequest,
+    mvr_service: MVRService = Depends(get_mvr_service),
+    current_user: dict = Depends(get_current_user),
+):
+    requester = current_user.get("email") or current_user.get("service_name") or "unknown"
+    if not request.items:
+        return InstantDetectionPersistBatchResponse(success=True, cycles_flushed=0)
+
+    pool = mvr_service.repository.pool
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                counts = await _persist_requests(conn, request.items)
+
+        return InstantDetectionPersistBatchResponse(
+            success=True,
+            cycles_flushed=len(request.items),
+            stored_individuals=counts["stored_individuals"],
+            new_individuals_created=counts["new_individuals_created"],
+            existing_individuals_updated=counts["existing_individuals_updated"],
+            mvr_records_promoted=counts["mvr_records_promoted"],
+            appearances_created=counts["appearances_created"],
         )
+    except Exception as e:
+        logger.error(
+            "Failed to persist instant detection batch for %s: %s",
+            requester,
+            e,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch persistence failed: {e}",
+        ) from e
 
 
 # ---------- Internal helpers ----------
+
+
+async def _persist_requests(conn, requests: List[InstantDetectionPersistRequest]) -> Dict[str, int]:
+    total_new_created = 0
+    total_existing_updated = 0
+    total_promoted = 0
+    total_appearances = 0
+
+    for request in requests:
+        session_id = _uuid.UUID(request.session_uuid)
+
+        try:
+            cycle_ts = datetime.fromisoformat(
+                request.cycle_timestamp.replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+        except ValueError:
+            cycle_ts = datetime.utcnow()
+
+        synthetic_video_uuid = _uuid.uuid5(
+            _uuid.NAMESPACE_URL,
+            f"instant-detection:{request.camera_id}:{request.cycle_timestamp}",
+        )
+
+        new_created = 0
+        existing_updated = 0
+        promoted = 0
+        appearances = 0
+
+        for po in request.person_objects:
+            individual_uuid: Optional[_uuid.UUID] = None
+            is_new = False
+
+            mvr_uuid = _uuid.UUID(po.mvr_person_uuid) if po.mvr_person_uuid else None
+
+            if mvr_uuid:
+                if po.mvr_created_new:
+                    individual_uuid = await _create_individual(conn, session_id, po, cycle_ts)
+                    is_new = True
+                    await _create_mvr_mapping(conn, individual_uuid, mvr_uuid, po.avg_confidence)
+                    await _promote_mvr(conn, mvr_uuid, individual_uuid)
+                    promoted += 1
+                else:
+                    row = await conn.fetchrow(
+                        """
+                        SELECT featured_individual_uuid
+                        FROM mvr_people
+                        WHERE mvr_people_uuid = $1
+                        """,
+                        mvr_uuid,
+                    )
+                    featured = row["featured_individual_uuid"] if row else None
+
+                    if featured:
+                        individual_uuid = featured
+                        await conn.execute(
+                            """
+                            UPDATE individuals
+                            SET total_appearances = COALESCE(total_appearances, 0) + 1,
+                                last_seen = $1,
+                                updated_at = $1
+                            WHERE individual_uuid = $2
+                            """,
+                            cycle_ts,
+                            individual_uuid,
+                        )
+                        existing_updated += 1
+                    else:
+                        individual_uuid = await _create_individual(conn, session_id, po, cycle_ts)
+                        is_new = True
+                        await _create_mvr_mapping(conn, individual_uuid, mvr_uuid, po.avg_confidence)
+                        await _promote_mvr(conn, mvr_uuid, individual_uuid)
+                        promoted += 1
+            else:
+                individual_uuid = await _create_individual(conn, session_id, po, cycle_ts)
+                is_new = True
+
+            if is_new:
+                new_created += 1
+
+            representative_faces = None
+            if po.best_face:
+                representative_faces = json.dumps(
+                    [{"bbox": po.best_face.bbox, "confidence": po.best_face.confidence}]
+                )
+
+            await conn.execute(
+                """
+                INSERT INTO individual_video_appearances (
+                    individual_uuid, video_uuid, person_object_uuid,
+                    start_timestamp, end_timestamp,
+                    confidence, quality_score,
+                    processing_method, source_session_uuid,
+                    representative_faces, created_at
+                ) VALUES (
+                    $1, $2, $3,
+                    $4, $5,
+                    $6, $7,
+                    $8, $9,
+                    $10, $11
+                )
+                ON CONFLICT (individual_uuid, video_uuid, person_object_uuid)
+                DO NOTHING
+                """,
+                individual_uuid,
+                synthetic_video_uuid,
+                _uuid.UUID(po.person_object_uuid),
+                cycle_ts,
+                cycle_ts,
+                po.avg_confidence,
+                po.avg_confidence,
+                "instant_detection",
+                session_id,
+                representative_faces,
+                cycle_ts,
+            )
+            appearances += 1
+
+        total_stored = new_created + existing_updated
+        await conn.execute(
+            """
+            UPDATE tracking_sessions
+            SET individuals_found = COALESCE(individuals_found, 0) + $1,
+                person_objects_processed = COALESCE(person_objects_processed, 0) + $2,
+                completed_at = $3
+            WHERE session_uuid = $4
+            """,
+            total_stored,
+            len(request.person_objects),
+            cycle_ts,
+            session_id,
+        )
+
+        total_new_created += new_created
+        total_existing_updated += existing_updated
+        total_promoted += promoted
+        total_appearances += appearances
+
+    return {
+        "stored_individuals": total_new_created + total_existing_updated,
+        "new_individuals_created": total_new_created,
+        "existing_individuals_updated": total_existing_updated,
+        "mvr_records_promoted": total_promoted,
+        "appearances_created": total_appearances,
+    }
 
 
 async def _create_individual(

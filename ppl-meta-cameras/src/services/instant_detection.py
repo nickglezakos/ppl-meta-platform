@@ -752,6 +752,10 @@ class InstantDetectionSampler:
                     person_faces,
                     key=lambda f: f.get("confidence", 0.0)
                 )
+                person["best_face"] = {
+                    "bbox": best_face.get("bbox", [0, 0, 0, 0]),
+                    "confidence": best_face.get("confidence", 0.0),
+                }
                 
                 # Get the frame for this face
                 frame_index_from_vision = best_face.get("frame_index", 0)

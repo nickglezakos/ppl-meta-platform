@@ -37,43 +37,47 @@ Office 365 emails for everyone
 
 
 
-
 *** Deployment tasks
 
 Instant detection analytics
 Instant detection possible merging (inlcuding "intale" automerging tasks)
-
-RUser roles (and startup)
-
 Proposal for instant detection counters based on storage statistics (not embeddings).
-Propoasl for instant detection counters with a new option at settings to store embeddings.
+Propoasal for instant detection counters with a new option at settings to store embeddings.
 
+User roles (and startup)
+
+Testing
 
 Wifi TAPO camera check local, mobile wifi.
-
 Teams action type setup and testing
 Multiple digital signage scenarios testing
   More than one triggers
   More than one digital signage devices
   Marketing user account
+
 Alpha test the local storage options and possible extent the local storage module
-Clarify the analytics module / screen.
+
 Edge camera test and upgrades (inlcuding possible auto network discovery) until stable with a USB camera on the RPI.
+
+Headscale scenario.
+
+Headscale implementation using Hetzner
+  Verify Hetzner status
+  ppl-meta online software licences
+  ppl-meta online operation services
+  ppl-meta-online website embedding of operations
+  Users onborading (access to ppl-meta VPN)
+  Users verification
+  Users access rights / capabilities
+  Intallation uuid (check if this is the application key)
+
+
+Cleanups
+
 APKs UX cleanup
 APKs branding including logos and thumbnails
 Front end and APKs UI cleanup
-Headscale scenario.
 
-Verify Hetzner status
-Headscale implementation using Hetzner
-  This should include the way to provide support
-ppl-meta online software licences
-ppl-meta online operation services
-ppl-meta-online website embedding of operations
-Users onborading (access to ppl-meta VPN)
-Users verification
-Users acceess rights / capabilities
-Intallation uuid (check if this is the application key)
 Clean up documentation documents and ignore their directory at build.
 
 Finalise the products
@@ -85,7 +89,6 @@ Upgrade documentation
   Eyenet short broshure
   Eyenet online tutorial
   
-
 
 
 *************************************************

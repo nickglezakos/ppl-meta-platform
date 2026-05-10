@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:excel/excel.dart' as excel;
 import 'package:path_provider/path_provider.dart';
@@ -25,6 +26,8 @@ class AnalyticsScreen extends ConsumerStatefulWidget {
 }
 
 class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
+  static const String _dataSourcePreferenceKey = 'analytics_data_source';
+
   // Filter state
   String _timeFilter = 'today'; // today, last_hour, last_3_hours, last_week, last_month, custom
   List<String> _selectedCollectionIds = []; // empty = all collections
@@ -126,7 +129,28 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAnalytics();
+    _restorePreferencesAndLoadAnalytics();
+  }
+
+  Future<void> _restorePreferencesAndLoadAnalytics() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedDataSource = prefs.getString(_dataSourcePreferenceKey);
+    if (!mounted) {
+      return;
+    }
+
+    if (storedDataSource == 'instant_detection' || storedDataSource == 'recording') {
+      setState(() {
+        _dataSource = storedDataSource!;
+      });
+    }
+
+    await _loadAnalytics();
+  }
+
+  Future<void> _persistDataSourcePreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_dataSourcePreferenceKey, _dataSource);
   }
 
   Future<void> _loadAnalytics() async {
@@ -2034,6 +2058,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
         _startDate = result['startDate'] as DateTime?;
         _endDate = result['endDate'] as DateTime?;
       });
+      await _persistDataSourcePreference();
       await _loadAnalytics();
     }
   }

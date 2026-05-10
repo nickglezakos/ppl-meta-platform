@@ -1701,6 +1701,12 @@ async def stop_instant_detection(request: Request):
     return await _proxy_to_cameras_service(request)
 
 
+@api_router.get("/instant-detection/approx-people")
+async def get_instant_detection_approx_people(request: Request):
+    """Proxy approximate instant-detection people analytics to VMeta service."""
+    return await _proxy_to_vmeta_service(request)
+
+
 async def _proxy_to_orchestrator_service(request: Request) -> Response:
     """Helper function to proxy requests to the Orchestrator service."""
     try:

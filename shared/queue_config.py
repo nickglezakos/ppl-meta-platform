@@ -38,6 +38,8 @@ celery_app.conf.update(
         "trigger_ppl_thread": {"queue": "ppl_thread_queue"},
         "monitor_face_detection": {"queue": "monitoring_queue"},
         "instant_detection.process_frames": {"queue": "instant_detection_queue"},
+        "instant_detection.persist_results": {"queue": "instant_detection_queue"},
+        "instant_detection.flush_persist_batch": {"queue": "instant_detection_queue"},
     },
     # Task retry configuration
     task_acks_late=True,

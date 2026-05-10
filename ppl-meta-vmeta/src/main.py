@@ -497,6 +497,20 @@ except ImportError as e:
 except Exception as e:
     logger.error(f"❌ Error adding Instant Detection Storage API router: {e}")
 
+# Add Instant Detection Analytics API router
+try:
+    from api.v1.instant_detection_analytics import router as instant_detection_analytics_router
+    app.include_router(
+        instant_detection_analytics_router,
+        prefix="/api/v1",
+        tags=["instant-detection-analytics"]
+    )
+    logger.info("✅ Instant Detection Analytics API router added successfully")
+except ImportError as e:
+    logger.warning(f"⚠️ Instant Detection Analytics API router not available: {e}")
+except Exception as e:
+    logger.error(f"❌ Error adding Instant Detection Analytics API router: {e}")
+
 # Add Tracking Sessions Summary API router
 try:
     from api.v1.tracking_sessions_summary import router as tracking_sessions_summary_router

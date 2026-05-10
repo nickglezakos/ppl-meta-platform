@@ -6,7 +6,7 @@ Runs detection in background workers to avoid blocking the main FastAPI service
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 from uuid import UUID
 
@@ -20,6 +20,83 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from shared.queue_config import celery_app, redis_client
 
 logger = logging.getLogger(__name__)
+
+
+INSTANT_DETECTION_BATCH_FLUSH_COUNT = int(
+    os.getenv("INSTANT_DETECTION_BATCH_FLUSH_COUNT", "10")
+)
+INSTANT_DETECTION_BATCH_FLUSH_SECONDS = int(
+    os.getenv("INSTANT_DETECTION_BATCH_FLUSH_SECONDS", "30")
+)
+
+
+def _batch_queue_key(camera_id: str) -> str:
+    return f"instant_detection_batch:{camera_id}"
+
+
+def _batch_oldest_key(camera_id: str) -> str:
+    return f"{_batch_queue_key(camera_id)}:oldest_ts"
+
+
+def _batch_lock_key(camera_id: str) -> str:
+    return f"{_batch_queue_key(camera_id)}:flush_lock"
+
+
+def _queue_batch_item(camera_id: str, payload: Dict[str, Any]) -> int:
+    queue_key = _batch_queue_key(camera_id)
+    oldest_key = _batch_oldest_key(camera_id)
+    pipe = redis_client.pipeline()
+    pipe.rpush(queue_key, json.dumps(payload))
+    pipe.setnx(oldest_key, payload["cycle_timestamp"])
+    result = pipe.execute()
+    return int(result[0])
+
+
+def _should_flush_batch(camera_id: str) -> bool:
+    queue_key = _batch_queue_key(camera_id)
+    oldest_key = _batch_oldest_key(camera_id)
+    queue_length = redis_client.llen(queue_key)
+    if queue_length >= INSTANT_DETECTION_BATCH_FLUSH_COUNT:
+        return True
+
+    oldest_ts = redis_client.get(oldest_key)
+    if not oldest_ts:
+        return False
+
+    try:
+        oldest_dt = datetime.fromisoformat(oldest_ts.replace("Z", "+00:00"))
+        if oldest_dt.tzinfo is None:
+            oldest_dt = oldest_dt.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - oldest_dt).total_seconds()
+        return age_seconds >= INSTANT_DETECTION_BATCH_FLUSH_SECONDS
+    except ValueError:
+        return True
+
+
+def _load_batch_items(camera_id: str, limit: int) -> List[Dict[str, Any]]:
+    raw_items = redis_client.lrange(_batch_queue_key(camera_id), 0, limit - 1)
+    items: List[Dict[str, Any]] = []
+    for raw_item in raw_items:
+        try:
+            items.append(json.loads(raw_item))
+        except json.JSONDecodeError:
+            logger.warning("⚠️ [CELERY] Skipping malformed instant batch item for %s", camera_id)
+    return items
+
+
+def _trim_batch_items(camera_id: str, count: int) -> None:
+    queue_key = _batch_queue_key(camera_id)
+    oldest_key = _batch_oldest_key(camera_id)
+    redis_client.ltrim(queue_key, count, -1)
+    next_item = redis_client.lindex(queue_key, 0)
+    if next_item:
+        try:
+            parsed = json.loads(next_item)
+            redis_client.set(oldest_key, parsed.get("cycle_timestamp", datetime.utcnow().isoformat() + "Z"))
+        except json.JSONDecodeError:
+            redis_client.delete(oldest_key)
+    else:
+        redis_client.delete(oldest_key)
 
 
 def _extract_source_identity_uuids(person_objects: List[Dict[str, Any]]) -> List[str]:
@@ -254,48 +331,121 @@ def persist_instant_detection_results(
     Called asynchronously after the main detection result has been
     cached and broadcast.  Never blocks the detection loop.
     """
-    import requests as http_requests
-    import jwt as _jwt
-    from datetime import datetime, timedelta
-
-    vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
-    endpoint = f"{vmeta_url}/api/v1/instant-detection/persist"
-
     payload = {
         "session_uuid": session_uuid,
         "camera_id": camera_id,
         "cycle_timestamp": cycle_timestamp,
         "person_objects": person_objects,
         "demographics": demographics,
+        "auth_token": auth_token,
     }
 
-    # Always generate a fresh service token to avoid expiry issues
-    node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
-    fresh_token = _jwt.encode(
-        {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
-        node_secret,
-        algorithm="HS256",
+    queue_length = _queue_batch_item(camera_id, payload)
+    logger.info(
+        "📦 [CELERY] Buffered instant detection batch item for %s (queue_length=%s)",
+        camera_id,
+        queue_length,
     )
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {fresh_token}",
+
+    if _should_flush_batch(camera_id):
+        flush_instant_detection_batch.delay(camera_id)
+    else:
+        flush_instant_detection_batch.apply_async(
+            args=[camera_id],
+            countdown=INSTANT_DETECTION_BATCH_FLUSH_SECONDS,
+        )
+
+    return {
+        "success": True,
+        "camera_id": camera_id,
+        "buffered": True,
+        "queue_length": queue_length,
     }
+
+
+@celery_app.task(
+    name="instant_detection.flush_persist_batch",
+    queue="instant_detection_queue",
+    time_limit=30,
+    soft_time_limit=25,
+    max_retries=1,
+    retry_backoff=True,
+    acks_late=True,
+)
+def flush_instant_detection_batch(camera_id: str) -> Dict:
+    import requests as http_requests
+    import jwt as _jwt
+    from datetime import timedelta
+
+    queue_key = _batch_queue_key(camera_id)
+    lock_key = _batch_lock_key(camera_id)
+    lock_acquired = redis_client.set(lock_key, "1", nx=True, ex=60)
+    if not lock_acquired:
+        return {"success": True, "camera_id": camera_id, "skipped": "flush_locked"}
 
     try:
-        resp = http_requests.post(endpoint, json=payload, headers=headers, timeout=10)
+        if not _should_flush_batch(camera_id):
+            return {"success": True, "camera_id": camera_id, "skipped": "flush_not_due"}
+
+        items = _load_batch_items(camera_id, INSTANT_DETECTION_BATCH_FLUSH_COUNT)
+        if not items:
+            return {"success": True, "camera_id": camera_id, "flushed": 0}
+
+        vmeta_url = os.getenv("VMETA_SERVICE_URL", "http://localhost:8008")
+        endpoint = f"{vmeta_url}/api/v1/instant-detection/persist-batch"
+
+        node_secret = os.getenv("NODE_SERVICE_SECRET", "default-secret-key-change-in-production")
+        fresh_token = _jwt.encode(
+            {"sub": "cameras-service", "exp": datetime.utcnow() + timedelta(minutes=5)},
+            node_secret,
+            algorithm="HS256",
+        )
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {fresh_token}",
+        }
+
+        batch_payload = {
+            "items": [
+                {
+                    "session_uuid": item["session_uuid"],
+                    "camera_id": item["camera_id"],
+                    "cycle_timestamp": item["cycle_timestamp"],
+                    "person_objects": item.get("person_objects", []),
+                    "demographics": item.get("demographics", {}),
+                }
+                for item in items
+            ]
+        }
+
+        resp = http_requests.post(endpoint, json=batch_payload, headers=headers, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
+            _trim_batch_items(camera_id, len(items))
+            remaining = redis_client.llen(queue_key)
             logger.info(
-                f"✅ [CELERY] Persisted instant detection for {camera_id}: "
-                f"{data.get('stored_individuals', 0)} individuals, "
-                f"{data.get('appearances_created', 0)} appearances"
+                "✅ [CELERY] Flushed %s instant detection items for %s (remaining=%s)",
+                len(items),
+                camera_id,
+                remaining,
             )
-            return {"success": True, "camera_id": camera_id, **data}
-        else:
-            logger.warning(
-                f"⚠️ [CELERY] VMeta persist returned {resp.status_code}: {resp.text[:200]}"
-            )
-            return {"success": False, "camera_id": camera_id, "status": resp.status_code}
+            if remaining > 0:
+                flush_instant_detection_batch.apply_async(
+                    args=[camera_id],
+                    countdown=INSTANT_DETECTION_BATCH_FLUSH_SECONDS,
+                )
+            return {"success": True, "camera_id": camera_id, "flushed": len(items), **data}
+
+        logger.warning(
+            "⚠️ [CELERY] VMeta persist-batch returned %s for %s: %s",
+            resp.status_code,
+            camera_id,
+            resp.text[:200],
+        )
+        return {"success": False, "camera_id": camera_id, "status": resp.status_code}
+
     except Exception as e:
-        logger.error(f"❌ [CELERY] Persist task failed for {camera_id}: {e}")
+        logger.error(f"❌ [CELERY] Persist batch flush failed for {camera_id}: {e}")
         return {"success": False, "camera_id": camera_id, "error": str(e)}
+    finally:
+        redis_client.delete(lock_key)
