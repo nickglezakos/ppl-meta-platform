@@ -39,22 +39,28 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     'percent_age_55_64': 55,
     'percent_age_65_plus': 65,
   };
+
   static const Set<String> _percentageConditionFields = {
     'percent_male',
     'percent_female',
   };
-  
+
   bool _isLoading = true;
   String? _errorMessage;
   List<TriggerModel> _triggers = [];
   List<Map<String, String>> _availableActions = [];
-  
+  bool? _filterIsActive;
   int _currentPage = 1;
   int _totalPages = 1;
-  bool? _filterIsActive;
 
-  bool _isPercentageConditionField(String field) {
-    return _percentageConditionFields.contains(field);
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTriggers();
+      _loadAvailableActions();
+      _loadAvailableGroups();
+    });
   }
 
   bool _isAgeThresholdField(String field) => field == 'age_threshold';
@@ -69,18 +75,31 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
         value: thresholdAge,
       );
     }
+
+    if (condition.field == 'percent_age') {
+      return DemographicCondition(
+        field: 'age_threshold',
+        operator: condition.operator,
+        value: condition.value,
+      );
+    }
+
     return condition;
   }
 
+  bool _isPercentageConditionField(String field) {
+    return _percentageConditionFields.contains(field);
+  }
+
   String _canonicalConditionField(String field) {
-    // age_count_* and percent_age_* are migrated at load time; nothing to remap here.
+    // age_count_* and percent_age_* are migrated at load time.
     return field;
   }
 
   double _defaultConditionValueForField(String field) {
-    if (_isPercentageConditionField(field)) return 50.0;
-    if (_isAgeThresholdField(field)) return 18.0;
-    return 1.0;
+    if (_isPercentageConditionField(field)) return 50;
+    if (_isAgeThresholdField(field)) return 18;
+    return 1;
   }
 
   double _normalizedConditionValueForField({
@@ -111,16 +130,6 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
     return value.toString();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadTriggers();
-      _loadAvailableActions();
-      _loadAvailableGroups();
-    });
-  }
-
   Future<void> _loadAvailableGroups() async {
     try {
       final groupsApiClient = IndividualGroupsApiClient(ref.read(apiClientProvider));
@@ -140,23 +149,23 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
       debugPrint('⚠️ Failed to load group names for triggers table: $e');
     }
   }
-  
+
   Future<void> _loadAvailableActions() async {
     try {
       final apiClient = ref.read(apiClientProvider);
-      
+
       debugPrint('🔍 [DEBUG] Loading available actions...');
       debugPrint('🔍 [DEBUG] ApiClient baseUrl: ${apiClient.dio.options.baseUrl}');
       debugPrint('🔍 [DEBUG] Request path: /api/v1/user-actions');
       debugPrint('🔍 [DEBUG] Full URL will be: ${apiClient.dio.options.baseUrl}/api/v1/user-actions');
-      
+
       final response = await apiClient.get(
         '/api/v1/user-actions',
         queryParameters: {'page': '1', 'page_size': '100'},
       );
-      
+
       debugPrint('🔍 [DEBUG] Response status: ${response.statusCode}');
-      
+
       if (response.statusCode == 200) {
         final data = response.data;
         setState(() {
@@ -176,6 +185,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
       debugPrint('🔍 [DEBUG] Error details: $e');
     }
   }
+
   
   Future<List<Camera>> _fetchCameras() async {
     try {
@@ -511,23 +521,20 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            Row(
-              children: [
-                const Text(
-                  'Automation',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 16),
-                ElevatedButton.icon(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 720;
+
+                final createButton = ElevatedButton.icon(
                   onPressed: () => _showCreateEditDialog(),
                   icon: const Icon(Icons.add),
                   label: const Text('Create Trigger'),
-                ),
-                const Spacer(),
-                // Filter dropdown
-                DropdownButton<bool?>(
+                );
+
+                final filterDropdown = DropdownButton<bool?>(
                   value: _filterIsActive,
                   hint: const Text('All Statuses'),
+                  isExpanded: isCompact,
                   items: const [
                     DropdownMenuItem(value: null, child: Text('All Statuses')),
                     DropdownMenuItem(value: true, child: Text('Active Only')),
@@ -537,17 +544,54 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                     setState(() => _filterIsActive = value);
                     _loadTriggers();
                   },
-                ),
-                const SizedBox(width: 16),
-                IconButton(
+                );
+
+                final refreshButton = IconButton(
                   icon: const Icon(Icons.refresh),
                   onPressed: () async {
                     await _loadTriggers();
                     await _loadAvailableGroups();
                   },
                   tooltip: 'Refresh',
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Automation',
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 12),
+                      createButton,
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: filterDropdown),
+                          const SizedBox(width: 8),
+                          refreshButton,
+                        ],
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    const Text(
+                      'Automation',
+                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 16),
+                    createButton,
+                    const Spacer(),
+                    filterDropdown,
+                    const SizedBox(width: 16),
+                    refreshButton,
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 16),
             
@@ -658,13 +702,24 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
               ? 2
               : 1;
 
+      final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: crossAxisCount == 3
+            ? 1.55
+            : crossAxisCount == 2
+                ? 1.4
+                : 1.2,
+        mainAxisExtent: crossAxisCount == 3
+            ? null
+            : crossAxisCount == 2
+            ? 244
+            : 264,
+      );
+
       return GridView.builder(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.55,
-        ),
+        gridDelegate: gridDelegate,
         itemCount: _triggers.length,
         itemBuilder: (context, index) => _buildTriggerCard(_triggers[index]),
       );
@@ -1012,6 +1067,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                     
                     DropdownButtonFormField<String>(
                       value: triggerMode,
+                      isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'Trigger Mode',
                         border: OutlineInputBorder(),
@@ -1034,6 +1090,12 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                           child: Text('Search Demographic'),
                         ),
                       ],
+                      selectedItemBuilder: (context) => const [
+                        Text('Instant Demographic', overflow: TextOverflow.ellipsis),
+                        Text('Instant People Match', overflow: TextOverflow.ellipsis),
+                        Text('Search People Match', overflow: TextOverflow.ellipsis),
+                        Text('Search Demographic', overflow: TextOverflow.ellipsis),
+                      ],
                       onChanged: (value) {
                         if (value == null) return;
                         setDialogState(() {
@@ -1047,155 +1109,213 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.tune, color: Colors.blue, size: 20),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Demographic Conditions (All must match)',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                  const Spacer(),
-                                  IconButton(
-                                    icon: const Icon(Icons.add_circle, color: Colors.blue),
-                                    onPressed: () {
-                                      setDialogState(() {
-                                        demographicConditions.add(
-                                          DemographicCondition(
-                                            field: 'people_count',
-                                            operator: 'gte',
-                                            value: 1,
-                                          ),
-                                        );
-                                      });
-                                    },
-                                    tooltip: 'Add condition',
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final isCompact = constraints.maxWidth < 360;
 
-                              ...List.generate(demographicConditions.length, (index) {
-                                final condition = demographicConditions[index];
-                                final canonicalField = _canonicalConditionField(condition.field);
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 3,
-                                        child: DropdownButtonFormField<String>(
-                                          value: canonicalField,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Field',
-                                            border: OutlineInputBorder(),
-                                            isDense: true,
-                                          ),
-                                          items: const [
-                                            DropdownMenuItem(value: 'people_count', child: Text('People Count')),
-                                            DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
-                                            DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
-                                            DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (isCompact)
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Row(
+                                          children: [
+                                            Icon(Icons.tune, color: Colors.blue, size: 20),
+                                            SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                'Demographic Conditions (All must match)',
+                                                style: TextStyle(fontWeight: FontWeight.bold),
+                                              ),
+                                            ),
                                           ],
-                                          onChanged: (value) {
+                                        ),
+                                        const SizedBox(height: 8),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                          onPressed: () {
                                             setDialogState(() {
-                                              final nextField = value!;
-                                              demographicConditions[index] = DemographicCondition(
-                                                field: nextField,
-                                                operator: condition.operator,
-                                                value: _normalizedConditionValueForField(
-                                                  previousField: canonicalField,
-                                                  nextField: nextField,
-                                                  currentValue: condition.value,
+                                              demographicConditions.add(
+                                                DemographicCondition(
+                                                  field: 'people_count',
+                                                  operator: 'gte',
+                                                  value: 1,
                                                 ),
                                               );
                                             });
                                           },
+                                          tooltip: 'Add condition',
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        flex: 2,
-                                        child: DropdownButtonFormField<String>(
-                                          value: condition.operator,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Op',
-                                            border: OutlineInputBorder(),
-                                            isDense: true,
+                                      ],
+                                    )
+                                  else
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.tune, color: Colors.blue, size: 20),
+                                        const SizedBox(width: 8),
+                                        const Expanded(
+                                          child: Text(
+                                            'Demographic Conditions (All must match)',
+                                            style: TextStyle(fontWeight: FontWeight.bold),
                                           ),
-                                          items: const [
-                                            DropdownMenuItem(value: 'gt', child: Text('>')),
-                                            DropdownMenuItem(value: 'gte', child: Text('≥')),
-                                            DropdownMenuItem(value: 'lt', child: Text('<')),
-                                            DropdownMenuItem(value: 'lte', child: Text('≤')),
-                                            DropdownMenuItem(value: 'eq', child: Text('=')),
-                                          ],
-                                          onChanged: (value) {
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_circle, color: Colors.blue),
+                                          onPressed: () {
                                             setDialogState(() {
-                                              demographicConditions[index] = DemographicCondition(
-                                                field: canonicalField,
-                                                operator: value!,
-                                                value: condition.value,
+                                              demographicConditions.add(
+                                                DemographicCondition(
+                                                  field: 'people_count',
+                                                  operator: 'gte',
+                                                  value: 1,
+                                                ),
                                               );
                                             });
                                           },
+                                          tooltip: 'Add condition',
                                         ),
+                                      ],
+                                    ),
+                                  const SizedBox(height: 12),
+                                  ...List.generate(demographicConditions.length, (index) {
+                                    final condition = demographicConditions[index];
+                                    final canonicalField = _canonicalConditionField(condition.field);
+
+                                    final fieldDropdown = DropdownButtonFormField<String>(
+                                      value: canonicalField,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Field',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        flex: 2,
-                                        child: TextFormField(
-                                          key: ValueKey('demographic-condition-$index-${condition.field}'),
-                                          initialValue: _formatConditionInputValue(condition.value),
-                                          decoration: InputDecoration(
-                                            labelText: _conditionValueLabel(canonicalField),
-                                            suffixText: _conditionValueSuffix(canonicalField),
-                                            border: const OutlineInputBorder(),
-                                            isDense: true,
-                                          ),
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: _isAgeThresholdField(canonicalField)
-                                              ? [FilteringTextInputFormatter.digitsOnly]
-                                              : _isPercentageConditionField(canonicalField)
-                                                  ? [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))]
-                                                  : [FilteringTextInputFormatter.digitsOnly],
-                                          onChanged: (value) {
-                                            var numValue = double.tryParse(value);
-                                            if (numValue != null) {
-                                              if (_isAgeThresholdField(canonicalField)) {
-                                                numValue = numValue.clamp(1, 100);
-                                              }
+                                      items: const [
+                                        DropdownMenuItem(value: 'people_count', child: Text('People Count')),
+                                        DropdownMenuItem(value: 'percent_male', child: Text('Male %')),
+                                        DropdownMenuItem(value: 'percent_female', child: Text('Female %')),
+                                        DropdownMenuItem(value: 'age_threshold', child: Text('Age')),
+                                      ],
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          final nextField = value!;
+                                          demographicConditions[index] = DemographicCondition(
+                                            field: nextField,
+                                            operator: condition.operator,
+                                            value: _normalizedConditionValueForField(
+                                              previousField: canonicalField,
+                                              nextField: nextField,
+                                              currentValue: condition.value,
+                                            ),
+                                          );
+                                        });
+                                      },
+                                    );
+
+                                    final operatorDropdown = DropdownButtonFormField<String>(
+                                      value: condition.operator,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Op',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      items: const [
+                                        DropdownMenuItem(value: 'gt', child: Text('>')),
+                                        DropdownMenuItem(value: 'gte', child: Text('≥')),
+                                        DropdownMenuItem(value: 'lt', child: Text('<')),
+                                        DropdownMenuItem(value: 'lte', child: Text('≤')),
+                                        DropdownMenuItem(value: 'eq', child: Text('=')),
+                                      ],
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          demographicConditions[index] = DemographicCondition(
+                                            field: canonicalField,
+                                            operator: value!,
+                                            value: condition.value,
+                                          );
+                                        });
+                                      },
+                                    );
+
+                                    final valueField = TextFormField(
+                                      key: ValueKey('demographic-condition-$index-${condition.field}'),
+                                      initialValue: _formatConditionInputValue(condition.value),
+                                      decoration: InputDecoration(
+                                        labelText: _conditionValueLabel(canonicalField),
+                                        suffixText: _conditionValueSuffix(canonicalField),
+                                        border: const OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: _isAgeThresholdField(canonicalField)
+                                          ? [FilteringTextInputFormatter.digitsOnly]
+                                          : _isPercentageConditionField(canonicalField)
+                                              ? [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*$'))]
+                                              : [FilteringTextInputFormatter.digitsOnly],
+                                      onChanged: (value) {
+                                        var numValue = double.tryParse(value);
+                                        if (numValue != null) {
+                                          if (_isAgeThresholdField(canonicalField)) {
+                                            numValue = numValue.clamp(1, 100);
+                                          }
+                                          setDialogState(() {
+                                            demographicConditions[index] = DemographicCondition(
+                                              field: canonicalField,
+                                              operator: condition.operator,
+                                              value: numValue!,
+                                            );
+                                          });
+                                        }
+                                      },
+                                    );
+
+                                    final removeButton = IconButton(
+                                      icon: const Icon(Icons.remove_circle, color: Colors.red),
+                                      onPressed: demographicConditions.length > 1
+                                          ? () {
                                               setDialogState(() {
-                                                demographicConditions[index] = DemographicCondition(
-                                                  field: canonicalField,
-                                                  operator: condition.operator,
-                                                  value: numValue!,
-                                                );
+                                                demographicConditions.removeAt(index);
                                               });
                                             }
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: const Icon(Icons.remove_circle, color: Colors.red),
-                                        onPressed: demographicConditions.length > 1
-                                            ? () {
-                                                setDialogState(() {
-                                                  demographicConditions.removeAt(index);
-                                                });
-                                              }
-                                            : null,
-                                        tooltip: 'Remove condition',
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                            ],
+                                          : null,
+                                      tooltip: 'Remove condition',
+                                    );
+
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: isCompact
+                                          ? Column(
+                                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                                              children: [
+                                                fieldDropdown,
+                                                const SizedBox(height: 8),
+                                                Row(
+                                                  children: [
+                                                    Expanded(child: operatorDropdown),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(child: valueField),
+                                                    const SizedBox(width: 8),
+                                                    removeButton,
+                                                  ],
+                                                ),
+                                              ],
+                                            )
+                                          : Row(
+                                              children: [
+                                                Expanded(flex: 3, child: fieldDropdown),
+                                                const SizedBox(width: 8),
+                                                Expanded(flex: 2, child: operatorDropdown),
+                                                const SizedBox(width: 8),
+                                                Expanded(flex: 2, child: valueField),
+                                                const SizedBox(width: 8),
+                                                removeButton,
+                                              ],
+                                            ),
+                                    );
+                                  }),
+                                ],
+                              );
+                            },
                           ),
                         ),
                       )
@@ -1653,6 +1773,7 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                           )
                         : DropdownButtonFormField<String>(
                             value: selectedCameraDeviceId,
+                            isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'Select Camera',
                               helperText: 'All registered cameras (connected or disconnected)',
@@ -1661,9 +1782,22 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                             items: availableCameras.map((camera) {
                               return DropdownMenuItem<String>(
                                 value: camera.deviceId,
-                                child: Text(camera.name),
+                                child: Text(
+                                  camera.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               );
                             }).toList(),
+                            selectedItemBuilder: (context) => availableCameras
+                                .map(
+                                  (camera) => Text(
+                                    camera.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                )
+                                .toList(),
                             onChanged: (value) => setDialogState(() => selectedCameraDeviceId = value),
                           ),
                     const SizedBox(height: 16),
@@ -1758,12 +1892,36 @@ class _TriggersTabState extends ConsumerState<TriggersTab> {
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(vertical: 4),
                                 child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Icon(Icons.add_circle_outline, size: 18, color: Colors.blue),
                                     const SizedBox(width: 8),
-                                    Text(action['name']!, style: const TextStyle(fontSize: 13)),
-                                    const SizedBox(width: 8),
-                                    Text(action['type'] ?? '', style: TextStyle(color: Colors.grey.shade500, fontSize: 11)),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            action['name']!,
+                                            style: const TextStyle(fontSize: 13),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          if ((action['type'] ?? '').isNotEmpty) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              action['type'] ?? '',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade500,
+                                                fontSize: 11,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),

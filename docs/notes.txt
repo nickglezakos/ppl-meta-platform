@@ -8,11 +8,24 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -H 'Content-Type: application/x-www-form-urlencoded' \
   -d 'username=fresh.user@example.com&password=NewPassword234!' 
 
+
+https://authority.eyenet-vision.com/admin
+
 *************************************************
 
 *** Logs
 
 /Users/nickgklezakos/Documents/ppl-meta-code/logs
+
+*************************************************
+Auhority
+
+ssh -i ~/.ssh/hetzner deploy@138.201.245.219
+
+curl -s https://authority.eyenet-vision.com/health
+curl -s https://authority.eyenet-vision.com/api/v1/installations/tenant-a
+curl -s https://authority.eyenet-vision.com/api/v1/owners/nick.glezakos@gmail.com
+
 
 *************************************************
 
@@ -39,12 +52,8 @@ Office 365 emails for everyone
 
 *** Deployment tasks
 
-Instant detection analytics
-Instant detection possible merging (inlcuding "intale" automerging tasks)
-Proposal for instant detection counters based on storage statistics (not embeddings).
-Propoasal for instant detection counters with a new option at settings to store embeddings.
+Roles and capabilities mateix + marketing role.
 
-User roles (and startup)
 
 Testing
 
@@ -74,7 +83,6 @@ Headscale implementation using Hetzner
 
 Cleanups
 
-APKs UX cleanup
 APKs branding including logos and thumbnails
 Front end and APKs UI cleanup
 

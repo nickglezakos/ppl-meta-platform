@@ -22,7 +22,8 @@ echo "✅ Nginx is installed: $(nginx -v 2>&1)"
 
 # Get the current directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NGINX_CONFIG="$SCRIPT_DIR/nginx-local-dev.conf"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+NGINX_CONFIG="$REPO_ROOT/docs/deployment/nginx/nginx-local-dev.conf"
 
 # Check if config file exists
 if [[ ! -f "$NGINX_CONFIG" ]]; then
@@ -32,9 +33,22 @@ fi
 
 echo "✅ Nginx configuration found: $NGINX_CONFIG"
 
+use_brew_service=0
+if [[ "$(uname -s)" == "Darwin" ]] && command -v brew &> /dev/null; then
+    if brew list nginx &> /dev/null; then
+        use_brew_service=1
+        echo "✅ Homebrew nginx detected - will use 'brew services' to keep it alive across reboots"
+    fi
+fi
+
 # Test the configuration
 echo "🧪 Testing nginx configuration..."
-if sudo nginx -t -c "$NGINX_CONFIG"; then
+if [[ $use_brew_service -eq 1 ]]; then
+    nginx -t -c "$NGINX_CONFIG"
+else
+    sudo nginx -t -c "$NGINX_CONFIG"
+fi
+if [[ $? -eq 0 ]]; then
     echo "✅ Nginx configuration is valid"
 else
     echo "❌ Nginx configuration has errors"
@@ -44,7 +58,12 @@ fi
 # Check if any nginx processes are running
 if pgrep nginx > /dev/null; then
     echo "⚠️  Nginx is already running. Stopping existing processes..."
-    sudo nginx -s quit 2>/dev/null || sudo pkill nginx
+    nginx -s quit >/dev/null 2>&1 || true
+    if [[ $use_brew_service -eq 1 ]]; then
+        brew services stop nginx >/dev/null 2>&1 || true
+    else
+        sudo nginx -s quit 2>/dev/null || sudo pkill nginx
+    fi
     sleep 2
 fi
 
@@ -92,7 +111,29 @@ fi
 
 # Start nginx
 echo "🚀 Starting nginx with local development configuration..."
-if sudo nginx -c "$NGINX_CONFIG"; then
+if [[ $use_brew_service -eq 1 ]]; then
+    BREW_PREFIX="$(brew --prefix)"
+    mkdir -p "$BREW_PREFIX/etc/nginx/servers"
+    cp "$NGINX_CONFIG" "$BREW_PREFIX/etc/nginx/nginx.conf"
+    if brew services start nginx; then
+        sleep 2
+    else
+        echo "⚠️  Failed to start nginx via brew services; falling back to direct nginx start"
+        if nginx -c "$NGINX_CONFIG"; then
+            use_brew_service=0
+        else
+            echo "❌ Failed to start nginx via direct nginx start after brew services failure"
+            exit 1
+        fi
+    fi
+elif sudo nginx -c "$NGINX_CONFIG"; then
+    :
+else
+    echo "❌ Failed to start nginx"
+    exit 1
+fi
+
+if curl -s http://localhost/health > /dev/null 2>&1; then
     echo "✅ Nginx started successfully!"
     echo ""
     echo "🌐 Your services are now available at:"
@@ -110,9 +151,15 @@ if sudo nginx -c "$NGINX_CONFIG"; then
     echo "   Gateway Service:  http://localhost/health/gateway"
     echo "   Orchestrator:     http://localhost/health/orchestrator"
     echo ""
-    echo "📋 To stop nginx: sudo nginx -s quit"
-    echo "🔄 To reload config: sudo nginx -s reload"
+    if [[ $use_brew_service -eq 1 ]]; then
+        echo "📋 To stop nginx: brew services stop nginx"
+        echo "🔄 To reload config: nginx -s reload"
+        echo "♻️  Auto-start on login/reboot is enabled through Homebrew services"
+    else
+        echo "📋 To stop nginx: sudo nginx -s quit"
+        echo "🔄 To reload config: sudo nginx -s reload"
+    fi
 else
-    echo "❌ Failed to start nginx"
+    echo "❌ Nginx started but /health is not reachable"
     exit 1
 fi

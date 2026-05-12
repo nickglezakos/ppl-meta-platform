@@ -1,0 +1,148 @@
+Analyzing triggers_tab.dart...                                  
+
+  error • Missing concrete implementation of 'abstract class State<T extends StatefulWidget> with Diagnosticable.build' • lib/widgets/triggers_tab.dart:19:7 • non_abstract_class_inherits_abstract_member
+  error • Const variables must be initialized with a constant value • lib/widgets/triggers_tab.dart:24:65 • const_initialized_with_non_constant_value
+  error • Expressions can't be used in a map literal • lib/widgets/triggers_tab.dart:32:31 • expression_in_map
+  error • Invalid constant value • lib/widgets/triggers_tab.dart:33:42 • invalid_constant
+  error • The elements in a const map literal must be constant • lib/widgets/triggers_tab.dart:33:42 • non_constant_map_element
+  error • The method 'setDialogState' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:39:39 • undefined_method
+  error • Undefined name 'demographicConditions' • lib/widgets/triggers_tab.dart:40:41 • undefined_identifier
+  error • Expected to find ';' • lib/widgets/triggers_tab.dart:89:3 • expected_token
+warning • The declaration '_normalizeConditionForEdit' isn't referenced • lib/widgets/triggers_tab.dart:94:24 • unused_element
+  error • The body might complete normally, causing 'null' to be returned, but the return type, 'DemographicCondition', is a potentially non-nullable type • lib/widgets/triggers_tab.dart:94:24 • body_might_complete_normally
+warning • The value of the local variable 'thresholdAge' isn't used • lib/widgets/triggers_tab.dart:95:11 • unused_local_variable
+warning • The label 'child' isn't used • lib/widgets/triggers_tab.dart:96:35 • unused_label
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:101:48 • undefined_identifier
+  error • The method 'setDialogState' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:114:43 • undefined_method
+  error • Undefined name 'demographicConditions' • lib/widgets/triggers_tab.dart:116:45 • undefined_identifier
+  error • Undefined name 'index' • lib/widgets/triggers_tab.dart:116:67 • undefined_identifier
+  error • The method '_normalizedConditionValueForField' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:119:54 • undefined_method
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:120:64 • undefined_identifier
+  error • The method 'setDialogState' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:144:43 • undefined_method
+  error • Undefined name 'demographicConditions' • lib/widgets/triggers_tab.dart:145:45 • undefined_identifier
+  error • Undefined name 'index' • lib/widgets/triggers_tab.dart:145:67 • undefined_identifier
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:146:54 • undefined_identifier
+  error • Undefined name 'index' • lib/widgets/triggers_tab.dart:155:79 • undefined_identifier
+  error • The method '_formatConditionInputValue' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:156:55 • undefined_method
+  error • The method '_conditionValueLabel' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:158:54 • undefined_method
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:158:75 • undefined_identifier
+  error • The method '_conditionValueSuffix' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:159:55 • undefined_method
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:159:77 • undefined_identifier
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:164:79 • undefined_identifier
+  error • The method '_isPercentageConditionField' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:166:47 • undefined_method
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:166:75 • undefined_identifier
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:172:70 • undefined_identifier
+  error • The method 'setDialogState' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:175:45 • undefined_method
+  error • Undefined name 'demographicConditions' • lib/widgets/triggers_tab.dart:176:47 • undefined_identifier
+  error • Undefined name 'index' • lib/widgets/triggers_tab.dart:176:69 • undefined_identifier
+  error • Undefined name 'canonicalField' • lib/widgets/triggers_tab.dart:177:56 • undefined_identifier
+  error • Undefined name 'demographicConditions' • lib/widgets/triggers_tab.dart:189:52 • undefined_identifier
+  error • The method 'setDialogState' isn't defined for the type '_TriggersTabState' • lib/widgets/triggers_tab.dart:191:49 • undefined_method
+  error • Undefined name 'demographicConditions' • lib/widgets/triggers_tab.dart:192:51 • undefined_identifier
+  error • Undefined name 'index' • lib/widgets/triggers_tab.dart:192:82 • undefined_identifier
+  error • Expected to find ';' • lib/widgets/triggers_tab.dart:238:35 • expected_token
+  error • Expected an identifier • lib/widgets/triggers_tab.dart:238:36 • missing_identifier
+  error • Unexpected text ';' • lib/widgets/triggers_tab.dart:238:36 • unexpected_token
+  error • Undefined name 'e' • lib/widgets/triggers_tab.dart:239:44 • undefined_identifier
+  error • Undefined name 'e' • lib/widgets/triggers_tab.dart:240:46 • undefined_identifier
+  error • Undefined name 'ref' • lib/widgets/triggers_tab.dart:249:29 • undefined_identifier
+  error • The function 'setState' isn't defined • lib/widgets/triggers_tab.dart:262:5 • undefined_function
+  error • Undefined name '_isLoading' • lib/widgets/triggers_tab.dart:263:7 • undefined_identifier
+  error • Undefined name '_errorMessage' • lib/widgets/triggers_tab.dart:264:7 • undefined_identifier
+  error • Undefined name '_triggerService' • lib/widgets/triggers_tab.dart:268:30 • undefined_identifier
+  error • Undefined name '_currentPage' • lib/widgets/triggers_tab.dart:269:15 • undefined_identifier
+  error • Undefined name '_filterIsActive' • lib/widgets/triggers_tab.dart:271:19 • undefined_identifier
+  error • The function 'setState' isn't defined • lib/widgets/triggers_tab.dart:276:7 • undefined_function
+  error • Undefined name '_triggers' • lib/widgets/triggers_tab.dart:277:9 • undefined_identifier
+  error • Undefined name '_totalPages' • lib/widgets/triggers_tab.dart:278:9 • undefined_identifier
+  error • Undefined name '_isLoading' • lib/widgets/triggers_tab.dart:279:9 • undefined_identifier
+  error • The function 'setState' isn't defined • lib/widgets/triggers_tab.dart:283:7 • undefined_function
+  error • Undefined name '_errorMessage' • lib/widgets/triggers_tab.dart:284:9 • undefined_identifier
+  error • Undefined name '_isLoading' • lib/widgets/triggers_tab.dart:285:9 • undefined_identifier
+warning • The declaration '_updateTriggerAction' isn't referenced • lib/widgets/triggers_tab.dart:292:16 • unused_element
+  error • Undefined name 'ref' • lib/widgets/triggers_tab.dart:294:25 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:302:14 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:304:30 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:312:12 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:313:28 • undefined_identifier
+  error • Undefined name 'ref' • lib/widgets/triggers_tab.dart:321:25 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:329:14 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:331:30 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:339:12 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:340:28 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:395:16 • undefined_identifier
+  error • Undefined name '_availableActions' • lib/widgets/triggers_tab.dart:403:24 • undefined_identifier
+  error • Undefined name '_availableActions' • lib/widgets/triggers_tab.dart:407:35 • undefined_identifier
+  error • Undefined name 'ref' • lib/widgets/triggers_tab.dart:456:25 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:464:14 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:466:30 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:474:12 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:475:28 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:483:16 • undefined_identifier
+  error • Undefined name 'ref' • lib/widgets/triggers_tab.dart:504:25 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:511:14 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:513:30 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:521:12 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:522:28 • undefined_identifier
+  error • Undefined name '_filterIsActive' • lib/widgets/triggers_tab.dart:589:26 • undefined_identifier
+  error • The function 'setState' isn't defined • lib/widgets/triggers_tab.dart:598:21 • undefined_function
+  error • Undefined name '_filterIsActive' • lib/widgets/triggers_tab.dart:598:36 • undefined_identifier
+  error • The function '_loadAvailableGroups' isn't defined • lib/widgets/triggers_tab.dart:607:27 • undefined_function
+  error • Undefined name '_isLoading' • lib/widgets/triggers_tab.dart:654:22 • undefined_identifier
+  error • Undefined name '_errorMessage' • lib/widgets/triggers_tab.dart:656:21 • undefined_identifier
+  error • Undefined name '_errorMessage' • lib/widgets/triggers_tab.dart:661:45 • undefined_identifier
+  error • Undefined name '_triggers' • lib/widgets/triggers_tab.dart:670:25 • undefined_identifier
+  error • Undefined name '_totalPages' • lib/widgets/triggers_tab.dart:691:17 • undefined_identifier
+  error • Undefined name '_currentPage' • lib/widgets/triggers_tab.dart:698:34 • undefined_identifier
+  error • The function 'setState' isn't defined • lib/widgets/triggers_tab.dart:700:31 • undefined_function
+  error • Undefined name '_currentPage' • lib/widgets/triggers_tab.dart:700:46 • undefined_identifier
+  error • Undefined name '_currentPage' • lib/widgets/triggers_tab.dart:706:33 • undefined_identifier
+  error • Undefined name '_totalPages' • lib/widgets/triggers_tab.dart:706:50 • undefined_identifier
+  error • Undefined name '_currentPage' • lib/widgets/triggers_tab.dart:708:34 • undefined_identifier
+  error • Undefined name '_totalPages' • lib/widgets/triggers_tab.dart:708:49 • undefined_identifier
+  error • The function 'setState' isn't defined • lib/widgets/triggers_tab.dart:710:31 • undefined_function
+  error • Undefined name '_currentPage' • lib/widgets/triggers_tab.dart:710:46 • undefined_identifier
+  error • Can't have modifier 'static' here • lib/widgets/triggers_tab.dart:729:3 • extraneous_modifier
+  error • Can't have modifier 'static' here • lib/widgets/triggers_tab.dart:736:3 • extraneous_modifier
+  error • Can't have modifier 'static' here • lib/widgets/triggers_tab.dart:743:3 • extraneous_modifier
+  error • Undefined name '_triggers' • lib/widgets/triggers_tab.dart:777:20 • undefined_identifier
+  error • Undefined name '_triggers' • lib/widgets/triggers_tab.dart:778:60 • undefined_identifier
+  error • Undefined name '_groupNameById' • lib/widgets/triggers_tab.dart:793:48 • undefined_identifier
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/triggers_tab.dart:813:27 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/triggers_tab.dart:832:40 • deprecated_member_use
+   info • 'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss • lib/widgets/triggers_tab.dart:881:36 • deprecated_member_use
+  error • Undefined name 'ref' • lib/widgets/triggers_tab.dart:1011:55 • undefined_identifier
+  error • Undefined name '_groupNameById' • lib/widgets/triggers_tab.dart:1018:11 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:1024:10 • undefined_identifier
+  error • Undefined name '_availableActions' • lib/widgets/triggers_tab.dart:1032:48 • undefined_identifier
+warning • The value of the local variable 'searchIntervalSeconds' isn't used • lib/widgets/triggers_tab.dart:1048:9 • unused_local_variable
+  error • Undefined name '_groupNameById' • lib/widgets/triggers_tab.dart:1056:28 • undefined_identifier
+  error • A value of type 'List<dynamic>' can't be assigned to a variable of type 'List<DemographicCondition>' • lib/widgets/triggers_tab.dart:1078:56 • invalid_assignment
+  error • Undefined name '_normalizeConditionForEdit' • lib/widgets/triggers_tab.dart:1080:12 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:1097:16 • undefined_identifier
+  error • The function '_canonicalConditionField' isn't defined • lib/widgets/triggers_tab.dart:1192:56 • undefined_function
+  error • The function '_normalizedConditionValueForField' isn't defined • lib/widgets/triggers_tab.dart:1218:56 • undefined_function
+  error • The function '_formatConditionInputValue' isn't defined • lib/widgets/triggers_tab.dart:1261:57 • undefined_function
+  error • The function '_conditionValueLabel' isn't defined • lib/widgets/triggers_tab.dart:1263:56 • undefined_function
+  error • The function '_conditionValueSuffix' isn't defined • lib/widgets/triggers_tab.dart:1264:57 • undefined_function
+  error • The function '_isAgeThresholdField' isn't defined • lib/widgets/triggers_tab.dart:1269:60 • undefined_function
+  error • The function '_isPercentageConditionField' isn't defined • lib/widgets/triggers_tab.dart:1271:49 • undefined_function
+  error • The function '_isAgeThresholdField' isn't defined • lib/widgets/triggers_tab.dart:1277:51 • undefined_function
+  error • The function '_canonicalConditionField' isn't defined • lib/widgets/triggers_tab.dart:1633:56 • undefined_function
+  error • The function '_normalizedConditionValueForField' isn't defined • lib/widgets/triggers_tab.dart:1659:56 • undefined_function
+  error • The function '_formatConditionInputValue' isn't defined • lib/widgets/triggers_tab.dart:1702:57 • undefined_function
+  error • The function '_conditionValueLabel' isn't defined • lib/widgets/triggers_tab.dart:1704:56 • undefined_function
+  error • The function '_conditionValueSuffix' isn't defined • lib/widgets/triggers_tab.dart:1705:57 • undefined_function
+  error • The function '_isAgeThresholdField' isn't defined • lib/widgets/triggers_tab.dart:1710:60 • undefined_function
+  error • The function '_isPercentageConditionField' isn't defined • lib/widgets/triggers_tab.dart:1712:49 • undefined_function
+  error • The function '_isAgeThresholdField' isn't defined • lib/widgets/triggers_tab.dart:1718:51 • undefined_function
+  error • Undefined name '_availableActions' • lib/widgets/triggers_tab.dart:1849:48 • undefined_identifier
+  error • Undefined name '_availableActions' • lib/widgets/triggers_tab.dart:1862:30 • undefined_identifier
+  error • Undefined name 'ref' • lib/widgets/triggers_tab.dart:2056:25 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:2112:13 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:2113:32 • undefined_identifier
+  error • Undefined name 'mounted' • lib/widgets/triggers_tab.dart:2122:11 • undefined_identifier
+  error • Undefined name 'context' • lib/widgets/triggers_tab.dart:2123:30 • undefined_identifier
+  error • Invalid context for 'super' invocation • lib/widgets/triggers_tab.dart:2141:5 • super_in_invalid_context
+  error • Expected a method, getter, setter or operator declaration • lib/widgets/triggers_tab.dart:2143:1 • expected_executable
+

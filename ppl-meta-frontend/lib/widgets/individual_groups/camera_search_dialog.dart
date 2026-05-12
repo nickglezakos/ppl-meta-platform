@@ -319,17 +319,9 @@ class _CameraSearchDialogState extends ConsumerState<CameraSearchDialog> {
                         color: Colors.blue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline,
-                              size: 20, color: Colors.blue),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${_selectedCollectionIds.length} of ${_cameraCollections.length} selected',
-                            style: const TextStyle(color: Colors.blue),
-                          ),
-                          const Spacer(),
-                          TextButton.icon(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final toggleButton = TextButton.icon(
                             onPressed: () {
                               setState(() {
                                 if (_selectedCollectionIds.length ==
@@ -349,8 +341,46 @@ class _CameraSearchDialogState extends ConsumerState<CameraSearchDialog> {
                               size: 18,
                             ),
                             label: const Text('Toggle All'),
-                          ),
-                        ],
+                          );
+
+                          final summaryText = Text(
+                            '${_selectedCollectionIds.length} of ${_cameraCollections.length} selected',
+                            style: const TextStyle(color: Colors.blue),
+                            overflow: TextOverflow.ellipsis,
+                          );
+
+                          if (constraints.maxWidth < 320) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.info_outline,
+                                        size: 20, color: Colors.blue),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: summaryText),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: toggleButton,
+                                ),
+                              ],
+                            );
+                          }
+
+                          return Row(
+                            children: [
+                              const Icon(Icons.info_outline,
+                                  size: 20, color: Colors.blue),
+                              const SizedBox(width: 8),
+                              Expanded(child: summaryText),
+                              const SizedBox(width: 8),
+                              toggleButton,
+                            ],
+                          );
+                        },
                       ),
                     ),
                     const SizedBox(height: 12),

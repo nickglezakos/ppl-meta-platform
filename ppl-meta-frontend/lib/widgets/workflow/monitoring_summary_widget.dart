@@ -230,28 +230,11 @@ class MonitoringSummaryWidget extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.face,
-                    color: AppColors.primary,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Face Detection',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            _buildCardHeader(
+              context,
+              icon: Icons.face,
+              iconColor: AppColors.primary,
+              title: 'Face Detection',
             ),
             const SizedBox(height: 20),
             _buildMetricRow(
@@ -307,28 +290,11 @@ class MonitoringSummaryWidget extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.secondary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.group,
-                    color: AppColors.secondary,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'MVR & Tracking',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            _buildCardHeader(
+              context,
+              icon: Icons.group,
+              iconColor: AppColors.secondary,
+              title: 'MVR & Tracking',
             ),
             const SizedBox(height: 20),
             _buildMetricRow(
@@ -403,6 +369,56 @@ class MonitoringSummaryWidget extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCardHeader(
+    BuildContext context, {
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final iconBadge = Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            color: iconColor,
+            size: 24,
+          ),
+        );
+
+        final titleText = Text(
+          title,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+        );
+
+        if (constraints.maxWidth < 180) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              iconBadge,
+              const SizedBox(height: 12),
+              titleText,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            iconBadge,
+            const SizedBox(width: 12),
+            Expanded(child: titleText),
+          ],
+        );
+      },
     );
   }
 

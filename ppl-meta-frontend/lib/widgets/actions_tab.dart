@@ -56,6 +56,7 @@ class _ActionsTabState extends State<ActionsTab> {
   }
 
   Future<void> _loadUserActions() async {
+    if (!mounted) return;
     setState(() {
       _isLoadingUser = true;
       _errorMessageUser = null;
@@ -65,12 +66,14 @@ class _ActionsTabState extends State<ActionsTab> {
       final response = await _userActionService.fetchUserActions(
         isActive: _filterIsActiveUser,
       );
-      
+
+      if (!mounted) return;
       setState(() {
         _userActions = response.actions;
         _isLoadingUser = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessageUser = 'Failed to load user actions: $e';
         _isLoadingUser = false;
@@ -79,6 +82,7 @@ class _ActionsTabState extends State<ActionsTab> {
   }
 
   Future<void> _loadSystemWorkflows() async {
+    if (!mounted) return;
     setState(() {
       _isLoadingSystem = true;
       _errorMessageSystem = null;
@@ -88,12 +92,14 @@ class _ActionsTabState extends State<ActionsTab> {
       final workflows = await _workflowService.getWorkflows(
         isActive: _filterIsActiveSystem,
       );
-      
+
+      if (!mounted) return;
       setState(() {
         _systemWorkflows = workflows;
         _isLoadingSystem = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessageSystem = 'Failed to load system workflows: $e';
         _isLoadingSystem = false;
@@ -199,17 +205,23 @@ class _ActionsTabState extends State<ActionsTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
-        Row(
-          children: [
-            const Icon(Icons.person, color: Colors.blue),
-            const SizedBox(width: 8),
-            Text(
-              'User Actions',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const Spacer(),
-            // Filter
-            DropdownButton<bool?>(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 760;
+
+            final titleRow = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.person, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  'User Actions',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ],
+            );
+
+            final filterDropdown = DropdownButton<bool?>(
               value: _filterIsActiveUser,
               dropdownColor: Colors.grey.shade900,
               items: const [
@@ -221,10 +233,9 @@ class _ActionsTabState extends State<ActionsTab> {
                 setState(() => _filterIsActiveUser = value);
                 _loadUserActions();
               },
-            ),
-            const SizedBox(width: 16),
-            // Create button
-            ElevatedButton.icon(
+            );
+
+            final createButton = ElevatedButton.icon(
               onPressed: () => _showCreateEditUserActionDialog(),
               icon: const Icon(Icons.add),
               label: const Text('Create Action'),
@@ -232,10 +243,9 @@ class _ActionsTabState extends State<ActionsTab> {
                 backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
               ),
-            ),
-            const SizedBox(width: 12),
-            // View Communication Logs button
-            OutlinedButton.icon(
+            );
+
+            final logsButton = OutlinedButton.icon(
               onPressed: () {
                 Navigator.push(
                   context,
@@ -250,8 +260,40 @@ class _ActionsTabState extends State<ActionsTab> {
                 foregroundColor: Colors.green.shade300,
                 side: BorderSide(color: Colors.green.shade700),
               ),
-            ),
-          ],
+            );
+
+            if (isCompact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  titleRow,
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      filterDropdown,
+                      createButton,
+                      logsButton,
+                    ],
+                  ),
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                titleRow,
+                const Spacer(),
+                filterDropdown,
+                const SizedBox(width: 16),
+                createButton,
+                const SizedBox(width: 12),
+                logsButton,
+              ],
+            );
+          },
         ),
         const SizedBox(height: 16),
         
@@ -315,22 +357,28 @@ class _ActionsTabState extends State<ActionsTab> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // Header
-        Row(
-          children: [
-            const Icon(Icons.settings, color: Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              'System Workflows',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(width: 8),
-            Chip(
-              label: const Text('Read-only', style: TextStyle(fontSize: 12)),
-              backgroundColor: Colors.grey.shade800,
-            ),
-            const Spacer(),
-            // Filter
-            DropdownButton<bool?>(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 640;
+
+            final titleBlock = Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Icon(Icons.settings, color: Colors.grey),
+                Text(
+                  'System Workflows',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                Chip(
+                  label: const Text('Read-only', style: TextStyle(fontSize: 12)),
+                  backgroundColor: Colors.grey.shade800,
+                ),
+              ],
+            );
+
+            final filterDropdown = DropdownButton<bool?>(
               value: _filterIsActiveSystem,
               dropdownColor: Colors.grey.shade900,
               items: const [
@@ -342,8 +390,27 @@ class _ActionsTabState extends State<ActionsTab> {
                 setState(() => _filterIsActiveSystem = value);
                 _loadSystemWorkflows();
               },
-            ),
-          ],
+            );
+
+            if (isCompact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  titleBlock,
+                  const SizedBox(height: 12),
+                  filterDropdown,
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(child: titleBlock),
+                const SizedBox(width: 12),
+                filterDropdown,
+              ],
+            );
+          },
         ),
         const SizedBox(height: 16),
         
@@ -1733,6 +1800,7 @@ class _UserActionDialogState extends State<_UserActionDialog> {
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 value: _selectedActionType,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Action Type'),
                 items: const [
                   DropdownMenuItem(value: 'alert', child: Text('Alert (On-Screen)')),
@@ -1741,6 +1809,14 @@ class _UserActionDialogState extends State<_UserActionDialog> {
                   DropdownMenuItem(value: 'log', child: Text('Log')),
                   DropdownMenuItem(value: 'digital_signage', child: Text('Digital Signage')),
                   DropdownMenuItem(value: 'messaging_app', child: Text('Messaging App (Slack / Teams)')),
+                ],
+                selectedItemBuilder: (context) => const [
+                  Text('Alert (On-Screen)', overflow: TextOverflow.ellipsis),
+                  Text('Email', overflow: TextOverflow.ellipsis),
+                  Text('Webhook', overflow: TextOverflow.ellipsis),
+                  Text('Log', overflow: TextOverflow.ellipsis),
+                  Text('Digital Signage', overflow: TextOverflow.ellipsis),
+                  Text('Messaging App (Slack / Teams)', overflow: TextOverflow.ellipsis),
                 ],
                 onChanged: (value) {
                   setState(() => _selectedActionType = value!);

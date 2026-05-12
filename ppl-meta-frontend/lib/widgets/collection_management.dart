@@ -471,45 +471,64 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.md),
-      child: Row(
-        children: [
-          // Title
-          Text(
-            'Collections',
-            style: AppTextStyles.h5,
-          ),
-          
-          const Spacer(),
-          
-          // Search field
-          SizedBox(
-            width: 200,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search collections...',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: AppSpacing.sm,
-                ),
-                isDense: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 640;
+
+          final searchField = TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Search collections...',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.sm,
+              ),
+              isDense: true,
             ),
-          ),
-          
-          const SizedBox(width: AppSpacing.sm),
-          
-          // Create button
-          ElevatedButton.icon(
+          );
+
+          final createButton = ElevatedButton.icon(
             onPressed: _showCreateDialog,
             icon: const Icon(Icons.add),
             label: const Text('Create'),
-          ),
-        ],
+          );
+
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Collections',
+                  style: AppTextStyles.h5,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                searchField,
+                const SizedBox(height: AppSpacing.sm),
+                createButton,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Text(
+                'Collections',
+                style: AppTextStyles.h5,
+              ),
+              const Spacer(),
+              SizedBox(
+                width: 200,
+                child: searchField,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              createButton,
+            ],
+          );
+        },
       ),
     );
   }
@@ -526,21 +545,21 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
           bottom: BorderSide(color: AppColors.border),
         ),
       ),
-      child: Row(
-        children: [
-          Text(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 640;
+
+          final filterLabel = Text(
             'Filter:',
             style: AppTextStyles.labelMedium.copyWith(
               color: AppColors.textSecondary,
             ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          
-          // Filter toggle buttons
-          ToggleButtons(
-            constraints: const BoxConstraints(
+          );
+
+          final filterButtons = ToggleButtons(
+            constraints: BoxConstraints(
               minHeight: 32,
-              minWidth: 80,
+              minWidth: isCompact ? 0 : 80,
             ),
             borderRadius: BorderRadius.circular(AppRadius.sm),
             isSelected: [
@@ -563,7 +582,9 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
             },
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -574,7 +595,9 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -585,7 +608,9 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                padding: EdgeInsets.symmetric(
+                  horizontal: isCompact ? AppSpacing.xs : AppSpacing.sm,
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -596,18 +621,41 @@ class _CollectionManagementState extends ConsumerState<CollectionManagement>
                 ),
               ),
             ],
-          ),
-          
-          const Spacer(),
-          
-          // Show count of filtered collections
-          Text(
+          );
+
+          final countLabel = Text(
             '${_filteredCollections.length} collections',
             style: AppTextStyles.caption.copyWith(
               color: AppColors.textTertiary,
             ),
-          ),
-        ],
+          );
+
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                filterLabel,
+                const SizedBox(height: AppSpacing.sm),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: filterButtons,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                countLabel,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              filterLabel,
+              const SizedBox(width: AppSpacing.md),
+              filterButtons,
+              const Spacer(),
+              countLabel,
+            ],
+          );
+        },
       ),
     );
   }

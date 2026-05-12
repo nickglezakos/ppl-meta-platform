@@ -93,13 +93,6 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
           ),
         ],
       ),
-      floatingActionButton: _tabController.index == 0
-          ? FloatingActionButton.extended(
-              onPressed: _showCreatePlaylistDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('New Playlist'),
-            )
-          : null,
     );
   }
 
@@ -156,27 +149,58 @@ class _SignageManagementScreenState extends ConsumerState<SignageManagementScree
 
         return Column(
           children: [
-            // Search bar
+            // Search + create row
             Padding(
               padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Search playlists...',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _searchController.clear();
-                            provider.loadVideoLists();
-                          },
-                        )
-                      : null,
-                  border: const OutlineInputBorder(),
-                ),
-                onSubmitted: (value) {
-                  provider.loadVideoLists(search: value);
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final isCompact = constraints.maxWidth < 700;
+
+                  final searchField = TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search playlists...',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                provider.loadVideoLists();
+                              },
+                            )
+                          : null,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onSubmitted: (value) {
+                      provider.loadVideoLists(search: value);
+                    },
+                  );
+
+                  final newPlaylistButton = ElevatedButton.icon(
+                    onPressed: _showCreatePlaylistDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('New Playlist'),
+                  );
+
+                  if (isCompact) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        searchField,
+                        const SizedBox(height: 12),
+                        newPlaylistButton,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: searchField),
+                      const SizedBox(width: 16),
+                      newPlaylistButton,
+                    ],
+                  );
                 },
               ),
             ),

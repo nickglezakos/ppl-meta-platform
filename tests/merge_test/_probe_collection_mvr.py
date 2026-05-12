@@ -4,7 +4,18 @@ Probe ALL MVR people for collection 360460d5 in the 1pm-5pm time range,
 including orphaned ones, to see true gender breakdown.
 """
 import sys
-sys.path.insert(0, '/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media/venv/lib/python3.13/site-packages')
+from pathlib import Path
+
+media_site_packages = (
+    Path(__file__).resolve().parents[2]
+    / "ppl-meta-media"
+    / "venv"
+    / "lib"
+    / f"python{sys.version_info.major}.{sys.version_info.minor}"
+    / "site-packages"
+)
+if media_site_packages.exists():
+    sys.path.insert(0, str(media_site_packages))
 
 import psycopg
 import requests
@@ -23,7 +34,7 @@ resp = requests.post(
 )
 resp.raise_for_status()
 token = resp.json()["access_token"]
-print(f"Auth ok")
+print("Auth ok")
 
 # Fetch videos in collection/time window
 media_resp = requests.get(

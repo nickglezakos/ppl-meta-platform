@@ -2,13 +2,13 @@
 
 import logging
 import os
+import smtplib
 import sys
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
-from fastapi.responses import JSONResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
 logger = logging.getLogger(__name__)
 
 from src.config import settings
+from src.auth_utils import create_access_token, get_current_user, require_capability
 from src.database import get_db
 from src.mail import send_email
 from src.models.user import User, UserAction
@@ -33,8 +34,8 @@ from src.schemas.user import (
     UserRead,
 )
 from src.services.user_service import (
+    create_user_with_licensing,
     create_password_reset_token,
-    create_user,
     get_user_by_email,
     get_user_by_guid,
     get_user_by_id,
@@ -69,70 +70,12 @@ def validate_password_update_data(password_data):
 
 def handle_validation_error(e):
     """Simple validation error handler replacement."""
-    from fastapi import HTTPException
-
     return HTTPException(status_code=400, detail=str(e))
 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 router = APIRouter(prefix="/api/v1/users", tags=["users-v1"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login")
-
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Create JWT access token."""
-    to_encode = data.copy()
-    expire = datetime.now() + (
-        expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    )
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
-):
-    """Get current authenticated user from JWT token."""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        logger.info("Attempting to decode JWT token")
-        logger.info("SECRET_KEY length: %d", len(settings.SECRET_KEY))
-        logger.info("ALGORITHM: %s", settings.ALGORITHM)
-
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        logger.info("JWT payload decoded: %s", payload)
-
-        user_id_str = payload.get("sub")
-        logger.info("User ID from token: %s", user_id_str)
-
-        if user_id_str is None:
-            logger.error("No user ID found in token payload")
-            raise credentials_exception
-
-        try:
-            user_id = int(user_id_str)
-        except (ValueError, TypeError):
-            logger.error("Invalid user ID format in token: %s", user_id_str)
-            raise credentials_exception
-    except JWTError as e:
-        logger.error("JWT decode error: %s", e)
-        raise credentials_exception
-
-    logger.info("Looking up user with ID: %s", user_id)
-    user = get_user_by_id(db, user_id)
-    if user is None:
-        logger.error("User not found for ID: %s", user_id)
-        raise credentials_exception
-
-    logger.info("User found: %s", user.username)
-    return user
 
 
 def verify_service_token(authorization: str = Header(None)):
@@ -174,7 +117,7 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
 
         # Create validated user object
         validated_user = UserCreate(**validated_data)
-        created_user = create_user(db, validated_user)
+        created_user = await create_user_with_licensing(db, validated_user)
 
         # Debug logging before user action logging
         logger.info("User created successfully with ID: %s", created_user.id)
@@ -204,7 +147,7 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
                     <p>This link expires in 24 hours.</p>
                 """,
             )
-        except Exception as email_err:
+        except (ConnectionError, OSError, RuntimeError, smtplib.SMTPException) as email_err:
             logger.warning("Failed to send verification email: %s", email_err)
 
         # Manual response construction to avoid any serialization issues
@@ -227,8 +170,8 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         # Handle unexpected errors
-        logger.error(f"Registration error: {e}")
-        raise HTTPException(status_code=500, detail="Registration failed")
+        logger.error("Registration error: %s", e)
+        raise HTTPException(status_code=500, detail="Registration failed") from e
 
 
 @router.get("/verify-email")
@@ -242,8 +185,8 @@ async def verify_email(token: str, db: Session = Depends(get_db)):
         action: str = payload.get("action")
         if user_id is None or action != "verify_email":
             raise HTTPException(status_code=400, detail="Invalid verification token")
-    except JWTError:
-        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    except JWTError as exc:
+        raise HTTPException(status_code=400, detail="Invalid or expired token") from exc
 
     user = get_user_by_id(db, user_id)
     if not user:
@@ -282,10 +225,11 @@ async def login(
 
 @router.get("/platform/services")
 async def get_platform_services(
-    request: Request,
+    _request: Request,
     mobile_ip: str = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _authorized_user: User = Depends(require_capability("auth.session.use")),
 ):
     """Get platform service discovery information for external connectivity.
 
@@ -304,7 +248,7 @@ async def get_platform_services(
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
             s.close()
-        except Exception:
+        except OSError:
             # Fallback to hostname resolution
             local_ip = socket.gethostbyname(socket.gethostname())
 
@@ -320,6 +264,7 @@ async def get_platform_services(
             result = subprocess.run(
                 ["ip", "addr", "show", "tailscale0"],
                 capture_output=True,
+                check=False,
                 text=True,
                 timeout=2,
             )
@@ -329,7 +274,7 @@ async def get_platform_services(
                     if "inet " in line and "100." in line:
                         tailscale_ip = line.split()[1].split("/")[0]
                         break
-        except Exception:
+        except (OSError, subprocess.SubprocessError):
             # Tailscale not available or error occurred
             pass
 
@@ -489,7 +434,10 @@ async def get_platform_services(
 
 
 @router.get("/profile")
-async def get_profile(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def get_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Get current user profile."""
     try:
         from src.services.capabilites_service import get_roles_and_capabilities_by_user
@@ -519,7 +467,9 @@ async def get_profile(current_user: User = Depends(get_current_user), db: Sessio
 
 @router.get("/debug-profile")
 async def debug_get_profile(
-    authorization: str = Header(None), db: Session = Depends(get_db)
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+    _authorized_user: User = Depends(require_capability("users.profile.read")),
 ):
     """Debug profile endpoint with manual token extraction."""
     logger.info("Debug profile endpoint called with authorization: %s", authorization)
@@ -560,15 +510,17 @@ async def debug_get_profile(
         }
     except JWTError as e:
         logger.error("JWT error: %s", e)
-        raise HTTPException(status_code=401, detail=f"JWT error: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"JWT error: {str(e)}") from e
     except Exception as e:
         logger.error("Debug profile error: %s", e)
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}") from e
 
 
 @router.post("/logout")
 def logout(
-    current_user: UserRead = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: UserRead = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _authorized_user: UserRead = Depends(require_capability("auth.session.use")),
 ):
     """User logout (stateless)."""
     log_user_action(db, current_user.username, current_user.email, "logout")
@@ -608,8 +560,8 @@ async def validate_token(
             "email": user.email,
             "email_verified": user.email_verified,
         }
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    except JWTError as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
 
 
 @router.get("/user-info/{user_id}")
@@ -669,15 +621,10 @@ async def get_user_permissions_for_service(
 async def get_user_profile_admin(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    _current_user: User = Depends(require_capability("users.accounts.read")),
 ):
     """Get a user's profile with roles and capabilities. Admin only."""
     from src.services.capabilites_service import get_roles_and_capabilities_by_user
-
-    # Check that current user is admin
-    caller_rc = get_roles_and_capabilities_by_user(db, current_user.id)
-    if "admin" not in caller_rc["roles"]:
-        raise HTTPException(status_code=403, detail="Admin access required")
 
     target_user = get_user_by_id(db, user_id)
     if not target_user:
@@ -701,16 +648,11 @@ async def toggle_user_capability(
     user_id: int,
     body: Dict[str, Any],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("auth.capabilities.assign")),
 ):
     """Toggle a capability for a user. Admin only."""
     from src.services.capabilites_service import get_roles_and_capabilities_by_user
     from src.models.role import Capability, RoleCapability
-
-    # Check that current user is admin
-    caller_rc = get_roles_and_capabilities_by_user(db, current_user.id)
-    if "admin" not in caller_rc["roles"]:
-        raise HTTPException(status_code=403, detail="Admin access required")
 
     capability_name = body.get("capability")
     enabled = body.get("enabled")
@@ -743,6 +685,13 @@ async def toggle_user_capability(
 
     db.commit()
 
+    log_user_action(
+        db,
+        current_user.username,
+        current_user.email,
+        f"user_capability_toggle:user={user_id}:capability={capability_name}:enabled={enabled}",
+    )
+
     updated_rc = get_roles_and_capabilities_by_user(db, user_id)
     return {"user_id": user_id, "roles": updated_rc["roles"], "capabilities": updated_rc["capabilities"]}
 
@@ -754,7 +703,7 @@ async def toggle_user_capability(
 def api_get_user_by_id(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user),
+    _current_user: UserRead = Depends(require_capability("users.accounts.read")),
 ):
     """Get user by ID."""
     user = get_user_by_id(db, user_id)
@@ -767,7 +716,7 @@ def api_get_user_by_id(
 def api_get_user_by_guid(
     guid: str,
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user),
+    _current_user: UserRead = Depends(require_capability("users.accounts.read")),
 ):
     """Get user by GUID."""
     user = get_user_by_guid(db, guid)
@@ -781,7 +730,7 @@ def api_list_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, le=1000),
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user),
+    _current_user: UserRead = Depends(require_capability("users.accounts.read")),
 ):
     """List users with pagination."""
     users = list_users(db, skip=skip, limit=limit)
@@ -793,7 +742,7 @@ def api_list_user_actions(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, le=1000),
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user),
+    _current_user: UserRead = Depends(require_capability("users.accounts.read")),
 ):
     """List user actions with pagination."""
     actions = db.query(UserAction).offset(skip).limit(limit).all()
@@ -805,6 +754,7 @@ async def update_password(
     password_update: UserPasswordUpdate,
     current_user: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _authorized_user: UserRead = Depends(require_capability("users.password.change_self")),
 ):
     """Update user password with enhanced validation."""
     try:
@@ -832,7 +782,7 @@ async def update_password(
     except HTTPException:
         # Re-raise validation errors (they already have proper format)
         raise
-    except Exception as e:
+    except (TypeError, ValueError) as e:
         # Handle unexpected errors with proper validation response
         return handle_validation_error(e)
 
@@ -887,23 +837,24 @@ async def admin_set_password(
     user_id: int,
     body: AdminSetPassword,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_capability("users.accounts.update")),
 ):
     """Admin sets a new password for a user and optionally emails it."""
-    from src.services.capabilites_service import get_roles_and_capabilities_by_user
-
-    caller_rc = get_roles_and_capabilities_by_user(db, current_user.id)
-    if "admin" not in caller_rc["roles"]:
-        raise HTTPException(status_code=403, detail="Admin access required")
 
     target_user = get_user_by_id(db, user_id)
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    result, error = set_new_password(db, user_id, body.new_password)
+    _result, error = set_new_password(db, user_id, body.new_password)
     if error:
         raise HTTPException(status_code=400, detail=error)
 
+    log_user_action(
+        db,
+        current_user.username,
+        current_user.email,
+        f"admin_password_set:user={user_id}",
+    )
     log_user_action(db, target_user.username, target_user.email, "admin_password_set")
 
     if body.send_email:

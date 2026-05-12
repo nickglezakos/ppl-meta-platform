@@ -1,8 +1,6 @@
-import os
 import re
 from datetime import datetime, timedelta
 
-from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -23,6 +21,15 @@ try:
     LICENSING_AVAILABLE = True
 except ImportError:
     LICENSING_AVAILABLE = False
+
+try:
+    from src.services.authority_service import authority_service
+
+    AUTHORITY_AVAILABLE = True
+except ImportError:
+    AUTHORITY_AVAILABLE = False
+
+from src.services.role_service import ensure_exact_system_roles
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
@@ -75,7 +82,7 @@ async def create_user_with_licensing(db: Session, user: UserCreate) -> UserModel
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"License limit reached. Maximum users: {license_info.get('max_users', 1)}",
                 )
-        except Exception as e:
+        except HTTPException as e:
             # Log warning but allow user creation if licensing service is unavailable
             print(f"Licensing validation failed: {e}")
 
@@ -88,19 +95,32 @@ async def create_user_with_licensing(db: Session, user: UserCreate) -> UserModel
     db.commit()
     db.refresh(db_user)
 
-    # If this is the first user and licensing is available, register as platform owner
-    if is_first_user and LICENSING_AVAILABLE:
-        try:
-            user_data = {
-                "email": user.email,
-                "username": user.username,
-                "full_name": getattr(user, "full_name", ""),
-                "role": "owner",
-            }
-            await licensing_service.register_owner(user_data)
-        except Exception as e:
-            # Log error but don't fail user creation
-            print(f"Failed to register owner with licensing service: {e}")
+    # If this is the first user, only grant owner after authority activation succeeds.
+    if is_first_user:
+        authority_result = {"configured": False, "approved": False}
+        if AUTHORITY_AVAILABLE:
+            authority_result = await authority_service.activate_owner_candidate(db, user.email)
+
+        if authority_result.get("configured") and authority_result.get("approved"):
+            ensure_exact_system_roles(db, user.email, {"owner", "admin", "user"})
+            if LICENSING_AVAILABLE:
+                try:
+                    user_data = {
+                        "email": user.email,
+                        "username": user.username,
+                        "full_name": getattr(user, "full_name", ""),
+                        "role": "owner",
+                    }
+                    await licensing_service.register_owner(user_data)
+                except RuntimeError as e:
+                    # Log error but don't fail user creation
+                    print(f"Failed to register owner with licensing service: {e}")
+        elif authority_result.get("configured"):
+            ensure_exact_system_roles(db, user.email, {"user"})
+            print(
+                "Authority service did not approve first-user owner registration: "
+                f"{authority_result.get('reason', 'unknown_reason')}"
+            )
 
     return db_user
 
@@ -118,8 +138,8 @@ def get_current_user(
         user_id: int = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+    except JWTError as exc:
+        raise credentials_exception from exc
     user = get_user_by_id(db, user_id)
     if user is None:
         raise credentials_exception

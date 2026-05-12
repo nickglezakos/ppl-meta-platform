@@ -1,5 +1,4 @@
 import logging
-import os
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
@@ -55,6 +54,12 @@ class Settings(BaseSettings):
     COMMUNICATIONS_SERVICE_URL: str = "http://localhost:8009"
     FRONTEND_URL: str = "http://localhost:3000"
     SERVICE_SECRET: str = ""
+    AUTHORITY_SERVICE_ENABLED: bool = False
+    AUTHORITY_SERVICE_URL: str = "https://authority.eyenet-vision.com"
+    AUTHORITY_INSTALLATION_UUID: str = ""
+    AUTHORITY_APPLICATION_KEY: str = ""
+    AUTHORITY_TIMEOUT_SECONDS: float = 10.0
+    AUTHORITY_REVALIDATION_INTERVAL_SECONDS: int = 300
 
     # Redis Configuration
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -137,8 +142,8 @@ class Settings(BaseSettings):
             logger.info("Database URL validation passed")
             return True
 
-        except Exception as e:
-            logger.error(f"Database URL validation failed: {e}")
+        except ValueError as e:
+            logger.error("Database URL validation failed: %s", e)
             return False
 
     def get_database_info(self) -> dict:
@@ -159,7 +164,7 @@ class Settings(BaseSettings):
                     else url
                 ),
             }
-        except Exception:
+        except ValueError:
             return {"error": "Failed to parse database URL"}
 
 

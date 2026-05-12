@@ -1,0 +1,14 @@
+services:
+  ppl-meta-authority:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ppl-meta-authority
+    restart: unless-stopped
+    environment:
+      AUTHORITY_DATABASE_PATH: ${AUTHORITY_DATABASE_PATH}
+      AUTHORITY_ADMIN_TOKEN: ${AUTHORITY_ADMIN_TOKEN}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data

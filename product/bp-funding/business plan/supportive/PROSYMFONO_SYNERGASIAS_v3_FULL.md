@@ -1,291 +1,264 @@
-# ΠΡΟΣΥΜΦΩΝΟ ΕΠΑΓΓΕΛΜΑΤΙΚΗΣ ΣΥΝΕΡΓΑΣΙΑΣ
+# PRELIMINARY PROFESSIONAL COOPERATION AGREEMENT
 
-**EyeNet Vision – Πλατφόρμα Ευφυούς Όρασης**  
+**EyeNet Vision - Intelligent Vision Platform**  
 **https://eyenet-vision.com**
 
-**Ημερομηνία:** ____/____/2026  
-**Έκδοση:** 3.0 –
+**Date:** ____/____/2026  
+**Version:** 3.0
 
 ---
 
-## 1. Συμβαλλόμενα Μέρη
+## 1. Contracting Parties
 
-**Α' Μέρος (EyeNet Vision):**  
-Επωνυμία: ___________________________  
-ΑΦΜ: ___________________________  
-Έδρα: ___________________________  
-Εκπρόσωπος: ___________________________  
+**Party A (EyeNet Vision):**  
+Company Name: mindfwd OÜ  
+Address: Sepapaja 6, Tallinn 15551, Estonia  
+Registry Code: 14910875  
+Representative: ___________________________
 
-**Β' Μέρος (Συνεργάτης):**  
-Επωνυμία/Ονοματεπώνυμο: ___________________________  
-ΑΦΜ: ___________________________  
-Έδρα/Διεύθυνση: ___________________________  
-Εκπρόσωπος: ___________________________  
+**Party B (Partner):**  
+Company Name / Full Name: ___________________________  
+Tax ID / Registration No.: ___________________________  
+Registered Address: ___________________________  
+Representative: ___________________________
 
 ---
 
-## 2. Περιγραφή Πλατφόρμας EyeNet Vision
+## 2. Description of the EyeNet Vision Platform
 
-### 2.1 Γενική Περιγραφή
+### 2.1 General Description
 
-Η **EyeNet Vision** είναι μία πλατφόρμα ευφυούς τεχνολογίας όρασης που μετατρέπει παθητικά συστήματα επιτήρησης σε ενεργή, αυτοματοποιημένη λειτουργική ευφυΐα. Συνδυάζει ιδιόκτητα μοντέλα computer vision, δημογραφική ανάλυση σε πραγματικό χρόνο και event-driven αυτοματισμούς σε μία ενοποιημένη πλατφόρμα.
+**EyeNet Vision** is an intelligent vision technology platform that transforms passive surveillance systems into active, automated operational intelligence. It combines proprietary computer vision models, real-time demographic analysis, and event-driven automations into a unified platform.
 
-### 2.2 Χαρτοφυλάκιο Προϊόντων
+### 2.2 Product Portfolio
 
-Η πλατφόρμα προσφέρει έξι εξειδικευμένες εφαρμογές, πέντε εκ των οποίων είναι έτοιμες για beta testing (Q2 2026):
+The platform offers six specialized applications, five of which are ready for beta testing in Q2 2026:
 
-| Εφαρμογή | Περιγραφή | Κατάσταση |
+| Application | Description | Status |
 |----------|-----------|-----------|
-| **Intelligent Signage** | Δημογραφικά στοχευμένη προβολή περιεχομένου σε οθόνες -- αναγνωρίζει φύλο, ηλικιακή ομάδα και συναισθηματική κατάσταση του κοινού για αυτόματη εναλλαγή διαφημιστικού περιεχομένου | Έτοιμο |
-| **Gate Activity** | Παρακολούθηση εισόδων/εξόδων, μέτρηση πλήθους, ανίχνευση ύποπτης συμπεριφοράς, θερμικοί χάρτες κίνησης και crowd analytics | Έτοιμο |
-| **Room & Gate Protection** | Αυτοματοποιημένος έλεγχος πρόσβασης, καταγραφή παρουσιών, αναφορές συμμόρφωσης -- αντικαθιστά χειροκίνητα συστήματα roster | Έτοιμο |
-| **Sentinel** | Αυτόματη αξιολόγηση προσωπικού ασφαλείας: παρουσία στη θέση, ετοιμότητα, καταγραφή αποχωρήσεων, ειδοποιήσεις στους supervisors | Έτοιμο |
-| **Underage Detector** | Ανίχνευση ατόμων κάτω της νόμιμης ηλικίας σε σημεία πώλησης (καπνός, αλκοόλ, τυχερά παιχνίδια) -- POS alert automation | Έτοιμο |
-| **Security Officer Agent** | Ενσωμάτωση σε smart glasses (Raspberry Pi 4) για real-time αναγνώριση σε πεδίο -- mobile security operations | Q3/Q4 2026 |
+| **Intelligent Signage** | Demographically targeted content display on screens. It recognizes gender, age group, and emotional state of the audience to automatically switch advertising content. | Ready |
+| **Gate Activity** | Monitoring entries and exits, crowd counting, suspicious behavior detection, movement heatmaps, and crowd analytics. | Ready |
+| **Room & Gate Protection** | Automated access control, attendance logging, and compliance reporting, replacing manual roster systems. | Ready |
+| **Sentinel** | Automated security staff evaluation: presence at post, readiness, departure logging, and supervisor alerts. | Ready |
+| **Underage Detector** | Detection of individuals below legal age at points of sale for tobacco, alcohol, and gambling, with POS alert automation. | Ready |
+| **Security Officer Agent** | Integration with smart glasses using Raspberry Pi 4 for real-time field recognition in mobile security operations. | Q3/Q4 2026 |
 
-### 2.3 Τεχνολογικά Πλεονεκτήματα
+### 2.3 Technological Advantages
 
-- **Privacy-First:** On-premises επεξεργασία, μηδενική εξάρτηση από cloud – πλήρης συμμόρφωση GDPR/CCPA
-- **Offline Operation:** Πλήρης λειτουργία χωρίς internet – κρίσιμο για βιομηχανικές εγκαταστάσεις, πλοία, απομονωμένες τοποθεσίες
-- **Event-Driven Triggers:** Αυτοματοποιημένες ενέργειες ανά κάμερα (email, SMS, webhook, σειρήνες, κλειδαριές, εναλλαγή οθονών)
-- **Ιδιόκτητοι Αλγόριθμοι AI/ML:** Ανίχνευση δημογραφικών, συμπεριφοράς, πλήθους – δύσκολοι στην αντιγραφή
-- **Hardware-Agnostic:** Λειτουργεί σε τυπικούς υπολογιστές (16GB RAM), υποστηρίζει USB, IP, RTSP κάμερες
-- **Κλιμακωσιμότητα:** Από 1 κάμερα σε single-point εγκατάσταση έως εταιρική ανάπτυξη πολλαπλών σημείων
+- **Privacy-First:** On-premises processing with zero cloud dependency and full GDPR/CCPA alignment
+- **Offline Operation:** Full functionality without internet connectivity, critical for industrial facilities, ships, and remote locations
+- **Event-Driven Triggers:** Automated actions per camera, including email, SMS, webhook, sirens, locks, and screen switching
+- **Proprietary AI/ML Algorithms:** Demographic, behavioral, and crowd detection capabilities that are difficult to replicate
+- **Hardware-Agnostic:** Runs on standard computers with 16GB RAM and supports USB, IP, and RTSP cameras
+- **Scalability:** From a single camera in a single-point installation to enterprise multi-site deployments
 
-### 2.4 Τρόποι Εγκατάστασης (Deployment Modes)
+### 2.4 Deployment Modes
 
-Πέντε διαφορετικοί τρόποι ανάπτυξης καλύπτουν κάθε φυσικό χώρο:
+Five different deployment modes cover a wide range of physical environments:
 
-| Τρόπος | Χρήση |
+| Mode | Use Case |
 |--------|-------|
-| **Spot** | Σημεία πώλησης, οθόνες digital signage |
-| **Gate** | Είσοδοι, διάδρομοι, πύλες πρόσβασης |
-| **Area** | Μεγάλοι χώροι (αποθήκες, αίθουσες, αεροδρόμια) |
-| **Goggles** | Φορητή χρήση (smart glasses) |
-| **Drone** | Εναέρια επιτήρηση |
+| **Spot** | Retail points of sale and digital signage screens |
+| **Gate** | Entrances, corridors, and access gates |
+| **Area** | Large spaces such as warehouses, halls, and airports |
+| **Goggles** | Portable use with smart glasses |
+| **Drone** | Aerial surveillance |
 
-### 2.5 Αγορά-Στόχος & Μέγεθος
+### 2.5 Target Market and Size
 
-**Συνολική Αγορά (TAM):** $2–4 δισ. (αγορά ΗΠΑ)
+**Total Addressable Market (TAM):** $2-4 billion in the U.S. market
 
-| Κλάδος | Εφαρμογές |
+| Sector | Applications |
 |--------|-----------|
-| **Λιανεμπόριο** | Intelligent Signage, Underage Detector – εμπορικά κέντρα, αλυσίδες, αεροδρόμια |
-| **Ασφάλεια** | Gate Activity, Sentinel, Security Officer Agent – εταιρείες security, αστυνομία |
-| **Εκπαίδευση** | Room & Gate Protection – σχολεία, πανεπιστήμια, campus |
-| **Βιομηχανία/Ναυτιλία** | Room & Gate Protection, Gate Activity – αποθήκες, εργοστάσια, πλοία |
-| **Εγκαταστάσεις** | Sentinel, Gate Activity – εταιρικά γραφεία, κυβερνητικά κτίρια |
+| **Retail** | Intelligent Signage, Underage Detector for malls, chains, and airports |
+| **Security** | Gate Activity, Sentinel, Security Officer Agent for security companies and law enforcement |
+| **Education** | Room & Gate Protection for schools, universities, and campuses |
+| **Industry / Maritime** | Room & Gate Protection and Gate Activity for warehouses, factories, and vessels |
+| **Facilities** | Sentinel and Gate Activity for corporate offices and government buildings |
 
 ---
 
-## 3. Σκοπός Παρόντος
+## 3. Purpose of This Document
 
-Το Α' Μέρος (EyeNet Vision) επιθυμεί να συνεργαστεί με φυσικά πρόσωπα ή/και εταιρείες για την περαιτέρω ανάπτυξη και εμπορική αξιοποίηση της πλατφόρμας. Το παρόν αποτελεί **μη δεσμευτική περιγραφή επαγγελματικής συνεργασίας** και περιγράφει τους άξονες κοινής δράσης οι οποίοι είναι οι εξής:
+Party A (EyeNet Vision) wishes to cooperate with individuals and/or companies for the further commercial development and market expansion of the platform. This document constitutes a **non-binding description of professional cooperation** and sets out the following areas of joint activity.
 
-### Άξονες Συνεργασίας:
+### Cooperation Areas
 
-**3.1 Διερεύνηση χρηματοδότησης Seed Round**
+**3.2 Exploration of Promotion Partnerships**
 
-Κοινή αναζήτηση πηγών χρηματοδότησης για τον γύρο Seed, με στόχο ποσό **$500.000 – $1.000.000** σε προ-αξιολόγηση **$2-4 εκατ.**, σύμφωνα με το επιχειρηματικό σχέδιο της EyeNet Vision. Τα κεφάλαια θα κατευθυνθούν σε:
+Exploration of opportunities for the commercial promotion of the platform through:
 
-| Κατηγορία | Κατανομή | Σκοπός |
-|-----------|----------|--------|
-| Ανάπτυξη Προϊόντος | ~40% | Μηχανικοί, mobile apps, customer success tooling |
-| Go-to-Market | ~35% | Αρχική ομάδα πωλήσεων, demand generation, content marketing |
-| Λειτουργικά | ~15% | Υποδομές, νομικά, λογιστικά |
-| Κεφάλαιο Κίνησης | ~10% | Runway buffer |
+- **Reseller networks:** Companies already selling security or IT solutions to business customers
+- **System integrators:** Integrators able to embed EyeNet Vision into existing customer infrastructure
+- **Strategic partners:** Camera manufacturers, access control providers, and digital signage companies
+- **Go-to-market channels:** Industry exhibitions, B2B events, digital marketing, and referral programs
 
-**Πηγές χρηματοδότησης που διερευνώνται:** Angel investors, VC funds (early-stage), κρατικά προγράμματα καινοτομίας (ΕΕ, Ελλάδα), accelerators/incubators τεχνολογίας, στρατηγικοί επενδυτές από τον κλάδο ασφάλειας/retail.
+**Geographic strategy:**
+- **2026:** Greece, United States as the primary market, and Canada for pilot activity
+- **2027:** European Union, including Greece and Romania, with a target of 20-30% of revenue from Europe
+- **2028+:** United Kingdom, France, and Asia-Pacific
 
-**Βασικοί στόχοι (milestones) για Series A ($2-3M):**
-- 50-75 B2B πελάτες
-- $1M+ ετήσια επαναλαμβανόμενα έσοδα (ARR)
-- Product-market fit validated σε 2-3 κλάδους
-- Γεωγραφική επέκταση (ΗΠΑ, Καναδάς, ΕΕ pilots)
+**Business model (dual revenue):**
+- **B2B Enterprise SaaS:** $6,000 - $150,000+ annually per contract, with a 6-9 month sales cycle
+- **B2C Freemium:** $20 - $300 per month, with a freemium funnel and 5-10% conversion
 
-**Χρονοδιάγραμμα Seed Round:**
+**Three-year financial projections:**
 
-| Φάση | Χρονικό Πλαίσιο | Ενέργεια |
-|------|-----------------|----------|
-| Προετοιμασία | Μήνας 1 | Finalization pitch deck, data room, NDA |
-| Outreach | Μήνες 1–2 | Προσέγγιση angel investors & VC funds |
-| Due Diligence | Μήνες 2–3 | Τεχνική & οικονομική αξιολόγηση |
-| Term Sheet | Μήνας 3–4 | Διαπραγμάτευση όρων επένδυσης |
-| Κλείσιμο | Μήνας 4–5 | Υπογραφή & μεταφορά κεφαλαίων |
-
-**3.2 Διερεύνηση συνεργασιών προώθησης**
-
-Αναζήτηση ευκαιριών για την εμπορική προώθηση της πλατφόρμας μέσω:
-
-- **Δικτύων μεταπωλητών (resellers):** Εταιρείες που ήδη πωλούν λύσεις ασφαλείας ή IT σε επιχειρήσεις
-- **System Integrators:** Ολοκληρωτές συστημάτων που μπορούν να ενσωματώσουν την EyeNet Vision σε υφιστάμενες υποδομές πελατών
-- **Στρατηγικών εταίρων:** Εταιρείες κατασκευής καμερών, access control, digital signage
-- **Καναλιών go-to-market:** Εκθέσεις κλάδου, B2B events, digital marketing, referral programs
-
-**Γεωγραφική στρατηγική:**
-- **2026:** Ελλάδα, ΗΠΑ (βασική αγορά) + Καναδάς (pilot)
-- **2027:** ΕΕ (Ελλάδα, Ρουμανία) – στόχος 20-30% εσόδων από Ευρώπη
-- **2028+:** UK, Γαλλία, Ασία-Ειρηνικός
-
-**Επιχειρηματικό μοντέλο (dual revenue):**
-- **B2B Enterprise SaaS:** $6.000 – $150.000+ ετησίως ανά σύμβαση, κύκλος πωλήσεων 6-9 μήνες
-- **B2C Freemium:** $20 – $300/μήνα, freemium funnel με 5-10% μετατροπή
-
-**Χρηματοοικονομικές προβλέψεις (3-ετές σχέδιο):**
-
-| Μετρική | 2026 | 2027 | 2028 |
+| Metric | 2026 | 2027 | 2028 |
 |---------|------|------|------|
-| **Συνολικά Έσοδα** | $1,04M | $8,09M | $26,15M |
-| **B2B Πελάτες** | 50 | 200 | 500 |
-| **B2C Χρήστες** | 600 | 6.000+ | 20.000+ |
+| **Total Revenue** | $1.04M | $8.09M | $26.15M |
+| **B2B Customers** | 50 | 200 | 500 |
+| **B2C Users** | 600 | 6,000+ | 20,000+ |
 | **Gross Margin** | 65% | 62% | 60% |
-| **EBITDA** | -$360K | $2,4M | $6,7M |
+| **EBITDA** | -$360K | $2.4M | $6.7M |
 
-**3.3 Διερεύνηση τρόπου συνεργασίας μεταξύ των μερών**
+**3.3 Exploration of the Cooperation Structure Between the Parties**
 
-Καθορισμός ρόλων, αρμοδιοτήτων και πιθανών όρων οικονομικής συνεργασίας, τα οποία θα αποτυπωθούν σε μελλοντική δεσμευτική συμφωνία εφόσον τα μέρη επιθυμούν να προχωρήσουν. Ενδεικτικά πεδία διερεύνησης:
+Definition of roles, responsibilities, and possible financial cooperation terms, which may be reflected in a future binding agreement if the parties decide to proceed. Indicative areas for discussion include:
 
-- Μοτίβο αμοιβής (success fee, retainer, equity, ή συνδυασμός)
-- Αποκλειστικότητα ή μη, γεωγραφικά ή κλαδικά
-- Αναφορές προόδου και KPIs αξιολόγησης
-- Χρονοδιάγραμμα μετάβασης σε δεσμευτική σύμβαση
-
----
-
-## 4. Δραστηριότητες Μερών
-
-### 4.1 Α' Μέρος (EyeNet Vision):
-- Παρουσίαση πλατφόρμας, επιχειρηματικού σχεδίου και τεχνολογικών δυνατοτήτων σε δυνητικούς επενδυτές και συνεργάτες
-- Παροχή υλικού στο Β' Μέρος: live demos, τεχνικό documentation, business plan, pitch deck, case studies
-- Συμμετοχή σε συναντήσεις, παρουσιάσεις και due diligence sessions
-- Αξιολόγηση και ανατροφοδότηση επί προτάσεων συνεργασίας
-- Ετοιμασία pilot installations για δυνητικούς πελάτες (2-4 κάμερες, 1-2 εβδομάδες εγκατάσταση)
-
-### 4.2. Β' Μέρος (Συνεργάτης):
-- Ενεργή αναζήτηση και προσέγγιση φυσικών προσώπων και νομικών οντοτήτων (εταιρειών, επενδυτικών φορέων, στρατηγικών εταίρων) που δύνανται να συμβάλουν στην επίτευξη των σκοπών του παρόντος
-- Διενέργεια ενεργειών δικτύωσης (lobbying) και επαγγελματικής διαμεσολάβησης για τη σύνδεση της EyeNet Vision με κατάλληλους επενδυτές, συνεργάτες και φορείς της αγοράς
-- Αξιοποίηση του επαγγελματικού δικτύου του Β' Μέρους για τον εντοπισμό ευκαιριών χρηματοδότησης, εμπορικών συνεργασιών και καναλιών προώθησης
-- Οργάνωση ή/και διευκόλυνση συναντήσεων, παρουσιάσεων και διαπραγματεύσεων με ενδιαφερόμενα μέρη
-- Παροχή εισηγήσεων σχετικά με τις απαιτήσεις και τις ανάγκες της αγοράς στην οποία δραστηριοποιείται
-
-### 4.3.
-- Συμφωνείται ρητά και ανεπιφύλακτα ότι κάθε υποψήφιος επενδυτής, πελάτης ή συνεργάτης που εισάγεται ή γνωστοποιείται από το Β΄ Μέρος στο Α΄ Μέρος, στο πλαίσιο του παρόντος, αναγνωρίζεται ως επαφή του Β΄ Μέρους. Σε περίπτωση που προκύψει από την επαφή αυτή συνεργασία, επένδυση, σύμβαση ή οποιοδήποτε οικονομικό όφελος για το Α΄ Μέρος, το Β΄ Μέρος δικαιούται εύλογη αμοιβή ή αποζημίωση, βάσει και τυχόν ειδικότερης συμφωνίας των μερών.
+- Compensation model, including success fee, retainer, equity, or a combination thereof
+- Exclusive or non-exclusive arrangement, whether geographic or sector-specific
+- Progress reporting and KPIs for evaluation
+- Timeline for transition into a binding agreement
 
 ---
 
-## 5. Εμπιστευτικότητα
+## 4. Activities of the Parties
 
-### 5.1 Ορισμός Εμπιστευτικών Πληροφοριών
+### 4.1 Party A (EyeNet Vision)
 
-Ως «Εμπιστευτικές Πληροφορίες» νοούνται, ενδεικτικά και όχι περιοριστικά:
+- Presentation of the platform, business plan, and technological capabilities to prospective investors and partners
+- Provision of materials to Party B, including live demos, technical documentation, business plan, pitch deck, and case studies
+- Participation in meetings, presentations, and due diligence sessions
+- Evaluation of and feedback on cooperation proposals
+- Preparation of pilot installations for prospective customers, typically involving 2-4 cameras and 1-2 weeks of setup
 
-- Ο πηγαίος κώδικας, η αρχιτεκτονική, οι αλγόριθμοι AI/ML και οι τεχνικές προδιαγραφές της πλατφόρμας EyeNet Vision
-- Το επιχειρηματικό σχέδιο (business plan), τα οικονομικά στοιχεία, οι χρηματοοικονομικές προβλέψεις και η στρατηγική τιμολόγησης
-- Τα στοιχεία πελατών, συνεργατών, προμηθευτών και επενδυτών (υφιστάμενων ή δυνητικών)
-- Εμπορικά μυστικά, τεχνογνωσία (know-how), μεθοδολογίες ανάπτυξης και εσωτερικές διαδικασίες
-- Παρουσιάσεις, demos, πρωτότυπα και κάθε υλικό που κοινοποιείται στο πλαίσιο της συνεργασίας
-- Πληροφορίες σχετικές με ευρεσιτεχνίες, εμπορικά σήματα ή εκκρεμείς αιτήσεις κατοχύρωσης
-- Στρατηγικά σχέδια, σχέδια go-to-market, πληροφορίες ανταγωνισμού και αναλύσεις αγοράς
+### 4.2 Party B (Partner)
 
-### 5.2 Υποχρεώσεις Εμπιστευτικότητας
+- Active search for and approach to individuals and legal entities, including companies, investment bodies, and strategic partners, that may contribute to the objectives of this document
+- Networking and professional intermediation activities to connect EyeNet Vision with suitable investors, partners, and market participants
+- Use of Party B's professional network to identify funding opportunities, commercial partnerships, and promotion channels
+- Organization and/or facilitation of meetings, presentations, and negotiations with interested parties
+- Recommendations regarding market requirements and market needs in the sectors where it operates
 
-Κάθε μέρος δεσμεύεται:
+### 4.3 Referral Recognition
 
-α) Να μην αποκαλύψει, δημοσιεύσει, μεταδώσει ή καταστήσει προσβάσιμες Εμπιστευτικές Πληροφορίες σε οποιονδήποτε τρίτο χωρίς προηγούμενη **ρητή γραπτή συγκατάθεση** του μέρους που τις κοινοποίησε.
-
-β) Να χρησιμοποιεί τις Εμπιστευτικές Πληροφορίες **αποκλειστικά** για τους σκοπούς που αναφέρονται στο Άρθρο 3 του παρόντος.
-
-γ) Να λαμβάνει κατάλληλα μέτρα προστασίας των Εμπιστευτικών Πληροφοριών, τουλάχιστον ισοδύναμα με αυτά που εφαρμόζει για τις δικές του εμπιστευτικές πληροφορίες.
-
-δ) Να περιορίζει την πρόσβαση στις Εμπιστευτικές Πληροφορίες μόνο σε πρόσωπα που χρειάζεται να τις γνωρίζουν (need-to-know basis) και να διασφαλίζει ότι τα πρόσωπα αυτά δεσμεύονται με αντίστοιχες υποχρεώσεις εμπιστευτικότητας.
-
-### 5.3 Εξαιρέσεις
-
-Δεν θεωρούνται Εμπιστευτικές Πληροφορίες όσες:
-
-- Ήταν δημοσίως γνωστές κατά τη στιγμή της κοινοποίησης, χωρίς υπαιτιότητα του λήπτη
-- Κατέστησαν δημοσίως γνωστές μετά την κοινοποίηση, χωρίς παραβίαση του παρόντος
-- Ήταν ήδη νομίμως στην κατοχή του λήπτη πριν την κοινοποίηση
-- Αποκτήθηκαν νομίμως από τρίτο μέρος χωρίς υποχρέωση εμπιστευτικότητας
-
-### 5.4 Διάρκεια Εμπιστευτικότητας
-
-Οι υποχρεώσεις εμπιστευτικότητας του παρόντος άρθρου ισχύουν καθ' όλη τη διάρκεια της συνεργασίας και για **τρία (3) έτη** μετά τη λήξη, λύση ή καταγγελία του παρόντος, ανεξαρτήτως αιτίας.
+- It is expressly agreed that each prospective investor, customer, or partner introduced or disclosed by Party B to Party A in the context of this document shall be recognized as a contact of Party B. If such contact results in cooperation, investment, contract execution, or any other economic benefit for Party A, Party B shall be entitled to reasonable compensation, subject also to any more specific agreement between the parties.
 
 ---
 
-## 6. Πνευματική Ιδιοκτησία
+## 5. Confidentiality
 
-### 6.1 Αποκλειστική Ιδιοκτησία
+### 5.1 Definition of Confidential Information
 
-Η πλατφόρμα EyeNet Vision στο σύνολό της – περιλαμβανομένων ενδεικτικά του πηγαίου κώδικα, των αλγορίθμων AI/ML (computer vision, δημογραφική ανάλυση, behavioral analytics), της αρχιτεκτονικής microservices, των πρωτοκόλλων επικοινωνίας, του UI/UX design, καθώς και κάθε εμπορικού σήματος, domain name (eyenet-vision.com) και λογοτύπου – αποτελεί **αποκλειστική πνευματική ιδιοκτησία του Α' Μέρους**.
+"Confidential Information" includes, indicatively and without limitation:
 
-### 6.2 Απαγόρευση Αντιγραφής
+- The source code, architecture, AI/ML algorithms, and technical specifications of the EyeNet Vision platform
+- The business plan, financial information, financial projections, and pricing strategy
+- Information relating to customers, partners, suppliers, and investors, whether existing or prospective
+- Trade secrets, know-how, development methodologies, and internal procedures
+- Presentations, demos, prototypes, and any material shared in the context of the cooperation
+- Information related to patents, trademarks, or pending filings
+- Strategic plans, go-to-market plans, competitive information, and market analysis
 
-Το Β' Μέρος δεν αποκτά κανένα δικαίωμα πνευματικής ή βιομηχανικής ιδιοκτησίας επί της πλατφόρμας μέσω του παρόντος. Απαγορεύεται ρητά η αντιγραφή, αναπαραγωγή, αποσυμπίληση (reverse engineering) ή δημιουργία παράγωγων έργων βασισμένων στην τεχνολογία της EyeNet Vision.
+### 5.2 Confidentiality Obligations
 
-### 6.3 Νέα Πνευματική Ιδιοκτησία
+Each party undertakes:
 
-Τυχόν νέα πνευματική ιδιοκτησία που προκύψει στο πλαίσιο της συνεργασίας θα αποτελέσει αντικείμενο ξεχωριστής γραπτής συμφωνίας.
+a) Not to disclose, publish, transmit, or make available Confidential Information to any third party without the prior **express written consent** of the party that disclosed it.
+
+b) To use the Confidential Information **exclusively** for the purposes described in Section 3 of this document.
+
+c) To apply appropriate measures to protect the Confidential Information, at least equivalent to those applied to its own confidential information.
+
+d) To limit access to Confidential Information only to persons who need to know it and to ensure that such persons are bound by corresponding confidentiality obligations.
+
+### 5.3 Exceptions
+
+Information shall not be considered Confidential Information if it:
+
+- Was publicly known at the time of disclosure without fault of the receiving party
+- Became publicly known after disclosure without breach of this document
+- Was already lawfully in the possession of the receiving party before disclosure
+- Was lawfully obtained from a third party without a confidentiality obligation
+
+### 5.4 Duration of Confidentiality
+
+The confidentiality obligations under this section remain in force throughout the duration of the cooperation and for **three (3) years** after termination, expiry, or cancellation of this document, regardless of cause.
 
 ---
 
-## 7. Ανταγωνιστικά Πλεονεκτήματα (Αναφορά)
+## 6. Intellectual Property
 
-Για πλήρη ενημέρωση του Β' Μέρους, ακολουθεί συνοπτική αποτύπωση της ανταγωνιστικής θέσης:
+### 6.1 Exclusive Ownership
 
+The EyeNet Vision platform in its entirety, including without limitation the source code, AI/ML algorithms for computer vision, demographic analysis, and behavioral analytics, the microservices architecture, communication protocols, UI/UX design, as well as any trademark, domain name `eyenet-vision.com`, and logo, is the **exclusive intellectual property of Party A**.
 
-| Χαρακτηριστικό | EyeNet Vision | Ανταγωνισμός |
+### 6.2 Prohibition of Copying
+
+Party B acquires no intellectual or industrial property rights in the platform through this document. Copying, reproduction, reverse engineering, or the creation of derivative works based on EyeNet Vision technology is expressly prohibited.
+
+### 6.3 New Intellectual Property
+
+Any new intellectual property arising in the context of the cooperation shall be the subject of a separate written agreement.
+
+---
+
+## 7. Competitive Advantages
+
+For the full information of Party B, the following is a summary of the competitive position of the platform:
+
+| Feature | EyeNet Vision | Competition |
 |---------------|---------------|--------------|
-| Privacy-first (on-premises) | NAI | Ελάχιστοι |
-| Πλήρης offline λειτουργία | NAI | Σπάνιο |
-| 6 εξειδικευμένες εφαρμογές | NAI | Οριζόντιες πλατφόρμες |
-| Event-driven triggers ανά κάμερα | NAI | Περιορισμένο |
-| Hardware-agnostic (16GB RAM) | NAI | Ιδιόκτητο hardware |
-| Κλιμάκωση 1 κάμερα - enterprise | NAI | Ελάχιστοι |
-| B2B + B2C dual model | NAI | Σπάνιο |
-| Dual deployment (cloud + on-prem) | NAI | Σπάνιο |
-| Αυτόματες ενέργειες χωρίς ανθρώπινη παρέμβαση | NAI | Περιορισμένο |
-| Ταχεία εγκατάσταση (1-2 εβδομάδες) | NAI | Μήνες |
+| Privacy-first on-premises architecture | YES | Very limited |
+| Full offline operation | YES | Rare |
+| Six specialized applications | YES | Mostly horizontal platforms |
+| Event-driven triggers per camera | YES | Limited |
+| Hardware-agnostic operation on 16GB RAM | YES | Often proprietary hardware |
+| Scaling from 1 camera to enterprise deployments | YES | Very limited |
+| B2B plus B2C dual model | YES | Rare |
+| Dual deployment, cloud plus on-prem | YES | Rare |
+| Automatic actions without human intervention | YES | Limited |
+| Fast installation in 1-2 weeks | YES | Often months |
 
-**Unit Economics (σύμφωνα με business plan):**
-- **B2B:** CAC $3.000-5.000 | LTV $144.000 | Payback 3-4 μήνες | LTV:CAC 40:1
-- **B2C:** CAC $20-30 | LTV $600-1.200 | Payback 1-2 μήνες | LTV:CAC 30:1
-
----
-
-## 8. Φύση Παρόντος
-
-Το παρόν **δεν αποτελεί δεσμευτική συμφωνία**. Περιγράφει επίσημα τις δραστηριότητες κάθε μέρους ώστε να επιτευχθούν οι ανωτέρω σκοποί. Κανένα μέρος δεν αναλαμβάνει νομική ή οικονομική δέσμευση μέσω του παρόντος. Τυχόν δεσμευτικοί όροι θα αποτυπωθούν σε ξεχωριστή σύμβαση.
-
-**Εξαίρεση:** Οι υποχρεώσεις εμπιστευτικότητας του Άρθρου 5 και πνευματικής ιδιοκτησίας του Άρθρου 6 είναι **δεσμευτικές** και ισχύουν ανεξαρτήτως της μη δεσμευτικής φύσης του παρόντος.
+**Unit economics according to the business plan:**
+- **B2B:** CAC $3,000-5,000 | LTV $144,000 | Payback 3-4 months | LTV:CAC 40:1
+- **B2C:** CAC $20-30 | LTV $600-1,200 | Payback 1-2 months | LTV:CAC 30:1
 
 ---
 
-## 9. Διάρκεια
+## 8. Nature of This Document
 
-Το παρόν ισχύει για **έξι (6) μήνες** από την υπογραφή. Κάθε μέρος μπορεί να αποχωρήσει ελεύθερα και αζημίως ανά πάσα στιγμή, με την επιφύλαξη των υποχρεώσεων εμπιστευτικότητας του Άρθρου 5 και πνευματικής ιδιοκτησίας του Άρθρου 6.
+This document **does not constitute a binding agreement**. It formally describes the activities of each party in order to achieve the purposes set out above. Neither party undertakes any legal or financial commitment through this document. Any binding terms shall be set out in a separate agreement.
 
----
-
-## Υπογραφές
-
-**Α' Μέρος (EyeNet Vision)**
-
-Ονοματεπώνυμο: ___________________________  
-Ιδιότητα: ___________________________  
-Υπογραφή: ___________________________  
-Ημερομηνία: ___/___/2026  
-
-**Β' Μέρος (Συνεργάτης)**
-
-Ονοματεπώνυμο: ___________________________  
-Ιδιότητα: ___________________________  
-Υπογραφή: ___________________________  
-Ημερομηνία: ___/___/2026  
+**Exception:** The confidentiality obligations under Section 5 and the intellectual property obligations under Section 6 are **binding** and apply regardless of the otherwise non-binding nature of this document.
 
 ---
 
-*Προσύμφωνο Επαγγελματικής Συνεργασίας – EyeNet Vision*  
+## 9. Duration
+
+This document shall remain in effect for **six (6) months** from the date of signature. Either party may withdraw freely and without liability at any time, subject to the confidentiality obligations of Section 5 and the intellectual property obligations of Section 6.
+
+---
+
+## Signatures
+
+**Party A (EyeNet Vision)**
+
+Full Name: ___________________________  
+Capacity: ___________________________  
+Signature: ___________________________  
+Date: ___/___/2026
+
+**Party B (Partner)**
+
+Full Name: ___________________________  
+Capacity: ___________________________  
+Signature: ___________________________  
+Date: ___/___/2026
+
+---
+
+*Preliminary Professional Cooperation Agreement - EyeNet Vision*  
 *https://eyenet-vision.com*  
-*Εμπιστευτικό Έγγραφο*
+*Confidential Document*

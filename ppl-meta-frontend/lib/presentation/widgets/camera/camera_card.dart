@@ -87,7 +87,7 @@ class CameraCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

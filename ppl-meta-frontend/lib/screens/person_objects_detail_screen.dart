@@ -5443,18 +5443,20 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                               ),
                               const SizedBox(height: 4),
                             ],
-                            Row(
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 Text(
                                   analysis.demographics?.gender ?? 'Unknown',
                                   style: TextStyle(
                                     fontSize: 18,
-                                    fontWeight: analysis.name != null 
-                                        ? FontWeight.normal 
+                                    fontWeight: analysis.name != null
+                                        ? FontWeight.normal
                                         : FontWeight.bold,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
                                 // Chip: Blue for merged, Grey for standalone
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -8235,7 +8237,7 @@ extension CrossVideoTabs on _PersonObjectsDetailScreenState {
                     borderRadius: BorderRadius.circular(8),
                     child: CustomPaint(
                       painter: AttendanceGraphPainter(cameraAnalyses),
-                      size: Size.infinite,
+                      child: const SizedBox.expand(),
                     ),
                   ),
                 ),
@@ -8333,6 +8335,7 @@ class AttendanceGraphPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (analyses.isEmpty) return;
+    if (!size.width.isFinite || !size.height.isFinite) return;
 
     // Sort analyses by number of appearances (descending)
     final sortedAnalyses = List<AggregatedIndividualAnalysis>.from(analyses)
@@ -8345,7 +8348,9 @@ class AttendanceGraphPainter extends CustomPainter {
     
     final graphWidth = size.width - leftMargin - rightMargin;
     final graphHeight = size.height - topMargin - bottomMargin;
+    if (graphWidth <= 0 || graphHeight <= 0) return;
     final rowHeight = graphHeight / sortedAnalyses.length;
+    if (!rowHeight.isFinite || rowHeight <= 0) return;
 
     // Find min/max time across all appearances
     DateTime? minTime;
@@ -8368,6 +8373,7 @@ class AttendanceGraphPainter extends CustomPainter {
     if (minTime == null || maxTime == null) return;
 
     final timeDuration = maxTime.difference(minTime);
+    if (timeDuration.inMilliseconds <= 0) return;
     
     // Helper to convert timestamp to X coordinate
     double timeToX(DateTime time) {

@@ -322,6 +322,12 @@ async def admin_set_password(request: Request, user_id: int):
     return await _proxy_to_node_service(request)
 
 
+@api_router.get("/licensing/authority/status")
+async def get_authority_status(request: Request):
+    """Proxy authority status to Node service."""
+    return await _proxy_to_node_service(request)
+
+
 @api_router.get("/users/storage-preferences")
 async def get_user_storage_preferences(request: Request):
     """Proxy get user storage preferences to Media service."""

@@ -66,7 +66,7 @@
 		{
 			"label": "🌐 Start Nginx Proxy (Local Dev)",
 			"type": "shell",
-			"command": "echo '🌐 Starting Nginx Proxy...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx proxy started successfully!'",
+			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh",
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -74,7 +74,7 @@
 		{
 			"label": "🌐 Stop Nginx Proxy (Local Dev)",
 			"type": "shell",
-			"command": "echo '🌐 Stopping Nginx Proxy...' && sudo nginx -s quit 2>/dev/null && echo '✅ Nginx proxy stopped successfully!' || echo '⚠️ Nginx was not running or already stopped'",
+			"command": "echo '🌐 Stopping Nginx Proxy...' && nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true && echo '✅ Nginx proxy stopped successfully!'",
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -82,7 +82,7 @@
 		{
 			"label": "🚀 Start Complete Platform (Services + Nginx)",
 			"type": "shell",
-			"command": "echo '🚀 Starting Complete PPL Meta Platform...' && echo '1. Starting all backend services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '2. Waiting for services to initialize...' && sleep 8 && echo '3. Starting Nginx proxy...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Complete platform started! Services + Nginx running.' && wait",
+			"command": "echo '🚀 Starting Complete PPL Meta Platform...' && echo '1. Starting all backend services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '2. Waiting for services to initialize...' && sleep 8 && echo '3. Starting Nginx proxy...' && bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh && echo '✅ Complete platform started! Services + Nginx running.' && wait",
 			"group": "build",
 			"isBackground": true,
 			"problemMatcher": []
@@ -90,7 +90,7 @@
 		{
 			"label": "🛑 Stop Complete Platform (Services + Nginx)",
 			"type": "shell",
-			"command": "echo '🛑 Stopping Complete PPL Meta Platform...' && echo '1. Stopping Nginx...' && sudo nginx -s quit 2>/dev/null || true && echo '2. Stopping all services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && echo '✅ Complete platform stopped!'",
+			"command": "echo '🛑 Stopping Complete PPL Meta Platform...' && echo '1. Stopping Nginx...' && nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true && echo '2. Stopping all services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && echo '✅ Complete platform stopped!'",
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -383,7 +383,7 @@
 		{
 			"label": "🌐 Start Nginx Proxy (Local Dev)",
 			"type": "shell",
-			"command": "sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf",
+			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh",
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -391,7 +391,7 @@
 		{
 			"label": "🌐 Stop Nginx Proxy (Local Dev)",
 			"type": "shell",
-			"command": "sudo nginx -s quit",
+			"command": "nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true",
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -399,7 +399,7 @@
 		{
 			"label": "🌐 Reload Nginx Configuration",
 			"type": "shell",
-			"command": "sudo nginx -s reload",
+			"command": "nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)",
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -407,7 +407,7 @@
 		{
 			"label": "🌐 Test Nginx Configuration",
 			"type": "shell",
-			"command": "sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf",
+			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/test-nginx-local.sh",
 			"group": "test",
 			"isBackground": false,
 			"problemMatcher": []
@@ -415,7 +415,7 @@
 		{
 			"label": "🌐 Reload Nginx Configuration",
 			"type": "shell",
-			"command": "echo '🌐 Reloading Nginx Configuration...' && sudo nginx -s reload && echo '✅ Nginx configuration reloaded!'",
+			"command": "echo '🌐 Reloading Nginx Configuration...' && (nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)) && echo '✅ Nginx configuration reloaded!'",
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
@@ -423,7 +423,7 @@
 		{
 			"label": "🌐 Test Nginx Configuration",
 			"type": "shell",
-			"command": "echo '🌐 Testing Nginx Configuration...' && sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx configuration is valid!'",
+			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/test-nginx-local.sh",
 			"group": "test",
 			"isBackground": false,
 			"problemMatcher": []

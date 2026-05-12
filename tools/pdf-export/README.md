@@ -4,14 +4,14 @@ This utility is isolated under `tools/pdf-export` and does not affect other mono
 
 ## Isolation
 
-- Virtual environment: `tools/pdf-export/.venv`
+- Virtual environment: `tools/pdf-export/venv` created with Python 3.11
 - Python dependencies: local to that virtual environment only
 - Output folder: `tools/pdf-export/output`
 
 ## Build simplified print HTML
 
 ```bash
-source tools/pdf-export/.venv/bin/activate
+source tools/pdf-export/venv/bin/activate
 python tools/pdf-export/build_print_html.py
 ```
 

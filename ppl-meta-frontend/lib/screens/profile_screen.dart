@@ -7,6 +7,7 @@ import '../core/theme/app_theme.dart';
 import '../core/models/user.dart';
 import '../widgets/change_password_dialog.dart';
 import '../widgets/custom_app_bar.dart';
+import '../widgets/authority_status_card.dart';
 import '../presentation/pages/developer_settings_page.dart';
 import '../presentation/pages/people_counters_page.dart';
 
@@ -173,8 +174,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 return Chip(
                   label: Text(role),
                   backgroundColor: role == 'admin'
-                      ? Colors.deepPurple.withOpacity(0.15)
-                      : Colors.blue.withOpacity(0.15),
+                      ? Colors.deepPurple.withValues(alpha: 0.15)
+                      : Colors.blue.withValues(alpha: 0.15),
                 );
               }).toList(),
             ),
@@ -237,6 +238,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             _buildProfileHeader(context, user),
             const SizedBox(height: 16),
             _buildAccountInfo(context, user),
+            const SizedBox(height: 24),
+            const AuthorityStatusCard(showAdminDetails: false),
             const SizedBox(height: 24),
 
             // Settings Section
@@ -386,7 +389,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           children: [
             CircleAvatar(
               radius: 60,
-              backgroundColor: AppColors.primary.withOpacity(0.1),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
               child: Text(
                 user.username.isNotEmpty ? user.username[0].toUpperCase() : 'U',
                 style: TextStyle(
@@ -415,8 +418,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
                 color: user.emailVerified
-                    ? Colors.green.withOpacity(0.1)
-                    : Colors.orange.withOpacity(0.1),
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: user.emailVerified ? Colors.green : Colors.orange,

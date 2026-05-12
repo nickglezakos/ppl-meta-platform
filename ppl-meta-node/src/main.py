@@ -1,5 +1,6 @@
 """Main entry point for the PPL Meta Node - User Management Service."""
 
+import asyncio
 import os
 import socket
 import subprocess
@@ -12,12 +13,12 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
 
 # Add the parent directory to Python path to import shared modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -29,7 +30,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 import logging
 
 # Basic logging setup with file handler
-import os
 from logging.handlers import RotatingFileHandler
 
 # Create logs directory if it doesn't exist
@@ -52,9 +52,9 @@ logger = logging.getLogger("ppl-meta-node")
 try:
     from src.config import settings
     from src.database import SessionLocal, engine
-    from src.microservice_config import CONSUL_CONFIG
     from src.models.user import Base
     from src.services.user_service import create_user, get_user_by_email
+    from src.services.authority_service import authority_service
 
     # Import licensing service for initialization
     try:
@@ -68,8 +68,8 @@ try:
         logger.warning("Licensing service not available")
 
     logger.info("Successfully imported core modules")
-except Exception as e:
-    logger.error(f"Failed to import core modules: {e}")
+except (ImportError, RuntimeError) as e:
+    logger.error("Failed to import core modules: %s", e)
     sys.exit(1)
 
 from src.api import app_settings, backup, capabilities, logs, otp, roles
@@ -77,22 +77,15 @@ from src.api.routes import legacy_health_router
 
 # Import API routers
 from src.api.v1.routes import router as v1_router
-from src.models.app_setting import AppSetting
 
 # Import models to ensure they're created
 from src.models.installation_info import InstallationInfo
-from src.models.log import Log
-from src.models.otp import OTP
-from src.models.role import Capability, Role, RoleCapability, UserRole
-from src.models.user import User, UserAction
 from src.schemas.user import UserCreate
 from src.services.multicast_discovery import MulticastServiceDiscoveryBroadcaster
-from src.services.role_service import ensure_admin_role, ensure_user_role, ensure_default_capabilities
+from src.services.role_service import ensure_default_capabilities, ensure_exact_system_roles
 
 # Try to import the shared service discovery module
 try:
-    from shared.service_discovery import register_service
-
     service_discovery_available = True
     logger.info("Service discovery module available")
 except ImportError:
@@ -123,6 +116,27 @@ def get_or_create_installation_guid(db: Session):
     return info.guid
 
 
+def ensure_installation_info_schema(db: Session):
+    """Upgrade installation_info in place for authority cache fields."""
+    inspector = inspect(db.bind)
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("installation_info")
+    }
+    required_columns = {
+        "authority_approved_owner_email": "TEXT",
+        "authority_licence_status": "TEXT",
+        "authority_owner_enabled": "BOOLEAN",
+        "authority_offline_grace_days": "INTEGER",
+        "authority_last_checked_at": "TIMESTAMP",
+        "authority_last_successful_check_at": "TIMESTAMP",
+        "authority_last_result_reason": "TEXT",
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in existing_columns:
+            db.execute(text(f"ALTER TABLE installation_info ADD COLUMN {column_name} {column_type}"))
+    db.commit()
+
+
 def get_local_network_ips():
     """Get all local network IP addresses including VPN ranges"""
     ips = []
@@ -131,7 +145,7 @@ def get_local_network_ips():
         import re
 
         result = subprocess.run(
-            ["ifconfig"], capture_output=True, text=True, timeout=10
+            ["ifconfig"], capture_output=True, check=False, text=True, timeout=10
         )
         if result.returncode == 0:
             # Look for inet addresses
@@ -159,7 +173,7 @@ def get_local_network_ips():
                     elif ip.startswith("192.168."):
                         print(f"Detected local network IP: {ip}")
 
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"ifconfig method failed: {e}")
         # Fallback to socket method
         hostname = socket.gethostname()
@@ -177,7 +191,7 @@ def get_dynamic_allowed_hosts():
     network_ips = get_local_network_ips()
 
     all_hosts = base_hosts + network_ips
-    logger.info(f"Dynamic allowed hosts: {all_hosts}")
+    logger.info("Dynamic allowed hosts: %s", all_hosts)
     return all_hosts
 
 
@@ -195,8 +209,8 @@ class TimingMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan context manager for startup and shutdown tasks."""
-    global service_discovery_client
     multicast_broadcaster = None
+    authority_revalidation_task = None
 
     logger.info("Starting PPL Meta Node service...")
 
@@ -204,8 +218,6 @@ async def lifespan(_app: FastAPI):
     if service_discovery_available:
         try:
             # Detect actual network IP for registration
-            import socket
-
             from shared.service_discovery import register_service
 
             try:
@@ -214,7 +226,7 @@ async def lifespan(_app: FastAPI):
                 s.connect(("8.8.8.8", 80))
                 detected_ip = s.getsockname()[0]
                 s.close()
-            except Exception:
+            except OSError:
                 # Fallback to hostname resolution
                 detected_ip = socket.gethostbyname(socket.gethostname())
 
@@ -233,8 +245,8 @@ async def lifespan(_app: FastAPI):
                 },
             )
             logger.info("Successfully registered ppl-meta-node with discovery service")
-        except Exception as e:
-            logger.error(f"Failed to register with discovery service: {e}")
+        except (ImportError, OSError, RuntimeError) as e:
+            logger.error("Failed to register with discovery service: %s", e)
             logger.info("Continuing without service discovery")
 
     try:
@@ -255,30 +267,29 @@ async def lifespan(_app: FastAPI):
                 Base.metadata.create_all(bind=engine)
                 logger.info("Database tables created/verified")
 
+                ensure_installation_info_schema(db)
+                logger.info("Installation info schema verified")
+
                 # Ensure installation GUID
                 guid = get_or_create_installation_guid(db)
-                logger.info(f"Installation GUID: {guid}")
+                logger.info("Installation GUID: %s", guid)
 
-                # Ensure first admin user exists
-                admin_email = "nick.glezakos@gmail.com"
-                admin_username = "nick.glezakos@gmail.com"
-                admin_user = get_user_by_email(db, admin_email)
-                if not admin_user:
-                    admin = UserCreate(
-                        username=admin_username,
-                        email=admin_email,
+                # Ensure reference users exist for local development bootstrap.
+                simple_user_email = "nick.glezakos@gmail.com"
+                simple_user = get_user_by_email(db, simple_user_email)
+                if not simple_user:
+                    baseline_user = UserCreate(
+                        username=simple_user_email,
+                        email=simple_user_email,
                         password="Kodikos@23",
                     )
-                    create_user(db, admin)
-                    logger.info("Admin user created with default credentials.")
+                    create_user(db, baseline_user)
+                    logger.info("Baseline user created with default credentials.")
                 else:
-                    logger.info("Admin user already exists")
+                    logger.info("Baseline user already exists")
 
-                # Ensure admin role exists and is assigned to the admin user
-                ensure_admin_role(db, admin_username)
-                logger.info("Admin role ensured")
-
-                # Seed fresh.user@example.com as admin
+                # Seed fresh.user@example.com as the privileged development account.
+                # Owner assignment is converged later so the authority service can decide it.
                 fresh_email = "fresh.user@example.com"
                 if not get_user_by_email(db, fresh_email):
                     create_user(db, UserCreate(
@@ -287,7 +298,6 @@ async def lifespan(_app: FastAPI):
                         password="Kodikos@23",
                     ))
                     logger.info("Fresh admin user created.")
-                ensure_admin_role(db, fresh_email)
 
                 # Seed nick.glezakos@outlook.com as regular user
                 outlook_email = "nick.glezakos@outlook.com"
@@ -298,7 +308,7 @@ async def lifespan(_app: FastAPI):
                         password="Kodikos@23",
                     ))
                     logger.info("Outlook test user created.")
-                ensure_user_role(db, outlook_email)
+                ensure_exact_system_roles(db, outlook_email, {"user"})
 
                 # Ensure default capabilities (media:view) assigned to roles
                 ensure_default_capabilities(db)
@@ -307,21 +317,128 @@ async def lifespan(_app: FastAPI):
                 db.close()
                 logger.info("Database initialization completed successfully")
 
-            except Exception as e:
-                logger.error(f"Database initialization failed: {e}")
+            except (OSError, RuntimeError) as e:
+                logger.error("Database initialization failed: %s", e)
                 if "db" in locals():
                     db.close()
                 raise
 
         await run_in_threadpool(init_guid_and_admin)
 
+        async def converge_bootstrap_roles() -> None:
+            fresh_email = "fresh.user@example.com"
+            simple_user_email = "nick.glezakos@gmail.com"
+            outlook_email = "nick.glezakos@outlook.com"
+
+            fresh_roles = {"owner", "admin", "user"}
+            approved_owner_email = None
+            if authority_service.is_configured():
+                db = SessionLocal()
+                try:
+                    authority_result = await authority_service.verify_owner_candidate(db, fresh_email)
+                finally:
+                    db.close()
+                if authority_result.get("approved"):
+                    logger.info("Authority approved %s as startup owner", fresh_email)
+                else:
+                    fresh_roles = {"admin", "user"}
+                    approved_owner_email = (
+                        authority_result.get("installation", {}).get("approved_owner_email")
+                    )
+                    logger.warning(
+                        "Authority did not approve %s as startup owner: %s",
+                        fresh_email,
+                        authority_result.get("reason", "unknown_reason"),
+                    )
+            else:
+                logger.info("Authority integration not configured; using local startup owner fallback")
+
+            def apply_bootstrap_roles() -> None:
+                db = SessionLocal()
+                try:
+                    simple_user_roles = {"user"}
+                    outlook_roles = {"user"}
+
+                    def converge_bootstrap_user_roles(email: str, role_names: set[str]) -> None:
+                        try:
+                            ensure_exact_system_roles(db, email, role_names)
+                        except ValueError as exc:
+                            if str(exc) != "Cannot remove the final owner role assignment":
+                                raise
+                            logger.warning(
+                                "Preserving existing owner role for %s during startup bootstrap because authority fallback did not identify a replacement owner yet",
+                                email,
+                            )
+
+                    if approved_owner_email and approved_owner_email != fresh_email:
+                        approved_owner = get_user_by_email(db, approved_owner_email)
+                        if approved_owner:
+                            converge_bootstrap_user_roles(
+                                approved_owner_email,
+                                {"owner", "admin", "user"},
+                            )
+                            logger.info(
+                                "Authority-approved owner bootstrap converged for %s",
+                                approved_owner_email,
+                            )
+                        else:
+                            logger.warning(
+                                "Authority-approved owner %s does not exist locally yet",
+                                approved_owner_email,
+                            )
+
+                    converge_bootstrap_user_roles(fresh_email, fresh_roles)
+                    if approved_owner_email == simple_user_email:
+                        simple_user_roles = {"owner", "admin", "user"}
+                    converge_bootstrap_user_roles(simple_user_email, simple_user_roles)
+
+                    if approved_owner_email == outlook_email:
+                        outlook_roles = {"owner", "admin", "user"}
+                    converge_bootstrap_user_roles(outlook_email, outlook_roles)
+                    logger.info(
+                        "Development role bootstrap converged: fresh=%s, nick=%s, outlook=%s",
+                        sorted(fresh_roles),
+                        sorted(simple_user_roles),
+                        sorted(outlook_roles),
+                    )
+                finally:
+                    db.close()
+
+            await run_in_threadpool(apply_bootstrap_roles)
+
+        await converge_bootstrap_roles()
+
+        async def revalidate_authority_periodically() -> None:
+            interval_seconds = max(1, settings.AUTHORITY_REVALIDATION_INTERVAL_SECONDS)
+            while True:
+                db = SessionLocal()
+                try:
+                    result = await authority_service.refresh_cached_authority_state(db)
+                    if result.get("configured"):
+                        logger.info(
+                            "Authority cache refresh completed: %s",
+                            result.get("reason", "unknown_reason"),
+                        )
+                except RuntimeError as e:
+                    logger.error("Authority cache refresh failed: %s", e)
+                finally:
+                    db.close()
+                await asyncio.sleep(interval_seconds)
+
+        if authority_service.is_configured():
+            authority_revalidation_task = asyncio.create_task(revalidate_authority_periodically())
+            logger.info(
+                "Authority revalidation worker started with %s second interval",
+                max(1, settings.AUTHORITY_REVALIDATION_INTERVAL_SECONDS),
+            )
+
         # Initialize licensing service if available
         if LICENSING_AVAILABLE and init_licensing_service:
             try:
                 await init_licensing_service()
                 logger.info("✅ Licensing service initialized")
-            except Exception as e:
-                logger.error(f"⚠️ Licensing service initialization failed: {e}")
+            except RuntimeError as e:
+                logger.error("⚠️ Licensing service initialization failed: %s", e)
 
         # Start multicast discovery broadcaster
         def start_multicast_broadcaster():
@@ -335,28 +452,35 @@ async def lifespan(_app: FastAPI):
                 else:
                     logger.warning("⚠️ Failed to start multicast broadcaster")
                     multicast_broadcaster = None
-            except Exception as e:
-                logger.error(f"❌ Error starting multicast broadcaster: {e}")
+            except RuntimeError as e:
+                logger.error("❌ Error starting multicast broadcaster: %s", e)
                 multicast_broadcaster = None
 
         await run_in_threadpool(start_multicast_broadcaster)
         logger.info("Service startup completed successfully")
 
-    except Exception as e:
-        logger.error(f"Service startup failed: {e}")
+    except (OSError, RuntimeError) as e:
+        logger.error("Service startup failed: %s", e)
         raise
 
     yield
 
     logger.info("Service shutting down...")
 
+    if authority_revalidation_task:
+        authority_revalidation_task.cancel()
+        try:
+            await authority_revalidation_task
+        except asyncio.CancelledError:
+            logger.info("Authority revalidation worker stopped")
+
     # Stop multicast broadcaster
     if multicast_broadcaster:
         try:
             multicast_broadcaster.stop()
             logger.info("✅ Multicast discovery broadcaster stopped")
-        except Exception as e:
-            logger.error(f"❌ Error stopping multicast broadcaster: {e}")
+        except RuntimeError as e:
+            logger.error("❌ Error stopping multicast broadcaster: %s", e)
 
     # Deregister from service discovery
     if service_discovery_available:
@@ -365,8 +489,8 @@ async def lifespan(_app: FastAPI):
 
             await deregister_service("ppl-meta-node")
             logger.info("Service deregistered from discovery service")
-        except Exception as e:
-            logger.error(f"Failed to deregister service: {e}")
+        except (ImportError, RuntimeError) as e:
+            logger.error("Failed to deregister service: %s", e)
 
 
 # FastAPI application with metadata
@@ -381,15 +505,14 @@ app = FastAPI(
 )
 
 # Add global exception handlers for validation errors
-from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc):
+async def validation_exception_handler(_request, exc):
     """Handle Pydantic validation errors."""
-    logger.error(f"Validation error: {exc}")
+    logger.error("Validation error: %s", exc)
     return JSONResponse(
         status_code=422,
         content={"detail": exc.errors(), "body": exc.body},
@@ -397,9 +520,9 @@ async def validation_exception_handler(request, exc):
 
 
 @app.exception_handler(ValueError)
-async def value_error_handler(request, exc):
+async def value_error_handler(_request, exc):
     """Handle value errors from custom validation."""
-    logger.error(f"Value error: {exc}")
+    logger.error("Value error: %s", exc)
     return JSONResponse(
         status_code=400,
         content={"detail": str(exc)},

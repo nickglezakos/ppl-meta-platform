@@ -263,7 +263,7 @@ class _CamerasScreenState extends ConsumerState<CamerasScreen> {
                       crossAxisCount: 2,
                       mainAxisSpacing: 16,
                       crossAxisSpacing: 16,
-                      childAspectRatio: 1.6,
+                      childAspectRatio: 1.5,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) => CameraCard(

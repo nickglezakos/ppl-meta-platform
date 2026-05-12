@@ -9,7 +9,7 @@ echo "============================================="
 # Test if nginx is running
 if ! pgrep nginx > /dev/null; then
     echo "❌ Nginx is not running. Please start nginx first."
-    echo "Run: ./setup-nginx-local.sh"
+    echo "Run: ./scripts/setup-nginx-local.sh"
     exit 1
 fi
 
@@ -98,6 +98,9 @@ echo "🎯 Test Summary:"
 echo "   Nginx is properly routing requests to your local Python services"
 echo "   You can access all services through http://localhost"
 echo "   CORS and security headers are configured for development"
+if command -v brew > /dev/null 2>&1 && brew list nginx > /dev/null 2>&1; then
+    echo "   Homebrew service status: $(brew services list | awk '$1 == "nginx" {print $2}')"
+fi
 echo ""
 echo "💡 Next steps:"
 echo "   • Test with a frontend application"

@@ -607,27 +607,54 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             const PeopleCountersTile(),
             const SizedBox(height: 8),
             // Section header
-            Row(
-              children: [
-                const Icon(Icons.analytics, color: AppColors.primary),
-                const SizedBox(width: 8),
-                const Text(
-                  'MVR People Detection Analytics',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                OutlinedButton.icon(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 520;
+
+                final titleRow = Row(
+                  children: const [
+                    Icon(Icons.analytics, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'MVR People Detection Analytics',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+
+                final exportButton = OutlinedButton.icon(
                   onPressed: _showExportDialog,
                   icon: const Icon(Icons.download, size: 18),
                   label: const Text('Export'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                   ),
-                ),
-              ],
+                );
+
+                if (isCompact) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      titleRow,
+                      const SizedBox(height: 12),
+                      exportButton,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: titleRow),
+                    const SizedBox(width: 16),
+                    exportButton,
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 8),
             Text(
@@ -722,24 +749,27 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             final isWide = constraints.maxWidth > 1000;
             final isTablet = constraints.maxWidth > 600 && constraints.maxWidth <= 1000;
             final crossAxisCount = isWide ? 4 : 2;
-            
-            // Adjust aspect ratio based on screen size
-            double childAspectRatio;
-            if (isWide) {
-              childAspectRatio = 1.6;
-            } else if (isTablet) {
-              childAspectRatio = 1.5;
-            } else {
-              childAspectRatio = 1.3;
-            }
-            
-            return GridView.count(
+
+            final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: crossAxisCount,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
-              childAspectRatio: childAspectRatio,
+              childAspectRatio: isWide
+                  ? 1.6
+                  : isTablet
+                      ? 1.45
+                      : 1.15,
+              mainAxisExtent: isWide
+                  ? null
+                  : isTablet
+                      ? 142
+                      : 156,
+            );
+
+            return GridView(
+              gridDelegate: gridDelegate,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               children: [
                 _buildMetricCard(
                   title: 'Total People',

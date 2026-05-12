@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from src.auth_utils import get_current_user
+from src.auth_utils import get_current_user, get_user_capability_names, get_user_role_names, require_capability
 from src.database import get_db
 from src.schemas.user import UserRead
 from src.services.capabilites_service import (
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/capabilities", tags=["capabilities"])
 def capabilities_by_role(
     role_id: int,
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user),
+    _current_user: UserRead = Depends(require_capability("auth.capabilities.read")),
 ):
     """
     Get a list of capability names for a given role. Only accessible to logged-in users.
@@ -32,7 +32,7 @@ def capabilities_by_role(
 def roles_and_capabilities_by_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(get_current_user),
+    _current_user: UserRead = Depends(require_capability("users.accounts.read")),
 ):
     """
     Returns the roles and capabilities of a given user. Only accessible to logged-in users.
@@ -52,5 +52,8 @@ def get_my_capabilities(
     """
     Returns the capabilities of the current logged-in user.
     """
-    result = get_roles_and_capabilities_by_user(db, current_user.id)
-    return {"user_id": current_user.id, "capabilities": result["capabilities"]}
+    return {
+        "user_id": current_user.id,
+        "roles": get_user_role_names(db, current_user.id),
+        "capabilities": sorted(get_user_capability_names(db, current_user.id)),
+    }
