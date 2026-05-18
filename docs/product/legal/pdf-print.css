@@ -1,0 +1,401 @@
+@page {
+  size: A4;
+  margin: 18mm 14mm 18mm 14mm;
+}
+
+:root {
+  --primary-black: #000000;
+  --text-black: #1a1a1a;
+  --gray-dark: #333333;
+  --gray-medium: #666666;
+  --gray-light: #999999;
+  --gray-bg: #f5f5f5;
+  --white: #ffffff;
+  --border-gray: #dddddd;
+}
+
+html, body {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  line-height: 1.6;
+  color: var(--text-black);
+  background: var(--white);
+  font-size: 11pt;
+}
+
+body {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px;
+}
+
+h1, h2, h3, h4 {
+  page-break-after: avoid;
+  break-after: avoid-page;
+  line-height: 1.3;
+}
+
+h1 {
+  font-size: 2.15rem;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--primary-black);
+  border-bottom: 3px solid var(--primary-black);
+  padding-bottom: 0.45rem;
+}
+
+h2 {
+  font-size: 1.65rem;
+  font-weight: 600;
+  margin-top: 1.7rem;
+  margin-bottom: 0.75rem;
+  color: var(--primary-black);
+  border-bottom: 2px solid var(--gray-medium);
+  padding-bottom: 0.28rem;
+}
+
+h3 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-top: 1.4rem;
+  margin-bottom: 0.7rem;
+  color: var(--gray-dark);
+}
+
+h4 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--gray-dark);
+}
+
+p {
+  margin-bottom: 1rem;
+  text-align: justify;
+}
+
+strong {
+  color: var(--primary-black);
+}
+
+p, li {
+  orphans: 3;
+  widows: 3;
+}
+
+ul, ol {
+  margin-top: 0.3em;
+  margin-bottom: 0.7em;
+}
+
+blockquote {
+  background: var(--gray-bg);
+  border-left: 4px solid var(--gray-dark);
+  padding: 1rem 1.1rem;
+  margin: 1.2rem 0;
+  color: var(--gray-dark);
+  page-break-inside: avoid;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  background: var(--white);
+  page-break-inside: avoid;
+  font-size: 0.95rem;
+}
+
+thead {
+  display: table-header-group;
+  background: var(--gray-dark);
+  color: var(--white);
+}
+
+tfoot {
+  display: table-footer-group;
+}
+
+th, td {
+  border: 1px solid var(--border-gray);
+  padding: 10px;
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+th {
+  text-align: left;
+  font-weight: 600;
+}
+
+tbody tr {
+  background: var(--white);
+}
+
+tbody tr:nth-child(even) {
+  background: var(--gray-bg);
+}
+
+tbody tr:hover {
+  background: #eeeeee;
+}
+
+tr, img, blockquote, pre {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  background: #f0f0f0;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+pre {
+  background: #fafafa;
+  border: 1px solid var(--border-gray);
+  border-radius: 6px;
+  padding: 10px;
+  overflow: auto;
+  page-break-inside: avoid;
+}
+
+hr {
+  border: 0;
+  border-top: 3px double var(--gray-medium);
+  margin: 2rem 0 1.5rem;
+}
+
+#TOC {
+  background: var(--gray-bg);
+  border: 1px solid var(--border-gray);
+  padding: 14px 16px;
+  margin: 1rem 0 1.5rem;
+}
+
+#TOC ul {
+  margin-left: 1.2rem;
+}
+
+#TOC a {
+  color: var(--gray-dark);
+  text-decoration: none;
+}
+
+#TOC a:hover {
+  text-decoration: underline;
+}
+
+.doc-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 0.2rem 0 0.9rem;
+}
+
+.doc-logo {
+  width: min(210px, 44vw);
+  height: auto;
+}
+
+.doc-logo-link-wrap {
+  text-align: center;
+  margin: -0.25rem 0 0.6rem;
+}
+
+.doc-logo-link-wrap a {
+  color: var(--gray-dark);
+  text-decoration: none;
+  font-size: 0.96rem;
+}
+
+.doc-logo-link-wrap a:hover {
+  text-decoration: underline;
+}
+
+.doc-pdf-link-wrap {
+  text-align: center;
+  margin: 0 0 0.9rem;
+}
+
+.doc-pdf-link {
+  display: inline-block;
+}
+
+.doc-pdf-logo {
+  width: 110px;
+  height: auto;
+  vertical-align: middle;
+}
+
+.doc-pdf-link:hover .doc-pdf-logo {
+  opacity: 0.88;
+}
+
+.table11-wrapper {
+  width: 100%;
+}
+
+.table11-table {
+  min-width: 980px;
+}
+
+@media screen and (max-width: 768px) {
+  body {
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 2rem;
+  }
+
+  h2 {
+    font-size: 1.45rem;
+  }
+
+  table {
+    font-size: 0.9rem;
+  }
+
+  th, td {
+    padding: 8px;
+  }
+
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .doc-logo {
+    width: min(180px, 56vw);
+  }
+
+  .doc-logo-link-wrap a {
+    font-size: 0.9rem;
+  }
+
+  .doc-pdf-logo {
+    width: 100px;
+  }
+
+  .table11-wrapper {
+    overflow: visible;
+  }
+
+  .table11-table {
+    min-width: 0;
+    width: 100%;
+    border: 0;
+    display: block;
+    margin-top: 0.9rem;
+  }
+
+  .table11-table thead {
+    display: none;
+  }
+
+  .table11-table tbody,
+  .table11-table tr,
+  .table11-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table11-table tr {
+    border: 1px solid var(--border-gray);
+    border-radius: 6px;
+    margin-bottom: 0.8rem;
+    background: var(--white);
+    overflow: hidden;
+  }
+
+  .table11-table td {
+    border-left: 0;
+    border-right: 0;
+    border-top: 0;
+    border-bottom: 1px solid var(--border-gray);
+    padding: 7px 10px 7px 44%;
+    position: relative;
+    min-height: 34px;
+  }
+
+  .table11-table td:last-child {
+    border-bottom: 0;
+  }
+
+  .table11-table td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 10px;
+    top: 7px;
+    width: 38%;
+    font-weight: 600;
+    color: var(--gray-dark);
+    white-space: normal;
+  }
+
+  .table11-table td:nth-child(1),
+  .table11-table td:nth-child(4),
+  .table11-table td:nth-child(6) {
+    font-weight: 600;
+  }
+
+  .table11-table td:nth-child(4) {
+    color: var(--gray-dark);
+  }
+
+  .table11-table td:nth-child(4)::before,
+  .table11-table td:nth-child(6)::before {
+    font-weight: 700;
+  }
+}
+
+@media print {
+  body {
+    padding: 20px;
+    font-size: 11pt;
+  }
+
+  h1 {
+    font-size: 24pt;
+  }
+
+  h2 {
+    font-size: 18pt;
+    margin-top: 20pt;
+  }
+
+  h3 {
+    font-size: 14pt;
+  }
+
+  a {
+    color: var(--text-black);
+    text-decoration: none;
+  }
+
+  h1, h2, h3, h4 {
+    page-break-after: avoid;
+  }
+
+  table, blockquote, pre {
+    page-break-inside: avoid;
+  }
+
+  #TOC {
+    border-color: var(--border-gray);
+  }
+
+  .page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+
+  .doc-pdf-link-wrap {
+    display: none;
+  }
+}

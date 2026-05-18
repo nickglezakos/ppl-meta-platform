@@ -147,6 +147,30 @@ This avoids trying to force all frontend targets into the same packaging shape i
 
 ---
 
+## Vision And vmeta Protection Strategy
+
+For the first packaging batch, `ppl-meta-vision` and `ppl-meta-vmeta` should still ship as Docker images, but they should not be treated like ordinary source-open Python service images.
+
+The recommended rule for these two services is:
+
+- keep the FastAPI shell, startup wiring, and non-sensitive integration glue as plain Python
+- compile the proprietary processing and decision modules with Cython
+- copy only the compiled extension artifacts for those protected modules into the final runtime image
+- remove the original `.py` source for the protected modules from the final runtime image
+- treat this as hardening, not as perfect secrecy
+
+This keeps the deployment boundary intact while reducing direct source exposure for the two most sensitive services in the batch.
+
+The concrete first-pass plan is documented in:
+
+- `docs/proposals/installation and onboarding/vision-vmeta-source-protection-plan.md`
+
+That plan also reflects an important constraint:
+
+- if a piece of logic must remain truly secret, it should not be shipped in a customer-controlled Docker image at all and should instead move behind a private service boundary
+
+---
+
 ## Shared Monorepo Assets That Must Continue To Travel With The Packaged Services
 
 The first batch will only work well if the packaged services continue to share the same contracts and helper assets they use now.

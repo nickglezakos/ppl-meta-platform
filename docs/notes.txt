@@ -9,7 +9,14 @@ curl -X POST 'http://localhost:8001/api/v1/users/login' \§
   -d 'username=fresh.user@example.com&password=NewPassword234!' 
 
 
+Authority
 https://authority.eyenet-vision.com/admin
+
+
+Webhook
+https://webhook.site/#!/view/f1ce9c66-568d-4369-95a7-7185e40d6ac9/777ec740-76bc-4026-9bc2-6d7a8d999ca2/1
+
+
 
 *************************************************
 
@@ -168,4 +175,3 @@ https://levelup.gitconnected.com/python-stop-waiting-for-your-python-code-to-fin
 
 
 ************************************************************************
-

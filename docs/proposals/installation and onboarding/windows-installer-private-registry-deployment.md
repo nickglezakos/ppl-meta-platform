@@ -1,9 +1,47 @@
 # Windows Installer And Private Registry Deployment Proposal
 
 **Date**: May 11, 2026  
-**Status**: Draft  
+**Status**: Published for release 2.24.88  
 **Scope**: Windows installer lifecycle, Docker Desktop prerequisite handling, private registry image pulls, installation identity provisioning, and initial platform health validation  
 **Depends On**: [docs/proposals/installation and onboarding/hetzner-minimal-owner-licence-lifecycle.md](/Users/nickgklezakos/Documents/ppl-meta-code/docs/proposals/installation%20and%20onboarding/hetzner-minimal-owner-licence-lifecycle.md)
+
+## Release Status
+
+Release `2.24.88` has now been built and published to GitHub Container Registry for the Windows installer stack.
+
+Published images for this release are:
+
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.24.88`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.24.88`
+
+This means the current Windows installer bundle is ready to pull exact pinned images for release `2.24.88` without any local image builds on the Windows target machine.
+
+### Published Release Verification
+
+Before a Windows deployment, operators can verify that the pinned release is present in GitHub Container Registry with manifest inspection.
+
+Example checks:
+
+```bash
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision-protected:2.24.88
+docker manifest inspect ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta-protected:2.24.88
+```
+
+If these commands return manifest JSON, the release is published and ready for installer pulls.
 
 ---
 
@@ -31,10 +69,10 @@ The following installer-related ideas are still future work and should be treate
 
 This proposal describes a practical MVP installer model for deploying the platform on Windows.
 
-The installer should not package the entire runtime itself. Instead, it should:
+The installer should not package the entire runtimeflutter  itself. Instead, it should:
 
 1. verify that Docker Desktop is installed and usable
-2. collect or provision installation identity and application-key data
+2. collect or prompt for installation identity and application-key data
 3. authenticate to a private image registry
 4. pull versioned container images
 5. write local configuration
@@ -67,14 +105,16 @@ The recommended Windows installer flow is:
 2. check Windows prerequisites
 3. check Docker Desktop presence
 4. check Docker engine availability
-5. collect or provision local authority configuration
-6. authenticate for private image pull
-7. pull exact tagged images
-8. write local config and compose assets
-9. start containers
-10. run health checks
-11. optionally validate authority reachability
-12. present success or recovery guidance
+5. create the local env file from template if needed
+6. collect or prompt for local authority configuration
+7. collect or prompt for registry credentials if needed
+8. authenticate for private image pull
+9. pull exact tagged images
+10. write local config and compose assets
+11. start containers
+12. run health checks
+13. optionally validate authority reachability
+14. present success or recovery guidance
 
 ---
 
@@ -107,6 +147,24 @@ Suggested checks:
 5. WSL2 available if required by the Docker setup
 6. required virtualization features enabled if needed
 7. required ports not already taken by conflicting services
+
+### Practical Disk Rule For This MVP
+
+Because the current operator environment may only have about 25 GB of free disk, the installer and packaging process should assume that local disk is constrained.
+
+That means:
+
+- do not build platform images on the Windows target machine
+- build and push images on a separate build machine or CI runner
+- pull only exact release-tagged images during Windows installation
+- keep the Windows installer bundle limited to compose, env, and startup assets
+- fail early if the target machine does not have the minimum free space needed for image pulls and writable volumes
+
+For the first pass, a practical minimum free-space guardrail is:
+
+- 12 GB free before pull and startup for the Windows target machine
+
+This does not guarantee success for every release, but it is a safer first threshold than assuming the installer can consume the full remaining disk.
 
 ### Failure Strategy
 
@@ -177,6 +235,8 @@ The installer should not rely on `latest`.
 
 The installer should authenticate before pulling images.
 
+For the current MVP bundle, the Windows installer may prompt the operator at runtime for required install values and registry credentials when they are not already present in the local env file. This keeps the default installer bundle free of hardcoded secrets while still allowing a simple GHCR pull workflow.
+
 There are three plausible options:
 
 ### Option 1. Shared Static Registry Credentials
@@ -188,6 +248,14 @@ Use only if absolutely necessary for a very early prototype.
 ### Option 2. Operator Enters Registry Credentials
 
 Better than hardcoding credentials, but still not ideal for scale.
+
+This is the currently implemented MVP behavior for the Windows bundle:
+
+- the installer creates `.env.windows` from the template if it does not already exist
+- the operator can leave required values unset and enter them when prompted
+- the operator can provide `REGISTRY_USERNAME` and `REGISTRY_PASSWORD` in `.env.windows`
+- or leave them unset and enter them when prompted by `install-platform.ps1`
+- for GitHub Container Registry, the password value is a GitHub personal access token with package access
 
 ### Option 3. Installer Receives Pull Authorization Via Hetzner Service
 
@@ -288,8 +356,8 @@ Minimal validation should include:
 
 Optional but recommended:
 
-6. successful contact with the Hetzner licensing authority
-7. confirmation that the configured authority URL is the intended environment
+1. successful contact with the Hetzner licensing authority
+2. confirmation that the configured authority URL is the intended environment
 
 ---
 
@@ -401,10 +469,10 @@ The best short-form MVP sequence is:
 
 After installer success, the owner lifecycle continues separately:
 
-13. operator ensures the entitlement exists in the authority admin UI
-14. first local user registers on the node
-15. Node activates ownership against the authority service
-16. approved first user receives local `owner`, `admin`, and `user` roles
+1. operator ensures the entitlement exists in the authority admin UI
+2. first local user registers on the node
+3. Node activates ownership against the authority service
+4. approved first user receives local `owner`, `admin`, and `user` roles
 
 ---
 
@@ -422,3 +490,8 @@ That gives the cleanest MVP:
 - repeatable, versioned deployments without embedding the whole runtime into the installer itself
 
 The key clarification is that the installer prepares the local authority configuration, but the actual owner grant still happens later during first-user onboarding against the Hetzner authority service.
+
+For constrained-disk environments, the packaging rule should also be explicit:
+
+- protected images such as `ppl-meta-vision-protected` and `ppl-meta-vmeta-protected` should be built on a separate build machine or CI runner
+- the Windows target should only pull pinned images from the private registry and should not perform local image compilation
