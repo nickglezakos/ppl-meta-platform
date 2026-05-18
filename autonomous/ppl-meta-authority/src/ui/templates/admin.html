@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPL Meta Authority Control</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body data-page="admin">
+  <div class="shell">
+    <section class="hero">
+      <div class="eyebrow">Authority Control Plane</div>
+      <img class="brand-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
+      <p class="lede">Session-backed control surface for platform admin, reseller, and owner workflows across onboarding, invitations, assignments, and installation lifecycle visibility.</p>
+      <div class="hero-actions hidden" data-auth-visibility="authenticated">
+        <a class="button-link secondary" href="/admin/console">Open data console</a>
+      </div>
+    </section>
+
+    <section id="loggedOutPanel" class="card auth-card">
+      <h2>Login</h2>
+      <p class="small auth-copy">Sign in to manage authority users, invitations, installations, and reseller or owner workflows. The data console is available as a separate page after login.</p>
+      <label>Email<input id="login_email" type="email" placeholder="admin@authority.local"></label>
+      <label>Password<input id="login_password" type="password" placeholder="Enter password"></label>
+      <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
+      <div class="actions">
+        <button type="button" id="loginButton">Login</button>
+        <button type="button" class="secondary" id="bootstrapButton">Bootstrap Admin</button>
+      </div>
+      <div class="status" data-shared-status></div>
+    </section>
+
+    <section id="authenticatedShell" class="grid hidden">
+      <div class="stack">
+        <div class="card">
+          <h2>Session</h2>
+          <div class="actions">
+            <button type="button" class="secondary" id="logoutButton">Logout</button>
+            <button type="button" class="secondary" id="loadSessionButton">Refresh session</button>
+            <a class="button-link secondary" href="/admin/console">Open data console</a>
+          </div>
+          <div class="status" data-shared-status></div>
+        </div>
+
+        <div class="card" id="acceptInvitationCard">
+          <h2>Accept Invitation</h2>
+          <div class="small">Create an authority account from an invitation token without using the API directly.</div>
+          <label>Invitation token<input id="accept_invitation_token" type="text" placeholder="Paste invitation token"></label>
+          <label>Display name<input id="accept_display_name" type="text" placeholder="Optional display name"></label>
+          <label>Password<input id="accept_password" type="password" placeholder="Set a password"></label>
+          <label class="inline-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
+          <div class="actions">
+            <button type="button" id="acceptInvitationButton">Accept invitation</button>
+          </div>
+          <div id="acceptStatus" class="status"></div>
+        </div>
+
+        <div class="card">
+          <h2>Session State</h2>
+          <div class="small">Current role and scope for this authority session.</div>
+          <div class="session-state">
+            <div><strong>Role:</strong> <span id="currentRole" class="small">Unauthenticated</span></div>
+            <div><strong>Email:</strong> <span id="currentEmail" class="small">-</span></div>
+            <div><strong>Reseller Scope:</strong> <span id="currentResellerScope" class="small">-</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="tabs">
+          <button type="button" class="tab-button active" data-tab="overview">Overview</button>
+          <button type="button" class="tab-button" data-tab="admin">Admin</button>
+          <button type="button" class="tab-button" data-tab="reseller">Reseller</button>
+          <button type="button" class="tab-button" data-tab="owner">Owner</button>
+        </div>
+
+        <div id="overview" class="tab-panel active">
+          <div class="metric-grid">
+            <div class="metric"><div class="label">Role</div><div id="metricRole" class="value">-</div></div>
+            <div class="metric"><div class="label">Reseller Scope</div><div id="metricScope" class="value">-</div></div>
+            <div class="metric"><div class="label">Owner Installations</div><div id="metricOwnerCount" class="value">0</div></div>
+            <div class="metric"><div class="label">Reseller Installations</div><div id="metricResellerCount" class="value">0</div></div>
+          </div>
+          <div class="metric-grid role-section" data-role-scope="platform_admin,reseller">
+            <div class="metric"><div class="label">Pending Invitations</div><div id="metricPendingInvitations" class="value">0</div></div>
+            <div class="metric"><div class="label">Recent Assignments</div><div id="metricRecentAssignments" class="value">0</div></div>
+          </div>
+          <div class="stack role-section" data-role-scope="platform_admin">
+            <div class="feature-card">
+              <div class="actions">
+                <h3>Admin Snapshot</h3>
+                <button type="button" class="secondary" id="loadAdminSummary">Refresh admin summary</button>
+              </div>
+              <div id="adminSummaryCards" class="summary-grid"></div>
+              <div class="summary-columns">
+                <div>
+                  <div class="small">Recent invitations</div>
+                  <div id="adminRecentInvitations" class="activity-list empty-list">No invitation activity yet.</div>
+                </div>
+                <div>
+                  <div class="small">Recent assignments</div>
+                  <div id="adminRecentAssignments" class="activity-list empty-list">No assignment activity yet.</div>
+                </div>
+                <div>
+                  <div class="small">Recent health reports</div>
+                  <div id="adminRecentHealth" class="activity-list empty-list">No health activity yet.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="stack role-section" data-role-scope="reseller,platform_admin">
+            <div class="feature-card">
+              <div class="actions">
+                <h3>Reseller Snapshot</h3>
+                <button type="button" class="secondary" id="loadOverviewResellerSummary">Refresh reseller summary</button>
+              </div>
+              <div id="resellerSummaryCards" class="summary-grid"></div>
+              <div>
+                <div class="small">Recent reseller assignments</div>
+                <div id="resellerRecentAssignments" class="activity-list empty-list">No reseller assignment activity yet.</div>
+              </div>
+              <div>
+                <div class="small">Recent health reports</div>
+                <div id="resellerRecentHealth" class="activity-list empty-list">No reseller health activity yet.</div>
+              </div>
+            </div>
+          </div>
+          <div class="stack role-section" data-role-scope="owner,support,platform_admin">
+            <div class="feature-card">
+              <div class="actions">
+                <h3>Owner Snapshot</h3>
+                <button type="button" class="secondary" id="loadOwnerSummary">Refresh owner summary</button>
+              </div>
+              <div id="ownerSummaryCards" class="summary-grid"></div>
+              <div>
+                <div class="small">Recent lifecycle updates</div>
+                <div id="ownerRecentUpdates" class="activity-list empty-list">No lifecycle activity yet.</div>
+              </div>
+              <div>
+                <div class="small">Recent health reports</div>
+                <div id="ownerRecentHealth" class="activity-list empty-list">No owner health activity yet.</div>
+              </div>
+            </div>
+          </div>
+          <div class="empty">Use the tabs to interact with authority APIs through a single session-backed shell.</div>
+        </div>
+
+        <div id="admin" class="tab-panel">
+          <div class="stack role-section" data-role-scope="platform_admin">
+            <div class="feature-card">
+              <h3>Create Entitlement</h3>
+              <div class="row">
+                <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
+                <label>Installation UUID<input id="installation_uuid" placeholder="Optional. Bound on activation."></label>
+              </div>
+              <div class="row">
+                <label>Approved owner email<input id="approved_owner_email" type="email" placeholder="owner@example.com"></label>
+                <label>Licence status
+                  <select id="licence_status">
+                    <option value="active">active</option>
+                    <option value="grace">grace</option>
+                    <option value="expired">expired</option>
+                    <option value="suspended">suspended</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row">
+                <label>Offline grace days<input id="offline_grace_days" type="number" min="0" value="14"></label>
+                <label>Owner enabled
+                  <select id="owner_enabled">
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </label>
+              </div>
+              <label>Tenant name<input id="tenant_name" value="New Tenant"></label>
+              <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
+              <div class="actions">
+                <button type="button" id="saveInstallation">Save entitlement</button>
+                <button type="button" class="secondary" id="loadInstallations">Load entitlements</button>
+              </div>
+            </div>
+
+            <div class="feature-card">
+              <h3>Issue Invitation</h3>
+              <div class="row">
+                <label>Invite email<input id="invite_email" type="email" placeholder="owner@example.com"></label>
+                <label>Role
+                  <select id="invite_role_name">
+                    <option value="owner">owner</option>
+                    <option value="reseller">reseller</option>
+                    <option value="support">support</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row">
+                <label>Reseller UUID<input id="invite_reseller_uuid" placeholder="Optional reseller scope"></label>
+                <label>Expiry days<input id="invite_expires_in_days" type="number" min="1" max="30" value="7"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="createInvitation">Create invitation</button>
+                <button type="button" class="secondary" id="loadInvitations">Load invitations</button>
+              </div>
+            </div>
+
+            <div class="feature-card">
+              <h3>Assign Installation</h3>
+              <div class="row">
+                <label>Entitlement UUID<input id="assignment_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>User email<input id="assignment_user_email" type="email" placeholder="owner@example.com"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="assignInstallation">Assign entitlement</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="reseller" class="tab-panel">
+          <div class="stack role-section" data-role-scope="reseller,platform_admin">
+            <div class="feature-card">
+              <h3>Reseller Owner Invitation</h3>
+              <div class="row">
+                <label>Owner email<input id="reseller_invite_email" type="email" placeholder="owner@example.com"></label>
+                <label>Expiry days<input id="reseller_invite_expires" type="number" min="1" max="30" value="7"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="resellerInviteButton">Issue owner invitation</button>
+                <button type="button" class="secondary" id="loadResellerSummary">Load reseller summary</button>
+              </div>
+            </div>
+            <div class="feature-card">
+              <h3>Reseller Assignment</h3>
+              <div class="row">
+                <label>Entitlement UUID<input id="reseller_assignment_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>Owner email<input id="reseller_assignment_user_email" type="email" placeholder="owner@example.com"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="resellerAssignButton">Assign entitlement</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="owner" class="tab-panel">
+          <div class="role-section" data-role-scope="owner,support,platform_admin,reseller">
+            <h3>Owner Dashboard</h3>
+            <div class="actions">
+              <button type="button" id="loadOwnerInstallations">Load my installations</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/admin/assets/admin.js"></script>
+</body>
+</html>

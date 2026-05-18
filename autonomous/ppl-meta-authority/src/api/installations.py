@@ -3,8 +3,12 @@ from pydantic import BaseModel, Field
 
 from core.storage import (
     activate_entitlement,
+    evaluate_update_eligibility,
     find_installation_by_owner_email,
+    get_entitlement_by_installation_uuid,
     get_installation_by_uuid,
+    record_installation_state,
+    record_update_event,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["authority"])
@@ -76,6 +80,57 @@ class OwnerStatusResponse(BaseModel):
     activation_status: str | None = None
 
 
+class InstallationStateReportRequest(BaseModel):
+    installation_uuid: str = Field(min_length=3)
+    current_release_version: str = Field(min_length=1)
+    deployment_mode: str | None = None
+    health_state: str | None = None
+    components: dict[str, str] = Field(default_factory=dict)
+
+
+class InstallationStateReportResponse(BaseModel):
+    report_uuid: str
+    installation_uuid: str
+    current_release_version: str
+    deployment_mode: str | None = None
+    health_state: str | None = None
+    components: dict[str, str]
+    reported_at: str
+
+
+class UpdateEligibilityRequest(BaseModel):
+    installation_uuid: str = Field(min_length=3)
+    target_release_version: str = Field(min_length=1)
+
+
+class UpdateEligibilityResponse(BaseModel):
+    allowed: bool
+    reason: str
+    installation_uuid: str | None = None
+    current_release_version: str | None = None
+    target_release_version: str | None = None
+
+
+class UpdateResultRequest(BaseModel):
+    installation_uuid: str = Field(min_length=3)
+    from_release_version: str | None = None
+    to_release_version: str = Field(min_length=1)
+    status: str = Field(pattern="^(pending|running|succeeded|failed|rolled_back)$")
+    failure_reason: str | None = None
+    components: dict[str, str] = Field(default_factory=dict)
+
+
+class UpdateEventResponse(BaseModel):
+    update_event_uuid: str
+    installation_uuid: str
+    from_release_version: str | None = None
+    to_release_version: str
+    status: str
+    failure_reason: str | None = None
+    components: dict[str, str]
+    created_at: str
+
+
 @router.get("/installations/{installation_uuid}", response_model=InstallationRecord)
 async def get_installation(installation_uuid: str) -> InstallationRecord:
     record = get_installation_by_uuid(installation_uuid)
@@ -109,3 +164,36 @@ async def activate_installation(payload: ActivationRequest) -> ActivationRespons
         owner_email=payload.owner_email,
     )
     return ActivationResponse(**result)
+
+
+@router.post("/installations/report-state", response_model=InstallationStateReportResponse)
+async def report_installation_state(
+    payload: InstallationStateReportRequest,
+) -> InstallationStateReportResponse:
+    entitlement = get_entitlement_by_installation_uuid(payload.installation_uuid)
+    if entitlement is None:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    report = record_installation_state(payload.model_dump())
+    return InstallationStateReportResponse(**report)
+
+
+@router.post("/installations/check-update", response_model=UpdateEligibilityResponse)
+async def check_installation_update(
+    payload: UpdateEligibilityRequest,
+) -> UpdateEligibilityResponse:
+    result = evaluate_update_eligibility(
+        installation_uuid=payload.installation_uuid,
+        target_release_version=payload.target_release_version,
+    )
+    return UpdateEligibilityResponse(**result)
+
+
+@router.post("/installations/report-update-result", response_model=UpdateEventResponse)
+async def report_update_result(payload: UpdateResultRequest) -> UpdateEventResponse:
+    entitlement = get_entitlement_by_installation_uuid(payload.installation_uuid)
+    if entitlement is None:
+        raise HTTPException(status_code=404, detail="Installation not found")
+
+    event = record_update_event(payload.model_dump())
+    return UpdateEventResponse(**event)

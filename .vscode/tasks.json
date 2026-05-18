@@ -272,6 +272,134 @@
 			"problemMatcher": []
 		},
 		{
+			"label": "🐘 Start Authority PostgreSQL (Local macOS)",
+			"type": "shell",
+			"command": "if command -v brew >/dev/null 2>&1; then brew services start postgresql@16 >/dev/null 2>&1 || brew services start postgresql >/dev/null 2>&1 || true; fi && if ! command -v psql >/dev/null 2>&1; then echo 'psql is not installed. Install PostgreSQL locally first.' && exit 1; fi && psql postgres -tAc \"SELECT 1 FROM pg_roles WHERE rolname = 'authority_user'\" | grep -q 1 || psql postgres -c \"CREATE ROLE authority_user LOGIN PASSWORD 'authority_password'\" && psql postgres -c \"ALTER ROLE authority_user WITH LOGIN PASSWORD 'authority_password'\" && psql postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = 'authority_db'\" | grep -q 1 || createdb -O authority_user authority_db && echo 'Authority PostgreSQL is ready on localhost:5432'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop Authority PostgreSQL (Local macOS)",
+			"type": "shell",
+			"command": "if command -v brew >/dev/null 2>&1; then brew services stop postgresql@16 >/dev/null 2>&1 || brew services stop postgresql >/dev/null 2>&1 || true; fi && echo 'Authority PostgreSQL stop command sent.'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Authority PostgreSQL Health Check (Local macOS)",
+			"type": "shell",
+			"command": "if ! command -v psql >/dev/null 2>&1; then echo 'psql is not installed. Install PostgreSQL locally first.' && exit 1; fi && PGPASSWORD=authority_password psql -h localhost -U authority_user -d authority_db -tAc 'SELECT current_database(), current_user' || echo 'Authority PostgreSQL is not responding on localhost:5432'",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🔐 Start Authority Service (Local Python)",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload",
+			"dependsOn": ["🐘 Start Authority PostgreSQL (Local macOS)"],
+			"dependsOrder": "sequence",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🔐 Start Authority Service (Local Bootstrap Admin)",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db AUTHORITY_BOOTSTRAP_ADMIN_ENABLED=true python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload",
+			"dependsOn": ["🐘 Start Authority PostgreSQL (Local macOS)"],
+			"dependsOrder": "sequence",
+			"group": "build",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "🛑 Stop Authority Service (Local Python)",
+			"type": "shell",
+			"command": "echo '🛑 Stopping Authority Service...' && pkill -f 'ppl-meta-authority/src.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8010 | xargs kill -9 2>/dev/null || true && echo 'Authority service stopped.'",
+			"dependsOn": ["🛑 Stop Authority PostgreSQL (Local macOS)"],
+			"dependsOrder": "sequence",
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🏥 Authority Service Health Check (Local)",
+			"type": "shell",
+			"command": "curl -L -s http://localhost:8010/health | python3 -m json.tool 2>/dev/null || echo 'Authority service not responding'",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🔑 Bootstrap Authority Admin (Local)",
+			"type": "shell",
+			"command": "echo 'Waiting for bootstrap-enabled authority service...' && curl -fsS --retry 20 --retry-delay 1 --retry-connrefused http://localhost:8010/health >/dev/null && echo 'Posting bootstrap-admin to local authority service...' && response=$(curl -sS -w '\n%{http_code}' -X POST http://localhost:8010/api/v1/auth/bootstrap-admin) && body=$(printf '%s\n' \"$response\" | sed '$d') && http_status=$(printf '%s\n' \"$response\" | tail -n 1) && printf '%s\n' \"$body\" | python3 -m json.tool && if [ \"$http_status\" != \"200\" ]; then echo && echo 'Bootstrap did not run even after starting bootstrap mode.' && exit 0; fi && echo && echo 'Bootstrap login credentials:' && echo '  email: admin@authority.local' && echo '  password: change-this-admin-password' && echo && echo 'Important: if this admin already existed, bootstrap does not reset the password.'",
+			"dependsOn": ["🛑 Stop Authority Service (Local Python)", "🔐 Start Authority Service (Local Bootstrap Admin)"],
+			"dependsOrder": "sequence",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🔐 Login Bootstrap Authority Admin (Local)",
+			"type": "shell",
+			"command": "echo 'Logging in with bootstrap admin credentials...' && curl -s -X POST http://localhost:8010/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@authority.local\",\"password\":\"change-this-admin-password\"}' | python3 -m json.tool",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🔄 Migrate Authority SQLite To PostgreSQL",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && PYTHONPATH=. python3.11 migrate_sqlite_to_postgres.py --sqlite-path ../data/authority-local.db --postgres-url postgresql://authority_user:authority_password@localhost:5432/authority_db",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🧪 Validate Authority Lifecycle Endpoints",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_lifecycle.py",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🧪 Validate Authority Auth And Dashboard",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_auth_dashboard.py",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🧪 Validate Authority Invitations And Assignments",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_invitations_assignments.py",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🧪 Validate Authority Bootstrap Gate",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_bootstrap_gate.py",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "🧪 Validate Authority Reseller Scope",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_reseller_scope.py",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
 			"label": "🧪 Test PPL Meta Mini Complete Pipeline",
 			"type": "shell",
 			"command": "cd autonomous/ppl-meta-mini && python demo_pipeline.py",

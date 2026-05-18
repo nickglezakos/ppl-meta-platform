@@ -1,10 +1,56 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
 
 from api.installations import EntitlementRecord, InstallationUpsertRequest
-from core.auth import require_admin_token
-from core.storage import delete_entitlement, get_entitlement_by_uuid, list_entitlements, upsert_entitlement
+from core.auth import require_platform_admin
+from core.storage import (
+    assign_entitlement_to_user,
+    create_invitation,
+    delete_entitlement,
+    get_authority_user_by_email,
+    get_entitlement_by_uuid,
+    list_entitlements,
+    list_invitations,
+    upsert_entitlement,
+)
 
-router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_admin_token)])
+router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends(require_platform_admin)])
+
+
+class InvitationRequest(BaseModel):
+    email: str
+    role_name: str = Field(pattern="^(owner|reseller|support)$")
+    reseller_uuid: str | None = None
+    expires_in_days: int = Field(default=7, ge=1, le=30)
+
+
+class InvitationResponse(BaseModel):
+    invitation_uuid: str
+    invitation_token: str
+    email: str
+    role_name: str
+    reseller_uuid: str | None = None
+    status: str
+    effective_status: str
+    expires_at: str
+    created_at: str
+    issued_by_user_uuid: str | None = None
+    accepted_at: str | None = None
+    accepted_by_user_uuid: str | None = None
+    is_expired: bool
+
+
+class InstallationAssignmentRequest(BaseModel):
+    entitlement_uuid: str
+    user_email: str
+
+
+class InstallationAssignmentResponse(BaseModel):
+    assignment_uuid: str
+    user_uuid: str
+    entitlement_uuid: str
+    assigned_by_user_uuid: str | None = None
+    created_at: str
 
 
 @router.get("/installations", response_model=list[EntitlementRecord])
@@ -34,3 +80,44 @@ async def admin_delete_installation(entitlement_uuid: str) -> Response:
         raise HTTPException(status_code=404, detail="Entitlement not found")
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/invitations", response_model=list[InvitationResponse])
+async def admin_list_invitations() -> list[InvitationResponse]:
+    return [InvitationResponse(**record) for record in list_invitations()]
+
+
+@router.post("/invitations", response_model=InvitationResponse, status_code=status.HTTP_201_CREATED)
+async def admin_create_invitation(
+    payload: InvitationRequest,
+    current_admin: dict[str, str] = Depends(require_platform_admin),
+) -> InvitationResponse:
+    invitation = create_invitation(
+        email=payload.email,
+        role_name=payload.role_name,
+        reseller_uuid=payload.reseller_uuid,
+        issued_by_user_uuid=current_admin.get("user_uuid"),
+        expires_in_days=payload.expires_in_days,
+    )
+    return InvitationResponse(**invitation)
+
+
+@router.post("/installation-assignments", response_model=InstallationAssignmentResponse, status_code=status.HTTP_201_CREATED)
+async def admin_assign_installation(
+    payload: InstallationAssignmentRequest,
+    current_admin: dict[str, str] = Depends(require_platform_admin),
+) -> InstallationAssignmentResponse:
+    entitlement = get_entitlement_by_uuid(payload.entitlement_uuid)
+    if entitlement is None:
+        raise HTTPException(status_code=404, detail="Entitlement not found")
+
+    user = get_authority_user_by_email(payload.user_email)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Authority user not found")
+
+    assignment = assign_entitlement_to_user(
+        entitlement_uuid=payload.entitlement_uuid,
+        user_uuid=user["user_uuid"],
+        assigned_by_user_uuid=current_admin.get("user_uuid"),
+    )
+    return InstallationAssignmentResponse(**assignment)
