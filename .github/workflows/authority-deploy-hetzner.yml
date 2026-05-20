@@ -26,6 +26,8 @@ jobs:
       HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
       HETZNER_USER: ${{ secrets.HETZNER_USER }}
       HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       AUTHORITY_BASE_URL: ${{ github.event.inputs.authority_base_url }}
       AUTHORITY_REMOTE_DIR: /home/deploy/apps/ppl-meta-authority/cicd
       AUTHORITY_COMPOSE_PROJECT: ppl-meta-authority
@@ -62,6 +64,7 @@ jobs:
           ssh "$HETZNER_USER@$HETZNER_HOST" "set -eu
             cd '$AUTHORITY_REMOTE_DIR'
             test -f '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            printf '%s\n' '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin
             AUTHORITY_IMAGE='${{ steps.image.outputs.image_ref }}'
             if grep -q '^AUTHORITY_IMAGE=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then
               sed -i.bak \"s|^AUTHORITY_IMAGE=.*$|AUTHORITY_IMAGE=$AUTHORITY_IMAGE|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'

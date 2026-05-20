@@ -11,6 +11,8 @@ The manual deployment workflow expects these repository secrets:
 - `HETZNER_HOST`: public SSH hostname or IP of the Hetzner server
 - `HETZNER_USER`: remote SSH user used for deployment
 - `HETZNER_SSH_KEY`: private SSH key for the deployment user
+- `GHCR_USERNAME`: GitHub username used for GitHub Container Registry login
+- `GHCR_TOKEN`: GitHub token with package read access for GitHub Container Registry
 - `AUTHORITY_ADMIN_EMAIL`: authority admin email used for authenticated post-deploy smoke checks
 - `AUTHORITY_ADMIN_PASSWORD`: authority admin password used for authenticated post-deploy smoke checks
 - `AUTHORITY_TEST_APPLICATION_KEY`: optional entitlement/application key used for activation-contract verification
@@ -18,6 +20,8 @@ The manual deployment workflow expects these repository secrets:
 - `AUTHORITY_TEST_INSTALLATION_UUID`: optional installation UUID used during activation-contract verification
 
 The workflow checker may warn about unknown secret names in the editor. Those warnings do not mean the workflow syntax is invalid.
+
+The deploy workflow performs a remote `docker login ghcr.io` before pulling the authority image, so the Hetzner host does not need pre-seeded registry credentials.
 
 ## Required Remote Layout
 
