@@ -14,6 +14,11 @@ class AlertNotificationService {
   final StreamController<AlertNotification> _alertController = StreamController.broadcast();
   final Set<String> _processedAlertIds = {};
   final Set<String> _shownAlertIds = {}; // Track alerts already shown to user
+  // Content-based deduplication: maps a content key to when it was last shown.
+  // Prevents the backend looping the same trigger (new UUID each time) from
+  // spamming the overlay.
+  final Map<String, DateTime> _recentlyShownByContent = {};
+  static const Duration _contentDeduplicationWindow = Duration(seconds: 60);
   final DateTime _serviceStartedAt = DateTime.now().toUtc();
   bool _isInitialized = false;
   bool _isFirstPoll = true; // Flag to skip showing old alerts on first load
@@ -155,14 +160,26 @@ class AlertNotificationService {
             if (eventData['severity'] != null) {
               _processedAlertIds.add(log.uuid);
               
-              // Skip if already shown to user
+              // Skip if already shown to user (UUID-based)
               if (_shownAlertIds.contains(log.uuid)) {
                 print('⏭️ AlertNotificationService: Skipping already-shown alert: ${log.uuid}');
                 continue;
               }
               
+              // Content-based deduplication: suppress if the same trigger+message
+              // was shown recently, even if the backend created a new UUID for it.
+              final contentKey = '${eventData['trigger_id'] ?? ''}:${eventData['message'] ?? ''}';
+              final lastShown = _recentlyShownByContent[contentKey];
+              if (lastShown != null &&
+                  DateTime.now().difference(lastShown) < _contentDeduplicationWindow) {
+                _shownAlertIds.add(log.uuid); // remember so UUID check catches it next time
+                print('⏭️ AlertNotificationService: Suppressing duplicate content within cooldown: $contentKey');
+                continue;
+              }
+              
               // Mark as shown
               _shownAlertIds.add(log.uuid);
+              _recentlyShownByContent[contentKey] = DateTime.now();
               
               // Create and emit alert notification
               final alert = AlertNotification(
@@ -190,11 +207,18 @@ class AlertNotificationService {
         _processedAlertIds.removeAll(_processedAlertIds.take(toRemove));
       }
       
-      // Clean up old shown alert IDs (keep only last 100)
-      if (_shownAlertIds.length > 100) {
-        final toRemove = _shownAlertIds.length - 100;
+      // Clean up old shown alert IDs — keep a large window so persistent backend
+      // entries are never re-emitted after eviction (the original loop bug).
+      if (_shownAlertIds.length > 10000) {
+        final toRemove = _shownAlertIds.length - 10000;
         _shownAlertIds.removeAll(_shownAlertIds.take(toRemove));
       }
+
+      // Evict expired content-deduplication entries.
+      final now = DateTime.now();
+      _recentlyShownByContent.removeWhere(
+        (_, lastShown) => now.difference(lastShown) >= _contentDeduplicationWindow,
+      );
       
     } catch (e) {
       // Re-attempt auth init on next poll after transient auth/network issues

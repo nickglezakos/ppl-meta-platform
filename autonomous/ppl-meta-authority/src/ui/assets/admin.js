@@ -5,21 +5,36 @@ const acceptStatusEl = document.getElementById('acceptStatus');
 const bodyEl = document.getElementById('dataBody');
 const loggedOutPanelEl = document.getElementById('loggedOutPanel');
 const authenticatedShellEl = document.getElementById('authenticatedShell');
+let previousFocusedElement = null;
 let sessionToken = '';
 let currentUser = null;
 let activeConsoleFilter = 'all';
 let consoleRowsByFilter = {
+  hierarchy: [],
   entitlements: [],
   invitations: [],
   assignments: [],
   updates: [],
   health: [],
 };
-const roleTabMap = {
+const viewRoleMap = {
+  session: ['platform_admin', 'distributor', 'reseller', 'owner', 'support'],
+  overview: ['platform_admin', 'distributor', 'reseller', 'owner', 'support'],
   admin: ['platform_admin'],
+  distributor: ['distributor'],
   reseller: ['reseller', 'platform_admin'],
   owner: ['owner', 'support', 'platform_admin', 'reseller'],
 };
+
+const viewTitleMap = {
+  session: 'Session',
+  overview: 'Overview',
+  admin: 'Admin',
+  distributor: 'Distributor',
+  reseller: 'Reseller',
+  owner: 'Owner Dashboard',
+};
+const requestedView = new URLSearchParams(window.location.search).get('view');
 
 function element(id) {
   return document.getElementById(id);
@@ -106,20 +121,29 @@ function setSession(user, token = '') {
   }
   setText('currentRole', user ? user.role_name : 'Unauthenticated');
   setText('currentEmail', user ? user.email : '-');
+  setText('currentDistributorScope', user && user.distributor_uuid ? user.distributor_uuid : '-');
   setText('currentResellerScope', user && user.reseller_uuid ? user.reseller_uuid : '-');
   setText('metricRole', user ? user.role_name : '-');
+  setText('metricDistributorScope', user && user.distributor_uuid ? user.distributor_uuid : '-');
   setText('metricScope', user && user.reseller_uuid ? user.reseller_uuid : '-');
+  setText('sessionViewRole', user ? user.role_name : '-');
+  setText('sessionViewEmail', user ? user.email : '-');
+  setText('sessionViewDistributor', user && user.distributor_uuid ? user.distributor_uuid : '-');
+  setText('sessionViewReseller', user && user.reseller_uuid ? user.reseller_uuid : '-');
   setMetricValue('metricPendingInvitations', 0);
   setMetricValue('metricRecentAssignments', 0);
   if (!user) {
     setMetricValue('metricOwnerCount', 0);
     setMetricValue('metricResellerCount', 0);
     renderSummaryCards('adminSummaryCards', []);
+    renderSummaryCards('distributorSummaryCards', []);
     renderSummaryCards('resellerSummaryCards', []);
     renderSummaryCards('ownerSummaryCards', []);
     renderActivityList('adminRecentInvitations', [], 'No invitation activity yet.');
     renderActivityList('adminRecentAssignments', [], 'No assignment activity yet.');
     renderActivityList('adminRecentHealth', [], 'No health activity yet.');
+    renderActivityList('distributorRecentAssignments', [], 'No distributor assignment activity yet.');
+    renderActivityList('distributorRecentHealth', [], 'No distributor health activity yet.');
     renderActivityList('resellerRecentAssignments', [], 'No reseller assignment activity yet.');
     renderActivityList('ownerRecentUpdates', [], 'No lifecycle activity yet.');
     renderActivityList('resellerRecentHealth', [], 'No reseller health activity yet.');
@@ -150,12 +174,12 @@ function syncRoleVisibility() {
     section.classList.toggle('hidden', !isRoleAllowed(allowedRoles));
   });
 
-  document.querySelectorAll('.tab-button').forEach((button) => {
-    const allowedRoles = roleTabMap[button.dataset.tab] || [];
+  document.querySelectorAll('.view-link[data-view]').forEach((button) => {
+    const allowedRoles = viewRoleMap[button.dataset.view] || [];
     const shouldHide = allowedRoles.length ? !isRoleAllowed(allowedRoles) : false;
     button.classList.toggle('hidden', shouldHide);
     if (button.classList.contains('active') && shouldHide) {
-      activateTab('overview');
+      activateView('session');
     }
   });
 
@@ -165,21 +189,72 @@ function syncRoleVisibility() {
   }
 }
 
-function activateTab(tabId) {
-  if (!document.querySelectorAll('.tab-button').length) {
-    return;
+function navigationFocusableElements() {
+  const nav = element('viewNavigation');
+  if (!nav) {
+    return [];
   }
-  document.querySelectorAll('.tab-button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.tab === tabId);
-  });
-  document.querySelectorAll('.tab-panel').forEach((panel) => {
-    panel.classList.toggle('active', panel.id === tabId);
-  });
+  return Array.from(nav.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((node) => !node.classList.contains('hidden'));
 }
 
-function preferredTabForRole(roleName) {
+function setNavigationOpen(isOpen) {
+  const navShell = element('viewShell');
+  const toggle = element('viewMenuToggle');
+  const overlay = element('viewDrawerOverlay');
+  const closeButton = element('viewDrawerClose');
+  const nav = element('viewNavigation');
+  if (!navShell || !toggle) {
+    return;
+  }
+  if (isOpen && !navShell.classList.contains('nav-open')) {
+    previousFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+  navShell.classList.toggle('nav-open', isOpen);
+  toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  toggle.textContent = isOpen ? 'Close' : 'Menu';
+  if (overlay) {
+    overlay.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  }
+  if (nav) {
+    nav.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  }
+  if (isOpen) {
+    toggle.blur();
+    window.setTimeout(() => {
+      const focusTarget = closeButton || navigationFocusableElements()[0] || nav;
+      if (focusTarget instanceof HTMLElement) {
+        focusTarget.focus();
+      }
+    }, 30);
+  } else {
+    const restoreTarget = previousFocusedElement && document.contains(previousFocusedElement)
+      ? previousFocusedElement
+      : toggle;
+    restoreTarget.focus();
+    previousFocusedElement = null;
+  }
+}
+
+function activateView(viewId) {
+  if (!document.querySelectorAll('.view-link[data-view]').length) {
+    return;
+  }
+  document.querySelectorAll('.view-link[data-view]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.view === viewId);
+  });
+  document.querySelectorAll('.view-panel').forEach((panel) => {
+    panel.classList.toggle('active', panel.id === viewId);
+  });
+  setText('currentViewTitle', viewTitleMap[viewId] || 'Session');
+  setNavigationOpen(false);
+}
+
+function preferredViewForRole(roleName) {
   if (roleName === 'platform_admin') {
     return 'admin';
+  }
+  if (roleName === 'distributor') {
+    return 'distributor';
   }
   if (roleName === 'reseller') {
     return 'reseller';
@@ -187,7 +262,7 @@ function preferredTabForRole(roleName) {
   if (roleName === 'owner' || roleName === 'support') {
     return 'owner';
   }
-  return 'overview';
+  return 'session';
 }
 
 function escapeHtml(value) {
@@ -293,6 +368,7 @@ function renderRows(rows) {
 function allConsoleRows() {
   return [
     ...consoleRowsByFilter.entitlements,
+    ...consoleRowsByFilter.hierarchy,
     ...consoleRowsByFilter.invitations,
     ...consoleRowsByFilter.assignments,
     ...consoleRowsByFilter.updates,
@@ -310,6 +386,7 @@ function rowsForActiveFilter() {
 function renderConsoleFilter() {
   const counts = {
     all: allConsoleRows().length,
+    hierarchy: consoleRowsByFilter.hierarchy.length,
     entitlements: consoleRowsByFilter.entitlements.length,
     invitations: consoleRowsByFilter.invitations.length,
     assignments: consoleRowsByFilter.assignments.length,
@@ -335,6 +412,7 @@ function setConsoleRows(filterName, rows) {
 function resetConsoleRows() {
   consoleRowsByFilter = {
     entitlements: [],
+    hierarchy: [],
     invitations: [],
     assignments: [],
     updates: [],
@@ -425,6 +503,60 @@ function resellerSummaryRows(summary) {
   }));
 }
 
+function distributorSummaryRows(summary) {
+  setMetricValue('metricResellerCount', summary.installation_count || 0);
+  return summary.installations.map((record) => ({
+    type: '<span class="pill">Distributor Installation</span>',
+    primary: `<code class="inline">${record.entitlement_uuid}</code>`,
+    scope: `${summary.distributor_uuid}<br><span class="small">${record.activation_status}</span>`,
+    owner: record.approved_owner_email,
+    keyInfo: `<code class="inline">${record.application_key}</code>`,
+    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span>`,
+  }));
+}
+
+function hierarchyRowsFromUsers(records) {
+  return records.map((record) => ({
+    type: `<span class="pill">${escapeHtml(record.role_name)}</span>`,
+    primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
+    scope: `${escapeHtml(record.distributor_uuid || 'no distributor')}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
+    owner: escapeHtml(record.display_name || '-'),
+    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
+    details: `${escapeHtml(record.status)}<br><span class="small">${escapeHtml(record.created_at || '-')}</span>`,
+  }));
+}
+
+function hierarchyRowsFromDistributorSummary(summary) {
+  const resellerRows = (summary.resellers || []).map((record) => ({
+    type: '<span class="pill">reseller</span>',
+    primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
+    scope: `${escapeHtml(summary.distributor_uuid)}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
+    owner: escapeHtml(record.display_name || '-'),
+    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
+    details: `${escapeHtml(String(record.owner_count))} owners`,
+  }));
+  const ownerRows = (summary.owners || []).map((record) => ({
+    type: '<span class="pill">owner</span>',
+    primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
+    scope: `${escapeHtml(summary.distributor_uuid)}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
+    owner: escapeHtml(record.display_name || '-'),
+    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
+    details: `${escapeHtml(String(record.installation_count))} installations`,
+  }));
+  return [...resellerRows, ...ownerRows];
+}
+
+function hierarchyRowsFromResellerSummary(summary) {
+  return (summary.owners || []).map((record) => ({
+    type: '<span class="pill">owner</span>',
+    primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
+    scope: `${escapeHtml(currentUser?.distributor_uuid || 'no distributor')}<br><span class="small">${escapeHtml(summary.reseller_uuid)}</span>`,
+    owner: escapeHtml(record.display_name || '-'),
+    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
+    details: `${escapeHtml(String(record.installation_count))} installations`,
+  }));
+}
+
 function ownerRows(records) {
   setMetricValue('metricOwnerCount', records.length);
   return entitlementRows(records);
@@ -462,6 +594,17 @@ function stateReportActivityItems(records) {
   }));
 }
 
+function scopedUserActivityItems(records, emptyScopeLabel) {
+  if (!records.length) {
+    return [];
+  }
+  return records.map((record) => ({
+    title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
+    meta: `${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || emptyScopeLabel)}`,
+    consoleFilter: 'hierarchy',
+  }));
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   const text = await response.text();
@@ -492,16 +635,23 @@ async function handleLogin() {
       }),
     });
     setSession(payload.user, payload.session_token);
-    activateTab(preferredTabForRole(payload.user.role_name));
     if (pageName === 'console') {
       await loadConsoleLandingData(payload.user.role_name);
-    } else if (payload.user.role_name === 'platform_admin') {
+    } else {
+      const nextView = requestedView && Object.prototype.hasOwnProperty.call(viewTitleMap, requestedView)
+        ? requestedView
+        : preferredViewForRole(payload.user.role_name);
+      activateView(nextView);
+    }
+    if (pageName !== 'console' && payload.user.role_name === 'platform_admin') {
       await loadAdminSummary();
       await loadOwnerSummary();
       await loadInstallations();
-    } else if (payload.user.role_name === 'reseller') {
+    } else if (pageName !== 'console' && payload.user.role_name === 'distributor') {
+      await loadDistributorSummary();
+    } else if (pageName !== 'console' && payload.user.role_name === 'reseller') {
       await loadResellerSummary();
-    } else if (payload.user.role_name === 'owner' || payload.user.role_name === 'support') {
+    } else if (pageName !== 'console' && (payload.user.role_name === 'owner' || payload.user.role_name === 'support')) {
       await loadOwnerSummary();
       await loadOwnerInstallations();
     }
@@ -524,7 +674,7 @@ async function handleAcceptInvitation() {
     });
     setAcceptStatus(`Invitation accepted for ${payload.email}. You can now log in.`);
     document.getElementById('login_email').value = payload.email;
-    activateTab('overview');
+    activateView('session');
   } catch (error) {
     setAcceptStatus(error.message, true);
   }
@@ -556,28 +706,22 @@ async function handleBootstrap() {
   }
 }
 
-async function loadConsoleLandingData(roleName) {
-  if (roleName === 'platform_admin') {
-    await loadAdminSummary();
-    await loadInstallations();
-    return;
-  }
-  if (roleName === 'reseller') {
-    await loadResellerSummary();
-    return;
-  }
-  if (roleName === 'owner' || roleName === 'support') {
-    await loadOwnerSummary();
-    await loadOwnerInstallations();
-  }
-}
-
 async function loadInstallations() {
   try {
     const records = await api('/api/v1/admin/installations', { headers: authHeaders() });
     setConsoleRows('entitlements', entitlementRows(records));
     renderConsoleFilter();
     setStatus(`Loaded ${records.length} entitlements.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function loadAdminUsers() {
+  try {
+    const users = await api('/api/v1/admin/users', { headers: authHeaders() });
+    setConsoleRows('hierarchy', hierarchyRowsFromUsers(users));
+    renderConsoleFilter();
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -618,6 +762,7 @@ async function createInvitation() {
       body: JSON.stringify({
         email: document.getElementById('invite_email').value.trim(),
         role_name: document.getElementById('invite_role_name').value,
+        distributor_uuid: document.getElementById('invite_distributor_uuid').value.trim() || null,
         reseller_uuid: document.getElementById('invite_reseller_uuid').value.trim() || null,
         expires_in_days: Number(document.getElementById('invite_expires_in_days').value || 7),
       }),
@@ -737,11 +882,76 @@ async function loadResellerSummary() {
     renderActivityList('resellerRecentAssignments', assignmentActivityItems(summary.recent_assignments || []), 'No reseller assignment activity yet.');
     renderActivityList('resellerRecentHealth', stateReportActivityItems(summary.recent_health_reports || []), 'No reseller health activity yet.');
     setConsoleRows('entitlements', resellerSummaryRows(summary));
+    setConsoleRows('hierarchy', hierarchyRowsFromResellerSummary(summary));
     setConsoleRows('health', stateReportRows(summary.recent_health_reports || []));
     renderConsoleFilter();
     setStatus(`Loaded reseller summary for ${summary.reseller_uuid}.`);
   } catch (error) {
     setStatus(error.message, true);
+  }
+}
+
+async function loadDistributorSummary() {
+  try {
+    const summary = await api('/api/v1/dashboard/distributor/summary', { headers: authHeaders() });
+    setMetricValue('metricPendingInvitations', summary.pending_invitation_count || 0);
+    setMetricValue('metricRecentAssignments', (summary.recent_assignments || []).length);
+    renderSummaryCards('distributorSummaryCards', [
+      { label: 'Resellers', value: summary.reseller_count },
+      { label: 'Owners', value: summary.owner_count },
+      { label: 'Installations', value: summary.installation_count },
+      { label: 'Pending Invitations', value: summary.pending_invitation_count },
+    ]);
+    renderActivityList('distributorRecentAssignments', assignmentActivityItems(summary.recent_assignments || []), 'No distributor assignment activity yet.');
+    renderActivityList('distributorRecentHealth', stateReportActivityItems(summary.recent_health_reports || []), 'No distributor health activity yet.');
+    setConsoleRows('entitlements', distributorSummaryRows(summary));
+    setConsoleRows('hierarchy', hierarchyRowsFromDistributorSummary(summary));
+    setConsoleRows('assignments', (summary.recent_assignments || []).map((record) => ({
+      type: '<span class="pill">Assignment</span>',
+      primary: `<code class="inline">${escapeHtml(record.assignment_uuid)}</code>`,
+      scope: `${escapeHtml(record.distributor_uuid || '-')}`,
+      owner: escapeHtml(record.owner_email),
+      keyInfo: `<code class="inline">${escapeHtml(record.entitlement_uuid)}</code>`,
+      details: `${escapeHtml(record.tenant_name || record.application_key)}`,
+    })));
+    setConsoleRows('health', stateReportRows(summary.recent_health_reports || []));
+    renderConsoleFilter();
+    setStatus(`Loaded distributor summary for ${summary.distributor_uuid}.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function loadDistributorScopedUsers(path, targetId, emptyMessage, emptyScopeLabel) {
+  try {
+    const records = await api(path, { headers: authHeaders() });
+    renderActivityList(targetId, scopedUserActivityItems(records, emptyScopeLabel), emptyMessage);
+    setConsoleRows('hierarchy', hierarchyRowsFromUsers(records));
+    renderConsoleFilter();
+    setStatus(`Loaded ${records.length} scoped users.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function loadConsoleLandingData(roleName) {
+  if (roleName === 'platform_admin') {
+    await loadInstallations();
+    await loadAdminUsers();
+    await loadAdminSummary();
+    return;
+  }
+  if (roleName === 'distributor') {
+    await loadDistributorSummary();
+    return;
+  }
+  if (roleName === 'reseller') {
+    await loadResellerSummary();
+    return;
+  }
+  if (roleName === 'owner' || roleName === 'support') {
+    await loadOwnerSummary();
+    await loadOwnerInstallations();
   }
 }
 
@@ -763,8 +973,48 @@ function bindPasswordVisibility(toggleId, inputId) {
   });
 }
 
-document.querySelectorAll('.tab-button').forEach((button) => {
-  button.addEventListener('click', () => activateTab(button.dataset.tab));
+document.querySelectorAll('.view-link[data-view]').forEach((button) => {
+  button.addEventListener('click', () => activateView(button.dataset.view));
+});
+
+bindClick('viewMenuToggle', () => {
+  const navShell = element('viewShell');
+  if (!navShell) {
+    return;
+  }
+  const isOpen = !navShell.classList.contains('nav-open');
+  setNavigationOpen(isOpen);
+});
+bindClick('viewDrawerClose', () => setNavigationOpen(false));
+bindClick('viewDrawerOverlay', () => setNavigationOpen(false));
+document.addEventListener('keydown', (event) => {
+  const navShell = element('viewShell');
+  if (!navShell?.classList.contains('nav-open')) {
+    return;
+  }
+  if (event.key === 'Escape') {
+    setNavigationOpen(false);
+    return;
+  }
+  if (event.key !== 'Tab') {
+    return;
+  }
+  const focusable = navigationFocusableElements();
+  if (!focusable.length) {
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+    return;
+  }
+  if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
 });
 
 document.querySelectorAll('.console-filter').forEach((button) => {
@@ -813,9 +1063,32 @@ bindClick('resellerInviteButton', async () => {
 bindClick('resellerAssignButton', () => assignInstallation('/api/v1/reseller/installation-assignments', 'reseller_assignment_entitlement_uuid', 'reseller_assignment_user_email').catch((error) => setStatus(error.message, true)));
 bindClick('loadOwnerInstallations', loadOwnerInstallations);
 bindClick('loadResellerSummary', loadResellerSummary);
+bindClick('loadDistributorSummary', loadDistributorSummary);
+bindClick('loadDistributorSummaryTab', loadDistributorSummary);
 bindClick('loadAdminSummary', loadAdminSummary);
 bindClick('loadOverviewResellerSummary', loadResellerSummary);
 bindClick('loadOwnerSummary', loadOwnerSummary);
+bindClick('sessionOpenConsoleButton', () => { window.location.href = '/admin/console'; });
+bindClick('distributorInviteButton', async () => {
+  try {
+    const invitation = await api('/api/v1/distributor/invitations', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        email: document.getElementById('distributor_invite_email').value.trim(),
+        reseller_uuid: document.getElementById('distributor_invite_reseller_uuid').value.trim(),
+      }),
+    });
+    setConsoleRows('invitations', invitationRows([invitation]));
+    renderConsoleFilter();
+    setStatus(`Distributor invitation created for ${invitation.email}.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+});
+bindClick('loadDistributorResellersButton', () => loadDistributorScopedUsers('/api/v1/distributor/resellers', 'distributorResellerList', 'No reseller users loaded yet.', 'no reseller'));
+bindClick('loadDistributorOwnersButton', () => loadDistributorScopedUsers('/api/v1/distributor/owners', 'distributorOwnerList', 'No owner users loaded yet.', 'no reseller'));
+bindClick('distributorAssignButton', () => assignInstallation('/api/v1/distributor/installation-assignments', 'distributor_assignment_entitlement_uuid', 'distributor_assignment_user_email').catch((error) => setStatus(error.message, true)));
 
 const requestedFilter = new URLSearchParams(window.location.search).get('filter');
 if (requestedFilter && (requestedFilter === 'all' || Object.prototype.hasOwnProperty.call(consoleRowsByFilter, requestedFilter))) {
@@ -833,9 +1106,13 @@ async function restoreSessionOnLoad() {
   sessionToken = storedToken;
   try {
     const me = await loadSession();
-    activateTab(preferredTabForRole(me.role_name));
     if (pageName === 'console') {
       await loadConsoleLandingData(me.role_name);
+    } else {
+      const nextView = requestedView && Object.prototype.hasOwnProperty.call(viewTitleMap, requestedView)
+        ? requestedView
+        : preferredViewForRole(me.role_name);
+      activateView(nextView);
     }
   } catch (error) {
     sessionToken = '';

@@ -1,6 +1,6 @@
 # Multi-stage build for PPL Meta Media Service
 # Stage 1: Build stage with all dependencies
-FROM python:3.11-alpine AS builder
+FROM python:3.11-slim-bookworm AS builder
 
 # Set environment variables for build
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,23 +9,37 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Install build dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
     gcc \
-    musl-dev \
-    postgresql-dev \
+    g++ \
+    make \
+    pkg-config \
+    libpq-dev \
     python3-dev \
     libffi-dev \
-    openssl-dev
+    libssl-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
 # Copy and install Python dependencies
 COPY requirements.txt .
-RUN pip install --user --no-warn-script-location -r requirements.txt
+RUN grep -v '^dlib' requirements.txt > /tmp/requirements-no-dlib.txt \
+    && pip install --user --no-warn-script-location -r /tmp/requirements-no-dlib.txt \
+    && pip install --user --no-warn-script-location --no-build-isolation "dlib>=19.24.0"
 
 # Stage 2: Runtime stage with minimal footprint
-FROM python:3.11-alpine AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -33,11 +47,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/home/app/.local/bin:$PATH"
 
 # Install only runtime dependencies
-RUN apk add --no-cache \
-    postgresql-libs \
+RUN apt-get update && apt-get install -y \
+    libpq5 \
     curl \
-    && addgroup -g 1001 -S app \
-    && adduser -S -D -H -u 1001 -h /home/app -s /sbin/nologin -G app app
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1001 app \
+    && useradd -m -u 1001 -g app -s /usr/sbin/nologin app
 
 # Set working directory
 WORKDIR /app

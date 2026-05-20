@@ -9,6 +9,7 @@ from core.storage import (
     delete_entitlement,
     get_authority_user_by_email,
     get_entitlement_by_uuid,
+    list_authority_users,
     list_entitlements,
     list_invitations,
     upsert_entitlement,
@@ -19,7 +20,8 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"], dependencies=[Depends
 
 class InvitationRequest(BaseModel):
     email: str
-    role_name: str = Field(pattern="^(owner|reseller|support)$")
+    role_name: str = Field(pattern="^(owner|reseller|distributor|support)$")
+    distributor_uuid: str | None = None
     reseller_uuid: str | None = None
     expires_in_days: int = Field(default=7, ge=1, le=30)
 
@@ -29,6 +31,7 @@ class InvitationResponse(BaseModel):
     invitation_token: str
     email: str
     role_name: str
+    distributor_uuid: str | None = None
     reseller_uuid: str | None = None
     status: str
     effective_status: str
@@ -53,9 +56,26 @@ class InstallationAssignmentResponse(BaseModel):
     created_at: str
 
 
+class AuthorityUserRecord(BaseModel):
+    user_uuid: str
+    email: str
+    display_name: str | None = None
+    role_name: str
+    status: str
+    distributor_uuid: str | None = None
+    reseller_uuid: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 @router.get("/installations", response_model=list[EntitlementRecord])
 async def admin_list_installations() -> list[EntitlementRecord]:
     return [EntitlementRecord(**record) for record in list_entitlements()]
+
+
+@router.get("/users", response_model=list[AuthorityUserRecord])
+async def admin_list_users() -> list[AuthorityUserRecord]:
+    return [AuthorityUserRecord(**record) for record in list_authority_users()]
 
 
 @router.post("/installations", response_model=EntitlementRecord)
@@ -95,6 +115,7 @@ async def admin_create_invitation(
     invitation = create_invitation(
         email=payload.email,
         role_name=payload.role_name,
+        distributor_uuid=payload.distributor_uuid,
         reseller_uuid=payload.reseller_uuid,
         issued_by_user_uuid=current_admin.get("user_uuid"),
         expires_in_days=payload.expires_in_days,

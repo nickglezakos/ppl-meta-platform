@@ -217,10 +217,10 @@ class CircuitBreakerMiddleware(BaseHTTPMiddleware):
                 "Circuit breaker opened",
                 service=target_service,
                 error=str(e),
-                state=circuit_breaker.current_state,
+                state=circuit_breaker.state,
             )
 
-            if circuit_breaker.current_state == "open":
+            if circuit_breaker.state == "open":
                 return JSONResponse(
                     status_code=503,
                     content={

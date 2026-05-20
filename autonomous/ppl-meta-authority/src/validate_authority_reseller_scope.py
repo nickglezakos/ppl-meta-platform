@@ -18,6 +18,7 @@ assert client.post('/api/v1/auth/register', json={
     'email': 'reseller4@example.com',
     'password': 'reseller44',
     'role_name': 'reseller',
+    'distributor_uuid': 'distributor-group-4',
     'reseller_uuid': 'reseller-group-4'
 }).status_code == 201
 reseller_login = client.post('/api/v1/auth/login', json={
@@ -26,6 +27,7 @@ reseller_login = client.post('/api/v1/auth/login', json={
 })
 assert reseller_login.status_code == 200
 reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_token']}"}
+assert reseller_login.json()['user']['distributor_uuid'] == 'distributor-group-4'
 invitation = client.post('/api/v1/reseller/invitations', json={
     'email': 'invited4@example.com'
 }, headers=reseller_headers)
@@ -52,6 +54,7 @@ owner_login = client.post('/api/v1/auth/login', json={
 })
 assert owner_login.status_code == 200
 owner_headers = {'Authorization': f"Bearer {owner_login.json()['session_token']}"}
+assert owner_login.json()['user']['distributor_uuid'] == 'distributor-group-4'
 assert client.get('/api/v1/dashboard/owner/installations', headers=owner_headers).status_code == 200
 assert client.get('/api/v1/dashboard/reseller/summary', headers=reseller_headers).status_code == 200
 print('Authority reseller scope validation passed.')

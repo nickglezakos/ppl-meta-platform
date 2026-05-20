@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet Digital Signage Offer for Plaisio Computers</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --success: #4caf50;
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1080px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body {
+      margin: 0;
+    }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 20px;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.35fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 106, 19, 0.11);
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 18px;
+      color: #d7deea;
+      max-width: 62ch;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-stack img {
+      height: 36px;
+      width: auto;
+    }
+
+    .brand-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(34, 211, 238, 0.24);
+      border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9);
+      color: #eef9ff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--brand-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .brand-link:hover {
+      color: #8be9f8;
+    }
+
+    .meta-card,
+    .section,
+    .pricing-card,
+    .key-card,
+    .note-card,
+    .summary-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px;
+      align-self: start;
+      color: var(--text);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .grid-two,
+    .pricing-grid,
+    .stats-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .grid-two {
+      grid-template-columns: 1.15fr 0.85fr;
+    }
+
+    .pricing-grid,
+    .stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      border-color: var(--panel-line);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    ul,
+    ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--brand-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent);
+      color: #f5fbff;
+      font-weight: 600;
+    }
+
+    .stats-grid {
+      margin-top: 18px;
+    }
+
+    .summary-card,
+    .key-card,
+    .pricing-card,
+    .note-card {
+      padding: 22px;
+      border-color: var(--panel-line);
+      background: #ffffff;
+    }
+
+    .summary-card strong,
+    .pricing-value,
+    .key-number {
+      color: #0f172a;
+    }
+
+    .summary-card p:last-child,
+    .note-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .pricing-card.featured {
+      border-color: rgba(25, 118, 210, 0.3);
+      background: linear-gradient(180deg, rgba(16, 19, 29, 0.04) 0%, rgba(25, 118, 210, 0.08) 38%, #ffffff 100%);
+      position: relative;
+    }
+
+    .pricing-card.featured::before {
+      content: "Recommended";
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--brand-primary);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .pricing-label {
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .pricing-value {
+      margin: 14px 0 8px;
+      font-size: 38px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-weight: 800;
+    }
+
+    .pricing-subtext {
+      color: #475569;
+      font-size: 15px;
+      min-height: 44px;
+    }
+
+    .pricing-list {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(15, 23, 42, 0.08);
+    }
+
+    .pricing-list li {
+      margin-top: 10px;
+    }
+
+    .key-number {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .footer-note {
+      margin-top: 18px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner,
+      .grid-two,
+      .pricing-grid,
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .page {
+        padding: 18px 16px 54px;
+      }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        max-width: none;
+        padding: 0;
+      }
+
+      .print-bar {
+        display: none;
+      }
+
+      .hero,
+      .meta-card,
+      .section,
+      .pricing-card,
+      .key-card,
+      .note-card,
+      .summary-card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      .hero {
+        margin-bottom: 12px;
+        background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.14);
+      }
+
+      .meta-card {
+        background: rgba(255, 255, 255, 0.04);
+        color: #ffffff;
+        border-color: rgba(34, 211, 238, 0.12);
+      }
+
+      .brand-chip,
+      .callout {
+        color: #f5fbff;
+      }
+
+      .brand-link,
+      .meta-label,
+      .lead {
+        color: inherit;
+      }
+
+      .section {
+        margin-top: 12px;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Offer for Plaisio Computers</span>
+            </div>
+          </div>
+          <span class="eyebrow">Digital Signage Commercial Offer</span>
+          <h1>EyeNet Digital Signage for Plaisio Computers</h1>
+          <a class="brand-link" href="https://eyenet-vision.com/">https://eyenet-vision.com/</a>
+        </div>
+
+        <aside class="meta-card">
+          <h3>Offer Snapshot</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Customer</span>
+              <span class="meta-value">Plaisio Computers</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Brand</span>
+              <span class="meta-value">EyeNet</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Offer Ref.</span>
+              <span class="meta-value">EYENET-PLAISIO-DS-2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Prepared On</span>
+              <span class="meta-value">19 May 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">License Scope</span>
+              <span class="meta-value">1 platform license + 30 app keys</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Commercial Model</span>
+              <span class="meta-value">Monthly or annual prepaid</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2>Executive Summary</h2>
+      </div>
+      <p class="lead">A single software license covering the EyeNet main platform and the Digital Signage module with full functionality, including automation, audience analytics, triggers, remote playback control, and centralized campaign management across the Plaisio store network.</p>
+      <div class="callout" style="margin-bottom: 24px; color: #f5fbff;">EyeNet Digital Signage helps customers start quickly with ordinary hardware, operate campaigns centrally, and grow toward intelligent audience-aware signage without replacing their whole infrastructure.</div>
+      <div class="grid-two">
+        <div>
+          <p>EyeNet Digital Signage is a simple, flexible, software-driven signage solution for a multi-store retail environment. It helps businesses deliver the right content on the right screen while connecting signage operations with live audience intelligence and analytics.</p>
+          <p>For Plaisio, the offer is structured around one software license for the main EyeNet platform and the Digital Signage module with full functionality. This includes digital signage operations, audience sensing, rule-based automation, triggers, and traffic analytics in one commercial package.</p>
+          <p>Instead of forcing a closed hardware model, the platform can run on standard PCs, laptops, and servers, supporting practical deployment choices for store-by-store rollout. The result is a platform that is easy to explain, easy to pilot, and easy to expand.</p>
+        </div>
+        <div class="summary-card">
+          <p><strong>Commercial objective</strong></p>
+          <p>Deliver a single, centrally managed software environment for digital signage across the Plaisio retail network, starting with 30 application keys for 30 stores and a clear price path for future expansion under the same license structure.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2>Scope of the Offer</h2>
+      </div>
+      <div class="stats-grid">
+        <div class="key-card">
+          <span class="stat-label">Platform License</span>
+          <span class="stat-value">1</span>
+          <p>One master license covering the EyeNet main platform and the Digital Signage module with full functionality.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Included App Keys</span>
+          <span class="stat-value">30</span>
+          <p>Thirty application keys, intended for one signage application deployment per Plaisio store.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Expansion Model</span>
+          <span class="stat-value">+ Keys</span>
+          <p>Additional application keys can be activated under the same software license as new stores, concepts, or screen groups are added.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2>Included Functionality</h2>
+      </div>
+      <div class="grid-two">
+        <div>
+          <h3>Digital signage and operations</h3>
+          <ul>
+            <li>Create playlists from uploaded video content.</li>
+            <li>Assign content to signage devices from a central interface.</li>
+            <li>Manage screens, zones, and playback remotely.</li>
+            <li>Support multiple screen formats across entrance displays, counter screens, wall-mounted campaign screens, and compact display points.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Advanced intelligence included in the same license</h3>
+          <ul>
+            <li>Audience sensing and live camera-based signals.</li>
+            <li>Trigger-based automation and intelligent playback logic.</li>
+            <li>Traffic analytics and zone performance visibility.</li>
+            <li>Optimization of content based on real audience behavior and demographic patterns where deployed.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note-card" style="margin-top: 22px;">
+        <p><strong>Positioning note:</strong> EyeNet Digital Signage is not just a screen player. It is a lightweight business platform that combines digital signage, audience sensing, rule-based automation, and traffic analytics.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2>Simplicity and Deployment Model</h2>
+      </div>
+      <div class="grid-two">
+        <div>
+          <p>From a sales and rollout perspective, onboarding is intentionally simple and staged. The platform can run on standard computing hardware and work with multiple camera types, reducing infrastructure friction and allowing adoption around the real environment of each store.</p>
+          <ol>
+            <li>Prepare a platform device such as a PC, laptop, or server.</li>
+            <li>Connect the required cameras and signage devices where applicable.</li>
+            <li>Ensure the local environment operates on the same network for reliable discovery and service communication.</li>
+            <li>Upload media, create playlists, and assign content to each store application.</li>
+            <li>Start with manual playback and expand into triggers, instant detection, and analytics as desired.</li>
+          </ol>
+        </div>
+        <div>
+          <h3>Supported practical deployment options</h3>
+          <ul>
+            <li>Standard PCs, laptops, and servers.</li>
+            <li>USB cameras connected to PCs or laptops.</li>
+            <li>USB cameras connected to Raspberry Pi devices.</li>
+            <li>Wi-Fi or IP cameras exposing RTSP streams.</li>
+            <li>Android mobile device cameras through the Android application.</li>
+          </ul>
+          <p class="footer-note">Remote access is recommended through VPN into the same environment, keeping the operational model clear and easy to support.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2>Commercial Pricing</h2>
+      </div>
+      <div class="pricing-grid">
+        <article class="pricing-card featured">
+          <span class="pricing-label">Monthly Subscription</span>
+          <div class="pricing-value">EUR 5,400</div>
+          <p class="pricing-subtext">Per month at EUR 180 per application key for 30 application keys under the main EyeNet platform license and the Digital Signage module with full functionality.</p>
+          <ul class="pricing-list">
+            <li>Includes central management, automation, analytics, and remote support.</li>
+            <li>Commercial scope covers 30 Plaisio stores under one software license.</li>
+            <li>Application key rate: <strong>EUR 180 / month</strong> per key.</li>
+            <li>Additional application key: <strong>EUR 180 / month</strong> per extra key.</li>
+          </ul>
+        </article>
+        <article class="pricing-card">
+          <span class="pricing-label">Annual Prepaid</span>
+          <div class="pricing-value">EUR 58,320</div>
+          <p class="pricing-subtext">Equivalent to a 10% discount against the standard 12-month monthly subscription total based on EUR 180 per application key per month.</p>
+          <ul class="pricing-list">
+            <li>Standard annualized value: EUR 64,800.</li>
+            <li>Annual prepayment discount: 10%.</li>
+            <li>Additional application key: <strong>EUR 1,944 / year</strong> per extra key.</li>
+          </ul>
+        </article>
+        <article class="pricing-card">
+          <span class="pricing-label">Optional Services</span>
+          <div class="pricing-value">As Needed</div>
+          <p class="pricing-subtext">Optional commercial services that can be added without changing the software license structure.</p>
+          <ul class="pricing-list">
+            <li>Remote onboarding and rollout support: EUR 1,800 one-time.</li>
+            <li>Administrator training workshop: EUR 950 one-time.</li>
+            <li>Premium support package: EUR 420 / month.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2>Commercial Interpretation for Plaisio</h2>
+      </div>
+      <div class="grid-two">
+        <div class="summary-card">
+          <span class="key-number">30 Stores</span>
+          <p>The included 30 application keys align with one application deployment per store, providing a straightforward commercial model for an initial national rollout.</p>
+        </div>
+        <div class="summary-card">
+          <span class="key-number">Same License</span>
+          <p>Any additional store, screen group, concept zone, or pilot environment can be added with extra application keys under the same software license, avoiding the need for a new platform agreement.</p>
+        </div>
+      </div>
+      <div class="note-card" style="margin-top: 22px;">
+        <p><strong>Why this structure works:</strong> It gives Plaisio a single contract and licensing model today, while preserving a clear and predictable expansion path for future stores, campaign concepts, pop-up environments, or specialized in-store zones.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2>Value Summary</h2>
+      </div>
+      <div class="grid-two">
+        <div>
+          <h3>Operational benefits</h3>
+          <ul>
+            <li>Central control of playlists and screens across multiple zones.</li>
+            <li>Faster campaign rollout and easier content switching by store or zone.</li>
+            <li>Lower lock-in risk due to hardware flexibility.</li>
+            <li>Clear path from simple signage to intelligent analytics-driven optimization.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Commercial benefits</h3>
+          <ul>
+            <li>One software license covering the main platform and Digital Signage module.</li>
+            <li>Thirty application keys included from day one.</li>
+            <li>Simple pricing for additional application keys under the same license.</li>
+            <li>Monthly or annual procurement path suitable for budgeting and scaling.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2>Assumptions and Exclusions</h2>
+      </div>
+      <ul>
+        <li>The customer provides the required display hardware, compute hardware, local networking, and any camera equipment where analytics workflows are used.</li>
+        <li>Taxes such as VAT are not included in the above pricing.</li>
+        <li>On-site installation, civil works, screen mounting, and custom software development are excluded unless separately quoted.</li>
+        <li>Remote access and support are assumed to be provided through a secure VPN or equivalent approved network access method.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2>Commercial Note</h2>
+      </div>
+      <p>This offer is structured to be printed or exported as PDF for internal review and commercial discussion.</p>
+      <p class="footer-note">Prepared by EyeNet for commercial discussion purposes. Pricing can be adjusted after final scope confirmation.</p>
+    </section>
+  </div>
+</body>
+</html>

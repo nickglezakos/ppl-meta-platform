@@ -94,6 +94,7 @@ def _schema_statements() -> list[str]:
             display_name TEXT,
             role_name TEXT NOT NULL DEFAULT 'owner',
             status TEXT NOT NULL DEFAULT 'active',
+            distributor_uuid TEXT,
             reseller_uuid TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -115,6 +116,7 @@ def _schema_statements() -> list[str]:
             invitation_token TEXT NOT NULL UNIQUE,
             email TEXT NOT NULL,
             role_name TEXT NOT NULL,
+            distributor_uuid TEXT,
             reseller_uuid TEXT,
             issued_by_user_uuid TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
@@ -143,9 +145,30 @@ def initialize_database() -> None:
     with _connect() as connection:
         for statement in _schema_statements():
             connection.execute(statement)
+        _ensure_column(connection, "authority_users", "distributor_uuid", "TEXT")
+        _ensure_column(connection, "authority_invitations", "distributor_uuid", "TEXT")
         connection.commit()
 
     _migrate_installations_to_entitlements()
+
+
+def _ensure_column(connection: Any, table_name: str, column_name: str, column_definition: str) -> None:
+    if _column_exists(connection, table_name, column_name):
+        return
+    connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
+
+
+def _column_exists(connection: Any, table_name: str, column_name: str) -> bool:
+    row = connection.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = ? AND column_name = ?
+        LIMIT 1
+        """,
+        (table_name, column_name),
+    ).fetchone()
+    return row is not None
 
 
 def seed_demo_installation() -> None:
@@ -189,6 +212,7 @@ def create_authority_user(
     password: str,
     display_name: str | None = None,
     role_name: str = "owner",
+    distributor_uuid: str | None = None,
     reseller_uuid: str | None = None,
 ) -> dict[str, Any]:
     user_uuid = str(uuid.uuid4())
@@ -202,10 +226,11 @@ def create_authority_user(
                 password_hash,
                 display_name,
                 role_name,
+                distributor_uuid,
                 reseller_uuid
-            ) VALUES (?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_uuid, email.lower(), password_hash, display_name, role_name, reseller_uuid),
+            (user_uuid, email.lower(), password_hash, display_name, role_name, distributor_uuid, reseller_uuid),
         )
         connection.commit()
 
@@ -237,6 +262,7 @@ def create_authority_user_from_invitation(
             password=password,
             display_name=display_name,
             role_name=invitation["role_name"],
+            distributor_uuid=invitation.get("distributor_uuid"),
             reseller_uuid=invitation["reseller_uuid"],
         )
 
@@ -307,6 +333,7 @@ def get_authority_session(session_token: str) -> dict[str, Any] | None:
         row = connection.execute(
                         f"""
             SELECT s.*, u.email, u.display_name, u.role_name, u.status, u.reseller_uuid
+            , u.distributor_uuid
             FROM authority_sessions s
             JOIN authority_users u ON u.user_uuid = s.user_uuid
             WHERE s.session_token = ?
@@ -349,6 +376,7 @@ def create_invitation(
     email: str,
     role_name: str,
     issued_by_user_uuid: str | None,
+    distributor_uuid: str | None = None,
     reseller_uuid: str | None = None,
     expires_in_days: int = 7,
 ) -> dict[str, Any]:
@@ -363,16 +391,18 @@ def create_invitation(
                 invitation_token,
                 email,
                 role_name,
+                distributor_uuid,
                 reseller_uuid,
                 issued_by_user_uuid,
                 expires_at
-            ) VALUES (?, ?, ?, ?, ?, ?, {expires_expr})
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, {expires_expr})
             """,
             (
                 invitation_uuid,
                 invitation_token,
                 email.lower(),
                 role_name,
+                distributor_uuid,
                 reseller_uuid,
                 issued_by_user_uuid,
                 *expires_params,
@@ -494,6 +524,22 @@ def list_entitlements_for_reseller_uuid(reseller_uuid: str) -> list[dict[str, An
     return [_entitlement_row_to_dict(row) for row in rows if row is not None]
 
 
+def list_entitlements_for_distributor_uuid(distributor_uuid: str) -> list[dict[str, Any]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT e.*
+            FROM authority_user_installations a
+            JOIN authority_users u ON u.user_uuid = a.user_uuid
+            JOIN entitlements e ON e.entitlement_uuid = a.entitlement_uuid
+            WHERE u.distributor_uuid = ? AND u.role_name = 'owner'
+            ORDER BY e.updated_at DESC, e.approved_owner_email ASC
+            """,
+            (distributor_uuid,),
+        ).fetchall()
+    return [_entitlement_row_to_dict(row) for row in rows if row is not None]
+
+
 def list_owner_users_by_reseller_uuid(reseller_uuid: str) -> list[dict[str, Any]]:
     with _connect() as connection:
         rows = connection.execute(
@@ -508,9 +554,38 @@ def list_owner_users_by_reseller_uuid(reseller_uuid: str) -> list[dict[str, Any]
     return [_authority_user_row_to_dict(row) for row in rows if row is not None]
 
 
+def list_reseller_users_by_distributor_uuid(distributor_uuid: str) -> list[dict[str, Any]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM authority_users
+            WHERE distributor_uuid = ? AND role_name = 'reseller'
+            ORDER BY created_at DESC, email ASC
+            """,
+            (distributor_uuid,),
+        ).fetchall()
+    return [_authority_user_row_to_dict(row) for row in rows if row is not None]
+
+
+def list_owner_users_by_distributor_uuid(distributor_uuid: str) -> list[dict[str, Any]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM authority_users
+            WHERE distributor_uuid = ? AND role_name = 'owner'
+            ORDER BY created_at DESC, email ASC
+            """,
+            (distributor_uuid,),
+        ).fetchall()
+    return [_authority_user_row_to_dict(row) for row in rows if row is not None]
+
+
 def list_recent_assignment_activity(
     limit: int = 5,
     reseller_uuid: str | None = None,
+    distributor_uuid: str | None = None,
 ) -> list[dict[str, Any]]:
     query = """
         SELECT
@@ -529,7 +604,10 @@ def list_recent_assignment_activity(
         JOIN entitlements e ON e.entitlement_uuid = a.entitlement_uuid
     """
     params: tuple[Any, ...]
-    if reseller_uuid:
+    if distributor_uuid:
+        query += " WHERE u.distributor_uuid = ? AND u.role_name = 'owner'"
+        params = (distributor_uuid, limit)
+    elif reseller_uuid:
         query += " WHERE u.reseller_uuid = ? AND u.role_name = 'owner'"
         params = (reseller_uuid, limit)
     else:
@@ -739,6 +817,19 @@ def list_authority_users_by_reseller_uuid(reseller_uuid: str) -> list[dict[str, 
             ORDER BY created_at DESC, email ASC
             """,
             (reseller_uuid,),
+        ).fetchall()
+
+    return [_authority_user_row_to_dict(row) for row in rows if row is not None]
+
+
+def list_authority_users() -> list[dict[str, Any]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM authority_users
+            ORDER BY distributor_uuid ASC NULLS FIRST, reseller_uuid ASC NULLS FIRST, role_name ASC, email ASC
+            """
         ).fetchall()
 
     return [_authority_user_row_to_dict(row) for row in rows if row is not None]
@@ -1031,6 +1122,41 @@ def list_recent_state_reports_for_reseller(
     return [_state_activity_row_to_dict(row) for row in rows if row is not None]
 
 
+def list_recent_state_reports_for_distributor(
+    distributor_uuid: str,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT
+                r.report_uuid,
+                r.installation_uuid,
+                r.current_release_version,
+                r.deployment_mode,
+                r.health_state,
+                r.components_json,
+                r.reported_at,
+                e.entitlement_uuid,
+                e.application_key,
+                e.tenant_name,
+                e.approved_owner_email,
+                e.activation_status,
+                e.licence_status
+            FROM installation_state_reports r
+            JOIN entitlements e ON e.installation_uuid = r.installation_uuid
+            JOIN authority_user_installations a ON a.entitlement_uuid = e.entitlement_uuid
+            JOIN authority_users u ON u.user_uuid = a.user_uuid
+            WHERE u.distributor_uuid = ? AND u.role_name = 'owner'
+            ORDER BY r.reported_at DESC, r.report_uuid DESC
+            LIMIT ?
+            """,
+            (distributor_uuid, limit),
+        ).fetchall()
+
+    return [_state_activity_row_to_dict(row) for row in rows if row is not None]
+
+
 def list_recent_state_reports(limit: int = 5) -> list[dict[str, Any]]:
     with _connect() as connection:
         rows = connection.execute(
@@ -1151,6 +1277,7 @@ def _authority_user_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "display_name": row["display_name"],
         "role_name": row["role_name"],
         "status": row["status"],
+        "distributor_uuid": row["distributor_uuid"],
         "reseller_uuid": row["reseller_uuid"],
         "created_at": _timestamp_value(row["created_at"]),
         "updated_at": _timestamp_value(row["updated_at"]),
@@ -1166,6 +1293,7 @@ def _authority_session_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "display_name": row["display_name"],
         "role_name": row["role_name"],
         "status": row["status"],
+        "distributor_uuid": row["distributor_uuid"],
         "reseller_uuid": row["reseller_uuid"],
         "created_at": _timestamp_value(row["created_at"]),
         "expires_at": _timestamp_value(row["expires_at"]),
@@ -1188,6 +1316,7 @@ def _invitation_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "invitation_token": row["invitation_token"],
         "email": row["email"],
         "role_name": row["role_name"],
+        "distributor_uuid": row["distributor_uuid"],
         "reseller_uuid": row["reseller_uuid"],
         "issued_by_user_uuid": row["issued_by_user_uuid"],
         "status": stored_status,

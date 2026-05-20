@@ -5,6 +5,7 @@ from api.admin import router as admin_router
 from api.admin_ui import router as admin_ui_router
 from api.auth import router as auth_router
 from api.dashboard import router as dashboard_router
+from api.distributor import router as distributor_router
 from api.health import router as health_router
 from api.installations import router as authority_router
 from api.reseller import router as reseller_router
@@ -35,6 +36,7 @@ app.include_router(health_router)
 app.include_router(authority_router)
 app.include_router(auth_router)
 app.include_router(dashboard_router)
+app.include_router(distributor_router)
 app.include_router(reseller_router)
 app.include_router(admin_router)
 app.include_router(admin_ui_router)

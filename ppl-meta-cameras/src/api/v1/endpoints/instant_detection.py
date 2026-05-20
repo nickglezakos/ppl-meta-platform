@@ -18,7 +18,7 @@ import requests as http_requests
 
 from src.services.instant_detection import InstantDetectionSampler
 from src.database import get_db
-from src.models.camera import Camera
+from src.models.camera import Camera, CameraType
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -227,7 +227,36 @@ async def start_instant_detection(
     
     # Get camera path
     camera_path = camera.connection_string or f"/dev/video{camera.device_index or 0}"
-    
+
+    # For mobile cameras, ensure queue worker is connected before starting sampling.
+    # The _sample_loop checks get_camera_stream() on its first iteration and stops
+    # immediately if no connected worker is found — this auto-connects it so that
+    # instant detection works even when recording is not active.
+    if camera.camera_type == CameraType.MOBILE:
+        try:
+            from src.services.camera_service_queue import get_camera_service
+            _queue_service = get_camera_service()
+            _worker = await _queue_service.get_camera_stream(camera_id)
+            if not _worker:
+                logger.info(
+                    f"📱 [INSTANT_DETECTION] Auto-connecting queue worker for mobile camera {camera_id}"
+                )
+                _connected = await _queue_service.connect_camera(camera_id)
+                if not _connected:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            f"Mobile camera {camera_id} is not active. "
+                            "Ensure the mobile camera app is streaming frames before starting instant detection."
+                        ),
+                    )
+        except HTTPException:
+            raise
+        except Exception as _e:
+            logger.warning(
+                f"⚠️ [INSTANT_DETECTION] Could not auto-connect queue worker for mobile camera {camera_id}: {_e}"
+            )
+
     try:
         # Load per-camera pipeline settings for storage configuration
         storage_multiple = camera.storage_multiple if camera.storage_multiple is not None else 1

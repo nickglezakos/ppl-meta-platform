@@ -1,0 +1,62 @@
+FROM python:3.11.11-slim-bookworm AS builder
+
+WORKDIR /app
+
+ENV CC=gcc \
+    CXX=g++ \
+    CMAKE_GENERATOR="Unix Makefiles"
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    gcc \
+    g++ \
+    make \
+    pkg-config \
+    python3-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements/ requirements/
+RUN grep -v '^dlib' requirements/base.txt > /tmp/requirements-no-dlib.txt \
+    && pip install --no-cache-dir -r /tmp/requirements-no-dlib.txt \
+    && pip install --no-cache-dir --no-build-isolation "dlib>=19.24.0" \
+    && pip install --no-cache-dir cython setuptools wheel
+
+COPY src/ ./src/
+COPY setup_protected.py ./setup_protected.py
+
+RUN python setup_protected.py build_ext --inplace
+
+FROM python:3.11.11-slim-bookworm AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local /usr/local
+
+COPY --from=builder /app/src/ ./src/
+
+RUN find /app/src -name "*.pyc" -delete \
+    && rm -f /app/src/services/embedding_service.py \
+    && rm -f /app/src/services/workflow_service.py \
+    && rm -f /app/src/services/mvr_service.py \
+    && rm -f /app/src/services/hierarchical_mvr_merger.py \
+    && rm -f /app/src/services/quality_selector.py
+
+EXPOSE 8008
+
+CMD ["python", "src/main.py"]

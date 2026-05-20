@@ -1,0 +1,110 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ppl-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ppl-redis
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  ppl-meta-node:
+    image: ${REGISTRY}/ppl-meta-node:${RELEASE_TAG}
+    ports:
+      - "${NODE_PORT}:8001"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8001
+      AUTHORITY_URL: ${AUTHORITY_URL}
+      INSTALLATION_UUID: ${INSTALLATION_UUID}
+      APPLICATION_KEY: ${APPLICATION_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  ppl-meta-media:
+    image: ${REGISTRY}/ppl-meta-media:${RELEASE_TAG}
+    ports:
+      - "${MEDIA_PORT}:8000"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  ppl-meta-gateway:
+    image: ${REGISTRY}/ppl-meta-gateway:${RELEASE_TAG}
+    ports:
+      - "${GATEWAY_PORT}:8080"
+    environment:
+      USER_SERVICE_URL: http://ppl-meta-node:8001
+      MEDIA_SERVICE_URL: http://ppl-meta-media:8000
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - ppl-meta-node
+      - ppl-meta-media
+      - redis
+    restart: unless-stopped
+
+  ppl-meta-orchestrator:
+    image: ${REGISTRY}/ppl-meta-orchestrator:${RELEASE_TAG}
+    ports:
+      - "${ORCHESTRATOR_PORT}:8002"
+    depends_on:
+      - postgres
+      - ppl-meta-node
+      - ppl-meta-media
+    restart: unless-stopped
+
+  ppl-meta-discovery:
+    image: ${REGISTRY}/ppl-meta-discovery:${RELEASE_TAG}
+    ports:
+      - "${DISCOVERY_PORT}:8004"
+    restart: unless-stopped
+
+  ppl-meta-communications:
+    image: ${REGISTRY}/ppl-meta-communications:${RELEASE_TAG}
+    ports:
+      - "${COMMUNICATIONS_PORT}:8009"
+    restart: unless-stopped
+
+  ppl-meta-vision:
+    image: ${REGISTRY}/ppl-meta-vision-protected:${RELEASE_TAG}
+    ports:
+      - "${VISION_PORT}:8003"
+    depends_on:
+      - ppl-meta-orchestrator
+    restart: unless-stopped
+
+  ppl-meta-vmeta:
+    image: ${REGISTRY}/ppl-meta-vmeta-protected:${RELEASE_TAG}
+    ports:
+      - "${VMETA_PORT}:8008"
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  ppl-meta-frontend:
+    image: ${REGISTRY}/ppl-meta-frontend:${RELEASE_TAG}
+    ports:
+      - "${FRONTEND_PORT}:80"
+    depends_on:
+      - ppl-meta-gateway
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

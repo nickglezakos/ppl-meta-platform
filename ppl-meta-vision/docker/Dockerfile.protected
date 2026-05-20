@@ -1,0 +1,60 @@
+FROM python:3.9.21-slim-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir cython setuptools wheel
+
+COPY src/ ./src/
+COPY models/ ./models/
+COPY setup_protected.py ./setup_protected.py
+
+RUN python setup_protected.py build_ext --inplace
+
+FROM python:3.9.21-slim-bookworm AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY --from=builder /app/src/ ./src/
+COPY --from=builder /app/models/ ./models/
+
+RUN find /app/src -name "*.pyc" -delete \
+    && rm -f /app/src/extracted_face_detector.py \
+    && rm -f /app/src/distance_calculator.py \
+    && rm -f /app/src/media_processor.py \
+    && rm -f /app/src/person_objects/face_grouping_engine.py
+
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8003
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
+
+CMD ["python", "src/main.py"]

@@ -49,6 +49,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ppl-meta-node")
 
+FRESH_ADMIN_EMAIL = "fresh.user@example.com"
+
 try:
     from src.config import settings
     from src.database import SessionLocal, engine
@@ -290,7 +292,7 @@ async def lifespan(_app: FastAPI):
 
                 # Seed fresh.user@example.com as the privileged development account.
                 # Owner assignment is converged later so the authority service can decide it.
-                fresh_email = "fresh.user@example.com"
+                fresh_email = FRESH_ADMIN_EMAIL
                 if not get_user_by_email(db, fresh_email):
                     create_user(db, UserCreate(
                         username=fresh_email,
@@ -326,7 +328,7 @@ async def lifespan(_app: FastAPI):
         await run_in_threadpool(init_guid_and_admin)
 
         async def converge_bootstrap_roles() -> None:
-            fresh_email = "fresh.user@example.com"
+            fresh_email = FRESH_ADMIN_EMAIL
             simple_user_email = "nick.glezakos@gmail.com"
             outlook_email = "nick.glezakos@outlook.com"
 
@@ -352,6 +354,10 @@ async def lifespan(_app: FastAPI):
                     )
             else:
                 logger.info("Authority integration not configured; using local startup owner fallback")
+
+            # Keep the local fresh user as an admin regardless of authority owner approval.
+            # Authority may remove owner, but this account remains the privileged development/admin user.
+            fresh_roles.update({"admin", "user"})
 
             def apply_bootstrap_roles() -> None:
                 db = SessionLocal()

@@ -21,6 +21,7 @@ class AuthorityUserResponse(BaseModel):
     display_name: str | None = None
     role_name: str
     status: str
+    distributor_uuid: str | None = None
     reseller_uuid: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -30,7 +31,8 @@ class RegisterRequest(BaseModel):
     email: str
     password: str = Field(min_length=8)
     display_name: str | None = None
-    role_name: str = Field(default="owner", pattern="^(owner|reseller|support)$")
+    role_name: str = Field(default="owner", pattern="^(owner|reseller|distributor|support)$")
+    distributor_uuid: str | None = None
     reseller_uuid: str | None = None
 
 
@@ -62,6 +64,7 @@ async def register(payload: RegisterRequest) -> AuthorityUserResponse:
         password=payload.password,
         display_name=payload.display_name,
         role_name=payload.role_name,
+        distributor_uuid=payload.distributor_uuid,
         reseller_uuid=payload.reseller_uuid,
     )
     return AuthorityUserResponse(**user)

@@ -8,8 +8,8 @@ Authority service for the installation lifecycle control plane, local-first admi
 - installation health and update event tracking
 - session-based authentication for authority users
 - bootstrap-admin flow for first-run local setup
-- invitation and assignment flows for owners and resellers
-- role-aware dashboard APIs for admin, reseller, and owner users
+- invitation and assignment flows for distributors, resellers, and owners
+- role-aware dashboard APIs for admin, distributor, reseller, and owner users
 - file-backed admin shell at `/admin`
 
 ## Local Run
@@ -30,6 +30,9 @@ Use the tasks in [.vscode/tasks.json](../../.vscode/tasks.json):
 - `🧪 Validate Authority Invitations And Assignments`
 - `🧪 Validate Authority Bootstrap Gate`
 - `🧪 Validate Authority Reseller Scope`
+- `🧪 Validate Authority Distributor Scope`
+- `🧪 Validate Authority Admin UI`
+- `python validate_authority_admin_e2e_workflow.py`
 
 The bootstrap variant exists for first-time local admin setup only. It enables the bootstrap endpoint so you can create the initial platform admin through the UI.
 
@@ -141,13 +144,14 @@ The bootstrap credentials are intentionally transitional. After first login, cre
 ## Suggested Manual QA Before Hetzner
 
 1. Bootstrap the initial admin user locally.
-2. Create at least one reseller user and one owner invitation.
-3. Accept the invitation through the UI.
+2. Create at least one distributor user, one reseller invitation, and one owner invitation.
+3. Accept the invitations through the UI.
 4. Create or assign an entitlement to the invited owner.
 5. Verify owner installations and owner summary views.
 6. Verify reseller summary visibility is limited to reseller-scoped records.
-7. Exercise the console filters for entitlements, invitations, assignments, updates, and health.
-8. Run the authority validation tasks before treating the local flow as deployment-ready.
+7. Verify distributor summary visibility is limited to distributor-scoped resellers, owners, and installations.
+8. Exercise the console filters for entitlements, invitations, assignments, updates, and health.
+9. Run the authority validation tasks before treating the local flow as deployment-ready.
 
 ## Admin Shell
 
@@ -158,9 +162,31 @@ It now supports:
 - login and logout with authority sessions
 - bootstrap-admin trigger when enabled
 - invitation acceptance
-- role-aware admin, reseller, and owner views
+- role-aware admin, distributor, reseller, and owner views
 - dashboard summaries with recent activity lanes
+- distributor-scoped reseller and owner directory views
+- distributor-scoped entitlement assignment to owner users
+- hierarchy-aware console rows for distributor, reseller, and owner scopes
 - filtered data console views for entitlements, invitations, assignments, updates, and health
+
+## Hierarchy
+
+The current authority onboarding chain is:
+
+1. platform admin can invite distributors, resellers, owners, and support users
+2. distributor can invite reseller users within a distributor scope
+3. reseller can invite owner users within a reseller scope
+
+When a reseller is invited by a distributor, both `distributor_uuid` and `reseller_uuid` are carried into the accepted account. When an owner is invited by that reseller, the owner inherits the same distributor and reseller scopes.
+
+Distributor management endpoints now include:
+
+- `POST /api/v1/distributor/invitations`
+- `GET /api/v1/distributor/resellers`
+- `GET /api/v1/distributor/owners`
+- `POST /api/v1/distributor/installation-assignments`
+
+For CI-safe end-to-end coverage, `validate_authority_admin_e2e_workflow.py` exercises the admin-to-distributor-to-reseller-to-owner onboarding chain, distributor user listings, and distributor entitlement assignment without needing a live browser runtime.
 
 ## Deployment Note
 

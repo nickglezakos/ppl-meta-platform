@@ -9,10 +9,10 @@ import psycopg
 from psycopg import sql
 
 TABLES: list[tuple[str, list[str]]] = [
-    ('authority_users', ['user_uuid', 'email', 'password_hash', 'display_name', 'role_name', 'status', 'reseller_uuid', 'created_at', 'updated_at']),
+    ('authority_users', ['user_uuid', 'email', 'password_hash', 'display_name', 'role_name', 'status', 'distributor_uuid', 'reseller_uuid', 'created_at', 'updated_at']),
     ('entitlements', ['entitlement_uuid', 'application_key', 'approved_owner_email', 'owner_enabled', 'licence_status', 'offline_grace_days', 'tenant_name', 'installation_uuid', 'activation_status', 'notes', 'created_at', 'updated_at']),
     ('installations', ['installation_uuid', 'application_key', 'approved_owner_email', 'owner_enabled', 'licence_status', 'offline_grace_days', 'tenant_name', 'notes', 'created_at', 'updated_at']),
-    ('authority_invitations', ['invitation_uuid', 'invitation_token', 'email', 'role_name', 'reseller_uuid', 'issued_by_user_uuid', 'status', 'accepted_by_user_uuid', 'expires_at', 'created_at', 'accepted_at']),
+    ('authority_invitations', ['invitation_uuid', 'invitation_token', 'email', 'role_name', 'distributor_uuid', 'reseller_uuid', 'issued_by_user_uuid', 'status', 'accepted_by_user_uuid', 'expires_at', 'created_at', 'accepted_at']),
     ('authority_sessions', ['session_token', 'user_uuid', 'created_at', 'expires_at', 'revoked_at']),
     ('installation_state_reports', ['report_uuid', 'installation_uuid', 'current_release_version', 'deployment_mode', 'health_state', 'components_json', 'reported_at']),
     ('update_events', ['update_event_uuid', 'installation_uuid', 'from_release_version', 'to_release_version', 'status', 'failure_reason', 'components_json', 'created_at']),

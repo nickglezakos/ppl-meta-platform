@@ -8,13 +8,8 @@
 </head>
 <body data-page="console">
   <div class="shell">
-    <section class="hero">
-      <div class="eyebrow">Authority Control Plane</div>
+    <section class="hero logo-header" data-auth-visibility="logged-out">
       <img class="brand-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
-      <p class="lede">Data console for invitations, assignments, updates, and installation health from the live authority service.</p>
-      <div class="hero-actions">
-        <a class="button-link secondary" href="/admin">Back to control shell</a>
-      </div>
     </section>
 
     <section id="loggedOutPanel" class="card auth-card">
@@ -30,60 +25,136 @@
       <div class="status" data-shared-status></div>
     </section>
 
-    <section id="authenticatedShell" class="grid hidden">
-      <div class="stack">
-        <div class="card">
-          <h2>Session</h2>
-          <div class="actions">
-            <button type="button" class="secondary" id="logoutButton">Logout</button>
-            <button type="button" class="secondary" id="loadSessionButton">Refresh session</button>
-          </div>
-          <div class="session-state">
-            <div><strong>Role:</strong> <span id="currentRole" class="small">Unauthenticated</span></div>
-            <div><strong>Email:</strong> <span id="currentEmail" class="small">-</span></div>
-            <div><strong>Reseller Scope:</strong> <span id="currentResellerScope" class="small">-</span></div>
-          </div>
-          <div class="status" data-shared-status></div>
+    <section id="authenticatedShell" class="authority-layout hidden">
+      <div class="card body-card navigation-shell">
+        <div class="view-topbar">
+          <img class="brand-logo topbar-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
+          <h2 id="currentViewTitle" class="view-title">Data Console</h2>
+          <button type="button" class="menu-toggle" id="viewMenuToggle" aria-expanded="false" aria-controls="viewNavigation">Menu</button>
         </div>
-        <div class="card hidden-metrics" aria-hidden="true">
-          <div id="metricRole">-</div>
-          <div id="metricScope">-</div>
-          <div id="metricOwnerCount">0</div>
-          <div id="metricResellerCount">0</div>
-          <div id="metricPendingInvitations">0</div>
-          <div id="metricRecentAssignments">0</div>
+        <div class="view-layout" id="viewShell">
+          <div class="view-drawer-overlay" id="viewDrawerOverlay" aria-hidden="true"></div>
+          <aside class="view-navigation" id="viewNavigation" aria-label="Authority navigation" tabindex="-1">
+            <div class="view-navigation-header">
+              <div>
+                <div class="eyebrow view-eyebrow">Workspace Menu</div>
+                <div class="view-navigation-title">Authority navigation</div>
+              </div>
+              <button type="button" class="drawer-close" id="viewDrawerClose" aria-label="Close navigation">Close</button>
+            </div>
+            <div class="view-navigation-section">
+              <div class="view-navigation-label">Control shell</div>
+              <a class="view-link view-link-anchor" href="/admin?view=session">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M7 4h10l3 3v13H4V4h3zm1 2v12h8V8.5L14.5 6zm2 3h4v2h-4zm0 4h6v2h-6z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Session</strong><span>Return to the authority session workspace.</span></span>
+              </a>
+              <a class="view-link view-link-anchor" href="/admin?view=overview">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M5 19V9h4v10zm5 0V5h4v14zm5 0v-7h4v7z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Overview</strong><span>Cross-role summaries and recent activity.</span></span>
+              </a>
+              <a class="view-link view-link-anchor" href="/admin?view=admin">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2l8 4v6c0 5.2-3.4 9.8-8 11-4.6-1.2-8-5.8-8-11V6zm0 5a3 3 0 100 6 3 3 0 000-6zm0 8c-2.1 0-4 .8-5.5 2.2 1.4 1.9 3.3 3.3 5.5 4 2.2-.7 4.1-2.1 5.5-4-1.5-1.4-3.4-2.2-5.5-2.2z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Admin</strong><span>Entitlements, invitations, installation assignment.</span></span>
+              </a>
+              <a class="view-link view-link-anchor" href="/admin?view=distributor">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M4 7l8-4 8 4-8 4zm0 3l8 4 8-4v7l-8 4-8-4z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Distributor</strong><span>Distributor-scoped reseller onboarding.</span></span>
+              </a>
+              <a class="view-link view-link-anchor" href="/admin?view=reseller">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M6 5h12v4H6zm-1 6h14v8H5zm3 2v4h3v-4zm5 0h3v4h-3z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Reseller</strong><span>Owner onboarding and installation scope.</span></span>
+              </a>
+              <a class="view-link view-link-anchor" href="/admin?view=owner">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M12 4a4 4 0 110 8 4 4 0 010-8zm-7 14c0-3.1 3.1-5 7-5s7 1.9 7 5v2H5z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Owner Dashboard</strong><span>Owner lifecycle and installation status.</span></span>
+              </a>
+            </div>
+            <div class="view-navigation-section">
+              <div class="view-navigation-label">Current route</div>
+              <a class="view-link view-link-anchor active" href="/admin/console">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M4 5h16v14H4zm2 2v2h12V7zm0 4v6h5v-6zm7 0v2h5v-2zm0 4v2h5v-2z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Data Console</strong><span>Inspect live authority records and filters.</span></span>
+              </a>
+            </div>
+          </aside>
+
+          <div class="view-content">
+            <div class="stack session-view-stack console-view-stack">
+              <div class="feature-card session-view-card">
+                <div class="merged-bar-title-row">
+                  <h3>Session</h3>
+                  <div class="actions compact-actions">
+                    <button type="button" class="secondary" id="logoutButton">Logout</button>
+                    <button type="button" class="secondary" id="loadSessionButton">Refresh session</button>
+                  </div>
+                </div>
+                <div class="session-state compact-session-state session-inline-meta">
+                  <div><strong>Role:</strong> <span id="currentRole" class="small">Unauthenticated</span></div>
+                  <div><strong>Email:</strong> <span id="currentEmail" class="small">-</span></div>
+                  <div><strong>Distributor Scope:</strong> <span id="currentDistributorScope" class="small">-</span></div>
+                  <div><strong>Reseller Scope:</strong> <span id="currentResellerScope" class="small">-</span></div>
+                </div>
+                <div class="status compact-status" data-shared-status></div>
+              </div>
+
+              <div class="card hidden-metrics" aria-hidden="true">
+                <div id="metricRole">-</div>
+                <div id="metricDistributorScope">-</div>
+                <div id="metricScope">-</div>
+                <div id="metricOwnerCount">0</div>
+                <div id="metricResellerCount">0</div>
+                <div id="metricPendingInvitations">0</div>
+                <div id="metricRecentAssignments">0</div>
+              </div>
+
+              <section class="card console-card page-console-card body-card">
+                <h3>Data Console</h3>
+                <div class="small">Live authority API output for entitlements, invitations, assignments, updates, and health reporting.</div>
+                <div class="console-toolbar">
+                  <button type="button" class="secondary console-filter active" data-console-filter="all">All <span class="filter-count" data-filter-count="all">0</span></button>
+                  <button type="button" class="secondary console-filter" data-console-filter="hierarchy">Hierarchy <span class="filter-count" data-filter-count="hierarchy">0</span></button>
+                  <button type="button" class="secondary console-filter" data-console-filter="entitlements">Entitlements <span class="filter-count" data-filter-count="entitlements">0</span></button>
+                  <button type="button" class="secondary console-filter" data-console-filter="invitations">Invitations <span class="filter-count" data-filter-count="invitations">0</span></button>
+                  <button type="button" class="secondary console-filter" data-console-filter="assignments">Assignments <span class="filter-count" data-filter-count="assignments">0</span></button>
+                  <button type="button" class="secondary console-filter" data-console-filter="updates">Updates <span class="filter-count" data-filter-count="updates">0</span></button>
+                  <button type="button" class="secondary console-filter" data-console-filter="health">Health <span class="filter-count" data-filter-count="health">0</span></button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Primary</th>
+                        <th>Scope / Status</th>
+                        <th>Owner / User</th>
+                        <th>Version / Key</th>
+                        <th>Details</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dataBody">
+                      <tr><td colspan="6" class="small">No data loaded yet.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
       </div>
-
-      <section class="card console-card page-console-card">
-        <h2>Data Console</h2>
-        <div class="small">Live authority API output for entitlements, invitations, assignments, updates, and health reporting.</div>
-        <div class="console-toolbar">
-          <button type="button" class="secondary console-filter active" data-console-filter="all">All <span class="filter-count" data-filter-count="all">0</span></button>
-          <button type="button" class="secondary console-filter" data-console-filter="entitlements">Entitlements <span class="filter-count" data-filter-count="entitlements">0</span></button>
-          <button type="button" class="secondary console-filter" data-console-filter="invitations">Invitations <span class="filter-count" data-filter-count="invitations">0</span></button>
-          <button type="button" class="secondary console-filter" data-console-filter="assignments">Assignments <span class="filter-count" data-filter-count="assignments">0</span></button>
-          <button type="button" class="secondary console-filter" data-console-filter="updates">Updates <span class="filter-count" data-filter-count="updates">0</span></button>
-          <button type="button" class="secondary console-filter" data-console-filter="health">Health <span class="filter-count" data-filter-count="health">0</span></button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Primary</th>
-                <th>Scope / Status</th>
-                <th>Owner / User</th>
-                <th>Version / Key</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody id="dataBody">
-              <tr><td colspan="6" class="small">No data loaded yet.</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
     </section>
   </div>
 

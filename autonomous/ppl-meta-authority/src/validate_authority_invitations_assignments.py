@@ -18,11 +18,13 @@ assert client.post('/api/v1/auth/register', json={
     'email': 'reseller2@example.com',
     'password': 'reseller22',
     'role_name': 'reseller',
+    'distributor_uuid': 'distributor-group-2',
     'reseller_uuid': 'reseller-group-2'
 }).status_code == 201
 invitation = client.post('/api/v1/admin/invitations', json={
     'email': 'invited-owner@example.com',
     'role_name': 'owner',
+    'distributor_uuid': 'distributor-group-2',
     'reseller_uuid': 'reseller-group-2'
 }, headers=admin_headers)
 assert invitation.status_code == 201
@@ -55,5 +57,6 @@ reseller_login = client.post('/api/v1/auth/login', json={
 })
 assert reseller_login.status_code == 200
 reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_token']}"}
+assert reseller_login.json()['user']['distributor_uuid'] == 'distributor-group-2'
 assert client.get('/api/v1/dashboard/reseller/summary', headers=reseller_headers).status_code == 200
 print('Authority invitation and assignment validation passed.')

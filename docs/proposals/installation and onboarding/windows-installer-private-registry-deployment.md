@@ -217,9 +217,10 @@ That is the right MVP distribution model.
 
 The registry could be:
 
-- private Docker Hub repository
 - GitHub Container Registry
 - self-hosted registry later if needed
+
+For the current platform direction, GitHub Container Registry should be treated as the default and Docker Hub should not be treated as the primary target.
 
 The important thing is that the images are:
 

@@ -6,16 +6,20 @@ from pydantic import BaseModel
 from core.auth import require_authority_user
 from core.storage import (
     list_entitlements,
+    list_entitlements_for_distributor_uuid,
     list_entitlements_for_reseller_uuid,
     list_entitlements_for_user_uuid,
     list_invitations,
     list_entitlements_for_owner_email,
     list_entitlements_for_owner_emails,
+    list_owner_users_by_distributor_uuid,
     list_owner_users_by_reseller_uuid,
     list_recent_assignment_activity,
     list_recent_state_reports,
+    list_recent_state_reports_for_distributor,
     list_recent_state_reports_for_owner,
     list_recent_state_reports_for_reseller,
+    list_reseller_users_by_distributor_uuid,
     list_recent_update_events_for_owner,
 )
 
@@ -56,6 +60,36 @@ class ResellerDashboardSummary(BaseModel):
     recent_health_reports: list["StateReportActivity"]
 
 
+class DistributorResellerSummary(BaseModel):
+    user_uuid: str
+    email: str
+    display_name: str | None = None
+    reseller_uuid: str | None = None
+    owner_count: int
+
+
+class DistributorOwnerSummary(BaseModel):
+    user_uuid: str
+    email: str
+    display_name: str | None = None
+    reseller_uuid: str | None = None
+    installation_count: int
+
+
+class DistributorDashboardSummary(BaseModel):
+    distributor_uuid: str
+    reseller_count: int
+    owner_count: int
+    installation_count: int
+    active_installation_count: int
+    pending_invitation_count: int
+    resellers: list[DistributorResellerSummary]
+    owners: list[DistributorOwnerSummary]
+    installations: list[DashboardInstallation]
+    recent_assignments: list["AssignmentActivity"]
+    recent_health_reports: list["StateReportActivity"]
+
+
 class AssignmentActivity(BaseModel):
     assignment_uuid: str
     user_uuid: str
@@ -63,6 +97,7 @@ class AssignmentActivity(BaseModel):
     assigned_by_user_uuid: str | None = None
     created_at: str
     owner_email: str
+    distributor_uuid: str | None = None
     reseller_uuid: str | None = None
     application_key: str
     tenant_name: str | None = None
@@ -73,6 +108,7 @@ class InvitationActivity(BaseModel):
     invitation_uuid: str
     email: str
     role_name: str
+    distributor_uuid: str | None = None
     reseller_uuid: str | None = None
     status: str
     effective_status: str
@@ -134,6 +170,7 @@ class StateReportActivity(BaseModel):
 
 
 ResellerDashboardSummary.model_rebuild()
+DistributorDashboardSummary.model_rebuild()
 OwnerDashboardSummary.model_rebuild()
 AdminDashboardSummary.model_rebuild()
 
@@ -249,6 +286,73 @@ async def reseller_summary(
             1 for installation in installations if installation["activation_status"] == "pending_activation"
         ),
         pending_invitation_count=sum(1 for invitation in invitations if invitation["effective_status"] == "pending"),
+        owners=owner_summaries,
+        installations=[DashboardInstallation(**record) for record in installations],
+        recent_assignments=[AssignmentActivity(**record) for record in recent_assignments],
+        recent_health_reports=[StateReportActivity(**record) for record in recent_health_reports],
+    )
+
+
+@router.get("/distributor/summary", response_model=DistributorDashboardSummary)
+async def distributor_summary(
+    current_user: dict[str, str] = Depends(require_authority_user),
+) -> DistributorDashboardSummary:
+    if current_user["role_name"] != "distributor":
+        raise HTTPException(status_code=403, detail="Distributor role required")
+    if not current_user.get("distributor_uuid"):
+        raise HTTPException(status_code=400, detail="Distributor account is not scoped to a distributor_uuid")
+
+    distributor_uuid = current_user["distributor_uuid"]
+    resellers = list_reseller_users_by_distributor_uuid(distributor_uuid)
+    owners = list_owner_users_by_distributor_uuid(distributor_uuid)
+    installations = list_entitlements_for_distributor_uuid(distributor_uuid)
+    invitations = [
+        record for record in list_invitations()
+        if record.get("distributor_uuid") == distributor_uuid
+    ]
+    recent_assignments = list_recent_assignment_activity(limit=5, distributor_uuid=distributor_uuid)
+    recent_health_reports = list_recent_state_reports_for_distributor(distributor_uuid, limit=5)
+
+    owner_count_by_reseller: dict[str, int] = {}
+    for owner in owners:
+        reseller_uuid = owner.get("reseller_uuid") or ""
+        owner_count_by_reseller[reseller_uuid] = owner_count_by_reseller.get(reseller_uuid, 0) + 1
+
+    reseller_summaries = [
+        DistributorResellerSummary(
+            user_uuid=reseller["user_uuid"],
+            email=reseller["email"],
+            display_name=reseller["display_name"],
+            reseller_uuid=reseller.get("reseller_uuid"),
+            owner_count=owner_count_by_reseller.get(reseller.get("reseller_uuid") or "", 0),
+        )
+        for reseller in resellers
+    ]
+
+    installations_by_email: dict[str, int] = {}
+    for installation in installations:
+        email = installation["approved_owner_email"].lower()
+        installations_by_email[email] = installations_by_email.get(email, 0) + 1
+
+    owner_summaries = [
+        DistributorOwnerSummary(
+            user_uuid=owner["user_uuid"],
+            email=owner["email"],
+            display_name=owner["display_name"],
+            reseller_uuid=owner.get("reseller_uuid"),
+            installation_count=installations_by_email.get(owner["email"].lower(), 0),
+        )
+        for owner in owners
+    ]
+
+    return DistributorDashboardSummary(
+        distributor_uuid=distributor_uuid,
+        reseller_count=len(reseller_summaries),
+        owner_count=len(owners),
+        installation_count=len(installations),
+        active_installation_count=sum(1 for installation in installations if installation["activation_status"] == "active"),
+        pending_invitation_count=sum(1 for invitation in invitations if invitation["effective_status"] == "pending"),
+        resellers=reseller_summaries,
         owners=owner_summaries,
         installations=[DashboardInstallation(**record) for record in installations],
         recent_assignments=[AssignmentActivity(**record) for record in recent_assignments],

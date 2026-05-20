@@ -66,6 +66,7 @@ def require_platform_admin(authorization: str | None = Header(default=None)) -> 
         "display_name": "Bootstrap Admin Token",
         "role_name": "platform_admin",
         "status": "active",
+        "distributor_uuid": None,
         "reseller_uuid": None,
     }
 
@@ -87,6 +88,29 @@ def require_reseller_or_platform_admin(authorization: str | None = Header(defaul
         "display_name": "Bootstrap Admin Token",
         "role_name": "platform_admin",
         "status": "active",
+        "distributor_uuid": None,
+        "reseller_uuid": None,
+    }
+
+
+def require_distributor_or_platform_admin(authorization: str | None = Header(default=None)) -> dict[str, str]:
+    session = get_authority_session_from_header(authorization)
+    if session is not None:
+        if session["role_name"] not in {"platform_admin", "distributor"}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Distributor or platform admin role required",
+            )
+        return session
+
+    require_admin_token(authorization)
+    return {
+        "user_uuid": "bootstrap-admin-token",
+        "email": "bootstrap-admin-token",
+        "display_name": "Bootstrap Admin Token",
+        "role_name": "platform_admin",
+        "status": "active",
+        "distributor_uuid": None,
         "reseller_uuid": None,
     }
 

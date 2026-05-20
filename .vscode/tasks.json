@@ -400,6 +400,14 @@
 			"problemMatcher": []
 		},
 		{
+			"label": "🧪 Validate Authority Admin End-To-End Workflow",
+			"type": "shell",
+			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_admin_e2e_workflow.py",
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
 			"label": "🧪 Test PPL Meta Mini Complete Pipeline",
 			"type": "shell",
 			"command": "cd autonomous/ppl-meta-mini && python demo_pipeline.py",

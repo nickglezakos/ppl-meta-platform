@@ -23,6 +23,7 @@ class ResellerInvitationResponse(BaseModel):
     invitation_token: str
     email: str
     role_name: str
+    distributor_uuid: str | None = None
     reseller_uuid: str | None = None
     status: str
     effective_status: str
@@ -68,6 +69,7 @@ async def reseller_create_owner_invitation(
     invitation = create_invitation(
         email=payload.email,
         role_name="owner",
+        distributor_uuid=current_user.get("distributor_uuid"),
         reseller_uuid=reseller_uuid,
         issued_by_user_uuid=current_user.get("user_uuid"),
         expires_in_days=payload.expires_in_days,

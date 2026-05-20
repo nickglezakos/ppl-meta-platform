@@ -1,8 +1,8 @@
-# Platform Private Docker Hub Deployment Proposal
+# Platform Private Registry Deployment Proposal
 
 **Date**: May 11, 2026  
 **Status**: Draft  
-**Scope**: Container image packaging for the full local platform, private Docker Hub distribution, Windows installer consumption, and separation of APK and Raspberry Pi deployment channels
+**Scope**: Container image packaging for the full local platform, GitHub Container Registry distribution, Windows installer consumption, and separation of APK and Raspberry Pi deployment channels
 
 ---
 
@@ -15,7 +15,7 @@ The goal is to make the main local platform installable on Windows through Docke
 The proposal covers:
 
 - which services should be built as Docker images
-- how those images should be published to a private Docker Hub namespace
+- how those images should be published to GitHub Container Registry
 - how the Windows installer should consume those images
 - which products should **not** be distributed through this container channel
 
@@ -27,7 +27,7 @@ Yes, your approach is broadly correct.
 
 The right packaging split is:
 
-1. the main local platform services are distributed as Docker images through a private Docker Hub repository set
+1. the main local platform services are distributed as Docker images through GitHub Container Registry
 2. the Windows installer pulls those versioned images and installs the platform on a Windows machine via Docker Desktop
 3. Android deliverables remain APK-based
 4. the Raspberry Pi edge camera remains a separate device image or dedicated device-specific deployment path
@@ -46,7 +46,7 @@ The main corrections are:
 
 ## Proposed Distribution Split
 
-### A. Main Local Platform Via Private Docker Hub
+### A. Main Local Platform Via GitHub Container Registry
 
 These services should be built and published as private Docker images for the Windows-installed local platform:
 
@@ -76,7 +76,7 @@ These should be distributed as signed APKs or through the appropriate Android re
 
 ### C. Edge Camera Via Separate Raspberry Pi Delivery Path
 
-The edge camera should remain separate from the Windows installer and from the general private Docker Hub platform bundle.
+The edge camera should remain separate from the Windows installer and from the general platform image bundle.
 
 Recommended options:
 
@@ -117,14 +117,14 @@ This avoids forcing every installation to run an unnecessarily large stack when 
 
 ---
 
-## Why Private Docker Hub Is The Right Channel
+## Why GitHub Container Registry Is The Right Channel
 
-Private Docker Hub is a reasonable MVP distribution channel for the containerized local platform because it gives:
+GitHub Container Registry is the better current distribution channel for the containerized local platform because it gives:
 
 - centralized image distribution
 - version-tagged release control
 - simple integration with Docker Desktop on Windows
-- a familiar operational model for CI/CD publishing
+- direct alignment with the GitHub-hosted repository and release workflow
 - easier updates than bundling images inside an installer
 
 This is especially suitable if the Windows installer is only responsible for:
@@ -140,21 +140,21 @@ This is especially suitable if the Windows installer is only responsible for:
 
 ## Image Naming And Tagging Strategy
 
-Each service should be published as its own image under one private Docker Hub organization or namespace.
+Each service should be published as its own image under one GitHub Container Registry namespace.
 
 Suggested pattern:
 
-- `docker.io/<org>/ppl-meta-bootcore:<platform-version>`
-- `docker.io/<org>/ppl-meta-cameras:<platform-version>`
-- `docker.io/<org>/ppl-meta-communications:<platform-version>`
-- `docker.io/<org>/ppl-meta-discovery:<platform-version>`
-- `docker.io/<org>/ppl-meta-frontend-web:<platform-version>`
-- `docker.io/<org>/ppl-meta-gateway:<platform-version>`
-- `docker.io/<org>/ppl-meta-media:<platform-version>`
-- `docker.io/<org>/ppl-meta-node:<platform-version>`
-- `docker.io/<org>/ppl-meta-orchestrator:<platform-version>`
-- `docker.io/<org>/ppl-meta-vision:<platform-version>`
-- `docker.io/<org>/ppl-meta-vmeta:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-bootcore:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-cameras:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-communications:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-discovery:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-frontend-web:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-gateway:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-media:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-node:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-orchestrator:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vision:<platform-version>`
+- `ghcr.io/nickglezakos/ppl-meta-platform/ppl-meta-vmeta:<platform-version>`
 
 Recommended rules:
 
@@ -203,7 +203,7 @@ The Docker deployment proposal must align with the implemented Hetzner authority
 
 The key separation is:
 
-- private Docker Hub distribution delivers the software
+- GitHub Container Registry delivers the software
 - Hetzner authority governs owner approval and licence activation
 
 The Windows installer prepares the machine for the authority lifecycle by writing:
@@ -367,7 +367,7 @@ The following decisions still need to be made explicitly:
 
 Yes, the overall approach is correct.
 
-The main local platform should be delivered as a set of private Docker Hub images and installed on Windows through Docker Desktop plus the Windows installer.
+The main local platform should be delivered as a set of GitHub Container Registry images and installed on Windows through Docker Desktop plus the Windows installer.
 
 Android products should remain APK-based, and the Raspberry Pi edge camera should remain on a separate device-specific deployment path.
 

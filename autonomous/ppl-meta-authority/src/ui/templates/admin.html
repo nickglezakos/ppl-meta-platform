@@ -8,18 +8,13 @@
 </head>
 <body data-page="admin">
   <div class="shell">
-    <section class="hero">
-      <div class="eyebrow">Authority Control Plane</div>
+    <section class="hero logo-header" data-auth-visibility="logged-out">
       <img class="brand-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
-      <p class="lede">Session-backed control surface for platform admin, reseller, and owner workflows across onboarding, invitations, assignments, and installation lifecycle visibility.</p>
-      <div class="hero-actions hidden" data-auth-visibility="authenticated">
-        <a class="button-link secondary" href="/admin/console">Open data console</a>
-      </div>
     </section>
 
     <section id="loggedOutPanel" class="card auth-card">
       <h2>Login</h2>
-      <p class="small auth-copy">Sign in to manage authority users, invitations, installations, and reseller or owner workflows. The data console is available as a separate page after login.</p>
+      <p class="small auth-copy">Sign in to manage authority users, invitations, installations, and distributor, reseller, or owner workflows. The data console is available as a separate page after login.</p>
       <label>Email<input id="login_email" type="email" placeholder="admin@authority.local"></label>
       <label>Password<input id="login_password" type="password" placeholder="Enter password"></label>
       <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
@@ -30,60 +25,165 @@
       <div class="status" data-shared-status></div>
     </section>
 
-    <section id="authenticatedShell" class="grid hidden">
-      <div class="stack">
-        <div class="card">
-          <h2>Session</h2>
-          <div class="actions">
-            <button type="button" class="secondary" id="logoutButton">Logout</button>
-            <button type="button" class="secondary" id="loadSessionButton">Refresh session</button>
-            <a class="button-link secondary" href="/admin/console">Open data console</a>
+    <section id="authenticatedShell" class="authority-layout hidden">
+      <div class="card body-card navigation-shell">
+        <div class="view-topbar">
+          <img class="brand-logo topbar-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
+          <h2 id="currentViewTitle" class="view-title">Session</h2>
+          <button type="button" class="menu-toggle" id="viewMenuToggle" aria-expanded="false" aria-controls="viewNavigation">Menu</button>
+        </div>
+        <div class="view-layout" id="viewShell">
+          <div class="view-drawer-overlay" id="viewDrawerOverlay" aria-hidden="true"></div>
+          <aside class="view-navigation" id="viewNavigation" aria-label="Authority navigation" tabindex="-1">
+            <div class="view-navigation-header">
+              <div>
+                <div class="eyebrow view-eyebrow">Workspace Menu</div>
+                <div class="view-navigation-title">Authority navigation</div>
+              </div>
+              <button type="button" class="drawer-close" id="viewDrawerClose" aria-label="Close navigation">Close</button>
+            </div>
+            <div class="view-navigation-section">
+              <div class="view-navigation-label">Workspace views</div>
+              <button type="button" class="view-link active" data-view="session">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M7 4h10l3 3v13H4V4h3zm1 2v12h8V8.5L14.5 6zm2 3h4v2h-4zm0 4h6v2h-6z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Session</strong><span>Identity, scope, invitation acceptance.</span></span>
+              </button>
+              <button type="button" class="view-link" data-view="overview">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M5 19V9h4v10zm5 0V5h4v14zm5 0v-7h4v7z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Overview</strong><span>Cross-role summaries and recent activity.</span></span>
+              </button>
+              <button type="button" class="view-link" data-view="admin">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2l8 4v6c0 5.2-3.4 9.8-8 11-4.6-1.2-8-5.8-8-11V6zm0 5a3 3 0 100 6 3 3 0 000-6zm0 8c-2.1 0-4 .8-5.5 2.2 1.4 1.9 3.3 3.3 5.5 4 2.2-.7 4.1-2.1 5.5-4-1.5-1.4-3.4-2.2-5.5-2.2z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Admin</strong><span>Entitlements, invitations, installation assignment.</span></span>
+              </button>
+              <button type="button" class="view-link" data-view="distributor">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M4 7l8-4 8 4-8 4zm0 3l8 4 8-4v7l-8 4-8-4z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Distributor</strong><span>Distributor-scoped reseller onboarding.</span></span>
+              </button>
+              <button type="button" class="view-link" data-view="reseller">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M6 5h12v4H6zm-1 6h14v8H5zm3 2v4h3v-4zm5 0h3v4h-3z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Reseller</strong><span>Owner onboarding and installation scope.</span></span>
+              </button>
+              <button type="button" class="view-link" data-view="owner">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M12 4a4 4 0 110 8 4 4 0 010-8zm-7 14c0-3.1 3.1-5 7-5s7 1.9 7 5v2H5z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Owner Dashboard</strong><span>Owner lifecycle and installation status.</span></span>
+              </button>
+            </div>
+            <div class="view-navigation-section">
+              <div class="view-navigation-label">Separate route</div>
+              <a class="view-link view-link-anchor" href="/admin/console">
+                <span class="view-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false"><path d="M4 5h16v14H4zm2 2v2h12V7zm0 4v6h5v-6zm7 0v2h5v-2zm0 4v2h5v-2z"/></svg>
+                </span>
+                <span class="view-link-copy"><strong>Data Console</strong><span>Open the data console in its own page.</span></span>
+              </a>
+            </div>
+          </aside>
+
+          <div class="view-content">
+        <div id="session" class="view-panel active">
+          <div class="stack session-view-stack">
+            <div class="feature-card session-view-card">
+              <div class="merged-bar-title-row">
+                <h3>Session</h3>
+                <div class="actions compact-actions">
+                  <button type="button" class="secondary" id="logoutButton">Logout</button>
+                  <button type="button" class="secondary" id="loadSessionButton">Refresh</button>
+                  <button type="button" class="secondary" id="sessionOpenConsoleButton">Open data console</button>
+                </div>
+              </div>
+              <div class="summary-grid session-summary-grid">
+                <div class="metric"><div class="label">Role</div><div id="sessionViewRole" class="value">-</div></div>
+                <div class="metric"><div class="label">Email</div><div id="sessionViewEmail" class="value metric-text">-</div></div>
+                <div class="metric"><div class="label">Distributor</div><div id="sessionViewDistributor" class="value metric-text">-</div></div>
+                <div class="metric"><div class="label">Reseller</div><div id="sessionViewReseller" class="value metric-text">-</div></div>
+              </div>
+              <div class="session-state compact-session-state session-inline-meta">
+                <div><strong>Role:</strong> <span id="currentRole" class="small">Unauthenticated</span></div>
+                <div><strong>Email:</strong> <span id="currentEmail" class="small">-</span></div>
+                <div><strong>Distributor:</strong> <span id="currentDistributorScope" class="small">-</span></div>
+                <div><strong>Reseller:</strong> <span id="currentResellerScope" class="small">-</span></div>
+              </div>
+              <div class="status compact-status" data-shared-status></div>
+            </div>
+
+            <div class="feature-card invitation-view-card" id="acceptInvitationCard">
+              <div class="merged-bar-title-row">
+                <h3>Accept Invitation</h3>
+                <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
+              </div>
+              <div class="compact-invitation-form invitation-view-form">
+                <label>Token<input id="accept_invitation_token" type="text" placeholder="Paste invitation token"></label>
+                <label>Display name<input id="accept_display_name" type="text" placeholder="Optional display name"></label>
+                <label>Password<input id="accept_password" type="password" placeholder="Set a password"></label>
+                <div class="compact-invitation-action">
+                  <button type="button" id="acceptInvitationButton">Accept invitation</button>
+                </div>
+              </div>
+              <div id="acceptStatus" class="status compact-status"></div>
+            </div>
+
+            <div class="feature-card">
+              <div class="summary-columns">
+                <div>
+                  <div class="small">Session actions</div>
+                  <div class="activity-list">
+                    <div class="activity-item"><div class="activity-title">Refresh the current authority session</div><div class="activity-meta">Use Refresh after role or scope changes.</div></div>
+                    <div class="activity-item"><div class="activity-title">Open the data console as a separate workspace</div><div class="activity-meta">The console stays on its own route instead of being embedded into this shell.</div></div>
+                  </div>
+                </div>
+                <div>
+                  <div class="small">Navigation</div>
+                  <div class="activity-list">
+                    <div class="activity-item"><div class="activity-title">Use the menu button to open views</div><div class="activity-meta">Desktop and mobile both start from the same collapsed navigation pattern.</div></div>
+                    <div class="activity-item"><div class="activity-title">Owner dashboard is a dedicated view</div><div class="activity-meta">Use the menu to switch directly to owner lifecycle and installation status.</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="status" data-shared-status></div>
         </div>
 
-        <div class="card" id="acceptInvitationCard">
-          <h2>Accept Invitation</h2>
-          <div class="small">Create an authority account from an invitation token without using the API directly.</div>
-          <label>Invitation token<input id="accept_invitation_token" type="text" placeholder="Paste invitation token"></label>
-          <label>Display name<input id="accept_display_name" type="text" placeholder="Optional display name"></label>
-          <label>Password<input id="accept_password" type="password" placeholder="Set a password"></label>
-          <label class="inline-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
-          <div class="actions">
-            <button type="button" id="acceptInvitationButton">Accept invitation</button>
-          </div>
-          <div id="acceptStatus" class="status"></div>
-        </div>
-
-        <div class="card">
-          <h2>Session State</h2>
-          <div class="small">Current role and scope for this authority session.</div>
-          <div class="session-state">
-            <div><strong>Role:</strong> <span id="currentRole" class="small">Unauthenticated</span></div>
-            <div><strong>Email:</strong> <span id="currentEmail" class="small">-</span></div>
-            <div><strong>Reseller Scope:</strong> <span id="currentResellerScope" class="small">-</span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="tabs">
-          <button type="button" class="tab-button active" data-tab="overview">Overview</button>
-          <button type="button" class="tab-button" data-tab="admin">Admin</button>
-          <button type="button" class="tab-button" data-tab="reseller">Reseller</button>
-          <button type="button" class="tab-button" data-tab="owner">Owner</button>
-        </div>
-
-        <div id="overview" class="tab-panel active">
+        <div id="overview" class="view-panel">
           <div class="metric-grid">
             <div class="metric"><div class="label">Role</div><div id="metricRole" class="value">-</div></div>
+            <div class="metric"><div class="label">Distributor Scope</div><div id="metricDistributorScope" class="value">-</div></div>
             <div class="metric"><div class="label">Reseller Scope</div><div id="metricScope" class="value">-</div></div>
             <div class="metric"><div class="label">Owner Installations</div><div id="metricOwnerCount" class="value">0</div></div>
             <div class="metric"><div class="label">Reseller Installations</div><div id="metricResellerCount" class="value">0</div></div>
           </div>
-          <div class="metric-grid role-section" data-role-scope="platform_admin,reseller">
+          <div class="metric-grid role-section" data-role-scope="platform_admin,distributor,reseller">
             <div class="metric"><div class="label">Pending Invitations</div><div id="metricPendingInvitations" class="value">0</div></div>
             <div class="metric"><div class="label">Recent Assignments</div><div id="metricRecentAssignments" class="value">0</div></div>
+          </div>
+          <div class="stack role-section" data-role-scope="distributor">
+            <div class="feature-card">
+              <div class="actions">
+                <h3>Distributor Snapshot</h3>
+                <button type="button" class="secondary" id="loadDistributorSummary">Refresh distributor summary</button>
+              </div>
+              <div id="distributorSummaryCards" class="summary-grid"></div>
+              <div>
+                <div class="small">Recent distributor assignments</div>
+                <div id="distributorRecentAssignments" class="activity-list empty-list">No distributor assignment activity yet.</div>
+              </div>
+              <div>
+                <div class="small">Recent health reports</div>
+                <div id="distributorRecentHealth" class="activity-list empty-list">No distributor health activity yet.</div>
+              </div>
+            </div>
           </div>
           <div class="stack role-section" data-role-scope="platform_admin">
             <div class="feature-card">
@@ -142,10 +242,10 @@
               </div>
             </div>
           </div>
-          <div class="empty">Use the tabs to interact with authority APIs through a single session-backed shell.</div>
+          <div class="empty">Use the menu to switch between authority workspaces in this session-backed shell.</div>
         </div>
 
-        <div id="admin" class="tab-panel">
+        <div id="admin" class="view-panel">
           <div class="stack role-section" data-role-scope="platform_admin">
             <div class="feature-card">
               <h3>Create Entitlement</h3>
@@ -189,11 +289,13 @@
                   <select id="invite_role_name">
                     <option value="owner">owner</option>
                     <option value="reseller">reseller</option>
+                    <option value="distributor">distributor</option>
                     <option value="support">support</option>
                   </select>
                 </label>
               </div>
               <div class="row">
+                <label>Distributor UUID<input id="invite_distributor_uuid" placeholder="Optional distributor scope"></label>
                 <label>Reseller UUID<input id="invite_reseller_uuid" placeholder="Optional reseller scope"></label>
                 <label>Expiry days<input id="invite_expires_in_days" type="number" min="1" max="30" value="7"></label>
               </div>
@@ -216,7 +318,50 @@
           </div>
         </div>
 
-        <div id="reseller" class="tab-panel">
+        <div id="distributor" class="view-panel">
+          <div class="stack role-section" data-role-scope="distributor">
+            <div class="feature-card">
+              <h3>Distributor Reseller Invitation</h3>
+              <div class="row">
+                <label>Reseller email<input id="distributor_invite_email" type="email" placeholder="reseller@example.com"></label>
+                <label>Reseller UUID<input id="distributor_invite_reseller_uuid" type="text" placeholder="reseller-group-1"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="distributorInviteButton">Issue reseller invitation</button>
+                <button type="button" class="secondary" id="loadDistributorSummaryTab">Load distributor summary</button>
+              </div>
+            </div>
+            <div class="feature-card">
+              <h3>Distributor Directory</h3>
+              <div class="actions">
+                <button type="button" id="loadDistributorResellersButton">Load resellers</button>
+                <button type="button" class="secondary" id="loadDistributorOwnersButton">Load owners</button>
+              </div>
+              <div class="summary-columns">
+                <div>
+                  <div class="small">Scoped resellers</div>
+                  <div id="distributorResellerList" class="activity-list empty-list">No reseller users loaded yet.</div>
+                </div>
+                <div>
+                  <div class="small">Scoped owners</div>
+                  <div id="distributorOwnerList" class="activity-list empty-list">No owner users loaded yet.</div>
+                </div>
+              </div>
+            </div>
+            <div class="feature-card">
+              <h3>Distributor Assignment</h3>
+              <div class="row">
+                <label>Entitlement UUID<input id="distributor_assignment_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>Owner email<input id="distributor_assignment_user_email" type="email" placeholder="owner@example.com"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="distributorAssignButton">Assign entitlement</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="reseller" class="view-panel">
           <div class="stack role-section" data-role-scope="reseller,platform_admin">
             <div class="feature-card">
               <h3>Reseller Owner Invitation</h3>
@@ -242,12 +387,14 @@
           </div>
         </div>
 
-        <div id="owner" class="tab-panel">
+        <div id="owner" class="view-panel">
           <div class="role-section" data-role-scope="owner,support,platform_admin,reseller">
             <h3>Owner Dashboard</h3>
             <div class="actions">
               <button type="button" id="loadOwnerInstallations">Load my installations</button>
             </div>
+          </div>
+        </div>
           </div>
         </div>
       </div>
