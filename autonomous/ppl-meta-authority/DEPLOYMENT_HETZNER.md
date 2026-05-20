@@ -23,9 +23,9 @@ The workflow checker may warn about unknown secret names in the editor. Those wa
 
 The workflow assumes the Hetzner host uses this directory structure:
 
-- `/opt/ppl-meta/authority/compose/docker-compose.yml`
-- `/opt/ppl-meta/authority/env/authority.env`
-- `/opt/ppl-meta/authority/scripts/check_authority_deployment.sh`
+- `/home/deploy/apps/ppl-meta-authority/cicd/compose/docker-compose.yml`
+- `/home/deploy/apps/ppl-meta-authority/cicd/env/authority.env`
+- `/home/deploy/apps/ppl-meta-authority/cicd/scripts/check_authority_deployment.sh`
 
 ## Required Remote Env File
 
@@ -34,8 +34,8 @@ Create the remote env file from [autonomous/ppl-meta-authority/.env.production.e
 Suggested command on Hetzner:
 
 ```sh
-mkdir -p /opt/ppl-meta/authority/compose /opt/ppl-meta/authority/env /opt/ppl-meta/authority/scripts
-cp /path/to/authority.env /opt/ppl-meta/authority/env/authority.env
+mkdir -p /home/deploy/apps/ppl-meta-authority/cicd/compose /home/deploy/apps/ppl-meta-authority/cicd/env /home/deploy/apps/ppl-meta-authority/cicd/scripts
+cp /path/to/authority.env /home/deploy/apps/ppl-meta-authority/cicd/env/authority.env
 ```
 
 Populate at minimum:
@@ -53,13 +53,14 @@ Populate at minimum:
 Copy [autonomous/ppl-meta-authority/docker-compose.production.yml](/Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-authority/docker-compose.production.yml) to:
 
 - `/opt/ppl-meta/authority/compose/docker-compose.yml`
+- `/home/deploy/apps/ppl-meta-authority/cicd/compose/docker-compose.yml`
 
 This file is image-based and expects `AUTHORITY_IMAGE` to be supplied externally. It is designed for CI/CD deployment and should replace ad hoc build-based compose usage on the server.
 
 ## Deployment Flow
 
 1. Publish a versioned authority image to GHCR using the release workflow.
-2. Update `AUTHORITY_IMAGE` in `/opt/ppl-meta/authority/env/authority.env` to the approved image tag or digest.
+2. Update `AUTHORITY_IMAGE` in `/home/deploy/apps/ppl-meta-authority/cicd/env/authority.env` to the approved image tag or digest.
 3. Run the manual Hetzner deployment workflow.
 4. The workflow copies the smoke-check script, updates the compose file, starts the authority container, and runs post-deploy checks.
 

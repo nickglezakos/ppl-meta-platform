@@ -27,7 +27,7 @@ jobs:
       HETZNER_USER: ${{ secrets.HETZNER_USER }}
       HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
       AUTHORITY_BASE_URL: ${{ github.event.inputs.authority_base_url }}
-      AUTHORITY_REMOTE_DIR: /opt/ppl-meta/authority
+      AUTHORITY_REMOTE_DIR: /home/deploy/apps/ppl-meta-authority/cicd
       AUTHORITY_COMPOSE_PROJECT: ppl-meta-authority
     steps:
       - name: Check out repository
