@@ -69,7 +69,7 @@ jobs:
             cd '$AUTHORITY_REMOTE_DIR'
             test -f '$AUTHORITY_REMOTE_DIR/env/authority.env'
             printf '%s\n' '$GHCR_TOKEN' | docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin
-            AUTHORITY_IMAGE='${{ steps.image.outputs.image_ref }}'
+            export AUTHORITY_IMAGE='${{ steps.image.outputs.image_ref }}'
             if grep -q '^AUTHORITY_IMAGE=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then
               sed -i.bak \"s|^AUTHORITY_IMAGE=.*$|AUTHORITY_IMAGE=$AUTHORITY_IMAGE|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'
             else
