@@ -56,7 +56,6 @@ Populate at minimum:
 
 Copy [autonomous/ppl-meta-authority/docker-compose.production.yml](/Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-authority/docker-compose.production.yml) to:
 
-- `/opt/ppl-meta/authority/compose/docker-compose.yml`
 - `/home/deploy/apps/ppl-meta-authority/cicd/compose/docker-compose.yml`
 
 This file is image-based and expects `AUTHORITY_IMAGE` to be supplied externally. It is designed for CI/CD deployment and should replace ad hoc build-based compose usage on the server.
@@ -67,6 +66,8 @@ This file is image-based and expects `AUTHORITY_IMAGE` to be supplied externally
 2. Update `AUTHORITY_IMAGE` in `/home/deploy/apps/ppl-meta-authority/cicd/env/authority.env` to the approved image tag or digest.
 3. Run the manual Hetzner deployment workflow.
 4. The workflow copies the smoke-check script, updates the compose file, starts the authority container, and runs post-deploy checks.
+
+For the first cutover from the legacy installations-only SQLite deployment, run the workflow once with `bootstrap_admin_before_login=true` and set the login smoke-check secrets to the bootstrap admin credentials.
 
 ## Digest Pinning Recommendation
 
@@ -88,6 +89,8 @@ The smoke-check script validates:
 - `/admin`
 - optional admin login and `/api/v1/auth/me`
 - optional activation-contract check using `application_key + owner_email + installation_uuid`
+
+When `bootstrap_admin_before_login=true`, the smoke-check first calls `POST /api/v1/auth/bootstrap-admin` before attempting login. Use that mode only for the one-time migration deployment.
 
 ## Notes
 

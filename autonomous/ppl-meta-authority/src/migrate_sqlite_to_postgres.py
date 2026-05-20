@@ -42,7 +42,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def fetch_sqlite_rows(connection: sqlite3.Connection, table_name: str, columns: list[str]) -> list[tuple[Any, ...]]:
-    rows = connection.execute(f"SELECT {', '.join(columns)} FROM {table_name}").fetchall()
+    try:
+        rows = connection.execute(f"SELECT {', '.join(columns)} FROM {table_name}").fetchall()
+    except sqlite3.OperationalError as exc:
+        if 'no such table' not in str(exc).lower():
+            raise
+        print(f'{table_name}: skipped missing source table')
+        return []
     normalized: list[tuple[Any, ...]] = []
     for row in rows:
         values = list(row)

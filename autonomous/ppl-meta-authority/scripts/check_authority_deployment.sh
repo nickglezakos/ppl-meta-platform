@@ -4,6 +4,7 @@ set -eu
 AUTHORITY_BASE_URL="${AUTHORITY_BASE_URL:-}"
 AUTHORITY_ADMIN_EMAIL="${AUTHORITY_ADMIN_EMAIL:-}"
 AUTHORITY_ADMIN_PASSWORD="${AUTHORITY_ADMIN_PASSWORD:-}"
+AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN="${AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN:-}"
 AUTHORITY_TEST_APPLICATION_KEY="${AUTHORITY_TEST_APPLICATION_KEY:-}"
 AUTHORITY_TEST_OWNER_EMAIL="${AUTHORITY_TEST_OWNER_EMAIL:-}"
 AUTHORITY_TEST_INSTALLATION_UUID="${AUTHORITY_TEST_INSTALLATION_UUID:-}"
@@ -27,6 +28,11 @@ curl --fail --silent --show-error "$AUTHORITY_BASE_URL/admin" >/dev/null
 
 SESSION_TOKEN=''
 if [ -n "$AUTHORITY_ADMIN_EMAIL" ] && [ -n "$AUTHORITY_ADMIN_PASSWORD" ]; then
+  if [ "$AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN" = 'true' ]; then
+    echo 'Bootstrapping initial admin...'
+    fetch_json -X POST "$AUTHORITY_BASE_URL/api/v1/auth/bootstrap-admin" >/dev/null
+  fi
+
   echo 'Checking authenticated login...'
   SESSION_TOKEN="$(fetch_json -X POST "$AUTHORITY_BASE_URL/api/v1/auth/login" \
     -d "{\"email\":\"$AUTHORITY_ADMIN_EMAIL\",\"password\":\"$AUTHORITY_ADMIN_PASSWORD\"}" | sed -n 's/.*"session_token":"\([^"]*\)".*/\1/p')"

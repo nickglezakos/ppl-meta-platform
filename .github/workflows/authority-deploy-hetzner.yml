@@ -16,6 +16,10 @@ on:
         description: 'Run activation contract check after deployment'
         required: true
         default: 'false'
+      bootstrap_admin_before_login:
+        description: 'For first migration deploys, bootstrap the initial authority admin before login verification'
+        required: true
+        default: 'false'
 
 jobs:
   deploy-authority:
@@ -79,6 +83,7 @@ jobs:
         env:
           AUTHORITY_ADMIN_EMAIL: ${{ secrets.AUTHORITY_ADMIN_EMAIL }}
           AUTHORITY_ADMIN_PASSWORD: ${{ secrets.AUTHORITY_ADMIN_PASSWORD }}
+          AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN: ${{ github.event.inputs.bootstrap_admin_before_login }}
           AUTHORITY_TEST_APPLICATION_KEY: ${{ github.event.inputs.run_activation_check == 'true' && secrets.AUTHORITY_TEST_APPLICATION_KEY || '' }}
           AUTHORITY_TEST_OWNER_EMAIL: ${{ github.event.inputs.run_activation_check == 'true' && secrets.AUTHORITY_TEST_OWNER_EMAIL || '' }}
           AUTHORITY_TEST_INSTALLATION_UUID: ${{ github.event.inputs.run_activation_check == 'true' && secrets.AUTHORITY_TEST_INSTALLATION_UUID || '' }}
@@ -86,6 +91,7 @@ jobs:
           export AUTHORITY_BASE_URL
           export AUTHORITY_ADMIN_EMAIL
           export AUTHORITY_ADMIN_PASSWORD
+          export AUTHORITY_BOOTSTRAP_ADMIN_BEFORE_LOGIN
           export AUTHORITY_TEST_APPLICATION_KEY
           export AUTHORITY_TEST_OWNER_EMAIL
           export AUTHORITY_TEST_INSTALLATION_UUID
