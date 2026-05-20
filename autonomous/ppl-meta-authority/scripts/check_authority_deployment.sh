@@ -20,11 +20,37 @@ fetch_json() {
     "$@"
 }
 
+wait_for_health() {
+  attempt=1
+  while [ "$attempt" -le 30 ]; do
+    if fetch_json "$AUTHORITY_BASE_URL/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  fetch_json "$AUTHORITY_BASE_URL/health" >/dev/null
+}
+
+wait_for_admin_shell() {
+  attempt=1
+  while [ "$attempt" -le 30 ]; do
+    if curl --fail --silent --show-error "$AUTHORITY_BASE_URL/admin" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+    attempt=$((attempt + 1))
+  done
+
+  curl --fail --silent --show-error "$AUTHORITY_BASE_URL/admin" >/dev/null
+}
+
 echo 'Checking health endpoint...'
-fetch_json "$AUTHORITY_BASE_URL/health" >/dev/null
+wait_for_health
 
 echo 'Checking admin shell...'
-curl --fail --silent --show-error "$AUTHORITY_BASE_URL/admin" >/dev/null
+wait_for_admin_shell
 
 SESSION_TOKEN=''
 if [ -n "$AUTHORITY_ADMIN_EMAIL" ] && [ -n "$AUTHORITY_ADMIN_PASSWORD" ]; then
