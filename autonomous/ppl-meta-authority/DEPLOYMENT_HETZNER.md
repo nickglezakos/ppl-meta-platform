@@ -19,6 +19,11 @@ The manual deployment workflow expects these repository secrets:
 - `AUTHORITY_TEST_OWNER_EMAIL`: optional approved owner email paired with the test application key
 - `AUTHORITY_TEST_INSTALLATION_UUID`: optional installation UUID used during activation-contract verification
 
+Current validated production state:
+
+- `AUTHORITY_ADMIN_EMAIL` and `AUTHORITY_ADMIN_PASSWORD` now point at the real production `platform_admin` account, not the bootstrap admin.
+- `AUTHORITY_TEST_APPLICATION_KEY`, `AUTHORITY_TEST_OWNER_EMAIL`, and `AUTHORITY_TEST_INSTALLATION_UUID` are configured and have already been validated through a successful `run_activation_check=true` deployment workflow run.
+
 The workflow checker may warn about unknown secret names in the editor. Those warnings do not mean the workflow syntax is invalid.
 
 The deploy workflow performs a remote `docker login ghcr.io` before pulling the authority image, so the Hetzner host does not need pre-seeded registry credentials.
@@ -69,6 +74,11 @@ This file is image-based and expects `AUTHORITY_IMAGE` to be supplied externally
 
 For the first cutover from the legacy installations-only SQLite deployment, run the workflow once with `bootstrap_admin_before_login=true` and set the login smoke-check secrets to the bootstrap admin credentials.
 
+That first-cutover mode has already been used for the current Hetzner authority host. Normal future deployments should use:
+
+- `bootstrap_admin_before_login=false`
+- `run_activation_check=true`
+
 ## Digest Pinning Recommendation
 
 Prefer image digests in production when available.
@@ -92,8 +102,15 @@ The smoke-check script validates:
 
 When `bootstrap_admin_before_login=true`, the smoke-check first calls `POST /api/v1/auth/bootstrap-admin` before attempting login. Use that mode only for the one-time migration deployment.
 
+The current validated steady-state deployment path is:
+
+1. real `platform_admin` login check using `AUTHORITY_ADMIN_EMAIL` and `AUTHORITY_ADMIN_PASSWORD`
+2. activation-contract check using `AUTHORITY_TEST_APPLICATION_KEY`, `AUTHORITY_TEST_OWNER_EMAIL`, and `AUTHORITY_TEST_INSTALLATION_UUID`
+3. bootstrap disabled on the server with `AUTHORITY_BOOTSTRAP_ADMIN_ENABLED=false`
+
 ## Notes
 
 - Bootstrap admin must remain disabled in production.
 - The workflow does not create secrets on the server; it assumes the env file already exists.
 - If PostgreSQL is externalized later, only the env file should need to change.
+- The legacy SQLite-to-PostgreSQL migration for the current Hetzner host has already been completed; future deploys should treat PostgreSQL as the only runtime database.
