@@ -1,0 +1,89 @@
+name: Authority Deploy Hetzner
+
+on:
+  workflow_dispatch:
+    inputs:
+      authority_version:
+        description: 'Authority image tag to deploy'
+        required: true
+      authority_image_ref:
+        description: 'Optional full image reference. If set, this overrides authority_version and can be a digest-pinned image.'
+        required: false
+      authority_base_url:
+        description: 'Public authority base URL used for post-deploy verification'
+        required: true
+      run_activation_check:
+        description: 'Run activation contract check after deployment'
+        required: true
+        default: 'false'
+
+jobs:
+  deploy-authority:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      HETZNER_USER: ${{ secrets.HETZNER_USER }}
+      HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+      AUTHORITY_BASE_URL: ${{ github.event.inputs.authority_base_url }}
+      AUTHORITY_REMOTE_DIR: /opt/ppl-meta/authority
+      AUTHORITY_COMPOSE_PROJECT: ppl-meta-authority
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve authority image reference
+        id: image
+        run: |
+          if [ -n "${{ github.event.inputs.authority_image_ref }}" ]; then
+            IMAGE_REF='${{ github.event.inputs.authority_image_ref }}'
+          else
+            IMAGE_REF='ghcr.io/nickglezakos/ppl-meta-authority:${{ github.event.inputs.authority_version }}'
+          fi
+          echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$HETZNER_HOST" >> ~/.ssh/known_hosts
+
+      - name: Copy deployment assets to Hetzner
+        run: |
+          ssh "$HETZNER_USER@$HETZNER_HOST" "mkdir -p '$AUTHORITY_REMOTE_DIR/scripts' '$AUTHORITY_REMOTE_DIR/compose' '$AUTHORITY_REMOTE_DIR/env'"
+          scp autonomous/ppl-meta-authority/scripts/check_authority_deployment.sh "$HETZNER_USER@$HETZNER_HOST:$AUTHORITY_REMOTE_DIR/scripts/check_authority_deployment.sh"
+          scp autonomous/ppl-meta-authority/docker-compose.production.yml "$HETZNER_USER@$HETZNER_HOST:$AUTHORITY_REMOTE_DIR/compose/docker-compose.yml"
+          ssh "$HETZNER_USER@$HETZNER_HOST" "chmod +x '$AUTHORITY_REMOTE_DIR/scripts/check_authority_deployment.sh'"
+
+      - name: Deploy authority image on Hetzner
+        run: |
+          ssh "$HETZNER_USER@$HETZNER_HOST" "set -eu
+            cd '$AUTHORITY_REMOTE_DIR'
+            test -f '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            AUTHORITY_IMAGE='${{ steps.image.outputs.image_ref }}'
+            if grep -q '^AUTHORITY_IMAGE=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then
+              sed -i.bak \"s|^AUTHORITY_IMAGE=.*$|AUTHORITY_IMAGE=$AUTHORITY_IMAGE|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            else
+              printf '\nAUTHORITY_IMAGE=%s\n' \"$AUTHORITY_IMAGE\" >> '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            fi
+            docker compose -p '$AUTHORITY_COMPOSE_PROJECT' --env-file '$AUTHORITY_REMOTE_DIR/env/authority.env' -f '$AUTHORITY_REMOTE_DIR/compose/docker-compose.yml' pull ppl-meta-authority
+            docker compose -p '$AUTHORITY_COMPOSE_PROJECT' --env-file '$AUTHORITY_REMOTE_DIR/env/authority.env' -f '$AUTHORITY_REMOTE_DIR/compose/docker-compose.yml' up -d ppl-meta-authority
+          "
+
+      - name: Run public deployment checks
+        env:
+          AUTHORITY_ADMIN_EMAIL: ${{ secrets.AUTHORITY_ADMIN_EMAIL }}
+          AUTHORITY_ADMIN_PASSWORD: ${{ secrets.AUTHORITY_ADMIN_PASSWORD }}
+          AUTHORITY_TEST_APPLICATION_KEY: ${{ github.event.inputs.run_activation_check == 'true' && secrets.AUTHORITY_TEST_APPLICATION_KEY || '' }}
+          AUTHORITY_TEST_OWNER_EMAIL: ${{ github.event.inputs.run_activation_check == 'true' && secrets.AUTHORITY_TEST_OWNER_EMAIL || '' }}
+          AUTHORITY_TEST_INSTALLATION_UUID: ${{ github.event.inputs.run_activation_check == 'true' && secrets.AUTHORITY_TEST_INSTALLATION_UUID || '' }}
+        run: |
+          export AUTHORITY_BASE_URL
+          export AUTHORITY_ADMIN_EMAIL
+          export AUTHORITY_ADMIN_PASSWORD
+          export AUTHORITY_TEST_APPLICATION_KEY
+          export AUTHORITY_TEST_OWNER_EMAIL
+          export AUTHORITY_TEST_INSTALLATION_UUID
+          sh autonomous/ppl-meta-authority/scripts/check_authority_deployment.sh

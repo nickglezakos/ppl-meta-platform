@@ -1,0 +1,33 @@
+services:
+  authority-postgres:
+    image: postgres:16
+    container_name: authority-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${AUTHORITY_POSTGRES_DB}
+      POSTGRES_USER: ${AUTHORITY_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AUTHORITY_POSTGRES_PASSWORD}
+    volumes:
+      - authority-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AUTHORITY_POSTGRES_USER} -d ${AUTHORITY_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ppl-meta-authority:
+    image: ${AUTHORITY_IMAGE}
+    container_name: ppl-meta-authority
+    restart: unless-stopped
+    depends_on:
+      authority-postgres:
+        condition: service_healthy
+    environment:
+      AUTHORITY_DATABASE_URL: ${AUTHORITY_DATABASE_URL}
+      AUTHORITY_ADMIN_TOKEN: ${AUTHORITY_ADMIN_TOKEN}
+      AUTHORITY_BOOTSTRAP_ADMIN_ENABLED: ${AUTHORITY_BOOTSTRAP_ADMIN_ENABLED:-false}
+    ports:
+      - "${AUTHORITY_PORT:-8000}:8000"
+
+volumes:
+  authority-postgres-data:

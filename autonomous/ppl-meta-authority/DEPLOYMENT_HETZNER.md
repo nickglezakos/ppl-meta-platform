@@ -1,0 +1,91 @@
+# Authority Hetzner Deployment Runbook
+
+## Purpose
+
+This runbook documents the exact files, GitHub secrets, and remote layout expected by the authority release and Hetzner deployment workflows.
+
+## Required GitHub Secrets
+
+The manual deployment workflow expects these repository secrets:
+
+- `HETZNER_HOST`: public SSH hostname or IP of the Hetzner server
+- `HETZNER_USER`: remote SSH user used for deployment
+- `HETZNER_SSH_KEY`: private SSH key for the deployment user
+- `AUTHORITY_ADMIN_EMAIL`: authority admin email used for authenticated post-deploy smoke checks
+- `AUTHORITY_ADMIN_PASSWORD`: authority admin password used for authenticated post-deploy smoke checks
+- `AUTHORITY_TEST_APPLICATION_KEY`: optional entitlement/application key used for activation-contract verification
+- `AUTHORITY_TEST_OWNER_EMAIL`: optional approved owner email paired with the test application key
+- `AUTHORITY_TEST_INSTALLATION_UUID`: optional installation UUID used during activation-contract verification
+
+The workflow checker may warn about unknown secret names in the editor. Those warnings do not mean the workflow syntax is invalid.
+
+## Required Remote Layout
+
+The workflow assumes the Hetzner host uses this directory structure:
+
+- `/opt/ppl-meta/authority/compose/docker-compose.yml`
+- `/opt/ppl-meta/authority/env/authority.env`
+- `/opt/ppl-meta/authority/scripts/check_authority_deployment.sh`
+
+## Required Remote Env File
+
+Create the remote env file from [autonomous/ppl-meta-authority/.env.production.example](/Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-authority/.env.production.example).
+
+Suggested command on Hetzner:
+
+```sh
+mkdir -p /opt/ppl-meta/authority/compose /opt/ppl-meta/authority/env /opt/ppl-meta/authority/scripts
+cp /path/to/authority.env /opt/ppl-meta/authority/env/authority.env
+```
+
+Populate at minimum:
+
+- `AUTHORITY_IMAGE`
+- `AUTHORITY_POSTGRES_DB`
+- `AUTHORITY_POSTGRES_USER`
+- `AUTHORITY_POSTGRES_PASSWORD`
+- `AUTHORITY_DATABASE_URL`
+- `AUTHORITY_ADMIN_TOKEN`
+- `AUTHORITY_BOOTSTRAP_ADMIN_ENABLED=false`
+
+## Required Remote Compose File
+
+Copy [autonomous/ppl-meta-authority/docker-compose.production.yml](/Users/nickgklezakos/Documents/ppl-meta-code/autonomous/ppl-meta-authority/docker-compose.production.yml) to:
+
+- `/opt/ppl-meta/authority/compose/docker-compose.yml`
+
+This file is image-based and expects `AUTHORITY_IMAGE` to be supplied externally. It is designed for CI/CD deployment and should replace ad hoc build-based compose usage on the server.
+
+## Deployment Flow
+
+1. Publish a versioned authority image to GHCR using the release workflow.
+2. Update `AUTHORITY_IMAGE` in `/opt/ppl-meta/authority/env/authority.env` to the approved image tag or digest.
+3. Run the manual Hetzner deployment workflow.
+4. The workflow copies the smoke-check script, updates the compose file, starts the authority container, and runs post-deploy checks.
+
+## Digest Pinning Recommendation
+
+Prefer image digests in production when available.
+
+Example:
+
+```sh
+AUTHORITY_IMAGE=ghcr.io/nickglezakos/ppl-meta-authority@sha256:replace-with-real-digest
+```
+
+Using a digest ensures the Hetzner deployment consumes an immutable image instead of a mutable tag.
+
+## Post-Deploy Verification
+
+The smoke-check script validates:
+
+- `/health`
+- `/admin`
+- optional admin login and `/api/v1/auth/me`
+- optional activation-contract check using `application_key + owner_email + installation_uuid`
+
+## Notes
+
+- Bootstrap admin must remain disabled in production.
+- The workflow does not create secrets on the server; it assumes the env file already exists.
+- If PostgreSQL is externalized later, only the env file should need to change.

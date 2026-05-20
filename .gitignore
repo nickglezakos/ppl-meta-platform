@@ -126,6 +126,7 @@ jspm_packages/
 .env.production.local
 .env.*
 !.env.example
+!.env.production.example
 
 # =============================================
 # DATABASES

@@ -1,0 +1,60 @@
+name: Authority Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      authority_version:
+        description: 'Authority version tag to publish. Defaults to VERSION file when omitted.'
+        required: false
+
+jobs:
+  build-and-publish-authority:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve authority version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.authority_version }}" ]; then
+            VERSION_VALUE='${{ github.event.inputs.authority_version }}'
+          else
+            VERSION_VALUE="$(tr -d '[:space:]' < VERSION)"
+          fi
+          echo "version=$VERSION_VALUE" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/nickglezakos/ppl-meta-authority
+          tags: |
+            type=raw,value=authority-${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=sha,prefix=authority-${{ steps.version.outputs.version }}-
+
+      - name: Build and push authority image
+        uses: docker/build-push-action@v6
+        with:
+          context: autonomous/ppl-meta-authority
+          file: autonomous/ppl-meta-authority/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
