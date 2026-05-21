@@ -32,6 +32,15 @@ jobs:
       HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
       GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      MAIL_SERVER: ${{ secrets.MAIL_SERVER }}
+      MAIL_PORT: ${{ secrets.MAIL_PORT }}
+      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+      MAIL_FROM: ${{ secrets.MAIL_FROM }}
+      MAIL_FROM_NAME: ${{ secrets.MAIL_FROM_NAME }}
+      MAIL_STARTTLS: ${{ secrets.MAIL_STARTTLS }}
+      MAIL_SSL_TLS: ${{ secrets.MAIL_SSL_TLS }}
+      USE_CREDENTIALS: ${{ secrets.USE_CREDENTIALS }}
       AUTHORITY_BASE_URL: ${{ github.event.inputs.authority_base_url }}
       AUTHORITY_REMOTE_DIR: /home/deploy/apps/ppl-meta-authority/cicd
       AUTHORITY_COMPOSE_PROJECT: ppl-meta-authority
@@ -74,6 +83,43 @@ jobs:
               sed -i.bak \"s|^AUTHORITY_IMAGE=.*$|AUTHORITY_IMAGE=$AUTHORITY_IMAGE|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'
             else
               printf '\nAUTHORITY_IMAGE=%s\n' \"$AUTHORITY_IMAGE\" >> '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            fi
+            if grep -q '^AUTHORITY_BASE_URL=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then
+              sed -i.bak \"s|^AUTHORITY_BASE_URL=.*$|AUTHORITY_BASE_URL=$AUTHORITY_BASE_URL|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            else
+              printf 'AUTHORITY_BASE_URL=%s\n' '$AUTHORITY_BASE_URL' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            fi
+            if grep -q '^AUTHORITY_PUBLIC_BASE_URL=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then
+              sed -i.bak \"s|^AUTHORITY_PUBLIC_BASE_URL=.*$|AUTHORITY_PUBLIC_BASE_URL=$AUTHORITY_BASE_URL|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            else
+              printf 'AUTHORITY_PUBLIC_BASE_URL=%s\n' '$AUTHORITY_BASE_URL' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'
+            fi
+            if [ -n '$MAIL_SERVER' ]; then
+              if grep -q '^MAIL_SERVER=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_SERVER=.*$|MAIL_SERVER=$MAIL_SERVER|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_SERVER=%s\n' '$MAIL_SERVER' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$MAIL_PORT' ]; then
+              if grep -q '^MAIL_PORT=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_PORT=.*$|MAIL_PORT=$MAIL_PORT|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_PORT=%s\n' '$MAIL_PORT' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$MAIL_USERNAME' ]; then
+              if grep -q '^MAIL_USERNAME=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_USERNAME=.*$|MAIL_USERNAME=$MAIL_USERNAME|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_USERNAME=%s\n' '$MAIL_USERNAME' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$MAIL_PASSWORD' ]; then
+              if grep -q '^MAIL_PASSWORD=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_PASSWORD=.*$|MAIL_PASSWORD=$MAIL_PASSWORD|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_PASSWORD=%s\n' '$MAIL_PASSWORD' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$MAIL_FROM' ]; then
+              if grep -q '^MAIL_FROM=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_FROM=.*$|MAIL_FROM=$MAIL_FROM|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_FROM=%s\n' '$MAIL_FROM' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$MAIL_FROM_NAME' ]; then
+              if grep -q '^MAIL_FROM_NAME=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_FROM_NAME=.*$|MAIL_FROM_NAME=$MAIL_FROM_NAME|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_FROM_NAME=%s\n' '$MAIL_FROM_NAME' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$MAIL_STARTTLS' ]; then
+              if grep -q '^MAIL_STARTTLS=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_STARTTLS=.*$|MAIL_STARTTLS=$MAIL_STARTTLS|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_STARTTLS=%s\n' '$MAIL_STARTTLS' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$MAIL_SSL_TLS' ]; then
+              if grep -q '^MAIL_SSL_TLS=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^MAIL_SSL_TLS=.*$|MAIL_SSL_TLS=$MAIL_SSL_TLS|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'MAIL_SSL_TLS=%s\n' '$MAIL_SSL_TLS' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
+            fi
+            if [ -n '$USE_CREDENTIALS' ]; then
+              if grep -q '^USE_CREDENTIALS=' '$AUTHORITY_REMOTE_DIR/env/authority.env'; then sed -i.bak \"s|^USE_CREDENTIALS=.*$|USE_CREDENTIALS=$USE_CREDENTIALS|\" '$AUTHORITY_REMOTE_DIR/env/authority.env'; else printf 'USE_CREDENTIALS=%s\n' '$USE_CREDENTIALS' >> '$AUTHORITY_REMOTE_DIR/env/authority.env'; fi
             fi
             docker compose -p '$AUTHORITY_COMPOSE_PROJECT' --env-file '$AUTHORITY_REMOTE_DIR/env/authority.env' -f '$AUTHORITY_REMOTE_DIR/compose/docker-compose.yml' pull ppl-meta-authority
             docker compose -p '$AUTHORITY_COMPOSE_PROJECT' --env-file '$AUTHORITY_REMOTE_DIR/env/authority.env' -f '$AUTHORITY_REMOTE_DIR/compose/docker-compose.yml' up -d ppl-meta-authority

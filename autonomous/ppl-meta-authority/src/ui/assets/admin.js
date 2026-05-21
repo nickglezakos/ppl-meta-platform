@@ -34,7 +34,9 @@ const viewTitleMap = {
   reseller: 'Reseller',
   owner: 'Owner Dashboard',
 };
-const requestedView = new URLSearchParams(window.location.search).get('view');
+const searchParams = new URLSearchParams(window.location.search);
+const requestedView = searchParams.get('view');
+const requestedInvitationToken = searchParams.get('invitation_token');
 
 function element(id) {
   return document.getElementById(id);
@@ -63,6 +65,19 @@ function setAcceptStatus(message, isError = false) {
   }
   acceptStatusEl.textContent = message;
   acceptStatusEl.className = isError ? 'status error' : 'status ok';
+}
+
+function prefillInvitationTokenFromUrl() {
+  if (!requestedInvitationToken) {
+    return;
+  }
+  const tokenField = document.getElementById('accept_invitation_token');
+  if (!(tokenField instanceof HTMLInputElement)) {
+    return;
+  }
+  tokenField.value = requestedInvitationToken;
+  activateView('session');
+  setAcceptStatus('Invitation token loaded from your email link. Set your display name and password to accept the invitation.');
 }
 
 function authHeaders() {
@@ -461,8 +476,18 @@ function invitationRows(records) {
     scope: `<span class="pill ${badgeClassForStatus(record.effective_status || record.status)}">${escapeHtml(record.effective_status || record.status)}</span><br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller scope')}</span>`,
     owner: escapeHtml(record.email),
     keyInfo: `<code class="inline">${escapeHtml(record.role_name)}</code>`,
-    details: `<div class="token-actions"><code class="inline">${escapeHtml(record.invitation_token)}</code><button type="button" class="mini-button" data-copy-token="${escapeHtml(record.invitation_token)}">Copy</button><button type="button" class="mini-button" data-fill-token="${escapeHtml(record.invitation_token)}">Use</button></div>${formatLifecycleTimestamp('created', record.created_at)}<br>${formatLifecycleTimestamp('expires', record.expires_at)}<br>${formatLifecycleTimestamp('accepted', record.accepted_at)}`,
+    details: `<div class="token-actions"><code class="inline">${escapeHtml(record.invitation_token)}</code><button type="button" class="mini-button" data-copy-token="${escapeHtml(record.invitation_token)}">Copy</button><button type="button" class="mini-button" data-fill-token="${escapeHtml(record.invitation_token)}">Use</button></div>${escapeHtml(record.email_delivery_message || 'Email delivery status unavailable.')}<br>${formatLifecycleTimestamp('created', record.created_at)}<br>${formatLifecycleTimestamp('expires', record.expires_at)}<br>${formatLifecycleTimestamp('accepted', record.accepted_at)}`,
   }));
+}
+
+function invitationDeliveryStatusMessage(invitation, createdLabel) {
+  if (invitation.email_delivered) {
+    return `${createdLabel} Email delivery succeeded.`;
+  }
+  if (invitation.email_delivery_attempted) {
+    return `${createdLabel} Email delivery was attempted but did not succeed. Use the token fallback.`;
+  }
+  return `${createdLabel} Email delivery was skipped. Configure MAIL_* settings and the authority base URL, or share the token manually.`;
 }
 
 function bindConsoleActions() {
@@ -769,7 +794,7 @@ async function createInvitation() {
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(`Created invitation for ${invitation.email}.`);
+    setStatus(invitationDeliveryStatusMessage(invitation, `Created invitation for ${invitation.email}.`), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -1055,7 +1080,7 @@ bindClick('resellerInviteButton', async () => {
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(`Reseller invitation created for ${invitation.email}.`);
+    setStatus(invitationDeliveryStatusMessage(invitation, `Reseller invitation created for ${invitation.email}.`), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -1081,13 +1106,14 @@ bindClick('distributorInviteButton', async () => {
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(`Distributor invitation created for ${invitation.email}.`);
+    setStatus(invitationDeliveryStatusMessage(invitation, `Distributor invitation created for ${invitation.email}.`), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }
 });
 bindClick('loadDistributorResellersButton', () => loadDistributorScopedUsers('/api/v1/distributor/resellers', 'distributorResellerList', 'No reseller users loaded yet.', 'no reseller'));
 bindClick('loadDistributorOwnersButton', () => loadDistributorScopedUsers('/api/v1/distributor/owners', 'distributorOwnerList', 'No owner users loaded yet.', 'no reseller'));
+prefillInvitationTokenFromUrl();
 bindClick('distributorAssignButton', () => assignInstallation('/api/v1/distributor/installation-assignments', 'distributor_assignment_entitlement_uuid', 'distributor_assignment_user_email').catch((error) => setStatus(error.message, true)));
 
 const requestedFilter = new URLSearchParams(window.location.search).get('filter');

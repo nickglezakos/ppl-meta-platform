@@ -120,6 +120,9 @@ def _schema_statements() -> list[str]:
             reseller_uuid TEXT,
             issued_by_user_uuid TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
+            email_delivery_attempted BOOLEAN NOT NULL DEFAULT FALSE,
+            email_delivered BOOLEAN NOT NULL DEFAULT FALSE,
+            email_delivery_message TEXT,
             accepted_by_user_uuid TEXT,
             expires_at TIMESTAMPTZ NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -147,6 +150,9 @@ def initialize_database() -> None:
             connection.execute(statement)
         _ensure_column(connection, "authority_users", "distributor_uuid", "TEXT")
         _ensure_column(connection, "authority_invitations", "distributor_uuid", "TEXT")
+        _ensure_column(connection, "authority_invitations", "email_delivery_attempted", "BOOLEAN NOT NULL DEFAULT FALSE")
+        _ensure_column(connection, "authority_invitations", "email_delivered", "BOOLEAN NOT NULL DEFAULT FALSE")
+        _ensure_column(connection, "authority_invitations", "email_delivery_message", "TEXT")
         connection.commit()
 
     _migrate_installations_to_entitlements()
@@ -440,6 +446,33 @@ def list_invitations() -> list[dict[str, Any]]:
             f"SELECT *, {_expired_expression('expires_at')} AS is_expired FROM authority_invitations ORDER BY created_at DESC"
         ).fetchall()
     return [_invitation_row_to_dict(row) for row in rows if row is not None]
+
+
+def update_invitation_email_delivery(
+    invitation_uuid: str,
+    attempted: bool,
+    delivered: bool,
+    message: str | None,
+) -> dict[str, Any]:
+    with _connect() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE authority_invitations
+            SET email_delivery_attempted = ?,
+                email_delivered = ?,
+                email_delivery_message = ?
+            WHERE invitation_uuid = ?
+            """,
+            (attempted, delivered, message, invitation_uuid),
+        )
+        connection.commit()
+    if cursor.rowcount <= 0:
+        raise RuntimeError("Invitation email delivery update failed")
+
+    invitation = get_invitation_by_uuid(invitation_uuid)
+    if invitation is None:
+        raise RuntimeError("Invitation email delivery update could not reload invitation")
+    return invitation
 
 
 def mark_invitation_accepted(invitation_uuid: str, user_uuid: str) -> bool:
@@ -1326,6 +1359,9 @@ def _invitation_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "created_at": _timestamp_value(row["created_at"]),
         "accepted_at": _timestamp_value(row["accepted_at"]),
         "is_expired": is_expired,
+        "email_delivery_attempted": bool(row.get("email_delivery_attempted", False)),
+        "email_delivered": bool(row.get("email_delivered", False)),
+        "email_delivery_message": row.get("email_delivery_message"),
     }
 def _assignment_row_to_dict(row: Any | None) -> dict[str, Any] | None:
     if row is None:

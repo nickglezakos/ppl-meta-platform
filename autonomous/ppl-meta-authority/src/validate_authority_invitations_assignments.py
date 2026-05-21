@@ -28,6 +28,12 @@ invitation = client.post('/api/v1/admin/invitations', json={
     'reseller_uuid': 'reseller-group-2'
 }, headers=admin_headers)
 assert invitation.status_code == 201
+assert 'email_delivery_attempted' in invitation.json()
+assert 'email_delivered' in invitation.json()
+assert 'email_delivery_message' in invitation.json()
+list_invitations = client.get('/api/v1/admin/invitations', headers=admin_headers)
+assert list_invitations.status_code == 200
+assert 'email_delivery_attempted' in list_invitations.json()[0]
 assert client.post('/api/v1/auth/accept-invitation', json={
     'invitation_token': invitation.json()['invitation_token'],
     'password': 'invitepass1'

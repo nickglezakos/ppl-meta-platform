@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from core.auth import require_reseller_or_platform_admin
+from core.email import send_invitation_email
 from core.storage import (
     assign_entitlement_to_user,
     create_invitation,
     get_authority_user_by_email,
     get_entitlement_by_uuid,
+    update_invitation_email_delivery,
 )
 
 router = APIRouter(prefix="/api/v1/reseller", tags=["reseller"])
@@ -33,6 +35,9 @@ class ResellerInvitationResponse(BaseModel):
     accepted_at: str | None = None
     accepted_by_user_uuid: str | None = None
     is_expired: bool
+    email_delivery_attempted: bool = False
+    email_delivered: bool = False
+    email_delivery_message: str | None = None
 
 
 class ResellerInstallationAssignmentRequest(BaseModel):
@@ -73,6 +78,13 @@ async def reseller_create_owner_invitation(
         reseller_uuid=reseller_uuid,
         issued_by_user_uuid=current_user.get("user_uuid"),
         expires_in_days=payload.expires_in_days,
+    )
+    delivery_result = send_invitation_email(invitation, issuer_email=current_user.get("email"))
+    invitation = update_invitation_email_delivery(
+        invitation_uuid=invitation["invitation_uuid"],
+        attempted=delivery_result.attempted,
+        delivered=delivery_result.delivered,
+        message=delivery_result.message,
     )
     return ResellerInvitationResponse(**invitation)
 

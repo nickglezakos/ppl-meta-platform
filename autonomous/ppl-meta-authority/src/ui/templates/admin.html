@@ -283,6 +283,7 @@
 
             <div class="feature-card">
               <h3>Issue Invitation</h3>
+              <div class="small">Creates an invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
               <div class="row">
                 <label>Invite email<input id="invite_email" type="email" placeholder="owner@example.com"></label>
                 <label>Role
@@ -322,6 +323,7 @@
           <div class="stack role-section" data-role-scope="distributor">
             <div class="feature-card">
               <h3>Distributor Reseller Invitation</h3>
+              <div class="small">Creates a reseller invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
               <div class="row">
                 <label>Reseller email<input id="distributor_invite_email" type="email" placeholder="reseller@example.com"></label>
                 <label>Reseller UUID<input id="distributor_invite_reseller_uuid" type="text" placeholder="reseller-group-1"></label>
@@ -365,6 +367,7 @@
           <div class="stack role-section" data-role-scope="reseller,platform_admin">
             <div class="feature-card">
               <h3>Reseller Owner Invitation</h3>
+              <div class="small">Creates an owner invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
               <div class="row">
                 <label>Owner email<input id="reseller_invite_email" type="email" placeholder="owner@example.com"></label>
                 <label>Expiry days<input id="reseller_invite_expires" type="number" min="1" max="30" value="7"></label>

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from core.auth import require_distributor_or_platform_admin
+from core.email import send_invitation_email
 from core.storage import (
     assign_entitlement_to_user,
     create_invitation,
@@ -9,6 +10,7 @@ from core.storage import (
     get_entitlement_by_uuid,
     list_owner_users_by_distributor_uuid,
     list_reseller_users_by_distributor_uuid,
+    update_invitation_email_delivery,
 )
 
 router = APIRouter(prefix="/api/v1/distributor", tags=["distributor"])
@@ -36,6 +38,9 @@ class DistributorInvitationResponse(BaseModel):
     accepted_at: str | None = None
     accepted_by_user_uuid: str | None = None
     is_expired: bool
+    email_delivery_attempted: bool = False
+    email_delivered: bool = False
+    email_delivery_message: str | None = None
 
 
 class DistributorScopedUserResponse(BaseModel):
@@ -108,6 +113,13 @@ async def distributor_create_reseller_invitation(
         reseller_uuid=payload.reseller_uuid,
         issued_by_user_uuid=current_user.get("user_uuid"),
         expires_in_days=payload.expires_in_days,
+    )
+    delivery_result = send_invitation_email(invitation, issuer_email=current_user.get("email"))
+    invitation = update_invitation_email_delivery(
+        invitation_uuid=invitation["invitation_uuid"],
+        attempted=delivery_result.attempted,
+        delivered=delivery_result.delivered,
+        message=delivery_result.message,
     )
     return DistributorInvitationResponse(**invitation)
 

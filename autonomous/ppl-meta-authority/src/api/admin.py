@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 from api.installations import EntitlementRecord, InstallationUpsertRequest
 from core.auth import require_platform_admin
+from core.email import send_invitation_email
 from core.storage import (
     assign_entitlement_to_user,
     create_invitation,
@@ -12,6 +13,7 @@ from core.storage import (
     list_authority_users,
     list_entitlements,
     list_invitations,
+    update_invitation_email_delivery,
     upsert_entitlement,
 )
 
@@ -41,6 +43,9 @@ class InvitationResponse(BaseModel):
     accepted_at: str | None = None
     accepted_by_user_uuid: str | None = None
     is_expired: bool
+    email_delivery_attempted: bool = False
+    email_delivered: bool = False
+    email_delivery_message: str | None = None
 
 
 class InstallationAssignmentRequest(BaseModel):
@@ -119,6 +124,13 @@ async def admin_create_invitation(
         reseller_uuid=payload.reseller_uuid,
         issued_by_user_uuid=current_admin.get("user_uuid"),
         expires_in_days=payload.expires_in_days,
+    )
+    delivery_result = send_invitation_email(invitation, issuer_email=current_admin.get("email"))
+    invitation = update_invitation_email_delivery(
+        invitation_uuid=invitation["invitation_uuid"],
+        attempted=delivery_result.attempted,
+        delivered=delivery_result.delivered,
+        message=delivery_result.message,
     )
     return InvitationResponse(**invitation)
 

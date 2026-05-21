@@ -109,6 +109,33 @@ Current persisted authority data includes:
 - invitations
 - explicit installation assignments
 
+## Invitation Email Delivery
+
+Authority can send invitation emails over SMTP when mail settings are provided.
+
+Required environment settings:
+
+- `AUTHORITY_BASE_URL` or `AUTHORITY_PUBLIC_BASE_URL`
+- `MAIL_SERVER`
+- `MAIL_PORT`
+- `MAIL_FROM`
+
+Optional environment settings:
+
+- `MAIL_USERNAME`
+- `MAIL_PASSWORD`
+- `MAIL_FROM_NAME`
+- `MAIL_STARTTLS`
+- `MAIL_SSL_TLS`
+- `USE_CREDENTIALS`
+
+When these settings are present, admin, distributor, and reseller invitation actions send an email that includes:
+
+- an invitation acceptance link to `/admin?view=session&invitation_token=...`
+- the raw invitation token as a fallback
+
+If mail settings are not configured, authority still creates invitation records and tokens, but email delivery is skipped.
+
 ## Authentication Model
 
 The current implementation uses session-based authority authentication.

@@ -15,6 +15,15 @@ The manual deployment workflow expects these repository secrets:
 - `GHCR_TOKEN`: GitHub token with package read access for GitHub Container Registry
 - `AUTHORITY_ADMIN_EMAIL`: authority admin email used for authenticated post-deploy smoke checks
 - `AUTHORITY_ADMIN_PASSWORD`: authority admin password used for authenticated post-deploy smoke checks
+- `MAIL_SERVER`: shared platform SMTP server used by authority invitation emails
+- `MAIL_PORT`: shared platform SMTP port
+- `MAIL_USERNAME`: shared platform SMTP username
+- `MAIL_PASSWORD`: shared platform SMTP password
+- `MAIL_FROM`: shared platform sender email address
+- `MAIL_FROM_NAME`: shared platform sender display name
+- `MAIL_STARTTLS`: shared platform SMTP STARTTLS toggle
+- `MAIL_SSL_TLS`: shared platform SMTP SSL/TLS toggle
+- `USE_CREDENTIALS`: shared platform SMTP authentication toggle
 - `AUTHORITY_TEST_APPLICATION_KEY`: optional entitlement/application key used for activation-contract verification
 - `AUTHORITY_TEST_OWNER_EMAIL`: optional approved owner email paired with the test application key
 - `AUTHORITY_TEST_INSTALLATION_UUID`: optional installation UUID used during activation-contract verification
@@ -56,6 +65,21 @@ Populate at minimum:
 - `AUTHORITY_DATABASE_URL`
 - `AUTHORITY_ADMIN_TOKEN`
 - `AUTHORITY_BOOTSTRAP_ADMIN_ENABLED=false`
+- `AUTHORITY_BASE_URL`
+
+For invitation email delivery, also populate:
+
+- `MAIL_SERVER`
+- `MAIL_PORT`
+- `MAIL_USERNAME`
+- `MAIL_PASSWORD`
+- `MAIL_FROM`
+- `MAIL_FROM_NAME`
+- `MAIL_STARTTLS`
+- `MAIL_SSL_TLS`
+- `USE_CREDENTIALS`
+
+The deploy workflow now also syncs `AUTHORITY_BASE_URL`, `AUTHORITY_PUBLIC_BASE_URL`, and the shared `MAIL_*` values from GitHub repository secrets into the remote `authority.env` file on each deployment.
 
 ## Required Remote Compose File
 
