@@ -105,7 +105,14 @@ function prefillInvitationTokenFromUrl() {
     return;
   }
   tokenField.value = requestedInvitationToken;
-  activateView('session');
+  if (currentUser) {
+    activateView('session');
+  } else {
+    const acceptCard = document.getElementById('acceptInvitationCard');
+    if (acceptCard instanceof HTMLElement) {
+      acceptCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
   setAcceptStatus('Invitation token loaded from your email link. Set your display name and password to accept the invitation.');
 }
 

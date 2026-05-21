@@ -18,6 +18,8 @@ assert 'id="distributorInviteButton"' in admin_html
 assert 'id="loadDistributorResellersButton"' in admin_html
 assert 'id="loadDistributorOwnersButton"' in admin_html
 assert 'id="distributorAssignButton"' in admin_html
+assert 'id="acceptInvitationCard" data-auth-visibility="logged-out"' in admin_html
+assert 'id="acceptInvitationForm" class="compact-invitation-form invitation-view-form"' in admin_html
 assert 'id="invite_distributor_uuid"' in admin_html
 assert 'id="currentDistributorScope"' in admin_html
 assert 'id="toastRegion" class="toast-region"' in admin_html

@@ -27,6 +27,22 @@
       </form>
     </section>
 
+    <section class="card auth-card invitation-view-card" id="acceptInvitationCard" data-auth-visibility="logged-out">
+      <div class="merged-bar-title-row">
+        <h2>Accept Invitation</h2>
+        <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
+      </div>
+      <p class="small auth-copy">Use the invitation link from your email to finish registration and activate your authority access.</p>
+      <form id="acceptInvitationForm" class="compact-invitation-form invitation-view-form">
+        <label>Token<input id="accept_invitation_token" type="text" autocomplete="one-time-code" placeholder="Paste invitation token"></label>
+        <label>Display name<input id="accept_display_name" type="text" autocomplete="name" placeholder="Optional display name"></label>
+        <label>Password<input id="accept_password" type="password" autocomplete="new-password" placeholder="Set a password"></label>
+        <div class="compact-invitation-action">
+          <button type="submit" id="acceptInvitationButton">Accept invitation</button>
+        </div>
+      </form>
+    </section>
+
     <section id="authenticatedShell" class="authority-layout hidden">
       <div class="card body-card navigation-shell">
         <div class="view-topbar">
@@ -118,21 +134,6 @@
                 <div><strong>Distributor:</strong> <span id="currentDistributorScope" class="small">-</span></div>
                 <div><strong>Reseller:</strong> <span id="currentResellerScope" class="small">-</span></div>
               </div>
-            </div>
-
-            <div class="feature-card invitation-view-card" id="acceptInvitationCard">
-              <div class="merged-bar-title-row">
-                <h3>Accept Invitation</h3>
-                <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
-              </div>
-              <form id="acceptInvitationForm" class="compact-invitation-form invitation-view-form">
-                <label>Token<input id="accept_invitation_token" type="text" autocomplete="one-time-code" placeholder="Paste invitation token"></label>
-                <label>Display name<input id="accept_display_name" type="text" autocomplete="name" placeholder="Optional display name"></label>
-                <label>Password<input id="accept_password" type="password" autocomplete="new-password" placeholder="Set a password"></label>
-                <div class="compact-invitation-action">
-                  <button type="submit" id="acceptInvitationButton">Accept invitation</button>
-                </div>
-              </form>
             </div>
 
             <div class="feature-card">
