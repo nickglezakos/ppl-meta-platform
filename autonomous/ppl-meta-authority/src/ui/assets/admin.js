@@ -23,8 +23,8 @@ const viewRoleMap = {
   overview: ['platform_admin', 'distributor', 'reseller', 'owner', 'support'],
   admin: ['platform_admin'],
   distributor: ['distributor'],
-  reseller: ['reseller', 'platform_admin'],
-  owner: ['owner', 'support', 'platform_admin', 'reseller'],
+  reseller: ['reseller'],
+  owner: ['owner', 'support'],
 };
 
 const viewTitleMap = {
@@ -231,7 +231,7 @@ function syncRoleVisibility() {
     const shouldHide = allowedRoles.length ? !isRoleAllowed(allowedRoles) : false;
     button.classList.toggle('hidden', shouldHide);
     if (button.classList.contains('active') && shouldHide) {
-      activateView('session');
+      activateView(preferredViewForRole(userRole()));
     }
   });
 

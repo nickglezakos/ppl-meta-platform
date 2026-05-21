@@ -31,6 +31,8 @@ console_html = console_page.text
 assert 'data-console-filter="hierarchy"' in console_html
 assert 'id="currentDistributorScope"' in console_html
 assert 'id="toastRegion" class="toast-region"' in console_html
+assert 'data-view="distributor" href="/admin?view=distributor"' in console_html
+assert 'data-view="reseller" href="/admin?view=reseller"' in console_html
 
 assets_js = client.get('/admin/assets/admin.js')
 assert assets_js.status_code == 200
@@ -41,6 +43,7 @@ assert 'loadDistributorScopedUsers' in js_text
 assert 'function showToast(message, tone = ' in js_text
 assert "pageName === 'admin' && Boolean(requestedInvitationToken)" in js_text
 assert 'function resolvedRequestedView(roleName)' in js_text
+assert "owner: ['owner', 'support']" in js_text
 assert 'data-console-filter="hierarchy"' not in js_text
 
 assets_css = client.get('/admin/assets/admin.css')
