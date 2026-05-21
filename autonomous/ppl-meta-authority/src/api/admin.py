@@ -117,6 +117,9 @@ async def admin_create_invitation(
     payload: InvitationRequest,
     current_admin: dict[str, str] = Depends(require_platform_admin),
 ) -> InvitationResponse:
+    if payload.role_name == "distributor" and not (payload.distributor_uuid or "").strip():
+        raise HTTPException(status_code=400, detail="Distributor invitations require a distributor_uuid")
+
     invitation = create_invitation(
         email=payload.email,
         role_name=payload.role_name,

@@ -48,6 +48,37 @@ assert distributor_login.status_code == 200
 distributor_headers = {'Authorization': f"Bearer {distributor_login.json()['session_token']}"}
 assert distributor_login.json()['user']['role_name'] == 'distributor'
 
+assert client.post('/api/v1/auth/register', json={
+    'email': 'existing-owner-upgrade@example.com',
+    'password': 'ownerstay88',
+    'role_name': 'owner'
+}).status_code == 201
+
+owner_upgrade_invitation = client.post('/api/v1/admin/invitations', json={
+    'email': 'existing-owner-upgrade@example.com',
+    'role_name': 'distributor',
+    'distributor_uuid': 'upgraded-distributor-group'
+}, headers=admin_headers)
+assert owner_upgrade_invitation.status_code == 201
+
+owner_upgrade_accept = client.post('/api/v1/auth/accept-invitation', json={
+    'invitation_token': owner_upgrade_invitation.json()['invitation_token'],
+    'password': 'nowdistrib88',
+    'display_name': 'Upgraded Distributor'
+})
+assert owner_upgrade_accept.status_code == 201
+assert owner_upgrade_accept.json()['role_name'] == 'distributor'
+assert owner_upgrade_accept.json()['distributor_uuid'] == 'upgraded-distributor-group'
+
+upgraded_login = client.post('/api/v1/auth/login', json={
+    'email': 'existing-owner-upgrade@example.com',
+    'password': 'nowdistrib88'
+})
+assert upgraded_login.status_code == 200
+assert upgraded_login.json()['user']['role_name'] == 'distributor'
+assert upgraded_login.json()['user']['display_name'] == 'Upgraded Distributor'
+assert upgraded_login.json()['user']['distributor_uuid'] == 'upgraded-distributor-group'
+
 reseller_invitation = client.post('/api/v1/distributor/invitations', json={
     'email': 'e2e-reseller@example.com',
     'reseller_uuid': 'e2e-reseller-group'

@@ -31,6 +31,12 @@ assert invitation.status_code == 201
 assert 'email_delivery_attempted' in invitation.json()
 assert 'email_delivered' in invitation.json()
 assert 'email_delivery_message' in invitation.json()
+missing_distributor_scope = client.post('/api/v1/admin/invitations', json={
+    'email': 'missing-distributor-scope@example.com',
+    'role_name': 'distributor'
+}, headers=admin_headers)
+assert missing_distributor_scope.status_code == 400
+assert missing_distributor_scope.json()['detail'] == 'Distributor invitations require a distributor_uuid'
 list_invitations = client.get('/api/v1/admin/invitations', headers=admin_headers)
 assert list_invitations.status_code == 200
 assert 'email_delivery_attempted' in list_invitations.json()[0]

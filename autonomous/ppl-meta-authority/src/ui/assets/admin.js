@@ -827,13 +827,20 @@ async function saveInstallation() {
 
 async function createInvitation() {
   try {
+    const roleName = document.getElementById('invite_role_name').value;
+    const distributorUuid = document.getElementById('invite_distributor_uuid').value.trim() || null;
+    if (roleName === 'distributor' && !distributorUuid) {
+      setStatus('Distributor invitations require a distributor UUID.', true);
+      return;
+    }
+
     const invitation = await api('/api/v1/admin/invitations', {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
         email: document.getElementById('invite_email').value.trim(),
-        role_name: document.getElementById('invite_role_name').value,
-        distributor_uuid: document.getElementById('invite_distributor_uuid').value.trim() || null,
+        role_name: roleName,
+        distributor_uuid: distributorUuid,
         reseller_uuid: document.getElementById('invite_reseller_uuid').value.trim() || null,
         expires_in_days: Number(document.getElementById('invite_expires_in_days').value || 7),
       }),

@@ -246,6 +246,37 @@ def create_authority_user(
     return user
 
 
+def update_authority_user_from_invitation(
+    user_uuid: str,
+    password: str,
+    role_name: str,
+    distributor_uuid: str | None = None,
+    reseller_uuid: str | None = None,
+    display_name: str | None = None,
+) -> dict[str, Any]:
+    password_hash = hash_password(password)
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE authority_users
+            SET password_hash = ?,
+                display_name = COALESCE(?, display_name),
+                role_name = ?,
+                distributor_uuid = ?,
+                reseller_uuid = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_uuid = ?
+            """,
+            (password_hash, display_name, role_name, distributor_uuid, reseller_uuid, user_uuid),
+        )
+        connection.commit()
+
+    user = get_authority_user_by_uuid(user_uuid)
+    if user is None:
+        raise RuntimeError("Authority user update failed")
+    return user
+
+
 def create_authority_user_from_invitation(
     invitation_token: str,
     password: str,
@@ -261,7 +292,14 @@ def create_authority_user_from_invitation(
 
     existing = get_authority_user_by_email(invitation["email"])
     if existing is not None:
-        user = existing
+        user = update_authority_user_from_invitation(
+            user_uuid=existing["user_uuid"],
+            password=password,
+            display_name=display_name,
+            role_name=invitation["role_name"],
+            distributor_uuid=invitation.get("distributor_uuid"),
+            reseller_uuid=invitation["reseller_uuid"],
+        )
     else:
         user = create_authority_user(
             email=invitation["email"],
