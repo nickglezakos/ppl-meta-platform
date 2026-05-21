@@ -12,7 +12,7 @@ os.environ['MAIL_PORT'] = '587'
 os.environ['MAIL_USERNAME'] = 'mailer@example.test'
 os.environ['MAIL_PASSWORD'] = 'not-a-real-password'
 os.environ['MAIL_FROM'] = 'noreply@example.test'
-os.environ['MAIL_FROM_NAME'] = 'PPL Meta Authority Test'
+os.environ['MAIL_FROM_NAME'] = 'Eyenet Vision Test'
 os.environ['MAIL_STARTTLS'] = 'true'
 os.environ['MAIL_SSL_TLS'] = 'false'
 os.environ['USE_CREDENTIALS'] = 'true'
@@ -83,6 +83,7 @@ try:
     assert last_sendmail[0] == 'noreply@example.test'
     assert 'email-validated-owner@example.com' in last_sendmail[1]
     assert 'https://authority.example.test/admin?view=session&invitation_token=' in last_sendmail[2]
+    assert 'Eyenet Vision' in last_sendmail[2]
     print('Authority invitation email delivery validation passed.')
 finally:
     authority_email.smtplib.SMTP = original_smtp

@@ -50,7 +50,7 @@ def get_mail_settings() -> AuthorityMailSettings | None:
         username=os.getenv("MAIL_USERNAME", "").strip(),
         password=os.getenv("MAIL_PASSWORD", "").strip(),
         from_email=from_email,
-        from_name=os.getenv("MAIL_FROM_NAME", "PPL Meta Authority").strip() or "PPL Meta Authority",
+        from_name=os.getenv("MAIL_FROM_NAME", "Eyenet Vision").strip() or "Eyenet Vision",
         starttls=_truthy(os.getenv("MAIL_STARTTLS", "true"), default=True),
         ssl_tls=_truthy(os.getenv("MAIL_SSL_TLS", "false"), default=False),
         use_credentials=_truthy(os.getenv("USE_CREDENTIALS", "true"), default=True),
@@ -81,15 +81,15 @@ def send_invitation_email(invitation: dict[str, object], issuer_email: str | Non
 
     accept_url = f"{settings.public_base_url}/admin?view=session&invitation_token={invitation_token}"
     issuer_line = f"This invitation was issued by {issuer_email}.\n\n" if issuer_email else ""
-    subject = f"PPL Meta Authority invitation for {role_name} access"
+    subject = f"Eyenet Vision invitation for {role_name} access"
     text_body = (
-        f"You have been invited to PPL Meta Authority as a {role_name}.\n\n"
+        f"You have been invited to Eyenet Vision as a {role_name}.\n\n"
         f"{issuer_line}"
         f"Open this link to accept the invitation:\n{accept_url}\n\n"
         f"If the form does not prefill automatically, use this invitation token:\n{invitation_token}\n"
     )
     html_body = (
-        f"<p>You have been invited to <strong>PPL Meta Authority</strong> as a <strong>{role_name}</strong>.</p>"
+        f"<p>You have been invited to <strong>Eyenet Vision</strong> as a <strong>{role_name}</strong>.</p>"
         f"<p>{issuer_line.strip()}</p>" if issuer_line else "<p></p>"
     ) + (
         f"<p><a href=\"{accept_url}\">Open the invitation page</a></p>"

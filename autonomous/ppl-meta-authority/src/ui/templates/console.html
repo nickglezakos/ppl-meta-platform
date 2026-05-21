@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/admin/assets/admin.css">
 </head>
 <body data-page="console">
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
   <div class="shell">
     <section class="hero logo-header" data-auth-visibility="logged-out">
       <img class="brand-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
@@ -15,14 +16,15 @@
     <section id="loggedOutPanel" class="card auth-card">
       <h2>Login</h2>
       <p class="small auth-copy">Sign in to inspect the authority data console. Use the bootstrap-enabled local task only for first-run admin setup.</p>
-      <label>Email<input id="login_email" type="email" placeholder="admin@authority.local"></label>
-      <label>Password<input id="login_password" type="password" placeholder="Enter password"></label>
-      <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
-      <div class="actions">
-        <button type="button" id="loginButton">Login</button>
-        <button type="button" class="secondary" id="bootstrapButton">Bootstrap Admin</button>
-      </div>
-      <div class="status" data-shared-status></div>
+      <form id="loginForm">
+        <label>Email<input id="login_email" type="email" autocomplete="email" placeholder="admin@authority.local"></label>
+        <label>Password<input id="login_password" type="password" autocomplete="current-password" placeholder="Enter password"></label>
+        <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
+        <div class="actions">
+          <button type="submit" id="loginButton">Login</button>
+          <button type="button" class="secondary" id="bootstrapButton">Bootstrap Admin</button>
+        </div>
+      </form>
     </section>
 
     <section id="authenticatedShell" class="authority-layout hidden">
@@ -93,7 +95,6 @@
           </aside>
 
           <div class="view-content">
-            <div class="status page-status" data-shared-status data-auth-visibility="authenticated"></div>
             <div class="stack session-view-stack console-view-stack">
               <div class="feature-card session-view-card">
                 <div class="merged-bar-title-row">
@@ -109,7 +110,6 @@
                   <div><strong>Distributor Scope:</strong> <span id="currentDistributorScope" class="small">-</span></div>
                   <div><strong>Reseller Scope:</strong> <span id="currentResellerScope" class="small">-</span></div>
                 </div>
-                <div class="status compact-status" data-shared-status></div>
               </div>
 
               <div class="card hidden-metrics" aria-hidden="true">

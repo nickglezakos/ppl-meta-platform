@@ -401,6 +401,68 @@ h1 {
   margin-top: 8px;
   font-size: 0.84rem;
 }
+.toast-region {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 160;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 24px));
+  pointer-events: none;
+}
+.toast {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  background: linear-gradient(180deg, rgba(9, 11, 18, 0.98), rgba(18, 23, 35, 0.96));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.38);
+  pointer-events: auto;
+  animation: toast-enter 160ms ease-out;
+}
+.toast-success {
+  border-color: rgba(76, 175, 80, 0.36);
+}
+.toast-error {
+  border-color: rgba(207, 102, 121, 0.4);
+}
+.toast-message {
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.toast-dismiss {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  min-width: auto;
+}
+.toast-dismiss:hover {
+  background: transparent;
+  color: var(--text);
+  transform: none;
+  filter: none;
+}
+.toast-exit {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 .compact-invitation-form {
   display: grid;
   grid-template-columns: 1.4fr 1fr 1fr auto;
@@ -561,13 +623,6 @@ button.secondary, .tab-button {
 }
 button:hover { transform: translateY(-1px); filter: brightness(1.04); }
 button.secondary:hover, .tab-button:hover { background: #1a2030; }
-.status {
-  min-height: 24px;
-  margin-top: 14px;
-  font-size: 0.95rem;
-}
-.status.ok { color: var(--success); }
-.status.error { color: var(--error); }
 .session-state {
   margin-top: 14px;
   display: grid;
@@ -770,6 +825,12 @@ code.inline {
   .summary-columns { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
+  .toast-region {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
   .view-topbar {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;

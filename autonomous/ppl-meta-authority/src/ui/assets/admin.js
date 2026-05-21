@@ -1,10 +1,11 @@
 const pageName = document.body.dataset.page || 'admin';
 const SESSION_TOKEN_STORAGE_KEY = 'authority.sessionToken';
-const statusEls = Array.from(document.querySelectorAll('[data-shared-status]'));
-const acceptStatusEl = document.getElementById('acceptStatus');
+const toastRegionEl = document.getElementById('toastRegion');
 const bodyEl = document.getElementById('dataBody');
 const loggedOutPanelEl = document.getElementById('loggedOutPanel');
 const authenticatedShellEl = document.getElementById('authenticatedShell');
+const TOAST_MAX_COUNT = 5;
+const TOAST_TIMEOUT_MS = 4200;
 let previousFocusedElement = null;
 let sessionToken = '';
 let currentUser = null;
@@ -49,22 +50,50 @@ function setText(id, value) {
   }
 }
 
-function setStatus(message, isError = false) {
-  if (!statusEls.length) {
+function dismissToast(toastEl) {
+  if (!(toastEl instanceof HTMLElement)) {
     return;
   }
-  statusEls.forEach((statusEl) => {
-    statusEl.textContent = message;
-    statusEl.className = isError ? 'status error' : 'status ok';
-  });
+  toastEl.classList.add('toast-exit');
+  window.setTimeout(() => {
+    toastEl.remove();
+  }, 180);
+}
+
+function showToast(message, tone = 'success') {
+  if (!toastRegionEl || !message) {
+    return;
+  }
+  const toastEl = document.createElement('div');
+  toastEl.className = `toast toast-${tone}`;
+
+  const messageEl = document.createElement('div');
+  messageEl.className = 'toast-message';
+  messageEl.textContent = message;
+
+  const dismissButton = document.createElement('button');
+  dismissButton.type = 'button';
+  dismissButton.className = 'toast-dismiss';
+  dismissButton.setAttribute('aria-label', 'Dismiss notification');
+  dismissButton.textContent = 'Close';
+  dismissButton.addEventListener('click', () => dismissToast(toastEl));
+
+  toastEl.append(messageEl, dismissButton);
+  toastRegionEl.prepend(toastEl);
+
+  while (toastRegionEl.childElementCount > TOAST_MAX_COUNT) {
+    dismissToast(toastRegionEl.lastElementChild);
+  }
+
+  window.setTimeout(() => dismissToast(toastEl), TOAST_TIMEOUT_MS);
+}
+
+function setStatus(message, isError = false) {
+  showToast(message, isError ? 'error' : 'success');
 }
 
 function setAcceptStatus(message, isError = false) {
-  if (!acceptStatusEl) {
-    return;
-  }
-  acceptStatusEl.textContent = message;
-  acceptStatusEl.className = isError ? 'status error' : 'status ok';
+  showToast(message, isError ? 'error' : 'success');
 }
 
 function prefillInvitationTokenFromUrl() {
