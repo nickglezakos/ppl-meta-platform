@@ -38,6 +38,7 @@ assert 'loadDistributorSummary' in js_text
 assert 'loadAdminUsers' in js_text
 assert 'loadDistributorScopedUsers' in js_text
 assert 'function showToast(message, tone = ' in js_text
+assert "pageName === 'admin' && Boolean(requestedInvitationToken)" in js_text
 assert 'data-console-filter="hierarchy"' not in js_text
 
 assets_css = client.get('/admin/assets/admin.css')

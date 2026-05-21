@@ -150,7 +150,8 @@ function storeSessionToken(token) {
 function updateAuthView() {
   const isAuthenticated = Boolean(currentUser);
   if (loggedOutPanelEl) {
-    loggedOutPanelEl.classList.toggle('hidden', isAuthenticated);
+    const hideLoggedOutPanel = isAuthenticated || (pageName === 'admin' && Boolean(requestedInvitationToken));
+    loggedOutPanelEl.classList.toggle('hidden', hideLoggedOutPanel);
   }
   if (authenticatedShellEl) {
     authenticatedShellEl.classList.toggle('hidden', !isAuthenticated);
