@@ -15,13 +15,15 @@
     <section id="loggedOutPanel" class="card auth-card">
       <h2>Login</h2>
       <p class="small auth-copy">Sign in to manage authority users, invitations, installations, and distributor, reseller, or owner workflows. The data console is available as a separate page after login.</p>
-      <label>Email<input id="login_email" type="email" placeholder="admin@authority.local"></label>
-      <label>Password<input id="login_password" type="password" placeholder="Enter password"></label>
-      <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
-      <div class="actions">
-        <button type="button" id="loginButton">Login</button>
-        <button type="button" class="secondary" id="bootstrapButton">Bootstrap Admin</button>
-      </div>
+      <form id="loginForm">
+        <label>Email<input id="login_email" type="email" placeholder="admin@authority.local"></label>
+        <label>Password<input id="login_password" type="password" placeholder="Enter password"></label>
+        <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
+        <div class="actions">
+          <button type="submit" id="loginButton">Login</button>
+          <button type="button" class="secondary" id="bootstrapButton">Bootstrap Admin</button>
+        </div>
+      </form>
       <div class="status" data-shared-status></div>
     </section>
 
@@ -124,14 +126,14 @@
                 <h3>Accept Invitation</h3>
                 <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
               </div>
-              <div class="compact-invitation-form invitation-view-form">
+              <form id="acceptInvitationForm" class="compact-invitation-form invitation-view-form">
                 <label>Token<input id="accept_invitation_token" type="text" placeholder="Paste invitation token"></label>
                 <label>Display name<input id="accept_display_name" type="text" placeholder="Optional display name"></label>
                 <label>Password<input id="accept_password" type="password" placeholder="Set a password"></label>
                 <div class="compact-invitation-action">
-                  <button type="button" id="acceptInvitationButton">Accept invitation</button>
+                  <button type="submit" id="acceptInvitationButton">Accept invitation</button>
                 </div>
-              </div>
+              </form>
               <div id="acceptStatus" class="status compact-status"></div>
             </div>
 

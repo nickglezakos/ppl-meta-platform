@@ -987,6 +987,17 @@ function bindClick(id, handler) {
   }
 }
 
+function bindFormSubmit(id, handler) {
+  const node = element(id);
+  if (!(node instanceof HTMLFormElement)) {
+    return;
+  }
+  node.addEventListener('submit', (event) => {
+    event.preventDefault();
+    handler();
+  });
+}
+
 function bindPasswordVisibility(toggleId, inputId) {
   const toggle = element(toggleId);
   const input = element(inputId);
@@ -1049,10 +1060,10 @@ document.querySelectorAll('.console-filter').forEach((button) => {
   });
 });
 
-bindClick('loginButton', handleLogin);
+bindFormSubmit('loginForm', handleLogin);
 bindClick('logoutButton', handleLogout);
 bindClick('bootstrapButton', handleBootstrap);
-bindClick('acceptInvitationButton', handleAcceptInvitation);
+bindFormSubmit('acceptInvitationForm', handleAcceptInvitation);
 bindPasswordVisibility('show_login_password', 'login_password');
 bindPasswordVisibility('show_accept_password', 'accept_password');
 bindClick('loadSessionButton', async () => {
