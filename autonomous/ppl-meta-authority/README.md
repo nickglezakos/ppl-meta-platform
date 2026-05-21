@@ -33,6 +33,7 @@ Use the tasks in [.vscode/tasks.json](../../.vscode/tasks.json):
 - `🧪 Validate Authority Distributor Scope`
 - `🧪 Validate Authority Admin UI`
 - `python validate_authority_admin_e2e_workflow.py`
+- `python validate_authority_invitation_email_delivery.py`
 
 The bootstrap variant exists for first-time local admin setup only. It enables the bootstrap endpoint so you can create the initial platform admin through the UI.
 
@@ -214,6 +215,8 @@ Distributor management endpoints now include:
 - `POST /api/v1/distributor/installation-assignments`
 
 For CI-safe end-to-end coverage, `validate_authority_admin_e2e_workflow.py` exercises the admin-to-distributor-to-reseller-to-owner onboarding chain, distributor user listings, and distributor entitlement assignment without needing a live browser runtime.
+
+For CI-safe invitation mail coverage, `validate_authority_invitation_email_delivery.py` stubs the SMTP transport and verifies that authority marks invitation email delivery as attempted and delivered, persists that result, and includes the invitation acceptance link in the outgoing message.
 
 ## Deployment Note
 

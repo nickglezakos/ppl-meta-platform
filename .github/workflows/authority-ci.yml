@@ -58,6 +58,7 @@ jobs:
         run: |
           python validate_authority_auth_dashboard.py
           python validate_authority_invitations_assignments.py
+          python validate_authority_invitation_email_delivery.py
           python validate_authority_reseller_scope.py
           python validate_authority_distributor_scope.py
           python validate_authority_admin_ui.py
