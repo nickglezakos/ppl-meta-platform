@@ -31,6 +31,7 @@ distributor_headers = {'Authorization': f"Bearer {distributor_login.json()['sess
 
 reseller_invitation = client.post('/api/v1/distributor/invitations', json={
     'email': 'dist-reseller@example.com',
+    'role_name': 'reseller',
     'reseller_uuid': 'reseller-group-8'
 }, headers=distributor_headers)
 assert reseller_invitation.status_code == 201
@@ -50,9 +51,11 @@ assert reseller_login.json()['user']['distributor_uuid'] == 'distributor-group-8
 assert reseller_login.json()['user']['reseller_uuid'] == 'reseller-group-8'
 reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_token']}"}
 
-owner_invitation = client.post('/api/v1/reseller/invitations', json={
-    'email': 'dist-owner@example.com'
-}, headers=reseller_headers)
+owner_invitation = client.post('/api/v1/distributor/invitations', json={
+    'email': 'dist-owner@example.com',
+    'role_name': 'owner',
+    'reseller_uuid': 'reseller-group-8'
+}, headers=distributor_headers)
 assert owner_invitation.status_code == 201
 
 assert client.post('/api/v1/auth/accept-invitation', json={

@@ -323,14 +323,20 @@
         <div id="distributor" class="view-panel">
           <div class="stack role-section" data-role-scope="distributor">
             <div class="feature-card">
-              <h3>Distributor Reseller Invitation</h3>
-              <div class="small">Creates a reseller invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
+              <h3>Distributor Invitation</h3>
+              <div class="small">Creates a reseller or owner invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
               <div class="row">
                 <label>Reseller email<input id="distributor_invite_email" type="email" placeholder="reseller@example.com"></label>
+                <label>Role
+                  <select id="distributor_invite_role_name">
+                    <option value="reseller">reseller</option>
+                    <option value="owner">owner</option>
+                  </select>
+                </label>
                 <label>Reseller UUID<input id="distributor_invite_reseller_uuid" type="text" placeholder="reseller-group-1"></label>
               </div>
               <div class="actions">
-                <button type="button" id="distributorInviteButton">Issue reseller invitation</button>
+                <button type="button" id="distributorInviteButton">Issue invitation</button>
                 <button type="button" class="secondary" id="loadDistributorSummaryTab">Load distributor summary</button>
               </div>
             </div>

@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/v1/distributor", tags=["distributor"])
 
 class DistributorInvitationRequest(BaseModel):
     email: str
-    role_name: str = Field(default="reseller", pattern="^(reseller)$")
+    role_name: str = Field(default="reseller", pattern="^(reseller|owner)$")
     reseller_uuid: str = Field(min_length=1)
     expires_in_days: int = Field(default=7, ge=1, le=30)
 
@@ -108,7 +108,7 @@ async def distributor_create_reseller_invitation(
     distributor_uuid = _resolve_distributor_scope(current_user, current_user.get("distributor_uuid"))
     invitation = create_invitation(
         email=payload.email,
-        role_name="reseller",
+        role_name=payload.role_name,
         distributor_uuid=distributor_uuid,
         reseller_uuid=payload.reseller_uuid,
         issued_by_user_uuid=current_user.get("user_uuid"),

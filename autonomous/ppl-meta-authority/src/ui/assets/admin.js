@@ -301,6 +301,17 @@ function activateView(viewId) {
   setNavigationOpen(false);
 }
 
+function resolvedRequestedView(roleName) {
+  if (!requestedView || !Object.prototype.hasOwnProperty.call(viewTitleMap, requestedView)) {
+    return preferredViewForRole(roleName);
+  }
+  const allowedRoles = viewRoleMap[requestedView] || [];
+  if (allowedRoles.length && !allowedRoles.includes(roleName)) {
+    return preferredViewForRole(roleName);
+  }
+  return requestedView;
+}
+
 function preferredViewForRole(roleName) {
   if (roleName === 'platform_admin') {
     return 'admin';
@@ -700,9 +711,7 @@ async function handleLogin() {
     if (pageName === 'console') {
       await loadConsoleLandingData(payload.user.role_name);
     } else {
-      const nextView = requestedView && Object.prototype.hasOwnProperty.call(viewTitleMap, requestedView)
-        ? requestedView
-        : preferredViewForRole(payload.user.role_name);
+      const nextView = resolvedRequestedView(payload.user.role_name);
       activateView(nextView);
     }
     if (pageName !== 'console' && payload.user.role_name === 'platform_admin') {
@@ -1149,12 +1158,13 @@ bindClick('distributorInviteButton', async () => {
       headers: authHeaders(),
       body: JSON.stringify({
         email: document.getElementById('distributor_invite_email').value.trim(),
+        role_name: document.getElementById('distributor_invite_role_name').value,
         reseller_uuid: document.getElementById('distributor_invite_reseller_uuid').value.trim(),
       }),
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(invitationDeliveryStatusMessage(invitation, `Distributor invitation created for ${invitation.email}.`), !invitation.email_delivered);
+    setStatus(invitationDeliveryStatusMessage(invitation, `${invitation.role_name === 'owner' ? 'Owner' : 'Reseller'} invitation created for ${invitation.email}.`), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -1183,9 +1193,7 @@ async function restoreSessionOnLoad() {
     if (pageName === 'console') {
       await loadConsoleLandingData(me.role_name);
     } else {
-      const nextView = requestedView && Object.prototype.hasOwnProperty.call(viewTitleMap, requestedView)
-        ? requestedView
-        : preferredViewForRole(me.role_name);
+      const nextView = resolvedRequestedView(me.role_name);
       activateView(nextView);
     }
   } catch (error) {
