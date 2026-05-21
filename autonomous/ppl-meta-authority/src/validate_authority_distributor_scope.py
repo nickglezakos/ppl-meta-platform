@@ -53,8 +53,7 @@ reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_to
 
 owner_invitation = client.post('/api/v1/distributor/invitations', json={
     'email': 'dist-owner@example.com',
-    'role_name': 'owner',
-    'reseller_uuid': 'reseller-group-8'
+    'role_name': 'owner'
 }, headers=distributor_headers)
 assert owner_invitation.status_code == 201
 
@@ -70,7 +69,14 @@ owner_login = client.post('/api/v1/auth/login', json={
 assert owner_login.status_code == 200
 assert owner_login.json()['user']['role_name'] == 'owner'
 assert owner_login.json()['user']['distributor_uuid'] == 'distributor-group-8'
-assert owner_login.json()['user']['reseller_uuid'] == 'reseller-group-8'
+assert owner_login.json()['user']['reseller_uuid'] is None
+
+missing_reseller_scope = client.post('/api/v1/distributor/invitations', json={
+    'email': 'missing-reseller-scope@example.com',
+    'role_name': 'reseller'
+}, headers=distributor_headers)
+assert missing_reseller_scope.status_code == 400
+assert missing_reseller_scope.json()['detail'] == 'Reseller invitations require a reseller_uuid'
 
 distributor_summary = client.get('/api/v1/dashboard/distributor/summary', headers=distributor_headers)
 assert distributor_summary.status_code == 200

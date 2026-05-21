@@ -324,19 +324,19 @@
           <div class="stack role-section" data-role-scope="distributor">
             <div class="feature-card">
               <h3>Distributor Invitation</h3>
-              <div class="small">Creates a reseller or owner invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
+              <div class="small">Creates an invitation token and sends the same email-link onboarding flow used across authority roles.</div>
               <div class="row">
-                <label>Reseller email<input id="distributor_invite_email" type="email" placeholder="reseller@example.com"></label>
+                <label><span id="distributorInviteEmailLabel">Invite email</span><input id="distributor_invite_email" type="email" placeholder="person@example.com"></label>
                 <label>Role
                   <select id="distributor_invite_role_name">
                     <option value="reseller">reseller</option>
                     <option value="owner">owner</option>
                   </select>
                 </label>
-                <label>Reseller UUID<input id="distributor_invite_reseller_uuid" type="text" placeholder="reseller-group-1"></label>
+                <label id="distributorInviteResellerUuidField">Reseller UUID<input id="distributor_invite_reseller_uuid" type="text" placeholder="reseller-group-1"></label>
               </div>
               <div class="actions">
-                <button type="button" id="distributorInviteButton">Issue invitation</button>
+                <button type="button" id="distributorInviteButton">Send invitation email</button>
                 <button type="button" class="secondary" id="loadDistributorSummaryTab">Load distributor summary</button>
               </div>
             </div>

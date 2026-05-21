@@ -16,6 +16,8 @@ assert 'data-view="distributor"' in admin_html
 assert 'id="sessionOpenConsoleButton"' in admin_html
 assert 'id="distributorInviteButton"' in admin_html
 assert 'id="distributor_invite_role_name"' in admin_html
+assert 'id="distributorInviteEmailLabel"' in admin_html
+assert 'id="distributorInviteResellerUuidField"' in admin_html
 assert 'id="loadDistributorResellersButton"' in admin_html
 assert 'id="loadDistributorOwnersButton"' in admin_html
 assert 'id="distributorAssignButton"' in admin_html
@@ -43,6 +45,7 @@ assert 'loadDistributorScopedUsers' in js_text
 assert 'function showToast(message, tone = ' in js_text
 assert "pageName === 'admin' && Boolean(requestedInvitationToken)" in js_text
 assert 'function resolvedRequestedView(roleName)' in js_text
+assert 'function syncDistributorInviteForm()' in js_text
 assert "owner: ['owner', 'support']" in js_text
 assert 'data-console-filter="hierarchy"' not in js_text
 

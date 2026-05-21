@@ -249,6 +249,35 @@ function navigationFocusableElements() {
   return Array.from(nav.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter((node) => !node.classList.contains('hidden'));
 }
 
+function syncDistributorInviteForm() {
+  const roleSelect = document.getElementById('distributor_invite_role_name');
+  const resellerField = document.getElementById('distributorInviteResellerUuidField');
+  const emailLabel = document.getElementById('distributorInviteEmailLabel');
+  const emailInput = document.getElementById('distributor_invite_email');
+  const resellerInput = document.getElementById('distributor_invite_reseller_uuid');
+  if (!(roleSelect instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  const invitingRole = roleSelect.value;
+  const requiresResellerScope = invitingRole === 'reseller';
+  if (resellerField) {
+    resellerField.classList.toggle('hidden', !requiresResellerScope);
+  }
+  if (emailLabel) {
+    emailLabel.textContent = invitingRole === 'owner' ? 'Owner email' : 'Invite email';
+  }
+  if (emailInput instanceof HTMLInputElement) {
+    emailInput.placeholder = invitingRole === 'owner' ? 'owner@example.com' : 'reseller@example.com';
+  }
+  if (resellerInput instanceof HTMLInputElement) {
+    resellerInput.required = requiresResellerScope;
+    if (!requiresResellerScope) {
+      resellerInput.value = '';
+    }
+  }
+}
+
 function setNavigationOpen(isOpen) {
   const navShell = element('viewShell');
   const toggle = element('viewMenuToggle');
@@ -1158,24 +1187,32 @@ bindClick('loadAdminSummary', loadAdminSummary);
 bindClick('loadOverviewResellerSummary', loadResellerSummary);
 bindClick('loadOwnerSummary', loadOwnerSummary);
 bindClick('sessionOpenConsoleButton', () => { window.location.href = '/admin/console'; });
+bindChange('distributor_invite_role_name', syncDistributorInviteForm);
 bindClick('distributorInviteButton', async () => {
   try {
+    const invitedRole = document.getElementById('distributor_invite_role_name').value;
+    const resellerUuid = document.getElementById('distributor_invite_reseller_uuid').value.trim() || null;
+    if (invitedRole === 'reseller' && !resellerUuid) {
+      setStatus('Reseller invitations require a reseller UUID.', true);
+      return;
+    }
     const invitation = await api('/api/v1/distributor/invitations', {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
         email: document.getElementById('distributor_invite_email').value.trim(),
-        role_name: document.getElementById('distributor_invite_role_name').value,
-        reseller_uuid: document.getElementById('distributor_invite_reseller_uuid').value.trim(),
+        role_name: invitedRole,
+        reseller_uuid: resellerUuid,
       }),
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(invitationDeliveryStatusMessage(invitation, `${invitation.role_name === 'owner' ? 'Owner' : 'Reseller'} invitation created for ${invitation.email}.`), !invitation.email_delivered);
+    setStatus(invitationDeliveryStatusMessage(invitation, `Invitation created for ${invitation.email}.`), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }
 });
+syncDistributorInviteForm();
 bindClick('loadDistributorResellersButton', () => loadDistributorScopedUsers('/api/v1/distributor/resellers', 'distributorResellerList', 'No reseller users loaded yet.', 'no reseller'));
 bindClick('loadDistributorOwnersButton', () => loadDistributorScopedUsers('/api/v1/distributor/owners', 'distributorOwnerList', 'No owner users loaded yet.', 'no reseller'));
 prefillInvitationTokenFromUrl();
