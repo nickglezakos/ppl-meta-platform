@@ -251,30 +251,18 @@ function navigationFocusableElements() {
 
 function syncDistributorInviteForm() {
   const roleSelect = document.getElementById('distributor_invite_role_name');
-  const resellerField = document.getElementById('distributorInviteResellerUuidField');
   const emailLabel = document.getElementById('distributorInviteEmailLabel');
   const emailInput = document.getElementById('distributor_invite_email');
-  const resellerInput = document.getElementById('distributor_invite_reseller_uuid');
   if (!(roleSelect instanceof HTMLSelectElement)) {
     return;
   }
 
   const invitingRole = roleSelect.value;
-  const requiresResellerScope = invitingRole === 'reseller';
-  if (resellerField) {
-    resellerField.classList.toggle('hidden', !requiresResellerScope);
-  }
   if (emailLabel) {
     emailLabel.textContent = invitingRole === 'owner' ? 'Owner email' : 'Invite email';
   }
   if (emailInput instanceof HTMLInputElement) {
     emailInput.placeholder = invitingRole === 'owner' ? 'owner@example.com' : 'reseller@example.com';
-  }
-  if (resellerInput instanceof HTMLInputElement) {
-    resellerInput.required = requiresResellerScope;
-    if (!requiresResellerScope) {
-      resellerInput.value = '';
-    }
   }
 }
 
@@ -1198,18 +1186,12 @@ bindChange('distributor_invite_role_name', syncDistributorInviteForm);
 bindClick('distributorInviteButton', async () => {
   try {
     const invitedRole = document.getElementById('distributor_invite_role_name').value;
-    const resellerUuid = document.getElementById('distributor_invite_reseller_uuid').value.trim() || null;
-    if (invitedRole === 'reseller' && !resellerUuid) {
-      setStatus('Reseller invitations require a reseller UUID.', true);
-      return;
-    }
     const invitation = await api('/api/v1/distributor/invitations', {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
         email: document.getElementById('distributor_invite_email').value.trim(),
         role_name: invitedRole,
-        reseller_uuid: resellerUuid,
       }),
     });
     setConsoleRows('invitations', invitationRows([invitation]));

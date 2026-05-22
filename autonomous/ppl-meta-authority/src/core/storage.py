@@ -426,6 +426,9 @@ def create_invitation(
 ) -> dict[str, Any]:
     invitation_uuid = str(uuid.uuid4())
     invitation_token = secrets.token_urlsafe(24)
+    normalized_reseller_uuid = (reseller_uuid or "").strip() or None
+    if role_name == "reseller" and not normalized_reseller_uuid:
+        normalized_reseller_uuid = f"reseller-{invitation_uuid[:8]}"
     expires_expr, expires_params = _future_timestamp_expression(expires_in_days, "days")
     with _connect() as connection:
         connection.execute(
@@ -447,7 +450,7 @@ def create_invitation(
                 email.lower(),
                 role_name,
                 distributor_uuid,
-                reseller_uuid,
+                normalized_reseller_uuid,
                 issued_by_user_uuid,
                 *expires_params,
             ),

@@ -107,8 +107,6 @@ async def distributor_create_reseller_invitation(
 ) -> DistributorInvitationResponse:
     distributor_uuid = _resolve_distributor_scope(current_user, current_user.get("distributor_uuid"))
     reseller_uuid = (payload.reseller_uuid or "").strip() or None
-    if payload.role_name == "reseller" and not reseller_uuid:
-        raise HTTPException(status_code=400, detail="Reseller invitations require a reseller_uuid")
 
     invitation = create_invitation(
         email=payload.email,

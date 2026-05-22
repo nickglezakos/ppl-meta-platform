@@ -31,10 +31,10 @@ distributor_headers = {'Authorization': f"Bearer {distributor_login.json()['sess
 
 reseller_invitation = client.post('/api/v1/distributor/invitations', json={
     'email': 'dist-reseller@example.com',
-    'role_name': 'reseller',
-    'reseller_uuid': 'reseller-group-8'
+    'role_name': 'reseller'
 }, headers=distributor_headers)
 assert reseller_invitation.status_code == 201
+assert reseller_invitation.json()['reseller_uuid']
 
 assert client.post('/api/v1/auth/accept-invitation', json={
     'invitation_token': reseller_invitation.json()['invitation_token'],
@@ -48,7 +48,7 @@ reseller_login = client.post('/api/v1/auth/login', json={
 assert reseller_login.status_code == 200
 assert reseller_login.json()['user']['role_name'] == 'reseller'
 assert reseller_login.json()['user']['distributor_uuid'] == 'distributor-group-8'
-assert reseller_login.json()['user']['reseller_uuid'] == 'reseller-group-8'
+assert reseller_login.json()['user']['reseller_uuid'] == reseller_invitation.json()['reseller_uuid']
 reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_token']}"}
 
 owner_invitation = client.post('/api/v1/distributor/invitations', json={
@@ -71,13 +71,6 @@ assert owner_login.json()['user']['role_name'] == 'owner'
 assert owner_login.json()['user']['distributor_uuid'] == 'distributor-group-8'
 assert owner_login.json()['user']['reseller_uuid'] is None
 
-missing_reseller_scope = client.post('/api/v1/distributor/invitations', json={
-    'email': 'missing-reseller-scope@example.com',
-    'role_name': 'reseller'
-}, headers=distributor_headers)
-assert missing_reseller_scope.status_code == 400
-assert missing_reseller_scope.json()['detail'] == 'Reseller invitations require a reseller_uuid'
-
 distributor_summary = client.get('/api/v1/dashboard/distributor/summary', headers=distributor_headers)
 assert distributor_summary.status_code == 200
 summary_payload = distributor_summary.json()
@@ -85,7 +78,7 @@ assert summary_payload['distributor_uuid'] == 'distributor-group-8'
 assert summary_payload['reseller_count'] == 1
 assert summary_payload['owner_count'] == 1
 assert len(summary_payload['resellers']) == 1
-assert summary_payload['resellers'][0]['reseller_uuid'] == 'reseller-group-8'
+assert summary_payload['resellers'][0]['reseller_uuid'] == reseller_invitation.json()['reseller_uuid']
 
 entitlement = client.post('/api/v1/admin/installations', json={
     'application_key': 'dist-owner-key',
