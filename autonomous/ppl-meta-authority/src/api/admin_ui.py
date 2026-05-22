@@ -9,6 +9,7 @@ UI_ROOT = Path(__file__).resolve().parent.parent / "ui"
 TEMPLATE_PATH = UI_ROOT / "templates" / "admin.html"
 CONSOLE_TEMPLATE_PATH = UI_ROOT / "templates" / "console.html"
 ASSETS_ROOT = UI_ROOT / "assets"
+FAVICON_PATH = ASSETS_ROOT / "eyenet-dark.svg"
 ASSET_CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8",
@@ -40,3 +41,10 @@ async def admin_asset(asset_name: str) -> FileResponse:
 
     media_type = ASSET_CONTENT_TYPES.get(asset_path.suffix, "application/octet-stream")
     return FileResponse(asset_path, media_type=media_type)
+
+
+@router.get("/favicon.ico")
+async def favicon() -> FileResponse:
+    if not FAVICON_PATH.exists():
+        raise HTTPException(status_code=404, detail="Authority favicon not found")
+    return FileResponse(FAVICON_PATH, media_type="image/svg+xml")

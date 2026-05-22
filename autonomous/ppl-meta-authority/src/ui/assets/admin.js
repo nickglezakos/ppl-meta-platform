@@ -1069,6 +1069,13 @@ function bindClick(id, handler) {
   }
 }
 
+function bindChange(id, handler) {
+  const node = element(id);
+  if (node) {
+    node.addEventListener('change', handler);
+  }
+}
+
 function bindFormSubmit(id, handler) {
   const node = element(id);
   if (!(node instanceof HTMLFormElement)) {
