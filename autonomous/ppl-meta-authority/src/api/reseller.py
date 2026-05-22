@@ -6,6 +6,7 @@ from core.email import send_invitation_email
 from core.storage import (
     assign_entitlement_to_user,
     create_invitation,
+    find_installation_by_owner_email,
     get_authority_user_by_email,
     get_entitlement_by_uuid,
     update_invitation_email_delivery,
@@ -71,6 +72,11 @@ async def reseller_create_owner_invitation(
     current_user: dict[str, str] = Depends(require_reseller_or_platform_admin),
 ) -> ResellerInvitationResponse:
     reseller_uuid = _resolve_reseller_scope(current_user)
+    if find_installation_by_owner_email(payload.email) is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Create an entitlement for this owner email before sending an owner invitation",
+        )
     invitation = create_invitation(
         email=payload.email,
         role_name="owner",

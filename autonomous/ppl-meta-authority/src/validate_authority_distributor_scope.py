@@ -55,6 +55,22 @@ owner_invitation = client.post('/api/v1/distributor/invitations', json={
     'email': 'dist-owner@example.com',
     'role_name': 'owner'
 }, headers=distributor_headers)
+assert owner_invitation.status_code == 400
+assert owner_invitation.json()['detail'] == 'Create an entitlement for this owner email before sending an owner invitation'
+
+owner_entitlement = client.post('/api/v1/admin/installations', json={
+    'application_key': 'dist-owner-key',
+    'approved_owner_email': 'dist-owner@example.com',
+    'owner_enabled': True,
+    'licence_status': 'active',
+    'tenant_name': 'Distributor Owner Tenant'
+}, headers=admin_headers)
+assert owner_entitlement.status_code == 200
+
+owner_invitation = client.post('/api/v1/distributor/invitations', json={
+    'email': 'dist-owner@example.com',
+    'role_name': 'owner'
+}, headers=distributor_headers)
 assert owner_invitation.status_code == 201
 
 assert client.post('/api/v1/auth/accept-invitation', json={
@@ -80,15 +96,6 @@ assert summary_payload['owner_count'] == 1
 assert len(summary_payload['resellers']) == 1
 assert summary_payload['resellers'][0]['reseller_uuid'] == reseller_invitation.json()['reseller_uuid']
 
-entitlement = client.post('/api/v1/admin/installations', json={
-    'application_key': 'dist-owner-key',
-    'approved_owner_email': 'dist-owner@example.com',
-    'owner_enabled': True,
-    'licence_status': 'active',
-    'tenant_name': 'Distributor Owner Tenant'
-}, headers=admin_headers)
-assert entitlement.status_code == 200
-
 owner_list = client.get('/api/v1/distributor/owners', headers=distributor_headers)
 assert owner_list.status_code == 200
 assert len(owner_list.json()) == 1
@@ -100,7 +107,7 @@ assert len(reseller_list.json()) == 1
 assert reseller_list.json()[0]['email'] == 'dist-reseller@example.com'
 
 assignment = client.post('/api/v1/distributor/installation-assignments', json={
-    'entitlement_uuid': entitlement.json()['entitlement_uuid'],
+    'entitlement_uuid': owner_entitlement.json()['entitlement_uuid'],
     'user_email': 'dist-owner@example.com'
 }, headers=distributor_headers)
 assert assignment.status_code == 201

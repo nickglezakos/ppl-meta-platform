@@ -31,11 +31,9 @@ assert reseller_login.json()['user']['distributor_uuid'] == 'distributor-group-4
 invitation = client.post('/api/v1/reseller/invitations', json={
     'email': 'invited4@example.com'
 }, headers=reseller_headers)
-assert invitation.status_code == 201
-assert client.post('/api/v1/auth/accept-invitation', json={
-    'invitation_token': invitation.json()['invitation_token'],
-    'password': 'invitepass4'
-}).status_code == 201
+assert invitation.status_code == 400
+assert invitation.json()['detail'] == 'Create an entitlement for this owner email before sending an owner invitation'
+
 entitlement = client.post('/api/v1/admin/installations', json={
     'application_key': 'invited4-key',
     'approved_owner_email': 'invited4@example.com',
@@ -44,6 +42,15 @@ entitlement = client.post('/api/v1/admin/installations', json={
     'tenant_name': 'Invited 4 Tenant'
 }, headers=admin_headers)
 assert entitlement.status_code == 200
+
+invitation = client.post('/api/v1/reseller/invitations', json={
+    'email': 'invited4@example.com'
+}, headers=reseller_headers)
+assert invitation.status_code == 201
+assert client.post('/api/v1/auth/accept-invitation', json={
+    'invitation_token': invitation.json()['invitation_token'],
+    'password': 'invitepass4'
+}).status_code == 201
 assert client.post('/api/v1/reseller/installation-assignments', json={
     'entitlement_uuid': entitlement.json()['entitlement_uuid'],
     'user_email': 'invited4@example.com'
