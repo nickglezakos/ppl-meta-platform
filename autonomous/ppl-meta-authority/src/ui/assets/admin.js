@@ -401,6 +401,49 @@ function activateView(viewId) {
     window.history.replaceState(null, '', `${window.location.pathname}?${nextSearch.toString()}`);
   }
   setNavigationOpen(false);
+  if (pageName === 'admin' && currentUser) {
+    loadViewData(viewId).catch((error) => setStatus(error.message, true));
+  }
+}
+
+async function loadViewData(viewId) {
+  const roleName = userRole();
+  if (!roleName) {
+    return;
+  }
+  if (viewId === 'overview') {
+    if (roleName === 'platform_admin') {
+      await Promise.all([loadAdminSummary(), loadResellerSummary(), loadOwnerSummary()]);
+      return;
+    }
+    if (roleName === 'distributor') {
+      await loadDistributorSummary();
+      return;
+    }
+    if (roleName === 'reseller') {
+      await Promise.all([loadResellerSummary(), loadOwnerSummary()]);
+      return;
+    }
+    if (roleName === 'owner' || roleName === 'support') {
+      await loadOwnerSummary();
+    }
+    return;
+  }
+  if (viewId === 'admin' && roleName === 'platform_admin') {
+    await loadAdminSummary();
+    return;
+  }
+  if (viewId === 'distributor' && roleName === 'distributor') {
+    await loadDistributorSummary();
+    return;
+  }
+  if (viewId === 'reseller' && roleName === 'reseller') {
+    await loadResellerSummary();
+    return;
+  }
+  if (viewId === 'owner' && (roleName === 'owner' || roleName === 'support' || roleName === 'platform_admin')) {
+    await loadOwnerSummary();
+  }
 }
 
 function resolvedRequestedView(roleName) {
