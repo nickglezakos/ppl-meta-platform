@@ -399,6 +399,11 @@ function activateView(viewId) {
     panel.classList.toggle('active', panel.id === viewId);
   });
   setText('currentViewTitle', viewTitleMap[viewId] || 'Session');
+  if (pageName === 'admin') {
+    const nextSearch = new URLSearchParams(window.location.search);
+    nextSearch.set('view', viewId);
+    window.history.replaceState(null, '', `${window.location.pathname}?${nextSearch.toString()}`);
+  }
   setNavigationOpen(false);
 }
 
