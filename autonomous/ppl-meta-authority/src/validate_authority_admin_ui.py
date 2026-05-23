@@ -16,6 +16,12 @@ assert 'data-view="distributor"' in admin_html
 assert 'id="sessionOpenConsoleButton"' in admin_html
 assert 'id="logoutButton"' in admin_html
 assert 'id="loadSessionButton"' in admin_html
+assert 'id="openChangePasswordButton"' in admin_html
+assert 'id="changePasswordModal"' in admin_html
+assert 'id="changePasswordForm"' in admin_html
+assert 'id="change_password_current"' in admin_html
+assert 'id="change_password_new"' in admin_html
+assert 'id="change_password_confirm"' in admin_html
 assert 'class="menu-toggle-icon"' in admin_html
 assert 'class="view-navigation-user-email" id="currentEmail"' in admin_html
 assert 'Role: <span id="currentRole">' in admin_html
@@ -59,6 +65,8 @@ assert 'data-console-filter="hierarchy"' in console_html
 assert 'data-console-filter="audit"' in console_html
 assert 'data-console-filter="users"' in console_html
 assert 'id="consoleSearchInput"' in console_html
+assert 'id="openChangePasswordButton"' in console_html
+assert 'id="changePasswordModal"' in console_html
 assert 'class="menu-toggle-icon"' in console_html
 assert 'class="view-navigation-user-email" id="currentEmail"' in console_html
 assert 'Role: <span id="currentRole">' in console_html
@@ -102,6 +110,8 @@ assert "owner: ['owner', 'support']" in js_text
 assert 'requestedPublicView' in js_text
 assert "window.location.href = '/admin';" in js_text
 assert 'login_email=' in js_text
+assert 'setChangePasswordModalOpen' in js_text
+assert '/api/v1/auth/change-password' in js_text
 assert 'data-console-filter="hierarchy"' not in js_text
 
 assets_css = client.get('/admin/assets/admin.css')

@@ -16,6 +16,18 @@ assert admin_login.status_code == 200
 admin_token = admin_login.json()['session_token']
 admin_headers = {'Authorization': f'Bearer {admin_token}'}
 assert client.get('/api/v1/auth/me', headers=admin_headers).status_code == 200
+change_password_response = client.post('/api/v1/auth/change-password', headers=admin_headers, json={
+    'current_password': 'change-this-admin-password',
+    'new_password': 'authority-admin-pass-2'
+})
+assert change_password_response.status_code == 200, change_password_response.text
+admin_login_after_password_change = client.post('/api/v1/auth/login', json={
+    'email': 'admin@authority.local',
+    'password': 'authority-admin-pass-2'
+})
+assert admin_login_after_password_change.status_code == 200
+admin_token = admin_login_after_password_change.json()['session_token']
+admin_headers = {'Authorization': f'Bearer {admin_token}'}
 assert client.post('/api/v1/auth/register', json={
     'email': 'reseller@example.com',
     'password': 'resellerpass',

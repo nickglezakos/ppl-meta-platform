@@ -5,6 +5,7 @@ from core.auth import bootstrap_admin_enabled, require_authority_user
 from core.storage import (
     authenticate_authority_user,
     bootstrap_authority_admin,
+    change_authority_user_password,
     create_authority_user_from_invitation,
     create_authority_session,
     create_authority_user,
@@ -51,6 +52,11 @@ class SessionResponse(BaseModel):
     session_token: str
     expires_at: str
     user: AuthorityUserResponse
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8)
 
 
 @router.post("/register", response_model=AuthorityUserResponse, status_code=status.HTTP_201_CREATED)
@@ -107,6 +113,23 @@ async def me(current_user: dict[str, str] = Depends(require_authority_user)) -> 
 async def logout(current_user: dict[str, str] = Depends(require_authority_user)) -> Response:
     revoke_authority_session(current_user["session_token"])
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/change-password", response_model=AuthorityUserResponse)
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: dict[str, str] = Depends(require_authority_user),
+) -> AuthorityUserResponse:
+    try:
+        user = change_authority_user_password(
+            user_uuid=current_user["user_uuid"],
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return AuthorityUserResponse(**user)
 
 
 @router.post("/bootstrap-admin", response_model=AuthorityUserResponse)

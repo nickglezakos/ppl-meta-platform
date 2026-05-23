@@ -376,6 +376,40 @@ def authenticate_authority_user(email: str, password: str) -> dict[str, Any] | N
     return _authority_user_row_to_dict(row)
 
 
+def change_authority_user_password(user_uuid: str, current_password: str, new_password: str) -> dict[str, Any]:
+    if len(new_password) < 8:
+        raise ValueError("New password must be at least 8 characters long")
+
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM authority_users WHERE user_uuid = ?",
+            (user_uuid,),
+        ).fetchone()
+
+        if row is None:
+            raise ValueError("Authority user not found")
+        if not verify_password(current_password, row["password_hash"]):
+            raise ValueError("Current password is incorrect")
+        if verify_password(new_password, row["password_hash"]):
+            raise ValueError("New password must be different from the current password")
+
+        connection.execute(
+            """
+            UPDATE authority_users
+            SET password_hash = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_uuid = ?
+            """,
+            (hash_password(new_password), user_uuid),
+        )
+        connection.commit()
+
+    user = get_authority_user_by_uuid(user_uuid)
+    if user is None:
+        raise RuntimeError("Authority user password update failed")
+    return user
+
+
 def create_authority_session(user_uuid: str, expires_in_hours: int = 24) -> dict[str, Any]:
     session_token = secrets.token_urlsafe(32)
     expires_expr, expires_params = _future_timestamp_expression(expires_in_hours, "hours")

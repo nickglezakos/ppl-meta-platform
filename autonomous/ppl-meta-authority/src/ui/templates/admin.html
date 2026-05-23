@@ -89,6 +89,7 @@
             <div class="view-navigation-section">
               <div class="view-navigation-label">Actions</div>
               <button type="button" class="view-link view-link-plain" id="loadSessionButton">Refresh session</button>
+              <button type="button" class="view-link view-link-plain" id="openChangePasswordButton">Change password</button>
               <button type="button" class="view-link view-link-plain view-link-danger" id="logoutButton">Logout</button>
             </div>
           </aside>
@@ -473,6 +474,26 @@
         </div>
       </div>
     </section>
+
+    <div class="modal-shell hidden" id="changePasswordModal" aria-hidden="true">
+      <div class="modal-backdrop" id="changePasswordBackdrop"></div>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="changePasswordTitle">
+        <div class="merged-bar-title-row">
+          <h2 id="changePasswordTitle">Change Password</h2>
+          <button type="button" class="drawer-close" id="closeChangePasswordButton" aria-label="Close change password dialog">Close</button>
+        </div>
+        <p class="small auth-copy">Update your authority password by confirming your current password and choosing a new one.</p>
+        <form id="changePasswordForm">
+          <label>Current password<input id="change_password_current" type="password" autocomplete="current-password" placeholder="Enter current password"></label>
+          <label>New password<input id="change_password_new" type="password" autocomplete="new-password" placeholder="Minimum 8 characters"></label>
+          <label>Confirm new password<input id="change_password_confirm" type="password" autocomplete="new-password" placeholder="Repeat new password"></label>
+          <div class="actions">
+            <button type="submit" id="submitChangePasswordButton">Update password</button>
+            <button type="button" class="secondary" id="cancelChangePasswordButton">Cancel</button>
+          </div>
+        </form>
+      </section>
+    </div>
   </div>
 
   <script src="/admin/assets/admin.js"></script>

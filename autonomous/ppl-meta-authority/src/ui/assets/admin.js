@@ -11,6 +11,7 @@ let sessionToken = '';
 let currentUser = null;
 let activeConsoleFilter = 'all';
 let consoleSearchQuery = '';
+let changePasswordReturnFocus = null;
 let adminUsersCache = [];
 let auditState = {
   items: [],
@@ -377,6 +378,38 @@ function setNavigationOpen(isOpen) {
     restoreTarget.focus();
     previousFocusedElement = null;
   }
+}
+
+function setChangePasswordModalOpen(isOpen) {
+  const modal = element('changePasswordModal');
+  const currentInput = element('change_password_current');
+  if (!(modal instanceof HTMLElement)) {
+    return;
+  }
+  if (isOpen) {
+    changePasswordReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+    window.setTimeout(() => {
+      if (currentInput instanceof HTMLElement) {
+        currentInput.focus();
+      }
+    }, 30);
+    return;
+  }
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  const form = element('changePasswordForm');
+  if (form instanceof HTMLFormElement) {
+    form.reset();
+  }
+  const restoreTarget = changePasswordReturnFocus && document.contains(changePasswordReturnFocus)
+    ? changePasswordReturnFocus
+    : element('openChangePasswordButton');
+  if (restoreTarget instanceof HTMLElement) {
+    restoreTarget.focus();
+  }
+  changePasswordReturnFocus = null;
 }
 
 function activateView(viewId) {
@@ -1236,6 +1269,36 @@ async function handleLogout() {
   }
 }
 
+async function handleChangePassword() {
+  const currentPassword = document.getElementById('change_password_current')?.value || '';
+  const newPassword = document.getElementById('change_password_new')?.value || '';
+  const confirmPassword = document.getElementById('change_password_confirm')?.value || '';
+
+  if (newPassword.length < 8) {
+    setStatus('New password must be at least 8 characters long.', true);
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    setStatus('New password confirmation does not match.', true);
+    return;
+  }
+
+  try {
+    await api('/api/v1/auth/change-password', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    });
+    setChangePasswordModalOpen(false);
+    setStatus('Password updated successfully.');
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
 async function loadInstallations() {
   try {
     const records = await api('/api/v1/admin/installations', { headers: authHeaders() });
@@ -1715,6 +1778,11 @@ bindClick('viewMenuToggle', () => {
 bindClick('viewDrawerClose', () => setNavigationOpen(false));
 bindClick('viewDrawerOverlay', () => setNavigationOpen(false));
 document.addEventListener('keydown', (event) => {
+  const changePasswordModal = element('changePasswordModal');
+  if (event.key === 'Escape' && changePasswordModal instanceof HTMLElement && !changePasswordModal.classList.contains('hidden')) {
+    setChangePasswordModalOpen(false);
+    return;
+  }
   const navShell = element('viewShell');
   if (!navShell?.classList.contains('nav-open')) {
     return;
@@ -1766,8 +1834,13 @@ bindChange('reassign_user_lookup', () => renderUserLookupResults('reassign_user_
 
 bindFormSubmit('loginForm', handleLogin);
 bindClick('logoutButton', handleLogout);
+bindClick('openChangePasswordButton', () => setChangePasswordModalOpen(true));
 bindFormSubmit('acceptInvitationForm', handleAcceptInvitation);
 bindClick('backToLoginButton', () => { window.location.href = '/admin'; });
+bindFormSubmit('changePasswordForm', handleChangePassword);
+bindClick('closeChangePasswordButton', () => setChangePasswordModalOpen(false));
+bindClick('cancelChangePasswordButton', () => setChangePasswordModalOpen(false));
+bindClick('changePasswordBackdrop', () => setChangePasswordModalOpen(false));
 bindPasswordVisibility('show_login_password', 'login_password');
 bindPasswordVisibility('show_accept_password', 'accept_password');
 bindClick('loadSessionButton', async () => {
