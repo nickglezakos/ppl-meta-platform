@@ -396,6 +396,14 @@ h1 {
 .compact-session-state > div {
   min-width: 0;
 }
+.compact-session-card {
+  padding: 14px 18px;
+}
+.persistent-session-bar {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
 .console-search-row {
   margin: 12px 0 0;
 }
