@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       authority_version:
-        description: 'Authority image tag to deploy'
+        description: 'Authority image tag suffix to deploy; defaults to the published authority-<version> tag'
         required: true
       authority_image_ref:
         description: 'Optional full image reference. If set, this overrides authority_version and can be a digest-pinned image.'
@@ -54,7 +54,7 @@ jobs:
           if [ -n "${{ github.event.inputs.authority_image_ref }}" ]; then
             IMAGE_REF='${{ github.event.inputs.authority_image_ref }}'
           else
-            IMAGE_REF='ghcr.io/nickglezakos/ppl-meta-authority:${{ github.event.inputs.authority_version }}'
+            IMAGE_REF='ghcr.io/nickglezakos/ppl-meta-authority:authority-${{ github.event.inputs.authority_version }}'
           fi
           echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
 
