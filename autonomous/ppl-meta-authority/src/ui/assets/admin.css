@@ -399,6 +399,9 @@ h1 {
 .compact-session-card {
   padding: 14px 18px;
 }
+.persistent-shell-session-bar {
+  margin-bottom: 18px;
+}
 .persistent-session-bar {
   margin-top: 0;
   padding-top: 0;
