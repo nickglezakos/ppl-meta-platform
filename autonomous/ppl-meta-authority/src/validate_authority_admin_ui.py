@@ -19,7 +19,7 @@ assert 'id="loadSessionButton"' in admin_html
 assert 'class="menu-toggle-icon"' in admin_html
 assert 'class="view-navigation-user-email" id="currentEmail"' in admin_html
 assert 'Role: <span id="currentRole">' in admin_html
-assert 'class="view-link view-link-plain active" data-view="session"' in admin_html
+assert 'data-view="session"' not in admin_html
 assert 'id="distributorInviteButton"' in admin_html
 assert 'id="distributor_invite_role_name"' in admin_html
 assert 'id="distributorInviteEmailLabel"' in admin_html
@@ -55,7 +55,10 @@ assert 'data-console-filter="hierarchy"' in console_html
 assert 'data-console-filter="audit"' in console_html
 assert 'data-console-filter="users"' in console_html
 assert 'id="consoleSearchInput"' in console_html
-assert 'id="currentDistributorScope"' in console_html
+assert 'class="menu-toggle-icon"' in console_html
+assert 'class="view-navigation-user-email" id="currentEmail"' in console_html
+assert 'Role: <span id="currentRole">' in console_html
+assert 'data-view="session"' not in console_html
 assert 'id="toastRegion" class="toast-region"' in console_html
 assert 'data-view="distributor" href="/admin?view=distributor"' in console_html
 assert 'data-view="reseller" href="/admin?view=reseller"' in console_html

@@ -236,7 +236,7 @@ h1 {
 .view-navigation {
   position: fixed;
   top: 92px;
-  left: 20px;
+  right: 20px;
   width: min(320px, calc(100vw - 40px));
   max-height: calc(100vh - 120px);
   overflow: auto;
@@ -248,7 +248,7 @@ h1 {
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(9, 11, 18, 0.98), rgba(18, 23, 35, 0.96));
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.42);
-  transform: translateX(-18px) scale(0.98);
+  transform: translateX(18px) scale(0.98);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -870,7 +870,7 @@ code.inline {
   }
   .view-navigation {
     top: 12px;
-    left: 12px;
+    right: 12px;
     width: calc(100vw - 24px);
     max-height: calc(100vh - 24px);
   }
