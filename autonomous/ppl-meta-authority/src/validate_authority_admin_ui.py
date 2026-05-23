@@ -34,6 +34,10 @@ assert 'id="loadMoreAuditEventsButton"' in admin_html
 assert 'id="adminAuditEvents"' in admin_html
 assert 'id="supportReinstateUserButton"' in admin_html
 assert 'id="adminUserDirectory"' in admin_html
+assert 'id="admin_user_lookup"' in admin_html
+assert 'id="adminUserLookupResults"' in admin_html
+assert 'id="reassign_user_lookup"' in admin_html
+assert 'id="reassignUserLookupResults"' in admin_html
 assert 'id="audit_target_entity_type"' in admin_html
 assert 'id="audit_target_entity_uuid"' in admin_html
 assert 'id="audit_action"' in admin_html
@@ -44,6 +48,8 @@ assert console_page.status_code == 200
 console_html = console_page.text
 assert 'data-console-filter="hierarchy"' in console_html
 assert 'data-console-filter="audit"' in console_html
+assert 'data-console-filter="users"' in console_html
+assert 'id="consoleSearchInput"' in console_html
 assert 'id="currentDistributorScope"' in console_html
 assert 'id="toastRegion" class="toast-region"' in console_html
 assert 'data-view="distributor" href="/admin?view=distributor"' in console_html
@@ -60,8 +66,12 @@ assert 'reassignUserScope' in js_text
 assert 'updateEntitlementStatus' in js_text
 assert 'supportReinstateUser' in js_text
 assert 'adminUserActivityItems' in js_text
+assert 'renderUserLookupResults' in js_text
+assert 'matchingUsers' in js_text
+assert 'userRows' in js_text
 assert 'data-user-quick-status' in js_text
 assert 'data-prepare-reassign' in js_text
+assert 'data-select-user-lookup' in js_text
 assert 'data-entitlement-status' in js_text
 assert 'data-open-audit' in js_text
 assert 'target_entity_uuid' in js_text

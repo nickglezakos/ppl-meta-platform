@@ -324,6 +324,10 @@
               <h3>User Lifecycle</h3>
               <div class="small">Suspend, reinstate, and remove users with explicit reasons. Use reassignment below to recover orphaned users.</div>
               <div class="row">
+                <label>Find user<input id="admin_user_lookup" placeholder="Search by email, uuid, display name, role, scope"></label>
+              </div>
+              <div id="adminUserLookupResults" class="activity-list empty-list">Load users or type to find a user.</div>
+              <div class="row">
                 <label>User UUID<input id="admin_user_uuid" placeholder="Paste user_uuid"></label>
                 <label>Status
                   <select id="admin_user_status">
@@ -347,6 +351,10 @@
             <div class="feature-card">
               <h3>User Reassignment</h3>
               <div class="small">Clear orphan state by assigning the user back into distributor or reseller scope.</div>
+              <div class="row">
+                <label>Find user<input id="reassign_user_lookup" placeholder="Search by email, uuid, display name, role, scope"></label>
+              </div>
+              <div id="reassignUserLookupResults" class="activity-list empty-list">Load users or type to find a user.</div>
               <div class="row">
                 <label>User UUID<input id="reassign_user_uuid" placeholder="Paste user_uuid"></label>
                 <label>Distributor UUID<input id="reassign_distributor_uuid" placeholder="dist-uuid"></label>

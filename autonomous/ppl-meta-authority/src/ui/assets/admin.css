@@ -396,6 +396,9 @@ h1 {
 .compact-session-state > div {
   min-width: 0;
 }
+.console-search-row {
+  margin: 12px 0 0;
+}
 .compact-status {
   min-height: 18px;
   margin-top: 8px;
@@ -730,6 +733,9 @@ button.secondary:hover, .tab-button:hover { background: #1a2030; }
   min-width: auto;
   padding: 8px 12px;
   font-size: 0.82rem;
+}
+.lookup-results {
+  margin-top: 12px;
 }
 .audit-state-block {
   margin-top: 8px;

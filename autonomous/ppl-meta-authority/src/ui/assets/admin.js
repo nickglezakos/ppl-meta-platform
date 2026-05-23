@@ -10,6 +10,8 @@ let previousFocusedElement = null;
 let sessionToken = '';
 let currentUser = null;
 let activeConsoleFilter = 'all';
+let consoleSearchQuery = '';
+let adminUsersCache = [];
 let auditState = {
   items: [],
   rows: [],
@@ -25,6 +27,7 @@ let auditState = {
   },
 };
 let consoleRowsByFilter = {
+  users: [],
   hierarchy: [],
   entitlements: [],
   invitations: [],
@@ -563,8 +566,19 @@ function renderRows(rows) {
   bindConsoleActions();
 }
 
+function stripHtml(value) {
+  return String(value || '').replace(/<[^>]*>/g, ' ');
+}
+
+function rowSearchText(row) {
+  return [row.type, row.primary, row.scope, row.owner, row.keyInfo, row.details]
+    .map((value) => stripHtml(value).toLowerCase())
+    .join(' ');
+}
+
 function allConsoleRows() {
   return [
+    ...consoleRowsByFilter.users,
     ...consoleRowsByFilter.entitlements,
     ...consoleRowsByFilter.hierarchy,
     ...consoleRowsByFilter.invitations,
@@ -576,15 +590,19 @@ function allConsoleRows() {
 }
 
 function rowsForActiveFilter() {
-  if (activeConsoleFilter === 'all') {
-    return allConsoleRows();
+  const sourceRows = activeConsoleFilter === 'all'
+    ? allConsoleRows()
+    : (consoleRowsByFilter[activeConsoleFilter] || []);
+  if (!consoleSearchQuery) {
+    return sourceRows;
   }
-  return consoleRowsByFilter[activeConsoleFilter] || [];
+  return sourceRows.filter((row) => rowSearchText(row).includes(consoleSearchQuery));
 }
 
 function renderConsoleFilter() {
   const counts = {
     all: allConsoleRows().length,
+    users: consoleRowsByFilter.users.length,
     hierarchy: consoleRowsByFilter.hierarchy.length,
     entitlements: consoleRowsByFilter.entitlements.length,
     invitations: consoleRowsByFilter.invitations.length,
@@ -611,6 +629,7 @@ function setConsoleRows(filterName, rows) {
 
 function resetConsoleRows() {
   consoleRowsByFilter = {
+    users: [],
     entitlements: [],
     hierarchy: [],
     invitations: [],
@@ -620,6 +639,8 @@ function resetConsoleRows() {
     health: [],
   };
   activeConsoleFilter = 'all';
+  consoleSearchQuery = '';
+  adminUsersCache = [];
   auditState = {
     items: [],
     rows: [],
@@ -791,6 +812,17 @@ function distributorSummaryRows(summary) {
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code>`,
     details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span><div class="token-actions"><button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button><button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button><button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button></div>`,
+  }));
+}
+
+function userRows(records) {
+  return records.map((record) => ({
+    type: `<span class="pill ${badgeClassForStatus(record.status)}">${escapeHtml(record.role_name)}</span>`,
+    primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
+    scope: `${escapeHtml(record.distributor_uuid || 'no distributor')}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
+    owner: escapeHtml(record.display_name || '-'),
+    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
+    details: `${statusBadgeMarkup(record.status)}<br><span class="small">updated ${escapeHtml(record.updated_at || record.created_at || '-')}</span>`,
   }));
 }
 
@@ -967,6 +999,78 @@ function adminUserActivityItems(records) {
   });
 }
 
+function matchingUsers(query) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return adminUsersCache.slice(0, 8);
+  }
+  return adminUsersCache.filter((record) => [
+    record.email,
+    record.user_uuid,
+    record.display_name,
+    record.role_name,
+    record.status,
+    record.distributor_uuid,
+    record.reseller_uuid,
+  ].some((value) => String(value || '').toLowerCase().includes(normalized))).slice(0, 8);
+}
+
+function lookupActivityItems(records, target) {
+  return records.map((record) => ({
+    title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
+    badges: `${statusBadgeMarkup(record.status)}`,
+    meta: `${escapeHtml(record.user_uuid)} · ${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || 'no reseller')}`,
+    actions: `<button type="button" class="secondary mini-button" data-select-user-lookup="${escapeHtml(target)}" data-user-uuid="${escapeHtml(record.user_uuid)}" data-distributor-uuid="${escapeHtml(record.distributor_uuid || '')}" data-reseller-uuid="${escapeHtml(record.reseller_uuid || '')}">Use user</button>`,
+  }));
+}
+
+function bindUserLookupActions(root) {
+  root.querySelectorAll('[data-select-user-lookup]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = button.dataset.selectUserLookup || '';
+      const userUuid = button.dataset.userUuid || '';
+      const distributorUuid = button.dataset.distributorUuid || '';
+      const resellerUuid = button.dataset.resellerUuid || '';
+      if (target === 'lifecycle') {
+        const userField = document.getElementById('admin_user_uuid');
+        if (userField instanceof HTMLInputElement) {
+          userField.value = userUuid;
+        }
+        setStatus('Lifecycle user field populated.');
+        return;
+      }
+      if (target === 'reassign') {
+        const userField = document.getElementById('reassign_user_uuid');
+        const distributorField = document.getElementById('reassign_distributor_uuid');
+        const resellerField = document.getElementById('reassign_reseller_uuid');
+        if (userField instanceof HTMLInputElement) {
+          userField.value = userUuid;
+        }
+        if (distributorField instanceof HTMLInputElement) {
+          distributorField.value = distributorUuid;
+        }
+        if (resellerField instanceof HTMLInputElement) {
+          resellerField.value = resellerUuid;
+        }
+        setStatus('Reassignment fields populated.');
+      }
+    });
+  });
+}
+
+function renderUserLookupResults(inputId, containerId, target) {
+  const input = document.getElementById(inputId);
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+  const matches = matchingUsers(input.value);
+  renderActivityList(containerId, lookupActivityItems(matches, target), 'No matching users found.');
+  const container = document.getElementById(containerId);
+  if (container instanceof HTMLElement) {
+    bindUserLookupActions(container);
+  }
+}
+
 function applyAuditFiltersToInputs() {
   const requested = requestedAuditFilters();
   const mapping = {
@@ -1116,8 +1220,12 @@ async function loadInstallations() {
 async function loadAdminUsers() {
   try {
     const users = await api('/api/v1/admin/users', { headers: authHeaders() });
+    adminUsersCache = users;
+    setConsoleRows('users', userRows(users));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(users));
     renderActivityList('adminUserDirectory', adminUserActivityItems(users), 'No users loaded yet.');
+    renderUserLookupResults('admin_user_lookup', 'adminUserLookupResults', 'lifecycle');
+    renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign');
     renderConsoleFilter();
     setStatus(`Loaded ${users.length} users.`);
   } catch (error) {
@@ -1437,6 +1545,7 @@ async function loadResellerSummary() {
     renderActivityList('resellerRecentAssignments', assignmentActivityItems(summary.recent_assignments || []), 'No reseller assignment activity yet.');
     renderActivityList('resellerRecentHealth', stateReportActivityItems(summary.recent_health_reports || []), 'No reseller health activity yet.');
     setConsoleRows('entitlements', resellerSummaryRows(summary));
+    setConsoleRows('users', userRows(summary.owners || []));
     setConsoleRows('hierarchy', hierarchyRowsFromResellerSummary(summary));
     setConsoleRows('health', stateReportRows(summary.recent_health_reports || []));
     renderConsoleFilter();
@@ -1464,6 +1573,7 @@ async function loadDistributorSummary() {
     renderActivityList('distributorRecentAssignments', assignmentActivityItems(summary.recent_assignments || []), 'No distributor assignment activity yet.');
     renderActivityList('distributorRecentHealth', stateReportActivityItems(summary.recent_health_reports || []), 'No distributor health activity yet.');
     setConsoleRows('entitlements', distributorSummaryRows(summary));
+    setConsoleRows('users', userRows([...(summary.resellers || []), ...(summary.owners || [])]));
     setConsoleRows('hierarchy', hierarchyRowsFromDistributorSummary(summary));
     setConsoleRows('assignments', (summary.recent_assignments || []).map((record) => ({
       type: '<span class="pill">Assignment</span>',
@@ -1485,6 +1595,7 @@ async function loadDistributorScopedUsers(path, targetId, emptyMessage, emptySco
   try {
     const records = await api(path, { headers: authHeaders() });
     renderActivityList(targetId, scopedUserActivityItems(records, emptyScopeLabel), emptyMessage);
+    setConsoleRows('users', userRows(records));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(records));
     renderConsoleFilter();
     setStatus(`Loaded ${records.length} scoped users.`);
@@ -1610,6 +1721,18 @@ document.querySelectorAll('.console-filter').forEach((button) => {
     renderConsoleFilter();
   });
 });
+
+bindChange('consoleSearchInput', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  consoleSearchQuery = target.value.trim().toLowerCase();
+  renderConsoleFilter();
+});
+
+bindChange('admin_user_lookup', () => renderUserLookupResults('admin_user_lookup', 'adminUserLookupResults', 'lifecycle'));
+bindChange('reassign_user_lookup', () => renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign'));
 
 bindFormSubmit('loginForm', handleLogin);
 bindClick('logoutButton', handleLogout);

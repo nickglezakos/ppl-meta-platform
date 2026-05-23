@@ -127,8 +127,12 @@
               <section class="card console-card page-console-card body-card">
                 <h3>Data Console</h3>
                 <div class="small">Live authority API output for entitlements, invitations, assignments, updates, and health reporting.</div>
+                <div class="row console-search-row">
+                  <label>Search loaded console rows<input id="consoleSearchInput" placeholder="Search by email, uuid, role, status, tenant, application key"></label>
+                </div>
                 <div class="console-toolbar">
                   <button type="button" class="secondary console-filter active" data-console-filter="all">All <span class="filter-count" data-filter-count="all">0</span></button>
+                  <button type="button" class="secondary console-filter" data-console-filter="users">Users <span class="filter-count" data-filter-count="users">0</span></button>
                   <button type="button" class="secondary console-filter" data-console-filter="hierarchy">Hierarchy <span class="filter-count" data-filter-count="hierarchy">0</span></button>
                   <button type="button" class="secondary console-filter" data-console-filter="entitlements">Entitlements <span class="filter-count" data-filter-count="entitlements">0</span></button>
                   <button type="button" class="secondary console-filter" data-console-filter="invitations">Invitations <span class="filter-count" data-filter-count="invitations">0</span></button>
