@@ -16,8 +16,10 @@ assert 'data-view="distributor"' in admin_html
 assert 'id="sessionOpenConsoleButton"' in admin_html
 assert 'id="logoutButton"' in admin_html
 assert 'id="loadSessionButton"' in admin_html
-assert 'id="sessionViewRole"' in admin_html
-assert 'id="sessionViewEmail"' in admin_html
+assert 'class="menu-toggle-icon"' in admin_html
+assert 'class="view-navigation-user-email" id="currentEmail"' in admin_html
+assert 'Role: <span id="currentRole">' in admin_html
+assert 'class="view-link view-link-plain active" data-view="session"' in admin_html
 assert 'id="distributorInviteButton"' in admin_html
 assert 'id="distributor_invite_role_name"' in admin_html
 assert 'id="distributorInviteEmailLabel"' in admin_html
@@ -28,7 +30,6 @@ assert 'id="distributorAssignButton"' in admin_html
 assert 'id="acceptInvitationCard" data-auth-visibility="logged-out"' in admin_html
 assert 'id="acceptInvitationForm" class="compact-invitation-form invitation-view-form"' in admin_html
 assert 'id="invite_distributor_uuid"' in admin_html
-assert 'id="currentDistributorScope"' in admin_html
 assert 'id="toastRegion" class="toast-region"' in admin_html
 assert 'id="updateUserStatusButton"' in admin_html
 assert 'id="reassignUserScopeButton"' in admin_html
@@ -38,10 +39,6 @@ assert 'id="loadMoreAuditEventsButton"' in admin_html
 assert 'id="adminAuditEvents"' in admin_html
 assert 'id="supportReinstateUserButton"' in admin_html
 assert 'id="adminUserDirectory"' in admin_html
-assert 'id="currentRole"' in admin_html
-assert 'id="currentEmail"' in admin_html
-assert 'id="currentDistributorScope"' in admin_html
-assert 'id="currentResellerScope"' in admin_html
 assert 'id="admin_user_lookup"' in admin_html
 assert 'id="adminUserLookupResults"' in admin_html
 assert 'id="reassign_user_lookup"' in admin_html

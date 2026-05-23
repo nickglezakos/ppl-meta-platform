@@ -50,7 +50,13 @@
         <div class="view-topbar">
           <img class="brand-logo topbar-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
           <h2 id="currentViewTitle" class="view-title">Session</h2>
-          <button type="button" class="menu-toggle" id="viewMenuToggle" aria-expanded="false" aria-controls="viewNavigation">Menu</button>
+          <button type="button" class="menu-toggle" id="viewMenuToggle" aria-expanded="false" aria-controls="viewNavigation" aria-label="Open navigation menu">
+            <span class="menu-toggle-icon" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </button>
         </div>
         <div class="view-layout" id="viewShell">
           <div class="view-drawer-overlay" id="viewDrawerOverlay" aria-hidden="true"></div>
@@ -63,93 +69,46 @@
               <button type="button" class="drawer-close" id="viewDrawerClose" aria-label="Close navigation">Close</button>
             </div>
             <div class="view-navigation-section">
-              <div class="view-navigation-label">Workspace views</div>
-              <button type="button" class="view-link active" data-view="session">
-                <span class="view-link-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false"><path d="M7 4h10l3 3v13H4V4h3zm1 2v12h8V8.5L14.5 6zm2 3h4v2h-4zm0 4h6v2h-6z"/></svg>
-                </span>
-                <span class="view-link-copy"><strong>Session</strong><span>Identity, scope, invitation acceptance.</span></span>
-              </button>
-              <button type="button" class="view-link" data-view="overview">
-                <span class="view-link-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false"><path d="M5 19V9h4v10zm5 0V5h4v14zm5 0v-7h4v7z"/></svg>
-                </span>
-                <span class="view-link-copy"><strong>Overview</strong><span>Cross-role summaries and recent activity.</span></span>
-              </button>
-              <button type="button" class="view-link" data-view="admin">
-                <span class="view-link-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2l8 4v6c0 5.2-3.4 9.8-8 11-4.6-1.2-8-5.8-8-11V6zm0 5a3 3 0 100 6 3 3 0 000-6zm0 8c-2.1 0-4 .8-5.5 2.2 1.4 1.9 3.3 3.3 5.5 4 2.2-.7 4.1-2.1 5.5-4-1.5-1.4-3.4-2.2-5.5-2.2z"/></svg>
-                </span>
-                <span class="view-link-copy"><strong>Admin</strong><span>Entitlements, invitations, installation assignment.</span></span>
-              </button>
-              <button type="button" class="view-link" data-view="distributor">
-                <span class="view-link-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false"><path d="M4 7l8-4 8 4-8 4zm0 3l8 4 8-4v7l-8 4-8-4z"/></svg>
-                </span>
-                <span class="view-link-copy"><strong>Distributor</strong><span>Distributor-scoped reseller onboarding.</span></span>
-              </button>
-              <button type="button" class="view-link" data-view="reseller">
-                <span class="view-link-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false"><path d="M6 5h12v4H6zm-1 6h14v8H5zm3 2v4h3v-4zm5 0h3v4h-3z"/></svg>
-                </span>
-                <span class="view-link-copy"><strong>Reseller</strong><span>Owner onboarding and installation scope.</span></span>
-              </button>
-              <button type="button" class="view-link" data-view="owner">
-                <span class="view-link-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false"><path d="M12 4a4 4 0 110 8 4 4 0 010-8zm-7 14c0-3.1 3.1-5 7-5s7 1.9 7 5v2H5z"/></svg>
-                </span>
-                <span class="view-link-copy"><strong>Owner Dashboard</strong><span>Owner lifecycle and installation status.</span></span>
-              </button>
+              <div class="view-navigation-label">Signed in</div>
+              <div class="view-navigation-user">
+                <div class="view-navigation-user-email" id="currentEmail">-</div>
+                <div class="view-navigation-user-role">Role: <span id="currentRole">Unauthenticated</span></div>
+              </div>
             </div>
             <div class="view-navigation-section">
-              <div class="view-navigation-label">Separate route</div>
-              <a class="view-link view-link-anchor" href="/admin/console">
-                <span class="view-link-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false"><path d="M4 5h16v14H4zm2 2v2h12V7zm0 4v6h5v-6zm7 0v2h5v-2zm0 4v2h5v-2z"/></svg>
-                </span>
-                <span class="view-link-copy"><strong>Data Console</strong><span>Open the data console in its own page.</span></span>
-              </a>
+              <div class="view-navigation-label">Workspace views</div>
+              <button type="button" class="view-link view-link-plain active" data-view="session">Session</button>
+              <button type="button" class="view-link view-link-plain" data-view="overview">Overview</button>
+              <button type="button" class="view-link view-link-plain" data-view="admin">Admin</button>
+              <button type="button" class="view-link view-link-plain" data-view="distributor">Distributor</button>
+              <button type="button" class="view-link view-link-plain" data-view="reseller">Reseller</button>
+              <button type="button" class="view-link view-link-plain" data-view="owner">Owner Dashboard</button>
+            </div>
+            <div class="view-navigation-section">
+              <div class="view-navigation-label">Actions</div>
+              <button type="button" class="view-link view-link-plain" id="loadSessionButton">Refresh session</button>
+              <button type="button" class="view-link view-link-plain" id="sessionOpenConsoleButton">Open data console</button>
+              <button type="button" class="view-link view-link-plain view-link-danger" id="logoutButton">Logout</button>
             </div>
           </aside>
 
           <div class="view-content">
-            <div class="feature-card session-view-card" data-auth-visibility="authenticated">
-              <div class="merged-bar-title-row">
-                <h3>Session</h3>
-                <div class="actions compact-actions">
-                  <button type="button" class="secondary" id="logoutButton">Logout</button>
-                  <button type="button" class="secondary" id="loadSessionButton">Refresh</button>
-                  <button type="button" class="secondary" id="sessionOpenConsoleButton">Open data console</button>
-                </div>
-              </div>
-              <div class="summary-grid session-summary-grid">
-                <div class="metric"><div class="label">Role</div><div id="sessionViewRole" class="value">-</div></div>
-                <div class="metric"><div class="label">Email</div><div id="sessionViewEmail" class="value metric-text">-</div></div>
-                <div class="metric"><div class="label">Distributor</div><div id="sessionViewDistributor" class="value metric-text">-</div></div>
-                <div class="metric"><div class="label">Reseller</div><div id="sessionViewReseller" class="value metric-text">-</div></div>
-              </div>
-              <div class="session-state compact-session-state session-inline-meta">
-                <div><strong>Role:</strong> <span id="currentRole" class="small">Unauthenticated</span></div>
-                <div><strong>Email:</strong> <span id="currentEmail" class="small">-</span></div>
-                <div><strong>Distributor:</strong> <span id="currentDistributorScope" class="small">-</span></div>
-                <div><strong>Reseller:</strong> <span id="currentResellerScope" class="small">-</span></div>
-              </div>
-            </div>
         <div id="session" class="view-panel active">
           <div class="stack session-view-stack">
             <div class="feature-card">
+              <h3>Session Workspace</h3>
               <div class="summary-columns">
                 <div>
-                  <div class="small">Session actions</div>
+                  <div class="small">Session menu</div>
                   <div class="activity-list">
-                    <div class="activity-item"><div class="activity-title">Refresh the current authority session</div><div class="activity-meta">Use Refresh after role or scope changes.</div></div>
-                    <div class="activity-item"><div class="activity-title">Open the data console as a separate workspace</div><div class="activity-meta">The console stays on its own route instead of being embedded into this shell.</div></div>
+                    <div class="activity-item"><div class="activity-title">Use the menu button for navigation and account actions</div><div class="activity-meta">The persistent header menu now carries navigation, logout, and your signed-in identity.</div></div>
+                    <div class="activity-item"><div class="activity-title">Refresh the current authority session from the menu</div><div class="activity-meta">Use Refresh Session after role or scope changes.</div></div>
                   </div>
                 </div>
                 <div>
                   <div class="small">Navigation</div>
                   <div class="activity-list">
-                    <div class="activity-item"><div class="activity-title">Use the menu button to open views</div><div class="activity-meta">Desktop and mobile both start from the same collapsed navigation pattern.</div></div>
+                    <div class="activity-item"><div class="activity-title">Use the menu button to open views</div><div class="activity-meta">Desktop and mobile both use the same persistent top bar and drawer menu.</div></div>
                     <div class="activity-item"><div class="activity-title">Owner dashboard is a dedicated view</div><div class="activity-meta">Use the menu to switch directly to owner lifecycle and installation status.</div></div>
                   </div>
                 </div>

@@ -360,7 +360,7 @@ function setNavigationOpen(isOpen) {
   }
   navShell.classList.toggle('nav-open', isOpen);
   toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-  toggle.textContent = isOpen ? 'Close' : 'Menu';
+  toggle.setAttribute('aria-label', isOpen ? 'Close navigation menu' : 'Open navigation menu');
   if (overlay) {
     overlay.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
   }
