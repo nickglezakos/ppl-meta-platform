@@ -10,11 +10,26 @@ let previousFocusedElement = null;
 let sessionToken = '';
 let currentUser = null;
 let activeConsoleFilter = 'all';
+let auditState = {
+  items: [],
+  rows: [],
+  nextOffset: null,
+  hasMore: false,
+  loadedCount: 0,
+  filters: {
+    target_entity_type: '',
+    target_entity_uuid: '',
+    action: '',
+    actor_role_name: '',
+    limit: '',
+  },
+};
 let consoleRowsByFilter = {
   hierarchy: [],
   entitlements: [],
   invitations: [],
   assignments: [],
+  audit: [],
   updates: [],
   health: [],
 };
@@ -38,6 +53,68 @@ const viewTitleMap = {
 const searchParams = new URLSearchParams(window.location.search);
 const requestedView = searchParams.get('view');
 const requestedInvitationToken = searchParams.get('invitation_token');
+
+function requestedAuditFilters() {
+  return {
+    target_entity_type: searchParams.get('target_entity_type') || '',
+    target_entity_uuid: searchParams.get('target_entity_uuid') || '',
+    action: searchParams.get('action') || '',
+    actor_role_name: searchParams.get('actor_role_name') || '',
+    limit: searchParams.get('limit') || '',
+    loaded: searchParams.get('audit_loaded') || '',
+  };
+}
+
+function currentAuditFiltersFromInputs() {
+  const requested = requestedAuditFilters();
+  return {
+    target_entity_type: document.getElementById('audit_target_entity_type')?.value.trim() || requested.target_entity_type,
+    target_entity_uuid: document.getElementById('audit_target_entity_uuid')?.value.trim() || requested.target_entity_uuid,
+    action: document.getElementById('audit_action')?.value.trim() || requested.action,
+    actor_role_name: document.getElementById('audit_actor_role_name')?.value.trim() || requested.actor_role_name,
+    limit: document.getElementById('audit_limit')?.value.trim() || requested.limit || '100',
+  };
+}
+
+function persistConsoleState() {
+  if (pageName !== 'console') {
+    return;
+  }
+  const nextSearch = new URLSearchParams(window.location.search);
+  nextSearch.set('filter', activeConsoleFilter);
+  const filters = auditState.filters;
+  if (filters.target_entity_type) {
+    nextSearch.set('target_entity_type', filters.target_entity_type);
+  } else {
+    nextSearch.delete('target_entity_type');
+  }
+  if (filters.target_entity_uuid) {
+    nextSearch.set('target_entity_uuid', filters.target_entity_uuid);
+  } else {
+    nextSearch.delete('target_entity_uuid');
+  }
+  if (filters.action) {
+    nextSearch.set('action', filters.action);
+  } else {
+    nextSearch.delete('action');
+  }
+  if (filters.actor_role_name) {
+    nextSearch.set('actor_role_name', filters.actor_role_name);
+  } else {
+    nextSearch.delete('actor_role_name');
+  }
+  if (filters.limit) {
+    nextSearch.set('limit', filters.limit);
+  } else {
+    nextSearch.delete('limit');
+  }
+  if (auditState.loadedCount > 0) {
+    nextSearch.set('audit_loaded', String(auditState.loadedCount));
+  } else {
+    nextSearch.delete('audit_loaded');
+  }
+  window.history.replaceState(null, '', `${window.location.pathname}?${nextSearch.toString()}`);
+}
 
 function element(id) {
   return document.getElementById(id);
@@ -405,7 +482,9 @@ function renderActivityList(containerId, items, emptyMessage) {
   container.innerHTML = items.map((item) => `
     <div class="activity-item ${item.consoleFilter ? 'console-link' : ''}" ${item.consoleFilter ? `data-console-jump="${escapeHtml(item.consoleFilter)}"` : ''}>
       <div class="activity-title">${item.title}</div>
+      ${item.badges ? `<div class="activity-badges">${item.badges}</div>` : ''}
       <div class="activity-meta">${item.meta}</div>
+      ${item.actions ? `<div class="activity-actions">${item.actions}</div>` : ''}
     </div>
   `).join('');
 
@@ -420,6 +499,45 @@ function renderActivityList(containerId, items, emptyMessage) {
       window.location.href = `/admin/console?filter=${encodeURIComponent(nextFilter)}`;
     });
   });
+
+  container.querySelectorAll('[data-user-quick-status]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const userUuid = button.dataset.userUuid || '';
+      const status = button.dataset.userQuickStatus || '';
+      if (!userUuid || !status) {
+        return;
+      }
+      try {
+        await api(`/api/v1/admin/users/${encodeURIComponent(userUuid)}/status`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            status,
+            reason_code: 'ui_quick_action',
+          }),
+        });
+        setStatus(`Updated user status to ${status}.`);
+        await loadAdminUsers();
+        await loadAuditEvents();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-prepare-reassign]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      document.getElementById('reassign_user_uuid').value = button.dataset.userUuid || '';
+      document.getElementById('reassign_distributor_uuid').value = button.dataset.distributorUuid || '';
+      document.getElementById('reassign_reseller_uuid').value = button.dataset.resellerUuid || '';
+      document.getElementById('reassign_reason_code').value = 'manual_reassignment';
+      setStatus('User copied into reassignment form.');
+    });
+  });
+
+  bindAuditJumpActions(container);
 }
 
 function renderRows(rows) {
@@ -451,6 +569,7 @@ function allConsoleRows() {
     ...consoleRowsByFilter.hierarchy,
     ...consoleRowsByFilter.invitations,
     ...consoleRowsByFilter.assignments,
+    ...consoleRowsByFilter.audit,
     ...consoleRowsByFilter.updates,
     ...consoleRowsByFilter.health,
   ];
@@ -470,6 +589,7 @@ function renderConsoleFilter() {
     entitlements: consoleRowsByFilter.entitlements.length,
     invitations: consoleRowsByFilter.invitations.length,
     assignments: consoleRowsByFilter.assignments.length,
+    audit: consoleRowsByFilter.audit.length,
     updates: consoleRowsByFilter.updates.length,
     health: consoleRowsByFilter.health.length,
   };
@@ -495,10 +615,25 @@ function resetConsoleRows() {
     hierarchy: [],
     invitations: [],
     assignments: [],
+    audit: [],
     updates: [],
     health: [],
   };
   activeConsoleFilter = 'all';
+  auditState = {
+    items: [],
+    rows: [],
+    nextOffset: null,
+    hasMore: false,
+    loadedCount: 0,
+    filters: {
+      target_entity_type: '',
+      target_entity_uuid: '',
+      action: '',
+      actor_role_name: '',
+      limit: '',
+    },
+  };
 }
 
 function updateEventRows(records) {
@@ -527,10 +662,10 @@ function entitlementRows(records) {
   return records.map((record) => ({
     type: '<span class="pill">Entitlement</span>',
     primary: `<code class="inline">${record.entitlement_uuid}</code>`,
-    scope: `${record.activation_status}<br><span class="small">${record.tenant_name || 'No tenant'}</span>`,
+    scope: `${statusBadgeMarkup(record.activation_status)}<br><span class="small">${record.tenant_name || 'No tenant'}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code><br><span class="small">${record.licence_status}</span>`,
-    details: `${record.installation_uuid || 'unbound'}<br><span class="small">grace ${record.offline_grace_days}d</span>`,
+    details: `${record.installation_uuid || 'unbound'}<br><span class="small">grace ${record.offline_grace_days}d</span><div class="token-actions"><button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button><button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button><button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button></div>`,
   }));
 }
 
@@ -579,6 +714,60 @@ function bindConsoleActions() {
       setAcceptStatus('Invitation token copied into the acceptance form.');
     });
   });
+
+  document.querySelectorAll('[data-entitlement-status]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const entitlementUuid = button.dataset.entitlementUuid || '';
+      const activationStatus = button.dataset.entitlementStatus || '';
+      if (!entitlementUuid || !activationStatus) {
+        return;
+      }
+      try {
+        await api(`/api/v1/admin/installations/${encodeURIComponent(entitlementUuid)}/activation-status`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            activation_status: activationStatus,
+            reason_code: 'ui_inline_action',
+          }),
+        });
+        setStatus(`Updated entitlement to ${activationStatus}.`);
+        await loadInstallations();
+        await loadAuditEvents();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+  });
+
+  bindAuditJumpActions(document);
+}
+
+function bindAuditJumpActions(root) {
+  root.querySelectorAll('[data-open-audit]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nextSearch = new URLSearchParams();
+      nextSearch.set('filter', 'audit');
+      const targetEntityType = button.dataset.auditTargetEntityType || '';
+      const targetEntityUuid = button.dataset.auditTargetEntityUuid || '';
+      const action = button.dataset.auditAction || '';
+      const actorRoleName = button.dataset.auditActorRoleName || '';
+      if (targetEntityType) {
+        nextSearch.set('target_entity_type', targetEntityType);
+      }
+      if (targetEntityUuid) {
+        nextSearch.set('target_entity_uuid', targetEntityUuid);
+      }
+      if (action) {
+        nextSearch.set('action', action);
+      }
+      if (actorRoleName) {
+        nextSearch.set('actor_role_name', actorRoleName);
+      }
+      window.location.href = `/admin/console?${nextSearch.toString()}`;
+    });
+  });
 }
 
 function resellerSummaryRows(summary) {
@@ -586,10 +775,10 @@ function resellerSummaryRows(summary) {
   return summary.installations.map((record) => ({
     type: '<span class="pill">Reseller Installation</span>',
     primary: `<code class="inline">${record.entitlement_uuid}</code>`,
-    scope: `${summary.reseller_uuid}<br><span class="small">${record.activation_status}</span>`,
+    scope: `${summary.reseller_uuid}<br><span class="small">${statusBadgeMarkup(record.activation_status)}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code>`,
-    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span>`,
+    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span><div class="token-actions"><button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button><button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button><button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button></div>`,
   }));
 }
 
@@ -598,10 +787,10 @@ function distributorSummaryRows(summary) {
   return summary.installations.map((record) => ({
     type: '<span class="pill">Distributor Installation</span>',
     primary: `<code class="inline">${record.entitlement_uuid}</code>`,
-    scope: `${summary.distributor_uuid}<br><span class="small">${record.activation_status}</span>`,
+    scope: `${summary.distributor_uuid}<br><span class="small">${statusBadgeMarkup(record.activation_status)}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code>`,
-    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span>`,
+    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span><div class="token-actions"><button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button><button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button><button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button></div>`,
   }));
 }
 
@@ -623,7 +812,7 @@ function hierarchyRowsFromDistributorSummary(summary) {
     scope: `${escapeHtml(summary.distributor_uuid)}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${escapeHtml(String(record.owner_count))} owners`,
+    details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.owner_count))} owners</span>`,
   }));
   const ownerRows = (summary.owners || []).map((record) => ({
     type: '<span class="pill">owner</span>',
@@ -631,7 +820,7 @@ function hierarchyRowsFromDistributorSummary(summary) {
     scope: `${escapeHtml(summary.distributor_uuid)}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${escapeHtml(String(record.installation_count))} installations`,
+    details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.installation_count))} installations</span>`,
   }));
   return [...resellerRows, ...ownerRows];
 }
@@ -643,7 +832,7 @@ function hierarchyRowsFromResellerSummary(summary) {
     scope: `${escapeHtml(currentUser?.distributor_uuid || 'no distributor')}<br><span class="small">${escapeHtml(summary.reseller_uuid)}</span>`,
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${escapeHtml(String(record.installation_count))} installations`,
+    details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.installation_count))} installations</span>`,
   }));
 }
 
@@ -690,9 +879,128 @@ function scopedUserActivityItems(records, emptyScopeLabel) {
   }
   return records.map((record) => ({
     title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
+    badges: `${statusBadgeMarkup(record.status)} ${record.status === 'orphaned' ? '<span class="pill badge-pending">needs reassignment</span>' : ''}`,
     meta: `${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || emptyScopeLabel)}`,
+    actions: `<button type="button" class="secondary mini-button" data-open-audit="true" data-audit-target-entity-type="authority_user" data-audit-target-entity-uuid="${escapeHtml(record.user_uuid)}">Audit</button>`,
     consoleFilter: 'hierarchy',
   }));
+}
+
+function auditEventActivityItems(records) {
+  return records.map((record) => ({
+    title: `${escapeHtml(record.action)} · ${escapeHtml(record.target_entity_type)}`,
+    meta: `${escapeHtml(record.reason_code || 'no reason')} · ${escapeHtml(record.created_at || '-')}`,
+    actions: `<button type="button" class="secondary mini-button" data-open-audit="true" data-audit-target-entity-type="${escapeHtml(record.target_entity_type)}" data-audit-target-entity-uuid="${escapeHtml(record.target_entity_uuid)}">Focus entity</button>`,
+    consoleFilter: 'audit',
+  }));
+}
+
+function formatAuditStateBlock(label, payload) {
+  if (!payload || !Object.keys(payload).length) {
+    return `<span class="small">${escapeHtml(label)}: -</span>`;
+  }
+  const entries = Object.entries(payload).map(([key, value]) => `${escapeHtml(key)}=${escapeHtml(JSON.stringify(value))}`);
+  return `<div class="audit-state-block"><span class="small audit-state-label">${escapeHtml(label)}</span><code class="inline">${entries.join(', ')}</code></div>`;
+}
+
+function auditTransitionSummary(record) {
+  if (record.action === 'user_scope_reassigned') {
+    const before = record.scope_before || {};
+    const after = record.scope_after || {};
+    return `<div class="audit-transition">scope: ${escapeHtml(before.distributor_uuid || before.reseller_uuid || 'unscoped')} -> ${escapeHtml(after.distributor_uuid || after.reseller_uuid || 'unscoped')}</div>`;
+  }
+  if (record.action === 'user_orphaned') {
+    return '<div class="audit-transition">scope removed and user marked orphaned</div>';
+  }
+  if (record.action === 'user_status_changed') {
+    const previousStatus = record.previous_state?.status || '-';
+    const nextStatus = record.new_state?.status || '-';
+    return `<div class="audit-transition">status: ${escapeHtml(String(previousStatus))} -> ${escapeHtml(String(nextStatus))}</div>`;
+  }
+  if (record.action === 'entitlement_status_changed') {
+    const previousStatus = record.previous_state?.activation_status || '-';
+    const nextStatus = record.new_state?.activation_status || '-';
+    return `<div class="audit-transition">activation: ${escapeHtml(String(previousStatus))} -> ${escapeHtml(String(nextStatus))}</div>`;
+  }
+  const previousState = record.previous_state || {};
+  const newState = record.new_state || {};
+  const transitionKey = Object.keys(newState).find((key) => Object.prototype.hasOwnProperty.call(previousState, key))
+    || Object.keys(newState)[0]
+    || Object.keys(previousState)[0];
+  if (!transitionKey) {
+    return '';
+  }
+  const previousValue = Object.prototype.hasOwnProperty.call(previousState, transitionKey) ? previousState[transitionKey] : '-';
+  const nextValue = Object.prototype.hasOwnProperty.call(newState, transitionKey) ? newState[transitionKey] : '-';
+  return `<div class="audit-transition">${escapeHtml(transitionKey)}: ${escapeHtml(String(previousValue))} -> ${escapeHtml(String(nextValue))}</div>`;
+}
+
+function auditEventRows(records) {
+  return records.map((record) => ({
+    type: '<span class="pill">Audit</span>',
+    primary: `<code class="inline">${escapeHtml(record.target_entity_uuid)}</code>`,
+    scope: `${escapeHtml(record.target_entity_type)}<br><span class="small">${escapeHtml(record.created_at || '-')}</span>`,
+    owner: escapeHtml(record.target_email || '-'),
+    keyInfo: `<code class="inline">${escapeHtml(record.action)}</code>`,
+    details: `${escapeHtml(record.reason_code || 'no reason')}<br><span class="small">${escapeHtml(record.actor_email || record.actor_role_name || 'unknown actor')}</span>${auditTransitionSummary(record)}${formatAuditStateBlock('previous', record.previous_state)}${formatAuditStateBlock('new', record.new_state)}${formatAuditStateBlock('scope before', record.scope_before)}${formatAuditStateBlock('scope after', record.scope_after)}<div class="token-actions"><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="${escapeHtml(record.target_entity_type)}" data-audit-target-entity-uuid="${escapeHtml(record.target_entity_uuid)}">Focus entity</button></div>`,
+  }));
+}
+
+function statusBadgeMarkup(status) {
+  return `<span class="pill ${badgeClassForStatus(status)}">${escapeHtml(status)}</span>`;
+}
+
+function adminUserActivityItems(records) {
+  return records.map((record) => {
+    const nextQuickAction = record.status === 'suspended' ? 'active' : 'suspended';
+    const nextQuickLabel = record.status === 'suspended' ? 'Reinstate' : 'Suspend';
+    return {
+      title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
+      badges: `${statusBadgeMarkup(record.status)} ${record.status === 'orphaned' ? '<span class="pill badge-pending">needs reassignment</span>' : ''}`,
+      meta: `${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || 'no reseller')}`,
+      actions: `
+        <button type="button" class="secondary mini-button" data-user-quick-status="${escapeHtml(nextQuickAction)}" data-user-uuid="${escapeHtml(record.user_uuid)}">${escapeHtml(nextQuickLabel)}</button>
+        <button type="button" class="secondary mini-button" data-prepare-reassign="true" data-user-uuid="${escapeHtml(record.user_uuid)}" data-distributor-uuid="${escapeHtml(record.distributor_uuid || '')}" data-reseller-uuid="${escapeHtml(record.reseller_uuid || '')}">Prepare reassign</button>
+        <button type="button" class="secondary mini-button" data-open-audit="true" data-audit-target-entity-type="authority_user" data-audit-target-entity-uuid="${escapeHtml(record.user_uuid)}">Audit</button>
+      `,
+    };
+  });
+}
+
+function applyAuditFiltersToInputs() {
+  const requested = requestedAuditFilters();
+  const mapping = {
+    audit_target_entity_type: requested.target_entity_type,
+    audit_target_entity_uuid: requested.target_entity_uuid,
+    audit_action: requested.action,
+    audit_actor_role_name: requested.actor_role_name,
+    audit_limit: requested.limit,
+  };
+  Object.entries(mapping).forEach(([id, value]) => {
+    const node = element(id);
+    if (node instanceof HTMLInputElement && value) {
+      node.value = value;
+    }
+  });
+}
+
+function setAuditState(payload, filters, mode = 'replace') {
+  const nextItems = mode === 'append' ? [...auditState.items, ...payload.items] : payload.items.slice();
+  auditState = {
+    items: nextItems,
+    rows: auditEventRows(nextItems),
+    nextOffset: payload.next_offset,
+    hasMore: payload.has_more,
+    loadedCount: nextItems.length,
+    filters: { ...filters },
+  };
+  setConsoleRows('audit', auditState.rows);
+  renderActivityList('adminAuditEvents', auditEventActivityItems(auditState.items), 'No audit events loaded yet.');
+  const loadMoreButton = document.getElementById('loadMoreAuditEventsButton');
+  if (loadMoreButton instanceof HTMLButtonElement) {
+    loadMoreButton.disabled = !auditState.hasMore;
+  }
+  persistConsoleState();
 }
 
 async function api(path, options = {}) {
@@ -809,7 +1117,153 @@ async function loadAdminUsers() {
   try {
     const users = await api('/api/v1/admin/users', { headers: authHeaders() });
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(users));
+    renderActivityList('adminUserDirectory', adminUserActivityItems(users), 'No users loaded yet.');
     renderConsoleFilter();
+    setStatus(`Loaded ${users.length} users.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function loadAuditEvents() {
+  try {
+    const query = new URLSearchParams();
+    const offset = 0;
+    const filters = currentAuditFiltersFromInputs();
+    query.set('offset', String(offset));
+    if (filters.target_entity_type) {
+      query.set('target_entity_type', filters.target_entity_type);
+    }
+    if (filters.target_entity_uuid) {
+      query.set('target_entity_uuid', filters.target_entity_uuid);
+    }
+    if (filters.action) {
+      query.set('action', filters.action);
+    }
+    if (filters.actor_role_name) {
+      query.set('actor_role_name', filters.actor_role_name);
+    }
+    if (filters.limit) {
+      query.set('limit', filters.limit);
+    }
+    const querySuffix = query.toString() ? `?${query.toString()}` : '';
+    const payload = await api(`/api/v1/admin/audit-events${querySuffix}`, { headers: authHeaders() });
+    setAuditState(payload, filters, 'replace');
+    renderConsoleFilter();
+    setStatus(`Loaded ${payload.items.length} audit events.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function loadMoreAuditEvents() {
+  if (auditState.nextOffset === null) {
+    return;
+  }
+  try {
+    const query = new URLSearchParams();
+    const filters = auditState.filters;
+    query.set('offset', String(auditState.nextOffset));
+    if (filters.target_entity_type) {
+      query.set('target_entity_type', filters.target_entity_type);
+    }
+    if (filters.target_entity_uuid) {
+      query.set('target_entity_uuid', filters.target_entity_uuid);
+    }
+    if (filters.action) {
+      query.set('action', filters.action);
+    }
+    if (filters.actor_role_name) {
+      query.set('actor_role_name', filters.actor_role_name);
+    }
+    if (filters.limit) {
+      query.set('limit', filters.limit);
+    }
+    const payload = await api(`/api/v1/admin/audit-events?${query.toString()}`, { headers: authHeaders() });
+    setAuditState(payload, filters, 'append');
+    renderConsoleFilter();
+    setStatus(`Loaded ${payload.items.length} more audit events.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function updateUserStatus() {
+  try {
+    const userUuid = document.getElementById('admin_user_uuid').value.trim();
+    const user = await api(`/api/v1/admin/users/${encodeURIComponent(userUuid)}/status`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        status: document.getElementById('admin_user_status').value,
+        reason_code: document.getElementById('admin_user_reason_code').value.trim(),
+        operator_note: document.getElementById('admin_user_operator_note').value.trim() || null,
+      }),
+    });
+    setStatus(`Updated ${user.email} to ${user.status}.`);
+    await loadAdminUsers();
+    await loadAuditEvents();
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function reassignUserScope() {
+  try {
+    const userUuid = document.getElementById('reassign_user_uuid').value.trim();
+    const user = await api(`/api/v1/admin/users/${encodeURIComponent(userUuid)}/scope`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        distributor_uuid: document.getElementById('reassign_distributor_uuid').value.trim() || null,
+        reseller_uuid: document.getElementById('reassign_reseller_uuid').value.trim() || null,
+        reason_code: document.getElementById('reassign_reason_code').value.trim(),
+        operator_note: document.getElementById('reassign_operator_note').value.trim() || null,
+      }),
+    });
+    setStatus(`Reassigned ${user.email} and restored status ${user.status}.`);
+    await loadAdminUsers();
+    await loadAuditEvents();
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function updateEntitlementStatus() {
+  try {
+    const entitlementUuid = document.getElementById('admin_entitlement_uuid').value.trim();
+    const entitlement = await api(`/api/v1/admin/installations/${encodeURIComponent(entitlementUuid)}/activation-status`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        activation_status: document.getElementById('admin_entitlement_status').value,
+        reason_code: document.getElementById('admin_entitlement_reason_code').value.trim(),
+        operator_note: document.getElementById('admin_entitlement_operator_note').value.trim() || null,
+      }),
+    });
+    setStatus(`Updated entitlement ${entitlement.entitlement_uuid} to ${entitlement.activation_status}.`);
+    await loadInstallations();
+    await loadAuditEvents();
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function supportReinstateUser() {
+  try {
+    const userUuid = document.getElementById('support_user_uuid').value.trim();
+    const user = await api(`/api/v1/support/users/${encodeURIComponent(userUuid)}/reinstate`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        reason_code: document.getElementById('support_reason_code').value.trim(),
+        operator_note: document.getElementById('support_operator_note').value.trim() || null,
+      }),
+    });
+    setStatus(`Emergency reinstated ${user.email}.`);
+    if (userRole() === 'support') {
+      await loadOwnerSummary();
+    }
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -922,6 +1376,8 @@ async function loadOwnerSummary() {
       { label: 'Active Licences', value: summary.active_installation_count },
       { label: 'Grace Licences', value: summary.grace_installation_count },
       { label: 'Pending Activation', value: summary.pending_activation_count },
+      { label: 'Suspended', value: summary.suspended_installation_count },
+      { label: 'Orphaned', value: summary.orphaned_installation_count },
     ]);
     renderActivityList('ownerRecentUpdates', ownerUpdateActivityItems(summary.recent_updates || []), 'No lifecycle activity yet.');
     renderActivityList('ownerRecentHealth', stateReportActivityItems(summary.recent_health_reports || []), 'No owner health activity yet.');
@@ -943,6 +1399,8 @@ async function loadAdminSummary() {
       { label: 'Active', value: summary.active_entitlement_count },
       { label: 'Pending Activation', value: summary.pending_activation_count },
       { label: 'Pending Invitations', value: summary.pending_invitation_count },
+      { label: 'Suspended Users', value: summary.suspended_user_count },
+      { label: 'Orphaned Users', value: summary.orphaned_user_count },
     ]);
     renderActivityList('adminRecentInvitations', invitationActivityItems(summary.recent_invitations || []), 'No invitation activity yet.');
     renderActivityList('adminRecentAssignments', assignmentActivityItems(summary.recent_assignments || []), 'No assignment activity yet.');
@@ -973,6 +1431,8 @@ async function loadResellerSummary() {
       { label: 'Installations', value: summary.installation_count },
       { label: 'Active', value: summary.active_installation_count },
       { label: 'Pending Invitations', value: summary.pending_invitation_count },
+      { label: 'Suspended Owners', value: summary.suspended_owner_count },
+      { label: 'Orphaned Owners', value: summary.orphaned_owner_count },
     ]);
     renderActivityList('resellerRecentAssignments', assignmentActivityItems(summary.recent_assignments || []), 'No reseller assignment activity yet.');
     renderActivityList('resellerRecentHealth', stateReportActivityItems(summary.recent_health_reports || []), 'No reseller health activity yet.');
@@ -996,6 +1456,10 @@ async function loadDistributorSummary() {
       { label: 'Owners', value: summary.owner_count },
       { label: 'Installations', value: summary.installation_count },
       { label: 'Pending Invitations', value: summary.pending_invitation_count },
+      { label: 'Suspended Resellers', value: summary.suspended_reseller_count },
+      { label: 'Orphaned Resellers', value: summary.orphaned_reseller_count },
+      { label: 'Suspended Owners', value: summary.suspended_owner_count },
+      { label: 'Orphaned Owners', value: summary.orphaned_owner_count },
     ]);
     renderActivityList('distributorRecentAssignments', assignmentActivityItems(summary.recent_assignments || []), 'No distributor assignment activity yet.');
     renderActivityList('distributorRecentHealth', stateReportActivityItems(summary.recent_health_reports || []), 'No distributor health activity yet.');
@@ -1033,6 +1497,15 @@ async function loadConsoleLandingData(roleName) {
   if (roleName === 'platform_admin') {
     await loadInstallations();
     await loadAdminUsers();
+    if (activeConsoleFilter === 'audit' || requestedAuditFilters().target_entity_uuid || requestedAuditFilters().target_entity_type) {
+      await loadAuditEvents();
+      const requestedLoaded = Number(requestedAuditFilters().loaded || '0');
+      while (auditState.hasMore && auditState.loadedCount < requestedLoaded) {
+        await loadMoreAuditEvents();
+      }
+    } else {
+      await loadAuditEvents();
+    }
     await loadAdminSummary();
     return;
   }
@@ -1133,6 +1606,7 @@ document.addEventListener('keydown', (event) => {
 document.querySelectorAll('.console-filter').forEach((button) => {
   button.addEventListener('click', () => {
     activeConsoleFilter = button.dataset.consoleFilter || 'all';
+    persistConsoleState();
     renderConsoleFilter();
   });
 });
@@ -1155,6 +1629,12 @@ bindClick('loadInstallations', loadInstallations);
 bindClick('saveInstallation', saveInstallation);
 bindClick('createInvitation', createInvitation);
 bindClick('loadInvitations', loadInvitations);
+bindClick('loadAdminUsersButton', loadAdminUsers);
+bindClick('updateUserStatusButton', updateUserStatus);
+bindClick('reassignUserScopeButton', reassignUserScope);
+bindClick('updateEntitlementStatusButton', updateEntitlementStatus);
+bindClick('loadAuditEventsButton', loadAuditEvents);
+bindClick('loadMoreAuditEventsButton', () => loadMoreAuditEvents().catch((error) => setStatus(error.message, true)));
 bindClick('assignInstallation', () => assignInstallation('/api/v1/admin/installation-assignments', 'assignment_entitlement_uuid', 'assignment_user_email').catch((error) => setStatus(error.message, true)));
 bindClick('resellerInviteButton', async () => {
   try {
@@ -1181,6 +1661,7 @@ bindClick('loadDistributorSummaryTab', loadDistributorSummary);
 bindClick('loadAdminSummary', loadAdminSummary);
 bindClick('loadOverviewResellerSummary', loadResellerSummary);
 bindClick('loadOwnerSummary', loadOwnerSummary);
+bindClick('supportReinstateUserButton', supportReinstateUser);
 bindClick('sessionOpenConsoleButton', () => { window.location.href = '/admin/console'; });
 bindChange('distributor_invite_role_name', syncDistributorInviteForm);
 bindClick('distributorInviteButton', async () => {
@@ -1205,6 +1686,7 @@ syncDistributorInviteForm();
 bindClick('loadDistributorResellersButton', () => loadDistributorScopedUsers('/api/v1/distributor/resellers', 'distributorResellerList', 'No reseller users loaded yet.', 'no reseller'));
 bindClick('loadDistributorOwnersButton', () => loadDistributorScopedUsers('/api/v1/distributor/owners', 'distributorOwnerList', 'No owner users loaded yet.', 'no reseller'));
 prefillInvitationTokenFromUrl();
+applyAuditFiltersToInputs();
 bindClick('distributorAssignButton', () => assignInstallation('/api/v1/distributor/installation-assignments', 'distributor_assignment_entitlement_uuid', 'distributor_assignment_user_email').catch((error) => setStatus(error.message, true)));
 
 const requestedFilter = new URLSearchParams(window.location.search).get('filter');

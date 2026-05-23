@@ -10,6 +10,7 @@ DEFAULT_VALIDATION_DATABASE_URL = os.getenv(
 
 TRUNCATE_STATEMENT = '''
 TRUNCATE TABLE
+    authority_audit_events,
     authority_user_installations,
     authority_sessions,
     authority_invitations,

@@ -141,6 +141,24 @@ def _schema_statements() -> list[str]:
             FOREIGN KEY (entitlement_uuid) REFERENCES entitlements(entitlement_uuid)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS authority_audit_events (
+            audit_event_uuid TEXT PRIMARY KEY,
+            actor_user_uuid TEXT,
+            actor_role_name TEXT,
+            target_entity_type TEXT NOT NULL,
+            target_entity_uuid TEXT NOT NULL,
+            target_email TEXT,
+            action TEXT NOT NULL,
+            previous_state_json TEXT,
+            new_state_json TEXT,
+            scope_before_json TEXT,
+            scope_after_json TEXT,
+            reason_code TEXT,
+            operator_note TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
     ]
 
 
@@ -175,6 +193,12 @@ def _column_exists(connection: Any, table_name: str, column_name: str) -> bool:
         (table_name, column_name),
     ).fetchone()
     return row is not None
+
+
+def _json_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, sort_keys=True)
 
 
 def seed_demo_installation() -> None:
@@ -343,7 +367,9 @@ def authenticate_authority_user(email: str, password: str) -> dict[str, Any] | N
 
     if row is None:
         return None
-    if row["status"] != "active":
+    status = row["status"]
+    role_name = row["role_name"]
+    if status != "active" and not (status == "orphaned" and role_name == "owner"):
         return None
     if not verify_password(password, row["password_hash"]):
         return None
@@ -402,6 +428,425 @@ def revoke_authority_session(session_token: str) -> bool:
         )
         connection.commit()
     return cursor.rowcount > 0
+
+
+def create_authority_audit_event(
+    *,
+    actor_user_uuid: str | None,
+    actor_role_name: str | None,
+    target_entity_type: str,
+    target_entity_uuid: str,
+    action: str,
+    target_email: str | None = None,
+    previous_state: dict[str, Any] | None = None,
+    new_state: dict[str, Any] | None = None,
+    scope_before: dict[str, Any] | None = None,
+    scope_after: dict[str, Any] | None = None,
+    reason_code: str | None = None,
+    operator_note: str | None = None,
+) -> dict[str, Any]:
+    audit_event_uuid = str(uuid.uuid4())
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO authority_audit_events (
+                audit_event_uuid,
+                actor_user_uuid,
+                actor_role_name,
+                target_entity_type,
+                target_entity_uuid,
+                target_email,
+                action,
+                previous_state_json,
+                new_state_json,
+                scope_before_json,
+                scope_after_json,
+                reason_code,
+                operator_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                audit_event_uuid,
+                actor_user_uuid,
+                actor_role_name,
+                target_entity_type,
+                target_entity_uuid,
+                target_email,
+                action,
+                _json_value(previous_state),
+                _json_value(new_state),
+                _json_value(scope_before),
+                _json_value(scope_after),
+                reason_code,
+                operator_note,
+            ),
+        )
+        connection.commit()
+
+    event = get_authority_audit_event_by_uuid(audit_event_uuid)
+    if event is None:
+        raise RuntimeError("Authority audit event creation failed")
+    return event
+
+
+def get_authority_audit_event_by_uuid(audit_event_uuid: str) -> dict[str, Any] | None:
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM authority_audit_events WHERE audit_event_uuid = ?",
+            (audit_event_uuid,),
+        ).fetchone()
+    return _authority_audit_event_row_to_dict(row)
+
+
+def list_authority_audit_events(
+    limit: int = 100,
+    *,
+    offset: int = 0,
+    target_entity_type: str | None = None,
+    target_entity_uuid: str | None = None,
+    action: str | None = None,
+    actor_role_name: str | None = None,
+) -> list[dict[str, Any]]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if target_entity_type:
+        conditions.append("target_entity_type = ?")
+        params.append(target_entity_type)
+    if target_entity_uuid:
+        conditions.append("target_entity_uuid = ?")
+        params.append(target_entity_uuid)
+    if action:
+        conditions.append("action = ?")
+        params.append(action)
+    if actor_role_name:
+        conditions.append("actor_role_name = ?")
+        params.append(actor_role_name)
+
+    query = """
+        SELECT *
+        FROM authority_audit_events
+    """
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY created_at DESC, audit_event_uuid DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+
+    with _connect() as connection:
+        rows = connection.execute(query, tuple(params)).fetchall()
+    return [_authority_audit_event_row_to_dict(row) for row in rows if row is not None]
+
+
+def set_authority_user_status(
+    user_uuid: str,
+    status: str,
+    *,
+    actor_user_uuid: str | None,
+    actor_role_name: str | None,
+    reason_code: str,
+    operator_note: str | None = None,
+) -> dict[str, Any]:
+    allowed_statuses = {"active", "suspended", "removed", "orphaned"}
+    if status not in allowed_statuses:
+        raise ValueError("Unsupported authority user status")
+
+    current_user = get_authority_user_by_uuid(user_uuid)
+    if current_user is None:
+        raise ValueError("Authority user not found")
+    if current_user["status"] == status:
+        return current_user
+
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE authority_users
+            SET status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_uuid = ?
+            """,
+            (status, user_uuid),
+        )
+        if status != "active":
+            connection.execute(
+                """
+                UPDATE authority_sessions
+                SET revoked_at = CURRENT_TIMESTAMP
+                WHERE user_uuid = ? AND revoked_at IS NULL
+                """,
+                (user_uuid,),
+            )
+        orphaned_users = _orphan_dependent_users_for_parent(
+            connection,
+            parent_user=current_user,
+        ) if status == "removed" else []
+        connection.commit()
+
+    updated_user = get_authority_user_by_uuid(user_uuid)
+    if updated_user is None:
+        raise RuntimeError("Authority user status update failed")
+
+    create_authority_audit_event(
+        actor_user_uuid=actor_user_uuid,
+        actor_role_name=actor_role_name,
+        target_entity_type="authority_user",
+        target_entity_uuid=user_uuid,
+        target_email=updated_user["email"],
+        action="user_status_changed",
+        previous_state={"status": current_user["status"]},
+        new_state={"status": updated_user["status"]},
+        scope_before={
+            "role_name": current_user["role_name"],
+            "distributor_uuid": current_user["distributor_uuid"],
+            "reseller_uuid": current_user["reseller_uuid"],
+        },
+        scope_after={
+            "role_name": updated_user["role_name"],
+            "distributor_uuid": updated_user["distributor_uuid"],
+            "reseller_uuid": updated_user["reseller_uuid"],
+        },
+        reason_code=reason_code,
+        operator_note=operator_note,
+    )
+    for orphaned_user in orphaned_users:
+        create_authority_audit_event(
+            actor_user_uuid=actor_user_uuid,
+            actor_role_name=actor_role_name,
+            target_entity_type="authority_user",
+            target_entity_uuid=orphaned_user["user_uuid"],
+            target_email=orphaned_user["email"],
+            action="user_orphaned",
+            previous_state=orphaned_user["previous_state"],
+            new_state=orphaned_user["new_state"],
+            scope_before=orphaned_user["scope_before"],
+            scope_after=orphaned_user["scope_after"],
+            reason_code=reason_code,
+            operator_note=operator_note,
+        )
+    return updated_user
+
+
+def reassign_authority_user_scope(
+    user_uuid: str,
+    *,
+    distributor_uuid: str | None,
+    reseller_uuid: str | None,
+    actor_user_uuid: str | None,
+    actor_role_name: str | None,
+    reason_code: str,
+    operator_note: str | None = None,
+) -> dict[str, Any]:
+    current_user = get_authority_user_by_uuid(user_uuid)
+    if current_user is None:
+        raise ValueError("Authority user not found")
+
+    normalized_distributor_uuid = (distributor_uuid or "").strip() or None
+    normalized_reseller_uuid = (reseller_uuid or "").strip() or None
+
+    if current_user["role_name"] == "owner" and not normalized_distributor_uuid and not normalized_reseller_uuid:
+        raise ValueError("Owner reassignment requires distributor_uuid or reseller_uuid")
+    if current_user["role_name"] == "reseller" and not normalized_distributor_uuid:
+        raise ValueError("Reseller reassignment requires distributor_uuid")
+    if current_user["role_name"] == "distributor":
+        raise ValueError("Distributor reassignment is not supported")
+
+    next_status = current_user["status"]
+    if current_user["status"] == "orphaned":
+        next_status = "active"
+
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE authority_users
+            SET distributor_uuid = ?,
+                reseller_uuid = ?,
+                status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE user_uuid = ?
+            """,
+            (normalized_distributor_uuid, normalized_reseller_uuid, next_status, user_uuid),
+        )
+        connection.commit()
+
+    updated_user = get_authority_user_by_uuid(user_uuid)
+    if updated_user is None:
+        raise RuntimeError("Authority user reassignment failed")
+
+    create_authority_audit_event(
+        actor_user_uuid=actor_user_uuid,
+        actor_role_name=actor_role_name,
+        target_entity_type="authority_user",
+        target_entity_uuid=user_uuid,
+        target_email=updated_user["email"],
+        action="user_scope_reassigned",
+        previous_state={"status": current_user["status"]},
+        new_state={"status": updated_user["status"]},
+        scope_before={
+            "distributor_uuid": current_user["distributor_uuid"],
+            "reseller_uuid": current_user["reseller_uuid"],
+        },
+        scope_after={
+            "distributor_uuid": updated_user["distributor_uuid"],
+            "reseller_uuid": updated_user["reseller_uuid"],
+        },
+        reason_code=reason_code,
+        operator_note=operator_note,
+    )
+    return updated_user
+
+
+def _orphan_dependent_users_for_parent(
+    connection: Any,
+    *,
+    parent_user: dict[str, Any],
+) -> list[dict[str, Any]]:
+    role_name = parent_user["role_name"]
+    if role_name not in {"distributor", "reseller"}:
+        return []
+
+    if role_name == "reseller":
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM authority_users
+            WHERE reseller_uuid = ? AND role_name = 'owner' AND status != 'removed'
+            """,
+            (parent_user["reseller_uuid"],),
+        ).fetchall()
+        dependents = [_authority_user_row_to_dict(row) for row in rows if row is not None]
+        connection.execute(
+            """
+            UPDATE authority_users
+            SET status = 'orphaned',
+                reseller_uuid = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE reseller_uuid = ? AND role_name = 'owner' AND status != 'removed'
+            """,
+            (parent_user["reseller_uuid"],),
+        )
+        return [
+            {
+                "user_uuid": user["user_uuid"],
+                "email": user["email"],
+                "previous_state": {"status": user["status"]},
+                "new_state": {"status": "orphaned"},
+                "scope_before": {
+                    "distributor_uuid": user["distributor_uuid"],
+                    "reseller_uuid": user["reseller_uuid"],
+                },
+                "scope_after": {
+                    "distributor_uuid": user["distributor_uuid"],
+                    "reseller_uuid": None,
+                },
+            }
+            for user in dependents
+            if user["status"] != "orphaned" or user["reseller_uuid"] is not None
+        ]
+
+    reseller_rows = connection.execute(
+        """
+        SELECT *
+        FROM authority_users
+        WHERE distributor_uuid = ? AND role_name = 'reseller' AND status != 'removed'
+        """,
+        (parent_user["distributor_uuid"],),
+    ).fetchall()
+    owner_rows = connection.execute(
+        """
+        SELECT *
+        FROM authority_users
+        WHERE distributor_uuid = ? AND role_name = 'owner' AND status != 'removed'
+        """,
+        (parent_user["distributor_uuid"],),
+    ).fetchall()
+    dependents = [
+        *[_authority_user_row_to_dict(row) for row in reseller_rows if row is not None],
+        *[_authority_user_row_to_dict(row) for row in owner_rows if row is not None],
+    ]
+    connection.execute(
+        """
+        UPDATE authority_users
+        SET status = 'orphaned',
+            distributor_uuid = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE distributor_uuid = ? AND role_name IN ('reseller', 'owner') AND status != 'removed'
+        """,
+        (parent_user["distributor_uuid"],),
+    )
+    return [
+        {
+            "user_uuid": user["user_uuid"],
+            "email": user["email"],
+            "previous_state": {"status": user["status"]},
+            "new_state": {"status": "orphaned"},
+            "scope_before": {
+                "distributor_uuid": user["distributor_uuid"],
+                "reseller_uuid": user["reseller_uuid"],
+            },
+            "scope_after": {
+                "distributor_uuid": None,
+                "reseller_uuid": user["reseller_uuid"],
+            },
+        }
+        for user in dependents
+        if user["status"] != "orphaned" or user["distributor_uuid"] is not None
+    ]
+
+
+def set_entitlement_activation_status(
+    entitlement_uuid: str,
+    activation_status: str,
+    *,
+    actor_user_uuid: str | None,
+    actor_role_name: str | None,
+    reason_code: str,
+    operator_note: str | None = None,
+) -> dict[str, Any]:
+    allowed_statuses = {"pending_activation", "active", "suspended", "revoked", "expired", "orphaned"}
+    if activation_status not in allowed_statuses:
+        raise ValueError("Unsupported entitlement activation status")
+
+    current_entitlement = get_entitlement_by_uuid(entitlement_uuid)
+    if current_entitlement is None:
+        raise ValueError("Entitlement not found")
+    if current_entitlement["activation_status"] == activation_status:
+        return current_entitlement
+
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE entitlements
+            SET activation_status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE entitlement_uuid = ?
+            """,
+            (activation_status, entitlement_uuid),
+        )
+        connection.commit()
+
+    updated_entitlement = get_entitlement_by_uuid(entitlement_uuid)
+    if updated_entitlement is None:
+        raise RuntimeError("Entitlement activation status update failed")
+
+    create_authority_audit_event(
+        actor_user_uuid=actor_user_uuid,
+        actor_role_name=actor_role_name,
+        target_entity_type="entitlement",
+        target_entity_uuid=entitlement_uuid,
+        target_email=updated_entitlement["approved_owner_email"],
+        action="entitlement_status_changed",
+        previous_state={"activation_status": current_entitlement["activation_status"]},
+        new_state={"activation_status": updated_entitlement["activation_status"]},
+        scope_before={
+            "installation_uuid": current_entitlement["installation_uuid"],
+            "licence_status": current_entitlement["licence_status"],
+        },
+        scope_after={
+            "installation_uuid": updated_entitlement["installation_uuid"],
+            "licence_status": updated_entitlement["licence_status"],
+        },
+        reason_code=reason_code,
+        operator_note=operator_note,
+    )
+    return updated_entitlement
 
 
 def bootstrap_authority_admin(email: str, password: str, display_name: str | None = None) -> dict[str, Any]:
@@ -1500,4 +1945,33 @@ def _state_activity_row_to_dict(row: Any | None) -> dict[str, Any] | None:
         "approved_owner_email": row["approved_owner_email"],
         "activation_status": row["activation_status"],
         "licence_status": row["licence_status"],
+    }
+
+
+def _authority_audit_event_row_to_dict(row: Any | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+
+    actor_email = None
+    actor_user_uuid = row["actor_user_uuid"]
+    if actor_user_uuid:
+        actor_user = get_authority_user_by_uuid(actor_user_uuid)
+        actor_email = actor_user["email"] if actor_user is not None else None
+
+    return {
+        "audit_event_uuid": row["audit_event_uuid"],
+        "actor_user_uuid": actor_user_uuid,
+        "actor_email": actor_email,
+        "actor_role_name": row["actor_role_name"],
+        "target_entity_type": row["target_entity_type"],
+        "target_entity_uuid": row["target_entity_uuid"],
+        "target_email": row["target_email"],
+        "action": row["action"],
+        "previous_state": json.loads(row["previous_state_json"] or "null"),
+        "new_state": json.loads(row["new_state_json"] or "null"),
+        "scope_before": json.loads(row["scope_before_json"] or "null"),
+        "scope_after": json.loads(row["scope_after_json"] or "null"),
+        "reason_code": row["reason_code"],
+        "operator_note": row["operator_note"],
+        "created_at": _timestamp_value(row["created_at"]),
     }

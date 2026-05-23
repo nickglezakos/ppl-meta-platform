@@ -22,12 +22,14 @@ assert client.post('/api/v1/auth/register', json={
     'role_name': 'reseller',
     'reseller_uuid': 'reseller-group-1'
 }).status_code == 201
-assert client.post('/api/v1/auth/register', json={
+owner_create = client.post('/api/v1/auth/register', json={
     'email': 'owner2@example.com',
     'password': 'ownerpass1',
     'role_name': 'owner',
     'reseller_uuid': 'reseller-group-1'
-}).status_code == 201
+})
+assert owner_create.status_code == 201
+owner_user_uuid = owner_create.json()['user_uuid']
 assert client.post('/api/v1/admin/installations', json={
     'application_key': 'owner2-key',
     'approved_owner_email': 'owner2@example.com',
@@ -42,11 +44,26 @@ owner_login = client.post('/api/v1/auth/login', json={
 assert owner_login.status_code == 200
 owner_headers = {'Authorization': f"Bearer {owner_login.json()['session_token']}"}
 assert client.get('/api/v1/dashboard/owner/installations', headers=owner_headers).status_code == 200
+admin_summary = client.get('/api/v1/dashboard/admin/summary', headers=admin_headers)
+assert admin_summary.status_code == 200
+assert 'suspended_user_count' in admin_summary.json()
+assert 'orphaned_user_count' in admin_summary.json()
 reseller_login = client.post('/api/v1/auth/login', json={
     'email': 'reseller@example.com',
     'password': 'resellerpass'
 })
 assert reseller_login.status_code == 200
 reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_token']}"}
-assert client.get('/api/v1/dashboard/reseller/summary', headers=reseller_headers).status_code == 200
+reseller_summary = client.get('/api/v1/dashboard/reseller/summary', headers=reseller_headers)
+assert reseller_summary.status_code == 200
+assert 'suspended_owner_count' in reseller_summary.json()
+assert 'orphaned_owner_count' in reseller_summary.json()
+assert client.patch(
+    f'/api/v1/admin/users/{owner_user_uuid}/status',
+    headers=admin_headers,
+    json={'status': 'suspended', 'reason_code': 'dashboard_check'}
+).status_code == 200
+admin_summary_after_suspend = client.get('/api/v1/dashboard/admin/summary', headers=admin_headers)
+assert admin_summary_after_suspend.status_code == 200
+assert admin_summary_after_suspend.json()['suspended_user_count'] >= 1
 print('Authority auth and dashboard validation passed.')

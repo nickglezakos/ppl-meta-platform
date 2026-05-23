@@ -9,6 +9,7 @@ from api.distributor import router as distributor_router
 from api.health import router as health_router
 from api.installations import router as authority_router
 from api.reseller import router as reseller_router
+from api.support import router as support_router
 from core.storage import initialize_database, seed_demo_installation
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,6 +39,7 @@ app.include_router(auth_router)
 app.include_router(dashboard_router)
 app.include_router(distributor_router)
 app.include_router(reseller_router)
+app.include_router(support_router)
 app.include_router(admin_router)
 app.include_router(admin_ui_router)
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from core.auth import require_authority_user
 from core.storage import (
     list_entitlements,
+    list_authority_users,
     list_entitlements_for_distributor_uuid,
     list_entitlements_for_reseller_uuid,
     list_entitlements_for_user_uuid,
@@ -44,12 +45,15 @@ class ResellerOwnerSummary(BaseModel):
     email: str
     display_name: str | None = None
     role_name: str
+    status: str
     installation_count: int
 
 
 class ResellerDashboardSummary(BaseModel):
     reseller_uuid: str
     owner_count: int
+    orphaned_owner_count: int
+    suspended_owner_count: int
     installation_count: int
     active_installation_count: int
     pending_activation_count: int
@@ -65,6 +69,7 @@ class DistributorResellerSummary(BaseModel):
     email: str
     display_name: str | None = None
     reseller_uuid: str | None = None
+    status: str
     owner_count: int
 
 
@@ -73,13 +78,18 @@ class DistributorOwnerSummary(BaseModel):
     email: str
     display_name: str | None = None
     reseller_uuid: str | None = None
+    status: str
     installation_count: int
 
 
 class DistributorDashboardSummary(BaseModel):
     distributor_uuid: str
     reseller_count: int
+    orphaned_reseller_count: int
+    suspended_reseller_count: int
     owner_count: int
+    orphaned_owner_count: int
+    suspended_owner_count: int
     installation_count: int
     active_installation_count: int
     pending_invitation_count: int
@@ -122,6 +132,8 @@ class AdminDashboardSummary(BaseModel):
     active_entitlement_count: int
     pending_activation_count: int
     pending_invitation_count: int
+    suspended_user_count: int
+    orphaned_user_count: int
     recent_invitations: list[InvitationActivity]
     recent_assignments: list[AssignmentActivity]
     recent_health_reports: list[StateReportActivity]
@@ -149,6 +161,8 @@ class OwnerDashboardSummary(BaseModel):
     active_installation_count: int
     grace_installation_count: int
     pending_activation_count: int
+    orphaned_installation_count: int
+    suspended_installation_count: int
     recent_updates: list[OwnerUpdateActivity]
     recent_health_reports: list["StateReportActivity"]
 
@@ -183,6 +197,7 @@ async def admin_summary(
         raise HTTPException(status_code=403, detail="Platform admin role required")
 
     entitlements = list_entitlements()
+    users = list_authority_users()
     invitations = list_invitations()
     recent_invitations = invitations[:5]
     recent_assignments = list_recent_assignment_activity(limit=5)
@@ -195,6 +210,8 @@ async def admin_summary(
             1 for record in entitlements if record["activation_status"] == "pending_activation"
         ),
         pending_invitation_count=sum(1 for record in invitations if record["effective_status"] == "pending"),
+        suspended_user_count=sum(1 for user in users if user["status"] == "suspended"),
+        orphaned_user_count=sum(1 for user in users if user["status"] == "orphaned"),
         recent_invitations=[InvitationActivity(**record) for record in recent_invitations],
         recent_assignments=[AssignmentActivity(**record) for record in recent_assignments],
         recent_health_reports=[StateReportActivity(**record) for record in recent_health_reports],
@@ -233,6 +250,8 @@ async def owner_summary(
         active_installation_count=sum(1 for record in records if record["licence_status"] == "active"),
         grace_installation_count=sum(1 for record in records if record["licence_status"] == "grace"),
         pending_activation_count=sum(1 for record in records if record["activation_status"] == "pending_activation"),
+        orphaned_installation_count=sum(1 for record in records if record["activation_status"] == "orphaned"),
+        suspended_installation_count=sum(1 for record in records if record["activation_status"] == "suspended"),
         recent_updates=[OwnerUpdateActivity(**record) for record in recent_updates],
         recent_health_reports=[StateReportActivity(**record) for record in recent_health_reports],
     )
@@ -271,6 +290,7 @@ async def reseller_summary(
             email=owner["email"],
             display_name=owner["display_name"],
             role_name=owner["role_name"],
+            status=owner["status"],
             installation_count=installations_by_email.get(owner["email"].lower(), 0),
         )
         for owner in owners
@@ -280,6 +300,8 @@ async def reseller_summary(
     return ResellerDashboardSummary(
         reseller_uuid=current_user["reseller_uuid"],
         owner_count=len(owner_summaries),
+        orphaned_owner_count=sum(1 for owner in owner_summaries if owner.status == "orphaned"),
+        suspended_owner_count=sum(1 for owner in owner_summaries if owner.status == "suspended"),
         installation_count=len(installations),
         active_installation_count=sum(1 for installation in installations if installation["activation_status"] == "active"),
         pending_activation_count=sum(
@@ -324,6 +346,7 @@ async def distributor_summary(
             email=reseller["email"],
             display_name=reseller["display_name"],
             reseller_uuid=reseller.get("reseller_uuid"),
+            status=reseller["status"],
             owner_count=owner_count_by_reseller.get(reseller.get("reseller_uuid") or "", 0),
         )
         for reseller in resellers
@@ -340,6 +363,7 @@ async def distributor_summary(
             email=owner["email"],
             display_name=owner["display_name"],
             reseller_uuid=owner.get("reseller_uuid"),
+            status=owner["status"],
             installation_count=installations_by_email.get(owner["email"].lower(), 0),
         )
         for owner in owners
@@ -348,7 +372,11 @@ async def distributor_summary(
     return DistributorDashboardSummary(
         distributor_uuid=distributor_uuid,
         reseller_count=len(reseller_summaries),
+        orphaned_reseller_count=sum(1 for reseller in reseller_summaries if reseller.status == "orphaned"),
+        suspended_reseller_count=sum(1 for reseller in reseller_summaries if reseller.status == "suspended"),
         owner_count=len(owners),
+        orphaned_owner_count=sum(1 for owner in owner_summaries if owner.status == "orphaned"),
+        suspended_owner_count=sum(1 for owner in owner_summaries if owner.status == "suspended"),
         installation_count=len(installations),
         active_installation_count=sum(1 for installation in installations if installation["activation_status"] == "active"),
         pending_invitation_count=sum(1 for invitation in invitations if invitation["effective_status"] == "pending"),

@@ -26,11 +26,24 @@ assert 'id="acceptInvitationForm" class="compact-invitation-form invitation-view
 assert 'id="invite_distributor_uuid"' in admin_html
 assert 'id="currentDistributorScope"' in admin_html
 assert 'id="toastRegion" class="toast-region"' in admin_html
+assert 'id="updateUserStatusButton"' in admin_html
+assert 'id="reassignUserScopeButton"' in admin_html
+assert 'id="updateEntitlementStatusButton"' in admin_html
+assert 'id="loadAuditEventsButton"' in admin_html
+assert 'id="loadMoreAuditEventsButton"' in admin_html
+assert 'id="adminAuditEvents"' in admin_html
+assert 'id="supportReinstateUserButton"' in admin_html
+assert 'id="adminUserDirectory"' in admin_html
+assert 'id="audit_target_entity_type"' in admin_html
+assert 'id="audit_target_entity_uuid"' in admin_html
+assert 'id="audit_action"' in admin_html
+assert 'id="audit_actor_role_name"' in admin_html
 
 console_page = client.get('/admin/console')
 assert console_page.status_code == 200
 console_html = console_page.text
 assert 'data-console-filter="hierarchy"' in console_html
+assert 'data-console-filter="audit"' in console_html
 assert 'id="currentDistributorScope"' in console_html
 assert 'id="toastRegion" class="toast-region"' in console_html
 assert 'data-view="distributor" href="/admin?view=distributor"' in console_html
@@ -41,6 +54,23 @@ assert assets_js.status_code == 200
 js_text = assets_js.text
 assert 'loadDistributorSummary' in js_text
 assert 'loadAdminUsers' in js_text
+assert 'loadAuditEvents' in js_text
+assert 'updateUserStatus' in js_text
+assert 'reassignUserScope' in js_text
+assert 'updateEntitlementStatus' in js_text
+assert 'supportReinstateUser' in js_text
+assert 'adminUserActivityItems' in js_text
+assert 'data-user-quick-status' in js_text
+assert 'data-prepare-reassign' in js_text
+assert 'data-entitlement-status' in js_text
+assert 'data-open-audit' in js_text
+assert 'target_entity_uuid' in js_text
+assert 'target_entity_type' in js_text
+assert 'actor_role_name' in js_text
+assert 'actor_email' in js_text
+assert 'auditTransitionSummary' in js_text
+assert 'loadMoreAuditEvents' in js_text
+assert 'applyAuditFiltersToInputs' in js_text
 assert 'loadDistributorScopedUsers' in js_text
 assert 'function showToast(message, tone = ' in js_text
 assert "pageName === 'admin' && Boolean(requestedInvitationToken)" in js_text

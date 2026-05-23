@@ -319,6 +319,98 @@
                 <button type="button" id="assignInstallation">Assign entitlement</button>
               </div>
             </div>
+
+            <div class="feature-card">
+              <h3>User Lifecycle</h3>
+              <div class="small">Suspend, reinstate, and remove users with explicit reasons. Use reassignment below to recover orphaned users.</div>
+              <div class="row">
+                <label>User UUID<input id="admin_user_uuid" placeholder="Paste user_uuid"></label>
+                <label>Status
+                  <select id="admin_user_status">
+                    <option value="active">active</option>
+                    <option value="suspended">suspended</option>
+                    <option value="removed">removed</option>
+                    <option value="orphaned">orphaned</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row">
+                <label>Reason code<input id="admin_user_reason_code" placeholder="policy_enforcement"></label>
+                <label>Operator note<input id="admin_user_operator_note" placeholder="Optional note"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="updateUserStatusButton">Update user status</button>
+                <button type="button" class="secondary" id="loadAdminUsersButton">Load users</button>
+              </div>
+            </div>
+
+            <div class="feature-card">
+              <h3>User Reassignment</h3>
+              <div class="small">Clear orphan state by assigning the user back into distributor or reseller scope.</div>
+              <div class="row">
+                <label>User UUID<input id="reassign_user_uuid" placeholder="Paste user_uuid"></label>
+                <label>Distributor UUID<input id="reassign_distributor_uuid" placeholder="dist-uuid"></label>
+              </div>
+              <div class="row">
+                <label>Reseller UUID<input id="reassign_reseller_uuid" placeholder="reseller-uuid"></label>
+                <label>Reason code<input id="reassign_reason_code" placeholder="manual_reassignment"></label>
+              </div>
+              <div class="row">
+                <label>Operator note<input id="reassign_operator_note" placeholder="Optional note"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="reassignUserScopeButton">Reassign user scope</button>
+              </div>
+            </div>
+
+            <div class="feature-card">
+              <h3>Entitlement Lifecycle</h3>
+              <div class="small">Change entitlement activation state without deleting the underlying record.</div>
+              <div class="row">
+                <label>Entitlement UUID<input id="admin_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>Activation status
+                  <select id="admin_entitlement_status">
+                    <option value="active">active</option>
+                    <option value="suspended">suspended</option>
+                    <option value="revoked">revoked</option>
+                    <option value="pending_activation">pending_activation</option>
+                    <option value="expired">expired</option>
+                    <option value="orphaned">orphaned</option>
+                  </select>
+                </label>
+              </div>
+              <div class="row">
+                <label>Reason code<input id="admin_entitlement_reason_code" placeholder="commercial_stop"></label>
+                <label>Operator note<input id="admin_entitlement_operator_note" placeholder="Optional note"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="updateEntitlementStatusButton">Update entitlement status</button>
+              </div>
+            </div>
+
+            <div class="feature-card">
+              <h3>Audit History</h3>
+              <div class="row">
+                <label>Entity type<input id="audit_target_entity_type" placeholder="authority_user or entitlement"></label>
+                <label>Entity UUID<input id="audit_target_entity_uuid" placeholder="Target user_uuid or entitlement_uuid"></label>
+              </div>
+              <div class="row">
+                <label>Action<input id="audit_action" placeholder="user_status_changed"></label>
+                <label>Actor role<input id="audit_actor_role_name" placeholder="platform_admin or support"></label>
+                <label>Limit<input id="audit_limit" type="number" min="1" max="500" value="100"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="loadAuditEventsButton">Load audit events</button>
+                <button type="button" class="secondary" id="loadMoreAuditEventsButton">Load more</button>
+              </div>
+              <div id="adminAuditEvents" class="activity-list empty-list">No audit events loaded yet.</div>
+            </div>
+
+            <div class="feature-card">
+              <h3>User Directory</h3>
+              <div class="small">Direct lifecycle actions for common user operations. Suspend, reinstate, or prepare reassignment without copying UUIDs manually.</div>
+              <div id="adminUserDirectory" class="activity-list empty-list">No users loaded yet.</div>
+            </div>
           </div>
         </div>
 
@@ -403,6 +495,22 @@
             <h3>Owner Dashboard</h3>
             <div class="actions">
               <button type="button" id="loadOwnerInstallations">Load my installations</button>
+            </div>
+          </div>
+          <div class="stack role-section" data-role-scope="support">
+            <div class="feature-card">
+              <h3>Emergency Recovery</h3>
+              <div class="small">Support may reinstate suspended owner or reseller users only. Scope reassignment and entitlement changes remain admin-only.</div>
+              <div class="row">
+                <label>User UUID<input id="support_user_uuid" placeholder="Paste suspended user_uuid"></label>
+                <label>Reason code<input id="support_reason_code" placeholder="emergency_recovery"></label>
+              </div>
+              <div class="row">
+                <label>Operator note<input id="support_operator_note" placeholder="Optional note"></label>
+              </div>
+              <div class="actions">
+                <button type="button" id="supportReinstateUserButton">Emergency reinstate user</button>
+              </div>
             </div>
           </div>
         </div>

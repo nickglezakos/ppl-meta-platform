@@ -714,6 +714,35 @@ button.secondary:hover, .tab-button:hover { background: #1a2030; }
   color: var(--muted);
   font-size: 0.84rem;
 }
+.activity-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.activity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.mini-button {
+  min-width: auto;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+}
+.audit-state-block {
+  margin-top: 8px;
+}
+.audit-state-label {
+  display: block;
+  margin-bottom: 4px;
+}
+.audit-transition {
+  margin-top: 8px;
+  color: #dfe8f5;
+  font-size: 0.84rem;
+}
 .empty-list {
   padding: 12px;
   border: 1px dashed var(--border);
