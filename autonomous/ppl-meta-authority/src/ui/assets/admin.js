@@ -416,7 +416,7 @@ function resolvedRequestedView(roleName) {
 
 function preferredViewForRole(roleName) {
   if (roleName === 'platform_admin') {
-    return 'admin';
+    return 'overview';
   }
   if (roleName === 'distributor') {
     return 'distributor';
@@ -427,7 +427,7 @@ function preferredViewForRole(roleName) {
   if (roleName === 'owner' || roleName === 'support') {
     return 'owner';
   }
-  return 'session';
+  return 'overview';
 }
 
 function escapeHtml(value) {
@@ -1146,7 +1146,8 @@ async function handleLogin() {
       await loadConsoleLandingData(payload.user.role_name);
     } else {
       const nextView = resolvedRequestedView(payload.user.role_name);
-      activateView(nextView);
+      const loginLandingView = nextView === 'session' ? 'overview' : nextView;
+      activateView(loginLandingView);
     }
     if (pageName !== 'console' && payload.user.role_name === 'platform_admin') {
       await loadAdminSummary();
