@@ -56,6 +56,7 @@ const viewTitleMap = {
 const searchParams = new URLSearchParams(window.location.search);
 const requestedView = searchParams.get('view');
 const requestedInvitationToken = searchParams.get('invitation_token');
+const requestedPublicView = requestedInvitationToken ? 'invitation' : 'login';
 
 function requestedAuditFilters() {
   return {
@@ -186,12 +187,7 @@ function prefillInvitationTokenFromUrl() {
   }
   tokenField.value = requestedInvitationToken;
   if (currentUser) {
-    activateView('session');
-  } else {
-    const acceptCard = document.getElementById('acceptInvitationCard');
-    if (acceptCard instanceof HTMLElement) {
-      acceptCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    activateView(preferredViewForRole(userRole()));
   }
   setAcceptStatus('Invitation token loaded from your email link. Set your display name and password to accept the invitation.');
 }
@@ -230,12 +226,15 @@ function storeSessionToken(token) {
 function updateAuthView() {
   const isAuthenticated = Boolean(currentUser);
   if (loggedOutPanelEl) {
-    const hideLoggedOutPanel = isAuthenticated || (pageName === 'admin' && Boolean(requestedInvitationToken));
-    loggedOutPanelEl.classList.toggle('hidden', hideLoggedOutPanel);
+    loggedOutPanelEl.classList.toggle('hidden', isAuthenticated || requestedPublicView !== 'login');
   }
   if (authenticatedShellEl) {
     authenticatedShellEl.classList.toggle('hidden', !isAuthenticated);
   }
+  document.querySelectorAll('[data-public-view]').forEach((node) => {
+    const shouldShow = !isAuthenticated && node.dataset.publicView === requestedPublicView;
+    node.classList.toggle('hidden', !shouldShow);
+  });
   document.querySelectorAll('[data-auth-visibility]').forEach((node) => {
     const visibility = node.dataset.authVisibility;
     const shouldShow = visibility === 'authenticated' ? isAuthenticated : !isAuthenticated;
@@ -315,10 +314,6 @@ function syncRoleVisibility() {
     }
   });
 
-  const bootstrapButton = document.getElementById('bootstrapButton');
-  if (bootstrapButton) {
-    bootstrapButton.classList.toggle('hidden', Boolean(currentUser));
-  }
 }
 
 function navigationFocusableElements() {
@@ -1222,8 +1217,7 @@ async function handleAcceptInvitation() {
       }),
     });
     setAcceptStatus(`Invitation accepted for ${payload.email}. You can now log in.`);
-    document.getElementById('login_email').value = payload.email;
-    activateView('session');
+    window.location.href = `/admin?login_email=${encodeURIComponent(payload.email)}`;
   } catch (error) {
     setAcceptStatus(error.message, true);
   }
@@ -1236,21 +1230,8 @@ async function handleLogout() {
     currentUser = null;
     setSession(null, '');
     renderRows([]);
-    setStatus('Session cleared.');
+    window.location.href = '/admin';
   } catch (error) {
-    setStatus(error.message, true);
-  }
-}
-
-async function handleBootstrap() {
-  try {
-    const result = await api('/api/v1/auth/bootstrap-admin', { method: 'POST' });
-    setStatus(`Bootstrap admin ready for ${result.email}. Use change-this-admin-password unless this admin already existed.`);
-  } catch (error) {
-    if (error.message === 'Bootstrap admin flow is disabled') {
-      setStatus('Bootstrap is disabled on the running service. Stop it and start Local Bootstrap Admin mode first.', true);
-      return;
-    }
     setStatus(error.message, true);
   }
 }
@@ -1785,8 +1766,8 @@ bindChange('reassign_user_lookup', () => renderUserLookupResults('reassign_user_
 
 bindFormSubmit('loginForm', handleLogin);
 bindClick('logoutButton', handleLogout);
-bindClick('bootstrapButton', handleBootstrap);
 bindFormSubmit('acceptInvitationForm', handleAcceptInvitation);
+bindClick('backToLoginButton', () => { window.location.href = '/admin'; });
 bindPasswordVisibility('show_login_password', 'login_password');
 bindPasswordVisibility('show_accept_password', 'accept_password');
 bindClick('loadSessionButton', async () => {
@@ -1860,6 +1841,14 @@ bindClick('loadDistributorOwnersButton', () => loadDistributorScopedUsers('/api/
 prefillInvitationTokenFromUrl();
 applyAuditFiltersToInputs();
 bindClick('distributorAssignButton', () => assignInstallation('/api/v1/distributor/installation-assignments', 'distributor_assignment_entitlement_uuid', 'distributor_assignment_user_email').catch((error) => setStatus(error.message, true)));
+
+const requestedLoginEmail = searchParams.get('login_email');
+if (requestedLoginEmail) {
+  const loginEmailField = document.getElementById('login_email');
+  if (loginEmailField instanceof HTMLInputElement) {
+    loginEmailField.value = requestedLoginEmail;
+  }
+}
 
 const requestedFilter = new URLSearchParams(window.location.search).get('filter');
 if (requestedFilter && (requestedFilter === 'all' || Object.prototype.hasOwnProperty.call(consoleRowsByFilter, requestedFilter))) {

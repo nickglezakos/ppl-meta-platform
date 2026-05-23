@@ -20,6 +20,7 @@ assert 'class="menu-toggle-icon"' in admin_html
 assert 'class="view-navigation-user-email" id="currentEmail"' in admin_html
 assert 'Role: <span id="currentRole">' in admin_html
 assert 'data-view="session"' not in admin_html
+assert 'id="bootstrapButton"' not in admin_html
 assert 'id="distributorInviteButton"' in admin_html
 assert 'id="distributor_invite_role_name"' in admin_html
 assert 'id="distributorInviteEmailLabel"' in admin_html
@@ -27,8 +28,11 @@ assert 'id="distributor_invite_reseller_uuid"' not in admin_html
 assert 'id="loadDistributorResellersButton"' in admin_html
 assert 'id="loadDistributorOwnersButton"' in admin_html
 assert 'id="distributorAssignButton"' in admin_html
-assert 'id="acceptInvitationCard" data-auth-visibility="logged-out"' in admin_html
+assert 'id="acceptInvitationCard"' in admin_html
+assert 'data-public-view="login"' in admin_html
+assert 'data-public-view="invitation"' in admin_html
 assert 'id="acceptInvitationForm" class="compact-invitation-form invitation-view-form"' in admin_html
+assert 'id="backToLoginButton"' in admin_html
 assert 'id="invite_distributor_uuid"' in admin_html
 assert 'id="toastRegion" class="toast-region"' in admin_html
 assert 'id="updateUserStatusButton"' in admin_html
@@ -91,11 +95,13 @@ assert 'loadMoreAuditEvents' in js_text
 assert 'applyAuditFiltersToInputs' in js_text
 assert 'loadDistributorScopedUsers' in js_text
 assert 'function showToast(message, tone = ' in js_text
-assert "pageName === 'admin' && Boolean(requestedInvitationToken)" in js_text
 assert 'function resolvedRequestedView(roleName)' in js_text
 assert "nextSearch.set('view', viewId)" in js_text
 assert 'function syncDistributorInviteForm()' in js_text
 assert "owner: ['owner', 'support']" in js_text
+assert 'requestedPublicView' in js_text
+assert "window.location.href = '/admin';" in js_text
+assert 'login_email=' in js_text
 assert 'data-console-filter="hierarchy"' not in js_text
 
 assets_css = client.get('/admin/assets/admin.css')

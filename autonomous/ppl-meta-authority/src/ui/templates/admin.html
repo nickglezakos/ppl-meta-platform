@@ -15,7 +15,7 @@
       <img class="brand-logo" src="/admin/assets/eyenet-dark.svg" alt="Eyent">
     </section>
 
-    <section id="loggedOutPanel" class="card auth-card">
+    <section id="loggedOutPanel" class="card auth-card" data-public-view="login">
       <h2>Login</h2>
       <p class="small auth-copy">Sign in to manage authority users, invitations, installations, and distributor, reseller, or owner workflows. The data console is available as a separate page after login.</p>
       <form id="loginForm">
@@ -24,12 +24,11 @@
         <label class="inline-toggle"><input id="show_login_password" type="checkbox">Show password</label>
         <div class="actions">
           <button type="submit" id="loginButton">Login</button>
-          <button type="button" class="secondary" id="bootstrapButton">Bootstrap Admin</button>
         </div>
       </form>
     </section>
 
-    <section class="card auth-card invitation-view-card" id="acceptInvitationCard" data-auth-visibility="logged-out">
+    <section class="card auth-card invitation-view-card hidden" id="acceptInvitationCard" data-public-view="invitation">
       <div class="merged-bar-title-row">
         <h2>Accept Invitation</h2>
         <label class="inline-toggle compact-toggle"><input id="show_accept_password" type="checkbox">Show password</label>
@@ -43,6 +42,9 @@
           <button type="submit" id="acceptInvitationButton">Accept invitation</button>
         </div>
       </form>
+      <div class="actions">
+        <button type="button" class="secondary" id="backToLoginButton">Back to login</button>
+      </div>
     </section>
 
     <section id="authenticatedShell" class="authority-layout hidden">
