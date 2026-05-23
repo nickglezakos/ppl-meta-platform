@@ -259,6 +259,14 @@ function setSession(user, token = '') {
   setText('shellCurrentEmail', user ? user.email : '-');
   setText('shellCurrentDistributorScope', user && user.distributor_uuid ? user.distributor_uuid : '-');
   setText('shellCurrentResellerScope', user && user.reseller_uuid ? user.reseller_uuid : '-');
+  setText('overviewCurrentRole', user ? user.role_name : 'Unauthenticated');
+  setText('overviewCurrentEmail', user ? user.email : '-');
+  setText('overviewCurrentDistributorScope', user && user.distributor_uuid ? user.distributor_uuid : '-');
+  setText('overviewCurrentResellerScope', user && user.reseller_uuid ? user.reseller_uuid : '-');
+  setText('adminCurrentRole', user ? user.role_name : 'Unauthenticated');
+  setText('adminCurrentEmail', user ? user.email : '-');
+  setText('adminCurrentDistributorScope', user && user.distributor_uuid ? user.distributor_uuid : '-');
+  setText('adminCurrentResellerScope', user && user.reseller_uuid ? user.reseller_uuid : '-');
   setText('metricRole', user ? user.role_name : '-');
   setText('metricDistributorScope', user && user.distributor_uuid ? user.distributor_uuid : '-');
   setText('metricScope', user && user.reseller_uuid ? user.reseller_uuid : '-');
