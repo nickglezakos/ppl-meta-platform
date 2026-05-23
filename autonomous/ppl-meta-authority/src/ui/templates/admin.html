@@ -113,17 +113,7 @@
           </aside>
 
           <div class="view-content">
-            <div class="feature-card compact-session-card persistent-shell-session-bar" data-auth-visibility="authenticated">
-              <div class="session-state compact-session-state session-inline-meta persistent-session-bar">
-                <div><strong>Role:</strong> <span id="shellCurrentRole" class="small">Unauthenticated</span></div>
-                <div><strong>Email:</strong> <span id="shellCurrentEmail" class="small">-</span></div>
-                <div><strong>Distributor:</strong> <span id="shellCurrentDistributorScope" class="small">-</span></div>
-                <div><strong>Reseller:</strong> <span id="shellCurrentResellerScope" class="small">-</span></div>
-              </div>
-            </div>
-        <div id="session" class="view-panel active">
-          <div class="stack session-view-stack">
-            <div class="feature-card session-view-card">
+            <div class="feature-card session-view-card" data-auth-visibility="authenticated">
               <div class="merged-bar-title-row">
                 <h3>Session</h3>
                 <div class="actions compact-actions">
@@ -145,7 +135,8 @@
                 <div><strong>Reseller:</strong> <span id="currentResellerScope" class="small">-</span></div>
               </div>
             </div>
-
+        <div id="session" class="view-panel active">
+          <div class="stack session-view-stack">
             <div class="feature-card">
               <div class="summary-columns">
                 <div>
@@ -168,14 +159,6 @@
         </div>
 
         <div id="overview" class="view-panel">
-          <div class="feature-card compact-session-card persistent-shell-session-bar" data-auth-visibility="authenticated">
-            <div class="session-state compact-session-state session-inline-meta persistent-session-bar">
-              <div><strong>Role:</strong> <span id="overviewCurrentRole" class="small">Unauthenticated</span></div>
-              <div><strong>Email:</strong> <span id="overviewCurrentEmail" class="small">-</span></div>
-              <div><strong>Distributor:</strong> <span id="overviewCurrentDistributorScope" class="small">-</span></div>
-              <div><strong>Reseller:</strong> <span id="overviewCurrentResellerScope" class="small">-</span></div>
-            </div>
-          </div>
           <div class="metric-grid">
             <div class="metric"><div class="label">Role</div><div id="metricRole" class="value">-</div></div>
             <div class="metric"><div class="label">Distributor Scope</div><div id="metricDistributorScope" class="value">-</div></div>
@@ -265,14 +248,6 @@
         </div>
 
         <div id="admin" class="view-panel">
-          <div class="feature-card compact-session-card persistent-shell-session-bar" data-auth-visibility="authenticated">
-            <div class="session-state compact-session-state session-inline-meta persistent-session-bar">
-              <div><strong>Role:</strong> <span id="adminCurrentRole" class="small">Unauthenticated</span></div>
-              <div><strong>Email:</strong> <span id="adminCurrentEmail" class="small">-</span></div>
-              <div><strong>Distributor:</strong> <span id="adminCurrentDistributorScope" class="small">-</span></div>
-              <div><strong>Reseller:</strong> <span id="adminCurrentResellerScope" class="small">-</span></div>
-            </div>
-          </div>
           <div class="stack role-section" data-role-scope="platform_admin">
             <div class="feature-card">
               <h3>Create Entitlement</h3>
