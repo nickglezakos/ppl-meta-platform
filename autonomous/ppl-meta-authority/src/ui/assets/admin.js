@@ -2,6 +2,8 @@ const pageName = document.body.dataset.page || 'admin';
 const SESSION_TOKEN_STORAGE_KEY = 'authority.sessionToken';
 const toastRegionEl = document.getElementById('toastRegion');
 const bodyEl = document.getElementById('dataBody');
+const hierarchyViewEl = document.getElementById('hierarchyView');
+const hierarchyExplainEl = document.getElementById('hierarchyExplain');
 const loggedOutPanelEl = document.getElementById('loggedOutPanel');
 const authenticatedShellEl = document.getElementById('authenticatedShell');
 const TOAST_MAX_COUNT = 5;
@@ -13,6 +15,7 @@ let activeConsoleFilter = 'all';
 let consoleSearchQuery = '';
 let changePasswordReturnFocus = null;
 let adminUsersCache = [];
+let hierarchyViewModel = [];
 let auditState = {
   items: [],
   rows: [],
@@ -579,25 +582,32 @@ function renderActivityList(containerId, items, emptyMessage) {
     });
   });
 
-  container.querySelectorAll('[data-user-quick-status]').forEach((button) => {
+  bindUserLifecycleActions(container);
+  bindAuditJumpActions(container);
+}
+
+function bindUserLifecycleActions(root) {
+  root.querySelectorAll('[data-user-quick-status]').forEach((button) => {
     button.addEventListener('click', async (event) => {
       event.stopPropagation();
       const userUuid = button.dataset.userUuid || '';
       const status = button.dataset.userQuickStatus || '';
+      const statusPath = button.dataset.userStatusPath || `/api/v1/admin/users/${encodeURIComponent(userUuid)}/status`;
+      const reasonCode = button.dataset.userStatusReasonCode || 'ui_quick_action';
       if (!userUuid || !status) {
         return;
       }
       try {
-        await api(`/api/v1/admin/users/${encodeURIComponent(userUuid)}/status`, {
+        await api(statusPath, {
           method: 'PATCH',
           headers: authHeaders(),
           body: JSON.stringify({
             status,
-            reason_code: 'ui_quick_action',
+            reason_code: reasonCode,
           }),
         });
         setStatus(`Updated user status to ${status}.`);
-        await loadAdminUsers();
+        await loadConsoleLandingData(userRole());
         await loadAuditEvents();
       } catch (error) {
         setStatus(error.message, true);
@@ -605,7 +615,7 @@ function renderActivityList(containerId, items, emptyMessage) {
     });
   });
 
-  container.querySelectorAll('[data-prepare-reassign]').forEach((button) => {
+  root.querySelectorAll('[data-prepare-reassign]').forEach((button) => {
     button.addEventListener('click', (event) => {
       event.stopPropagation();
       document.getElementById('reassign_user_uuid').value = button.dataset.userUuid || '';
@@ -616,7 +626,29 @@ function renderActivityList(containerId, items, emptyMessage) {
     });
   });
 
-  bindAuditJumpActions(container);
+  root.querySelectorAll('[data-support-reinstate-user]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const userUuid = button.dataset.supportReinstateUser || '';
+      if (!userUuid) {
+        return;
+      }
+      try {
+        const user = await api(`/api/v1/support/users/${encodeURIComponent(userUuid)}/reinstate`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            reason_code: 'ui_support_emergency_reinstate',
+          }),
+        });
+        setStatus(`Emergency reinstated ${user.email}.`);
+        await loadConsoleLandingData(userRole());
+        await loadAuditEvents();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+  });
 }
 
 function renderRows(rows) {
@@ -624,22 +656,184 @@ function renderRows(rows) {
     return;
   }
   if (!rows.length) {
-    bodyEl.innerHTML = '<tr><td colspan="6" class="small">No rows returned.</td></tr>';
+    bodyEl.innerHTML = '<tr><td colspan="7" class="small">No rows returned.</td></tr>';
     return;
   }
 
+  const columns = [
+    ['Type', 'type'],
+    ['Primary', 'primary'],
+    ['Scope / Status', 'scope'],
+    ['Owner / User', 'owner'],
+    ['Version / Key', 'keyInfo'],
+    ['Details', 'details'],
+    ['Actions', 'actions'],
+  ];
+
   bodyEl.innerHTML = rows.map((row) => `
     <tr>
-      <td>${row.type}</td>
-      <td>${row.primary}</td>
-      <td>${row.scope}</td>
-      <td>${row.owner}</td>
-      <td>${row.keyInfo}</td>
-      <td>${row.details}</td>
+      ${columns.map(([label, key]) => `<td data-label="${escapeHtml(label)}" class="${key === 'actions' ? 'console-actions-cell' : ''}">${row[key] || noConsoleActionsMarkup()}</td>`).join('')}
     </tr>
   `).join('');
 
   bindConsoleActions();
+}
+
+function hierarchySearchMatches(item, query) {
+  if (!query) {
+    return true;
+  }
+  return stripHtml(item.searchText || '').toLowerCase().includes(query);
+}
+
+function renderHierarchyUserCard(user) {
+  return `
+    <article class="hierarchy-user-card">
+      <div class="hierarchy-user-card-header">
+        <div>
+          <div class="hierarchy-user-title">${escapeHtml(user.displayName || user.email || 'Unknown user')}</div>
+          <div class="hierarchy-user-subtitle"><code class="inline">${escapeHtml(user.email || user.userUuid || '-')}</code></div>
+        </div>
+        <div class="hierarchy-user-badges">${statusBadgeMarkup(user.status || 'unknown')} <span class="pill">${escapeHtml(user.roleName || 'user')}</span></div>
+      </div>
+      <div class="hierarchy-user-meta">
+        <span>Distributor: ${escapeHtml(user.distributorUuid || 'unscoped')}</span>
+        <span>Reseller: ${escapeHtml(user.resellerUuid || 'unassigned')}</span>
+        <span>User UUID: <code class="inline">${escapeHtml(user.userUuid || '-')}</code></span>
+      </div>
+      <div class="hierarchy-user-actions">${user.actions || noConsoleActionsMarkup()}</div>
+    </article>
+  `;
+}
+
+function renderHierarchyView(model) {
+  if (!hierarchyViewEl) {
+    return;
+  }
+  const query = consoleSearchQuery;
+  const filteredGroups = (model || []).map((group) => ({
+    ...group,
+    branches: (group.branches || []).map((branch) => ({
+      ...branch,
+      users: (branch.users || []).filter((user) => hierarchySearchMatches(user, query)),
+    })).filter((branch) => hierarchySearchMatches(branch, query) || branch.users.length),
+  })).filter((group) => hierarchySearchMatches(group, query) || group.branches.length);
+
+  if (!filteredGroups.length) {
+    hierarchyViewEl.innerHTML = '<div class="small hierarchy-empty">No hierarchy relationships matched the current data.</div>';
+    bindConsoleActions();
+    return;
+  }
+
+  hierarchyViewEl.innerHTML = filteredGroups.map((group) => `
+    <details class="hierarchy-group" open>
+      <summary class="hierarchy-group-header">
+        <div>
+          <div class="hierarchy-group-title">${escapeHtml(group.title)}</div>
+          <div class="hierarchy-group-subtitle">${escapeHtml(group.subtitle || '')}</div>
+        </div>
+        <div class="hierarchy-group-count">${escapeHtml(String(group.userCount || 0))} users</div>
+      </summary>
+      <div class="hierarchy-branches">
+        ${(group.branches || []).map((branch) => `
+          <details class="hierarchy-branch" open>
+            <summary class="hierarchy-branch-header">
+              <div>
+                <div class="hierarchy-branch-title">${escapeHtml(branch.title)}</div>
+                <div class="hierarchy-branch-subtitle">${escapeHtml(branch.subtitle || '')}</div>
+              </div>
+              <div class="hierarchy-branch-count">${escapeHtml(String((branch.users || []).length))}</div>
+            </summary>
+            <div class="hierarchy-user-list">
+              ${(branch.users || []).map((user) => renderHierarchyUserCard(user)).join('') || '<div class="small hierarchy-empty">No users in this branch.</div>'}
+            </div>
+          </details>
+        `).join('')}
+      </div>
+    </details>
+  `).join('');
+
+  bindConsoleActions();
+}
+
+function noConsoleActionsMarkup() {
+  return '<span class="small">No direct actions</span>';
+}
+
+function consoleActionMenu(label, actionsMarkup) {
+  if (!actionsMarkup) {
+    return noConsoleActionsMarkup();
+  }
+  return `
+    <details class="console-action-menu">
+      <summary>${escapeHtml(label)}</summary>
+      <div class="console-action-menu-panel">${actionsMarkup}</div>
+    </details>
+  `;
+}
+
+function viewerCanManageEntitlements() {
+  return userRole() === 'platform_admin';
+}
+
+function viewerCanPrepareReassign() {
+  return userRole() === 'platform_admin';
+}
+
+function viewerCanUpdateUserStatus(targetRoleName) {
+  return userRole() === 'platform_admin' && targetRoleName !== 'platform_admin';
+}
+
+function viewerCanDistributorManageUser(targetRoleName) {
+  return userRole() === 'distributor' && targetRoleName === 'reseller';
+}
+
+function viewerCanResellerManageUser(targetRoleName) {
+  return userRole() === 'reseller' && targetRoleName === 'owner';
+}
+
+function viewerCanEmergencyReinstate(targetRoleName, targetStatus) {
+  return userRole() === 'support'
+    && targetStatus === 'suspended'
+    && (targetRoleName === 'owner' || targetRoleName === 'reseller');
+}
+
+function buildUserConsoleActions(record) {
+  const actions = [];
+  if (viewerCanUpdateUserStatus(record.role_name)) {
+    const nextStatus = record.status === 'suspended' ? 'active' : 'suspended';
+    const nextLabel = record.status === 'suspended' ? 'Reinstate' : 'Suspend';
+    actions.push(`<button type="button" class="secondary mini-button" data-user-quick-status="${escapeHtml(nextStatus)}" data-user-uuid="${escapeHtml(record.user_uuid)}" data-user-status-path="/api/v1/admin/users/${escapeHtml(record.user_uuid)}/status" data-user-status-reason-code="ui_quick_action">${escapeHtml(nextLabel)}</button>`);
+  }
+  if (viewerCanDistributorManageUser(record.role_name)) {
+    const nextStatus = record.status === 'suspended' ? 'active' : 'suspended';
+    const nextLabel = record.status === 'suspended' ? 'Reinstate' : 'Suspend';
+    actions.push(`<button type="button" class="secondary mini-button" data-user-quick-status="${escapeHtml(nextStatus)}" data-user-uuid="${escapeHtml(record.user_uuid)}" data-user-status-path="/api/v1/distributor/users/${escapeHtml(record.user_uuid)}/status" data-user-status-reason-code="ui_distributor_scope_action">${escapeHtml(nextLabel)}</button>`);
+  }
+  if (viewerCanResellerManageUser(record.role_name)) {
+    const nextStatus = record.status === 'suspended' ? 'active' : 'suspended';
+    const nextLabel = record.status === 'suspended' ? 'Reinstate' : 'Suspend';
+    actions.push(`<button type="button" class="secondary mini-button" data-user-quick-status="${escapeHtml(nextStatus)}" data-user-uuid="${escapeHtml(record.user_uuid)}" data-user-status-path="/api/v1/reseller/users/${escapeHtml(record.user_uuid)}/status" data-user-status-reason-code="ui_reseller_scope_action">${escapeHtml(nextLabel)}</button>`);
+  }
+  if (viewerCanEmergencyReinstate(record.role_name, record.status)) {
+    actions.push(`<button type="button" class="secondary mini-button" data-support-reinstate-user="${escapeHtml(record.user_uuid)}">Emergency reinstate</button>`);
+  }
+  if (viewerCanPrepareReassign()) {
+    actions.push(`<button type="button" class="secondary mini-button" data-prepare-reassign="true" data-user-uuid="${escapeHtml(record.user_uuid)}" data-distributor-uuid="${escapeHtml(record.distributor_uuid || '')}" data-reseller-uuid="${escapeHtml(record.reseller_uuid || '')}">Prepare reassign</button>`);
+  }
+  actions.push(`<button type="button" class="secondary mini-button" data-open-audit="true" data-audit-target-entity-type="authority_user" data-audit-target-entity-uuid="${escapeHtml(record.user_uuid)}">Audit</button>`);
+  return consoleActionMenu('Actions', actions.join(''));
+}
+
+function buildEntitlementConsoleActions(record) {
+  const actions = [];
+  if (viewerCanManageEntitlements()) {
+    actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button>`);
+    actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button>`);
+    actions.push(`<button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button>`);
+  }
+  actions.push(`<button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button>`);
+  return consoleActionMenu('Actions', actions.join(''));
 }
 
 function stripHtml(value) {
@@ -647,7 +841,7 @@ function stripHtml(value) {
 }
 
 function rowSearchText(row) {
-  return [row.type, row.primary, row.scope, row.owner, row.keyInfo, row.details]
+  return [row.type, row.primary, row.scope, row.owner, row.keyInfo, row.details, row.actions]
     .map((value) => stripHtml(value).toLowerCase())
     .join(' ');
 }
@@ -694,7 +888,20 @@ function renderConsoleFilter() {
     const filterName = element.dataset.filterCount || 'all';
     element.textContent = String(counts[filterName] || 0);
   });
-  if (bodyEl) {
+  const tableWrapEl = document.querySelector('.table-wrap');
+  const showHierarchyView = activeConsoleFilter === 'hierarchy';
+  if (hierarchyViewEl) {
+    hierarchyViewEl.classList.toggle('hidden', !showHierarchyView);
+  }
+  if (hierarchyExplainEl) {
+    hierarchyExplainEl.classList.toggle('hidden', !showHierarchyView);
+  }
+  if (tableWrapEl) {
+    tableWrapEl.classList.toggle('hidden', showHierarchyView);
+  }
+  if (showHierarchyView) {
+    renderHierarchyView(hierarchyViewModel);
+  } else if (bodyEl) {
     renderRows(rowsForActiveFilter());
   }
 }
@@ -731,6 +938,7 @@ function resetConsoleRows() {
       limit: '',
     },
   };
+  hierarchyViewModel = [];
 }
 
 function updateEventRows(records) {
@@ -762,7 +970,8 @@ function entitlementRows(records) {
     scope: `${statusBadgeMarkup(record.activation_status)}<br><span class="small">${record.tenant_name || 'No tenant'}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code><br><span class="small">${record.licence_status}</span>`,
-    details: `${record.installation_uuid || 'unbound'}<br><span class="small">grace ${record.offline_grace_days}d</span><div class="token-actions"><button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button><button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button><button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button></div>`,
+    details: `${record.installation_uuid || 'unbound'}<br><span class="small">grace ${record.offline_grace_days}d</span>`,
+    actions: buildEntitlementConsoleActions(record),
   }));
 }
 
@@ -773,7 +982,8 @@ function invitationRows(records) {
     scope: `<span class="pill ${badgeClassForStatus(record.effective_status || record.status)}">${escapeHtml(record.effective_status || record.status)}</span><br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller scope')}</span>`,
     owner: escapeHtml(record.email),
     keyInfo: `<code class="inline">${escapeHtml(record.role_name)}</code>`,
-    details: `<div class="token-actions"><code class="inline">${escapeHtml(record.invitation_token)}</code><button type="button" class="mini-button" data-copy-token="${escapeHtml(record.invitation_token)}">Copy</button><button type="button" class="mini-button" data-fill-token="${escapeHtml(record.invitation_token)}">Use</button></div>${escapeHtml(record.email_delivery_message || 'Email delivery status unavailable.')}<br>${formatLifecycleTimestamp('created', record.created_at)}<br>${formatLifecycleTimestamp('expires', record.expires_at)}<br>${formatLifecycleTimestamp('accepted', record.accepted_at)}`,
+    details: `<code class="inline">${escapeHtml(record.invitation_token)}</code><br>${escapeHtml(record.email_delivery_message || 'Email delivery status unavailable.')}<br>${formatLifecycleTimestamp('created', record.created_at)}<br>${formatLifecycleTimestamp('expires', record.expires_at)}<br>${formatLifecycleTimestamp('accepted', record.accepted_at)}`,
+    actions: consoleActionMenu('Actions', `<button type="button" class="mini-button" data-copy-token="${escapeHtml(record.invitation_token)}">Copy token</button><button type="button" class="mini-button" data-fill-token="${escapeHtml(record.invitation_token)}">Use token</button>`),
   }));
 }
 
@@ -837,6 +1047,7 @@ function bindConsoleActions() {
     });
   });
 
+  bindUserLifecycleActions(document);
   bindAuditJumpActions(document);
 }
 
@@ -875,7 +1086,8 @@ function resellerSummaryRows(summary) {
     scope: `${summary.reseller_uuid}<br><span class="small">${statusBadgeMarkup(record.activation_status)}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code>`,
-    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span><div class="token-actions"><button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button><button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button><button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button></div>`,
+    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span>`,
+    actions: buildEntitlementConsoleActions(record),
   }));
 }
 
@@ -887,7 +1099,8 @@ function distributorSummaryRows(summary) {
     scope: `${summary.distributor_uuid}<br><span class="small">${statusBadgeMarkup(record.activation_status)}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code>`,
-    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span><div class="token-actions"><button type="button" class="mini-button secondary" data-entitlement-status="active" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Activate</button><button type="button" class="mini-button secondary" data-entitlement-status="suspended" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Suspend</button><button type="button" class="mini-button secondary" data-entitlement-status="revoked" data-entitlement-uuid="${escapeHtml(record.entitlement_uuid)}">Revoke</button><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="entitlement" data-audit-target-entity-uuid="${escapeHtml(record.entitlement_uuid)}">Audit</button></div>`,
+    details: `${record.tenant_name || 'No tenant'}<br><span class="small">${record.licence_status}</span>`,
+    actions: buildEntitlementConsoleActions(record),
   }));
 }
 
@@ -899,6 +1112,7 @@ function userRows(records) {
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
     details: `${statusBadgeMarkup(record.status)}<br><span class="small">updated ${escapeHtml(record.updated_at || record.created_at || '-')}</span>`,
+    actions: buildUserConsoleActions(record),
   }));
 }
 
@@ -910,7 +1124,168 @@ function hierarchyRowsFromUsers(records) {
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
     details: `${escapeHtml(record.status)}<br><span class="small">${escapeHtml(record.created_at || '-')}</span>`,
+    actions: buildUserConsoleActions(record),
   }));
+}
+
+function normalizeHierarchyUser(record, roleNameOverride = null) {
+  return {
+    userUuid: record.user_uuid,
+    email: record.email,
+    displayName: record.display_name || '',
+    roleName: roleNameOverride || record.role_name || 'user',
+    status: record.status || 'unknown',
+    distributorUuid: record.distributor_uuid || '',
+    resellerUuid: record.reseller_uuid || '',
+    actions: buildUserConsoleActions(record),
+    searchText: [
+      record.email,
+      record.display_name,
+      roleNameOverride || record.role_name,
+      record.status,
+      record.distributor_uuid,
+      record.reseller_uuid,
+      record.user_uuid,
+    ].join(' '),
+  };
+}
+
+function hierarchyBranch(title, subtitle, users) {
+  return {
+    title,
+    subtitle,
+    users,
+    searchText: [title, subtitle, ...users.map((user) => user.searchText)].join(' '),
+  };
+}
+
+function buildHierarchyModelFromUsers(records) {
+  const distributorGroups = new Map();
+  const unscopedUsers = [];
+
+  records.forEach((record) => {
+    const user = normalizeHierarchyUser(record);
+    const distributorKey = record.distributor_uuid || '__unscoped__';
+    if (!record.distributor_uuid) {
+      unscopedUsers.push(user);
+      return;
+    }
+    if (!distributorGroups.has(distributorKey)) {
+      distributorGroups.set(distributorKey, {
+        title: `Distributor ${record.distributor_uuid}`,
+        subtitle: 'Tenant root for reseller and owner scope',
+        resellerManagers: [],
+        resellers: new Map(),
+        directOwners: [],
+      });
+    }
+    const group = distributorGroups.get(distributorKey);
+    if (record.role_name === 'distributor') {
+      group.resellerManagers.push(user);
+      return;
+    }
+    if (record.role_name === 'reseller') {
+      const resellerKey = record.reseller_uuid || `__reseller__${record.user_uuid}`;
+      const resellerBranch = group.resellers.get(resellerKey) || {
+        title: `Reseller ${record.reseller_uuid || 'pending scope'}`,
+        subtitle: 'Reseller account and its owner users',
+        users: [],
+      };
+      resellerBranch.users.unshift(user);
+      group.resellers.set(resellerKey, resellerBranch);
+      return;
+    }
+    if (record.role_name === 'owner') {
+      if (record.reseller_uuid) {
+        const resellerKey = record.reseller_uuid;
+        const resellerBranch = group.resellers.get(resellerKey) || {
+          title: `Reseller ${record.reseller_uuid}`,
+          subtitle: 'Scoped owner accounts',
+          users: [],
+        };
+        resellerBranch.users.push(user);
+        group.resellers.set(resellerKey, resellerBranch);
+      } else {
+        group.directOwners.push(user);
+      }
+      return;
+    }
+    group.directOwners.push(user);
+  });
+
+  const models = Array.from(distributorGroups.values()).map((group) => {
+    const branches = [];
+    if (group.resellerManagers.length) {
+      branches.push(hierarchyBranch('Distributor managers', 'Accounts invited at the distributor level', group.resellerManagers));
+    }
+    Array.from(group.resellers.values()).forEach((resellerBranch) => {
+      branches.push(hierarchyBranch(resellerBranch.title, resellerBranch.subtitle, resellerBranch.users));
+    });
+    if (group.directOwners.length) {
+      branches.push(hierarchyBranch('Direct distributor users', 'Users scoped to the distributor without a reseller branch', group.directOwners));
+    }
+    return {
+      title: group.title,
+      subtitle: group.subtitle,
+      branches,
+      userCount: branches.reduce((total, branch) => total + branch.users.length, 0),
+      searchText: [group.title, group.subtitle, ...branches.map((branch) => branch.searchText)].join(' '),
+    };
+  });
+
+  if (unscopedUsers.length) {
+    const unscopedBranch = hierarchyBranch('Unscoped accounts', 'Users not yet attached to a distributor or reseller branch', unscopedUsers);
+    models.push({
+      title: 'Unscoped hierarchy',
+      subtitle: 'Accounts that exist but are not attached to a tenant branch',
+      branches: [unscopedBranch],
+      userCount: unscopedUsers.length,
+      searchText: `Unscoped hierarchy ${unscopedBranch.searchText}`,
+    });
+  }
+
+  return models;
+}
+
+function buildHierarchyModelFromDistributorSummary(summary) {
+  const resellerBranches = (summary.resellers || []).map((record) => {
+    const resellerUser = normalizeHierarchyUser(record, 'reseller');
+    const ownerUsers = (summary.owners || [])
+      .filter((owner) => owner.reseller_uuid === record.reseller_uuid)
+      .map((owner) => normalizeHierarchyUser(owner, 'owner'));
+    return hierarchyBranch(
+      `Reseller ${record.reseller_uuid || record.email}`,
+      `${record.owner_count || ownerUsers.length} owners in scope`,
+      [resellerUser, ...ownerUsers],
+    );
+  });
+
+  const unassignedOwners = (summary.owners || [])
+    .filter((owner) => !(summary.resellers || []).some((reseller) => reseller.reseller_uuid === owner.reseller_uuid))
+    .map((owner) => normalizeHierarchyUser(owner, 'owner'));
+  if (unassignedOwners.length) {
+    resellerBranches.push(hierarchyBranch('Unassigned owners', 'Owner accounts without a matching reseller branch', unassignedOwners));
+  }
+
+  return [{
+    title: `Distributor ${summary.distributor_uuid}`,
+    subtitle: 'Resellers and owners grouped by delegated scope',
+    branches: resellerBranches,
+    userCount: resellerBranches.reduce((total, branch) => total + branch.users.length, 0),
+    searchText: [`Distributor ${summary.distributor_uuid}`, ...resellerBranches.map((branch) => branch.searchText)].join(' '),
+  }];
+}
+
+function buildHierarchyModelFromResellerSummary(summary) {
+  const ownerUsers = (summary.owners || []).map((record) => normalizeHierarchyUser(record, 'owner'));
+  const ownerBranch = hierarchyBranch('Owner accounts', 'Users invited into this reseller scope', ownerUsers);
+  return [{
+    title: `Reseller ${summary.reseller_uuid}`,
+    subtitle: `Distributor ${currentUser?.distributor_uuid || 'unscoped distributor'}`,
+    branches: [ownerBranch],
+    userCount: ownerUsers.length,
+    searchText: [`Reseller ${summary.reseller_uuid}`, ownerBranch.searchText].join(' '),
+  }];
 }
 
 function hierarchyRowsFromDistributorSummary(summary) {
@@ -921,6 +1296,7 @@ function hierarchyRowsFromDistributorSummary(summary) {
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
     details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.owner_count))} owners</span>`,
+    actions: buildUserConsoleActions(record),
   }));
   const ownerRows = (summary.owners || []).map((record) => ({
     type: '<span class="pill">owner</span>',
@@ -929,6 +1305,7 @@ function hierarchyRowsFromDistributorSummary(summary) {
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
     details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.installation_count))} installations</span>`,
+    actions: buildUserConsoleActions(record),
   }));
   return [...resellerRows, ...ownerRows];
 }
@@ -941,6 +1318,7 @@ function hierarchyRowsFromResellerSummary(summary) {
     owner: escapeHtml(record.display_name || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
     details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.installation_count))} installations</span>`,
+    actions: buildUserConsoleActions(record),
   }));
 }
 
@@ -1050,7 +1428,8 @@ function auditEventRows(records) {
     scope: `${escapeHtml(record.target_entity_type)}<br><span class="small">${escapeHtml(record.created_at || '-')}</span>`,
     owner: escapeHtml(record.target_email || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.action)}</code>`,
-    details: `${escapeHtml(record.reason_code || 'no reason')}<br><span class="small">${escapeHtml(record.actor_email || record.actor_role_name || 'unknown actor')}</span>${auditTransitionSummary(record)}${formatAuditStateBlock('previous', record.previous_state)}${formatAuditStateBlock('new', record.new_state)}${formatAuditStateBlock('scope before', record.scope_before)}${formatAuditStateBlock('scope after', record.scope_after)}<div class="token-actions"><button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="${escapeHtml(record.target_entity_type)}" data-audit-target-entity-uuid="${escapeHtml(record.target_entity_uuid)}">Focus entity</button></div>`,
+    details: `${escapeHtml(record.reason_code || 'no reason')}<br><span class="small">${escapeHtml(record.actor_email || record.actor_role_name || 'unknown actor')}</span>${auditTransitionSummary(record)}${formatAuditStateBlock('previous', record.previous_state)}${formatAuditStateBlock('new', record.new_state)}${formatAuditStateBlock('scope before', record.scope_before)}${formatAuditStateBlock('scope after', record.scope_after)}`,
+    actions: consoleActionMenu('Actions', `<button type="button" class="mini-button secondary" data-open-audit="true" data-audit-target-entity-type="${escapeHtml(record.target_entity_type)}" data-audit-target-entity-uuid="${escapeHtml(record.target_entity_uuid)}">Focus entity</button>`),
   }));
 }
 
@@ -1316,6 +1695,7 @@ async function loadAdminUsers() {
     adminUsersCache = users;
     setConsoleRows('users', userRows(users));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(users));
+    hierarchyViewModel = buildHierarchyModelFromUsers(users);
     renderActivityList('adminUserDirectory', adminUserActivityItems(users), 'No users loaded yet.');
     renderUserLookupResults('admin_user_lookup', 'adminUserLookupResults', 'lifecycle');
     renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign');
@@ -1640,6 +2020,7 @@ async function loadResellerSummary() {
     setConsoleRows('entitlements', resellerSummaryRows(summary));
     setConsoleRows('users', userRows(summary.owners || []));
     setConsoleRows('hierarchy', hierarchyRowsFromResellerSummary(summary));
+    hierarchyViewModel = buildHierarchyModelFromResellerSummary(summary);
     setConsoleRows('health', stateReportRows(summary.recent_health_reports || []));
     renderConsoleFilter();
     setStatus(`Loaded reseller summary for ${summary.reseller_uuid}.`);
@@ -1668,6 +2049,7 @@ async function loadDistributorSummary() {
     setConsoleRows('entitlements', distributorSummaryRows(summary));
     setConsoleRows('users', userRows([...(summary.resellers || []), ...(summary.owners || [])]));
     setConsoleRows('hierarchy', hierarchyRowsFromDistributorSummary(summary));
+    hierarchyViewModel = buildHierarchyModelFromDistributorSummary(summary);
     setConsoleRows('assignments', (summary.recent_assignments || []).map((record) => ({
       type: '<span class="pill">Assignment</span>',
       primary: `<code class="inline">${escapeHtml(record.assignment_uuid)}</code>`,
@@ -1690,6 +2072,7 @@ async function loadDistributorScopedUsers(path, targetId, emptyMessage, emptySco
     renderActivityList(targetId, scopedUserActivityItems(records, emptyScopeLabel), emptyMessage);
     setConsoleRows('users', userRows(records));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(records));
+    hierarchyViewModel = buildHierarchyModelFromUsers(records);
     renderConsoleFilter();
     setStatus(`Loaded ${records.length} scoped users.`);
   } catch (error) {

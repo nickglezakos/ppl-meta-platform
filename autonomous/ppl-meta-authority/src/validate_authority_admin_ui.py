@@ -65,6 +65,8 @@ assert 'data-console-filter="hierarchy"' in console_html
 assert 'data-console-filter="audit"' in console_html
 assert 'data-console-filter="users"' in console_html
 assert 'id="consoleSearchInput"' in console_html
+assert '<th>Actions</th>' in console_html
+assert 'colspan="7"' in console_html
 assert 'id="openChangePasswordButton"' in console_html
 assert 'id="changePasswordModal"' in console_html
 assert 'class="menu-toggle-icon"' in console_html
@@ -94,6 +96,11 @@ assert 'data-prepare-reassign' in js_text
 assert 'data-select-user-lookup' in js_text
 assert 'data-entitlement-status' in js_text
 assert 'data-open-audit' in js_text
+assert 'data-support-reinstate-user' in js_text
+assert 'buildUserConsoleActions' in js_text
+assert 'buildEntitlementConsoleActions' in js_text
+assert 'viewerCanManageEntitlements' in js_text
+assert 'viewerCanEmergencyReinstate' in js_text
 assert 'target_entity_uuid' in js_text
 assert 'target_entity_type' in js_text
 assert 'actor_role_name' in js_text
@@ -116,4 +123,11 @@ assert 'data-console-filter="hierarchy"' not in js_text
 
 assets_css = client.get('/admin/assets/admin.css')
 assert assets_css.status_code == 200
+css_text = assets_css.text
+assert '.console-action-menu' in css_text
+assert '.console-actions-cell' in css_text
+assert 'td::before {' in css_text
+assert 'content: attr(data-label);' in css_text
+assert 'thead {' in css_text
+assert 'display: none;' in css_text
 print('Authority admin UI validation passed.')

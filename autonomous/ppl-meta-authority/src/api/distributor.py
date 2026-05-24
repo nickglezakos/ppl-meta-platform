@@ -7,10 +7,12 @@ from core.storage import (
     assign_entitlement_to_user,
     create_invitation,
     get_authority_user_by_email,
+    get_authority_user_by_uuid,
     find_installation_by_owner_email,
     get_entitlement_by_uuid,
     list_owner_users_by_distributor_uuid,
     list_reseller_users_by_distributor_uuid,
+    set_authority_user_status,
     update_invitation_email_delivery,
 )
 
@@ -69,6 +71,12 @@ class DistributorInstallationAssignmentResponse(BaseModel):
     created_at: str
 
 
+class DistributorUserStatusChangeRequest(BaseModel):
+    status: str = Field(pattern="^(active|suspended)$")
+    reason_code: str = Field(min_length=1)
+    operator_note: str | None = None
+
+
 def _resolve_distributor_scope(current_user: dict[str, str], requested_distributor_uuid: str | None = None) -> str | None:
     if current_user["role_name"] == "platform_admin":
         return requested_distributor_uuid
@@ -79,6 +87,18 @@ def _resolve_distributor_scope(current_user: dict[str, str], requested_distribut
     if requested_distributor_uuid and requested_distributor_uuid != distributor_uuid:
         raise HTTPException(status_code=403, detail="Requested distributor scope does not match current distributor account")
     return distributor_uuid
+
+
+def _validate_distributor_user_status_target(
+    current_user: dict[str, str],
+    target_user: dict[str, str],
+) -> None:
+    if target_user["role_name"] != "reseller":
+        raise HTTPException(status_code=403, detail="Distributor may only suspend or reinstate reseller users")
+
+    distributor_uuid = _resolve_distributor_scope(current_user, target_user.get("distributor_uuid"))
+    if current_user["role_name"] != "platform_admin" and distributor_uuid != current_user.get("distributor_uuid"):
+        raise HTTPException(status_code=403, detail="Target reseller is outside distributor scope")
 
 
 @router.get("/resellers", response_model=list[DistributorScopedUserResponse])
@@ -163,3 +183,32 @@ async def distributor_assign_installation(
         assigned_by_user_uuid=current_user.get("user_uuid"),
     )
     return DistributorInstallationAssignmentResponse(**assignment)
+
+
+@router.patch("/users/{user_uuid}/status", response_model=DistributorScopedUserResponse)
+async def distributor_update_user_status(
+    user_uuid: str,
+    payload: DistributorUserStatusChangeRequest,
+    current_user: dict[str, str] = Depends(require_distributor_or_platform_admin),
+) -> DistributorScopedUserResponse:
+    target_user = get_authority_user_by_uuid(user_uuid)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="Authority user not found")
+
+    _validate_distributor_user_status_target(current_user, target_user)
+
+    try:
+        user = set_authority_user_status(
+            user_uuid=user_uuid,
+            status=payload.status,
+            actor_user_uuid=current_user.get("user_uuid"),
+            actor_role_name=current_user.get("role_name"),
+            reason_code=payload.reason_code,
+            operator_note=payload.operator_note,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if detail.endswith("not found") else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+    return DistributorScopedUserResponse(**user)

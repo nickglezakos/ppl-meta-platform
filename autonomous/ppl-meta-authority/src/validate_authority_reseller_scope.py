@@ -61,6 +61,54 @@ owner_login = client.post('/api/v1/auth/login', json={
 })
 assert owner_login.status_code == 200
 owner_headers = {'Authorization': f"Bearer {owner_login.json()['session_token']}"}
+owner_user_uuid = owner_login.json()['user']['user_uuid']
+
+reseller_suspend_owner = client.patch(
+    f'/api/v1/reseller/users/{owner_user_uuid}/status',
+    json={
+        'status': 'suspended',
+        'reason_code': 'scope_policy_test',
+    },
+    headers=reseller_headers,
+)
+assert reseller_suspend_owner.status_code == 200, reseller_suspend_owner.text
+assert reseller_suspend_owner.json()['status'] == 'suspended'
+
+owner_login_denied = client.post('/api/v1/auth/login', json={
+    'email': 'invited4@example.com',
+    'password': 'invitepass4'
+})
+assert owner_login_denied.status_code == 401, owner_login_denied.text
+
+reseller_reinstate_owner = client.patch(
+    f'/api/v1/reseller/users/{owner_user_uuid}/status',
+    json={
+        'status': 'active',
+        'reason_code': 'scope_policy_test',
+    },
+    headers=reseller_headers,
+)
+assert reseller_reinstate_owner.status_code == 200, reseller_reinstate_owner.text
+assert reseller_reinstate_owner.json()['status'] == 'active'
+
+reseller_suspend_self = client.patch(
+    f"/api/v1/reseller/users/{reseller_login.json()['user']['user_uuid']}/status",
+    json={
+        'status': 'suspended',
+        'reason_code': 'scope_policy_test',
+    },
+    headers=reseller_headers,
+)
+assert reseller_suspend_self.status_code == 403, reseller_suspend_self.text
+assert reseller_suspend_self.json()['detail'] == 'Reseller may only suspend or reinstate owner users'
+
+owner_login = client.post('/api/v1/auth/login', json={
+    'email': 'invited4@example.com',
+    'password': 'invitepass4'
+})
+assert owner_login.status_code == 200, owner_login.text
+owner_headers = {'Authorization': f"Bearer {owner_login.json()['session_token']}"}
+
 assert owner_login.json()['user']['distributor_uuid'] == 'distributor-group-4'
 assert client.get('/api/v1/dashboard/owner/installations', headers=owner_headers).status_code == 200
 assert client.get('/api/v1/dashboard/reseller/summary', headers=reseller_headers).status_code == 200

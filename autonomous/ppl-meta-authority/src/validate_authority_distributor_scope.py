@@ -106,6 +106,41 @@ assert reseller_list.status_code == 200
 assert len(reseller_list.json()) == 1
 assert reseller_list.json()[0]['email'] == 'dist-reseller@example.com'
 
+reseller_user_uuid = reseller_list.json()[0]['user_uuid']
+distributor_suspend_reseller = client.patch(
+    f'/api/v1/distributor/users/{reseller_user_uuid}/status',
+    json={
+        'status': 'suspended',
+        'reason_code': 'scope_policy_test',
+    },
+    headers=distributor_headers,
+)
+assert distributor_suspend_reseller.status_code == 200, distributor_suspend_reseller.text
+assert distributor_suspend_reseller.json()['status'] == 'suspended'
+
+distributor_reinstate_reseller = client.patch(
+    f'/api/v1/distributor/users/{reseller_user_uuid}/status',
+    json={
+        'status': 'active',
+        'reason_code': 'scope_policy_test',
+    },
+    headers=distributor_headers,
+)
+assert distributor_reinstate_reseller.status_code == 200, distributor_reinstate_reseller.text
+assert distributor_reinstate_reseller.json()['status'] == 'active'
+
+owner_user_uuid = owner_list.json()[0]['user_uuid']
+distributor_suspend_owner = client.patch(
+    f'/api/v1/distributor/users/{owner_user_uuid}/status',
+    json={
+        'status': 'suspended',
+        'reason_code': 'scope_policy_test',
+    },
+    headers=distributor_headers,
+)
+assert distributor_suspend_owner.status_code == 403, distributor_suspend_owner.text
+assert distributor_suspend_owner.json()['detail'] == 'Distributor may only suspend or reinstate reseller users'
+
 assignment = client.post('/api/v1/distributor/installation-assignments', json={
     'entitlement_uuid': owner_entitlement.json()['entitlement_uuid'],
     'user_email': 'dist-owner@example.com'

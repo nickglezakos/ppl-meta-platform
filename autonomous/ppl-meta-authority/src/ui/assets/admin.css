@@ -368,6 +368,140 @@ h1 {
   line-height: 1.35;
   color: var(--muted);
 }
+.hierarchy-view {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+.hierarchy-explain {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  background: rgba(21, 24, 38, 0.56);
+}
+.hierarchy-group {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(12, 15, 24, 0.9), rgba(8, 10, 16, 0.94));
+}
+.hierarchy-group-header,
+.hierarchy-branch-header,
+.hierarchy-user-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.hierarchy-group-header {
+  list-style: none;
+  cursor: pointer;
+}
+.hierarchy-branch-header {
+  list-style: none;
+  cursor: pointer;
+}
+.hierarchy-group-header::-webkit-details-marker {
+  display: none;
+}
+.hierarchy-branch-header::-webkit-details-marker {
+  display: none;
+}
+.hierarchy-group[open] .hierarchy-group-header {
+  padding-bottom: 2px;
+}
+.hierarchy-branch[open] .hierarchy-branch-header {
+  padding-bottom: 2px;
+}
+.hierarchy-group-title,
+.hierarchy-branch-title,
+.hierarchy-user-title {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.hierarchy-group-subtitle,
+.hierarchy-branch-subtitle,
+.hierarchy-user-subtitle,
+.hierarchy-empty {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.hierarchy-group-count,
+.hierarchy-branch-count {
+  min-width: 44px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(25, 118, 210, 0.16);
+  border: 1px solid rgba(34, 211, 238, 0.14);
+  text-align: center;
+  font-size: 0.82rem;
+}
+.hierarchy-branches,
+.hierarchy-user-list {
+  display: grid;
+  gap: 12px;
+}
+.hierarchy-branch {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(154, 164, 178, 0.14);
+  background: rgba(21, 24, 38, 0.62);
+}
+.hierarchy-user-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(29, 35, 51, 0.96);
+  background: rgba(5, 5, 9, 0.86);
+}
+.hierarchy-user-badges,
+.hierarchy-user-meta,
+.hierarchy-user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.hierarchy-user-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.hierarchy-user-actions .console-action-menu {
+  width: 100%;
+}
+.hierarchy-group-header::after {
+  content: 'Collapse';
+  margin-left: auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.14);
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.hierarchy-group:not([open]) .hierarchy-group-header::after {
+  content: 'Expand';
+}
+.hierarchy-branch-header::after {
+  content: 'Collapse';
+  margin-left: auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.14);
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.hierarchy-branch:not([open]) .hierarchy-branch-header::after {
+  content: 'Expand';
+}
 .view-link-anchor {
   justify-content: flex-start;
 }
@@ -858,6 +992,52 @@ th {
   letter-spacing: 0.08em;
   color: var(--muted);
 }
+.console-actions-cell {
+  width: 1%;
+  white-space: nowrap;
+}
+.console-action-menu {
+  position: relative;
+  display: inline-block;
+}
+.console-action-menu summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-3);
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.console-action-menu summary::-webkit-details-marker {
+  display: none;
+}
+.console-action-menu[open] summary {
+  background: #1a2030;
+}
+.console-action-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 15;
+  min-width: 180px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(9, 11, 18, 0.98), rgba(18, 23, 35, 0.96));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.38);
+}
+.console-action-menu-panel .mini-button {
+  width: 100%;
+  justify-content: center;
+}
 code.inline {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
@@ -962,5 +1142,80 @@ code.inline {
   .modal-card {
     width: calc(100vw - 24px);
     padding: 18px;
+  }
+  .table-wrap {
+    overflow: visible;
+  }
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+    width: 100%;
+  }
+  thead {
+    display: none;
+  }
+  tbody {
+    display: grid;
+    gap: 14px;
+  }
+  tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: linear-gradient(180deg, rgba(15, 15, 20, 0.98), rgba(21, 24, 38, 0.96));
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.26);
+    overflow: hidden;
+  }
+  td {
+    display: grid;
+    grid-template-columns: minmax(110px, 132px) minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(29, 35, 51, 0.95);
+  }
+  td:last-child {
+    border-bottom: 0;
+  }
+  td::before {
+    content: attr(data-label);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+  .console-actions-cell {
+    width: 100%;
+    white-space: normal;
+  }
+  .console-action-menu,
+  .console-action-menu summary {
+    width: 100%;
+  }
+  .console-action-menu-panel {
+    position: static;
+    min-width: 0;
+    margin-top: 8px;
+  }
+  .hierarchy-group,
+  .hierarchy-branch,
+  .hierarchy-user-card {
+    padding: 14px;
+  }
+  .hierarchy-group-header,
+  .hierarchy-branch-header,
+  .hierarchy-user-card-header {
+    flex-direction: column;
+  }
+  .hierarchy-user-meta,
+  .hierarchy-user-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .hierarchy-group-header::after {
+    margin-left: 0;
+  }
+  .hierarchy-branch-header::after {
+    margin-left: 0;
   }
 }

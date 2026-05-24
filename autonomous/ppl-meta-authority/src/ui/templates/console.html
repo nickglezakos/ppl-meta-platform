@@ -105,6 +105,8 @@
                   <button type="button" class="secondary console-filter" data-console-filter="updates">Updates <span class="filter-count" data-filter-count="updates">0</span></button>
                   <button type="button" class="secondary console-filter" data-console-filter="health">Health <span class="filter-count" data-filter-count="health">0</span></button>
                 </div>
+                <div id="hierarchyExplain" class="small hierarchy-explain hidden">Hierarchy is the relationship map: distributor branches, reseller branches, and the owner accounts each branch can manage.</div>
+                <div id="hierarchyView" class="hierarchy-view hidden"></div>
                 <div class="table-wrap">
                   <table>
                     <thead>
@@ -115,10 +117,11 @@
                         <th>Owner / User</th>
                         <th>Version / Key</th>
                         <th>Details</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody id="dataBody">
-                      <tr><td colspan="6" class="small">No data loaded yet.</td></tr>
+                      <tr><td colspan="7" class="small">No data loaded yet.</td></tr>
                     </tbody>
                   </table>
                 </div>

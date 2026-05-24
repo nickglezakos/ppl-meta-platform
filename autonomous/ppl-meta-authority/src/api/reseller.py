@@ -8,7 +8,9 @@ from core.storage import (
     create_invitation,
     find_installation_by_owner_email,
     get_authority_user_by_email,
+    get_authority_user_by_uuid,
     get_entitlement_by_uuid,
+    set_authority_user_status,
     update_invitation_email_delivery,
 )
 
@@ -54,6 +56,24 @@ class ResellerInstallationAssignmentResponse(BaseModel):
     created_at: str
 
 
+class ResellerScopedUserResponse(BaseModel):
+    user_uuid: str
+    email: str
+    display_name: str | None = None
+    role_name: str
+    status: str
+    distributor_uuid: str | None = None
+    reseller_uuid: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class ResellerUserStatusChangeRequest(BaseModel):
+    status: str = Field(pattern="^(active|suspended)$")
+    reason_code: str = Field(min_length=1)
+    operator_note: str | None = None
+
+
 def _resolve_reseller_scope(current_user: dict[str, str], requested_reseller_uuid: str | None = None) -> str | None:
     if current_user["role_name"] == "platform_admin":
         return requested_reseller_uuid
@@ -64,6 +84,18 @@ def _resolve_reseller_scope(current_user: dict[str, str], requested_reseller_uui
     if requested_reseller_uuid and requested_reseller_uuid != reseller_uuid:
         raise HTTPException(status_code=403, detail="Requested reseller scope does not match current reseller account")
     return reseller_uuid
+
+
+def _validate_reseller_user_status_target(
+    current_user: dict[str, str],
+    target_user: dict[str, str],
+) -> None:
+    if target_user["role_name"] != "owner":
+        raise HTTPException(status_code=403, detail="Reseller may only suspend or reinstate owner users")
+
+    reseller_uuid = _resolve_reseller_scope(current_user, target_user.get("reseller_uuid"))
+    if current_user["role_name"] != "platform_admin" and reseller_uuid != current_user.get("reseller_uuid"):
+        raise HTTPException(status_code=403, detail="Target owner is outside reseller scope")
 
 
 @router.post("/invitations", response_model=ResellerInvitationResponse, status_code=status.HTTP_201_CREATED)
@@ -126,3 +158,32 @@ async def reseller_assign_installation(
         assigned_by_user_uuid=current_user.get("user_uuid"),
     )
     return ResellerInstallationAssignmentResponse(**assignment)
+
+
+@router.patch("/users/{user_uuid}/status", response_model=ResellerScopedUserResponse)
+async def reseller_update_user_status(
+    user_uuid: str,
+    payload: ResellerUserStatusChangeRequest,
+    current_user: dict[str, str] = Depends(require_reseller_or_platform_admin),
+) -> ResellerScopedUserResponse:
+    target_user = get_authority_user_by_uuid(user_uuid)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="Authority user not found")
+
+    _validate_reseller_user_status_target(current_user, target_user)
+
+    try:
+        user = set_authority_user_status(
+            user_uuid=user_uuid,
+            status=payload.status,
+            actor_user_uuid=current_user.get("user_uuid"),
+            actor_role_name=current_user.get("role_name"),
+            reason_code=payload.reason_code,
+            operator_note=payload.operator_note,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if detail.endswith("not found") else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+    return ResellerScopedUserResponse(**user)

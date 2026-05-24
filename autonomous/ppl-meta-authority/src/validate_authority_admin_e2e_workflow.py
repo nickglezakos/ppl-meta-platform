@@ -97,6 +97,15 @@ reseller_login = client.post('/api/v1/auth/login', json={
 assert reseller_login.status_code == 200
 reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_token']}"}
 
+entitlement = client.post('/api/v1/admin/installations', json={
+    'application_key': 'e2e-owner-key',
+    'approved_owner_email': 'e2e-owner@example.com',
+    'owner_enabled': True,
+    'licence_status': 'active',
+    'tenant_name': 'E2E Owner Tenant'
+}, headers=admin_headers)
+assert entitlement.status_code == 200
+
 owner_invitation = client.post('/api/v1/reseller/invitations', json={
     'email': 'e2e-owner@example.com'
 }, headers=reseller_headers)
@@ -106,15 +115,6 @@ assert client.post('/api/v1/auth/accept-invitation', json={
     'invitation_token': owner_invitation.json()['invitation_token'],
     'password': 'e2eowner88'
 }).status_code == 201
-
-entitlement = client.post('/api/v1/admin/installations', json={
-    'application_key': 'e2e-owner-key',
-    'approved_owner_email': 'e2e-owner@example.com',
-    'owner_enabled': True,
-    'licence_status': 'active',
-    'tenant_name': 'E2E Owner Tenant'
-}, headers=admin_headers)
-assert entitlement.status_code == 200
 
 owner_list = client.get('/api/v1/distributor/owners', headers=distributor_headers)
 assert owner_list.status_code == 200
