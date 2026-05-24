@@ -332,6 +332,7 @@ function syncDistributorInviteForm() {
   const roleSelect = document.getElementById('distributor_invite_role_name');
   const emailLabel = document.getElementById('distributorInviteEmailLabel');
   const emailInput = document.getElementById('distributor_invite_email');
+  const hint = document.getElementById('distributorInviteHint');
   if (!(roleSelect instanceof HTMLSelectElement)) {
     return;
   }
@@ -343,6 +344,18 @@ function syncDistributorInviteForm() {
   if (emailInput instanceof HTMLInputElement) {
     emailInput.placeholder = invitingRole === 'owner' ? 'owner@example.com' : 'reseller@example.com';
   }
+  if (hint) {
+    hint.textContent = invitingRole === 'owner'
+      ? 'Owner onboarding now creates the entitlement automatically after invitation acceptance.'
+      : 'Reseller invitations only create the scoped user identity. Entitlement creation still happens later when owners are onboarded.';
+  }
+}
+
+function invitationCreatedMessage(invitation, defaultLabel) {
+  if (invitation.role_name === 'owner') {
+    return `${defaultLabel} Entitlement creation will be handled automatically when the owner accepts.`;
+  }
+  return defaultLabel;
 }
 
 function setNavigationOpen(isOpen) {
@@ -1899,7 +1912,7 @@ async function createInvitation() {
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(invitationDeliveryStatusMessage(invitation, `Created invitation for ${invitation.email}.`), !invitation.email_delivered);
+    setStatus(invitationDeliveryStatusMessage(invitation, invitationCreatedMessage(invitation, `Created invitation for ${invitation.email}.`)), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -2257,7 +2270,7 @@ bindClick('resellerInviteButton', async () => {
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(invitationDeliveryStatusMessage(invitation, `Reseller invitation created for ${invitation.email}.`), !invitation.email_delivered);
+    setStatus(invitationDeliveryStatusMessage(invitation, invitationCreatedMessage(invitation, `Reseller invitation created for ${invitation.email}.`)), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -2286,7 +2299,7 @@ bindClick('distributorInviteButton', async () => {
     });
     setConsoleRows('invitations', invitationRows([invitation]));
     renderConsoleFilter();
-    setStatus(invitationDeliveryStatusMessage(invitation, `Invitation created for ${invitation.email}.`), !invitation.email_delivered);
+    setStatus(invitationDeliveryStatusMessage(invitation, invitationCreatedMessage(invitation, `Invitation created for ${invitation.email}.`)), !invitation.email_delivered);
   } catch (error) {
     setStatus(error.message, true);
   }

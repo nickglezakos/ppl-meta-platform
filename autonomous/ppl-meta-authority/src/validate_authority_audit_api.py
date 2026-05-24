@@ -92,4 +92,40 @@ assert all(item['target_entity_uuid'] == entitlement['entitlement_uuid'] for ite
 assert all(item['action'] == 'entitlement_status_changed' for item in filtered_payload['items'])
 assert all(item['actor_email'] == 'admin@authority.local' for item in filtered_payload['items'])
 
+owner_invitation = client.post('/api/v1/admin/invitations', json={
+    'email': 'owner.auto.audit@example.com',
+    'role_name': 'owner',
+    'distributor_uuid': 'audit-distributor-group',
+    'reseller_uuid': 'audit-reseller-group',
+}, headers=admin_headers)
+assert owner_invitation.status_code == 201, owner_invitation.text
+
+owner_accept = client.post('/api/v1/auth/accept-invitation', json={
+    'invitation_token': owner_invitation.json()['invitation_token'],
+    'password': 'audit-owner-pass',
+    'display_name': 'Auto Audit Owner',
+})
+assert owner_accept.status_code == 201, owner_accept.text
+
+auto_created = client.get(
+    '/api/v1/admin/audit-events',
+    headers=admin_headers,
+    params={
+        'target_entity_type': 'entitlement',
+        'action': 'entitlement_auto_created',
+        'limit': 20,
+        'offset': 0,
+    },
+)
+assert auto_created.status_code == 200, auto_created.text
+auto_created_payload = auto_created.json()
+assert auto_created_payload['items']
+matching_auto_create = next(
+    item for item in auto_created_payload['items']
+    if item['target_email'] == 'owner.auto.audit@example.com'
+)
+assert matching_auto_create['reason_code'] == 'auto_entitlement_on_owner_onboarding'
+assert matching_auto_create['target_entity_type'] == 'entitlement'
+assert matching_auto_create['operator_note'] == 'Owner invitation acceptance auto-created entitlement'
+
 print('Authority audit API validation passed.')

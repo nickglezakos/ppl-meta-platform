@@ -42,6 +42,19 @@ The confusion comes from treating `hierarchy` as if it were a second kind of use
 
 The current RBAC analysis already notes that the role model has no built-in semantic hierarchy. That means hierarchy is not a property implicitly provided by the role table itself. If the system needs distributor to reseller to owner relationships, that structure must be represented explicitly as assignment or parent-scope metadata, not by duplicating user records.
 
+### 3. Onboarding Is Too Entitlement-First
+
+The current authority admin flow exposes entitlement creation too early in the operator journey.
+
+This is operationally valid, but product-wise it is backwards for normal onboarding.
+
+It creates four problems:
+
+- operators must understand licensing internals before the target user or owner account is fully onboarded
+- owner onboarding can fail because entitlement, invitation, and assignment steps happen in the wrong order
+- reseller and distributor operators are pushed into back-office record management instead of guided customer onboarding
+- the UI presents internal control objects before it presents the human onboarding journey
+
 ---
 
 ## Proposal
@@ -256,6 +269,95 @@ User-specific lifecycle controls should still remain reachable from the user row
 
 ---
 
+## 3. Make User Onboarding Primary And Manual Entitlement Creation Secondary
+
+### Recommended Product Direction
+
+The default onboarding path should be user-first, not entitlement-first.
+
+Recommended default flow:
+
+- invite or onboard the downstream user first
+- place that user into hierarchy through the inviter's scope
+- complete owner acceptance and account activation
+- create or attach the required entitlement automatically from that onboarding context
+- keep manual entitlement creation available only as an advanced administrative path
+
+This matches how operators actually think:
+
+- first onboard the person or customer account
+- then attach the licensing and installation approval needed for service activation
+
+### Why User-First Onboarding Is Better
+
+Benefits:
+
+- it matches the mental model of distributor, reseller, and owner onboarding
+- it reduces out-of-order operational failures
+- it lowers the chance of mismatched owner emails or missing prerequisite records
+- it makes hierarchy-driven administration feel natural instead of mechanical
+- it hides entitlement internals until an operator actually needs advanced licensing control
+
+### Recommended UX Split
+
+The platform should support two distinct workflows:
+
+- Primary flow: guided owner onboarding
+- Secondary flow: advanced entitlement administration
+
+#### Primary Flow
+
+This should be the default operator journey for distributor and reseller users.
+
+Recommended steps:
+
+- create or invite the owner user
+- accept the invitation and establish the owner account
+- inherit distributor and reseller scope automatically from the inviter
+- auto-create the initial entitlement, or guide the operator through a single post-acceptance step that binds entitlement data to the accepted owner
+
+The operator should experience this as one onboarding workflow, not as unrelated admin panels.
+
+#### Secondary Flow
+
+Manual `Create Entitlement` should remain available, but only as an advanced administrative tool.
+
+This remains useful for cases such as:
+
+- pre-provisioning licences before customer acceptance
+- bulk commercial preparation by platform admins
+- recovery, migration, or exception handling
+- back-office lifecycle repair when a user or installation state becomes inconsistent
+
+### Recommended UI Direction
+
+For the admin view:
+
+- keep `Create Entitlement`, but move it conceptually into an `Advanced licensing` area
+- make `Issue Invitation` or a new `Onboard Owner` flow the primary visible action for day-to-day onboarding
+- explain that manual entitlement creation is for exceptional or pre-provisioning scenarios, not the default user journey
+
+For reseller and distributor views:
+
+- treat owner onboarding as the first-class flow
+- let entitlement creation happen automatically when policy allows
+- if automatic creation is not possible yet, guide the operator with one structured step instead of forcing them to reason about the full entitlement model in advance
+
+### Domain Recommendation
+
+Keep entitlements as first-class authority records in the domain, but treat them as secondary in the product workflow.
+
+Recommended rule:
+
+- entitlements remain the licensing and approval source of truth
+- user onboarding becomes the default operational entry point
+- hierarchy determines who may onboard whom
+- advanced manual entitlement creation remains available for platform administrators and exception handling
+
+This preserves governance without making the admin surface feel backwards.
+
+---
+
 ## Acceptance Criteria
 
 The proposal is satisfied when all of the following are true:
@@ -269,6 +371,9 @@ The proposal is satisfied when all of the following are true:
 7. Destructive actions require explicit confirmation and capture audit metadata.
 8. Product terminology distinguishes identity management from organizational assignment.
 9. `Users` and `Hierarchy` are no longer treated as duplicate concepts in the admin console.
+10. Default onboarding is described as user-first rather than entitlement-first.
+11. Manual entitlement creation is explicitly positioned as an advanced or exceptional workflow, not the primary onboarding path.
+12. Distributor and reseller onboarding flows are documented as hierarchy-scoped user onboarding journeys that may create or attach entitlements automatically.
 
 ---
 
@@ -284,3 +389,10 @@ Keep both `users` and `hierarchy`, but define them as different layers:
 - hierarchy is organizational scope structure
 
 The right product change is not to remove one of them blindly. The right change is to make the separation explicit in both the UI and the domain model, so lifecycle actions happen on user records while scope and reassignment concerns happen in the organizational layer.
+
+Also change the onboarding direction:
+
+- make user onboarding the primary operator flow
+- keep entitlements as the licensing source of truth
+- push manual entitlement creation into an advanced administrative workflow
+- let hierarchy drive who can onboard whom and where resulting accounts belong

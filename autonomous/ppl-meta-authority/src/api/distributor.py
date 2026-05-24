@@ -8,7 +8,6 @@ from core.storage import (
     create_invitation,
     get_authority_user_by_email,
     get_authority_user_by_uuid,
-    find_installation_by_owner_email,
     get_entitlement_by_uuid,
     list_owner_users_by_distributor_uuid,
     list_reseller_users_by_distributor_uuid,
@@ -128,12 +127,6 @@ async def distributor_create_reseller_invitation(
 ) -> DistributorInvitationResponse:
     distributor_uuid = _resolve_distributor_scope(current_user, current_user.get("distributor_uuid"))
     reseller_uuid = (payload.reseller_uuid or "").strip() or None
-    if payload.role_name == "owner" and find_installation_by_owner_email(payload.email) is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Create an entitlement for this owner email before sending an owner invitation",
-        )
-
     invitation = create_invitation(
         email=payload.email,
         role_name=payload.role_name,

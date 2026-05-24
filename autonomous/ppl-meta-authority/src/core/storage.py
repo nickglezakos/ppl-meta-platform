@@ -335,7 +335,60 @@ def create_authority_user_from_invitation(
         )
 
     mark_invitation_accepted(invitation["invitation_uuid"], user["user_uuid"])
+    if invitation["role_name"] == "owner":
+        ensure_owner_entitlement_for_user(
+            user,
+            actor_user_uuid=invitation.get("issued_by_user_uuid"),
+        )
     return user
+
+
+def ensure_owner_entitlement_for_user(
+    user: dict[str, Any],
+    *,
+    actor_user_uuid: str | None = None,
+) -> dict[str, Any]:
+    if user["role_name"] != "owner":
+        raise ValueError("Automatic entitlement creation only supports owner users")
+
+    existing_records = list_entitlements_for_owner_email(user["email"])
+    if existing_records:
+        return existing_records[0]
+
+    tenant_name = (user.get("display_name") or user["email"].split("@", 1)[0]).strip() or user["email"]
+    entitlement = upsert_entitlement(
+        {
+            "approved_owner_email": user["email"],
+            "owner_enabled": True,
+            "licence_status": "active",
+            "offline_grace_days": 14,
+            "tenant_name": tenant_name,
+            "notes": "Auto-created during owner onboarding",
+        }
+    )
+    create_authority_audit_event(
+        actor_user_uuid=actor_user_uuid,
+        actor_role_name=None,
+        target_entity_type="entitlement",
+        target_entity_uuid=entitlement["entitlement_uuid"],
+        target_email=entitlement["approved_owner_email"],
+        action="entitlement_auto_created",
+        previous_state=None,
+        new_state={
+            "activation_status": entitlement["activation_status"],
+            "owner_enabled": entitlement["owner_enabled"],
+            "licence_status": entitlement["licence_status"],
+        },
+        scope_before=None,
+        scope_after={
+            "distributor_uuid": user.get("distributor_uuid"),
+            "reseller_uuid": user.get("reseller_uuid"),
+            "installation_uuid": entitlement["installation_uuid"],
+        },
+        reason_code="auto_entitlement_on_owner_onboarding",
+        operator_note="Owner invitation acceptance auto-created entitlement",
+    )
+    return entitlement
 
 
 def get_authority_user_by_email(email: str) -> dict[str, Any] | None:

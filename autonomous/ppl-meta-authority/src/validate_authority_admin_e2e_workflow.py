@@ -97,15 +97,6 @@ reseller_login = client.post('/api/v1/auth/login', json={
 assert reseller_login.status_code == 200
 reseller_headers = {'Authorization': f"Bearer {reseller_login.json()['session_token']}"}
 
-entitlement = client.post('/api/v1/admin/installations', json={
-    'application_key': 'e2e-owner-key',
-    'approved_owner_email': 'e2e-owner@example.com',
-    'owner_enabled': True,
-    'licence_status': 'active',
-    'tenant_name': 'E2E Owner Tenant'
-}, headers=admin_headers)
-assert entitlement.status_code == 200
-
 owner_invitation = client.post('/api/v1/reseller/invitations', json={
     'email': 'e2e-owner@example.com'
 }, headers=reseller_headers)
@@ -116,6 +107,15 @@ assert client.post('/api/v1/auth/accept-invitation', json={
     'password': 'e2eowner88'
 }).status_code == 201
 
+installations = client.get('/api/v1/admin/installations', headers=admin_headers)
+assert installations.status_code == 200
+entitlement = next(
+    record for record in installations.json()
+    if record['approved_owner_email'] == 'e2e-owner@example.com'
+)
+assert entitlement['notes'] == 'Auto-created during owner onboarding'
+assert entitlement['activation_status'] == 'pending_activation'
+
 owner_list = client.get('/api/v1/distributor/owners', headers=distributor_headers)
 assert owner_list.status_code == 200
 assert any(record['email'] == 'e2e-owner@example.com' for record in owner_list.json())
@@ -125,7 +125,7 @@ assert reseller_list.status_code == 200
 assert any(record['email'] == 'e2e-reseller@example.com' for record in reseller_list.json())
 
 assignment = client.post('/api/v1/distributor/installation-assignments', json={
-    'entitlement_uuid': entitlement.json()['entitlement_uuid'],
+    'entitlement_uuid': entitlement['entitlement_uuid'],
     'user_email': 'e2e-owner@example.com'
 }, headers=distributor_headers)
 assert assignment.status_code == 201

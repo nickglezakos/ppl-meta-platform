@@ -55,22 +55,6 @@ owner_invitation = client.post('/api/v1/distributor/invitations', json={
     'email': 'dist-owner@example.com',
     'role_name': 'owner'
 }, headers=distributor_headers)
-assert owner_invitation.status_code == 400
-assert owner_invitation.json()['detail'] == 'Create an entitlement for this owner email before sending an owner invitation'
-
-owner_entitlement = client.post('/api/v1/admin/installations', json={
-    'application_key': 'dist-owner-key',
-    'approved_owner_email': 'dist-owner@example.com',
-    'owner_enabled': True,
-    'licence_status': 'active',
-    'tenant_name': 'Distributor Owner Tenant'
-}, headers=admin_headers)
-assert owner_entitlement.status_code == 200
-
-owner_invitation = client.post('/api/v1/distributor/invitations', json={
-    'email': 'dist-owner@example.com',
-    'role_name': 'owner'
-}, headers=distributor_headers)
 assert owner_invitation.status_code == 201
 
 assert client.post('/api/v1/auth/accept-invitation', json={
@@ -86,6 +70,15 @@ assert owner_login.status_code == 200
 assert owner_login.json()['user']['role_name'] == 'owner'
 assert owner_login.json()['user']['distributor_uuid'] == 'distributor-group-8'
 assert owner_login.json()['user']['reseller_uuid'] is None
+
+installations = client.get('/api/v1/admin/installations', headers=admin_headers)
+assert installations.status_code == 200
+owner_entitlement = next(
+    record for record in installations.json()
+    if record['approved_owner_email'] == 'dist-owner@example.com'
+)
+assert owner_entitlement['notes'] == 'Auto-created during owner onboarding'
+assert owner_entitlement['activation_status'] == 'pending_activation'
 
 distributor_summary = client.get('/api/v1/dashboard/distributor/summary', headers=distributor_headers)
 assert distributor_summary.status_code == 200
@@ -142,7 +135,7 @@ assert distributor_suspend_owner.status_code == 403, distributor_suspend_owner.t
 assert distributor_suspend_owner.json()['detail'] == 'Distributor may only suspend or reinstate reseller users'
 
 assignment = client.post('/api/v1/distributor/installation-assignments', json={
-    'entitlement_uuid': owner_entitlement.json()['entitlement_uuid'],
+    'entitlement_uuid': owner_entitlement['entitlement_uuid'],
     'user_email': 'dist-owner@example.com'
 }, headers=distributor_headers)
 assert assignment.status_code == 201

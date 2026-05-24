@@ -200,6 +200,7 @@
           <div class="stack role-section" data-role-scope="platform_admin">
             <div class="feature-card">
               <h3>Create Entitlement</h3>
+              <div class="hint">Advanced licensing workflow. Normal owner onboarding can now create the required entitlement automatically when the invitation is accepted.</div>
               <div class="row">
                 <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
                 <label>Installation UUID<input id="installation_uuid" placeholder="Optional. Bound on activation."></label>
@@ -235,6 +236,7 @@
             <div class="feature-card">
               <h3>Issue Invitation</h3>
               <div class="small">Creates an invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
+              <div class="hint">For owner invites, the entitlement can be created automatically during successful onboarding. Use manual entitlement creation only for pre-provisioning, repair, or exception handling.</div>
               <div class="row">
                 <label>Invite email<input id="invite_email" type="email" placeholder="owner@example.com"></label>
                 <label>Role
@@ -375,6 +377,7 @@
             <div class="feature-card">
               <h3>Distributor Invitation</h3>
               <div class="small">Creates an invitation token and sends the same email-link onboarding flow used across authority roles.</div>
+              <div class="hint" id="distributorInviteHint">Owner onboarding now creates the entitlement automatically after invitation acceptance. Reseller invitations remain identity-only.</div>
               <div class="row">
                 <label><span id="distributorInviteEmailLabel">Invite email</span><input id="distributor_invite_email" type="email" placeholder="person@example.com"></label>
                 <label>Role
@@ -424,6 +427,7 @@
             <div class="feature-card">
               <h3>Reseller Owner Invitation</h3>
               <div class="small">Creates an owner invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
+              <div class="hint">When the invited owner accepts, authority creates the entitlement automatically if one does not already exist for that owner email.</div>
               <div class="row">
                 <label>Owner email<input id="reseller_invite_email" type="email" placeholder="owner@example.com"></label>
                 <label>Expiry days<input id="reseller_invite_expires" type="number" min="1" max="30" value="7"></label>
