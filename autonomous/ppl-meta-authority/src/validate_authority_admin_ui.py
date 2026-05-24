@@ -40,6 +40,11 @@ assert 'data-public-view="invitation"' in admin_html
 assert 'id="acceptInvitationForm" class="compact-invitation-form invitation-view-form"' in admin_html
 assert 'id="backToLoginButton"' in admin_html
 assert 'id="invite_distributor_uuid"' in admin_html
+assert 'id="startOwnerOnboardingButton"' in admin_html
+assert 'id="owner_onboarding_email"' in admin_html
+assert 'id="owner_onboarding_distributor_uuid"' in admin_html
+assert 'id="owner_onboarding_reseller_uuid"' in admin_html
+assert 'Advanced Licensing' in admin_html
 assert 'id="toastRegion" class="toast-region"' in admin_html
 assert 'id="updateUserStatusButton"' in admin_html
 assert 'id="reassignUserScopeButton"' in admin_html
@@ -113,6 +118,8 @@ assert 'function showToast(message, tone = ' in js_text
 assert 'function resolvedRequestedView(roleName)' in js_text
 assert "nextSearch.set('view', viewId)" in js_text
 assert 'function syncDistributorInviteForm()' in js_text
+assert 'async function startOwnerOnboarding()' in js_text
+assert 'Owner onboarding started for' in js_text
 assert "owner: ['owner', 'support']" in js_text
 assert 'requestedPublicView' in js_text
 assert "window.location.href = '/admin';" in js_text
@@ -125,6 +132,8 @@ assets_css = client.get('/admin/assets/admin.css')
 assert assets_css.status_code == 200
 css_text = assets_css.text
 assert '.console-action-menu' in css_text
+assert '.wizard-steps' in css_text
+assert '.advanced-card summary' in css_text
 assert '.console-actions-cell' in css_text
 assert 'td::before {' in css_text
 assert 'content: attr(data-label);' in css_text

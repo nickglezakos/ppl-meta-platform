@@ -199,44 +199,49 @@
         <div id="admin" class="view-panel">
           <div class="stack role-section" data-role-scope="platform_admin">
             <div class="feature-card">
-              <h3>Create Entitlement</h3>
-              <div class="hint">Advanced licensing workflow. Normal owner onboarding can now create the required entitlement automatically when the invitation is accepted.</div>
-              <div class="row">
-                <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
-                <label>Installation UUID<input id="installation_uuid" placeholder="Optional. Bound on activation."></label>
-              </div>
-              <div class="row">
-                <label>Approved owner email<input id="approved_owner_email" type="email" placeholder="owner@example.com"></label>
-                <label>Licence status
-                  <select id="licence_status">
-                    <option value="active">active</option>
-                    <option value="grace">grace</option>
-                    <option value="expired">expired</option>
-                    <option value="suspended">suspended</option>
-                  </select>
-                </label>
-              </div>
-              <div class="row">
-                <label>Offline grace days<input id="offline_grace_days" type="number" min="0" value="14"></label>
-                <label>Owner enabled
-                  <select id="owner_enabled">
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </select>
-                </label>
-              </div>
-              <label>Tenant name<input id="tenant_name" value="New Tenant"></label>
-              <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
-              <div class="actions">
-                <button type="button" id="saveInstallation">Save entitlement</button>
-                <button type="button" class="secondary" id="loadInstallations">Load entitlements</button>
+              <h3>Owner Onboarding</h3>
+              <div class="small">Use this guided flow as the default way to onboard owners. Authority sends the invitation first, then creates the entitlement automatically when the owner accepts.</div>
+              <div class="wizard-steps" id="ownerOnboardingWizard">
+                <section class="wizard-step">
+                  <div class="wizard-step-number">1</div>
+                  <div>
+                    <h4>Owner identity</h4>
+                    <div class="row">
+                      <label>Owner email<input id="owner_onboarding_email" type="email" placeholder="owner@example.com"></label>
+                      <label>Display name<input id="owner_onboarding_display_name" type="text" placeholder="Optional display name"></label>
+                    </div>
+                  </div>
+                </section>
+                <section class="wizard-step">
+                  <div class="wizard-step-number">2</div>
+                  <div>
+                    <h4>Hierarchy placement</h4>
+                    <div class="row">
+                      <label>Distributor UUID<input id="owner_onboarding_distributor_uuid" placeholder="Optional distributor scope"></label>
+                      <label>Reseller UUID<input id="owner_onboarding_reseller_uuid" placeholder="Optional reseller scope"></label>
+                      <label>Expiry days<input id="owner_onboarding_expires_in_days" type="number" min="1" max="30" value="7"></label>
+                    </div>
+                    <div class="hint">Use reseller scope when the owner belongs under a specific reseller branch. Leave both fields blank only for exceptional platform-admin onboarding.</div>
+                  </div>
+                </section>
+                <section class="wizard-step">
+                  <div class="wizard-step-number">3</div>
+                  <div>
+                    <h4>Send and monitor</h4>
+                    <div class="hint">When the owner accepts the email invitation, authority creates or reuses the entitlement automatically. Installation binding still happens later during assignment or activation.</div>
+                    <div class="actions">
+                      <button type="button" id="startOwnerOnboardingButton">Start owner onboarding</button>
+                      <button type="button" class="secondary" id="loadInvitations">Load invitations</button>
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
 
             <div class="feature-card">
-              <h3>Issue Invitation</h3>
-              <div class="small">Creates an invitation token and attempts SMTP email delivery when authority mail settings are configured.</div>
-              <div class="hint">For owner invites, the entitlement can be created automatically during successful onboarding. Use manual entitlement creation only for pre-provisioning, repair, or exception handling.</div>
+              <h3>Role Invitation</h3>
+              <div class="small">Use this for non-owner roles or exceptional admin invitations. Owner onboarding should normally go through the guided flow above.</div>
+              <div class="hint">For owner invites created here, the entitlement is still created automatically on acceptance.</div>
               <div class="row">
                 <label>Invite email<input id="invite_email" type="email" placeholder="owner@example.com"></label>
                 <label>Role
@@ -255,9 +260,47 @@
               </div>
               <div class="actions">
                 <button type="button" id="createInvitation">Create invitation</button>
-                <button type="button" class="secondary" id="loadInvitations">Load invitations</button>
               </div>
             </div>
+
+            <details class="feature-card advanced-card">
+              <summary>
+                <span>Advanced Licensing</span>
+                <span class="small">Manual entitlement creation for pre-provisioning, repair, or exception handling.</span>
+              </summary>
+              <div class="advanced-card-body">
+                <div class="row">
+                  <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
+                  <label>Installation UUID<input id="installation_uuid" placeholder="Optional. Bound on activation."></label>
+                </div>
+                <div class="row">
+                  <label>Approved owner email<input id="approved_owner_email" type="email" placeholder="owner@example.com"></label>
+                  <label>Licence status
+                    <select id="licence_status">
+                      <option value="active">active</option>
+                      <option value="grace">grace</option>
+                      <option value="expired">expired</option>
+                      <option value="suspended">suspended</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="row">
+                  <label>Offline grace days<input id="offline_grace_days" type="number" min="0" value="14"></label>
+                  <label>Owner enabled
+                    <select id="owner_enabled">
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  </label>
+                </div>
+                <label>Tenant name<input id="tenant_name" value="New Tenant"></label>
+                <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
+                <div class="actions">
+                  <button type="button" id="saveInstallation">Save entitlement</button>
+                  <button type="button" class="secondary" id="loadInstallations">Load entitlements</button>
+                </div>
+              </div>
+            </details>
 
             <div class="feature-card">
               <h3>Assign Installation</h3>

@@ -1890,6 +1890,55 @@ async function saveInstallation() {
   }
 }
 
+async function startOwnerOnboarding() {
+  try {
+    const email = document.getElementById('owner_onboarding_email').value.trim();
+    const distributorUuid = document.getElementById('owner_onboarding_distributor_uuid').value.trim() || null;
+    const resellerUuid = document.getElementById('owner_onboarding_reseller_uuid').value.trim() || null;
+    const expiresInDays = Number(document.getElementById('owner_onboarding_expires_in_days').value || 7);
+    const displayName = document.getElementById('owner_onboarding_display_name').value.trim();
+
+    if (!email) {
+      setStatus('Owner onboarding requires an email address.', true);
+      return;
+    }
+
+    const invitation = await api('/api/v1/admin/invitations', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        email,
+        role_name: 'owner',
+        distributor_uuid: distributorUuid,
+        reseller_uuid: resellerUuid,
+        expires_in_days: expiresInDays,
+      }),
+    });
+    setConsoleRows('invitations', invitationRows([invitation]));
+    renderConsoleFilter();
+
+    document.getElementById('invite_email').value = email;
+    document.getElementById('invite_role_name').value = 'owner';
+    document.getElementById('invite_distributor_uuid').value = distributorUuid || '';
+    document.getElementById('invite_reseller_uuid').value = resellerUuid || '';
+    document.getElementById('invite_expires_in_days').value = String(expiresInDays);
+    document.getElementById('approved_owner_email').value = email;
+    if (displayName) {
+      document.getElementById('tenant_name').value = displayName;
+    }
+
+    setStatus(
+      invitationDeliveryStatusMessage(
+        invitation,
+        `Owner onboarding started for ${invitation.email}. The entitlement will be created automatically after acceptance.`
+      ),
+      !invitation.email_delivered,
+    );
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
 async function createInvitation() {
   try {
     const roleName = document.getElementById('invite_role_name').value;
@@ -2249,6 +2298,7 @@ bindClick('loadSessionButton', async () => {
 });
 bindClick('loadInstallations', loadInstallations);
 bindClick('saveInstallation', saveInstallation);
+bindClick('startOwnerOnboardingButton', startOwnerOnboarding);
 bindClick('createInvitation', createInvitation);
 bindClick('loadInvitations', loadInvitations);
 bindClick('loadAdminUsersButton', loadAdminUsers);
