@@ -2378,6 +2378,9 @@ updateAuthView();
 syncRoleVisibility();
 
 async function restoreSessionOnLoad() {
+  if (pageName === 'admin' && requestedInvitationToken) {
+    return;
+  }
   const storedToken = persistedSessionToken();
   if (!storedToken) {
     return;

@@ -120,6 +120,7 @@ assert "nextSearch.set('view', viewId)" in js_text
 assert 'function syncDistributorInviteForm()' in js_text
 assert 'async function startOwnerOnboarding()' in js_text
 assert 'Owner onboarding started for' in js_text
+assert "if (pageName === 'admin' && requestedInvitationToken)" in js_text
 assert "owner: ['owner', 'support']" in js_text
 assert 'requestedPublicView' in js_text
 assert "window.location.href = '/admin';" in js_text
