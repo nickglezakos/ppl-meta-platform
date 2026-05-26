@@ -393,6 +393,58 @@ async def _materialize_single_media_from_persisted_person_objects(
             return 0.85
         return quality / 100.0 if quality > 1.0 else quality
 
+    async def _delete_existing_video_rows(conn) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        individual_rows = await conn.fetch(
+            """
+            SELECT DISTINCT individual_uuid
+            FROM individual_video_appearances
+            WHERE video_uuid = $1
+            """,
+            media_uuid,
+        )
+        individual_uuids = [row["individual_uuid"] for row in individual_rows]
+
+        iva_delete = await conn.execute(
+            "DELETE FROM individual_video_appearances WHERE video_uuid = $1",
+            media_uuid,
+        )
+        counts["iva_deleted"] = int(iva_delete.split()[-1] or 0)
+
+        mapping_delete = "DELETE 0"
+        if individual_uuids:
+            mapping_delete = await conn.execute(
+                """
+                DELETE FROM individual_mvr_mapping
+                WHERE individual_uuid = ANY($1::uuid[])
+                """,
+                individual_uuids,
+            )
+        counts["mapping_deleted"] = int(mapping_delete.split()[-1] or 0)
+
+        mvr_delete = await conn.execute(
+            "DELETE FROM mvr_people WHERE source_media_uuid = $1",
+            media_uuid,
+        )
+        counts["mvr_people_deleted"] = int(mvr_delete.split()[-1] or 0)
+
+        individual_delete = "DELETE 0"
+        if individual_uuids:
+            individual_delete = await conn.execute(
+                """
+                DELETE FROM individuals i
+                WHERE i.individual_uuid = ANY($1::uuid[])
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM individual_video_appearances iva
+                    WHERE iva.individual_uuid = i.individual_uuid
+                  )
+                """,
+                individual_uuids,
+            )
+        counts["individuals_deleted"] = int(individual_delete.split()[-1] or 0)
+        return counts
+
     async with mvr_repository.pool.acquire() as conn:
         # Only consider an MVR "existing" for this media if it is actually
         # reachable through the IVA -> mapping join (the same join used by
@@ -414,6 +466,28 @@ async def _materialize_single_media_from_persisted_person_objects(
             """,
             media_uuid,
         )
+
+        current_person_object_count = len(person_objects_payload)
+        should_rebuild_existing = (
+            existing_count
+            and current_person_object_count > 0
+            and int(existing_count) != current_person_object_count
+        )
+
+        if should_rebuild_existing:
+            logger.warning(
+                "Persisted person-object materialization mismatch for media %s: existing reachable MVR rows=%s, current person_objects=%s. Rebuilding per-video VMeta rows.",
+                media_uuid,
+                existing_count,
+                current_person_object_count,
+            )
+            delete_counts = await _delete_existing_video_rows(conn)
+            logger.info(
+                "Deleted stale per-video VMeta rows for media %s before rebuild: %s",
+                media_uuid,
+                delete_counts,
+            )
+            existing_count = 0
 
     if existing_count:
         return PersistedPersonObjectsMaterializationResponse(
@@ -807,7 +881,7 @@ def _age_display_to_mean(age_display: Optional[str]) -> Optional[float]:
 
 def _build_persistent_search_summary(
     search_response: MVRPeopleSearchResponse,
-    camera_ids: List[str],
+    camera_uuids: List[str],
     video_uuids: List[str],
     start_time: Optional[datetime],
     end_time: Optional[datetime],
@@ -880,7 +954,7 @@ def _build_persistent_search_summary(
         "total_unknown": total_unknown,
         "average_age": round(sum(ages) / len(ages), 3) if ages else None,
         "search_input": {
-            "camera_ids": sorted({camera_id for camera_id in camera_ids if camera_id}),
+            "camera_uuids": sorted({camera_uuid for camera_uuid in camera_uuids if camera_uuid}),
             "video_uuids": sorted({video_uuid for video_uuid in video_uuids if video_uuid}),
             "start_date": start_time,
             "end_date": end_time,
@@ -3774,8 +3848,8 @@ async def search_mvr_people_by_videos(
 )
 async def search_mvr_people_by_videos_persisted_merge_session(
     request: Request,
-    camera_ids: List[str] = Body(
-        ..., embed=True, description="List of camera identifiers participating in the search"
+    camera_uuids: List[str] = Body(
+        ..., embed=True, description="List of camera UUIDs participating in the search"
     ),
     video_uuids: List[str] = Body(
         ..., embed=True, description="List of video UUIDs to search"
@@ -3789,7 +3863,7 @@ async def search_mvr_people_by_videos_persisted_merge_session(
     limit: int = Body(100, description="Max results (default: 100, max: 500)"),
     similarity_threshold: float = Body(0.60, ge=0.0, le=1.0, description="Similarity threshold for merge preview (0-1, default 0.60)"),
     ignore_existing_session: bool = Body(False, description="Force a fresh session even if the same input was already stored"),
-    video_details: Optional[List[Dict[str, Any]]] = Body(None, description="Optional per-video metadata such as camera_id and media_timestamp"),
+    video_details: Optional[List[Dict[str, Any]]] = Body(None, description="Optional per-video metadata such as camera_uuid and media_timestamp"),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
     mvr_service: MVRService = Depends(get_mvr_service),
     mvr_matcher = Depends(get_mvr_matcher),
@@ -3798,7 +3872,7 @@ async def search_mvr_people_by_videos_persisted_merge_session(
 ):
     logger.info(
         "Searching persistent merge session for %s cameras and %s videos (user: %s, ignore_existing_session: %s)",
-        len(camera_ids),
+        len(camera_uuids),
         len(video_uuids),
         current_user.get("email"),
         ignore_existing_session,
@@ -3806,7 +3880,7 @@ async def search_mvr_people_by_videos_persisted_merge_session(
 
     if not ignore_existing_session:
         existing_session = await mvr_repository.get_search_session_by_same_input(
-            camera_ids=camera_ids,
+            camera_ids=camera_uuids,
             video_uuids=video_uuids,
         )
         if existing_session:
@@ -3819,6 +3893,8 @@ async def search_mvr_people_by_videos_persisted_merge_session(
                 "message": "Reused existing persisted merge session",
             }
 
+    should_auto_merge = len({video_uuid for video_uuid in video_uuids if video_uuid}) > 1
+
     search_response = await search_mvr_people_by_videos(
         request=request,
         video_uuids=video_uuids,
@@ -3826,9 +3902,9 @@ async def search_mvr_people_by_videos_persisted_merge_session(
         end_time=end_time,
         limit=limit,
         force_refresh=True,
-        auto_merge=True,
+        auto_merge=should_auto_merge,
         similarity_threshold=similarity_threshold,
-        ignore_existing_hierarchy=True,
+        ignore_existing_hierarchy=should_auto_merge,
         mvr_repository=mvr_repository,
         mvr_service=mvr_service,
         mvr_matcher=mvr_matcher,
@@ -3838,21 +3914,22 @@ async def search_mvr_people_by_videos_persisted_merge_session(
 
     result_payload = search_response.dict()
     result_payload.setdefault("search_parameters", {})
-    result_payload["search_parameters"]["camera_ids"] = sorted(
-        {camera_id for camera_id in camera_ids if camera_id}
+    result_payload["search_parameters"]["camera_uuids"] = sorted(
+        {camera_uuid for camera_uuid in camera_uuids if camera_uuid}
     )
     result_payload["search_parameters"]["persisted_merge_session"] = True
+    result_payload["search_parameters"]["auto_merge"] = should_auto_merge
 
     summary_payload = _build_persistent_search_summary(
         search_response=search_response,
-        camera_ids=camera_ids,
+        camera_uuids=camera_uuids,
         video_uuids=video_uuids,
         start_time=start_time,
         end_time=end_time,
     )
 
     created_session = await mvr_repository.create_search_session(
-        camera_ids=camera_ids,
+        camera_ids=camera_uuids,
         video_uuids=video_uuids,
         requested_start_date=start_time,
         requested_end_date=end_time,
@@ -3895,7 +3972,7 @@ async def search_mvr_people_by_videos_persisted_merge_session(
 )
 async def search_mvr_people_by_videos_persisted_merge_session_batch(
     request: Request,
-    batch_camera_id: str = Body(..., embed=True, description="The single camera id this batch belongs to"),
+    batch_camera_uuid: str = Body(..., embed=True, description="The single camera UUID this batch belongs to"),
     batch_start_utc: datetime = Body(..., embed=True, description="UTC start of the batch window"),
     batch_end_utc: datetime = Body(..., embed=True, description="UTC end of the batch window"),
     video_uuids: List[str] = Body(..., embed=True, description="Video UUIDs that fall inside the batch window"),
@@ -3909,7 +3986,7 @@ async def search_mvr_people_by_videos_persisted_merge_session_batch(
     current_user: dict = Depends(get_current_user),
 ):
     batch_key = MVRRepository.build_batch_key(
-        batch_camera_id, batch_start_utc, batch_end_utc
+        batch_camera_uuid, batch_start_utc, batch_end_utc
     )
 
     logger.info(
@@ -3940,7 +4017,7 @@ async def search_mvr_people_by_videos_persisted_merge_session_batch(
             "total_count": 0,
             "search_parameters": {
                 "video_uuids": [],
-                "camera_ids": [batch_camera_id],
+                    "camera_uuids": [batch_camera_uuid],
                 "persisted_merge_session": True,
                 "people_counters_batch": True,
                 "batch_key": batch_key,
@@ -3952,16 +4029,16 @@ async def search_mvr_people_by_videos_persisted_merge_session_batch(
                 success=True,
                 people=[],
                 total_count=0,
-                search_parameters={"camera_ids": [batch_camera_id]},
+                search_parameters={"camera_uuids": [batch_camera_uuid]},
                 message="Empty batch",
             ),
-            camera_ids=[batch_camera_id],
+            camera_uuids=[batch_camera_uuid],
             video_uuids=[],
             start_time=batch_start_utc,
             end_time=batch_end_utc,
         )
         created = await mvr_repository.create_search_session(
-            camera_ids=[batch_camera_id],
+            camera_ids=[batch_camera_uuid],
             video_uuids=[],
             requested_start_date=batch_start_utc,
             requested_end_date=batch_end_utc,
@@ -3973,7 +4050,7 @@ async def search_mvr_people_by_videos_persisted_merge_session_batch(
         await mvr_repository.tag_session_as_batch(
             search_session_uuid=created["search_session_uuid"],
             batch_key=batch_key,
-            batch_camera_id=batch_camera_id,
+            batch_camera_id=batch_camera_uuid,
             batch_start_utc=batch_start_utc,
             batch_end_utc=batch_end_utc,
         )
@@ -3993,7 +4070,7 @@ async def search_mvr_people_by_videos_persisted_merge_session_batch(
     # through so a forced recompute also forces a fresh merge.
     inner = await search_mvr_people_by_videos_persisted_merge_session(
         request=request,
-        camera_ids=[batch_camera_id],
+        camera_uuids=[batch_camera_uuid],
         video_uuids=video_uuids,
         start_time=batch_start_utc,
         end_time=batch_end_utc,
@@ -4019,7 +4096,7 @@ async def search_mvr_people_by_videos_persisted_merge_session_batch(
         tagged = await mvr_repository.tag_session_as_batch(
             search_session_uuid=session_uuid_typed,
             batch_key=batch_key,
-            batch_camera_id=batch_camera_id,
+            batch_camera_id=batch_camera_uuid,
             batch_start_utc=batch_start_utc,
             batch_end_utc=batch_end_utc,
         )
@@ -6568,6 +6645,7 @@ async def get_mvr_search_analysis(
             for group in (request.ephemeral_groups or [])
             if group.get("super_individual_uuid")
         }
+        missing_requested_uuids: List[str] = []
 
         if not stored_comparison_enabled:
             analyses = []
@@ -6586,17 +6664,27 @@ async def get_mvr_search_analysis(
                             )
                         ]
                     )
-                analyses.append(
-                    await _build_analysis_from_mvr_person(
-                        mvr_repository=mvr_repository,
-                        mvr_person_uuid=requested_uuid,
-                        session_uuid=request.session_uuid,
-                        start_time=request.start_time,
-                        end_time=request.end_time,
-                        member_mvr_person_uuids=member_uuids,
-                        ephemeral_group=ephemeral_group,
+                try:
+                    analyses.append(
+                        await _build_analysis_from_mvr_person(
+                            mvr_repository=mvr_repository,
+                            mvr_person_uuid=requested_uuid,
+                            session_uuid=request.session_uuid,
+                            start_time=request.start_time,
+                            end_time=request.end_time,
+                            member_mvr_person_uuids=member_uuids,
+                            ephemeral_group=ephemeral_group,
+                        )
                     )
-                )
+                except HTTPException as exc:
+                    if exc.status_code == status.HTTP_404_NOT_FOUND:
+                        missing_requested_uuids.append(requested_uuid)
+                        logger.warning(
+                            "Skipping missing MVR UUID during backend-owned analysis: %s",
+                            requested_uuid,
+                        )
+                        continue
+                    raise
 
             analyses.sort(
                 key=lambda item: (item["first_seen"], item["individual_uuid"])
@@ -6616,6 +6704,7 @@ async def get_mvr_search_analysis(
                 "requested_mvr_uuids": requested_uuids,
                 "resolved_super_individual_uuids": [],
                 "skipped_duplicate_inputs": [],
+                "missing_requested_mvr_uuids": missing_requested_uuids,
                 "analyses": analyses,
             }
 
@@ -6632,11 +6721,21 @@ async def get_mvr_search_analysis(
         analyses: List[Dict[str, Any]] = []
 
         for requested_uuid in request.mvr_uuids:
-            hierarchy = await merger.get_super_individual_hierarchy(
-                requested_uuid,
-                merged_page=request.merged_page,
-                merged_page_size=request.merged_page_size,
-            )
+            try:
+                hierarchy = await merger.get_super_individual_hierarchy(
+                    requested_uuid,
+                    merged_page=request.merged_page,
+                    merged_page_size=request.merged_page_size,
+                )
+            except HTTPException as exc:
+                if exc.status_code == status.HTTP_404_NOT_FOUND:
+                    missing_requested_uuids.append(str(requested_uuid))
+                    logger.warning(
+                        "Skipping missing hierarchy MVR UUID during backend-owned analysis: %s",
+                        requested_uuid,
+                    )
+                    continue
+                raise
 
             resolved_uuid = str(
                 hierarchy.get("resolved_super_individual_uuid") or requested_uuid
@@ -6673,6 +6772,7 @@ async def get_mvr_search_analysis(
             "requested_mvr_uuids": [str(uuid) for uuid in request.mvr_uuids],
             "resolved_super_individual_uuids": resolved_roots,
             "skipped_duplicate_inputs": skipped_duplicate_inputs,
+            "missing_requested_mvr_uuids": missing_requested_uuids,
             "analyses": analyses,
         }
     except Exception as e:

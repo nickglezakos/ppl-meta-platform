@@ -516,6 +516,37 @@ class MediaApiClient {
     }
   }
 
+  /// Bulk remove media items from collection using backend bulk-remove endpoint
+  Future<ApiResponse<void>> bulkRemoveFromCollection({
+    required String collectionId,
+    required List<String> mediaIds,
+  }) async {
+    try {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
+        return ApiResponse.error('Authentication required. Please login again.');
+      }
+
+      final response = await _apiClient.post(
+        '/api/v1/media/collections/$collectionId/bulk-remove',
+        data: {
+          'media_ids': mediaIds,
+          'collection_id': collectionId,
+          'user_id': userId,
+        },
+      );
+
+      print('DEBUG: MediaApiClient bulkRemoveFromCollection - success: ${response.data}');
+      return ApiResponse.success(null);
+    } on DioException catch (e) {
+      print('DEBUG: MediaApiClient bulkRemoveFromCollection - DioException: $e');
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      print('DEBUG: MediaApiClient bulkRemoveFromCollection - Exception: $e');
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   /// Get analytics data
   Future<ApiResponse<MediaAnalytics>> getAnalytics({
     DateTime? startDate,
@@ -1852,7 +1883,7 @@ class MediaApiClient {
   }
 
   Future<ApiResponse<Map<String, dynamic>>> searchPersistedMergedMVRPeopleByVideos({
-    required List<String> cameraIds,
+    required List<String> cameraUuids,
     required List<String> videoUuids,
     DateTime? startTime,
     DateTime? endTime,
@@ -1863,7 +1894,7 @@ class MediaApiClient {
   }) async {
     try {
       final data = {
-        'camera_ids': cameraIds,
+        'camera_uuids': cameraUuids,
         'video_uuids': videoUuids,
         'limit': limit,
         'ignore_existing_session': ignoreExistingSession,

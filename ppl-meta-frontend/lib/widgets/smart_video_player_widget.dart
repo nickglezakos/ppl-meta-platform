@@ -81,12 +81,15 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   @override
   void initState() {
     super.initState();
+
+    final hasExternalFaceData =
+        widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty;
     
     // Cache provider references for safe disposal
     _faceDataCache = ref.read(faceDataCacheProvider);
     _mediaFaceDataNotifier = ref.read(mediaFaceDataProvider(widget.mediaItem.uuid).notifier);
 
-    if (widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty) {
+    if (hasExternalFaceData) {
       _storedFaceData = widget.initialFaceData;
       _faceDataSource = widget.initialFaceDataSource;
       debugPrint('🎯 EXTERNAL FACE DATA: Loaded ${widget.initialFaceData!.length} faces for ${widget.mediaItem.uuid}');
@@ -106,7 +109,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       _setFallbackPlaybackMode();
       _isLoadingWorkflowData = false;
       _startPreviewStoredFaceLoad();
-    } else if (widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty) {
+    } else if (hasExternalFaceData) {
       _setFallbackPlaybackMode();
       _isLoadingWorkflowData = false;
     } else {
@@ -151,7 +154,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
   }
 
   void _startPreviewStoredFaceLoad() {
-    if (_isLoadingStoredFaces || widget.initialFaceData != null) {
+    final hasExternalFaceData =
+        widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty;
+    if (_isLoadingStoredFaces || hasExternalFaceData) {
       return;
     }
 
@@ -559,7 +564,7 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
       );
 
       // Load stored face data if using optimized mode
-      if (widget.initialFaceData == null &&
+      if ((widget.initialFaceData == null || widget.initialFaceData!.isEmpty) &&
           _currentPlaybackMode?.mode == 'stored_data' &&
           _processingStatus?.faceDetectionProcessed == true) {
         await _loadStoredFaceData();
@@ -839,7 +844,9 @@ class _SmartVideoPlayerWidgetState extends ConsumerState<SmartVideoPlayerWidget>
     // If no faces available yet, we'll make the API call first
     
     if (facesToDisplay.isEmpty) {
-      if (widget.initialFaceData != null) {
+      final hasExternalFaceData =
+          widget.initialFaceData != null && widget.initialFaceData!.isNotEmpty;
+      if (hasExternalFaceData) {
         return _buildBasicVideoPlayerForLoading(videoUrl);
       }
       if (!widget.enableWorkflowIntegration) {

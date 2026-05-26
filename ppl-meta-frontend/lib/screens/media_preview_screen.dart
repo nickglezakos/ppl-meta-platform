@@ -342,6 +342,10 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
               'Authorization': 'Bearer ${apiClient.authToken}',
           },
           collectionId: null, // TODO: Pass collection ID from route parameters
+          initialFaceData: _previewMvrFaces,
+          initialFaceDataSource: _previewMvrPeople.isNotEmpty
+              ? 'media_preview_mvr_data'
+              : 'media_preview_person_objects_data',
           enableWorkflowIntegration: false,
           onControllerReady: (controller) {
             debugPrint('🎬 Smart video controller ready with workflow integration');
@@ -389,9 +393,9 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
         return;
       }
 
-        final overlayFaces = personObjects.isNotEmpty
-          ? _buildPersonObjectOverlayFaces(mediaUuid, personObjects)
-          : _buildMvrOverlayFaces(mediaUuid, mvrPeople);
+      final overlayFaces = mvrPeople.isNotEmpty
+          ? _buildMvrOverlayFaces(mediaUuid, mvrPeople)
+          : _buildPersonObjectOverlayFaces(mediaUuid, personObjects);
       final analysisContext = mvrPeople.isEmpty ? null : _buildPreviewAnalysisContext(mvrPeople);
 
       setState(() {

@@ -1029,7 +1029,7 @@ async def _build_recording_pipeline_search_dataset(
             f"{VMETA_SERVICE_URL}/api/v1/mvr-people/search/by-videos/persisted-merge-session",
             headers={"Authorization": f"Bearer {auth_token}"},
             json={
-                "camera_ids": sorted(set(camera_ids)),
+                "camera_uuids": sorted(set(camera_ids)),
                 "video_uuids": video_uuids,
                 "start_time": start_time.isoformat(),
                 "end_time": end_time.isoformat(),

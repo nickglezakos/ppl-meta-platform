@@ -60,6 +60,32 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   String? _trackingSessionUuid;
   Map<String, dynamic>? _trackingSessionData;
 
+  List<String> _resolveCollectionCameraUuids(MediaCollection? collection) {
+    if (collection == null) {
+      return const [];
+    }
+
+    final metadataCameraIds = collection.metadata?['camera_ids'];
+    if (metadataCameraIds is List) {
+      final uuids = metadataCameraIds
+          .whereType<Object>()
+          .map((value) => value.toString())
+          .where((value) => value.isNotEmpty)
+          .toSet()
+          .toList();
+      if (uuids.isNotEmpty) {
+        return uuids;
+      }
+    }
+
+    final collectionUuid = collection.uuid;
+    if (collectionUuid != null && collectionUuid.isNotEmpty) {
+      return [collectionUuid];
+    }
+
+    return const [];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -926,6 +952,92 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         return;
       }
 
+        if (sessionData['search_results'] != null) {
+        final searchParams =
+            sessionData['search_parameters'] as Map<String, dynamic>? ?? const {};
+        final rawVideoUuids = searchParams['video_uuids'] as List<dynamic>? ?? const [];
+        final videoUuids = rawVideoUuids.map((value) => value.toString()).toList();
+        final sessionCameraUuids =
+            (searchParams['camera_uuids'] as List<dynamic>? ?? const [])
+                .map((value) => value.toString())
+                .where((value) => value.isNotEmpty)
+                .toList();
+        final collectionCameraUuids = _resolveCollectionCameraUuids(
+          _selectedCollection,
+        );
+        final cameraUuids = sessionCameraUuids.isNotEmpty
+            ? sessionCameraUuids
+            : collectionCameraUuids;
+
+        if (cameraUuids.isNotEmpty &&
+            videoUuids.isNotEmpty) {
+          final generalSettings = ref.read(generalSettingsProvider).valueOrNull;
+          final mergeThreshold =
+              generalSettings?.mergeIndividualsThreshold ?? 0.70;
+          final apiClient = ref.read(apiClientProvider);
+          final mediaApiClient = MediaApiClient(apiClient);
+          final startTime = searchParams['start_time'] != null
+              ? DateTime.tryParse(searchParams['start_time'].toString())
+              : _startDate;
+          final endTime = searchParams['end_time'] != null
+              ? DateTime.tryParse(searchParams['end_time'].toString())
+              : _endDate;
+
+          final mergeResponse =
+              await mediaApiClient.searchPersistedMergedMVRPeopleByVideos(
+            cameraUuids: cameraUuids,
+            videoUuids: videoUuids,
+            startTime: startTime,
+            endTime: endTime,
+            limit: 500,
+            similarityThreshold: mergeThreshold,
+            ignoreExistingSession: false,
+          );
+
+          if (mergeResponse.success && mergeResponse.data != null) {
+            final mergeSessionUuid =
+                mergeResponse.data!['search_session_uuid'] as String?;
+            final payload = mergeResponse.data!['result_payload']
+                    as Map<String, dynamic>? ??
+                const {};
+            final mergedResults =
+                payload['mvr_people'] as List<dynamic>? ?? const [];
+            final mergedUuids = mergedResults
+                .map((mvr) => (mvr as Map<String, dynamic>)['mvr_people_uuid'])
+                .whereType<Object>()
+                .map((uuid) => uuid.toString())
+                .toList();
+
+            if (mergeSessionUuid != null && mergedUuids.isNotEmpty) {
+              final rawResults =
+                  sessionData['search_results'] as List<dynamic>? ?? const [];
+              final promotedSessionData = Map<String, dynamic>.from(sessionData);
+              promotedSessionData['search_results'] = mergedResults;
+              promotedSessionData['persisted_merge_session_uuid'] = mergeSessionUuid;
+              promotedSessionData['persisted_merge_session_reused'] =
+                  mergeResponse.data!['reused_existing_session'] as bool? ?? false;
+              promotedSessionData['hierarchical_merge_applied'] = true;
+              promotedSessionData['merge_rule_applied'] = 'backend-owned';
+              promotedSessionData['pre_merge_count'] = rawResults.length;
+              promotedSessionData['post_merge_count'] = mergedUuids.length;
+              promotedSessionData['merge_statistics'] = {
+                'total_mvr': rawResults.length,
+                'super_individuals': mergedUuids.length,
+                'merges_performed': rawResults.length - mergedUuids.length,
+                'standalone_individuals': mergedUuids.length,
+              };
+
+              _navigateToCrossVideoAnalysis(
+                individualUuids: mergedUuids,
+                sessionUuid: mergeSessionUuid,
+                sessionData: promotedSessionData,
+              );
+              return;
+            }
+          }
+        }
+      }
+
       // Extract MVR people from search results
       final mvrPeople = _trackingSessionData!['search_results'] as List<dynamic>;
 
@@ -1020,11 +1132,10 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       // cameraDeviceId is not a collection identifier and may not resolve in
       // backend collection filtering after camera ID format changes.
       // Keep cameraDeviceId as fallback for legacy compatibility only.
-      final collectionIdentifier = _selectedCollection!.uuid ??
-                   _selectedCollection!.id ??
-                   _selectedCollection!.cameraDeviceId;
-      if (collectionIdentifier == null || collectionIdentifier.isEmpty) {
-        print('ERROR: Collection identifier is missing, cannot search or materialize MVR data');
+      final collectionUuid = _selectedCollection!.uuid;
+      final cameraUuids = _resolveCollectionCameraUuids(_selectedCollection);
+      if (collectionUuid == null || collectionUuid.isEmpty || cameraUuids.isEmpty) {
+        print('ERROR: Collection UUID or camera UUIDs are missing, cannot search or materialize MVR data');
         setState(() {
           _individualsCount = 0;
           _uniqueMvrCount = 0;
@@ -1033,12 +1144,13 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
         return;
       }
       
-      print('🔍 Searching existing MVR people for collection: $collectionIdentifier');
+      print('🔍 Searching existing MVR people for collection UUID: $collectionUuid');
+      print('   Camera UUIDs: ${cameraUuids.join(", ")}');
       print('   Date range: ${_startDate!.toIso8601String()} to ${_endDate!.toIso8601String()}');
       
       // Step 1: Get all videos from this collection within date range
       final mediaResponse = await mediaApiClient.searchMedia(
-        collectionId: collectionIdentifier,
+        collectionId: collectionUuid,
         mediaType: MediaType.video,
         startDate: _startDate,
         endDate: _endDate,
@@ -1071,15 +1183,19 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       final videoDetails = mediaResponse.data!.items
           .map((media) => {
                 'video_uuid': media.uuid,
-                'camera_id': collectionIdentifier,
                 'media_timestamp': media.createdAt.toUtc().toIso8601String(),
               })
           .toList();
+      if (cameraUuids.length == 1) {
+        for (final detail in videoDetails) {
+          detail['camera_uuid'] = cameraUuids.first;
+        }
+      }
       
       // Step 2: Search for existing MVR people in these videos
       final searchResponse = autoMerge
           ? await mediaApiClient.searchPersistedMergedMVRPeopleByVideos(
-              cameraIds: [collectionIdentifier],
+            cameraUuids: cameraUuids,
               videoUuids: videoUuids,
               startTime: _startDate,
               endTime: _endDate,
@@ -1110,7 +1226,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
           print('ℹ️ No persisted MVR rows found, triggering backend materialization session...');
 
           final sessionResponse = await mediaApiClient.createCrossVideoTrackingSession(
-            collectionName: collectionIdentifier,
+            collectionName: collectionUuid,
             videoUuids: videoUuids,
           );
 
@@ -1153,7 +1269,8 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
             'total_appearances': totalAppearances,
             'search_parameters': payload['search_parameters'],
             'collection_name': _selectedCollection!.name, // Add collection name
-            'collection_id': collectionIdentifier,        // Keep route scope aligned with backend camera IDs
+            'collection_id': collectionUuid,
+            'camera_uuids': cameraUuids,
             'persisted_merge_session_uuid': persistedSessionUuid,
             'persisted_merge_session_reused': autoMerge
                 ? (searchResponse.data!['reused_existing_session'] as bool? ?? false)
@@ -1611,6 +1728,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
   /// Handle move to collection operation
   void _handleMoveToCollection(List<MediaItem> items, String targetCollectionId) async {
     final organizationService = ref.read(mediaOrganizationServiceProvider);
+    final sourceCollectionId = _selectedCollection?.uuid;
     
     setState(() {
       _isProcessing = true;
@@ -1621,6 +1739,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
       final success = await organizationService.bulkMoveMedia(
         mediaIds,
         targetCollectionId,
+        sourceCollectionId: sourceCollectionId,
       );
 
       if (success) {
@@ -1651,8 +1770,7 @@ class _CollectionsScreenState extends ConsumerState<CollectionsScreen> {
 
     try {
       final mediaIds = items.map((item) => item.mediaId).toList();
-      // Use move functionality with copy flag (if supported) or implement separate copy logic
-      final success = await organizationService.bulkMoveMedia(
+      final success = await organizationService.copyMediaToCollection(
         mediaIds,
         targetCollectionId,
       );

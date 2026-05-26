@@ -261,6 +261,192 @@ class PPLThreadEndpoints:
             demographics=demographics,
         )
 
+    def _build_grouping_faces_from_stored_objects(
+        self,
+        stored_person_objects: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Flatten persisted person-object route data into face records for regrouping."""
+        grouping_faces: List[Dict[str, Any]] = []
+
+        for stored_person in stored_person_objects:
+            source_person_id = str(stored_person.get("person_id") or "")
+            quality_score = float(stored_person.get("quality_score") or 0.0)
+            demographics = stored_person.get("demographics") or {}
+            temporal_span = stored_person.get("temporal_span") or {}
+            representative_faces = stored_person.get("representative_faces") or []
+            if isinstance(representative_faces, str):
+                try:
+                    representative_faces = json.loads(representative_faces)
+                except (TypeError, ValueError):
+                    representative_faces = []
+
+            representative_faces_by_id: Dict[str, Dict[str, Any]] = {}
+            for representative_face in representative_faces:
+                if not isinstance(representative_face, dict):
+                    continue
+                face_id = representative_face.get("face_id")
+                if face_id is not None:
+                    representative_faces_by_id[str(face_id)] = representative_face
+
+            movement_tracking = stored_person.get("movement_tracking") or {}
+            route_points = movement_tracking.get("route_points") or []
+
+            for index, route_point in enumerate(route_points):
+                if not isinstance(route_point, dict):
+                    continue
+
+                bbox = route_point.get("bbox") or []
+                if len(bbox) != 4:
+                    continue
+
+                position = route_point.get("position") or {}
+                center_x = position.get("x")
+                center_y = position.get("y")
+                if center_x is None or center_y is None:
+                    center_x = (float(bbox[0]) + float(bbox[2])) / 2
+                    center_y = (float(bbox[1]) + float(bbox[3])) / 2
+
+                face_id = route_point.get("face_id") or f"{source_person_id}:{index}"
+                representative_face = representative_faces_by_id.get(str(face_id), {})
+                face_data = representative_face.get("face_data") or {}
+
+                grouping_faces.append(
+                    {
+                        "id": face_id,
+                        "source_person_id": source_person_id,
+                        "bbox": bbox,
+                        "frame_number": route_point.get(
+                            "frame_number",
+                            temporal_span.get("start_frame", 0),
+                        ),
+                        "timestamp": route_point.get("timestamp", 0),
+                        "center_x": float(center_x),
+                        "center_y": float(center_y),
+                        "confidence": route_point.get("confidence", quality_score),
+                        "distance_from_camera": face_data.get("distance")
+                        or route_point.get("distance_from_camera"),
+                        "age_estimate": face_data.get("age_estimate")
+                        or demographics.get("age_estimate"),
+                        "estimated_age": face_data.get("estimated_age")
+                        or demographics.get("age_estimate"),
+                        "gender": face_data.get("gender") or demographics.get("gender"),
+                        "estimated_gender": face_data.get("estimated_gender")
+                        or demographics.get("gender"),
+                    }
+                )
+
+        return grouping_faces
+
+    def _build_person_groups_from_stored_objects(
+        self,
+        stored_person_objects: List[Dict[str, Any]],
+    ) -> List[PPLThreadPersonGroup]:
+        """Normalize persisted tracking fragments into UI-facing grouped person objects."""
+        if not stored_person_objects:
+            return []
+
+        grouping_faces = self._build_grouping_faces_from_stored_objects(
+            stored_person_objects
+        )
+        face_bboxes = [face.get("bbox") or [] for face in grouping_faces]
+        face_bboxes = [bbox for bbox in face_bboxes if len(bbox) == 4]
+
+        if not grouping_faces or len(face_bboxes) != len(grouping_faces):
+            return [
+                self._build_person_group_from_stored_object(person)
+                for person in stored_person_objects
+            ]
+
+        source_person_lookup = {
+            str(person.get("person_id") or ""): person for person in stored_person_objects
+        }
+        grouped_faces = self._extract_face_groups(face_bboxes, grouping_faces)
+        person_groups: List[PPLThreadPersonGroup] = []
+
+        for group_faces in grouped_faces.values():
+            if not group_faces:
+                continue
+
+            member_ids = list(
+                dict.fromkeys(
+                    str(face.get("source_person_id") or "")
+                    for face in group_faces
+                    if face.get("source_person_id")
+                )
+            )
+            member_objects = [
+                source_person_lookup[member_id]
+                for member_id in member_ids
+                if member_id in source_person_lookup
+            ]
+            anchor_person = max(
+                member_objects,
+                key=lambda person: (
+                    int(person.get("face_count") or 0),
+                    float(person.get("quality_score") or 0.0),
+                    str(person.get("person_id") or ""),
+                ),
+            ) if member_objects else {"person_id": str(uuid.uuid4())}
+
+            representative_faces: List[Dict[str, Any]] = []
+            for member_object in member_objects:
+                member_representative_faces = member_object.get("representative_faces") or []
+                if isinstance(member_representative_faces, str):
+                    try:
+                        member_representative_faces = json.loads(member_representative_faces)
+                    except (TypeError, ValueError):
+                        member_representative_faces = []
+                for representative_face in member_representative_faces:
+                    if isinstance(representative_face, dict):
+                        representative_faces.append(representative_face)
+
+            representative_faces.sort(
+                key=lambda face: float(face.get("quality_score") or 0.0),
+                reverse=True,
+            )
+
+            all_face_ids = list(
+                dict.fromkeys(str(face.get("id")) for face in group_faces if face.get("id"))
+            )
+            quality_scores = [
+                float(face.get("confidence") or 0.0)
+                for face in group_faces
+                if isinstance(face.get("confidence"), (int, float))
+            ]
+            average_confidence = (
+                round(sum(quality_scores) / len(quality_scores), 3)
+                if quality_scores
+                else 0.0
+            )
+
+            movement_tracking = self._generate_movement_tracking(group_faces)
+            movement_tracking["source_person_ids"] = member_ids
+
+            person_groups.append(
+                PPLThreadPersonGroup(
+                    person_uuid=str(anchor_person.get("person_id") or uuid.uuid4()),
+                    person_id=str(anchor_person.get("person_id") or uuid.uuid4()),
+                    face_count=len(all_face_ids),
+                    representative_faces=representative_faces[:3],
+                    all_face_ids=all_face_ids,
+                    average_confidence=average_confidence,
+                    spatial_bounds=self._calculate_spatial_bounds(group_faces),
+                    temporal_span=self._calculate_temporal_span(group_faces),
+                    movement_tracking=movement_tracking,
+                    quality_metrics={
+                        "quality_score": float(anchor_person.get("quality_score") or 0.0),
+                        "merged_source_person_count": len(member_ids),
+                        "merged_source_person_ids": member_ids,
+                    },
+                    demographics=self._build_group_demographics(group_faces),
+                )
+            )
+
+        return person_groups or [
+            self._build_person_group_from_stored_object(person)
+            for person in stored_person_objects
+        ]
+
     async def _build_person_objects_from_live_faces(
         self,
         media_id: str,
@@ -397,10 +583,9 @@ class PPLThreadEndpoints:
 
             if session_details.success and session_details.data:
                 stored_person_objects = session_details.data.get("person_objects") or []
-                person_groups = [
-                    self._build_person_group_from_stored_object(person)
-                    for person in stored_person_objects
-                ]
+                person_groups = self._build_person_groups_from_stored_objects(
+                    stored_person_objects
+                )
                 total_persons = len(person_groups)
                 total_faces = sum(person.face_count for person in person_groups)
 
@@ -987,10 +1172,9 @@ class PPLThreadEndpoints:
                     )
 
                 stored_person_objects = session_details.data.get("person_objects") or []
-                person_groups = [
-                    self._build_person_group_from_stored_object(person)
-                    for person in stored_person_objects
-                ]
+                person_groups = self._build_person_groups_from_stored_objects(
+                    stored_person_objects
+                )
                 total_persons = len(person_groups)
                 total_faces = sum(person.face_count for person in person_groups)
 

@@ -27,21 +27,39 @@ class MediaOrganizationService extends ChangeNotifier {
   String? get operationError => _operationError;
 
     /// Move a single media item to a collection
-  Future<bool> moveMediaToCollection(String mediaId, String targetCollectionId) async {
+  Future<bool> moveMediaToCollection(
+    String mediaId,
+    String targetCollectionId, {
+    String? sourceCollectionId,
+  }) async {
     try {
       _setOperationState(true, 0.0, 'Moving media to collection...');
       
       // For now, use a placeholder user GUID - this should be replaced with actual auth
       const userGuid = 'current-user'; // TODO: Get from auth service
 
-      // Remove from current collection (if any) and add to target
       final response = await _mediaApiClient.bulkAddToCollection(
         collectionId: targetCollectionId,
         mediaIds: [mediaId],
       );
 
+      if (!response.success) {
+        _setOperationState(false, 0.0, null);
+        return false;
+      }
+
+      if (sourceCollectionId != null && sourceCollectionId != targetCollectionId) {
+        final removeResponse = await _mediaApiClient.bulkRemoveFromCollection(
+          collectionId: sourceCollectionId,
+          mediaIds: [mediaId],
+        );
+        if (!removeResponse.success) {
+          throw Exception('Added media to target collection but failed to remove it from source collection');
+        }
+      }
+
       _setOperationState(false, 1.0, null);
-      return response.success;
+      return true;
     } catch (e) {
       _setOperationError('Failed to move media: ${e.toString()}');
       return false;
@@ -49,7 +67,11 @@ class MediaOrganizationService extends ChangeNotifier {
   }
 
   /// Move multiple media items to a target collection
-  Future<bool> bulkMoveMedia(List<String> mediaIds, String targetCollectionId) async {
+  Future<bool> bulkMoveMedia(
+    List<String> mediaIds,
+    String targetCollectionId, {
+    String? sourceCollectionId,
+  }) async {
     try {
       _setOperationState(true, 0.0, 'Moving ${mediaIds.length} items...');
       
@@ -72,6 +94,16 @@ class MediaOrganizationService extends ChangeNotifier {
         
         if (!response.success) {
           throw Exception('Failed to process batch ${i + 1}');
+        }
+
+        if (sourceCollectionId != null && sourceCollectionId != targetCollectionId) {
+          final removeResponse = await _mediaApiClient.bulkRemoveFromCollection(
+            collectionId: sourceCollectionId,
+            mediaIds: chunk,
+          );
+          if (!removeResponse.success) {
+            throw Exception('Failed to remove batch ${i + 1} from source collection');
+          }
         }
       }
 
@@ -169,19 +201,14 @@ class MediaOrganizationService extends ChangeNotifier {
   Future<bool> removeFromCollection(List<String> mediaIds, String collectionId) async {
     try {
       _setOperationState(true, 0.0, 'Removing ${mediaIds.length} items...');
-      
-      // Note: This would require a remove API endpoint
-      // For now, we'll throw an informative error
-      throw UnimplementedError('Remove from collection API not yet implemented');
-      
-      // TODO: Implement when backend supports removal
-      // final response = await _mediaApiClient.bulkRemoveFromCollection(
-      //   collectionId: collectionId,
-      //   mediaIds: mediaIds,
-      // );
 
-      // _setOperationState(false, 1.0, null);
-      // return response.success;
+      final response = await _mediaApiClient.bulkRemoveFromCollection(
+        collectionId: collectionId,
+        mediaIds: mediaIds,
+      );
+
+      _setOperationState(false, 1.0, null);
+      return response.success;
     } catch (e) {
       _setOperationError('Failed to remove media: ${e.toString()}');
       return false;

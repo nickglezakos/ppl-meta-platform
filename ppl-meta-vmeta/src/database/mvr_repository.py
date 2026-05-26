@@ -47,6 +47,7 @@ class MVRRepository:
         # across user sessions.
         self._route_dataset_cache: Dict[str, Any] = {}
         self._ROUTE_CACHE_TTL_S: float = 300.0  # 5 minutes
+        self._search_sessions_has_is_stale: Optional[bool] = None
         logger.info("MVRRepository initialized")
 
     def _canonicalize_search_identity_values(self, values: List[str]) -> List[str]:
@@ -91,6 +92,21 @@ class MVRRepository:
 
         return value.astimezone(timezone.utc).replace(tzinfo=None)
 
+    async def _search_sessions_support_is_stale(self, conn: asyncpg.Connection) -> bool:
+        if self._search_sessions_has_is_stale is not None:
+            return self._search_sessions_has_is_stale
+
+        row = await conn.fetchrow(
+            """
+            SELECT 1
+              FROM information_schema.columns
+             WHERE table_name = 'mvr_search_sessions'
+               AND column_name = 'is_stale'
+            """
+        )
+        self._search_sessions_has_is_stale = row is not None
+        return self._search_sessions_has_is_stale
+
     async def get_search_session_by_same_input(
         self,
         camera_ids: List[str],
@@ -104,8 +120,11 @@ class MVRRepository:
         canonical_cameras = self._canonicalize_search_identity_values(camera_ids)
 
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
             params: List[Any] = [canonical_cameras, same_input_key]
             overlap_clause = ""
+            stale_clause = ""
+
             if requested_start_date is not None and requested_end_date is not None:
                 overlap_clause = """
                   AND (
@@ -116,6 +135,9 @@ class MVRRepository:
                 """
                 params.extend([requested_start_date, requested_end_date])
 
+            if supports_is_stale:
+                stale_clause = "AND COALESCE(ms.is_stale, FALSE) = FALSE"
+
             row = await conn.fetchrow(
                 f"""
                 WITH candidate_sessions AS (
@@ -124,6 +146,7 @@ class MVRRepository:
                     INNER JOIN mvr_search_session_cameras msc
                         ON msc.search_session_uuid = ms.search_session_uuid
                     WHERE msc.camera_id = ANY($1::text[])
+                      {stale_clause}
                     {overlap_clause}
                 )
                 SELECT
@@ -307,7 +330,8 @@ class MVRRepository:
                             (
                                 search_session_uuid,
                                 video_uuid,
-                                video_detail_map.get(video_uuid, {}).get("camera_id"),
+                                video_detail_map.get(video_uuid, {}).get("camera_uuid")
+                                or video_detail_map.get(video_uuid, {}).get("camera_id"),
                                 self._normalize_db_timestamp(
                                     video_detail_map.get(video_uuid, {}).get("media_timestamp")
                                 ),
@@ -373,14 +397,16 @@ class MVRRepository:
         batch_start_utc = self._normalize_db_timestamp(batch_start_utc)
         batch_end_utc = self._normalize_db_timestamp(batch_end_utc)
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
+            stale_assignment = "is_stale        = FALSE," if supports_is_stale else ""
             row = await conn.fetchrow(
-                """
+                f"""
                 UPDATE mvr_search_sessions
                    SET batch_key       = $2,
                        batch_camera_id = $3,
                        batch_start_utc = $4,
                        batch_end_utc   = $5,
-                       is_stale        = FALSE,
+                       {stale_assignment}
                        updated_at      = NOW()
                  WHERE search_session_uuid = $1
                  RETURNING search_session_uuid
@@ -396,14 +422,16 @@ class MVRRepository:
     async def get_batch_by_key(self, batch_key: str) -> Optional[Dict[str, Any]]:
         """Look up a single batch row by its deterministic key."""
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
+            stale_select = "is_stale," if supports_is_stale else "FALSE AS is_stale,"
             row = await conn.fetchrow(
-                """
+                f"""
                 SELECT search_session_uuid,
                        batch_key,
                        batch_camera_id,
                        batch_start_utc,
                        batch_end_utc,
-                       is_stale,
+                       {stale_select}
                        total_individuals,
                        total_appearances,
                        unique_videos,
@@ -427,6 +455,7 @@ class MVRRepository:
     ) -> List[Dict[str, Any]]:
         """List people-counters batches for a camera (diagnostics + UI)."""
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
             params: List[Any] = [camera_id]
             extra = []
             if date_from is not None:
@@ -435,8 +464,9 @@ class MVRRepository:
             if date_to is not None:
                 params.append(self._normalize_db_timestamp(date_to))
                 extra.append(f"AND batch_end_utc <= ${len(params)}")
-            if not include_stale:
+            if not include_stale and supports_is_stale:
                 extra.append("AND is_stale = FALSE")
+            stale_select = "is_stale," if supports_is_stale else "FALSE AS is_stale,"
             rows = await conn.fetch(
                 f"""
                 SELECT search_session_uuid,
@@ -444,7 +474,7 @@ class MVRRepository:
                        batch_camera_id,
                        batch_start_utc,
                        batch_end_utc,
-                       is_stale,
+                       {stale_select}
                        total_individuals,
                        unique_videos,
                        created_at,
@@ -473,8 +503,10 @@ class MVRRepository:
         period_start_utc = self._normalize_db_timestamp(period_start_utc)
         period_end_utc = self._normalize_db_timestamp(period_end_utc)
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
+            stale_filter = "AND is_stale = FALSE" if supports_is_stale else ""
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT search_session_uuid,
                        batch_key,
                        batch_camera_id,
@@ -486,11 +518,11 @@ class MVRRepository:
                   FROM mvr_search_sessions
                  WHERE batch_camera_id = $1
                    AND batch_key IS NOT NULL
-                   AND is_stale = FALSE
+                                     {stale_filter}
                    AND batch_start_utc >= $2
                    AND batch_end_utc   <= $3
                  ORDER BY batch_start_utc ASC
-                """,
+                                """,
                 camera_id,
                 period_start_utc,
                 period_end_utc,
@@ -498,12 +530,18 @@ class MVRRepository:
             return [dict(r) for r in rows]
 
     async def mark_batches_stale_for_video(self, video_uuid: str) -> int:
-        """Invalidate every batch whose window covers the given video's timestamp.
+        """Invalidate every search session touching the given video.
 
-        Called from materialization / merge / deletion hooks (proposal §5.7).
-        Returns the number of batches marked stale.
+        Called from materialization / merge / deletion hooks. This applies to
+        both people-counter batches and regular persisted merge/search sessions,
+        because either type can be reused after the underlying video changes.
+
+        Returns the number of sessions marked stale.
         """
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
+            if not supports_is_stale:
+                return 0
             result = await conn.execute(
                 """
                 UPDATE mvr_search_sessions ms
@@ -512,7 +550,6 @@ class MVRRepository:
                   FROM mvr_search_session_videos v
                  WHERE v.search_session_uuid = ms.search_session_uuid
                    AND v.video_uuid = $1::uuid
-                   AND ms.batch_key IS NOT NULL
                    AND ms.is_stale = FALSE
                 """,
                 video_uuid,
@@ -526,6 +563,9 @@ class MVRRepository:
     async def mark_batch_stale(self, batch_key: str) -> bool:
         """Manually flag a single batch for refresh (admin action / tests)."""
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
+            if not supports_is_stale:
+                return False
             row = await conn.fetchrow(
                 """
                 UPDATE mvr_search_sessions
@@ -538,15 +578,19 @@ class MVRRepository:
             return row is not None
 
     async def mark_batches_stale_for_mvr_people(self, mvr_people_uuids: List[str]) -> int:
-        """Invalidate every batch whose result includes one of the given mvr_people identities.
+        """Invalidate every search session whose result includes the given identities.
 
         Called whenever the canonical identity of an mvr_people row changes
-        (hierarchical merge, unmerge, identity reassignment). Proposal §5.7.
-        Returns the number of batches marked stale.
+        (hierarchical merge, unmerge, identity reassignment).
+
+        Returns the number of sessions marked stale.
         """
         if not mvr_people_uuids:
             return 0
         async with self.pool.acquire() as conn:
+            supports_is_stale = await self._search_sessions_support_is_stale(conn)
+            if not supports_is_stale:
+                return 0
             result = await conn.execute(
                 """
                 UPDATE mvr_search_sessions ms
@@ -555,7 +599,6 @@ class MVRRepository:
                   FROM mvr_search_session_people p
                  WHERE p.search_session_uuid = ms.search_session_uuid
                    AND p.mvr_people_uuid = ANY($1::uuid[])
-                   AND ms.batch_key IS NOT NULL
                    AND ms.is_stale = FALSE
                 """,
                 [str(u) for u in mvr_people_uuids],

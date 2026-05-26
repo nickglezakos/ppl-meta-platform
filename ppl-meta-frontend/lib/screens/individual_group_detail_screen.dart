@@ -246,6 +246,7 @@ class _IndividualGroupDetailScreenState
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              final analysisUuid = member.mvrPersonUuid ?? member.id;
               
               // Generate a proper UUID for the session
               const uuid = Uuid();
@@ -253,7 +254,7 @@ class _IndividualGroupDetailScreenState
               
               // Navigate to Cross-Video Analysis for this individual
               final analysisContext = CrossVideoAnalysisContext(
-                individualUuids: [member.id],
+                individualUuids: [analysisUuid],
                 sessionUuid: sessionUuid,
                 sessionData: {
                   'source': 'individual_group_member',
@@ -318,19 +319,34 @@ class _IndividualGroupDetailScreenState
       return;
     }
 
+    final analysisUuids = _members
+        .where((member) => _selectedMembers.contains(member.id))
+        .map((member) => member.mvrPersonUuid ?? member.id)
+        .toSet()
+        .toList();
+
+    if (analysisUuids.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selected members do not have analysis identifiers'),
+        ),
+      );
+      return;
+    }
+
     // Generate a proper UUID for the session
     const uuid = Uuid();
     final sessionUuid = uuid.v4();
 
     // Create context for cross-video analysis with selected individuals
     final analysisContext = CrossVideoAnalysisContext(
-      individualUuids: _selectedMembers.toList(),
+      individualUuids: analysisUuids,
       sessionUuid: sessionUuid, // Use proper UUID
       sessionData: {
         'source': 'individual_group_multi_select',
         'group_id': widget.groupId,
         'group_name': _group?.name ?? 'Unknown Group',
-        'individuals_found': _selectedMembers.length,
+        'individuals_found': analysisUuids.length,
         'total_videos': 0, // No specific videos - analyzing across all appearances
         'hierarchical_merge_applied': true, // Critical: Use hierarchy endpoint
         'search_results': [], // Indicates this is MVR people, not individuals
