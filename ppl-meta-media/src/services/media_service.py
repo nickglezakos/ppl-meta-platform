@@ -56,16 +56,19 @@ class MediaService:
         # Generate file hash for deduplication
         file_hash = hashlib.sha256(content).hexdigest()
 
-        # Check if file already exists
-        existing_media = (
-            self.db.query(Media)
-            .filter(Media.checksum == file_hash)
-            .filter(Media.uploaded_by == upload_request.user_id)
-            .first()
-        )
+        # Check if file already exists unless caller explicitly requested
+        # a separate upload entry for the same file bytes.
+        if not upload_request.force_separate_upload:
+            existing_media = (
+                self.db.query(Media)
+                .filter(Media.checksum == file_hash)
+                .filter(Media.uploaded_by == upload_request.user_id)
+                .first()
+            )
 
-        if existing_media:
-            return existing_media
+            if existing_media:
+                setattr(existing_media, "is_duplicate", True)
+                return existing_media
 
         # Determine media type from MIME type
         mime_type = file.content_type or "application/octet-stream"
@@ -146,6 +149,7 @@ class MediaService:
         self.db.add(media)
         self.db.commit()
         self.db.refresh(media)
+        setattr(media, "is_duplicate", False)
         
         # 🎯 v2.21.7: Redis event publishing DISABLED
         # Camera service now uses direct DB polling (more reliable)

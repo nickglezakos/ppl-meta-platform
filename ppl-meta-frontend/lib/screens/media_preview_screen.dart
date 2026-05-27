@@ -374,12 +374,46 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       final mediaUuid = widget.mediaItem.uuid;
       List<Map<String, dynamic>> personObjects = const <Map<String, dynamic>>[];
 
-      var mvrPeople = await _loadExistingMvrPeople(mediaApiClient, mediaUuid);
+      var mvrPeople = await _loadExistingMvrPeople(
+        mediaApiClient,
+        mediaUuid,
+        forceRefresh: true,
+      );
 
       final hasPersonObjects = await personObjectsApiClient.hasPersonObjectsForMedia(mediaUuid);
       if (hasPersonObjects) {
         final personObjectsData = await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
         personObjects = personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
+
+        final persistedPersonCount = personObjects.length;
+        final mvrPersonCount = mvrPeople.length;
+        final requiresRematerialization =
+            persistedPersonCount > 0 && mvrPersonCount != persistedPersonCount;
+
+        if (requiresRematerialization) {
+          debugPrint(
+            '🔁 Preview MVR mismatch for $mediaUuid: '
+            'persisted persons=$persistedPersonCount, MVR people=$mvrPersonCount. '
+            'Requesting authoritative rematerialization.',
+          );
+
+          final materializeResponse =
+              await mediaApiClient.materializePersistedPersonObjects(
+            mediaUuid: mediaUuid,
+            personObjects: personObjects,
+            mediaType: 'video',
+            awaitAuthoritativeRefresh: true,
+          );
+
+          if (materializeResponse.success) {
+            mvrPeople = await _loadExistingMvrPeople(mediaApiClient, mediaUuid);
+          } else {
+            debugPrint(
+              '❌ Preview rematerialization failed for $mediaUuid: '
+              '${materializeResponse.error}',
+            );
+          }
+        }
       }
 
       // NOTE: We deliberately do NOT call materializePersistedPersonObjects
@@ -424,6 +458,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   Future<List<Map<String, dynamic>>> _loadExistingMvrPeople(
     dynamic mediaApiClient,
     String mediaUuid,
+    {bool forceRefresh = false}
   ) async {
     final countResponse = await mediaApiClient.getMVRPeopleCountByVideos(videoUuids: [mediaUuid]);
     if (!countResponse.success) {
@@ -439,6 +474,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
       videoUuids: [mediaUuid],
       limit: 200,
       autoMerge: false,
+      forceRefresh: forceRefresh,
     );
 
     if (!searchResponse.success) {
@@ -1670,7 +1706,11 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
   }
 
   /// Navigate to cross-video analysis screen with MVR-backed preview context
-  void _navigateToCrossVideoAnalysis() {
+  Future<void> _navigateToCrossVideoAnalysis() async {
+    if (!_isPreparingMvrPreview) {
+      await _preparePreviewMvrData();
+    }
+
     final analysisContext = _previewAnalysisContext;
     if (analysisContext == null) {
       return;
@@ -1963,11 +2003,15 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             (postMvrResponse.data?['count'] as num?)?.toInt() ?? 0;
       }
 
-      if (postMvrCount == 0) {
-        final personObjectsData = await personObjectsApiClient
-            .getPersonObjectsForMedia(mediaUuid);
-        final persisted = personObjectsData?.rawPersonGroups ??
-            const <Map<String, dynamic>>[];
+      final personObjectsData = await personObjectsApiClient
+          .getPersonObjectsForMedia(mediaUuid);
+      final persisted = personObjectsData?.rawPersonGroups ??
+          const <Map<String, dynamic>>[];
+      final persistedPersonCount = persisted.length;
+      final requiresRematerialization =
+          persistedPersonCount > 0 && postMvrCount != persistedPersonCount;
+
+      if (requiresRematerialization) {
         if (persisted.isNotEmpty) {
           final materializeResponse =
               await mediaApiClient.materializePersistedPersonObjects(
@@ -1975,6 +2019,7 @@ class _EnhancedMediaPreviewScreenState extends ConsumerState<EnhancedMediaPrevie
             personObjects: persisted,
             sessionUuid: response.data?.sessionUuid,
             mediaType: 'video',
+            awaitAuthoritativeRefresh: true,
           );
           if (!materializeResponse.success) {
             messenger.showSnackBar(

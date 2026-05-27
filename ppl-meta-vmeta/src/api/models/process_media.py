@@ -130,6 +130,15 @@ class PersistedPersonObjectsMaterializationRequest(BaseModel):
         description="Materialization options reused by single-media MVR processing",
     )
 
+    await_authoritative_refresh: bool = Field(
+        default=False,
+        description=(
+            "When true, wait for the authoritative orchestrator-backed IVA refresh "
+            "before returning. Intended for UI/manual repair flows, not the "
+            "orchestrator callback path."
+        ),
+    )
+
 
 class PersistedPersonObjectsMaterializationResponse(BaseModel):
     """Response for internal persisted person-object materialization."""

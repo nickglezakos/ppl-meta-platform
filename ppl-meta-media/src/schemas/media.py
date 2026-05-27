@@ -117,6 +117,7 @@ class MediaUploadRequest(MediaBase):
     # These fields are for additional metadata
     media_type: Optional[MediaType] = None  # Will be determined by service
     user_id: Optional[UUID4] = None  # User who is uploading
+    force_separate_upload: bool = False
     technical_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
@@ -220,6 +221,7 @@ class MediaResponse(MediaBase):
     end_timestamp: Optional[datetime] = None    # Recording end time
     thumbnail_url: Optional[str] = None
     url: Optional[str] = None
+    is_duplicate: bool = False
     collections: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)

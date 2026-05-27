@@ -222,7 +222,7 @@ class VMetaCacheClient:
                 sorted_videos = sorted(video_uuids)
                 videos_str = ",".join(sorted_videos)
                 videos_hash = hashlib.md5(videos_str.encode()).hexdigest()[:12]
-                pattern = f"mvr_search:{videos_hash}:*"
+                pattern = f"mvr_search:v2:{videos_hash}:*"
                 
                 keys = []
                 async for key in self.client.scan_iter(match=pattern):

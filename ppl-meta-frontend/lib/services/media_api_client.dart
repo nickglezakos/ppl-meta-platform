@@ -34,6 +34,7 @@ class MediaApiClient {
     String? mimeType,
     Map<String, dynamic>? metadata,
     String? collectionId,
+    bool forceSeparateUpload = false,
     DeviceInfo? deviceInfo,
     Function(int, int)? onProgress,
     Function(double)? onProgressPercent,
@@ -69,6 +70,7 @@ class MediaApiClient {
         'file': file,
         'media_type': mediaType,  // Required field
         'user_id': userId,        // Required field
+        'force_separate_upload': forceSeparateUpload.toString(),
         if (metadata != null) 'metadata': metadata,
         if (collectionId != null) 'collection_id': collectionId,
         if (deviceInfo != null) 'device_info': deviceInfo.toJson(),
@@ -84,6 +86,7 @@ class MediaApiClient {
 
       // Create a MediaItem from the response data, mapping backend fields to frontend model
       final responseData = response.data as Map<String, dynamic>;
+      final isDuplicate = responseData['is_duplicate'] == true;
       final mediaItem = MediaItem(
         mediaId: responseData['id']?.toString() ?? responseData['uuid']?.toString() ?? '',
         uuid: responseData['uuid']?.toString() ?? responseData['id']?.toString() ?? '',
@@ -98,12 +101,16 @@ class MediaApiClient {
         isPublic: responseData['is_public'] ?? false,
         thumbnailUrl: responseData['thumbnail_url'],
         url: responseData['url'],
+        isDuplicate: isDuplicate,
         tags: (responseData['tags'] as List?)?.cast<String>() ?? [],
         description: responseData['description'],
         technicalMetadata: responseData['technical_metadata'],
       );
 
-      return ApiResponse.success(mediaItem);
+      return ApiResponse.success(
+        mediaItem,
+        message: isDuplicate ? 'duplicate' : 'uploaded',
+      );
     } on DioException catch (e) {
       return ApiResponse.error(_handleDioError(e));
     } catch (e) {
@@ -1846,6 +1853,7 @@ class MediaApiClient {
     DateTime? endTime,
     int limit = 100,
     bool autoMerge = false,
+    bool forceRefresh = false,
     double? similarityThreshold,
   }) async {
     try {
@@ -1853,6 +1861,7 @@ class MediaApiClient {
         'video_uuids': videoUuids,
         'limit': limit,
         'auto_merge': autoMerge,
+        'force_refresh': forceRefresh,
       };
       
       if (startTime != null) {
@@ -2040,6 +2049,7 @@ class MediaApiClient {
     required List<Map<String, dynamic>> personObjects,
     String? sessionUuid,
     String? mediaType,
+    bool awaitAuthoritativeRefresh = false,
   }) async {
     try {
       final response = await _apiClient.post(
@@ -2049,6 +2059,7 @@ class MediaApiClient {
           'session_uuid': sessionUuid,
           'media_type': mediaType,
           'person_objects': personObjects,
+          'await_authoritative_refresh': awaitAuthoritativeRefresh,
         },
       );
 

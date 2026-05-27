@@ -47,10 +47,13 @@ class _UploadScreenState extends State<UploadScreen> {
               showPreview: true,
               maxFileSizeBytes: 100 * 1024 * 1024, // 100MB
               onUploadComplete: (mediaItem) {
+                final snackBarText = mediaItem.isDuplicate
+                    ? 'File already exists in the media library as ${mediaItem.filename}'
+                    : 'Upload completed: ${mediaItem.filename}';
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('✅ Upload completed: ${mediaItem.filename}'),
-                    backgroundColor: AppColors.success,
+                    content: Text(mediaItem.isDuplicate ? 'ℹ️ $snackBarText' : '✅ $snackBarText'),
+                    backgroundColor: mediaItem.isDuplicate ? AppColors.warning : AppColors.success,
                     duration: const Duration(seconds: 4),
                   ),
                 );

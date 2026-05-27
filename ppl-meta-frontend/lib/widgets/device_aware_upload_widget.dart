@@ -44,6 +44,7 @@ class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidge
   Map<String, double> _uploadProgress = {};
   Map<String, UploadStatus> _uploadStatus = {};
   bool _isUploading = false;
+  bool _forceSeparateUpload = false;
   
   late AnimationController _dragAnimationController;
   late Animation<double> _dragOpacityAnimation;
@@ -219,6 +220,7 @@ class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidge
         fileBytes: fileBytes,
         fileName: file.name,
         mimeType: _getMimeType(file.name),
+        forceSeparateUpload: _forceSeparateUpload,
         deviceInfo: _deviceInfo,
         onProgressPercent: (progress) {
           setState(() {
@@ -428,6 +430,23 @@ class _DeviceAwareUploadWidgetState extends ConsumerState<DeviceAwareUploadWidge
               ),
             ),
             
+            const SizedBox(height: AppSpacing.md),
+
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Create separate item even if file already exists'),
+              subtitle: const Text('Turn this on before uploading when you want a new library entry instead of deduplication.'),
+              value: _forceSeparateUpload,
+              onChanged: _isUploading
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _forceSeparateUpload = value;
+                      });
+                    },
+              activeColor: AppColors.primary,
+            ),
+
             const SizedBox(height: AppSpacing.md),
             
             // Upload area

@@ -155,6 +155,7 @@ async def _refresh_iva_from_orchestrator_task(
     pool: Any,
     media_uuid_str: str,
     auth_token: Optional[str] = None,
+    initial_delay_seconds: float = 2.0,
 ) -> None:
     """Background task: rewrite iva rows for *media_uuid* with orchestrator's
     authoritative person_groups (proper person_uuid + representative_faces +
@@ -178,10 +179,10 @@ async def _refresh_iva_from_orchestrator_task(
         return
 
     # Give the orchestrator a moment to complete its sync POST and become
-    # responsive. The synchronous requests.post on the orchestrator side
-    # returns as soon as we send the response, but a small delay further
-    # avoids racing the unwind of its handler.
-    await asyncio.sleep(2.0)
+    # responsive. UI-triggered repair flows can bypass this delay because
+    # they are not racing the orchestrator's callback handler.
+    if initial_delay_seconds > 0:
+        await asyncio.sleep(initial_delay_seconds)
 
     orchestrator_url = os.getenv("PPL_ORCHESTRATOR_URL", "http://localhost:8002")
     internal_token = auth_token or os.getenv(
@@ -653,6 +654,7 @@ async def materialize_persisted_person_objects(
     background_tasks: BackgroundTasks,
     mvr_service: MVRService = Depends(get_mvr_service),
     mvr_repository: MVRRepository = Depends(get_mvr_repository),
+    cache_client = Depends(get_cache_client),
     _current_user: dict = Depends(get_current_user_or_internal_service),
 ):
     auth_header = http_request.headers.get("Authorization", "")
@@ -685,6 +687,31 @@ async def materialize_persisted_person_objects(
         media_type_override=request.media_type,
         session_uuid=request.session_uuid,
     )
+
+    try:
+        invalidated = await cache_client.invalidate_mvr_search(
+            video_uuids=[str(media_uuid)],
+        )
+        logger.info(
+            "Invalidated %s MVR search cache key(s) after materializing media %s",
+            invalidated,
+            media_uuid,
+        )
+    except Exception as cache_error:
+        logger.warning(
+            "Cache invalidation after persisted-person-object materialization failed for %s: %s",
+            media_uuid,
+            cache_error,
+        )
+
+    if request.await_authoritative_refresh:
+        await _refresh_iva_from_orchestrator_task(
+            mvr_repository.pool,
+            str(media_uuid),
+            auth_token,
+            0.0,
+        )
+        return response
 
     # Schedule post-response refresh: re-fetch person_groups from orchestrator
     # (now unblocked) and rewrite iva rows with proper person_uuid +

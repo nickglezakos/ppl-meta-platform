@@ -423,6 +423,8 @@ async def upload_media(
     file: UploadFile = File(...),
     media_type: MediaType = Form(...),  # Now required
     user_id: str = Form(...),
+    collection_id: Optional[str] = Form(None),
+    force_separate_upload: bool = Form(False),
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),  # JSON string
@@ -442,6 +444,10 @@ async def upload_media(
     """Upload a new media file with metadata and device information."""
     try:
         media_service = MediaService(db)
+        user_uuid = UUID(user_id)
+
+        if collection_id and not await media_service.get_collection(collection_id, user_uuid):
+            raise HTTPException(status_code=404, detail="Collection not found or not accessible")
 
         # Parse optional fields
         parsed_location_data = None
@@ -465,7 +471,8 @@ async def upload_media(
         # Create upload request from form data
         upload_request = MediaUploadRequest(
             media_type=media_type,
-            user_id=UUID(user_id),  # Include user_id
+            user_id=user_uuid,  # Include user_id
+            force_separate_upload=force_separate_upload,
             title=title,
             description=description,
             tags=tags.split(",") if tags else [],
@@ -482,6 +489,18 @@ async def upload_media(
         )
 
         media = await media_service.upload_media(file, upload_request)
+
+        if collection_id:
+            added = await media_service.add_media_to_collection(
+                collection_id=collection_id,
+                media_id=str(media.uuid),
+                user_id=user_uuid,
+            )
+            if not added:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Media uploaded but could not be assigned to the requested collection",
+                )
 
         # Generate URLs for the uploaded media
         media_response = MediaResponse.model_validate(media)

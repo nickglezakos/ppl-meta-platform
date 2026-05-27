@@ -183,6 +183,9 @@ class MediaItem {
   
   @JsonKey(name: 'url')
   final String? url; // Media access URL
+
+  @JsonKey(name: 'is_duplicate')
+  final bool isDuplicate;
   
   @JsonKey(name: 'duration')
   final int? duration; // Duration in seconds for video/audio files
@@ -223,6 +226,7 @@ class MediaItem {
     this.technicalMetadata,
     this.thumbnailUrl,
     this.url,
+    this.isDuplicate = false,
     this.duration,
     this.collections,
     this.collectionInfo,

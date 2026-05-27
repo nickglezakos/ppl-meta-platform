@@ -951,11 +951,15 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
               (postMvrResponse.data?['count'] as num?)?.toInt() ?? 0;
         }
 
-        if (postMvrCount == 0) {
-          final personObjectsData =
-              await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
-          final persisted =
-              personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
+        final personObjectsData =
+          await personObjectsApiClient.getPersonObjectsForMedia(mediaUuid);
+        final persisted =
+          personObjectsData?.rawPersonGroups ?? const <Map<String, dynamic>>[];
+        final persistedPersonCount = persisted.length;
+        final requiresRematerialization =
+          persistedPersonCount > 0 && postMvrCount != persistedPersonCount;
+
+        if (requiresRematerialization) {
           if (persisted.isNotEmpty) {
             debugPrint(
               '🔁 Compute: MVRs missing after pipeline — explicitly '
@@ -967,6 +971,7 @@ class _MediaDetailsDialogState extends ConsumerState<MediaDetailsDialog> {
               personObjects: persisted,
               sessionUuid: response.data?.sessionUuid,
               mediaType: 'video',
+              awaitAuthoritativeRefresh: true,
             );
             if (!materializeResponse.success) {
               _showErrorSnackBar(
