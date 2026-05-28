@@ -699,7 +699,7 @@ function consoleColumnsForFilter(filterName) {
 
   const baseColumns = [
     ['Type', 'type'],
-    ['Primary', 'primary'],
+    ['Record', 'primary'],
     ['Scope / Status', 'scope'],
     ['Owner / User', 'owner'],
   ];
@@ -986,7 +986,7 @@ function resetConsoleRows() {
 function updateEventRows(records) {
   return records.map((record) => ({
     type: `<span class="pill ${badgeClassForStatus(record.status)}">Update</span>`,
-    primary: `<code class="inline">${escapeHtml(record.installation_uuid)}</code>`,
+    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Unknown installation')}<br><span class="small"><code class="inline">${escapeHtml(record.installation_uuid)}</code></span>`,
     scope: `${escapeHtml(record.status)}<br><span class="small">${escapeHtml(record.created_at)}</span>`,
     owner: escapeHtml(record.approved_owner_email || '-'),
     keyInfo: `${escapeHtml(record.from_release_version || 'unknown')} -> <code class="inline">${escapeHtml(record.to_release_version)}</code>`,
@@ -997,7 +997,7 @@ function updateEventRows(records) {
 function stateReportRows(records) {
   return records.map((record) => ({
     type: '<span class="pill">Health</span>',
-    primary: `<code class="inline">${escapeHtml(record.installation_uuid)}</code>`,
+    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Unknown installation')}<br><span class="small"><code class="inline">${escapeHtml(record.installation_uuid)}</code></span>`,
     scope: `${escapeHtml(record.health_state || 'unknown')}<br><span class="small">${escapeHtml(record.reported_at)}</span>`,
     owner: escapeHtml(record.approved_owner_email || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.current_release_version)}</code><br><span class="small">${escapeHtml(record.deployment_mode || 'unknown mode')}</span>`,
@@ -1008,7 +1008,7 @@ function stateReportRows(records) {
 function entitlementRows(records) {
   return records.map((record) => ({
     type: '<span class="pill">Entitlement</span>',
-    primary: `<code class="inline">${record.entitlement_uuid}</code>`,
+    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Unassigned entitlement')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
     scope: `${statusBadgeMarkup(record.activation_status)}<br><span class="small">${record.tenant_name || 'No tenant'}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code><br><span class="small">${record.licence_status}</span>`,
@@ -1020,7 +1020,7 @@ function entitlementRows(records) {
 function invitationRows(records) {
   return records.map((record) => ({
     type: `<span class="pill ${badgeClassForStatus(record.effective_status || record.status)}">Invitation</span>`,
-    primary: `<code class="inline">${escapeHtml(record.invitation_uuid)}</code>`,
+    primary: `${escapeHtml(record.email)}<br><span class="small"><code class="inline">${escapeHtml(record.invitation_uuid)}</code></span>`,
     scope: `<span class="pill ${badgeClassForStatus(record.effective_status || record.status)}">${escapeHtml(record.effective_status || record.status)}</span><br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller scope')}</span>`,
     owner: escapeHtml(record.email),
     keyInfo: `<code class="inline">${escapeHtml(record.role_name)}</code>`,
@@ -1124,7 +1124,7 @@ function resellerSummaryRows(summary) {
   setMetricValue('metricResellerCount', summary.installation_count || 0);
   return summary.installations.map((record) => ({
     type: '<span class="pill">Reseller Installation</span>',
-    primary: `<code class="inline">${record.entitlement_uuid}</code>`,
+    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Reseller installation')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
     scope: `${summary.reseller_uuid}<br><span class="small">${statusBadgeMarkup(record.activation_status)}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code>`,
@@ -1137,7 +1137,7 @@ function distributorSummaryRows(summary) {
   setMetricValue('metricResellerCount', summary.installation_count || 0);
   return summary.installations.map((record) => ({
     type: '<span class="pill">Distributor Installation</span>',
-    primary: `<code class="inline">${record.entitlement_uuid}</code>`,
+    primary: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Distributor installation')}<br><span class="small"><code class="inline">${escapeHtml(record.entitlement_uuid)}</code></span>`,
     scope: `${summary.distributor_uuid}<br><span class="small">${statusBadgeMarkup(record.activation_status)}</span>`,
     owner: record.approved_owner_email,
     keyInfo: `<code class="inline">${record.application_key}</code>`,
@@ -1477,7 +1477,7 @@ function auditTransitionSummary(record) {
 function auditEventRows(records) {
   return records.map((record) => ({
     type: '<span class="pill">Audit</span>',
-    primary: `<code class="inline">${escapeHtml(record.target_entity_uuid)}</code>`,
+    primary: `${escapeHtml(record.target_email || record.target_entity_type || 'Audit event')}<br><span class="small"><code class="inline">${escapeHtml(record.target_entity_uuid)}</code></span>`,
     scope: `${escapeHtml(record.target_entity_type)}<br><span class="small">${escapeHtml(record.created_at || '-')}</span>`,
     owner: escapeHtml(record.target_email || '-'),
     keyInfo: `<code class="inline">${escapeHtml(record.action)}</code>`,
