@@ -57,8 +57,7 @@ assert 'id="loadMoreAuditEventsButton"' in admin_html
 assert 'id="adminAuditEvents"' in admin_html
 assert 'id="supportReinstateUserButton"' in admin_html
 assert 'id="adminUserDirectory"' in admin_html
-assert 'id="admin_user_lookup"' in admin_html
-assert 'id="adminUserLookupResults"' in admin_html
+assert 'id="admin_user_directory_search"' in admin_html
 assert 'id="reassign_user_lookup"' in admin_html
 assert 'id="reassignUserLookupResults"' in admin_html
 assert 'id="audit_target_entity_type"' in admin_html
@@ -98,12 +97,15 @@ assert 'supportReinstateUser' in js_text
 assert 'adminUserActivityItems' in js_text
 assert 'renderUserLookupResults' in js_text
 assert 'matchingUsers' in js_text
+assert 'renderAdminUserDirectory' in js_text
+assert 'filteredAdminUsers' in js_text
 assert 'setEntityPickerOpen' in js_text
 assert 'openEntityPickerForInput' in js_text
 assert 'bindUuidPickerInputs' in js_text
 assert 'matchingEntitlements' in js_text
 assert 'data-uuid-picker-kind' in js_text
 assert 'data-picker-distributor-uuid' in js_text
+assert 'user_email' in js_text
 assert 'owner_onboarding_reseller_uuid' in js_text
 assert 'invite_reseller_uuid' in js_text
 assert 'reassign_reseller_uuid' in js_text

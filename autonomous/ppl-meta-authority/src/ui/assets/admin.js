@@ -576,6 +576,14 @@ function escapeHtml(value) {
 }
 
 function entityPickerConfig(kind) {
+  if (kind === 'user_email') {
+    return {
+      title: 'Search user email',
+      hint: 'Search users by email or display name and use the selected email address.',
+      placeholder: 'Search by email, display name, role, or UUID',
+      empty: 'No matching user emails found.',
+    };
+  }
   if (kind === 'user') {
     return {
       title: 'Search user',
@@ -683,6 +691,14 @@ function matchingScopedUsers(query, roleName, uuidField) {
 }
 
 function pickerActivityItems(records, kind) {
+  if (kind === 'user_email') {
+    return records.map((record) => ({
+      title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
+      badges: statusBadgeMarkup(record.status || 'unknown'),
+      meta: `${escapeHtml(record.display_name || 'no display name')} · ${escapeHtml(record.user_uuid)} · ${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || 'no reseller')}`,
+      actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.email)}">Use email</button>`,
+    }));
+  }
   if (kind === 'user' || kind === 'audit_user') {
     return records.map((record) => ({
       title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
@@ -727,7 +743,7 @@ function pickerActivityItems(records, kind) {
 }
 
 async function ensureEntityPickerData(kind) {
-  if (kind === 'user' || kind === 'distributor_scope' || kind === 'reseller_scope') {
+  if (kind === 'user' || kind === 'user_email' || kind === 'distributor_scope' || kind === 'reseller_scope') {
     if (!adminUsersCache.length && userRole() === 'platform_admin') {
       await loadAdminUsers();
     }
@@ -782,6 +798,8 @@ function renderEntityPickerResults() {
   let items = [];
   if (entityPickerState.kind === 'user') {
     items = pickerActivityItems(matchingUsers(query), 'user');
+  } else if (entityPickerState.kind === 'user_email') {
+    items = pickerActivityItems(matchingUsers(query), 'user_email');
   } else if (entityPickerState.kind === 'distributor_scope') {
     items = pickerActivityItems(matchingScopedUsers(query, 'distributor', 'distributor_uuid'), 'distributor_scope');
   } else if (entityPickerState.kind === 'reseller_scope') {
@@ -1843,19 +1861,35 @@ function statusBadgeMarkup(status) {
 
 function adminUserActivityItems(records) {
   return records.map((record) => {
-    const nextQuickAction = record.status === 'suspended' ? 'active' : 'suspended';
-    const nextQuickLabel = record.status === 'suspended' ? 'Reinstate' : 'Suspend';
     return {
       title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
       badges: `${statusBadgeMarkup(record.status)} ${record.status === 'orphaned' ? '<span class="pill badge-pending">needs reassignment</span>' : ''}`,
-      meta: `${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || 'no reseller')}`,
-      actions: `
-        <button type="button" class="secondary mini-button" data-user-quick-status="${escapeHtml(nextQuickAction)}" data-user-uuid="${escapeHtml(record.user_uuid)}">${escapeHtml(nextQuickLabel)}</button>
-        <button type="button" class="secondary mini-button" data-prepare-reassign="true" data-user-uuid="${escapeHtml(record.user_uuid)}" data-distributor-uuid="${escapeHtml(record.distributor_uuid || '')}" data-reseller-uuid="${escapeHtml(record.reseller_uuid || '')}">Prepare reassign</button>
-        <button type="button" class="secondary mini-button" data-open-audit="true" data-audit-target-entity-type="authority_user" data-audit-target-entity-uuid="${escapeHtml(record.user_uuid)}">Audit</button>
-      `,
+      meta: `${escapeHtml(record.display_name || 'no display name')} · ${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || 'no reseller')}`,
+      actions: consoleActionMenu('Actions', buildUserConsoleActions(record)),
     };
   });
+}
+
+function filteredAdminUsers(query) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return adminUsersCache;
+  }
+  return adminUsersCache.filter((record) => [
+    record.email,
+    record.user_uuid,
+    record.display_name,
+    record.role_name,
+    record.status,
+    record.distributor_uuid,
+    record.reseller_uuid,
+  ].some((value) => String(value || '').toLowerCase().includes(normalized)));
+}
+
+function renderAdminUserDirectory() {
+  const searchInput = document.getElementById('admin_user_directory_search');
+  const query = searchInput instanceof HTMLInputElement ? searchInput.value : '';
+  renderActivityList('adminUserDirectory', adminUserActivityItems(filteredAdminUsers(query)), 'No matching users found.');
 }
 
 function matchingUsers(query) {
@@ -2101,8 +2135,7 @@ async function loadAdminUsers() {
     setConsoleRows('users', userRows(users));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(users));
     hierarchyViewModel = buildHierarchyModelFromUsers(users);
-    renderActivityList('adminUserDirectory', adminUserActivityItems(users), 'No users loaded yet.');
-    renderUserLookupResults('admin_user_lookup', 'adminUserLookupResults', 'lifecycle');
+    renderAdminUserDirectory();
     renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign');
     renderConsoleFilter();
     setStatus(`Loaded ${users.length} users.`);
@@ -2672,9 +2705,9 @@ bindChange('consoleSearchInput', (event) => {
   renderConsoleFilter();
 });
 
-bindChange('admin_user_lookup', () => renderUserLookupResults('admin_user_lookup', 'adminUserLookupResults', 'lifecycle'));
 bindChange('reassign_user_lookup', () => renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign'));
 bindChange('entityPickerSearchInput', renderEntityPickerResults);
+bindChange('admin_user_directory_search', renderAdminUserDirectory);
 
 bindFormSubmit('loginForm', handleLogin);
 bindClick('logoutButton', handleLogout);
@@ -2698,7 +2731,6 @@ bindClick('loadSessionButton', async () => {
     setStatus(error.message, true);
   }
 });
-bindClick('loadInstallations', loadInstallations);
 bindClick('saveInstallation', saveInstallation);
 bindClick('startOwnerOnboardingButton', startOwnerOnboarding);
 bindClick('createInvitation', createInvitation);

@@ -274,7 +274,7 @@
                   <label>Installation UUID<input id="installation_uuid" data-uuid-picker-kind="installation" placeholder="Click to search installation"></label>
                 </div>
                 <div class="row">
-                  <label>Approved owner email<input id="approved_owner_email" type="email" placeholder="owner@example.com"></label>
+                  <label>Approved owner email<input id="approved_owner_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
                   <label>Licence status
                     <select id="licence_status">
                       <option value="active">active</option>
@@ -297,7 +297,6 @@
                 <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
                 <div class="actions">
                   <button type="button" id="saveInstallation">Save entitlement</button>
-                  <button type="button" class="secondary" id="loadInstallations">Load entitlements</button>
                 </div>
               </div>
             </details>
@@ -306,7 +305,7 @@
               <h3>Assign Installation</h3>
               <div class="row">
                 <label>Entitlement UUID<input id="assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                <label>User email<input id="assignment_user_email" type="email" placeholder="owner@example.com"></label>
+                <label>User email<input id="assignment_user_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search user by email or name"></label>
               </div>
               <div class="actions">
                 <button type="button" id="assignInstallation">Assign entitlement</button>
@@ -316,10 +315,6 @@
             <div class="feature-card">
               <h3>User Lifecycle</h3>
               <div class="small">Suspend, reinstate, and remove users with explicit reasons. Use reassignment below to recover orphaned users.</div>
-              <div class="row">
-                <label>Find user<input id="admin_user_lookup" placeholder="Search by email, uuid, display name, role, scope"></label>
-              </div>
-              <div id="adminUserLookupResults" class="activity-list empty-list">Load users or type to find a user.</div>
               <div class="row">
                 <label>User UUID<input id="admin_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
                 <label>Status
@@ -410,6 +405,9 @@
             <div class="feature-card">
               <h3>User Directory</h3>
               <div class="small">Direct lifecycle actions for common user operations. Suspend, reinstate, or prepare reassignment without copying UUIDs manually.</div>
+              <div class="row">
+                <label>Search users<input id="admin_user_directory_search" placeholder="Search by email, name, role, status, or scope"></label>
+              </div>
               <div id="adminUserDirectory" class="activity-list empty-list">No users loaded yet.</div>
             </div>
           </div>
@@ -456,7 +454,7 @@
               <h3>Distributor Assignment</h3>
               <div class="row">
                 <label>Entitlement UUID<input id="distributor_assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                <label>Owner email<input id="distributor_assignment_user_email" type="email" placeholder="owner@example.com"></label>
+                <label>Owner email<input id="distributor_assignment_user_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
               </div>
               <div class="actions">
                 <button type="button" id="distributorAssignButton">Assign entitlement</button>
@@ -484,7 +482,7 @@
               <h3>Reseller Assignment</h3>
               <div class="row">
                 <label>Entitlement UUID<input id="reseller_assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
-                <label>Owner email<input id="reseller_assignment_user_email" type="email" placeholder="owner@example.com"></label>
+                <label>Owner email<input id="reseller_assignment_user_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
               </div>
               <div class="actions">
                 <button type="button" id="resellerAssignButton">Assign entitlement</button>
