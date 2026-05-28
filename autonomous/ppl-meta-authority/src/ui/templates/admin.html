@@ -217,8 +217,8 @@
                   <div>
                     <h4>Hierarchy placement</h4>
                     <div class="row">
-                      <label>Distributor UUID<input id="owner_onboarding_distributor_uuid" placeholder="Optional distributor scope"></label>
-                      <label>Reseller UUID<input id="owner_onboarding_reseller_uuid" placeholder="Optional reseller scope"></label>
+                      <label>Distributor UUID<input id="owner_onboarding_distributor_uuid" data-uuid-picker-kind="distributor_scope" placeholder="Click to search distributor scope"></label>
+                      <label>Reseller UUID<input id="owner_onboarding_reseller_uuid" data-uuid-picker-kind="reseller_scope" placeholder="Click to search reseller scope"></label>
                       <label>Expiry days<input id="owner_onboarding_expires_in_days" type="number" min="1" max="30" value="7"></label>
                     </div>
                     <div class="hint">Use reseller scope when the owner belongs under a specific reseller branch. Leave both fields blank only for exceptional platform-admin onboarding.</div>
@@ -254,8 +254,8 @@
                 </label>
               </div>
               <div class="row">
-                <label>Distributor UUID<input id="invite_distributor_uuid" placeholder="Optional distributor scope"></label>
-                <label>Reseller UUID<input id="invite_reseller_uuid" placeholder="Optional reseller scope"></label>
+                <label>Distributor UUID<input id="invite_distributor_uuid" data-uuid-picker-kind="distributor_scope" placeholder="Click to search distributor scope"></label>
+                <label>Reseller UUID<input id="invite_reseller_uuid" data-uuid-picker-kind="reseller_scope" placeholder="Click to search reseller scope"></label>
                 <label>Expiry days<input id="invite_expires_in_days" type="number" min="1" max="30" value="7"></label>
               </div>
               <div class="actions">
@@ -271,7 +271,7 @@
               <div class="advanced-card-body">
                 <div class="row">
                   <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
-                  <label>Installation UUID<input id="installation_uuid" placeholder="Optional. Bound on activation."></label>
+                  <label>Installation UUID<input id="installation_uuid" data-uuid-picker-kind="installation" placeholder="Click to search installation"></label>
                 </div>
                 <div class="row">
                   <label>Approved owner email<input id="approved_owner_email" type="email" placeholder="owner@example.com"></label>
@@ -305,7 +305,7 @@
             <div class="feature-card">
               <h3>Assign Installation</h3>
               <div class="row">
-                <label>Entitlement UUID<input id="assignment_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>Entitlement UUID<input id="assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
                 <label>User email<input id="assignment_user_email" type="email" placeholder="owner@example.com"></label>
               </div>
               <div class="actions">
@@ -321,7 +321,7 @@
               </div>
               <div id="adminUserLookupResults" class="activity-list empty-list">Load users or type to find a user.</div>
               <div class="row">
-                <label>User UUID<input id="admin_user_uuid" placeholder="Paste user_uuid"></label>
+                <label>User UUID<input id="admin_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
                 <label>Status
                   <select id="admin_user_status">
                     <option value="active">active</option>
@@ -349,11 +349,11 @@
               </div>
               <div id="reassignUserLookupResults" class="activity-list empty-list">Load users or type to find a user.</div>
               <div class="row">
-                <label>User UUID<input id="reassign_user_uuid" placeholder="Paste user_uuid"></label>
-                <label>Distributor UUID<input id="reassign_distributor_uuid" placeholder="dist-uuid"></label>
+                <label>User UUID<input id="reassign_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
+                <label>Distributor UUID<input id="reassign_distributor_uuid" data-uuid-picker-kind="distributor_scope" placeholder="Click to search distributor scope"></label>
               </div>
               <div class="row">
-                <label>Reseller UUID<input id="reassign_reseller_uuid" placeholder="reseller-uuid"></label>
+                <label>Reseller UUID<input id="reassign_reseller_uuid" data-uuid-picker-kind="reseller_scope" placeholder="Click to search reseller scope"></label>
                 <label>Reason code<input id="reassign_reason_code" placeholder="manual_reassignment"></label>
               </div>
               <div class="row">
@@ -368,7 +368,7 @@
               <h3>Entitlement Lifecycle</h3>
               <div class="small">Change entitlement activation state without deleting the underlying record.</div>
               <div class="row">
-                <label>Entitlement UUID<input id="admin_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>Entitlement UUID<input id="admin_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
                 <label>Activation status
                   <select id="admin_entitlement_status">
                     <option value="active">active</option>
@@ -393,7 +393,7 @@
               <h3>Audit History</h3>
               <div class="row">
                 <label>Entity type<input id="audit_target_entity_type" placeholder="authority_user or entitlement"></label>
-                <label>Entity UUID<input id="audit_target_entity_uuid" placeholder="Target user_uuid or entitlement_uuid"></label>
+                <label>Entity UUID<input id="audit_target_entity_uuid" data-uuid-picker-kind="audit_entity" placeholder="Click to search audit target"></label>
               </div>
               <div class="row">
                 <label>Action<input id="audit_action" placeholder="user_status_changed"></label>
@@ -455,7 +455,7 @@
             <div class="feature-card">
               <h3>Distributor Assignment</h3>
               <div class="row">
-                <label>Entitlement UUID<input id="distributor_assignment_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>Entitlement UUID<input id="distributor_assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
                 <label>Owner email<input id="distributor_assignment_user_email" type="email" placeholder="owner@example.com"></label>
               </div>
               <div class="actions">
@@ -483,7 +483,7 @@
             <div class="feature-card">
               <h3>Reseller Assignment</h3>
               <div class="row">
-                <label>Entitlement UUID<input id="reseller_assignment_entitlement_uuid" placeholder="Paste entitlement_uuid"></label>
+                <label>Entitlement UUID<input id="reseller_assignment_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
                 <label>Owner email<input id="reseller_assignment_user_email" type="email" placeholder="owner@example.com"></label>
               </div>
               <div class="actions">
@@ -505,7 +505,7 @@
               <h3>Emergency Recovery</h3>
               <div class="small">Support may reinstate suspended owner or reseller users only. Scope reassignment and entitlement changes remain admin-only.</div>
               <div class="row">
-                <label>User UUID<input id="support_user_uuid" placeholder="Paste suspended user_uuid"></label>
+                <label>User UUID<input id="support_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
                 <label>Reason code<input id="support_reason_code" placeholder="emergency_recovery"></label>
               </div>
               <div class="row">
@@ -539,6 +539,24 @@
             <button type="button" class="secondary" id="cancelChangePasswordButton">Cancel</button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div class="modal-shell hidden" id="entityPickerModal" aria-hidden="true">
+      <div class="modal-backdrop" id="entityPickerBackdrop"></div>
+      <section class="modal-card entity-picker-card" role="dialog" aria-modal="true" aria-labelledby="entityPickerTitle">
+        <div class="merged-bar-title-row">
+          <div>
+            <h2 id="entityPickerTitle">Search record</h2>
+            <div class="small" id="entityPickerHint">Search by human-friendly identifiers and use the matching record.</div>
+          </div>
+          <button type="button" class="drawer-close" id="closeEntityPickerButton" aria-label="Close entity picker dialog">Close</button>
+        </div>
+        <label>Search<input id="entityPickerSearchInput" type="text" autocomplete="off" placeholder="Search by email, name, tenant, or identifier"></label>
+        <div id="entityPickerResults" class="activity-list empty-list">Choose a UUID field to open search.</div>
+        <div class="actions">
+          <button type="button" class="secondary" id="cancelEntityPickerButton">Cancel</button>
+        </div>
       </section>
     </div>
   </div>

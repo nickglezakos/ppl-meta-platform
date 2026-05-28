@@ -15,7 +15,13 @@ let activeConsoleFilter = 'all';
 let consoleSearchQuery = '';
 let changePasswordReturnFocus = null;
 let adminUsersCache = [];
+let entitlementSearchCache = [];
 let hierarchyViewModel = [];
+let entityPickerReturnFocus = null;
+let entityPickerState = {
+  targetInputId: '',
+  kind: '',
+};
 let auditState = {
   items: [],
   rows: [],
@@ -179,6 +185,28 @@ function setStatus(message, isError = false) {
 
 function setAcceptStatus(message, isError = false) {
   showToast(message, isError ? 'error' : 'success');
+}
+
+function setEntityPickerOpen(isOpen) {
+  const modal = element('entityPickerModal');
+  if (!(modal instanceof HTMLElement)) {
+    return;
+  }
+  modal.classList.toggle('hidden', !isOpen);
+  modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  document.body.classList.toggle('modal-open', isOpen);
+  if (isOpen) {
+    const searchInput = element('entityPickerSearchInput');
+    if (searchInput instanceof HTMLInputElement) {
+      window.setTimeout(() => searchInput.focus(), 0);
+    }
+    return;
+  }
+  if (entityPickerReturnFocus instanceof HTMLElement) {
+    entityPickerReturnFocus.focus();
+  }
+  entityPickerReturnFocus = null;
+  entityPickerState = { targetInputId: '', kind: '' };
 }
 
 function prefillInvitationTokenFromUrl() {
@@ -428,6 +456,27 @@ function setChangePasswordModalOpen(isOpen) {
   changePasswordReturnFocus = null;
 }
 
+function mergeUsersIntoCache(records) {
+  const merged = new Map();
+  [...adminUsersCache, ...(records || [])].forEach((record) => {
+    if (record && record.user_uuid) {
+      merged.set(record.user_uuid, record);
+    }
+  });
+  adminUsersCache = Array.from(merged.values());
+}
+
+function setEntitlementSearchCache(records) {
+  const merged = new Map();
+  [...entitlementSearchCache, ...(records || [])].forEach((record) => {
+    const key = record && (record.entitlement_uuid || record.installation_uuid || record.application_key);
+    if (key) {
+      merged.set(key, record);
+    }
+  });
+  entitlementSearchCache = Array.from(merged.values());
+}
+
 function activateView(viewId) {
   if (!document.querySelectorAll('.view-link[data-view]').length) {
     return;
@@ -524,6 +573,308 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function entityPickerConfig(kind) {
+  if (kind === 'user') {
+    return {
+      title: 'Search user',
+      hint: 'Search by email, display name, role, or scope and use the matching user UUID.',
+      placeholder: 'Search by email, name, role, or UUID',
+      empty: 'No matching users found.',
+    };
+  }
+  if (kind === 'entitlement') {
+    return {
+      title: 'Search entitlement',
+      hint: 'Search by owner email, tenant name, application key, installation UUID, or entitlement UUID.',
+      placeholder: 'Search by owner email, tenant, application key, or entitlement UUID',
+      empty: 'No matching entitlements found.',
+    };
+  }
+  if (kind === 'installation') {
+    return {
+      title: 'Search installation',
+      hint: 'Search by installation UUID, owner email, tenant name, or application key.',
+      placeholder: 'Search by installation UUID, tenant, or owner email',
+      empty: 'No matching installations found.',
+    };
+  }
+  if (kind === 'distributor_scope') {
+    return {
+      title: 'Search distributor scope',
+      hint: 'Search distributor users by email or name and use the matching distributor UUID.',
+      placeholder: 'Search distributor by email, name, or UUID',
+      empty: 'No matching distributor scopes found.',
+    };
+  }
+  if (kind === 'reseller_scope') {
+    return {
+      title: 'Search reseller scope',
+      hint: 'Search reseller users by email or name and use the matching reseller UUID.',
+      placeholder: 'Search reseller by email, name, or UUID',
+      empty: 'No matching reseller scopes found.',
+    };
+  }
+  if (kind === 'audit_entity') {
+    return {
+      title: 'Search audit target',
+      hint: 'Choose an entity type first, then search that entity by human-friendly identifiers.',
+      placeholder: 'Search by user email/name or entitlement owner/tenant',
+      empty: 'No matching audit targets found.',
+    };
+  }
+  return {
+    title: 'Search record',
+    hint: 'Search for the record you want to use.',
+    placeholder: 'Search',
+    empty: 'No matching records found.',
+  };
+}
+
+function normalizePickerQuery() {
+  const input = element('entityPickerSearchInput');
+  if (!(input instanceof HTMLInputElement)) {
+    return '';
+  }
+  return input.value.trim().toLowerCase();
+}
+
+function matchingEntitlements(query) {
+  if (!query) {
+    return entitlementSearchCache.slice(0, 8);
+  }
+  return entitlementSearchCache.filter((record) => [
+    record.entitlement_uuid,
+    record.approved_owner_email,
+    record.tenant_name,
+    record.application_key,
+    record.installation_uuid,
+    record.activation_status,
+    record.licence_status,
+  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, 8);
+}
+
+function matchingInstallations(query) {
+  const installations = entitlementSearchCache.filter((record) => record.installation_uuid);
+  if (!query) {
+    return installations.slice(0, 8);
+  }
+  return installations.filter((record) => [
+    record.installation_uuid,
+    record.approved_owner_email,
+    record.tenant_name,
+    record.application_key,
+    record.entitlement_uuid,
+  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, 8);
+}
+
+function matchingScopedUsers(query, roleName, uuidField) {
+  const records = adminUsersCache.filter((record) => record.role_name === roleName && record[uuidField]);
+  if (!query) {
+    return records.slice(0, 8);
+  }
+  return records.filter((record) => [
+    record.email,
+    record.display_name,
+    record.user_uuid,
+    record[uuidField],
+  ].some((value) => String(value || '').toLowerCase().includes(query))).slice(0, 8);
+}
+
+function pickerActivityItems(records, kind) {
+  if (kind === 'user' || kind === 'audit_user') {
+    return records.map((record) => ({
+      title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
+      badges: statusBadgeMarkup(record.status || 'unknown'),
+      meta: `${escapeHtml(record.display_name || 'no display name')} · ${escapeHtml(record.user_uuid)} · ${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || 'no reseller')}`,
+      actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.user_uuid)}">Use user</button>`,
+    }));
+  }
+  if (kind === 'distributor_scope') {
+    return records.map((record) => ({
+      title: `${escapeHtml(record.display_name || record.email)} · distributor`,
+      badges: statusBadgeMarkup(record.status || 'unknown'),
+      meta: `${escapeHtml(record.email)} · ${escapeHtml(record.distributor_uuid)}`,
+      actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.distributor_uuid)}">Use distributor scope</button>`,
+    }));
+  }
+  if (kind === 'reseller_scope') {
+    return records.map((record) => ({
+      title: `${escapeHtml(record.display_name || record.email)} · reseller`,
+      badges: statusBadgeMarkup(record.status || 'unknown'),
+      meta: `${escapeHtml(record.email)} · ${escapeHtml(record.reseller_uuid)} · ${escapeHtml(record.distributor_uuid || 'no distributor')}`,
+      actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.reseller_uuid)}" data-picker-distributor-uuid="${escapeHtml(record.distributor_uuid || '')}">Use reseller scope</button>`,
+    }));
+  }
+  if (kind === 'entitlement' || kind === 'audit_entitlement') {
+    return records.map((record) => ({
+      title: `${escapeHtml(record.tenant_name || record.approved_owner_email || record.application_key || 'Entitlement')} · ${escapeHtml(record.activation_status || record.licence_status || 'unknown')}`,
+      badges: statusBadgeMarkup(record.activation_status || 'unknown'),
+      meta: `${escapeHtml(record.approved_owner_email || 'no owner')} · ${escapeHtml(record.entitlement_uuid)} · ${escapeHtml(record.installation_uuid || 'unbound installation')}`,
+      actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.entitlement_uuid)}">Use entitlement</button>`,
+    }));
+  }
+  if (kind === 'installation') {
+    return records.map((record) => ({
+      title: `${escapeHtml(record.tenant_name || record.approved_owner_email || 'Installation')} · ${escapeHtml(record.installation_uuid)}`,
+      badges: statusBadgeMarkup(record.activation_status || 'unknown'),
+      meta: `${escapeHtml(record.approved_owner_email || 'no owner')} · ${escapeHtml(record.entitlement_uuid || 'no entitlement')}`,
+      actions: `<button type="button" class="secondary mini-button" data-picker-select-value="${escapeHtml(record.installation_uuid)}">Use installation</button>`,
+    }));
+  }
+  return [];
+}
+
+async function ensureEntityPickerData(kind) {
+  if (kind === 'user' || kind === 'distributor_scope' || kind === 'reseller_scope') {
+    if (!adminUsersCache.length && userRole() === 'platform_admin') {
+      await loadAdminUsers();
+    }
+    return;
+  }
+  if (kind === 'entitlement' || kind === 'installation') {
+    if (entitlementSearchCache.length) {
+      return;
+    }
+    if (userRole() === 'platform_admin') {
+      await loadInstallations();
+      return;
+    }
+    if (userRole() === 'distributor') {
+      await loadDistributorSummary();
+      return;
+    }
+    if (userRole() === 'reseller') {
+      await loadResellerSummary();
+      return;
+    }
+    await loadOwnerInstallations();
+    return;
+  }
+  if (kind === 'audit_entity') {
+    const entityType = element('audit_target_entity_type')?.value.trim();
+    if (entityType === 'authority_user') {
+      await ensureEntityPickerData('user');
+      return;
+    }
+    if (entityType === 'entitlement') {
+      await ensureEntityPickerData('entitlement');
+    }
+  }
+}
+
+function renderEntityPickerResults() {
+  const config = entityPickerConfig(entityPickerState.kind);
+  const title = element('entityPickerTitle');
+  const hint = element('entityPickerHint');
+  const searchInput = element('entityPickerSearchInput');
+  if (title) {
+    title.textContent = config.title;
+  }
+  if (hint) {
+    hint.textContent = config.hint;
+  }
+  if (searchInput instanceof HTMLInputElement) {
+    searchInput.placeholder = config.placeholder;
+  }
+  const query = normalizePickerQuery();
+  let items = [];
+  if (entityPickerState.kind === 'user') {
+    items = pickerActivityItems(matchingUsers(query), 'user');
+  } else if (entityPickerState.kind === 'distributor_scope') {
+    items = pickerActivityItems(matchingScopedUsers(query, 'distributor', 'distributor_uuid'), 'distributor_scope');
+  } else if (entityPickerState.kind === 'reseller_scope') {
+    items = pickerActivityItems(matchingScopedUsers(query, 'reseller', 'reseller_uuid'), 'reseller_scope');
+  } else if (entityPickerState.kind === 'entitlement') {
+    items = pickerActivityItems(matchingEntitlements(query), 'entitlement');
+  } else if (entityPickerState.kind === 'installation') {
+    items = pickerActivityItems(matchingInstallations(query), 'installation');
+  } else if (entityPickerState.kind === 'audit_entity') {
+    const entityType = element('audit_target_entity_type')?.value.trim();
+    if (entityType === 'authority_user') {
+      items = pickerActivityItems(matchingUsers(query), 'audit_user');
+    } else if (entityType === 'entitlement') {
+      items = pickerActivityItems(matchingEntitlements(query), 'audit_entitlement');
+    } else {
+      renderActivityList('entityPickerResults', [], 'Set the audit entity type to authority_user or entitlement first.');
+      return;
+    }
+  }
+  renderActivityList('entityPickerResults', items, config.empty);
+  const results = element('entityPickerResults');
+  if (!(results instanceof HTMLElement)) {
+    return;
+  }
+  results.querySelectorAll('[data-picker-select-value]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = element(entityPickerState.targetInputId);
+      if (target instanceof HTMLInputElement) {
+        target.value = button.dataset.pickerSelectValue || '';
+        const distributorUuid = button.dataset.pickerDistributorUuid || '';
+        if (distributorUuid) {
+          const siblingDistributorInputIdByTarget = {
+            owner_onboarding_reseller_uuid: 'owner_onboarding_distributor_uuid',
+            invite_reseller_uuid: 'invite_distributor_uuid',
+            reassign_reseller_uuid: 'reassign_distributor_uuid',
+          };
+          const siblingId = siblingDistributorInputIdByTarget[target.id];
+          const siblingField = siblingId ? element(siblingId) : null;
+          if (siblingField instanceof HTMLInputElement && !siblingField.value.trim()) {
+            siblingField.value = distributorUuid;
+            siblingField.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+        target.dispatchEvent(new Event('change', { bubbles: true }));
+        setStatus(`${target.labels?.[0]?.textContent?.trim() || 'Field'} populated.`);
+      }
+      setEntityPickerOpen(false);
+    });
+  });
+}
+
+async function openEntityPickerForInput(input) {
+  if (!(input instanceof HTMLInputElement)) {
+    return;
+  }
+  const kind = input.dataset.uuidPickerKind || '';
+  if (!kind) {
+    return;
+  }
+  entityPickerReturnFocus = input;
+  entityPickerState = {
+    targetInputId: input.id,
+    kind,
+  };
+  const searchInput = element('entityPickerSearchInput');
+  if (searchInput instanceof HTMLInputElement) {
+    searchInput.value = '';
+  }
+  try {
+    await ensureEntityPickerData(kind);
+    renderEntityPickerResults();
+    setEntityPickerOpen(true);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+function bindUuidPickerInputs() {
+  document.querySelectorAll('[data-uuid-picker-kind]').forEach((node) => {
+    if (!(node instanceof HTMLInputElement)) {
+      return;
+    }
+    node.addEventListener('click', (event) => {
+      event.preventDefault();
+      openEntityPickerForInput(node);
+    });
+    node.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openEntityPickerForInput(node);
+      }
+    });
+  });
 }
 
 function badgeClassForStatus(status) {
@@ -1734,6 +2085,7 @@ async function handleChangePassword() {
 async function loadInstallations() {
   try {
     const records = await api('/api/v1/admin/installations', { headers: authHeaders() });
+    setEntitlementSearchCache(records);
     setConsoleRows('entitlements', entitlementRows(records));
     renderConsoleFilter();
     setStatus(`Loaded ${records.length} entitlements.`);
@@ -1745,7 +2097,7 @@ async function loadInstallations() {
 async function loadAdminUsers() {
   try {
     const users = await api('/api/v1/admin/users', { headers: authHeaders() });
-    adminUsersCache = users;
+    mergeUsersIntoCache(users);
     setConsoleRows('users', userRows(users));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(users));
     hierarchyViewModel = buildHierarchyModelFromUsers(users);
@@ -2042,6 +2394,7 @@ async function assignInstallation(path, entitlementFieldId, userFieldId) {
 async function loadOwnerInstallations() {
   try {
     const records = await api('/api/v1/dashboard/owner/installations', { headers: authHeaders() });
+    setEntitlementSearchCache(records);
     setConsoleRows('entitlements', ownerRows(records));
     renderConsoleFilter();
     setStatus(`Loaded ${records.length} owner installations.`);
@@ -2107,6 +2460,8 @@ async function loadAdminSummary() {
 async function loadResellerSummary() {
   try {
     const summary = await api('/api/v1/dashboard/reseller/summary', { headers: authHeaders() });
+    mergeUsersIntoCache(summary.owners || []);
+    setEntitlementSearchCache(summary.installations || []);
     setMetricValue('metricPendingInvitations', summary.pending_invitation_count || 0);
     setMetricValue('metricRecentAssignments', (summary.recent_assignments || []).length);
     renderSummaryCards('resellerSummaryCards', [
@@ -2134,6 +2489,8 @@ async function loadResellerSummary() {
 async function loadDistributorSummary() {
   try {
     const summary = await api('/api/v1/dashboard/distributor/summary', { headers: authHeaders() });
+    mergeUsersIntoCache([...(summary.resellers || []), ...(summary.owners || [])]);
+    setEntitlementSearchCache(summary.installations || []);
     setMetricValue('metricPendingInvitations', summary.pending_invitation_count || 0);
     setMetricValue('metricRecentAssignments', (summary.recent_assignments || []).length);
     renderSummaryCards('distributorSummaryCards', [
@@ -2171,6 +2528,7 @@ async function loadDistributorSummary() {
 async function loadDistributorScopedUsers(path, targetId, emptyMessage, emptyScopeLabel) {
   try {
     const records = await api(path, { headers: authHeaders() });
+    mergeUsersIntoCache(records);
     renderActivityList(targetId, scopedUserActivityItems(records, emptyScopeLabel), emptyMessage);
     setConsoleRows('users', userRows(records));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(records));
@@ -2316,6 +2674,7 @@ bindChange('consoleSearchInput', (event) => {
 
 bindChange('admin_user_lookup', () => renderUserLookupResults('admin_user_lookup', 'adminUserLookupResults', 'lifecycle'));
 bindChange('reassign_user_lookup', () => renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign'));
+bindChange('entityPickerSearchInput', renderEntityPickerResults);
 
 bindFormSubmit('loginForm', handleLogin);
 bindClick('logoutButton', handleLogout);
@@ -2326,6 +2685,9 @@ bindFormSubmit('changePasswordForm', handleChangePassword);
 bindClick('closeChangePasswordButton', () => setChangePasswordModalOpen(false));
 bindClick('cancelChangePasswordButton', () => setChangePasswordModalOpen(false));
 bindClick('changePasswordBackdrop', () => setChangePasswordModalOpen(false));
+bindClick('closeEntityPickerButton', () => setEntityPickerOpen(false));
+bindClick('cancelEntityPickerButton', () => setEntityPickerOpen(false));
+bindClick('entityPickerBackdrop', () => setEntityPickerOpen(false));
 bindPasswordVisibility('show_login_password', 'login_password');
 bindPasswordVisibility('show_accept_password', 'accept_password');
 bindClick('loadSessionButton', async () => {
@@ -2400,6 +2762,7 @@ bindClick('loadDistributorOwnersButton', () => loadDistributorScopedUsers('/api/
 prefillInvitationTokenFromUrl();
 applyAuditFiltersToInputs();
 bindClick('distributorAssignButton', () => assignInstallation('/api/v1/distributor/installation-assignments', 'distributor_assignment_entitlement_uuid', 'distributor_assignment_user_email').catch((error) => setStatus(error.message, true)));
+bindUuidPickerInputs();
 
 const requestedLoginEmail = searchParams.get('login_email');
 if (requestedLoginEmail) {

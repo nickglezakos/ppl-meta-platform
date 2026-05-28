@@ -18,6 +18,9 @@ assert 'id="logoutButton"' in admin_html
 assert 'id="loadSessionButton"' in admin_html
 assert 'id="openChangePasswordButton"' in admin_html
 assert 'id="changePasswordModal"' in admin_html
+assert 'id="entityPickerModal"' in admin_html
+assert 'id="entityPickerSearchInput"' in admin_html
+assert 'id="entityPickerResults"' in admin_html
 assert 'id="changePasswordForm"' in admin_html
 assert 'id="change_password_current"' in admin_html
 assert 'id="change_password_new"' in admin_html
@@ -95,6 +98,15 @@ assert 'supportReinstateUser' in js_text
 assert 'adminUserActivityItems' in js_text
 assert 'renderUserLookupResults' in js_text
 assert 'matchingUsers' in js_text
+assert 'setEntityPickerOpen' in js_text
+assert 'openEntityPickerForInput' in js_text
+assert 'bindUuidPickerInputs' in js_text
+assert 'matchingEntitlements' in js_text
+assert 'data-uuid-picker-kind' in js_text
+assert 'data-picker-distributor-uuid' in js_text
+assert 'owner_onboarding_reseller_uuid' in js_text
+assert 'invite_reseller_uuid' in js_text
+assert 'reassign_reseller_uuid' in js_text
 assert 'userRows' in js_text
 assert 'data-user-quick-status' in js_text
 assert 'data-prepare-reassign' in js_text
@@ -135,6 +147,7 @@ css_text = assets_css.text
 assert '.console-action-menu' in css_text
 assert '.wizard-steps' in css_text
 assert '.advanced-card summary' in css_text
+assert '.entity-picker-card' in css_text
 assert '.console-actions-cell' in css_text
 assert 'td::before {' in css_text
 assert 'content: attr(data-label);' in css_text
