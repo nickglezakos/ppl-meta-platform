@@ -668,20 +668,14 @@ function renderRows(rows) {
   if (!bodyEl) {
     return;
   }
+  const columns = consoleColumnsForFilter(activeConsoleFilter);
   if (!rows.length) {
-    bodyEl.innerHTML = '<tr><td colspan="7" class="small">No rows returned.</td></tr>';
+    bodyEl.innerHTML = `<tr><td colspan="${columns.length}" class="small">No rows returned.</td></tr>`;
+    renderConsoleHeader(columns);
     return;
   }
 
-  const columns = [
-    ['Type', 'type'],
-    ['Primary', 'primary'],
-    ['Scope / Status', 'scope'],
-    ['Owner / User', 'owner'],
-    ['Version / Key', 'keyInfo'],
-    ['Details', 'details'],
-    ['Actions', 'actions'],
-  ];
+  renderConsoleHeader(columns);
 
   bodyEl.innerHTML = rows.map((row) => `
     <tr>
@@ -690,6 +684,41 @@ function renderRows(rows) {
   `).join('');
 
   bindConsoleActions();
+}
+
+function consoleColumnsForFilter(filterName) {
+  const keyColumnLabelByFilter = {
+    all: 'Licence / Reference',
+    entitlements: 'Licence Key',
+    invitations: 'Invitation Role',
+    assignments: 'Entitlement Ref',
+    audit: 'Audit Action',
+    updates: 'Release Version',
+    health: 'Release Version',
+  };
+
+  const baseColumns = [
+    ['Type', 'type'],
+    ['Primary', 'primary'],
+    ['Scope / Status', 'scope'],
+    ['Owner / User', 'owner'],
+  ];
+
+  if (filterName !== 'users' && filterName !== 'hierarchy') {
+    baseColumns.push([keyColumnLabelByFilter[filterName] || 'Reference', 'keyInfo']);
+  }
+
+  baseColumns.push(['Details', 'details']);
+  baseColumns.push(['Actions', 'actions']);
+  return baseColumns;
+}
+
+function renderConsoleHeader(columns) {
+  const headerRow = document.getElementById('consoleHeaderRow');
+  if (!headerRow) {
+    return;
+  }
+  headerRow.innerHTML = columns.map(([label]) => `<th>${escapeHtml(label)}</th>`).join('');
 }
 
 function hierarchySearchMatches(item, query) {
@@ -1117,14 +1146,25 @@ function distributorSummaryRows(summary) {
   }));
 }
 
+function userReferenceMarkup(record, fallbackLabel = 'User Record') {
+  if (record.role_name) {
+    return `<span class="pill">${escapeHtml(record.role_name)}</span>`;
+  }
+  return `<span class="small">${escapeHtml(fallbackLabel)}</span>`;
+}
+
+function userDetailsMarkup(record, secondaryText) {
+  return `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(secondaryText)}</span><br><span class="small">UUID ${escapeHtml(record.user_uuid || '-')}</span>`;
+}
+
 function userRows(records) {
   return records.map((record) => ({
     type: `<span class="pill ${badgeClassForStatus(record.status)}">${escapeHtml(record.role_name)}</span>`,
     primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
     scope: `${escapeHtml(record.distributor_uuid || 'no distributor')}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
     owner: escapeHtml(record.display_name || '-'),
-    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${statusBadgeMarkup(record.status)}<br><span class="small">updated ${escapeHtml(record.updated_at || record.created_at || '-')}</span>`,
+    keyInfo: userReferenceMarkup(record, 'User record'),
+    details: userDetailsMarkup(record, `updated ${record.updated_at || record.created_at || '-'}`),
     actions: buildUserConsoleActions(record),
   }));
 }
@@ -1135,8 +1175,8 @@ function hierarchyRowsFromUsers(records) {
     primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
     scope: `${escapeHtml(record.distributor_uuid || 'no distributor')}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
     owner: escapeHtml(record.display_name || '-'),
-    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${escapeHtml(record.status)}<br><span class="small">${escapeHtml(record.created_at || '-')}</span>`,
+    keyInfo: userReferenceMarkup(record, 'Hierarchy record'),
+    details: userDetailsMarkup(record, `joined ${record.created_at || '-'}`),
     actions: buildUserConsoleActions(record),
   }));
 }
@@ -1307,8 +1347,8 @@ function hierarchyRowsFromDistributorSummary(summary) {
     primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
     scope: `${escapeHtml(summary.distributor_uuid)}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
     owner: escapeHtml(record.display_name || '-'),
-    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.owner_count))} owners</span>`,
+    keyInfo: '<span class="pill">Reseller Branch</span>',
+    details: userDetailsMarkup(record, `${String(record.owner_count)} owners in branch`),
     actions: buildUserConsoleActions(record),
   }));
   const ownerRows = (summary.owners || []).map((record) => ({
@@ -1316,8 +1356,8 @@ function hierarchyRowsFromDistributorSummary(summary) {
     primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
     scope: `${escapeHtml(summary.distributor_uuid)}<br><span class="small">${escapeHtml(record.reseller_uuid || 'no reseller')}</span>`,
     owner: escapeHtml(record.display_name || '-'),
-    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.installation_count))} installations</span>`,
+    keyInfo: '<span class="pill">Owner Account</span>',
+    details: userDetailsMarkup(record, `${String(record.installation_count)} installations`),
     actions: buildUserConsoleActions(record),
   }));
   return [...resellerRows, ...ownerRows];
@@ -1329,8 +1369,8 @@ function hierarchyRowsFromResellerSummary(summary) {
     primary: `<code class="inline">${escapeHtml(record.email)}</code>`,
     scope: `${escapeHtml(currentUser?.distributor_uuid || 'no distributor')}<br><span class="small">${escapeHtml(summary.reseller_uuid)}</span>`,
     owner: escapeHtml(record.display_name || '-'),
-    keyInfo: `<code class="inline">${escapeHtml(record.user_uuid)}</code>`,
-    details: `${statusBadgeMarkup(record.status)}<br><span class="small">${escapeHtml(String(record.installation_count))} installations</span>`,
+    keyInfo: '<span class="pill">Owner Account</span>',
+    details: userDetailsMarkup(record, `${String(record.installation_count)} installations`),
     actions: buildUserConsoleActions(record),
   }));
 }
