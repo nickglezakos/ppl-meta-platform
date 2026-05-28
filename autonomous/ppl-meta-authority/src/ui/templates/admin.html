@@ -231,7 +231,6 @@
                     <div class="hint">When the owner accepts the email invitation, authority creates or reuses the entitlement automatically. Installation binding still happens later during assignment or activation.</div>
                     <div class="actions">
                       <button type="button" id="startOwnerOnboardingButton">Start owner onboarding</button>
-                      <button type="button" class="secondary" id="loadInvitations">Load invitations</button>
                     </div>
                   </div>
                 </section>
@@ -332,17 +331,12 @@
               </div>
               <div class="actions">
                 <button type="button" id="updateUserStatusButton">Update user status</button>
-                <button type="button" class="secondary" id="loadAdminUsersButton">Load users</button>
               </div>
             </div>
 
             <div class="feature-card">
               <h3>User Reassignment</h3>
               <div class="small">Clear orphan state by assigning the user back into distributor or reseller scope.</div>
-              <div class="row">
-                <label>Find user<input id="reassign_user_lookup" placeholder="Search by email, uuid, display name, role, scope"></label>
-              </div>
-              <div id="reassignUserLookupResults" class="activity-list empty-list">Load users or type to find a user.</div>
               <div class="row">
                 <label>User UUID<input id="reassign_user_uuid" data-uuid-picker-kind="user" placeholder="Click to search user"></label>
                 <label>Distributor UUID<input id="reassign_distributor_uuid" data-uuid-picker-kind="distributor_scope" placeholder="Click to search distributor scope"></label>
@@ -409,6 +403,7 @@
                 <label>Search users<input id="admin_user_directory_search" placeholder="Search by email, name, role, status, or scope"></label>
               </div>
               <div id="adminUserDirectory" class="activity-list empty-list">No users loaded yet.</div>
+              <div id="adminUserDirectoryPagination" class="actions hidden"></div>
             </div>
           </div>
         </div>
@@ -443,10 +438,12 @@
                 <div>
                   <div class="small">Scoped resellers</div>
                   <div id="distributorResellerList" class="activity-list empty-list">No reseller users loaded yet.</div>
+                  <div id="distributorResellerPagination" class="actions hidden"></div>
                 </div>
                 <div>
                   <div class="small">Scoped owners</div>
                   <div id="distributorOwnerList" class="activity-list empty-list">No owner users loaded yet.</div>
+                  <div id="distributorOwnerPagination" class="actions hidden"></div>
                 </div>
               </div>
             </div>

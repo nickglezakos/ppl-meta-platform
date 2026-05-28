@@ -15,8 +15,13 @@ let activeConsoleFilter = 'all';
 let consoleSearchQuery = '';
 let changePasswordReturnFocus = null;
 let adminUsersCache = [];
+let adminUserDirectoryPage = 1;
 let entitlementSearchCache = [];
 let hierarchyViewModel = [];
+const scopedUserDirectoryPages = {
+  distributorResellerList: 1,
+  distributorOwnerList: 1,
+};
 let entityPickerReturnFocus = null;
 let entityPickerState = {
   targetInputId: '',
@@ -523,7 +528,7 @@ async function loadViewData(viewId) {
     return;
   }
   if (viewId === 'admin' && roleName === 'platform_admin') {
-    await loadAdminSummary();
+    await Promise.all([loadAdminSummary(), loadAdminUsers()]);
     return;
   }
   if (viewId === 'distributor' && roleName === 'distributor') {
@@ -1209,7 +1214,7 @@ function viewerCanEmergencyReinstate(targetRoleName, targetStatus) {
     && (targetRoleName === 'owner' || targetRoleName === 'reseller');
 }
 
-function buildUserConsoleActions(record) {
+function buildUserActionButtons(record) {
   const actions = [];
   if (viewerCanUpdateUserStatus(record.role_name)) {
     const nextStatus = record.status === 'suspended' ? 'active' : 'suspended';
@@ -1233,7 +1238,11 @@ function buildUserConsoleActions(record) {
     actions.push(`<button type="button" class="secondary mini-button" data-prepare-reassign="true" data-user-uuid="${escapeHtml(record.user_uuid)}" data-distributor-uuid="${escapeHtml(record.distributor_uuid || '')}" data-reseller-uuid="${escapeHtml(record.reseller_uuid || '')}">Prepare reassign</button>`);
   }
   actions.push(`<button type="button" class="secondary mini-button" data-open-audit="true" data-audit-target-entity-type="authority_user" data-audit-target-entity-uuid="${escapeHtml(record.user_uuid)}">Audit</button>`);
-  return consoleActionMenu('Actions', actions.join(''));
+  return actions.join('');
+}
+
+function buildUserConsoleActions(record) {
+  return consoleActionMenu('Actions', buildUserActionButtons(record));
 }
 
 function buildEntitlementConsoleActions(record) {
@@ -1794,6 +1803,44 @@ function scopedUserActivityItems(records, emptyScopeLabel) {
   }));
 }
 
+function renderScopedUserList(targetId, records, emptyMessage, emptyScopeLabel) {
+  const pageSize = 20;
+  const pageCount = Math.max(1, Math.ceil(records.length / pageSize));
+  scopedUserDirectoryPages[targetId] = Math.min(scopedUserDirectoryPages[targetId] || 1, pageCount);
+  const startIndex = (scopedUserDirectoryPages[targetId] - 1) * pageSize;
+  const visibleRecords = records.slice(startIndex, startIndex + pageSize);
+  renderActivityList(targetId, scopedUserActivityItems(visibleRecords, emptyScopeLabel), emptyMessage);
+
+  const paginationId = targetId === 'distributorResellerList'
+    ? 'distributorResellerPagination'
+    : targetId === 'distributorOwnerList'
+      ? 'distributorOwnerPagination'
+      : '';
+  const pagination = paginationId ? document.getElementById(paginationId) : null;
+  if (!(pagination instanceof HTMLElement)) {
+    return;
+  }
+  if (records.length <= pageSize) {
+    pagination.className = 'actions hidden';
+    pagination.innerHTML = '';
+    return;
+  }
+  pagination.className = 'actions';
+  pagination.innerHTML = `
+    <button type="button" class="secondary" id="${paginationId}PrevButton" ${scopedUserDirectoryPages[targetId] <= 1 ? 'disabled' : ''}>Previous</button>
+    <div class="small">Page ${scopedUserDirectoryPages[targetId]} of ${pageCount}</div>
+    <button type="button" class="secondary" id="${paginationId}NextButton" ${scopedUserDirectoryPages[targetId] >= pageCount ? 'disabled' : ''}>Next</button>
+  `;
+  pagination.querySelector(`#${paginationId}PrevButton`)?.addEventListener('click', () => {
+    scopedUserDirectoryPages[targetId] = Math.max(1, (scopedUserDirectoryPages[targetId] || 1) - 1);
+    renderScopedUserList(targetId, records, emptyMessage, emptyScopeLabel);
+  });
+  pagination.querySelector(`#${paginationId}NextButton`)?.addEventListener('click', () => {
+    scopedUserDirectoryPages[targetId] = Math.min(pageCount, (scopedUserDirectoryPages[targetId] || 1) + 1);
+    renderScopedUserList(targetId, records, emptyMessage, emptyScopeLabel);
+  });
+}
+
 function auditEventActivityItems(records) {
   return records.map((record) => ({
     title: `${escapeHtml(record.action)} · ${escapeHtml(record.target_entity_type)}`,
@@ -1865,7 +1912,7 @@ function adminUserActivityItems(records) {
       title: `${escapeHtml(record.email)} · ${escapeHtml(record.role_name)}`,
       badges: `${statusBadgeMarkup(record.status)} ${record.status === 'orphaned' ? '<span class="pill badge-pending">needs reassignment</span>' : ''}`,
       meta: `${escapeHtml(record.display_name || 'no display name')} · ${escapeHtml(record.distributor_uuid || 'no distributor')} · ${escapeHtml(record.reseller_uuid || 'no reseller')}`,
-      actions: consoleActionMenu('Actions', buildUserConsoleActions(record)),
+      actions: consoleActionMenu('Actions', buildUserActionButtons(record)),
     };
   });
 }
@@ -1889,7 +1936,36 @@ function filteredAdminUsers(query) {
 function renderAdminUserDirectory() {
   const searchInput = document.getElementById('admin_user_directory_search');
   const query = searchInput instanceof HTMLInputElement ? searchInput.value : '';
-  renderActivityList('adminUserDirectory', adminUserActivityItems(filteredAdminUsers(query)), 'No matching users found.');
+  const filteredUsers = filteredAdminUsers(query);
+  const pageSize = 20;
+  const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  adminUserDirectoryPage = Math.min(adminUserDirectoryPage, pageCount);
+  const startIndex = (adminUserDirectoryPage - 1) * pageSize;
+  const visibleUsers = filteredUsers.slice(startIndex, startIndex + pageSize);
+  renderActivityList('adminUserDirectory', adminUserActivityItems(visibleUsers), 'No matching users found.');
+  const pagination = document.getElementById('adminUserDirectoryPagination');
+  if (!(pagination instanceof HTMLElement)) {
+    return;
+  }
+  if (filteredUsers.length <= pageSize) {
+    pagination.className = 'actions hidden';
+    pagination.innerHTML = '';
+    return;
+  }
+  pagination.className = 'actions';
+  pagination.innerHTML = `
+    <button type="button" class="secondary" id="adminUserDirectoryPrevButton" ${adminUserDirectoryPage <= 1 ? 'disabled' : ''}>Previous</button>
+    <div class="small">Page ${adminUserDirectoryPage} of ${pageCount}</div>
+    <button type="button" class="secondary" id="adminUserDirectoryNextButton" ${adminUserDirectoryPage >= pageCount ? 'disabled' : ''}>Next</button>
+  `;
+  pagination.querySelector('#adminUserDirectoryPrevButton')?.addEventListener('click', () => {
+    adminUserDirectoryPage = Math.max(1, adminUserDirectoryPage - 1);
+    renderAdminUserDirectory();
+  });
+  pagination.querySelector('#adminUserDirectoryNextButton')?.addEventListener('click', () => {
+    adminUserDirectoryPage = Math.min(pageCount, adminUserDirectoryPage + 1);
+    renderAdminUserDirectory();
+  });
 }
 
 function matchingUsers(query) {
@@ -2132,11 +2208,11 @@ async function loadAdminUsers() {
   try {
     const users = await api('/api/v1/admin/users', { headers: authHeaders() });
     mergeUsersIntoCache(users);
+    adminUserDirectoryPage = 1;
     setConsoleRows('users', userRows(users));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(users));
     hierarchyViewModel = buildHierarchyModelFromUsers(users);
     renderAdminUserDirectory();
-    renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign');
     renderConsoleFilter();
     setStatus(`Loaded ${users.length} users.`);
   } catch (error) {
@@ -2562,7 +2638,8 @@ async function loadDistributorScopedUsers(path, targetId, emptyMessage, emptySco
   try {
     const records = await api(path, { headers: authHeaders() });
     mergeUsersIntoCache(records);
-    renderActivityList(targetId, scopedUserActivityItems(records, emptyScopeLabel), emptyMessage);
+    scopedUserDirectoryPages[targetId] = 1;
+    renderScopedUserList(targetId, records, emptyMessage, emptyScopeLabel);
     setConsoleRows('users', userRows(records));
     setConsoleRows('hierarchy', hierarchyRowsFromUsers(records));
     hierarchyViewModel = buildHierarchyModelFromUsers(records);
@@ -2705,9 +2782,11 @@ bindChange('consoleSearchInput', (event) => {
   renderConsoleFilter();
 });
 
-bindChange('reassign_user_lookup', () => renderUserLookupResults('reassign_user_lookup', 'reassignUserLookupResults', 'reassign'));
 bindChange('entityPickerSearchInput', renderEntityPickerResults);
-bindChange('admin_user_directory_search', renderAdminUserDirectory);
+bindChange('admin_user_directory_search', () => {
+  adminUserDirectoryPage = 1;
+  renderAdminUserDirectory();
+});
 
 bindFormSubmit('loginForm', handleLogin);
 bindClick('logoutButton', handleLogout);
@@ -2734,8 +2813,6 @@ bindClick('loadSessionButton', async () => {
 bindClick('saveInstallation', saveInstallation);
 bindClick('startOwnerOnboardingButton', startOwnerOnboarding);
 bindClick('createInvitation', createInvitation);
-bindClick('loadInvitations', loadInvitations);
-bindClick('loadAdminUsersButton', loadAdminUsers);
 bindClick('updateUserStatusButton', updateUserStatus);
 bindClick('reassignUserScopeButton', reassignUserScope);
 bindClick('updateEntitlementStatusButton', updateEntitlementStatus);
