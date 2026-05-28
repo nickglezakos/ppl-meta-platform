@@ -48,6 +48,13 @@ assert 'id="owner_onboarding_email"' in admin_html
 assert 'id="owner_onboarding_distributor_uuid"' in admin_html
 assert 'id="owner_onboarding_reseller_uuid"' in admin_html
 assert 'Advanced Licensing' in admin_html
+assert 'id="toggleAdminSectionsButton"' in admin_html
+assert 'id="toggleAdminSectionsLabel"' in admin_html
+assert 'Create Entitlement' in admin_html
+assert 'Update Licence Details' in admin_html
+assert 'id="createEntitlementButton"' in admin_html
+assert 'id="updateEntitlementDetailsButton"' in admin_html
+assert 'id="edit_entitlement_uuid"' in admin_html
 assert 'id="toastRegion" class="toast-region"' in admin_html
 assert 'id="updateUserStatusButton"' in admin_html
 assert 'id="reassignUserScopeButton"' in admin_html
@@ -146,6 +153,10 @@ assert "window.location.href = '/admin';" in js_text
 assert 'login_email=' in js_text
 assert 'setChangePasswordModalOpen' in js_text
 assert '/api/v1/auth/change-password' in js_text
+assert 'function createEntitlement()' in js_text
+assert 'function updateEntitlementDetails()' in js_text
+assert 'function makeAdminSectionsCollapsible()' in js_text
+assert 'function setAllAdminSectionsOpen(isOpen)' in js_text
 assert 'data-console-filter="hierarchy"' not in js_text
 
 assets_css = client.get('/admin/assets/admin.css')

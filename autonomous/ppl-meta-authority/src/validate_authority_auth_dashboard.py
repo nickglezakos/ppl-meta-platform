@@ -42,13 +42,27 @@ owner_create = client.post('/api/v1/auth/register', json={
 })
 assert owner_create.status_code == 201
 owner_user_uuid = owner_create.json()['user_uuid']
-assert client.post('/api/v1/admin/installations', json={
+created_entitlement = client.post('/api/v1/admin/installations', json={
     'application_key': 'owner2-key',
     'approved_owner_email': 'owner2@example.com',
     'owner_enabled': True,
     'licence_status': 'active',
     'tenant_name': 'Owner 2 Tenant'
-}, headers=admin_headers).status_code == 200
+}, headers=admin_headers)
+assert created_entitlement.status_code == 200
+updated_entitlement = client.post('/api/v1/admin/installations', json={
+    'entitlement_uuid': created_entitlement.json()['entitlement_uuid'],
+    'approved_owner_email': 'owner2@example.com',
+    'owner_enabled': False,
+    'licence_status': 'grace',
+    'offline_grace_days': 21,
+    'tenant_name': 'Owner 2 Tenant Updated'
+}, headers=admin_headers)
+assert updated_entitlement.status_code == 200
+assert updated_entitlement.json()['application_key'] == 'owner2-key'
+assert updated_entitlement.json()['owner_enabled'] is False
+assert updated_entitlement.json()['licence_status'] == 'grace'
+assert updated_entitlement.json()['offline_grace_days'] == 21
 owner_login = client.post('/api/v1/auth/login', json={
     'email': 'owner2@example.com',
     'password': 'ownerpass1'

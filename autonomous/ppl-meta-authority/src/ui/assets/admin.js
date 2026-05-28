@@ -139,6 +139,84 @@ function element(id) {
   return document.getElementById(id);
 }
 
+function setAllAdminSectionsOpen(isOpen) {
+  const adminView = element('admin');
+  if (!(adminView instanceof HTMLElement)) {
+    return;
+  }
+  adminView.querySelectorAll('details.feature-card.collapsible-card').forEach((card) => {
+    if (card instanceof HTMLDetailsElement) {
+      card.open = isOpen;
+    }
+  });
+  updateAdminSectionsToggleLabel();
+}
+
+function updateAdminSectionsToggleLabel() {
+  const adminView = element('admin');
+  const toggleButton = element('toggleAdminSectionsButton');
+  const toggleLabel = element('toggleAdminSectionsLabel');
+  if (!(adminView instanceof HTMLElement) || !(toggleButton instanceof HTMLButtonElement) || !(toggleLabel instanceof HTMLElement)) {
+    return;
+  }
+  const cards = Array.from(adminView.querySelectorAll('details.feature-card.collapsible-card'));
+  const anyOpen = cards.some((card) => card instanceof HTMLDetailsElement && card.open);
+  toggleButton.setAttribute('aria-expanded', anyOpen ? 'true' : 'false');
+  toggleLabel.textContent = anyOpen ? 'Collapse all' : 'Expand all';
+}
+
+function makeAdminSectionsCollapsible() {
+  const adminView = element('admin');
+  if (!(adminView instanceof HTMLElement)) {
+    return;
+  }
+
+  adminView.querySelectorAll('.role-section > .feature-card').forEach((card, index) => {
+    if (card instanceof HTMLDetailsElement) {
+      card.classList.add('collapsible-card');
+      const summary = card.querySelector(':scope > summary');
+      if (summary instanceof HTMLElement) {
+        summary.classList.add('collapsible-card-summary');
+      }
+      card.open = false;
+      card.addEventListener('toggle', updateAdminSectionsToggleLabel);
+      return;
+    }
+
+    if (!(card instanceof HTMLElement)) {
+      return;
+    }
+
+    const titleNode = Array.from(card.children).find((child) => child.tagName === 'H3');
+    const details = document.createElement('details');
+    details.className = `${card.className} collapsible-card`;
+    details.open = false;
+
+    const summary = document.createElement('summary');
+    summary.className = 'collapsible-card-summary';
+    const title = document.createElement('span');
+    title.className = 'collapsible-card-title';
+    title.textContent = titleNode?.textContent?.trim() || `Section ${index + 1}`;
+    summary.appendChild(title);
+
+    const body = document.createElement('div');
+    body.className = 'collapsible-card-body';
+    Array.from(card.childNodes).forEach((node) => {
+      if (node === titleNode) {
+        return;
+      }
+      body.appendChild(node);
+    });
+
+    details.appendChild(summary);
+    details.appendChild(body);
+    details.addEventListener('toggle', updateAdminSectionsToggleLabel);
+    card.replaceWith(details);
+  });
+
+  updateAdminSectionsToggleLabel();
+}
+
 function setText(id, value) {
   const target = element(id);
   if (target) {
@@ -2364,7 +2442,7 @@ async function supportReinstateUser() {
   }
 }
 
-async function saveInstallation() {
+async function createEntitlement() {
   try {
     const payload = {
       application_key: document.getElementById('application_key').value.trim() || null,
@@ -2385,7 +2463,44 @@ async function saveInstallation() {
     renderConsoleFilter();
     document.getElementById('assignment_entitlement_uuid').value = record.entitlement_uuid;
     document.getElementById('reseller_assignment_entitlement_uuid').value = record.entitlement_uuid;
-    setStatus(`Saved entitlement ${record.entitlement_uuid}.`);
+    setStatus(`Created entitlement ${record.entitlement_uuid}.`);
+  } catch (error) {
+    setStatus(error.message, true);
+  }
+}
+
+async function updateEntitlementDetails() {
+  try {
+    const entitlementUuid = document.getElementById('edit_entitlement_uuid').value.trim();
+    if (!entitlementUuid) {
+      setStatus('Updating licence details requires an entitlement UUID.', true);
+      return;
+    }
+
+    const currentRecord = await api(`/api/v1/admin/installations/${encodeURIComponent(entitlementUuid)}`, {
+      headers: authHeaders(),
+    });
+    const payload = {
+      entitlement_uuid: entitlementUuid,
+      application_key: currentRecord.application_key,
+      installation_uuid: currentRecord.installation_uuid,
+      approved_owner_email: document.getElementById('edit_approved_owner_email').value.trim(),
+      owner_enabled: document.getElementById('edit_owner_enabled').value === 'true',
+      licence_status: document.getElementById('edit_licence_status').value,
+      offline_grace_days: Number(document.getElementById('edit_offline_grace_days').value || 0),
+      tenant_name: document.getElementById('edit_tenant_name').value.trim() || null,
+      notes: document.getElementById('edit_notes').value.trim() || null,
+    };
+    const record = await api('/api/v1/admin/installations', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    });
+    setConsoleRows('entitlements', entitlementRows([record]));
+    renderConsoleFilter();
+    document.getElementById('assignment_entitlement_uuid').value = record.entitlement_uuid;
+    document.getElementById('reseller_assignment_entitlement_uuid').value = record.entitlement_uuid;
+    setStatus(`Updated licence details for entitlement ${record.entitlement_uuid}.`);
   } catch (error) {
     setStatus(error.message, true);
   }
@@ -2720,6 +2835,8 @@ document.querySelectorAll('.view-link[data-view]').forEach((button) => {
   button.addEventListener('click', () => activateView(button.dataset.view));
 });
 
+makeAdminSectionsCollapsible();
+
 bindClick('viewMenuToggle', () => {
   const navShell = element('viewShell');
   if (!navShell) {
@@ -2730,6 +2847,15 @@ bindClick('viewMenuToggle', () => {
 });
 bindClick('viewDrawerClose', () => setNavigationOpen(false));
 bindClick('viewDrawerOverlay', () => setNavigationOpen(false));
+bindClick('toggleAdminSectionsButton', () => {
+  const adminView = element('admin');
+  if (!(adminView instanceof HTMLElement)) {
+    return;
+  }
+  const cards = Array.from(adminView.querySelectorAll('details.feature-card.collapsible-card'));
+  const shouldOpen = !cards.every((card) => card instanceof HTMLDetailsElement && card.open);
+  setAllAdminSectionsOpen(shouldOpen);
+});
 document.addEventListener('keydown', (event) => {
   const changePasswordModal = element('changePasswordModal');
   if (event.key === 'Escape' && changePasswordModal instanceof HTMLElement && !changePasswordModal.classList.contains('hidden')) {
@@ -2810,7 +2936,8 @@ bindClick('loadSessionButton', async () => {
     setStatus(error.message, true);
   }
 });
-bindClick('saveInstallation', saveInstallation);
+bindClick('createEntitlementButton', createEntitlement);
+bindClick('updateEntitlementDetailsButton', updateEntitlementDetails);
 bindClick('startOwnerOnboardingButton', startOwnerOnboarding);
 bindClick('createInvitation', createInvitation);
 bindClick('updateUserStatusButton', updateUserStatus);

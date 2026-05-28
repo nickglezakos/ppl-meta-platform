@@ -73,10 +73,12 @@ body {
   color: #fff;
   font-weight: 700;
 }
-.advanced-card {
+.advanced-card,
+.collapsible-card {
   overflow: hidden;
 }
-.advanced-card summary {
+.advanced-card summary,
+.collapsible-card summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -84,14 +86,58 @@ body {
   cursor: pointer;
   list-style: none;
 }
-.advanced-card summary::-webkit-details-marker {
+.advanced-card summary::-webkit-details-marker,
+.collapsible-card summary::-webkit-details-marker {
   display: none;
 }
 .advanced-card summary span:first-child {
   font-weight: 600;
 }
-.advanced-card-body {
+.collapsible-card-summary::after,
+.advanced-card summary::after {
+  content: 'Collapse';
+  margin-left: auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.14);
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.collapsible-card:not([open]) .collapsible-card-summary::after,
+.advanced-card:not([open]) summary::after {
+  content: 'Expand';
+}
+.advanced-card-body,
+.collapsible-card-body {
   margin-top: 18px;
+}
+.section-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+.section-toggle-button {
+  min-width: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-toggle-icon {
+  display: inline-grid;
+  gap: 4px;
+}
+.section-toggle-icon span {
+  display: block;
+  width: 14px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.collapsible-card-title {
+  font-size: 1rem;
+  font-weight: 600;
 }
   overflow: hidden;
   .wizard-step {
@@ -796,6 +842,9 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: linear-gradient(180deg, rgba(15, 15, 20, 0.92), rgba(21, 24, 38, 0.84));
+}
+.feature-card.collapsible-card > summary {
+  margin: 0;
 }
 .card h2 {
   margin-top: 0;

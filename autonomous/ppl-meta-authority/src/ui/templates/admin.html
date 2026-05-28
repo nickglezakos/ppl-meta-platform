@@ -197,6 +197,12 @@
         </div>
 
         <div id="admin" class="view-panel">
+          <div class="section-toolbar role-section" data-role-scope="platform_admin">
+            <button type="button" id="toggleAdminSectionsButton" class="secondary section-toggle-button" aria-expanded="false">
+              <span class="section-toggle-icon" aria-hidden="true"><span></span><span></span></span>
+              <span id="toggleAdminSectionsLabel">Expand all</span>
+            </button>
+          </div>
           <div class="stack role-section" data-role-scope="platform_admin">
             <div class="feature-card">
               <h3>Owner Onboarding</h3>
@@ -265,37 +271,77 @@
             <details class="feature-card advanced-card">
               <summary>
                 <span>Advanced Licensing</span>
-                <span class="small">Manual entitlement creation for pre-provisioning, repair, or exception handling.</span>
+                <span class="small">Separate manual entitlement creation from existing licence-detail updates.</span>
               </summary>
               <div class="advanced-card-body">
-                <div class="row">
-                  <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
-                  <label>Installation UUID<input id="installation_uuid" data-uuid-picker-kind="installation" placeholder="Click to search installation"></label>
-                </div>
-                <div class="row">
-                  <label>Approved owner email<input id="approved_owner_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
-                  <label>Licence status
-                    <select id="licence_status">
-                      <option value="active">active</option>
-                      <option value="grace">grace</option>
-                      <option value="expired">expired</option>
-                      <option value="suspended">suspended</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="row">
-                  <label>Offline grace days<input id="offline_grace_days" type="number" min="0" value="14"></label>
-                  <label>Owner enabled
-                    <select id="owner_enabled">
-                      <option value="true">true</option>
-                      <option value="false">false</option>
-                    </select>
-                  </label>
-                </div>
-                <label>Tenant name<input id="tenant_name" value="New Tenant"></label>
-                <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
-                <div class="actions">
-                  <button type="button" id="saveInstallation">Save entitlement</button>
+                <div class="stack">
+                  <section>
+                    <h4>Create Entitlement</h4>
+                    <div class="small">Use this for pre-provisioning or exception cases where you need to create a brand-new entitlement record manually.</div>
+                    <div class="row">
+                      <label>Application key<input id="application_key" placeholder="Leave blank to auto-generate"></label>
+                      <label>Installation UUID<input id="installation_uuid" data-uuid-picker-kind="installation" placeholder="Click to search installation"></label>
+                    </div>
+                    <div class="row">
+                      <label>Approved owner email<input id="approved_owner_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
+                      <label>Licence status
+                        <select id="licence_status">
+                          <option value="active">active</option>
+                          <option value="grace">grace</option>
+                          <option value="expired">expired</option>
+                          <option value="suspended">suspended</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="row">
+                      <label>Offline grace days<input id="offline_grace_days" type="number" min="0" value="14"></label>
+                      <label>Owner enabled
+                        <select id="owner_enabled">
+                          <option value="true">true</option>
+                          <option value="false">false</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label>Tenant name<input id="tenant_name" value="New Tenant"></label>
+                    <label>Notes<textarea id="notes">Created from the authority control shell.</textarea></label>
+                    <div class="actions">
+                      <button type="button" id="createEntitlementButton">Create entitlement</button>
+                    </div>
+                  </section>
+
+                  <section>
+                    <h4>Update Licence Details</h4>
+                    <div class="small">Use this for an existing entitlement when you need to change licence details without rotating the application key.</div>
+                    <div class="hint">Activation status changes are handled in the separate entitlement status card below.</div>
+                    <div class="row">
+                      <label>Entitlement UUID<input id="edit_entitlement_uuid" data-uuid-picker-kind="entitlement" placeholder="Click to search entitlement"></label>
+                      <label>Approved owner email<input id="edit_approved_owner_email" data-uuid-picker-kind="user_email" type="email" placeholder="Click to search owner by email or name"></label>
+                    </div>
+                    <div class="row">
+                      <label>Licence status
+                        <select id="edit_licence_status">
+                          <option value="active">active</option>
+                          <option value="grace">grace</option>
+                          <option value="expired">expired</option>
+                          <option value="suspended">suspended</option>
+                        </select>
+                      </label>
+                      <label>Offline grace days<input id="edit_offline_grace_days" type="number" min="0" value="14"></label>
+                    </div>
+                    <div class="row">
+                      <label>Owner enabled
+                        <select id="edit_owner_enabled">
+                          <option value="true">true</option>
+                          <option value="false">false</option>
+                        </select>
+                      </label>
+                      <label>Tenant name<input id="edit_tenant_name" value="New Tenant"></label>
+                    </div>
+                    <label>Notes<textarea id="edit_notes">Updated from the authority control shell.</textarea></label>
+                    <div class="actions">
+                      <button type="button" id="updateEntitlementDetailsButton">Update licence details</button>
+                    </div>
+                  </section>
                 </div>
               </div>
             </details>

@@ -1228,11 +1228,17 @@ def list_recent_assignment_activity(
 
 def upsert_entitlement(record: dict[str, Any]) -> dict[str, Any]:
     entitlement_uuid = record.get("entitlement_uuid") or str(uuid.uuid4())
-    application_key = record.get("application_key") or str(uuid.uuid4())
-    installation_uuid = record.get("installation_uuid") or None
-    activation_status = record.get("activation_status") or (
-        "active" if installation_uuid else "pending_activation"
+    existing_entitlement = get_entitlement_by_uuid(entitlement_uuid) if record.get("entitlement_uuid") else None
+    application_key = record.get("application_key") or (
+        existing_entitlement["application_key"] if existing_entitlement else str(uuid.uuid4())
     )
+    installation_uuid = record.get("installation_uuid")
+    if installation_uuid is None and existing_entitlement is not None:
+        installation_uuid = existing_entitlement.get("installation_uuid")
+    installation_uuid = installation_uuid or None
+    activation_status = record.get("activation_status") or (
+        existing_entitlement.get("activation_status") if existing_entitlement else None
+    ) or ("active" if installation_uuid else "pending_activation")
 
     with _connect() as connection:
         connection.execute(
