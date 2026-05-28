@@ -8,9 +8,12 @@ from main import app
 
 client = TestClient(app)
 
-admin_page = client.get('/admin')
-assert admin_page.status_code == 200
-admin_html = admin_page.text
+admin_page = client.get('/admin', follow_redirects=False)
+assert admin_page.status_code == 307
+assert admin_page.headers['location'] == '/admin/console'
+admin_view_page = client.get('/admin?view=admin')
+assert admin_view_page.status_code == 200
+admin_html = admin_view_page.text
 assert 'id="viewMenuToggle"' in admin_html
 assert 'data-view="distributor"' in admin_html
 assert 'id="sessionOpenConsoleButton"' in admin_html
@@ -89,6 +92,7 @@ assert 'class="view-navigation-user-email" id="currentEmail"' in console_html
 assert 'Role: <span id="currentRole">' in console_html
 assert 'data-view="session"' not in console_html
 assert 'id="toastRegion" class="toast-region"' in console_html
+assert 'href="/admin/console">Data Console</a>' in console_html
 assert 'data-view="distributor" href="/admin?view=distributor"' in console_html
 assert 'data-view="reseller" href="/admin?view=reseller"' in console_html
 

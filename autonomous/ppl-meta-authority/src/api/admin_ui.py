@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 
 router = APIRouter(tags=["admin-ui"])
 
@@ -18,9 +18,12 @@ ASSET_CONTENT_TYPES = {
 
 
 @router.get("/admin", response_class=HTMLResponse)
-async def admin_ui() -> HTMLResponse:
+async def admin_ui(request: Request) -> Response:
     if not TEMPLATE_PATH.exists():
         raise HTTPException(status_code=500, detail="Authority admin template is missing")
+
+    if not request.query_params:
+        return RedirectResponse(url="/admin/console", status_code=307)
 
     return HTMLResponse(TEMPLATE_PATH.read_text(encoding="utf-8"))
 
