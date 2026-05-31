@@ -59,7 +59,7 @@ async def create_audit_log(
 
 @router.get("/logs", response_model=CommunicationLogListResponse)
 async def get_communication_logs(
-    type: Optional[str] = Query(None, description="Filter by communication type"),
+    log_type: Optional[str] = Query(None, alias="type", description="Filter by communication type"),
     status: Optional[str] = Query(None, description="Filter by status"),
     recipient: Optional[str] = Query(None, description="Filter by recipient"),
     triggered_by: Optional[str] = Query(None, description="Filter by trigger source"),
@@ -84,7 +84,7 @@ async def get_communication_logs(
     end_dt = datetime.fromisoformat(end_date) if end_date else None
     
     logs, total = log_service.get_logs(
-        type=type,
+        type=log_type,
         status=status,
         recipient=recipient,
         triggered_by=triggered_by,
@@ -151,8 +151,8 @@ async def get_communication_log(
     
     try:
         log_uuid_obj = UUID(log_uuid)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid UUID format")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid UUID format") from exc
     
     log = log_service.get_log_by_uuid(log_uuid_obj)
     if not log:
@@ -170,6 +170,8 @@ async def get_communication_log(
         triggered_by=log.triggered_by,
         trigger_type=log.trigger_type,
         trigger_id=log.trigger_id,
+        installation_id=log.installation_id,
+        tenant_name=log.tenant_name,
         attempts=log.attempts,
         last_attempt_at=log.last_attempt_at.isoformat() if log.last_attempt_at else None,
         delivered_at=log.delivered_at.isoformat() if log.delivered_at else None,

@@ -71,7 +71,7 @@ start_service \
 start_service \
     "ppl-meta-node" \
     "ppl-meta-node" \
-    "source venv/bin/activate && PYTHONPATH=$PROJECT_ROOT/ppl-meta-node python src/main.py" \
+    "source $PROJECT_ROOT/scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=$PROJECT_ROOT/ppl-meta-node python src/main.py" \
     "8001"
 
 # Start Media Service
@@ -106,7 +106,7 @@ start_service \
 start_service \
     "ppl-meta-cameras" \
     "ppl-meta-cameras" \
-    "set -a && source .env && set +a && PYTHONPATH=$PROJECT_ROOT/ppl-meta-cameras $PROJECT_ROOT/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload" \
+    "set -a && source .env && set +a && source $PROJECT_ROOT/scripts/load-presence-runtime-env.sh && PYTHONPATH=$PROJECT_ROOT/ppl-meta-cameras $PROJECT_ROOT/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload" \
     "8005"
 
 # Start Bootcore Service
@@ -123,6 +123,13 @@ start_service \
     "source venv/bin/activate && cd src && PYTHONPATH=$PROJECT_ROOT/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload" \
     "8008"
 
+# Start Presence Service
+start_service \
+    "ppl-meta-presence" \
+    "ppl-meta-presence/src" \
+    "source $PROJECT_ROOT/scripts/load-presence-runtime-env.sh && python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8011 --reload" \
+    "8011"
+
 echo ""
 echo "================================================"
 echo "✅ All services started successfully!"
@@ -137,6 +144,7 @@ echo "  • Vision Service:       http://localhost:8003/health"
 echo "  • Cameras Service:      http://localhost:8005/health"
 echo "  • Bootcore Service:     http://localhost:8007/health"
 echo "  • VMeta Service:        http://localhost:8008/health"
+echo "  • Presence Service:     http://localhost:8011/health"
 echo ""
 echo "📝 Logs are being written to: $PROJECT_ROOT/logs/"
 echo "🔍 To view logs: tail -f $PROJECT_ROOT/logs/<service-name>.log"

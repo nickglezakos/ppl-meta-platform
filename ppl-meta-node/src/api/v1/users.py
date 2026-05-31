@@ -603,7 +603,7 @@ async def get_user_permissions_for_service(
             {
                 "role_id": role.id,
                 "role_name": role.name,
-                "role_description": role.description,
+                "role_description": getattr(role, "description", None),
             }
         )
 
@@ -611,7 +611,10 @@ async def get_user_permissions_for_service(
             capability = role_capability.capability
             if capability.name not in [c["name"] for c in user_capabilities]:
                 user_capabilities.append(
-                    {"name": capability.name, "description": capability.description}
+                    {
+                        "name": capability.name,
+                        "description": getattr(capability, "description", None),
+                    }
                 )
 
     return {"user_id": user.id, "roles": user_roles, "capabilities": user_capabilities}
@@ -779,9 +782,6 @@ async def update_password(
             db, current_user.username, current_user.email, "password_update"
         )
         return {"detail": "Password updated successfully"}
-    except HTTPException:
-        # Re-raise validation errors (they already have proper format)
-        raise
     except (TypeError, ValueError) as e:
         # Handle unexpected errors with proper validation response
         return handle_validation_error(e)

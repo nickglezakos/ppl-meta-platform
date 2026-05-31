@@ -548,10 +548,10 @@ async def list_active_connections(
         connected_workers = manager.get_connected_workers()
         
         active_connections = []
-        for device_id, worker in connected_workers.items():
+        for worker in connected_workers:
             stats = worker.get_stats()
             active_connections.append({
-                "device_id": device_id,
+                "device_id": worker.device_id,
                 "status": worker.status.value,
                 "frames_read": stats["frames_read"],
                 "uptime": stats.get("uptime_seconds", 0)

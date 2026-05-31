@@ -1,758 +1,840 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"label": "🐍 Start Node Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-node && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🎨 Start Media Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Start Gateway Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🎼 Start Orchestrator Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔍 Start Cameras Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload",
-			"group": "build",
-			"isBackground": true
-		},
-		{
-			"label": "📧 Start Communications Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload",
-			"group": "build",
-			"isBackground": true
-		},
-		{
-			"label": "🚀 Start All Local Python Services",
-			"type": "shell",
-			"command": "echo '🚀 Starting all PPL Meta services in local Python mode...' && echo 'Starting Discovery Service...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & echo 'Starting Node Service...' && (cd ppl-meta-node && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && source venv/bin/activate && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Starting Bootcore Service...' && (cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload) & echo 'Starting vmeta Service...' && (cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload) & echo 'Starting Communications Service...' && (cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload) & echo '✅ All services started! Use separate nginx task if needed.' && wait",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop All Local Python Services",
-			"type": "shell",
-			"command": "echo '🛑 Stopping all local Python services...' && echo '1. Killing Python processes...' && pkill -9 -f 'python.*ppl-meta' 2>/dev/null || true && pkill -9 -f 'uvicorn.*ppl-meta' 2>/dev/null || true && echo '2. Force-killing ports...' && sleep 1 && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8080; do lsof -ti:$port | xargs kill -9 2>/dev/null || true; done && sleep 1 && echo '3. Verifying ports are free...' && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8080; do if lsof -i :$port >/dev/null 2>&1; then echo \"⚠️  Port $port still in use\"; else echo \"✅ Port $port free\"; fi; done && echo '✅ All services stopped and ports verified free!'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Start Nginx Proxy (Local Dev)",
-			"type": "shell",
-			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Stop Nginx Proxy (Local Dev)",
-			"type": "shell",
-			"command": "echo '🌐 Stopping Nginx Proxy...' && nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true && echo '✅ Nginx proxy stopped successfully!'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🚀 Start Complete Platform (Services + Nginx)",
-			"type": "shell",
-			"command": "echo '🚀 Starting Complete PPL Meta Platform...' && echo '1. Starting all backend services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '2. Waiting for services to initialize...' && sleep 8 && echo '3. Starting Nginx proxy...' && bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh && echo '✅ Complete platform started! Services + Nginx running.' && wait",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop Complete Platform (Services + Nginx)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping Complete PPL Meta Platform...' && echo '1. Stopping Nginx...' && nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true && echo '2. Stopping all services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && echo '✅ Complete platform stopped!'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Local Python Health Check - All Services",
-			"type": "shell",
-			"command": "echo '🏥 PPL Meta Platform - Local Python Development Health Check' && echo '========================================================' && echo && echo '📋 Service Status:' && echo '• ppl-meta-node (8001):' && curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-media (8000):' && curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-gateway (8080):' && curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-orchestrator (8002):' && curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vision (8003):' && curl -L -s http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-cameras (8005):' && curl -L -s http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-discovery (8006):' && curl -L -s http://localhost:8006/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-bootcore (8007):' && curl -L -s http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vmeta (8008):' && curl -L -s http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-communications (8009):' && curl -L -s http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔍 Show Local Python Services Status",
-			"type": "shell",
-			"command": "echo '🔍 Local Python Services Status:' && echo '========================================' && ps aux | grep 'python.*main.py\\|uvicorn.*main:app\\|ppl-meta-vision.*python' | grep -v grep || echo 'No local Python services found running.'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Node Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Node service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Media Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Media service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Gateway Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Gateway service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Orchestrator Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Orchestrator service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Cameras Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo 'Cameras service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔍 Start Vision Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-vision && python src/main.py",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop Vision Service (Local Python)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping Vision Service...' && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && echo 'Vision service stopped.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Vision Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo 'Vision service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔍 Start Discovery Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop Discovery Service (Local Python)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping Discovery Service...' && pkill -f 'ppl-meta-discovery.*uvicorn.*main:app' 2>/dev/null || true && echo 'Discovery service stopped.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Discovery Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8006/health | python3 -m json.tool 2>/dev/null || echo 'Discovery service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Bootcore Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo 'Bootcore service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 vmeta Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo 'vmeta service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Communications Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo 'Communications service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔍 List All Registered Services",
-			"type": "shell",
-			"command": "echo '🔍 PPL Meta Discovery Service - Registered Services' && echo '=================================================' && curl -s http://localhost:8006/api/v1/services | python3 -m json.tool 2>/dev/null || echo 'Discovery service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔍 Discovery Service - Health Check All Services",
-			"type": "shell",
-			"command": "echo '🔍 PPL Meta Discovery Service - All Services Health Check' && echo '=========================================================' && curl -s http://localhost:8006/api/v1/services?status=healthy | python3 -c \"import sys, json; data = json.load(sys.stdin); print(f'Healthy Services: {data[\\\"healthy_count\\\"]}/{data[\\\"total_count\\\"]}'); [print(f'✅ {s[\\\"name\\\"]} ({s[\\\"service_type\\\"]}) - {s[\\\"host\\\"]}:{s[\\\"port\\\"]}') for s in data[\\\"services\\\"] if s[\\\"status\\\"] == 'healthy']; [print(f'❌ {s[\\\"name\\\"]} ({s[\\\"service_type\\\"]}) - {s[\\\"status\\\"]}') for s in data[\\\"services\\\"] if s[\\\"status\\\"] != 'healthy']\" 2>/dev/null || echo 'Discovery service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔍 Discovery Service - Search Backend Services",
-			"type": "shell",
-			"command": "echo '🔍 PPL Meta Discovery Service - Backend Services' && echo '=================================================' && curl -s 'http://localhost:8006/api/v1/services?service_type=backend' | python3 -c \"import sys, json; data = json.load(sys.stdin); [print(f'{s[\\\"name\\\"]} v{s[\\\"version\\\"]} - {s[\\\"host\\\"]}:{s[\\\"port\\\"]} ({s[\\\"status\\\"]})') for s in data[\\\"services\\\"]]\" 2>/dev/null || echo 'Discovery service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔧 Start PPL Meta Mini Service",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-mini/src && python main.py",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop PPL Meta Mini Service",
-			"type": "shell",
-			"command": "echo '🛑 Stopping PPL Meta Mini Service...' && pkill -f 'ppl-meta-mini.*python.*main.py' 2>/dev/null || true && echo 'PPL Meta Mini service stopped.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 PPL Meta Mini Health Check",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8004/health | python3 -m json.tool 2>/dev/null || echo 'PPL Meta Mini service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🐘 Start Authority PostgreSQL (Local macOS)",
-			"type": "shell",
-			"command": "if command -v brew >/dev/null 2>&1; then brew services start postgresql@16 >/dev/null 2>&1 || brew services start postgresql >/dev/null 2>&1 || true; fi && if ! command -v psql >/dev/null 2>&1; then echo 'psql is not installed. Install PostgreSQL locally first.' && exit 1; fi && psql postgres -tAc \"SELECT 1 FROM pg_roles WHERE rolname = 'authority_user'\" | grep -q 1 || psql postgres -c \"CREATE ROLE authority_user LOGIN PASSWORD 'authority_password'\" && psql postgres -c \"ALTER ROLE authority_user WITH LOGIN PASSWORD 'authority_password'\" && psql postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = 'authority_db'\" | grep -q 1 || createdb -O authority_user authority_db && echo 'Authority PostgreSQL is ready on localhost:5432'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop Authority PostgreSQL (Local macOS)",
-			"type": "shell",
-			"command": "if command -v brew >/dev/null 2>&1; then brew services stop postgresql@16 >/dev/null 2>&1 || brew services stop postgresql >/dev/null 2>&1 || true; fi && echo 'Authority PostgreSQL stop command sent.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Authority PostgreSQL Health Check (Local macOS)",
-			"type": "shell",
-			"command": "if ! command -v psql >/dev/null 2>&1; then echo 'psql is not installed. Install PostgreSQL locally first.' && exit 1; fi && PGPASSWORD=authority_password psql -h localhost -U authority_user -d authority_db -tAc 'SELECT current_database(), current_user' || echo 'Authority PostgreSQL is not responding on localhost:5432'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔐 Start Authority Service (Local Python)",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload",
-			"dependsOn": ["🐘 Start Authority PostgreSQL (Local macOS)"],
-			"dependsOrder": "sequence",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔐 Start Authority Service (Local Bootstrap Admin)",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db AUTHORITY_BOOTSTRAP_ADMIN_ENABLED=true python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload",
-			"dependsOn": ["🐘 Start Authority PostgreSQL (Local macOS)"],
-			"dependsOrder": "sequence",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop Authority Service (Local Python)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping Authority Service...' && pkill -f 'ppl-meta-authority/src.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8010 | xargs kill -9 2>/dev/null || true && echo 'Authority service stopped.'",
-			"dependsOn": ["🛑 Stop Authority PostgreSQL (Local macOS)"],
-			"dependsOrder": "sequence",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Authority Service Health Check (Local)",
-			"type": "shell",
-			"command": "curl -L -s http://localhost:8010/health | python3 -m json.tool 2>/dev/null || echo 'Authority service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔑 Bootstrap Authority Admin (Local)",
-			"type": "shell",
-			"command": "echo 'Waiting for bootstrap-enabled authority service...' && curl -fsS --retry 20 --retry-delay 1 --retry-connrefused http://localhost:8010/health >/dev/null && echo 'Posting bootstrap-admin to local authority service...' && response=$(curl -sS -w '\n%{http_code}' -X POST http://localhost:8010/api/v1/auth/bootstrap-admin) && body=$(printf '%s\n' \"$response\" | sed '$d') && http_status=$(printf '%s\n' \"$response\" | tail -n 1) && printf '%s\n' \"$body\" | python3 -m json.tool && if [ \"$http_status\" != \"200\" ]; then echo && echo 'Bootstrap did not run even after starting bootstrap mode.' && exit 0; fi && echo && echo 'Bootstrap login credentials:' && echo '  email: admin@authority.local' && echo '  password: change-this-admin-password' && echo && echo 'Important: if this admin already existed, bootstrap does not reset the password.'",
-			"dependsOn": ["🛑 Stop Authority Service (Local Python)", "🔐 Start Authority Service (Local Bootstrap Admin)"],
-			"dependsOrder": "sequence",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔐 Login Bootstrap Authority Admin (Local)",
-			"type": "shell",
-			"command": "echo 'Logging in with bootstrap admin credentials...' && curl -s -X POST http://localhost:8010/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@authority.local\",\"password\":\"change-this-admin-password\"}' | python3 -m json.tool",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔄 Migrate Authority SQLite To PostgreSQL",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && PYTHONPATH=. python3.11 migrate_sqlite_to_postgres.py --sqlite-path ../data/authority-local.db --postgres-url postgresql://authority_user:authority_password@localhost:5432/authority_db",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Validate Authority Lifecycle Endpoints",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_lifecycle.py",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Validate Authority Auth And Dashboard",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_auth_dashboard.py",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Validate Authority Invitations And Assignments",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_invitations_assignments.py",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Validate Authority Bootstrap Gate",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_bootstrap_gate.py",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Validate Authority Reseller Scope",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_reseller_scope.py",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Validate Authority Admin End-To-End Workflow",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_admin_e2e_workflow.py",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Test PPL Meta Mini Complete Pipeline",
-			"type": "shell",
-			"command": "cd autonomous/ppl-meta-mini && python demo_pipeline.py",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Start PPL Meta Mini with Apache Proxy",
-			"type": "shell",
-			"command": "${workspaceFolder}/scripts/start-apache-proxy.sh",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop PPL Meta Mini with Apache Proxy",
-			"type": "shell",
-			"command": "${workspaceFolder}/scripts/stop-apache-proxy.sh",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔧 Install Apache (macOS)",
-			"type": "shell",
-			"command": "brew install httpd && echo '✅ Apache installed. Configure with APACHE_MACOS_SETUP.md'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Test Apache Proxy Health",
-			"type": "shell",
-			"command": "echo '🏥 Testing Apache Proxy...' && curl -s http://localhost:8080/ppl-health | python3 -m json.tool 2>/dev/null || echo 'Apache proxy not responding' && echo '' && echo 'Direct service:' && curl -s http://localhost:8004/health | python3 -m json.tool 2>/dev/null || echo 'Direct service not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏗️ Build All Docker Images",
-			"type": "shell",
-			"command": "docker-compose",
-			"args": [
-				"-f",
-				"docker-compose.minimal.yml",
-				"build"
-			],
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🚀 Start All Services (Docker)",
-			"type": "shell",
-			"command": "docker-compose",
-			"args": [
-				"-f",
-				"docker-compose.minimal.yml",
-				"up",
-				"-d"
-			],
-			"group": "build",
-			"dependsOn": [
-				"🏗️ Build All Docker Images"
-			],
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop All Services (Docker)",
-			"type": "shell",
-			"command": "docker-compose",
-			"args": [
-				"-f",
-				"docker-compose.minimal.yml",
-				"down"
-			],
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Health Check - All Services (Docker)",
-			"type": "shell",
-			"command": "python",
-			"args": [
-				"-c",
-				"import requests; import sys; services = [('Gateway', 'http://localhost:8080/health'), ('Node', 'http://localhost:8001/health'), ('Media', 'http://localhost:8000/health'), ('Orchestrator', 'http://localhost:8002/health')]; results = []; [results.append(f'✅ {name}: {requests.get(url, timeout=5).status_code}' if (lambda: requests.get(url, timeout=5).status_code == 200)() else f'❌ {name}: Failed') for name, url in services]; [print(r) for r in results]"
-			],
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📋 View Logs - All Services (Docker)",
-			"type": "shell",
-			"command": "docker-compose",
-			"args": [
-				"-f",
-				"docker-compose.minimal.yml",
-				"logs",
-				"-f"
-			],
-			"group": "test",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Start Nginx Proxy (Local Dev)",
-			"type": "shell",
-			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Stop Nginx Proxy (Local Dev)",
-			"type": "shell",
-			"command": "nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Reload Nginx Configuration",
-			"type": "shell",
-			"command": "nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Test Nginx Configuration",
-			"type": "shell",
-			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/test-nginx-local.sh",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Reload Nginx Configuration",
-			"type": "shell",
-			"command": "echo '🌐 Reloading Nginx Configuration...' && (nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)) && echo '✅ Nginx configuration reloaded!'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🌐 Test Nginx Configuration",
-			"type": "shell",
-			"command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/test-nginx-local.sh",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🚀 Start All Services then Nginx (Interactive)",
-			"type": "shell",
-			"command": "echo '🚀 Starting all PPL Meta services...' && echo 'Starting Node Service...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Waiting for services to start...' && sleep 8 && echo 'Starting Nginx Proxy (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ All services and nginx started!'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop All Services + Nginx (Local Python)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping all local Python services and Nginx...' && sudo nginx -s quit 2>/dev/null || true && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'uvicorn.*main_minimal:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-node.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-media.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-gateway.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-orchestrator.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-discovery.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-bootcore.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-vmeta.*uvicorn' 2>/dev/null || true && echo 'All services and nginx stopped.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Health Check via Nginx Proxy",
-			"type": "shell",
-			"command": "echo '🏥 PPL Meta Platform - Health Check via Nginx Proxy' && echo '========================================================' && echo && echo '🔍 Checking Nginx status...' && if curl -s --connect-timeout 2 --max-time 4 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo && echo '📋 Service Status via Nginx (http://localhost):' && echo '• All Services Health:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health | python3 -m json.tool 2>/dev/null || echo '❌ Aggregated health endpoint not responding' && echo && echo '• Node Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/node | python3 -m json.tool 2>/dev/null || echo '❌ Node service not responding via nginx' && echo && echo '• Media Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/media | python3 -m json.tool 2>/dev/null || echo '❌ Media service not responding via nginx' && echo && echo '• Gateway Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/gateway | python3 -m json.tool 2>/dev/null || echo '❌ Gateway service not responding via nginx' && echo && echo '• Orchestrator Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/orchestrator | python3 -m json.tool 2>/dev/null || echo '❌ Orchestrator service not responding via nginx' && echo && echo '• Vision Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/vision | python3 -m json.tool 2>/dev/null || echo '❌ Vision service not responding via nginx' && echo && echo '• Cameras Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/cameras | python3 -m json.tool 2>/dev/null || echo '❌ Cameras service not responding via nginx' && echo && echo '• Bootcore Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/bootcore | python3 -m json.tool 2>/dev/null || echo '❌ Bootcore service not responding via nginx' && echo && echo '• vmeta Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/vmeta | python3 -m json.tool 2>/dev/null || echo '❌ vmeta service not responding via nginx' && echo && echo '• Communications Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/communications | python3 -m json.tool 2>/dev/null || echo '❌ Communications service not responding via nginx'; else echo '❌ Nginx is not running' && echo && echo '🔄 Falling back to direct service checks:' && echo '• Node Service (8001):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Media Service (8000):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Gateway Service (8080):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Orchestrator Service (8002):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Vision Service (8003):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Cameras Service (8005):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Bootcore Service (8007):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• vmeta Service (8008):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Communications Service (8009):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '💡 Tip: Start nginx with: 🌐 Start Nginx Proxy (Local Dev)'; fi",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Health Check - Direct Services Only",
-			"type": "shell",
-			"command": "echo '🏥 PPL Meta Platform - Direct Service Health Check' && echo '========================================================' && echo && echo '📋 Direct Service Status:' && echo '• Node Service (8001):' && curl -L -s --connect-timeout 3 http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Media Service (8000):' && curl -L -s --connect-timeout 3 http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Gateway Service (8080):' && curl -L -s --connect-timeout 3 http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Orchestrator Service (8002):' && curl -L -s --connect-timeout 3 http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Vision Service (8003):' && curl -L -s --connect-timeout 3 http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Cameras Service (8005):' && curl -L -s --connect-timeout 3 http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Bootcore Service (8007):' && curl -L -s --connect-timeout 3 http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• vmeta Service (8008):' && curl -L -s --connect-timeout 3 http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Install Flutter Dependencies",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter pub get",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Start Frontend (Web)",
-			"type": "shell",
-			"command": "echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d chrome --web-port 3000",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Start Frontend (Desktop)",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter run -d macos",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Build Frontend (Web)",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter build web --release",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Build Frontend (Desktop)",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter build macos --release",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Generate Code (Frontend)",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter packages pub run build_runner build --delete-conflicting-outputs",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Watch Code Generation (Frontend)",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter packages pub run build_runner watch --delete-conflicting-outputs",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Test Frontend",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter test",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Clean Frontend",
-			"type": "shell",
-			"command": "cd ppl-meta-frontend && flutter clean && flutter pub get",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📱 Check Flutter Doctor",
-			"type": "shell",
-			"command": "flutter doctor -v",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🚀 Start Full Stack (Backend + Frontend)",
-			"type": "shell",
-			"command": "echo '🚀 Starting Full PPL Meta Platform (Backend + Frontend)...' && echo 'Starting Backend Services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Frontend...' && sleep 3 && (echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d chrome --web-port 3000) & wait",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🧪 Complete Testing Workflow",
-			"type": "shell",
-			"command": "echo '🧪 PPL Meta Platform - Complete Testing Workflow' && echo '========================================================' && echo && echo '1️⃣ Stopping any existing services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && sudo nginx -s quit 2>/dev/null || true && sleep 2 && echo '✅ Cleanup complete' && echo && echo '2️⃣ Starting all services...' && (cd ppl-meta-node && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main_enhanced.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '✅ All services starting...' && echo && echo '3️⃣ Waiting for services to initialize...' && sleep 10 && echo && echo '4️⃣ Starting Nginx (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx started' && echo && echo '5️⃣ Running health checks...' && sleep 3 && echo && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo '📋 Service Status via Nginx:' && for service in health health/node health/media health/gateway health/orchestrator health/vision health/cameras; do echo -n \"  $service: \"; if curl -s --connect-timeout 3 http://localhost/$service >/dev/null 2>&1; then echo '✅ OK'; else echo '❌ FAIL'; fi; done; else echo '❌ Nginx failed to start'; fi && echo && echo '✅ Testing workflow complete!'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🔧 Start Bootcore Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload",
-			"isBackground": true,
-			"group": "build"
-		},
-		{
-			"label": "🔧 Start vmeta Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload",
-			"isBackground": true,
-			"group": "build"
-		},
-		{
-			"label": "🔧 Start vmeta Service (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-vmeta/src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop vmeta Service (Local Python)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping vmeta Service...' && pkill -f 'ppl-meta-vmeta.*uvicorn.*main:app' 2>/dev/null || true && echo 'vmeta service stopped.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop Communications Service (Local Python)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping Communications Service...' && pkill -f 'ppl-meta-communications.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8009 | xargs kill -9 2>/dev/null || true && echo 'Communications service stopped.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "📷 Start Edge Camera (Local Python)",
-			"type": "shell",
-			"command": "cd ppl-meta-edge-camera && source venv/bin/activate && cd src && python main.py",
-			"group": "build",
-			"isBackground": true,
-			"problemMatcher": []
-		},
-		{
-			"label": "🛑 Stop Edge Camera (Local Python)",
-			"type": "shell",
-			"command": "echo '🛑 Stopping Edge Camera...' && pkill -f 'ppl-meta-edge-camera.*python.*main.py' 2>/dev/null || true && lsof -ti:9001 | xargs kill -9 2>/dev/null || true && echo 'Edge camera stopped.'",
-			"group": "build",
-			"isBackground": false,
-			"problemMatcher": []
-		},
-		{
-			"label": "🏥 Edge Camera Health Check",
-			"type": "shell",
-			"command": "echo '🏥 Edge Camera Health Check' && echo '=========================' && curl -s http://localhost:9001/health | python -m json.tool || echo '❌ Edge camera not responding'",
-			"group": "test",
-			"isBackground": false,
-			"problemMatcher": []
-		}
-	]
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "🐍 Start Node Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🎨 Start Media Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Start Gateway Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🎼 Start Orchestrator Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔍 Start Cameras Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-cameras && set -a && source .env && set +a && source ../scripts/load-presence-runtime-env.sh && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload",
+            "group": "build",
+            "isBackground": true
+        },
+        {
+            "label": "📧 Start Communications Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload",
+            "group": "build",
+            "isBackground": true
+        },
+        {
+            "label": "🫶 Start Presence Service (Local Python 3.11)",
+            "type": "shell",
+            "command": "cd ppl-meta-presence/src && source /Users/nickgklezakos/Documents/ppl-meta-code/scripts/load-presence-runtime-env.sh && PRESENCE_DETECTION_BACKEND_MODE=auto PRESENCE_PREFERRED_CAMERA_TYPES=${env:PRESENCE_PREFERRED_CAMERA_TYPES} PRESENCE_PREFERRED_CAMERA_NAMES=${env:PRESENCE_PREFERRED_CAMERA_NAMES} PRESENCE_ALLOWED_CAMERA_STATUSES=${env:PRESENCE_ALLOWED_CAMERA_STATUSES} PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-presence/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8011 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛠️ Migrate Presence Service (Alembic)",
+            "type": "shell",
+            "command": "cd ppl-meta-presence && python3.11 -m alembic upgrade head",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛠️ Repair Presence Analytics Metadata (Local)",
+            "type": "shell",
+            "command": "cd ppl-meta-presence && python3.11 repair_presence_analytics.py",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛠️ Repair Presence Analytics Metadata (API)",
+            "type": "shell",
+            "command": "cd ppl-meta-presence && PRESENCE_VALIDATION_SKIP_COMPLETION=1 PRESENCE_VALIDATION_BASE_URL=http://localhost:8011/api/v1/presence PRESENCE_VALIDATION_USERNAME=${env:PRESENCE_VALIDATION_USERNAME} PRESENCE_VALIDATION_PASSWORD=${env:PRESENCE_VALIDATION_PASSWORD} python3.11 - <<'PY'\nfrom validate_presence_flow import login, http_json\nimport json\n\ntoken = login()\nstatus, payload = http_json(f'http://localhost:8011/api/v1/presence/analytics/repair', method='POST', token=token)\nif status != 200:\n    raise SystemExit(f'Analytics repair API failed: HTTP {status} {json.dumps(payload)}')\nprint(json.dumps(payload, indent=2))\nPY",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Presence Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8011/health | python3 -m json.tool 2>/dev/null || echo 'Presence service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Presence Flow (Local)",
+            "type": "shell",
+            "command": "PORT_PIDS=$(lsof -ti tcp:8012 | tr '\n' ' ') && if [[ -n \"$PORT_PIDS\" ]]; then kill $PORT_PIDS; fi && cd ppl-meta-presence/src && source /Users/nickgklezakos/Documents/ppl-meta-code/scripts/load-presence-runtime-env.sh && PRESENCE_DETECTION_BACKEND_MODE=simulate PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-presence/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8012 >/tmp/ppl-meta-presence-simulated.log 2>&1 & SERVER_PID=$! && trap 'kill $SERVER_PID 2>/dev/null || true' EXIT && python3.11 -c \"import json,time,urllib.request; url='http://localhost:8012/health'; deadline=time.time()+30; last_error='';\nwhile time.time() < deadline:\n    try:\n        with urllib.request.urlopen(url, timeout=2) as response:\n            data=json.load(response)\n            assert data.get('status') == 'healthy'\n            break\n    except Exception as exc:\n        last_error=str(exc)\n        time.sleep(1)\nelse:\n    raise SystemExit(f'Simulated presence service did not become healthy: {last_error}')\" && cd .. && PRESENCE_VALIDATION_BASE_URL=http://localhost:8012/api/v1/presence PRESENCE_VALIDATION_USERNAME=${env:PRESENCE_VALIDATION_USERNAME} PRESENCE_VALIDATION_PASSWORD=${env:PRESENCE_VALIDATION_PASSWORD} python3.11 validate_presence_flow.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Presence Trace And Analytics (Local)",
+            "type": "shell",
+            "command": "cd ppl-meta-presence && PRESENCE_VALIDATION_SKIP_COMPLETION=1 PRESENCE_VALIDATION_BASE_URL=http://localhost:8011/api/v1/presence PRESENCE_VALIDATION_USERNAME=${env:PRESENCE_VALIDATION_USERNAME} PRESENCE_VALIDATION_PASSWORD=${env:PRESENCE_VALIDATION_PASSWORD} python3.11 validate_presence_flow.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Presence Policy Modes (Local)",
+            "type": "shell",
+            "command": "cd ppl-meta-presence && python3.11 validate_presence_policy_modes.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "♻️ Reset Presence Reservations (Local)",
+            "type": "shell",
+            "command": "cd ppl-meta-presence && ./reset_presence_reservations.sh",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Start All Local Python Services",
+            "type": "shell",
+            "command": "echo '🚀 Starting all PPL Meta services in local Python mode...' && echo 'Starting Discovery Service...' && (cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload) & echo 'Starting Node Service...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && source venv/bin/activate && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras && set -a && source .env && set +a && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-cameras/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Starting Bootcore Service...' && (cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload) & echo 'Starting vmeta Service...' && (cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload) & echo 'Starting Communications Service...' && (cd ppl-meta-communications && /Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-communications/venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8009 --reload) & echo 'Starting Presence Service...' && (cd ppl-meta-presence/src && source /Users/nickgklezakos/Documents/ppl-meta-code/scripts/load-presence-runtime-env.sh && PRESENCE_DETECTION_BACKEND_MODE=auto PRESENCE_PREFERRED_CAMERA_TYPES=${env:PRESENCE_PREFERRED_CAMERA_TYPES} PRESENCE_PREFERRED_CAMERA_NAMES=${env:PRESENCE_PREFERRED_CAMERA_NAMES} PRESENCE_ALLOWED_CAMERA_STATUSES=${env:PRESENCE_ALLOWED_CAMERA_STATUSES} PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-presence/src python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8011 --reload) & echo '✅ All services started! Use separate nginx task if needed.' && wait",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop All Local Python Services",
+            "type": "shell",
+            "command": "echo '🛑 Stopping all local Python services...' && echo '1. Killing Python processes...' && pkill -9 -f 'python.*ppl-meta' 2>/dev/null || true && pkill -9 -f 'uvicorn.*ppl-meta' 2>/dev/null || true && echo '2. Force-killing ports...' && sleep 1 && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8080; do lsof -ti:$port | xargs kill -9 2>/dev/null || true; done && sleep 1 && echo '3. Verifying ports are free...' && for port in 8000 8001 8002 8003 8005 8006 8007 8008 8009 8011 8080; do if lsof -i :$port >/dev/null 2>&1; then echo \"⚠️  Port $port still in use\"; else echo \"✅ Port $port free\"; fi; done && echo '✅ All services stopped and ports verified free!'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Start Nginx Proxy (Local Dev)",
+            "type": "shell",
+            "command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Stop Nginx Proxy (Local Dev)",
+            "type": "shell",
+            "command": "echo '🌐 Stopping Nginx Proxy...' && nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true && echo '✅ Nginx proxy stopped successfully!'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Start Complete Platform (Services + Nginx)",
+            "type": "shell",
+            "command": "echo '🚀 Starting Complete PPL Meta Platform...' && echo '1. Starting all backend services...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '2. Waiting for services to initialize...' && sleep 8 && echo '3. Starting Nginx proxy...' && bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh && echo '✅ Complete platform started! Services + Nginx running.' && wait",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Complete Platform (Services + Nginx)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Complete PPL Meta Platform...' && echo '1. Stopping Nginx...' && nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true && echo '2. Stopping all services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && echo '✅ Complete platform stopped!'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Local Python Health Check - All Services",
+            "type": "shell",
+            "command": "echo '🏥 PPL Meta Platform - Local Python Development Health Check' && echo '========================================================' && echo && echo '📋 Service Status:' && echo '• ppl-meta-node (8001):' && curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-media (8000):' && curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-gateway (8080):' && curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-orchestrator (8002):' && curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vision (8003):' && curl -L -s http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-cameras (8005):' && curl -L -s http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-discovery (8006):' && curl -L -s http://localhost:8006/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-bootcore (8007):' && curl -L -s http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-vmeta (8008):' && curl -L -s http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-communications (8009):' && curl -L -s http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding' && echo && echo '• ppl-meta-presence (8011):' && curl -L -s http://localhost:8011/health | python3 -m json.tool 2>/dev/null || echo 'Service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔍 Show Local Python Services Status",
+            "type": "shell",
+            "command": "echo '🔍 Local Python Services Status:' && echo '========================================' && ps aux | grep 'python.*main.py\\|uvicorn.*main:app\\|ppl-meta-vision.*python' | grep -v grep || echo 'No local Python services found running.'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Node Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo 'Node service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Media Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo 'Media service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Gateway Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo 'Gateway service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Orchestrator Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo 'Orchestrator service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Cameras Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo 'Cameras service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔍 Start Vision Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-vision && python src/main.py",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Vision Service (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Vision Service...' && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && echo 'Vision service stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Vision Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo 'Vision service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔍 Start Discovery Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-discovery/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8006 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Discovery Service (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Discovery Service...' && pkill -f 'ppl-meta-discovery.*uvicorn.*main:app' 2>/dev/null || true && echo 'Discovery service stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Discovery Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8006/health | python3 -m json.tool 2>/dev/null || echo 'Discovery service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Bootcore Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo 'Bootcore service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 vmeta Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo 'vmeta service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Communications Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo 'Communications service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔍 List All Registered Services",
+            "type": "shell",
+            "command": "echo '🔍 PPL Meta Discovery Service - Registered Services' && echo '=================================================' && curl -s http://localhost:8006/api/v1/services | python3 -m json.tool 2>/dev/null || echo 'Discovery service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔍 Discovery Service - Health Check All Services",
+            "type": "shell",
+            "command": "echo '🔍 PPL Meta Discovery Service - All Services Health Check' && echo '=========================================================' && curl -s http://localhost:8006/api/v1/services?status=healthy | python3 -c \"import sys, json; data = json.load(sys.stdin); print(f'Healthy Services: {data[\\\"healthy_count\\\"]}/{data[\\\"total_count\\\"]}'); [print(f'✅ {s[\\\"name\\\"]} ({s[\\\"service_type\\\"]}) - {s[\\\"host\\\"]}:{s[\\\"port\\\"]}') for s in data[\\\"services\\\"] if s[\\\"status\\\"] == 'healthy']; [print(f'❌ {s[\\\"name\\\"]} ({s[\\\"service_type\\\"]}) - {s[\\\"status\\\"]}') for s in data[\\\"services\\\"] if s[\\\"status\\\"] != 'healthy']\" 2>/dev/null || echo 'Discovery service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔍 Discovery Service - Search Backend Services",
+            "type": "shell",
+            "command": "echo '🔍 PPL Meta Discovery Service - Backend Services' && echo '=================================================' && curl -s 'http://localhost:8006/api/v1/services?service_type=backend' | python3 -c \"import sys, json; data = json.load(sys.stdin); [print(f'{s[\\\"name\\\"]} v{s[\\\"version\\\"]} - {s[\\\"host\\\"]}:{s[\\\"port\\\"]} ({s[\\\"status\\\"]})') for s in data[\\\"services\\\"]]\" 2>/dev/null || echo 'Discovery service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔧 Start PPL Meta Mini Service",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-mini/src && python main.py",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop PPL Meta Mini Service",
+            "type": "shell",
+            "command": "echo '🛑 Stopping PPL Meta Mini Service...' && pkill -f 'ppl-meta-mini.*python.*main.py' 2>/dev/null || true && echo 'PPL Meta Mini service stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 PPL Meta Mini Health Check",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8004/health | python3 -m json.tool 2>/dev/null || echo 'PPL Meta Mini service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🐘 Start Authority PostgreSQL (Local macOS)",
+            "type": "shell",
+            "command": "if command -v brew >/dev/null 2>&1; then brew services start postgresql@16 >/dev/null 2>&1 || brew services start postgresql >/dev/null 2>&1 || true; fi && if ! command -v psql >/dev/null 2>&1; then echo 'psql is not installed. Install PostgreSQL locally first.' && exit 1; fi && psql postgres -tAc \"SELECT 1 FROM pg_roles WHERE rolname = 'authority_user'\" | grep -q 1 || psql postgres -c \"CREATE ROLE authority_user LOGIN PASSWORD 'authority_password'\" && psql postgres -c \"ALTER ROLE authority_user WITH LOGIN PASSWORD 'authority_password'\" && psql postgres -tAc \"SELECT 1 FROM pg_database WHERE datname = 'authority_db'\" | grep -q 1 || createdb -O authority_user authority_db && echo 'Authority PostgreSQL is ready on localhost:5432'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Authority PostgreSQL (Local macOS)",
+            "type": "shell",
+            "command": "if command -v brew >/dev/null 2>&1; then brew services stop postgresql@16 >/dev/null 2>&1 || brew services stop postgresql >/dev/null 2>&1 || true; fi && echo 'Authority PostgreSQL stop command sent.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Authority PostgreSQL Health Check (Local macOS)",
+            "type": "shell",
+            "command": "if ! command -v psql >/dev/null 2>&1; then echo 'psql is not installed. Install PostgreSQL locally first.' && exit 1; fi && PGPASSWORD=authority_password psql -h localhost -U authority_user -d authority_db -tAc 'SELECT current_database(), current_user' || echo 'Authority PostgreSQL is not responding on localhost:5432'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔐 Start Authority Service (Local Python)",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload",
+            "dependsOn": [
+                "🐘 Start Authority PostgreSQL (Local macOS)"
+            ],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔐 Start Authority Service (Local Bootstrap Admin)",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db AUTHORITY_BOOTSTRAP_ADMIN_ENABLED=true python3.11 -m uvicorn main:app --host 0.0.0.0 --port 8010 --reload",
+            "dependsOn": [
+                "🐘 Start Authority PostgreSQL (Local macOS)"
+            ],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Authority Service (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Authority Service...' && pkill -f 'ppl-meta-authority/src.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8010 | xargs kill -9 2>/dev/null || true && echo 'Authority service stopped.'",
+            "dependsOn": [
+                "🛑 Stop Authority PostgreSQL (Local macOS)"
+            ],
+            "dependsOrder": "sequence",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Authority Service Health Check (Local)",
+            "type": "shell",
+            "command": "curl -L -s http://localhost:8010/health | python3 -m json.tool 2>/dev/null || echo 'Authority service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔑 Bootstrap Authority Admin (Local)",
+            "type": "shell",
+            "command": "echo 'Waiting for bootstrap-enabled authority service...' && curl -fsS --retry 20 --retry-delay 1 --retry-connrefused http://localhost:8010/health >/dev/null && echo 'Posting bootstrap-admin to local authority service...' && response=$(curl -sS -w '\n%{http_code}' -X POST http://localhost:8010/api/v1/auth/bootstrap-admin) && body=$(printf '%s\n' \"$response\" | sed '$d') && http_status=$(printf '%s\n' \"$response\" | tail -n 1) && printf '%s\n' \"$body\" | python3 -m json.tool && if [ \"$http_status\" != \"200\" ]; then echo && echo 'Bootstrap did not run even after starting bootstrap mode.' && exit 0; fi && echo && echo 'Bootstrap login credentials:' && echo '  email: admin@authority.local' && echo '  password: change-this-admin-password' && echo && echo 'Important: if this admin already existed, bootstrap does not reset the password.'",
+            "dependsOn": [
+                "🛑 Stop Authority Service (Local Python)",
+                "🔐 Start Authority Service (Local Bootstrap Admin)"
+            ],
+            "dependsOrder": "sequence",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔐 Login Bootstrap Authority Admin (Local)",
+            "type": "shell",
+            "command": "echo 'Logging in with bootstrap admin credentials...' && curl -s -X POST http://localhost:8010/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@authority.local\",\"password\":\"change-this-admin-password\"}' | python3 -m json.tool",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔄 Migrate Authority SQLite To PostgreSQL",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && PYTHONPATH=. python3.11 migrate_sqlite_to_postgres.py --sqlite-path ../data/authority-local.db --postgres-url postgresql://authority_user:authority_password@localhost:5432/authority_db",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Authority Lifecycle Endpoints",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_lifecycle.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Authority Auth And Dashboard",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_auth_dashboard.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Authority Invitations And Assignments",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_invitations_assignments.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Authority Bootstrap Gate",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_bootstrap_gate.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Authority Reseller Scope",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_reseller_scope.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Validate Authority Admin End-To-End Workflow",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-authority/src && AUTHORITY_DATABASE_URL=postgresql://authority_user:authority_password@localhost:5432/authority_db PYTHONPATH=. python3.11 validate_authority_admin_e2e_workflow.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Test PPL Meta Mini Complete Pipeline",
+            "type": "shell",
+            "command": "cd autonomous/ppl-meta-mini && python demo_pipeline.py",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Start PPL Meta Mini with Apache Proxy",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/start-apache-proxy.sh",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop PPL Meta Mini with Apache Proxy",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/stop-apache-proxy.sh",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔧 Install Apache (macOS)",
+            "type": "shell",
+            "command": "brew install httpd && echo '✅ Apache installed. Configure with APACHE_MACOS_SETUP.md'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Test Apache Proxy Health",
+            "type": "shell",
+            "command": "echo '🏥 Testing Apache Proxy...' && curl -s http://localhost:8080/ppl-health | python3 -m json.tool 2>/dev/null || echo 'Apache proxy not responding' && echo '' && echo 'Direct service:' && curl -s http://localhost:8004/health | python3 -m json.tool 2>/dev/null || echo 'Direct service not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏗️ Build All Docker Images",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "docker-compose.minimal.yml",
+                "build"
+            ],
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Start All Services (Docker)",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "docker-compose.minimal.yml",
+                "up",
+                "-d"
+            ],
+            "group": "build",
+            "dependsOn": [
+                "🏗️ Build All Docker Images"
+            ],
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop All Services (Docker)",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "docker-compose.minimal.yml",
+                "down"
+            ],
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Health Check - All Services (Docker)",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "-c",
+                "import requests; import sys; services = [('Gateway', 'http://localhost:8080/health'), ('Node', 'http://localhost:8001/health'), ('Media', 'http://localhost:8000/health'), ('Orchestrator', 'http://localhost:8002/health')]; results = []; [results.append(f'✅ {name}: {requests.get(url, timeout=5).status_code}' if (lambda: requests.get(url, timeout=5).status_code == 200)() else f'❌ {name}: Failed') for name, url in services]; [print(r) for r in results]"
+            ],
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📋 View Logs - All Services (Docker)",
+            "type": "shell",
+            "command": "docker-compose",
+            "args": [
+                "-f",
+                "docker-compose.minimal.yml",
+                "logs",
+                "-f"
+            ],
+            "group": "test",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Start Nginx Proxy (Local Dev)",
+            "type": "shell",
+            "command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/setup-nginx-local.sh",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Stop Nginx Proxy (Local Dev)",
+            "type": "shell",
+            "command": "nginx -s quit 2>/dev/null || true && if command -v brew >/dev/null 2>&1 && brew list nginx >/dev/null 2>&1; then brew services stop nginx || true; fi && sudo nginx -s quit 2>/dev/null || true",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Reload Nginx Configuration",
+            "type": "shell",
+            "command": "nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Test Nginx Configuration",
+            "type": "shell",
+            "command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/test-nginx-local.sh",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Reload Nginx Configuration",
+            "type": "shell",
+            "command": "echo '🌐 Reloading Nginx Configuration...' && (nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && nginx -s reload || (sudo nginx -t -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && sudo nginx -s reload)) && echo '✅ Nginx configuration reloaded!'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🌐 Test Nginx Configuration",
+            "type": "shell",
+            "command": "bash /Users/nickgklezakos/Documents/ppl-meta-code/scripts/test-nginx-local.sh",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Start All Services then Nginx (Interactive)",
+            "type": "shell",
+            "command": "echo '🚀 Starting all PPL Meta services...' && echo 'Starting Node Service...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & echo 'Starting Media Service...' && (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & echo 'Starting Gateway Service...' && (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & echo 'Starting Orchestrator Service...' && (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Vision Service...' && (cd ppl-meta-vision && python src/main.py) & echo 'Starting Cameras Service...' && (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo 'Waiting for services to start...' && sleep 8 && echo 'Starting Nginx Proxy (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ All services and nginx started!'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop All Services + Nginx (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping all local Python services and Nginx...' && sudo nginx -s quit 2>/dev/null || true && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && pkill -f 'uvicorn.*main_minimal:app' 2>/dev/null || true && pkill -f 'ppl-meta-vision.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-cameras.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-node.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-media.*python.*main.py' 2>/dev/null || true && pkill -f 'ppl-meta-gateway.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-orchestrator.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-discovery.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-bootcore.*uvicorn' 2>/dev/null || true && pkill -f 'ppl-meta-vmeta.*uvicorn' 2>/dev/null || true && echo 'All services and nginx stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Health Check via Nginx Proxy",
+            "type": "shell",
+            "command": "echo '🏥 PPL Meta Platform - Health Check via Nginx Proxy' && echo '========================================================' && echo && echo '🔍 Checking Nginx status...' && if curl -s --connect-timeout 2 --max-time 4 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo && echo '📋 Service Status via Nginx (http://localhost):' && echo '• All Services Health:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health | python3 -m json.tool 2>/dev/null || echo '❌ Aggregated health endpoint not responding' && echo && echo '• Node Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/node | python3 -m json.tool 2>/dev/null || echo '❌ Node service not responding via nginx' && echo && echo '• Media Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/media | python3 -m json.tool 2>/dev/null || echo '❌ Media service not responding via nginx' && echo && echo '• Gateway Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/gateway | python3 -m json.tool 2>/dev/null || echo '❌ Gateway service not responding via nginx' && echo && echo '• Orchestrator Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/orchestrator | python3 -m json.tool 2>/dev/null || echo '❌ Orchestrator service not responding via nginx' && echo && echo '• Vision Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/vision | python3 -m json.tool 2>/dev/null || echo '❌ Vision service not responding via nginx' && echo && echo '• Cameras Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/cameras | python3 -m json.tool 2>/dev/null || echo '❌ Cameras service not responding via nginx' && echo && echo '• Bootcore Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/bootcore | python3 -m json.tool 2>/dev/null || echo '❌ Bootcore service not responding via nginx' && echo && echo '• vmeta Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/vmeta | python3 -m json.tool 2>/dev/null || echo '❌ vmeta service not responding via nginx' && echo && echo '• Communications Service:' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost/health/communications | python3 -m json.tool 2>/dev/null || echo '❌ Communications service not responding via nginx'; else echo '❌ Nginx is not running' && echo && echo '🔄 Falling back to direct service checks:' && echo '• Node Service (8001):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Media Service (8000):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Gateway Service (8080):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Orchestrator Service (8002):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Vision Service (8003):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Cameras Service (8005):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Bootcore Service (8007):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• vmeta Service (8008):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Communications Service (8009):' && curl -L -s --connect-timeout 2 --max-time 4 http://localhost:8009/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '💡 Tip: Start nginx with: 🌐 Start Nginx Proxy (Local Dev)'; fi",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Health Check - Direct Services Only",
+            "type": "shell",
+            "command": "echo '🏥 PPL Meta Platform - Direct Service Health Check' && echo '========================================================' && echo && echo '📋 Direct Service Status:' && echo '• Node Service (8001):' && curl -L -s --connect-timeout 3 http://localhost:8001/api/v1/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Media Service (8000):' && curl -L -s --connect-timeout 3 http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Gateway Service (8080):' && curl -L -s --connect-timeout 3 http://localhost:8080/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Orchestrator Service (8002):' && curl -L -s --connect-timeout 3 http://localhost:8002/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Vision Service (8003):' && curl -L -s --connect-timeout 3 http://localhost:8003/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Cameras Service (8005):' && curl -L -s --connect-timeout 3 http://localhost:8005/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Bootcore Service (8007):' && curl -L -s --connect-timeout 3 http://localhost:8007/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• vmeta Service (8008):' && curl -L -s --connect-timeout 3 http://localhost:8008/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding' && echo && echo '• Presence Service (8011):' && curl -L -s --connect-timeout 3 http://localhost:8011/health | python3 -m json.tool 2>/dev/null || echo '❌ Not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Install Flutter Dependencies",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter pub get",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Start Frontend (Web)",
+            "type": "shell",
+            "command": "echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d chrome --web-port 3000",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Start Frontend (Desktop)",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter run -d macos",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Build Frontend (Web)",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter build web --release",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Build Frontend (Desktop)",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter build macos --release",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Generate Code (Frontend)",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter packages pub run build_runner build --delete-conflicting-outputs",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Watch Code Generation (Frontend)",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter packages pub run build_runner watch --delete-conflicting-outputs",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Test Frontend",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter test",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Clean Frontend",
+            "type": "shell",
+            "command": "cd ppl-meta-frontend && flutter clean && flutter pub get",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📱 Check Flutter Doctor",
+            "type": "shell",
+            "command": "flutter doctor -v",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🚀 Start Full Stack (Backend + Frontend)",
+            "type": "shell",
+            "command": "echo '🚀 Starting Full PPL Meta Platform (Backend + Frontend)...' && echo 'Starting Backend Services...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & echo 'Starting Frontend...' && sleep 3 && (echo '🧹 Ensuring port 3000 is free...' && lsof -ti tcp:3000 | xargs kill -9 2>/dev/null || true && cd ppl-meta-frontend && flutter run -d chrome --web-port 3000) & wait",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🧪 Complete Testing Workflow",
+            "type": "shell",
+            "command": "echo '🧪 PPL Meta Platform - Complete Testing Workflow' && echo '========================================================' && echo && echo '1️⃣ Stopping any existing services...' && pkill -f 'python.*main.py' 2>/dev/null || true && pkill -f 'uvicorn.*main:app' 2>/dev/null || true && sudo nginx -s quit 2>/dev/null || true && sleep 2 && echo '✅ Cleanup complete' && echo && echo '2️⃣ Starting all services...' && (cd ppl-meta-node && source ../scripts/load-presence-runtime-env.sh && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-node python src/main.py) & (cd ppl-meta-media && source venv/bin/activate && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-media python src/main.py) & (cd ppl-meta-gateway/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8080 --reload) & (cd ppl-meta-orchestrator/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8002 --reload) & (cd ppl-meta-vision && python src/main_enhanced.py) & (cd ppl-meta-cameras/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8005 --reload) & echo '✅ All services starting...' && echo && echo '3️⃣ Waiting for services to initialize...' && sleep 10 && echo && echo '4️⃣ Starting Nginx (will prompt for password)...' && sudo nginx -c /Users/nickgklezakos/Documents/ppl-meta-code/docs/deployment/nginx/nginx-local-dev.conf && echo '✅ Nginx started' && echo && echo '5️⃣ Running health checks...' && sleep 3 && echo && if curl -s --connect-timeout 2 http://localhost/ >/dev/null 2>&1; then echo '✅ Nginx is running' && echo '📋 Service Status via Nginx:' && for service in health health/node health/media health/gateway health/orchestrator health/vision health/cameras; do echo -n \"  $service: \"; if curl -s --connect-timeout 3 http://localhost/$service >/dev/null 2>&1; then echo '✅ OK'; else echo '❌ FAIL'; fi; done; else echo '❌ Nginx failed to start'; fi && echo && echo '✅ Testing workflow complete!'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🔧 Start Bootcore Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-bootcore/src && source ../venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port 8007 --reload",
+            "isBackground": true,
+            "group": "build"
+        },
+        {
+            "label": "🔧 Start vmeta Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-vmeta && source venv/bin/activate && cd src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload",
+            "isBackground": true,
+            "group": "build"
+        },
+        {
+            "label": "🔧 Start vmeta Service (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-vmeta/src && PYTHONPATH=/Users/nickgklezakos/Documents/ppl-meta-code/ppl-meta-vmeta/src uvicorn main:app --host 0.0.0.0 --port 8008 --reload",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop vmeta Service (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping vmeta Service...' && pkill -f 'ppl-meta-vmeta.*uvicorn.*main:app' 2>/dev/null || true && echo 'vmeta service stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Communications Service (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Communications Service...' && pkill -f 'ppl-meta-communications.*uvicorn.*main:app' 2>/dev/null || true && lsof -ti:8009 | xargs kill -9 2>/dev/null || true && echo 'Communications service stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "📷 Start Edge Camera (Local Python)",
+            "type": "shell",
+            "command": "cd ppl-meta-edge-camera && source venv/bin/activate && cd src && python main.py",
+            "group": "build",
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "🛑 Stop Edge Camera (Local Python)",
+            "type": "shell",
+            "command": "echo '🛑 Stopping Edge Camera...' && pkill -f 'ppl-meta-edge-camera.*python.*main.py' 2>/dev/null || true && lsof -ti:9001 | xargs kill -9 2>/dev/null || true && echo 'Edge camera stopped.'",
+            "group": "build",
+            "isBackground": false,
+            "problemMatcher": []
+        },
+        {
+            "label": "🏥 Edge Camera Health Check",
+            "type": "shell",
+            "command": "echo '🏥 Edge Camera Health Check' && echo '=========================' && curl -s http://localhost:9001/health | python -m json.tool || echo '❌ Edge camera not responding'",
+            "group": "test",
+            "isBackground": false,
+            "problemMatcher": []
+        }
+    ],
+    "inputs": []
 }
