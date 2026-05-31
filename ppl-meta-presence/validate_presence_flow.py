@@ -77,6 +77,84 @@ def find_presence_assets(token: str, user_uuid: str) -> dict[str, dict | None]:
     }
 
 
+def assert_external_assets(
+    token: str,
+    *,
+    session_payload: dict,
+    result_payload: dict | None,
+    trace_payload: dict,
+) -> dict:
+    session_assets = session_payload.get("external_assets") or {}
+    required_keys = ("individual_group_id", "trigger_uuid", "action_uuid")
+    missing_keys = [key for key in required_keys if not session_assets.get(key)]
+    if missing_keys:
+        fail(
+            "Session did not expose complete external_assets UUIDs: "
+            f"missing={missing_keys} payload={json.dumps(session_payload)}"
+        )
+
+    result_assets = (result_payload or {}).get("external_assets") or {}
+    trace_session_assets = (trace_payload.get("session") or {}).get("external_assets") or {}
+    trace_action_assets = (trace_payload.get("action_plan") or {}).get("external_assets") or {}
+
+    if result_payload is not None and result_assets != session_assets:
+        fail(
+            "Result external_assets diverged from session external_assets: "
+            f"{json.dumps({'session': session_assets, 'result': result_assets})}"
+        )
+    if trace_session_assets != session_assets:
+        fail(
+            "Trace session external_assets diverged from session external_assets: "
+            f"{json.dumps({'session': session_assets, 'trace_session': trace_session_assets})}"
+        )
+    if trace_action_assets != session_assets:
+        fail(
+            "Trace action_plan external_assets diverged from session external_assets: "
+            f"{json.dumps({'session': session_assets, 'trace_action_plan': trace_action_assets})}"
+        )
+
+    group_payload = gateway_json(token, f"/individual-groups/{session_assets['individual_group_id']}")
+    trigger_payload = gateway_json(token, f"/triggers/{session_assets['trigger_uuid']}")
+    action_payload = gateway_json(token, f"/user-actions/{session_assets['action_uuid']}")
+
+    group = group_payload.get("group") or {}
+    if group.get("id") != session_assets["individual_group_id"]:
+        fail(
+            "External group UUID lookup did not match session external_assets: "
+            f"{json.dumps({'session': session_assets, 'group_lookup': group_payload})}"
+        )
+    if trigger_payload.get("uuid") != session_assets["trigger_uuid"]:
+        fail(
+            "External trigger UUID lookup did not match session external_assets: "
+            f"{json.dumps({'session': session_assets, 'trigger_lookup': trigger_payload})}"
+        )
+    if action_payload.get("uuid") != session_assets["action_uuid"]:
+        fail(
+            "External action UUID lookup did not match session external_assets: "
+            f"{json.dumps({'session': session_assets, 'action_lookup': action_payload})}"
+        )
+    if trigger_payload.get("ppl_match_group_id") != session_assets["individual_group_id"]:
+        fail(
+            "Trigger no longer points at the same external group UUID exposed by presence: "
+            f"{json.dumps({'session': session_assets, 'trigger_lookup': trigger_payload})}"
+        )
+    if session_assets["action_uuid"] not in (trigger_payload.get("action_uuids") or []):
+        fail(
+            "Trigger no longer references the same external action UUID exposed by presence: "
+            f"{json.dumps({'session': session_assets, 'trigger_lookup': trigger_payload})}"
+        )
+
+    return {
+        "session": session_assets,
+        "result": result_assets,
+        "trace_session": trace_session_assets,
+        "trace_action_plan": trace_action_assets,
+        "gateway_group": {"id": group.get("id"), "name": group.get("name")},
+        "gateway_trigger": {"uuid": trigger_payload.get("uuid"), "name": trigger_payload.get("name")},
+        "gateway_action": {"uuid": action_payload.get("uuid"), "name": action_payload.get("name")},
+    }
+
+
 def clear_presence_group_members(token: str, group_id: str) -> list[dict]:
     members = list_gateway_items(token, f"/individual-groups/{group_id}/members")
     if not members:
@@ -417,6 +495,12 @@ def main() -> None:
     analytics = assert_analytics_summary(token)
     policy_source_analytics = assert_policy_source_analytics(token)
     assets_after = find_presence_assets(token, session_payload["data"]["user_uuid"])
+    external_asset_validation = assert_external_assets(
+        token,
+        session_payload=session_payload["data"],
+        result_payload=result,
+        trace_payload=trace,
+    )
 
     print(json.dumps(
         {
@@ -428,6 +512,7 @@ def main() -> None:
             "assets_before": assets_before,
             "cleared_group_members": cleared_members,
             "assets_after": assets_after,
+            "external_asset_validation": external_asset_validation,
             "trace": trace,
             "decision_history_query": decision_history_query,
             "session_trace_query": trace_query,

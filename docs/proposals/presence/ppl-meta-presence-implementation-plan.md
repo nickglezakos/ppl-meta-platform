@@ -226,6 +226,19 @@ Validated local outcome:
 This closes the earlier gap where presence could complete logically while camera
 cleanup remained unverified at the hardware/runtime level.
 
+Operational note from repeated live runs:
+
+- presence grants remained correctly gated on fresh trigger-backed `ppl_match`
+  results and did not reproduce a false-positive grant path
+- direct session, result, and trace APIs now expose the provisioned external
+  asset UUIDs used for the presence group, trigger, and action
+- repeated live runs confirmed that the presence-related email action can be
+  delivered successfully for the same provisioned trigger
+- one earlier missed email did not reproduce after the UUID-based validation
+  pass, so the remaining risk is narrowed to intermittent downstream multi-action
+  delivery or fan-out behavior under concurrent same-camera trigger activity,
+  not the presence service's match-to-grant rule
+
 ## Authentication And User Context
 
 Expected dependency:

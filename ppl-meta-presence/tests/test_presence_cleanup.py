@@ -271,6 +271,10 @@ async def test_presence_assets_are_auto_provisioned(monkeypatch: pytest.MonkeyPa
     assert profile.metadata["presence_action_uuid"] == "action-uuid"
     assert profile.metadata["presence_trigger_uuid"] == "trigger-uuid"
     assert profile.metadata["presence_trigger_threshold"] == 0.6
+    assert session.external_assets is not None
+    assert session.external_assets.individual_group_id == "group-001"
+    assert session.external_assets.action_uuid == "action-uuid"
+    assert session.external_assets.trigger_uuid == "trigger-uuid"
     assert any(call[0] == "create_group" for call in platform_clients.calls)
     assert any(call[0] == "create_action" for call in platform_clients.calls)
     assert any(call[0] == "create_trigger" for call in platform_clients.calls)
@@ -426,6 +430,9 @@ async def test_get_result_grants_after_fresh_trigger_backed_match(monkeypatch: p
 
     assert result.decision == PresenceDecisionState.GRANTED
     assert result.reason_code == "presence_ppl_match"
+    assert result.external_assets is not None
+    assert result.external_assets.individual_group_id == "group-001"
+    assert result.external_assets.trigger_uuid == "trigger-uuid"
     assert service.sessions[session.session_uuid].policy_source == "platform_trigger"
     assert ("stop", camera_id) in platform_clients.calls
     assert ("disconnect", camera_id) in platform_clients.calls

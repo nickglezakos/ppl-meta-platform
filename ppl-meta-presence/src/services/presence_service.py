@@ -18,6 +18,7 @@ from models.presence_models import (
     CreatePresenceGroupRequest,
     CreatePresenceSessionRequest,
     PresenceDecisionRecord,
+    PresenceExternalAssets,
     PresenceGroup,
     PresenceGroupPolicy,
     PresenceAnalyticsEvent,
@@ -95,6 +96,7 @@ class PresenceService:
 
     def get_action_plan(self, session_uuid: str) -> PresenceActionPlan:
         session = self.sessions[session_uuid]
+        self._sync_session_external_assets(session)
         matched_group_uuid = self._resolve_matched_group_uuid(session)
         trigger_type, action_type, policy_source = self._resolve_trigger_and_action(session)
         return PresenceActionPlan(
@@ -105,10 +107,12 @@ class PresenceService:
             trigger_type=trigger_type,
             action_type=action_type,
             action_execution_status=session.action_execution_status,
+            external_assets=session.external_assets,
         )
 
     async def get_session_trace(self, session_uuid: str, current_user: dict) -> PresenceSessionTrace:
         session = self.sessions[session_uuid]
+        self._sync_session_external_assets(session)
         action_plan = self.get_action_plan(session_uuid)
         decision_history = self.list_decision_history(session_uuid)
         audit_log = await self._get_audit_log_trace(session, current_user)
@@ -314,13 +318,17 @@ class PresenceService:
             resolved_collection_uuid=self._get_default_collection_id(),
         )
         await self._ensure_presence_automation_assets(session, current_user)
+        self._sync_session_external_assets(session)
         self.sessions[session.session_uuid] = session
         self.qr_tokens[session.qr_token] = session.session_uuid
         self.repository.save_session(session)
         return session
 
     def get_session(self, session_uuid: str) -> PresenceSession | None:
-        return self.sessions.get(session_uuid)
+        session = self.sessions.get(session_uuid)
+        if session:
+            self._sync_session_external_assets(session)
+        return session
 
     async def upload_burst(self, session_uuid: str, request: PresenceBurstUploadRequest) -> PresenceDetectionAttempt:
         session = self.sessions[session_uuid]
@@ -572,6 +580,7 @@ class PresenceService:
 
     async def get_result(self, session_uuid: str, current_user: dict) -> PresenceResult:
         session = self.sessions[session_uuid]
+        self._sync_session_external_assets(session)
         latest_attempt = self._latest_attempt(session_uuid)
 
         if session.status == PresenceSessionStatus.QR_RESOLVED and session.decision == PresenceDecisionState.PENDING:
@@ -630,6 +639,7 @@ class PresenceService:
             executed_at=session.executed_at,
             resolved_camera_uuid=session.resolved_camera_uuid,
             resolved_collection_uuid=session.resolved_collection_uuid,
+            external_assets=session.external_assets,
         )
 
     async def _advance_live_detection(self, session: PresenceSession) -> None:
@@ -763,6 +773,8 @@ class PresenceService:
             group_profile.updated_at = datetime.utcnow()
             self.repository.save_profile(group_profile)
 
+        self._sync_session_external_assets(session)
+
     async def _ensure_external_individual_group(self, session: PresenceSession, token: str) -> str:
         expected_name = self._presence_individual_group_name(session.user_uuid)
         groups = await self.platform_clients.list_individual_groups(token)
@@ -889,7 +901,29 @@ class PresenceService:
         group_profile.metadata = metadata
         group_profile.updated_at = datetime.utcnow()
         self.repository.save_profile(group_profile)
+        self._sync_session_external_assets(session)
         return True
+
+    def _external_assets_for_user(self, user_uuid: str | None) -> PresenceExternalAssets | None:
+        if not user_uuid:
+            return None
+
+        group_profile = self.profiles.get(self._presence_group_uuid(user_uuid))
+        if not group_profile or not isinstance(group_profile.metadata, dict):
+            return None
+
+        metadata = group_profile.metadata
+        assets = PresenceExternalAssets(
+            individual_group_id=metadata.get("presence_individual_group_id"),
+            trigger_uuid=metadata.get("presence_trigger_uuid"),
+            action_uuid=metadata.get("presence_action_uuid"),
+        )
+        if not any([assets.individual_group_id, assets.trigger_uuid, assets.action_uuid]):
+            return None
+        return assets
+
+    def _sync_session_external_assets(self, session: PresenceSession) -> None:
+        session.external_assets = self._external_assets_for_user(session.user_uuid)
 
     async def _resolve_trigger_backed_match(
         self,

@@ -118,6 +118,7 @@ class PresenceSession(BaseModel):
     action_execution_status: Optional[str] = None
     action_log_uuid: Optional[str] = None
     executed_at: Optional[datetime] = None
+    external_assets: Optional[PresenceExternalAssets] = None
 
 
 class PresenceFramePayload(BaseModel):
@@ -182,6 +183,12 @@ class ResetInstallationReservationsRequest(BaseModel):
     installation_uuid: str = "local-installation"
 
 
+class PresenceExternalAssets(BaseModel):
+    individual_group_id: Optional[str] = None
+    trigger_uuid: Optional[str] = None
+    action_uuid: Optional[str] = None
+
+
 class PresenceResult(BaseModel):
     session_uuid: str
     status: PresenceSessionStatus
@@ -198,6 +205,7 @@ class PresenceResult(BaseModel):
     executed_at: Optional[datetime] = None
     resolved_camera_uuid: Optional[str] = None
     resolved_collection_uuid: Optional[str] = None
+    external_assets: Optional[PresenceExternalAssets] = None
 
 
 class PresenceActionPlan(BaseModel):
@@ -208,6 +216,7 @@ class PresenceActionPlan(BaseModel):
     trigger_type: Optional[str] = None
     action_type: Optional[str] = None
     action_execution_status: Optional[str] = None
+    external_assets: Optional[PresenceExternalAssets] = None
 
 
 class PresenceDecisionRecord(BaseModel):
