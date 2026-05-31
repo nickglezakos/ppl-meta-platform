@@ -8,8 +8,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from models.presence_models import (  # noqa: E402
+    BindResourcesRequest,
+    PresenceAnalyticsEvent,
     PresenceDecisionState,
     PresenceDetectionAttempt,
+    PresenceResource,
     PresenceSession,
     PresenceSessionStatus,
 )
@@ -68,6 +71,37 @@ class _FakePlatformClients:
         self.groups = []
         self.group_members = {}
         self.trigger_lookup = {}
+
+    async def list_cameras(self, token: str):
+        self.calls.append(("list_cameras", token))
+        return [
+            {
+                "device_id": "camera-platform-001",
+                "name": "Presence Camera",
+                "camera_type": "USB",
+                "status": "available",
+            }
+        ]
+
+    async def list_collections(self, token: str):
+        self.calls.append(("list_collections", token))
+        return [
+            {
+                "uuid": "collection-platform-001",
+                "name": "Presence Collection",
+                "camera_device_id": "camera-platform-001",
+            }
+        ]
+
+    async def get_collection_by_camera_device_id(self, camera_device_id: str, token: str):
+        self.calls.append(("get_collection_by_camera", token, camera_device_id))
+        if camera_device_id == "camera-platform-001":
+            return {
+                "uuid": "collection-platform-001",
+                "name": "Presence Collection",
+                "camera_device_id": camera_device_id,
+            }
+        return None
 
     async def get_instant_detection_results(self, camera_id: str):
         self.calls.append(("get_results", camera_id))
@@ -168,6 +202,244 @@ def _build_attempt(session_uuid: str) -> PresenceDetectionAttempt:
         attempt_index=1,
         capture_phase="initial",
     )
+
+
+def test_qr_current_returns_existing_session_qr_without_creating_new_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    session = PresenceSession(
+        device_uuid="presence-validation-device",
+        user_uuid="7",
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+    )
+    service.sessions[session.session_uuid] = session
+    service.qr_tokens[session.qr_token] = session.session_uuid
+
+    current_qr = service.qr_current("local-installation", "presence-validation-device")
+
+    assert current_qr["found"] is True
+    assert current_qr["qr_token"] == session.qr_token
+    assert current_qr["session_uuid"] == session.session_uuid
+    assert current_qr["payload"]["session_uuid"] == session.session_uuid
+    assert current_qr["qr_status"] == session.qr_status
+
+
+def test_qr_current_returns_not_found_without_minting_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+
+    current_qr = service.qr_current("local-installation", "missing-device")
+
+    assert current_qr["found"] is False
+    assert current_qr["qr_token"] is None
+    assert current_qr["session_uuid"] is None
+    assert service.qr_tokens == {}
+
+
+def test_bind_resources_uses_reserved_platform_resource_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    session = PresenceSession(
+        device_uuid="presence-validation-device",
+        user_uuid="7",
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+    )
+    camera_resource = PresenceResource(
+        resource_type="camera",
+        installation_uuid="local-installation",
+        platform_resource_uuid="camera-platform-001",
+    )
+    collection_resource = PresenceResource(
+        resource_type="collection",
+        installation_uuid="local-installation",
+        platform_resource_uuid="collection-platform-001",
+    )
+    service.sessions[session.session_uuid] = session
+    service.cameras[camera_resource.resource_uuid] = camera_resource
+    service.collections[collection_resource.resource_uuid] = collection_resource
+
+    bound_session = service.bind_resources(
+        session.session_uuid,
+        BindResourcesRequest(
+            camera_uuid=camera_resource.resource_uuid,
+            collection_uuid=collection_resource.resource_uuid,
+        ),
+    )
+
+    assert bound_session.resolved_camera_uuid == "camera-platform-001"
+    assert bound_session.resolved_collection_uuid == "collection-platform-001"
+
+
+def test_bind_resources_rejects_unknown_resources(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    session = PresenceSession(
+        device_uuid="presence-validation-device",
+        user_uuid="7",
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+    )
+    service.sessions[session.session_uuid] = session
+
+    with pytest.raises(ValueError, match="not reserved for presence"):
+        service.bind_resources(
+            session.session_uuid,
+            BindResourcesRequest(
+                camera_uuid="unknown-camera",
+                collection_uuid="unknown-collection",
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_reserve_camera_rejects_unsupported_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+
+    with pytest.raises(ValueError, match="not supported"):
+        await service.reserve_camera(
+            presence_service_module.ReserveResourceRequest(
+                installation_uuid="local-installation",
+                resource_uuid="camera-platform-001",
+                mode="create",
+            ),
+            {"token": "user-token"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_list_cameras_exposes_reservation_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    camera_resource = PresenceResource(
+        resource_type="camera",
+        installation_uuid="local-installation",
+        platform_resource_uuid="camera-platform-001",
+    )
+    collection_resource = PresenceResource(
+        resource_type="collection",
+        installation_uuid="local-installation",
+        platform_resource_uuid="collection-platform-001",
+        metadata={"camera_device_id": "camera-platform-001"},
+    )
+    service.cameras[camera_resource.resource_uuid] = camera_resource
+    service.collections[collection_resource.resource_uuid] = collection_resource
+
+    items = await service.list_cameras({"token": "user-token"})
+
+    assert items[0]["reserved_for_presence"] is True
+    assert items[0]["reserved_resource_uuid"] == camera_resource.resource_uuid
+    assert items[0]["reserved_installation_uuid"] == "local-installation"
+    assert items[0]["linked_collection_uuid"] == "collection-platform-001"
+
+
+@pytest.mark.asyncio
+async def test_action_plan_exposes_trigger_action_observation(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    current_user = {"sub": "7", "token": "user-token", "username": "presence-user"}
+    group = service.ensure_group(
+        presence_service_module.CreatePresenceGroupRequest(
+            installation_uuid="local-installation",
+            user_uuid="7",
+            display_name="Presence Group 7",
+        ),
+        current_user,
+    )
+    profile = service.profiles[group.group_uuid]
+    profile.metadata = {
+        "presence_individual_group_id": "group-001",
+        "presence_action_uuid": "action-uuid",
+        "presence_trigger_uuid": "trigger-uuid",
+    }
+    platform_clients.trigger_lookup["trigger-uuid"] = {
+        "uuid": "trigger-uuid",
+        "action_uuid": "action-uuid",
+        "action_uuids": ["action-uuid", "email-action-uuid"],
+        "action_names": ["Presence Action 7", "email notification"],
+        "last_fired_at": "2026-05-31T10:41:41Z",
+        "last_matched_at": "2026-05-31T10:41:37Z",
+        "ppl_match_group_id": "group-001",
+    }
+    session = PresenceSession(
+        device_uuid="presence-validation-device",
+        user_uuid="7",
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+    )
+    service.sessions[session.session_uuid] = session
+
+    action_plan = service.get_action_plan(session.session_uuid)
+
+    assert action_plan.trigger_observation is not None
+    assert action_plan.trigger_observation.trigger_uuid == "trigger-uuid"
+    assert action_plan.trigger_observation.configured_action_uuids == ["action-uuid", "email-action-uuid"]
+    assert action_plan.trigger_observation.configured_action_names == ["Presence Action 7", "email notification"]
+
+
+def test_phase4_analytics_breakdowns_cover_installation_collection_and_action_outcomes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    service.analytics_events = [
+        PresenceAnalyticsEvent(
+            session_uuid="session-1",
+            installation_uuid="inst-a",
+            user_uuid="7",
+            device_uuid="device-a",
+            outcome="granted",
+            reason_code="presence_ppl_match",
+            resolved_collection_uuid="collection-1",
+            action_type="group_open_door",
+            action_execution_status="executed",
+        ),
+        PresenceAnalyticsEvent(
+            session_uuid="session-2",
+            installation_uuid="inst-a",
+            user_uuid="8",
+            device_uuid="device-b",
+            outcome="failed",
+            reason_code="presence_timeout",
+            resolved_collection_uuid=None,
+            action_type="group_open_door",
+            action_execution_status="failed",
+        ),
+        PresenceAnalyticsEvent(
+            session_uuid="session-3",
+            installation_uuid="inst-b",
+            user_uuid="9",
+            device_uuid="device-c",
+            outcome="granted",
+            reason_code="presence_ppl_match",
+            resolved_collection_uuid="collection-1",
+            action_type=None,
+            action_execution_status=None,
+        ),
+    ]
+
+    by_installation = service.analytics_by_installation()
+    by_collection = service.analytics_by_reserved_collection()
+    action_outcomes = service.analytics_action_outcomes()
+    repair_payload = service.repair_analytics_metadata()
+
+    assert {item["installation_uuid"]: item["event_count"] for item in by_installation} == {
+        "inst-a": 2,
+        "inst-b": 1,
+    }
+    assert {item["resolved_collection_uuid"]: item["event_count"] for item in by_collection} == {
+        "collection-1": 2,
+        "unbound": 1,
+    }
+    assert {
+        (item["action_type"], item["action_execution_status"]): item["event_count"]
+        for item in action_outcomes
+    } == {
+        ("group_open_door", "executed"): 1,
+        ("group_open_door", "failed"): 1,
+        ("unknown", "unknown"): 1,
+    }
+    assert repair_payload["installation_breakdown"] == by_installation
+    assert repair_payload["reserved_collection_breakdown"] == by_collection
+    assert repair_payload["action_outcome_breakdown"] == action_outcomes
 
 
 @pytest.mark.asyncio

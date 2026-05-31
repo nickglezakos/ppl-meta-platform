@@ -181,7 +181,10 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     async def bind_resources(session_uuid: str, request: BindResourcesRequest):
         if session_uuid not in service.sessions:
             raise HTTPException(status_code=404, detail="Presence session not found")
-        session = service.bind_resources(session_uuid, request)
+        try:
+            session = service.bind_resources(session_uuid, request)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": session.model_dump()}
 
     @router.get("/mobile/sessions/{session_uuid}/result")
@@ -197,6 +200,10 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     @router.post("/qr/render")
     async def render_qr(request: PresenceQrRenderRequest):
         return {"success": True, "data": service.qr_render(request)}
+
+    @router.get("/qr/current")
+    async def get_current_qr(installation_uuid: str = "local-installation", device_reference: str | None = None):
+        return {"success": True, "data": service.qr_current(installation_uuid, device_reference)}
 
     @router.post("/qr/validate")
     async def validate_qr(request: PresenceQrValidateRequest):
@@ -251,6 +258,18 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     @router.get("/analytics/by-policy-source")
     async def analytics_by_policy_source():
         return {"success": True, "data": {"items": service.analytics_by_policy_source()}}
+
+    @router.get("/analytics/by-installation")
+    async def analytics_by_installation():
+        return {"success": True, "data": {"items": service.analytics_by_installation()}}
+
+    @router.get("/analytics/by-reserved-collection")
+    async def analytics_by_reserved_collection():
+        return {"success": True, "data": {"items": service.analytics_by_reserved_collection()}}
+
+    @router.get("/analytics/action-outcomes")
+    async def analytics_action_outcomes():
+        return {"success": True, "data": {"items": service.analytics_action_outcomes()}}
 
     @router.post("/analytics/repair")
     async def repair_analytics_metadata(current_user: dict = Depends(require_admin_user)):

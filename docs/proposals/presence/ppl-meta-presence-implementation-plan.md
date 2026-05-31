@@ -114,6 +114,8 @@ Current local implementation notes:
 - camera name preference can be forced with `PRESENCE_PREFERRED_CAMERA_NAMES`, matched against camera name or `device_id`
 - allowed candidate statuses default to `available,disconnected,connected` and can be overridden with `PRESENCE_ALLOWED_CAMERA_STATUSES`
 - local VS Code testing includes a `♻️ Reset Presence Reservations (Local)` task, which calls `ppl-meta-presence/reset_presence_reservations.sh`
+- explicit reservation endpoints currently support validated `bind` mode only; unsupported reservation modes fail fast instead of being silently coerced
+- presence camera listings now expose reservation metadata including the internal reserved resource UUID, installation UUID, and linked collection UUID for operator-facing debugging
 
 The service should either create these resources through existing platform contracts or bind to already-created ones and validate them.
 
@@ -238,6 +240,9 @@ Operational note from repeated live runs:
   pass, so the remaining risk is narrowed to intermittent downstream multi-action
   delivery or fan-out behavior under concurrent same-camera trigger activity,
   not the presence service's match-to-grant rule
+- the presence backend now exposes the provisioned trigger's configured action
+  UUIDs and names on its own action-plan/result debugging surface so operators
+  can verify expected fan-out without leaving the presence API
 
 ## Authentication And User Context
 
@@ -590,6 +595,8 @@ Operational note:
 - the single-session routes remain the primary detail view, while the new collection routes support debugging and support workflows across many sessions
 - operators can also trigger the existing analytics metadata backfill through an authenticated API route, so the local repair script is no longer the only operational path
 - the repair route now requires admin-level authorization; presence resolves that either from token claims or by querying node's `user-permissions` endpoint with `SERVICE_SECRET`
+- analytics routes now expose the remaining Phase 4 dashboard breakdowns as first-class API surfaces: by installation, by reserved collection, and by action outcome
+- action outcome analytics now make downstream execution state visible without requiring an operator to inspect individual session traces one by one
 
 ---
 
@@ -634,6 +641,12 @@ The implementation should enforce:
 - metrics
 - operational dashboards
 - admin management refinements
+
+Backend completion status:
+
+- completed for the presence backend API surface
+- covered by the current implementation through stricter reservation validation, cross-session trace and decision-history queries, trigger fan-out observability, admin-gated analytics repair, and analytics breakdowns for policy source, installation, reserved collection, and action outcomes
+- frontend/admin widget work remains a separate consumer task rather than a backend gap
 
 ---
 
@@ -742,7 +755,13 @@ The following endpoints are either required by the simple use case or need tight
 Needed for the backend presence widget to request renderable QR payload data.
 
 - `GET /api/v1/presence/qr/current`
-Needed if the backend widget needs to poll or refresh the current QR state.
+Implemented.
+
+Current behavior:
+
+- returns the current session-backed QR payload for a device when one exists
+- returns `found=false` without minting a synthetic token when no current QR exists
+- supports backend widgets that need to poll or refresh QR state safely
 
 - `POST /api/v1/presence/mobile/sessions`
 Already defined, but the implementation contract should confirm whether a registered `device_uuid` is mandatory on day one.
@@ -756,17 +775,47 @@ Needed to correlate the QR shown in the backend UI with the mobile session.
 - `GET /api/v1/presence/mobile/sessions/{session_uuid}/result`
 Needed for the mobile app to retrieve final presence outcome.
 
+- `POST /api/v1/presence/mobile/sessions/{session_uuid}/bind-resources`
+Implemented with stricter validation.
+
+Current behavior:
+
+- explicit bind requests must reference resources already reserved for presence
+- successful binding resolves and stores the validated platform resource UUIDs
+- invalid resource references now fail fast instead of silently persisting arbitrary values
+
+- `POST /api/v1/presence/cameras/reserve`
+- `POST /api/v1/presence/collections/reserve`
+Tightened.
+
+Current behavior:
+
+- only validated `bind` mode is currently supported
+- unsupported reservation modes fail fast with a validation error
+- reserved camera listings now surface richer operator-facing reservation metadata
+
 - `GET /api/v1/presence/analytics/summary`
 - `GET /api/v1/presence/analytics/outcomes`
 - `GET /api/v1/presence/analytics/by-user`
 - `GET /api/v1/presence/analytics/by-device`
-Needed for the statement "upon success the backend analytics of the presence events are available" to be concretely true.
+- `GET /api/v1/presence/analytics/by-policy-source`
+- `GET /api/v1/presence/analytics/by-installation`
+- `GET /api/v1/presence/analytics/by-reserved-collection`
+- `GET /api/v1/presence/analytics/action-outcomes`
+- `POST /api/v1/presence/analytics/repair`
+Implemented.
+
+Current behavior:
+
+- presence analytics now cover the Phase 4 backend dashboard breakdowns called for by the plan
+- operators can query installation-level, collection-level, and action-outcome aggregates directly from the presence API
+- analytics metadata repair is available through an admin-gated endpoint instead of only through startup repair or local scripts
 
 ## Backend Domain Behavior Still Needing Explicit Confirmation
 
 The following behaviors are assumed by the simple use case, but still need to be locked down during implementation:
 
-- whether the backend QR widget creates a new QR per backend-user action or reuses an already-issued current QR
+- whether the backend QR widget should prefer `qr/current` reuse or force a fresh `qr/render` on each operator action
 - whether a mobile session can exist before QR scan, or only after the QR is scanned
 - whether the first presence release requires successful action execution before analytics are published, or whether analytics are published for all terminal decisions including action failure
 - whether presence analytics should appear in generic analytics dashboards, presence-specific dashboards, or both

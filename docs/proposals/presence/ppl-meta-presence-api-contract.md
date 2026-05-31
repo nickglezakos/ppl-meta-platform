@@ -221,7 +221,12 @@ Response body:
   "data": {
     "session_uuid": "ps_123",
     "status": "created",
-    "expires_at": "2026-05-30T12:00:00Z"
+    "expires_at": "2026-05-30T12:00:00Z",
+    "external_assets": {
+      "individual_group_id": "grp_123",
+      "trigger_uuid": "trigger_123",
+      "action_uuid": "action_123"
+    }
   }
 }
 ```
@@ -252,7 +257,12 @@ Response body:
     "status": "awaiting_front_burst",
     "retry_allowed": true,
     "detection_status": "not_started",
-    "qr_status": "not_scanned"
+    "qr_status": "not_scanned",
+    "external_assets": {
+      "individual_group_id": "grp_123",
+      "trigger_uuid": "trigger_123",
+      "action_uuid": "action_123"
+    }
   }
 }
 ```
@@ -301,11 +311,17 @@ Response body:
     "session_uuid": "ps_123",
     "status": "completed",
     "decision": "granted",
-    "reason_code": "presence_match",
-    "trigger_type": "presence_match",
-    "action_type": "presence_grant",
+    "reason_code": "presence_ppl_match",
+    "policy_source": "platform_trigger",
+    "trigger_type": "group_presence_granted",
+    "action_type": "group_open_door",
     "resolved_camera_uuid": "cam_presence_01",
-    "resolved_collection_uuid": "col_presence_01"
+    "resolved_collection_uuid": "col_presence_01",
+    "external_assets": {
+      "individual_group_id": "grp_123",
+      "trigger_uuid": "trigger_123",
+      "action_uuid": "action_123"
+    }
   }
 }
 ```
@@ -487,6 +503,60 @@ Response body:
 }
 ```
 
+## Get Current QR Payload
+
+```text
+GET /api/v1/presence/qr/current?installation_uuid=&device_reference=
+```
+
+Purpose:
+
+- return the current session-backed QR payload for a device without minting a new QR token
+- support backend widgets that need to poll current QR state safely
+
+Response body when a current session-backed QR exists:
+
+```json
+{
+  "success": true,
+  "data": {
+    "found": true,
+    "installation_uuid": "inst_123",
+    "device_reference": "kiosk_a",
+    "qr_token": "qr_tok_123",
+    "expires_at": "2026-05-30T12:00:00Z",
+    "payload": {
+      "installation_uuid": "inst_123",
+      "device_reference": "kiosk_a",
+      "qr_token": "qr_tok_123",
+      "session_uuid": "ps_123"
+    },
+    "session_uuid": "ps_123",
+    "session_status": "awaiting_front_burst",
+    "qr_status": "not_scanned"
+  }
+}
+```
+
+Response body when no current session-backed QR exists:
+
+```json
+{
+  "success": true,
+  "data": {
+    "found": false,
+    "installation_uuid": "inst_123",
+    "device_reference": "kiosk_a",
+    "qr_token": null,
+    "expires_at": null,
+    "payload": null,
+    "session_uuid": null,
+    "session_status": null,
+    "qr_status": null
+  }
+}
+```
+
 ## Upload Retry Front Burst
 
 ```text
@@ -547,10 +617,14 @@ Response body:
   "data": {
     "items": [
       {
-        "camera_uuid": "cam_presence_01",
-        "camera_type": "presence",
-        "installation_uuid": "inst_123",
-        "status": "reserved"
+        "device_id": "cam_presence_01",
+        "name": "Presence Camera",
+        "camera_type": "USB",
+        "status": "available",
+        "reserved_for_presence": true,
+        "reserved_resource_uuid": "presence_resource_123",
+        "reserved_installation_uuid": "inst_123",
+        "linked_collection_uuid": "col_presence_01"
       }
     ]
   }
@@ -576,7 +650,11 @@ Request body:
 Possible `mode` values:
 
 - `bind`
-- `create`
+
+Current implementation note:
+
+- only `bind` is currently supported
+- unsupported modes fail fast with a validation error instead of being silently accepted
 
 ## List Presence Collections
 
@@ -599,6 +677,11 @@ Request body:
   "mode": "bind"
 }
 ```
+
+Current implementation note:
+
+- only `bind` is currently supported
+- unsupported modes fail fast with a validation error instead of being silently accepted
 
 ## Bind Presence Resources To Session
 
@@ -628,6 +711,12 @@ Response body:
   }
 }
 ```
+
+Current implementation note:
+
+- explicit resource binding is validation-backed
+- `camera_uuid` and `collection_uuid` must resolve to resources already reserved for presence
+- the session stores the validated platform resource UUIDs after binding, not arbitrary request strings
 
 ---
 
@@ -692,6 +781,99 @@ Response body:
 
 ## Analytics Endpoints
 
+## Get Presence Analytics Summary
+
+```text
+GET /api/v1/presence/analytics/summary
+```
+
+Purpose:
+
+- return top-level presence counts for dashboards and operator overviews
+
+## Get Presence Analytics By User
+
+```text
+GET /api/v1/presence/analytics/by-user
+```
+
+Purpose:
+
+- return per-user event counts
+
+## Get Presence Analytics By Device
+
+```text
+GET /api/v1/presence/analytics/by-device
+```
+
+Purpose:
+
+- return per-device event counts
+
+## Get Presence Analytics Outcomes
+
+```text
+GET /api/v1/presence/analytics/outcomes
+```
+
+Purpose:
+
+- return outcome distribution across granted, denied, retry, and failed sessions
+
+## Get Presence Analytics By Policy Source
+
+```text
+GET /api/v1/presence/analytics/by-policy-source
+```
+
+Purpose:
+
+- return counts grouped by the policy source that determined the action path
+
+## Get Presence Analytics By Installation
+
+```text
+GET /api/v1/presence/analytics/by-installation
+```
+
+Purpose:
+
+- return per-installation event counts for multi-site dashboards and support tooling
+
+## Get Presence Analytics By Reserved Collection
+
+```text
+GET /api/v1/presence/analytics/by-reserved-collection
+```
+
+Purpose:
+
+- return counts grouped by the resolved presence collection used during the session
+- sessions without a resolved collection are grouped under `unbound`
+
+## Get Presence Analytics Action Outcomes
+
+```text
+GET /api/v1/presence/analytics/action-outcomes
+```
+
+Purpose:
+
+- return counts grouped by `action_type` and `action_execution_status`
+- surface operator-visible action fan-out and downstream execution outcomes without reading raw traces
+
+## Presence Analytics Repair Endpoint
+
+```text
+POST /api/v1/presence/analytics/repair
+```
+
+Purpose:
+
+- trigger metadata backfill for persisted analytics events that are missing normalized policy or action fields
+- return current breakdowns so operators can verify the repaired analytics shape in the same call
+
 ## Get Presence Action Plan
 
 ```text
@@ -712,13 +894,37 @@ Response body:
     "session_uuid": "ps_123",
     "matched_group_uuid": "grp_presence_user_123",
     "decision": "granted",
-    "policy_source": "group_policy",
+    "policy_source": "platform_trigger",
     "trigger_type": "group_presence_granted",
     "action_type": "group_open_door",
-    "action_execution_status": "executed"
+    "action_execution_status": "executed",
+    "external_assets": {
+      "individual_group_id": "grp_123",
+      "trigger_uuid": "trigger_123",
+      "action_uuid": "action_123"
+    },
+    "trigger_observation": {
+      "trigger_uuid": "trigger_123",
+      "configured_action_uuids": [
+        "action_123",
+        "email_action_456"
+      ],
+      "configured_action_names": [
+        "Presence Action 7",
+        "email notification"
+      ],
+      "last_fired_at": "2026-05-31T10:41:41Z",
+      "last_matched_at": "2026-05-31T10:41:37Z",
+      "ppl_match_group_id": "grp_123"
+    }
   }
 }
 ```
+
+Current implementation note:
+
+- `trigger_observation` is an operational visibility surface derived from the provisioned trigger metadata currently visible to presence
+- it is intended to help operators verify which action UUIDs and names were configured on the presence trigger during debugging of multi-action fan-out or delivery issues
 
 Accepted `policy_source` values:
 
@@ -784,16 +990,40 @@ Response body:
       "session_uuid": "ps_123",
       "decision": "granted",
       "matched_group_uuid": "grp_presence_user_123",
-      "policy_source": "group_policy",
+      "policy_source": "platform_trigger",
       "trigger_type": "group_presence_granted",
-      "action_type": "group_open_door"
+      "action_type": "group_open_door",
+      "external_assets": {
+        "individual_group_id": "grp_123",
+        "trigger_uuid": "trigger_123",
+        "action_uuid": "action_123"
+      }
     },
     "action_plan": {
       "session_uuid": "ps_123",
       "decision": "granted",
       "policy_source": "group_policy",
       "trigger_type": "group_presence_granted",
-      "action_type": "group_open_door"
+      "action_type": "group_open_door",
+      "external_assets": {
+        "individual_group_id": "grp_123",
+        "trigger_uuid": "trigger_123",
+        "action_uuid": "action_123"
+      },
+      "trigger_observation": {
+        "trigger_uuid": "trigger_123",
+        "configured_action_uuids": [
+          "action_123",
+          "email_action_456"
+        ],
+        "configured_action_names": [
+          "Presence Action 7",
+          "email notification"
+        ],
+        "last_fired_at": "2026-05-31T10:41:41Z",
+        "last_matched_at": "2026-05-31T10:41:37Z",
+        "ppl_match_group_id": "grp_123"
+      }
     },
     "decision_history": [
       {
@@ -913,6 +1143,8 @@ Operational note:
 - the current backend repairs those older analytics payloads lazily on service startup by backfilling from decision history or the saved session when possible
 - the current non-simulated completion contract is trigger-backed: a successful session should finish with `reason_code=presence_ppl_match` and `policy_source=platform_trigger`, not with a grant based only on raw instant-detection transport success
 - multiple media triggers may evaluate against the same camera stream; local validation confirmed presence can complete on its provisioned `ppl_match` trigger while a separate alert trigger on the same camera also fires independently
+- current session, result, and trace responses also expose the provisioned external group, trigger, and action UUIDs directly through `external_assets`
+- current action-plan and result responses also expose `trigger_observation` so operators can see the trigger's configured action UUIDs and names from the presence debugging surface
 
 ## Repair Presence Analytics Metadata
 

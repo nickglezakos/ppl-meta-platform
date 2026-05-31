@@ -189,6 +189,15 @@ class PresenceExternalAssets(BaseModel):
     action_uuid: Optional[str] = None
 
 
+class PresenceTriggerObservation(BaseModel):
+    trigger_uuid: Optional[str] = None
+    configured_action_uuids: List[str] = Field(default_factory=list)
+    configured_action_names: List[str] = Field(default_factory=list)
+    last_fired_at: Optional[str] = None
+    last_matched_at: Optional[str] = None
+    ppl_match_group_id: Optional[str] = None
+
+
 class PresenceResult(BaseModel):
     session_uuid: str
     status: PresenceSessionStatus
@@ -206,6 +215,7 @@ class PresenceResult(BaseModel):
     resolved_camera_uuid: Optional[str] = None
     resolved_collection_uuid: Optional[str] = None
     external_assets: Optional[PresenceExternalAssets] = None
+    trigger_observation: Optional[PresenceTriggerObservation] = None
 
 
 class PresenceActionPlan(BaseModel):
@@ -217,6 +227,7 @@ class PresenceActionPlan(BaseModel):
     action_type: Optional[str] = None
     action_execution_status: Optional[str] = None
     external_assets: Optional[PresenceExternalAssets] = None
+    trigger_observation: Optional[PresenceTriggerObservation] = None
 
 
 class PresenceDecisionRecord(BaseModel):

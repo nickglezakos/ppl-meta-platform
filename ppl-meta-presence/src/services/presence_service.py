@@ -34,6 +34,7 @@ from models.presence_models import (
     PresenceSession,
     PresenceSessionTrace,
     PresenceSessionStatus,
+    PresenceTriggerObservation,
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
     UpdateInstallationPolicyRequest,
@@ -97,6 +98,7 @@ class PresenceService:
     def get_action_plan(self, session_uuid: str) -> PresenceActionPlan:
         session = self.sessions[session_uuid]
         self._sync_session_external_assets(session)
+        trigger_observation = self._trigger_observation_for_session(session)
         matched_group_uuid = self._resolve_matched_group_uuid(session)
         trigger_type, action_type, policy_source = self._resolve_trigger_and_action(session)
         return PresenceActionPlan(
@@ -108,6 +110,7 @@ class PresenceService:
             action_type=action_type,
             action_execution_status=session.action_execution_status,
             external_assets=session.external_assets,
+            trigger_observation=trigger_observation,
         )
 
     async def get_session_trace(self, session_uuid: str, current_user: dict) -> PresenceSessionTrace:
@@ -384,6 +387,39 @@ class PresenceService:
             },
         }
 
+    def qr_current(self, installation_uuid: str = "local-installation", device_reference: str | None = None) -> dict:
+        session = self._find_latest_session_for_device(device_reference)
+        if not session:
+            return {
+                "found": False,
+                "installation_uuid": installation_uuid,
+                "device_reference": device_reference,
+                "qr_token": None,
+                "expires_at": None,
+                "payload": None,
+                "session_uuid": None,
+                "session_status": None,
+                "qr_status": None,
+            }
+
+        self.qr_tokens[session.qr_token] = session.session_uuid
+        return {
+            "found": True,
+            "installation_uuid": installation_uuid,
+            "device_reference": device_reference,
+            "qr_token": session.qr_token,
+            "expires_at": session.expires_at.isoformat(),
+            "payload": {
+                "installation_uuid": installation_uuid,
+                "device_reference": device_reference,
+                "qr_token": session.qr_token,
+                "session_uuid": session.session_uuid,
+            },
+            "session_uuid": session.session_uuid,
+            "session_status": session.status,
+            "qr_status": session.qr_status,
+        }
+
     def qr_validate(self, qr_token: str) -> dict:
         session_uuid = self.qr_tokens.get(qr_token)
         return {
@@ -403,13 +439,22 @@ class PresenceService:
 
     def bind_resources(self, session_uuid: str, request: BindResourcesRequest) -> PresenceSession:
         session = self.sessions[session_uuid]
-        session.resolved_camera_uuid = request.camera_uuid
-        session.resolved_collection_uuid = request.collection_uuid
+        camera_resource = self._find_reserved_resource(self.cameras, request.camera_uuid)
+        if not camera_resource:
+            raise ValueError(f"Camera '{request.camera_uuid}' is not reserved for presence")
+
+        collection_resource = self._find_reserved_resource(self.collections, request.collection_uuid)
+        if not collection_resource:
+            raise ValueError(f"Collection '{request.collection_uuid}' is not reserved for presence")
+
+        session.resolved_camera_uuid = camera_resource.platform_resource_uuid
+        session.resolved_collection_uuid = collection_resource.platform_resource_uuid
         session.updated_at = datetime.utcnow()
         self.repository.save_session(session)
         return session
 
     async def reserve_camera(self, request: ReserveResourceRequest, current_user: dict) -> PresenceResource:
+        self._validate_reservation_mode(request.mode, "camera")
         token = current_user.get("token")
         if not token:
             raise ValueError("Missing auth token for camera reservation")
@@ -430,6 +475,8 @@ class PresenceService:
                 "name": selected_camera.get("name"),
                 "camera_type": selected_camera.get("camera_type"),
                 "status": selected_camera.get("status"),
+                "reservation_mode": request.mode,
+                "reserved_by": "presence",
             },
         )
         self._clear_existing_resources("camera", request.installation_uuid)
@@ -445,6 +492,9 @@ class PresenceService:
                 metadata={
                     "name": collection.get("name"),
                     "camera_device_id": collection.get("camera_device_id"),
+                    "reservation_mode": "bind",
+                    "reserved_by": "presence",
+                    "auto_bound_from_camera_uuid": request.resource_uuid,
                 },
             )
             self._clear_existing_resources("collection", request.installation_uuid)
@@ -454,6 +504,7 @@ class PresenceService:
         return resource
 
     async def reserve_collection(self, request: ReserveResourceRequest, current_user: dict) -> PresenceResource:
+        self._validate_reservation_mode(request.mode, "collection")
         token = current_user.get("token")
         if not token:
             raise ValueError("Missing auth token for collection reservation")
@@ -479,6 +530,8 @@ class PresenceService:
             metadata={
                 "name": selected_collection.get("name"),
                 "camera_device_id": selected_collection.get("camera_device_id"),
+                "reservation_mode": request.mode,
+                "reserved_by": "presence",
             },
         )
         self._clear_existing_resources("collection", request.installation_uuid)
@@ -497,6 +550,7 @@ class PresenceService:
         }
         items = []
         for camera in platform_cameras:
+            reserved_resource = self._find_reserved_resource(self.cameras, str(camera.get("device_id")))
             items.append(
                 {
                     "device_id": camera.get("device_id"),
@@ -504,6 +558,9 @@ class PresenceService:
                     "camera_type": camera.get("camera_type"),
                     "status": camera.get("status"),
                     "reserved_for_presence": camera.get("device_id") in reserved_device_ids,
+                    "reserved_resource_uuid": reserved_resource.resource_uuid if reserved_resource else None,
+                    "reserved_installation_uuid": reserved_resource.installation_uuid if reserved_resource else None,
+                    "linked_collection_uuid": self._linked_collection_for_camera(str(camera.get("device_id"))),
                 }
             )
         return items
@@ -640,6 +697,7 @@ class PresenceService:
             resolved_camera_uuid=session.resolved_camera_uuid,
             resolved_collection_uuid=session.resolved_collection_uuid,
             external_assets=session.external_assets,
+            trigger_observation=self._trigger_observation_for_session(session),
         )
 
     async def _advance_live_detection(self, session: PresenceSession) -> None:
@@ -1103,12 +1161,51 @@ class PresenceService:
             for policy_source, count in aggregates.items()
         ]
 
+    def analytics_by_installation(self) -> list[dict]:
+        aggregates: Dict[str, int] = {}
+        for event in self.analytics_events:
+            key = event.installation_uuid or "unknown"
+            aggregates[key] = aggregates.get(key, 0) + 1
+        return [
+            {"installation_uuid": installation_uuid, "event_count": count}
+            for installation_uuid, count in aggregates.items()
+        ]
+
+    def analytics_by_reserved_collection(self) -> list[dict]:
+        aggregates: Dict[str, int] = {}
+        for event in self.analytics_events:
+            key = event.resolved_collection_uuid or "unbound"
+            aggregates[key] = aggregates.get(key, 0) + 1
+        return [
+            {"resolved_collection_uuid": resolved_collection_uuid, "event_count": count}
+            for resolved_collection_uuid, count in aggregates.items()
+        ]
+
+    def analytics_action_outcomes(self) -> list[dict]:
+        aggregates: Dict[tuple[str, str], int] = {}
+        for event in self.analytics_events:
+            action_type = event.action_type or "unknown"
+            action_execution_status = event.action_execution_status or "unknown"
+            key = (action_type, action_execution_status)
+            aggregates[key] = aggregates.get(key, 0) + 1
+        return [
+            {
+                "action_type": action_type,
+                "action_execution_status": action_execution_status,
+                "event_count": count,
+            }
+            for (action_type, action_execution_status), count in aggregates.items()
+        ]
+
     def repair_analytics_metadata(self) -> dict:
         repaired_event_count = self._backfill_analytics_event_metadata()
         return {
             "analytics_event_count": len(self.analytics_events),
             "repaired_event_count": repaired_event_count,
             "policy_source_breakdown": self.analytics_by_policy_source(),
+            "installation_breakdown": self.analytics_by_installation(),
+            "reserved_collection_breakdown": self.analytics_by_reserved_collection(),
+            "action_outcome_breakdown": self.analytics_action_outcomes(),
         }
 
     def _backfill_analytics_event_metadata(self) -> int:
@@ -1603,6 +1700,66 @@ class PresenceService:
             return None
 
         return max(device_sessions, key=lambda session: session.created_at)
+
+    def _find_reserved_resource(
+        self,
+        resources: Dict[str, PresenceResource],
+        requested_uuid: str | None,
+    ) -> PresenceResource | None:
+        if not requested_uuid:
+            return None
+
+        for resource in resources.values():
+            if resource.resource_uuid == requested_uuid or resource.platform_resource_uuid == requested_uuid:
+                return resource
+        return None
+
+    def _linked_collection_for_camera(self, camera_device_id: str | None) -> str | None:
+        if not camera_device_id:
+            return None
+        for resource in self.collections.values():
+            if resource.metadata.get("camera_device_id") == camera_device_id:
+                return resource.platform_resource_uuid
+        return None
+
+    def _validate_reservation_mode(self, mode: str | None, resource_type: str) -> None:
+        if mode != "bind":
+            raise ValueError(
+                f"Reservation mode '{mode}' is not supported for {resource_type} reservations; use 'bind'"
+            )
+
+    def _trigger_observation_for_session(self, session: PresenceSession) -> PresenceTriggerObservation | None:
+        assets = session.external_assets or self._external_assets_for_user(session.user_uuid)
+        if not assets or not assets.trigger_uuid:
+            return None
+
+        group_profile = self.profiles.get(self._presence_group_uuid(session.user_uuid))
+        if not group_profile or not isinstance(group_profile.metadata, dict):
+            return PresenceTriggerObservation(trigger_uuid=assets.trigger_uuid)
+
+        metadata = group_profile.metadata
+        configured_action_uuid = metadata.get("presence_action_uuid")
+        trigger = getattr(self.platform_clients, "trigger_lookup", {}).get(assets.trigger_uuid)
+        if not isinstance(trigger, dict):
+            return PresenceTriggerObservation(
+                trigger_uuid=assets.trigger_uuid,
+                configured_action_uuids=[configured_action_uuid] if configured_action_uuid else [],
+            )
+
+        action_uuids = trigger.get("action_uuids") or []
+        if not action_uuids and trigger.get("action_uuid"):
+            action_uuids = [trigger.get("action_uuid")]
+        action_names = trigger.get("action_names") or []
+        if not action_names and trigger.get("action_name"):
+            action_names = [trigger.get("action_name")]
+        return PresenceTriggerObservation(
+            trigger_uuid=str(trigger.get("uuid") or assets.trigger_uuid),
+            configured_action_uuids=[str(item) for item in action_uuids if item],
+            configured_action_names=[str(item) for item in action_names if item],
+            last_fired_at=trigger.get("last_fired_at"),
+            last_matched_at=trigger.get("last_matched_at"),
+            ppl_match_group_id=trigger.get("ppl_match_group_id"),
+        )
 
     def _get_or_create_user_profile(
         self,
