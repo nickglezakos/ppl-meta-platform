@@ -390,10 +390,20 @@ class PresenceService:
             self._fail_session(session, "presence_attempt_limit_reached")
             return
 
+        await self._start_live_detection_attempt(session, capture_phase="camera_only_initial")
+
+    async def _start_verified_detection(self, session: PresenceSession) -> None:
+        if self._remaining_attempt_capacity(session) <= 0:
+            self._fail_session(session, "presence_attempt_limit_reached")
+            return
+
+        await self._start_live_detection_attempt(session, capture_phase="qr_plus_camera_initial")
+
+    async def _start_live_detection_attempt(self, session: PresenceSession, *, capture_phase: str) -> None:
         attempt = PresenceDetectionAttempt(
             session_uuid=session.session_uuid,
             attempt_index=len(self.attempts.get(session.session_uuid, [])) + 1,
-            capture_phase="camera_only_initial",
+            capture_phase=capture_phase,
         )
         self.attempts.setdefault(session.session_uuid, []).append(attempt)
 
@@ -776,6 +786,15 @@ class PresenceService:
             and session.decision == PresenceDecisionState.PENDING
         ):
             await self._grant_qr_check_in(session, current_user)
+
+        if (
+            session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA
+            and live_detection_ready
+            and session.decision == PresenceDecisionState.PENDING
+            and latest_attempt is None
+        ):
+            await self._start_verified_detection(session)
+            latest_attempt = self._latest_attempt(session_uuid)
 
         if live_detection_ready and session.decision == PresenceDecisionState.PENDING:
             await self._advance_live_detection(session)
@@ -2100,13 +2119,25 @@ class PresenceService:
         if not device_uuid:
             return None
 
-        device_sessions = [
-            session for session in self.sessions.values() if session.device_uuid == device_uuid
-        ]
+        device_sessions = [session for session in self.sessions.values() if session.device_uuid == device_uuid]
         if not device_sessions:
             return None
 
-        return max(device_sessions, key=lambda session: session.created_at)
+        active_sessions: list[PresenceSession] = []
+        for session in device_sessions:
+            self._apply_session_limits(session)
+            if session.status == PresenceSessionStatus.FAILED:
+                continue
+            if session.decision == PresenceDecisionState.FAILED:
+                continue
+            if session.expires_at <= datetime.utcnow():
+                continue
+            active_sessions.append(session)
+
+        if not active_sessions:
+            return None
+
+        return max(active_sessions, key=lambda session: session.created_at)
 
     def _find_reserved_resource(
         self,

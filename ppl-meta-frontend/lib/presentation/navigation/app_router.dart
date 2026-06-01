@@ -301,6 +301,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/presence-station',
+        name: 'presence-station',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: PresenceScreen(stationMode: true),
+        ),
+      ),
+      GoRoute(
         path: '/individual-groups',
         name: 'individual-groups',
         builder: (context, state) => const ProviderScreenWrapper(

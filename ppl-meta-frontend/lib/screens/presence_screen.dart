@@ -15,7 +15,9 @@ import '../widgets/custom_app_bar.dart';
 import '../core/providers/camera_providers.dart';
 
 class PresenceScreen extends ConsumerStatefulWidget {
-  const PresenceScreen({super.key});
+  final bool stationMode;
+
+  const PresenceScreen({super.key, this.stationMode = false});
 
   @override
   ConsumerState<PresenceScreen> createState() => _PresenceScreenState();
@@ -47,9 +49,15 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
   @override
   void initState() {
     super.initState();
-    _deviceReferenceController.text = 'presence-web-console';
+    _deviceReferenceController.text = widget.stationMode ? 'presence-web-station' : 'presence-web-console';
+    if (widget.stationMode) {
+      _selectedExecutionMode = 'qr_plus_camera';
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadPresenceDashboard();
+      if (widget.stationMode) {
+        _refreshExecutionState(renderIfMissing: true);
+      }
     });
   }
 
@@ -923,14 +931,18 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Start a presence session, fetch the current QR payload, and refresh live state from the frontend.',
+                      widget.stationMode
+                          ? 'Render a live station QR for another mobile or web client to scan during presence verification.'
+                          : 'Start a presence session, fetch the current QR payload, and refresh live state from the frontend.',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.grey[400]),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _selectedExecutionMode == 'camera_only'
-                          ? 'Camera Only uses the presence backend and a reserved platform camera. It does not open this browser device webcam.'
-                          : 'QR-backed modes render the current token for the selected device reference below.',
+                      widget.stationMode
+                          ? 'Station mode is intended to present the current live QR token for another device to scan.'
+                          : _selectedExecutionMode == 'camera_only'
+                              ? 'Camera Only uses the presence backend and a reserved platform camera. It does not open this browser device webcam.'
+                              : 'QR-backed modes render the current token for the selected device reference below.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orangeAccent),
                     ),
                   ],
@@ -952,7 +964,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
               ButtonSegment(value: 'qr_plus_camera', label: Text('QR + Camera')),
             ],
             selected: {_selectedExecutionMode},
-            onSelectionChanged: (selection) {
+            onSelectionChanged: widget.stationMode ? null : (selection) {
               setState(() {
                 _selectedExecutionMode = selection.first;
               });
@@ -973,14 +985,14 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
             runSpacing: 12,
             children: [
               ElevatedButton.icon(
-                onPressed: _isSubmittingAdminAction ? null : _startExecutionSession,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Start Session'),
+                onPressed: _isSubmittingAdminAction ? null : () => _refreshExecutionState(renderIfMissing: true),
+                icon: Icon(widget.stationMode ? Icons.qr_code_2 : Icons.play_arrow),
+                label: Text(widget.stationMode ? 'Render Station QR' : 'Start Session'),
               ),
               OutlinedButton.icon(
                 onPressed: _isSubmittingAdminAction ? null : () => _refreshExecutionState(),
                 icon: const Icon(Icons.sync),
-                label: const Text('Refresh State'),
+                label: Text(widget.stationMode ? 'Refresh QR' : 'Refresh State'),
               ),
               OutlinedButton.icon(
                 onPressed: _isSubmittingAdminAction || _currentQr?.qrToken == null ? null : _validateCurrentQr,
@@ -988,7 +1000,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
                 label: const Text('Validate QR'),
               ),
               OutlinedButton.icon(
-                onPressed: _isSubmittingAdminAction || _selectedExecutionMode == 'camera_only' || _currentQr?.qrToken == null
+                onPressed: widget.stationMode || _isSubmittingAdminAction || _selectedExecutionMode == 'camera_only' || _currentQr?.qrToken == null
                     ? null
                     : _submitTestQrHit,
                 icon: const Icon(Icons.qr_code_scanner),
@@ -1000,7 +1012,9 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             title: const Text('Auto-refresh execution state'),
-            subtitle: const Text('Poll current QR, session status, and result every 4 seconds while testing.'),
+            subtitle: Text(widget.stationMode
+                ? 'Refresh the station QR and linked session state every 4 seconds.'
+                : 'Poll current QR, session status, and result every 4 seconds while testing.'),
             value: _autoRefreshExecution,
             onChanged: _isSubmittingAdminAction ? null : _setAutoRefreshExecution,
           ),

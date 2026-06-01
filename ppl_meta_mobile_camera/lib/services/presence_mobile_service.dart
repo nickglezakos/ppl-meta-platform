@@ -73,6 +73,51 @@ class PresenceMobileService {
     return PresenceMobileResult.fromJson(_unwrapData(response));
   }
 
+  Future<PresenceMobileQrPayload> getCurrentQr({
+    required String installationUuid,
+    String? deviceReference,
+  }) async {
+    final token = _requireAuthToken();
+    final baseUrl = await _presenceBaseUrl();
+    final uri = Uri.parse('$baseUrl/api/v1/presence/qr/current').replace(
+      queryParameters: {
+        'installation_uuid': installationUuid,
+        if (deviceReference != null && deviceReference.isNotEmpty) 'device_reference': deviceReference,
+      },
+    );
+    final response = await http.get(uri, headers: _jsonHeaders(token));
+    return PresenceMobileQrPayload.fromJson(_unwrapData(response));
+  }
+
+  Future<PresenceMobileQrPayload> renderQr({
+    required String installationUuid,
+    String? deviceReference,
+  }) async {
+    final token = _requireAuthToken();
+    final baseUrl = await _presenceBaseUrl();
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/v1/presence/qr/render'),
+      headers: _jsonHeaders(token),
+      body: jsonEncode({
+        'installation_uuid': installationUuid,
+        if (deviceReference != null && deviceReference.isNotEmpty) 'device_reference': deviceReference,
+      }),
+    );
+    final data = _unwrapData(response);
+    final payload = data['payload'] is Map<String, dynamic> ? data['payload'] as Map<String, dynamic> : null;
+    return PresenceMobileQrPayload(
+      found: true,
+      installationUuid: installationUuid,
+      deviceReference: deviceReference,
+      qrToken: data['qr_token']?.toString(),
+      expiresAt: data['expires_at']?.toString(),
+      sessionUuid: payload?['session_uuid']?.toString(),
+      sessionStatus: null,
+      qrStatus: null,
+      payload: payload,
+    );
+  }
+
   Future<PresenceMobileDetectionStatus> getDetectionStatus(String sessionUuid) async {
     final token = _requireAuthToken();
     final baseUrl = await _presenceBaseUrl();
@@ -217,18 +262,43 @@ class PresenceMobileService {
   }
 
   Map<String, dynamic> _unwrapData(http.Response response) {
-    final decoded = jsonDecode(response.body);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      final detail = decoded is Map<String, dynamic> ? decoded['detail'] ?? decoded['error'] : null;
-      throw Exception(detail?.toString() ?? 'Request failed with status ${response.statusCode}');
+    final body = response.body.trim();
+    dynamic decoded;
+
+    if (body.isNotEmpty) {
+      try {
+        decoded = jsonDecode(body);
+      } on FormatException {
+        final snippet = body.length > 180 ? '${body.substring(0, 180)}...' : body;
+        throw Exception(
+          'Presence service returned non-JSON response '
+          '(status ${response.statusCode}): $snippet',
+        );
+      }
     }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = decoded is Map<String, dynamic>
+          ? decoded['detail'] ?? decoded['error']
+          : null;
+      throw Exception(
+        detail?.toString() ??
+            'Presence request failed with status ${response.statusCode}',
+      );
+    }
+
     if (decoded is Map<String, dynamic>) {
       final data = decoded['data'];
       if (data is Map<String, dynamic>) {
         return data;
       }
     }
-    throw Exception('Unexpected response payload');
+
+    throw Exception(
+      body.isEmpty
+          ? 'Presence service returned an empty response'
+          : 'Unexpected response payload from Presence service',
+    );
   }
 
   int _rotationAngleFor(DeviceOrientation orientation, {required bool isFrontCamera}) {

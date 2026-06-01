@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 class CameraSettingsPanel extends StatelessWidget {
   final Function(String) onQualityChanged;
   final String currentQuality;
+  final VoidCallback onOpenGallery;
   final VoidCallback onClose;
 
   const CameraSettingsPanel({
     Key? key,
     required this.onQualityChanged,
     required this.currentQuality,
+    required this.onOpenGallery,
     required this.onClose,
   }) : super(key: key);
 
@@ -56,6 +58,10 @@ class CameraSettingsPanel extends StatelessWidget {
                 
                 // Advanced Settings
                 _buildAdvancedSettings(),
+
+                const SizedBox(height: 24),
+
+                _buildGalleryAccess(),
               ],
             ),
           ),
@@ -344,6 +350,22 @@ class CameraSettingsPanel extends StatelessWidget {
             inactiveTrackColor: Colors.white.withOpacity(0.3),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildGalleryAccess() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onOpenGallery,
+        icon: const Icon(Icons.photo_library),
+        label: const Text('Open Gallery'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: BorderSide(color: Colors.white.withOpacity(0.3)),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
       ),
     );
   }

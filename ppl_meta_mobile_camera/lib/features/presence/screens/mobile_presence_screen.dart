@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../../core/providers/authentication_provider.dart';
 import '../../../features/camera/screens/camera_screen.dart';
@@ -11,7 +13,14 @@ import '../../../models/presence_mobile_models.dart';
 import '../../../services/presence_mobile_service.dart';
 
 class MobilePresenceScreen extends StatefulWidget {
-  const MobilePresenceScreen({super.key});
+  final String initialSessionMode;
+  final bool autoStartSession;
+
+  const MobilePresenceScreen({
+    super.key,
+    this.initialSessionMode = 'qr_plus_camera',
+    this.autoStartSession = false,
+  });
 
   @override
   State<MobilePresenceScreen> createState() => _MobilePresenceScreenState();
@@ -19,13 +28,16 @@ class MobilePresenceScreen extends StatefulWidget {
 
 class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   final PresenceMobileService _presenceService = PresenceMobileService();
+  final TextEditingController _stationDeviceReferenceController = TextEditingController(text: 'mobile-presence-station');
 
-  String _sessionMode = 'qr_plus_camera';
+  String _role = 'scanner';
+  late String _sessionMode;
   String? _deviceUuid;
   PresenceMobileSession? _session;
   PresenceMobileResult? _result;
   PresenceMobileDetectionAttempt? _lastAttempt;
   PresenceMobileDetectionStatus? _detectionStatus;
+  PresenceMobileQrPayload? _stationQr;
   CameraController? _frontCameraController;
   bool _isBusy = false;
   bool _autoPolling = false;
@@ -33,9 +45,13 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   Timer? _pollTimer;
   String? _lastTerminalAlertKey;
 
+  bool get _requiresFrontBurst => _sessionMode == 'qr_plus_camera';
+  bool get _usesStreamingOnlyCameraPath => _sessionMode == 'camera_only';
+
   @override
   void initState() {
     super.initState();
+    _sessionMode = widget.initialSessionMode;
     _bootstrap();
   }
 
@@ -43,25 +59,77 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _frontCameraController?.dispose();
+    _stationDeviceReferenceController.dispose();
     super.dispose();
   }
 
   Future<void> _bootstrap() async {
     await _runBusy(() async {
       final deviceUuid = await _presenceService.ensureRegisteredDevice();
-      await _ensureFrontCameraPreview();
+      if (_requiresFrontBurst) {
+        await _ensureFrontCameraPreview();
+      }
       if (!mounted) {
         return;
       }
       setState(() {
         _deviceUuid = deviceUuid;
+        if (_stationDeviceReferenceController.text.trim().isEmpty) {
+          _stationDeviceReferenceController.text = deviceUuid;
+        }
         _statusMessage = 'Mobile presence is ready. Device anchor restored from the existing camera client registration.';
+      });
+
+      if (widget.autoStartSession) {
+        await _startSession();
+      }
+    });
+  }
+
+  Future<void> _renderStationQr({bool renderIfMissing = false}) async {
+    await _runBusy(() async {
+      final deviceReference = _stationDeviceReferenceController.text.trim();
+      final current = await _presenceService.getCurrentQr(
+        installationUuid: 'local-installation',
+        deviceReference: deviceReference.isEmpty ? null : deviceReference,
+      );
+
+      var effectiveQr = current;
+      if (renderIfMissing && (!current.found || (current.qrToken?.isEmpty ?? true))) {
+        effectiveQr = await _presenceService.renderQr(
+          installationUuid: 'local-installation',
+          deviceReference: deviceReference.isEmpty ? null : deviceReference,
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _stationQr = effectiveQr;
+        _statusMessage = effectiveQr.found
+            ? 'Station QR is ready for another device to scan.'
+            : 'No station QR is currently active for this device reference.';
       });
     });
   }
 
+  Future<void> _copyStationQrToken() async {
+    final qrToken = _stationQr?.qrToken;
+    if (qrToken == null || qrToken.isEmpty) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: qrToken));
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Station QR token copied.')),
+    );
+  }
+
   Future<void> _ensureFrontCameraPreview() async {
-    if (_sessionMode == 'qr_only') {
+    if (!_requiresFrontBurst) {
       return;
     }
     if (_frontCameraController != null && _frontCameraController!.value.isInitialized) {
@@ -88,6 +156,10 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
   Future<void> _startSession() async {
     await _runBusy(() async {
       final session = await _presenceService.createSession(sessionMode: _sessionMode);
+      PresenceMobileDetectionStatus? detectionStatus;
+      if (_usesStreamingOnlyCameraPath) {
+        detectionStatus = await _presenceService.getDetectionStatus(session.sessionUuid);
+      }
       if (!mounted) {
         return;
       }
@@ -95,10 +167,17 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
         _session = session;
         _result = null;
         _lastAttempt = null;
-        _detectionStatus = null;
+        _detectionStatus = detectionStatus;
         _lastTerminalAlertKey = null;
-        _statusMessage = 'Presence session created. Continue with the mode-specific steps below.';
+        _statusMessage = _usesStreamingOnlyCameraPath
+            ? 'Presence session created. Keep the mobile camera streaming to the platform and poll for the backend decision.'
+            : 'Presence session created. Continue with the mode-specific steps below.';
       });
+
+      if (_usesStreamingOnlyCameraPath) {
+        _setAutoPolling(true);
+        await _refreshResult();
+      }
     });
   }
 
@@ -401,6 +480,89 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'scanner', label: Text('Scanner')),
+                ButtonSegment(value: 'station', label: Text('Station')),
+              ],
+              selected: {_role},
+              onSelectionChanged: _isBusy
+                  ? null
+                  : (selection) {
+                      setState(() {
+                        _role = selection.first;
+                      });
+                      if (selection.first == 'station') {
+                        _renderStationQr();
+                      }
+                    },
+            ),
+            const SizedBox(height: 16),
+            if (_role == 'station')
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Station QR Renderer', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      const Text('Render a live presence QR on this mobile device for another device to scan.'),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: _stationDeviceReferenceController,
+                        decoration: const InputDecoration(
+                          labelText: 'Station Device Reference',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _isBusy ? null : () => _renderStationQr(renderIfMissing: true),
+                            icon: const Icon(Icons.qr_code_2),
+                            label: const Text('Render / Refresh QR'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _isBusy || _stationQr?.qrToken == null ? null : _copyStationQrToken,
+                            icon: const Icon(Icons.copy),
+                            label: const Text('Copy Token'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (_stationQr != null && _stationQr!.found && (_stationQr!.qrToken?.isNotEmpty ?? false)) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Center(
+                            child: QrImageView(
+                              data: _stationQr!.qrToken!,
+                              version: QrVersions.auto,
+                              size: 220,
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SelectableText(_stationQr!.qrToken!),
+                        if (_stationQr!.expiresAt != null) ...[
+                          const SizedBox(height: 8),
+                          Text('Expires: ${_stationQr!.expiresAt}'),
+                        ],
+                      ] else
+                        const Text('No active station QR yet. Render one to let another device scan it.'),
+                    ],
+                  ),
+                ),
+              )
+            else ...[
             DropdownButtonFormField<String>(
               value: _sessionMode,
               decoration: const InputDecoration(labelText: 'Presence Mode'),
@@ -418,8 +580,16 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                       setState(() {
                         _sessionMode = value;
                       });
-                      if (value != 'qr_only') {
+                      if (value == 'qr_plus_camera') {
                         await _ensureFrontCameraPreview();
+                      } else if (_frontCameraController != null) {
+                        await _frontCameraController?.dispose();
+                        if (!mounted) {
+                          return;
+                        }
+                        setState(() {
+                          _frontCameraController = null;
+                        });
                       }
                     },
             ),
@@ -430,7 +600,7 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
               label: const Text('Start Presence Session'),
             ),
             const SizedBox(height: 16),
-            if (_sessionMode != 'qr_only')
+            if (_requiresFrontBurst)
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -439,6 +609,8 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                     children: [
                       Text('Front Burst', style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 8),
+                      const Text('Use the mobile front camera only for QR + camera mode. Camera-only mode relies on the already-streaming registered platform camera.'),
+                      const SizedBox(height: 12),
                       if (_frontCameraController != null && _frontCameraController!.value.isInitialized)
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
@@ -457,7 +629,7 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                           OutlinedButton.icon(
                             onPressed: _isBusy || _session == null ? null : () => _captureFrontBurst(capturePhase: 'pre_qr'),
                             icon: const Icon(Icons.camera_front),
-                            label: Text(_sessionMode == 'camera_only' ? 'Capture 3-Frame Burst' : 'Capture Pre-QR Burst'),
+                            label: const Text('Capture Pre-QR Burst'),
                           ),
                           if ((_session?.retryAllowed ?? false) && (_detectionStatus?.requiresRetry ?? false))
                             OutlinedButton.icon(
@@ -471,6 +643,29 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                   ),
                 ),
               ),
+            if (_usesStreamingOnlyCameraPath) ...[
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Camera Path', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      const Text('Camera-only presence does not upload a burst. It relies on the same mobile camera already streaming to the platform, reserved in Presence settings, and used by the Presence trigger.'),
+                      const SizedBox(height: 12),
+                      const Text('Operator checklist:'),
+                      const SizedBox(height: 8),
+                      const Text('1. Keep the mobile camera connected and streaming.'),
+                      const Text('2. Reserve that same mobile camera in Presence settings.'),
+                      const Text('3. Ensure the Presence trigger points to that same reserved camera.'),
+                      const Text('4. Start the session here, then use Refresh Result or Auto Poll.'),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             const SizedBox(height: 16),
             if (_sessionMode != 'camera_only')
               Card(
@@ -509,6 +704,11 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
                       Text('QR Status: ${_session!.qrStatus}'),
                       Text('Detection: ${_session!.detectionStatus}'),
                       Text('Grant Type: ${_session!.grantType}'),
+                      if (_usesStreamingOnlyCameraPath)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text('Camera-only mode uses the reserved streaming platform camera, not a local front-camera burst.'),
+                        ),
                       if (_detectionStatus != null)
                         Text('Decision State: ${_detectionStatus!.presenceDecisionState}'),
                       if (_detectionStatus != null)
@@ -555,6 +755,7 @@ class _MobilePresenceScreenState extends State<MobilePresenceScreen> {
             if (_isBusy) ...[
               const SizedBox(height: 16),
               const Center(child: CircularProgressIndicator()),
+            ],
             ],
           ],
         ),

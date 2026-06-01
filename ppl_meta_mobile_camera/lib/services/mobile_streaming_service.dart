@@ -90,6 +90,11 @@ class MobileStreamingService {
     _isStreaming = true;
     developer.log('Frame sending enabled for session-based streaming', name: _logTag);
   }
+
+  void disableFrameSending() {
+    _isStreaming = false;
+    developer.log('Frame sending disabled', name: _logTag);
+  }
   
   /// Start streaming with the given configuration
   Future<bool> startStreaming({

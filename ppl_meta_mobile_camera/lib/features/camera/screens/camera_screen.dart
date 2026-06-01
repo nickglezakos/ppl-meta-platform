@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 // import 'package:camera/camera.dart'; // Unused import removed
 import '../../../core/core.dart';
 import '../../../core/services/orientation_service.dart';
 import '../../../models/camera_registration_result.dart';
+import '../../../models/presence_mobile_models.dart';
 // import '../../../services/automatic_streaming_workflow.dart'; // Unused import removed
 import '../../../services/device_identifier_service.dart';
 import '../../../services/mobile_streaming_service.dart' hide StreamQuality;
+import '../../../services/presence_mobile_service.dart';
 // import '../../../services/auto_authentication_service.dart' hide PlatformServices; // Unused import removed
 import '../../../services/app_logger.dart';
 import '../widgets/camera_preview_widget.dart';
@@ -14,7 +18,6 @@ import '../widgets/camera_controls.dart';
 import '../widgets/camera_settings_panel.dart';
 // import '../widgets/streaming_panel.dart'; // Unused import removed
 import 'gallery_screen.dart';
-import '../../presence/screens/mobile_presence_screen.dart';
 import 'platform_connection_screen.dart';
 import 'camera_settings_screen.dart';
 import '../../authentication/screens/simple_setup_screen_new.dart';
@@ -29,10 +32,16 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with TickerProviderStateMixin {
+  final PresenceMobileService _presenceService = PresenceMobileService();
   late AnimationController _settingsAnimationController;
   late AnimationController _streamingAnimationController;
+  Timer? _presenceResultAlertTimer;
   bool _showSettings = false;
   bool _isNavigatingToAuth = false; // Prevent navigation loop
+  bool _presenceFlowBusy = false;
+  String? _activePresenceSessionUuid;
+  String? _presenceStatusMessage;
+  _PresenceResultAlertData? _presenceResultAlert;
 
   @override
   void initState() {
@@ -60,6 +69,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   void dispose() {
+    _presenceResultAlertTimer?.cancel();
     _settingsAnimationController.dispose();
     _streamingAnimationController.dispose();
     super.dispose();
@@ -180,6 +190,15 @@ class _CameraScreenState extends State<CameraScreen>
                 // Loading Overlay
                 if (cameraProvider.isLoading)
                   _buildLoadingOverlay(),
+
+                if (_presenceStatusMessage != null)
+                  _buildPresenceStatusOverlay(cameraProvider),
+
+                if (_presenceResultAlert != null)
+                  _buildPresenceResultAlertOverlay(),
+
+                if (_shouldShowStopResetControl(cameraProvider))
+                  _buildStopResetOverlay(cameraProvider),
               ],
             ),
           ),
@@ -283,16 +302,6 @@ class _CameraScreenState extends State<CameraScreen>
                   ),
                 ),
                 const PopupMenuItem(
-                  value: 'presence',
-                  child: Row(
-                    children: [
-                      Icon(Icons.badge_outlined),
-                      SizedBox(width: 8),
-                      Text('Presence'),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
                   value: 'logout',
                   child: Row(
                     children: [
@@ -321,11 +330,13 @@ class _CameraScreenState extends State<CameraScreen>
         onSwitchCamera: () => _switchCamera(cameraProvider),
         onToggleFlash: () => _toggleFlash(cameraProvider),
         onZoomChanged: (zoom) => _setZoom(cameraProvider, zoom),
-        onOpenGallery: _openGallery,
         onVideoTap: () {
           CameraLogger.info('Video tap triggered - starting zero-input workflow');
           _handleSimpleStreamingWorkflow();
         }, // NEW: Simplified streaming workflow with debug
+        onPresenceQrTap: _startQrOnlyPresence,
+        onPresenceCameraTap: _startCameraOnlyPresence,
+        onPresenceVerifiedTap: _startVerifiedPresence,
         isFlashOn: cameraProvider.isFlashOn,
         zoomLevel: cameraProvider.zoomLevel,
         isFrontCamera: cameraProvider.isFrontCamera,
@@ -346,6 +357,7 @@ class _CameraScreenState extends State<CameraScreen>
           child: CameraSettingsPanel(
             onQualityChanged: (quality) => _changeQuality(cameraProvider, quality),
             currentQuality: cameraProvider.currentConfig?.quality ?? 'medium',
+            onOpenGallery: _openGallery,
             onClose: _toggleSettings,
           ),
         );
@@ -424,6 +436,124 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  Widget _buildPresenceStatusOverlay(CameraProvider cameraProvider) {
+    return Positioned(
+      top: 90,
+      left: 16,
+      right: 16,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.78),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            if (_presenceFlowBusy)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            else
+              const Icon(Icons.info_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _presenceStatusMessage!,
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+            TextButton(
+              onPressed: cameraProvider.isLoading
+                  ? null
+                  : () => _stopAndResetCameraState(cameraProvider),
+              child: const Text(
+                'Stop',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _shouldShowStopResetControl(CameraProvider cameraProvider) {
+    return _isAnyStreamingActive(cameraProvider) ||
+        _presenceFlowBusy ||
+        _presenceStatusMessage != null ||
+        _activePresenceSessionUuid != null;
+  }
+
+  bool _isAnyStreamingActive(CameraProvider cameraProvider) {
+    return cameraProvider.isStreaming ||
+        CameraService.instance.isStreaming ||
+        MobileStreamingService().isStreaming;
+  }
+
+  Widget _buildStopResetOverlay(CameraProvider cameraProvider) {
+    return Positioned(
+      bottom: 152,
+      right: 16,
+      child: SafeArea(
+        child: FilledButton.icon(
+          onPressed: cameraProvider.isLoading
+              ? null
+              : () => _stopAndResetCameraState(cameraProvider),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.red.shade700,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+          icon: const Icon(Icons.stop_circle_outlined),
+          label: const Text('Stop / Reset'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresenceResultAlertOverlay() {
+    final alert = _presenceResultAlert!;
+    return Positioned(
+      top: 90,
+      left: 16,
+      right: 16,
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: alert.backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.28),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(alert.icon, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  alert.message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // Event Handlers
   void _handlePreviewTap(TapUpDetails details) {
     // Future: Implement tap-to-focus
@@ -487,9 +617,9 @@ class _CameraScreenState extends State<CameraScreen>
     final cameraProvider = context.read<CameraProvider>();
     
     // If already streaming, stop it
-    if (cameraProvider.isStreaming) {
+    if (_isAnyStreamingActive(cameraProvider)) {
       CameraLogger.streaming('Camera is already streaming, stopping current stream');
-      await cameraProvider.stopStreaming();
+      await _stopAllStreamingPaths(cameraProvider);
       CameraLogger.streaming('Stream stopped');
       return;
     }
@@ -765,9 +895,6 @@ class _CameraScreenState extends State<CameraScreen>
       case 'profile':
         _showUserProfile(authProvider);
         break;
-      case 'presence':
-        _openPresence();
-        break;
       case 'camera_settings':
         _openCameraSettings();
         break;
@@ -780,12 +907,361 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  void _openPresence() {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => const MobilePresenceScreen(),
-      ),
-    );
+  Future<void> _startQrOnlyPresence() async {
+    if (_presenceFlowBusy) {
+      return;
+    }
+
+    setState(() {
+      _presenceFlowBusy = true;
+      _presenceStatusMessage = 'Starting QR-only Presence session...';
+    });
+
+    try {
+      final session = await _presenceService.createSession(sessionMode: 'qr_only');
+      _activePresenceSessionUuid = session.sessionUuid;
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _presenceStatusMessage = 'Scan the station QR to complete Presence check-in.';
+      });
+
+      final rawValue = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const _CameraPresenceQrScannerScreen()),
+      );
+
+      if (!mounted) {
+        return;
+      }
+      if (rawValue == null || rawValue.isEmpty) {
+        setState(() {
+          _presenceStatusMessage = null;
+        });
+        return;
+      }
+
+      await _presenceService.submitQrHit(
+        sessionUuid: session.sessionUuid,
+        qrToken: _presenceService.parseQrToken(rawValue),
+      );
+
+      setState(() {
+        _presenceStatusMessage = 'QR submitted. Waiting for terminal Presence result...';
+      });
+
+      final result = await _pollPresenceResult(session.sessionUuid);
+      if (!mounted) {
+        return;
+      }
+      _showPresenceResultSnackBar(result);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to complete QR-only Presence: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _presenceFlowBusy = false;
+          _presenceStatusMessage = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _startCameraOnlyPresence() async {
+    if (_presenceFlowBusy) {
+      return;
+    }
+
+    final cameraProvider = context.read<CameraProvider>();
+    final wasStreamingBeforePresence = _isAnyStreamingActive(cameraProvider);
+    setState(() {
+      _presenceFlowBusy = true;
+    });
+
+    try {
+      if (!_isAnyStreamingActive(cameraProvider)) {
+        await _handleSimpleStreamingWorkflow();
+      }
+
+      final session = await _presenceService.createSession(sessionMode: 'camera_only');
+      _activePresenceSessionUuid = session.sessionUuid;
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _presenceStatusMessage = 'Camera-only Presence started. The backend is connecting the reserved camera and starting instant detection.';
+      });
+
+      final result = await _pollPresenceResult(session.sessionUuid);
+      if (!mounted) {
+        return;
+      }
+      _showPresenceResultSnackBar(result);
+      await _restoreStreamingAfterPresence(
+        cameraProvider: cameraProvider,
+        wasStreamingBeforePresence: wasStreamingBeforePresence,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start camera-only Presence: $error'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+      await _restoreStreamingAfterPresence(
+        cameraProvider: cameraProvider,
+        wasStreamingBeforePresence: wasStreamingBeforePresence,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _presenceFlowBusy = false;
+          _presenceStatusMessage = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _startVerifiedPresence() async {
+    if (_presenceFlowBusy) {
+      return;
+    }
+
+    final cameraProvider = context.read<CameraProvider>();
+    setState(() {
+      _presenceFlowBusy = true;
+      _presenceStatusMessage = 'Starting verified Presence flow...';
+    });
+
+    try {
+      await _stopAllStreamingPaths(cameraProvider);
+      await _ensureCameraDirection(cameraProvider, useFrontCamera: false);
+
+      final session = await _presenceService.createSession(sessionMode: 'qr_plus_camera');
+      _activePresenceSessionUuid = session.sessionUuid;
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _presenceStatusMessage = 'Camera flow started. Now scan the station QR.';
+      });
+
+      final rawValue = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const _CameraPresenceQrScannerScreen()),
+      );
+
+      if (!mounted) {
+        return;
+      }
+      if (rawValue == null || rawValue.isEmpty) {
+        setState(() {
+          _presenceStatusMessage = null;
+        });
+        return;
+      }
+
+      await _presenceService.submitQrHit(
+        sessionUuid: session.sessionUuid,
+        qrToken: _presenceService.parseQrToken(rawValue),
+      );
+
+      setState(() {
+        _presenceStatusMessage = 'QR accepted. Switching to the front camera for live Presence...';
+      });
+
+      await _prepareForFrontCameraPresence(cameraProvider);
+      await _startVerifiedPresenceStreaming(cameraProvider);
+
+      setState(() {
+        _presenceStatusMessage = 'QR submitted. Waiting for verified Presence result...';
+      });
+
+      final result = await _pollPresenceResult(session.sessionUuid);
+      if (!mounted) {
+        return;
+      }
+      _showPresenceResultSnackBar(result);
+      await _stopAllStreamingPaths(cameraProvider);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to complete verified Presence: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      await _stopAllStreamingPaths(cameraProvider);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _presenceFlowBusy = false;
+          _presenceStatusMessage = null;
+        });
+      }
+    }
+  }
+
+  Future<PresenceMobileResult> _pollPresenceResult(String sessionUuid) async {
+    while (true) {
+      final result = await _presenceService.getResult(sessionUuid);
+      if (result.isTerminal) {
+        return result;
+      }
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
+  }
+
+  Future<void> _restoreStreamingAfterPresence({
+    required CameraProvider cameraProvider,
+    required bool wasStreamingBeforePresence,
+  }) async {
+    if (wasStreamingBeforePresence) {
+      return;
+    }
+    if (!_isAnyStreamingActive(cameraProvider)) {
+      return;
+    }
+    await _stopAllStreamingPaths(cameraProvider);
+  }
+
+  Future<void> _prepareForFrontCameraPresence(CameraProvider cameraProvider) async {
+    await _stopAllStreamingPaths(cameraProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+
+    await _ensureCameraDirection(cameraProvider, useFrontCamera: true);
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+  }
+
+  Future<void> _startVerifiedPresenceStreaming(CameraProvider cameraProvider) async {
+    try {
+      await _handleSimpleStreamingWorkflow();
+      return;
+    } catch (_) {
+      // _handleSimpleStreamingWorkflow handles user-visible errors internally.
+    }
+
+    setState(() {
+      _presenceStatusMessage = 'Front camera is slow to start. Retrying live Presence...';
+    });
+
+    await _stopAllStreamingPaths(cameraProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    await _ensureCameraDirection(cameraProvider, useFrontCamera: true);
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    await _handleSimpleStreamingWorkflow();
+  }
+
+  Future<void> _ensureCameraDirection(
+    CameraProvider cameraProvider, {
+    required bool useFrontCamera,
+  }) async {
+    if (cameraProvider.isFrontCamera == useFrontCamera) {
+      return;
+    }
+
+    await cameraProvider.switchCamera();
+
+    if (cameraProvider.isFrontCamera != useFrontCamera) {
+      final expectedCamera = useFrontCamera ? 'front' : 'back';
+      throw Exception('Failed to switch to the $expectedCamera camera');
+    }
+  }
+
+  Future<void> _stopAllStreamingPaths(CameraProvider cameraProvider) async {
+    final mobileStreamingService = MobileStreamingService();
+
+    mobileStreamingService.disableFrameSending();
+
+    if (CameraService.instance.isStreaming) {
+      await CameraService.instance.stopStreaming();
+    }
+
+    if (cameraProvider.isStreaming) {
+      await cameraProvider.stopStreaming();
+    }
+  }
+
+  Future<void> _stopAndResetCameraState(CameraProvider cameraProvider) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      if (_isAnyStreamingActive(cameraProvider)) {
+        await _stopAllStreamingPaths(cameraProvider);
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _presenceFlowBusy = false;
+        _activePresenceSessionUuid = null;
+        _presenceStatusMessage = null;
+      });
+      cameraProvider.clearError();
+
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Camera reset to idle state. Streaming stopped and Presence flow cleared.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to stop camera activity: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showPresenceResultSnackBar(PresenceMobileResult result) {
+    final success = result.decision == 'granted';
+    final message = success
+        ? 'Presence completed: ${result.reasonCode}'
+        : 'Presence ended: ${result.reasonCode}';
+    _presenceResultAlertTimer?.cancel();
+    setState(() {
+      _presenceResultAlert = _PresenceResultAlertData(
+        message: message,
+        backgroundColor: success ? Colors.green.shade700 : Colors.red.shade700,
+        icon: success ? Icons.check_circle : Icons.cancel,
+      );
+    });
+
+    _presenceResultAlertTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _presenceResultAlert = null;
+      });
+    });
   }
 
   void _showUserProfile(AuthenticationProvider authProvider) {
@@ -870,6 +1346,77 @@ class _CameraScreenState extends State<CameraScreen>
       return serviceData['url'] ?? serviceData['baseUrl'] ?? serviceData['endpoint'];
     }
     return null;
+  }
+}
+
+class _PresenceResultAlertData {
+  const _PresenceResultAlertData({
+    required this.message,
+    required this.backgroundColor,
+    required this.icon,
+  });
+
+  final String message;
+  final Color backgroundColor;
+  final IconData icon;
+}
+
+class _CameraPresenceQrScannerScreen extends StatefulWidget {
+  const _CameraPresenceQrScannerScreen();
+
+  @override
+  State<_CameraPresenceQrScannerScreen> createState() => _CameraPresenceQrScannerScreenState();
+}
+
+class _CameraPresenceQrScannerScreenState extends State<_CameraPresenceQrScannerScreen> {
+  final MobileScannerController _controller = MobileScannerController(facing: CameraFacing.back);
+  bool _handled = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Scan Presence QR')),
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            onDetect: (capture) {
+              if (_handled) {
+                return;
+              }
+              final value = capture.barcodes.firstOrNull?.rawValue;
+              if (value == null || value.isEmpty) {
+                return;
+              }
+              _handled = true;
+              Navigator.of(context).pop(value);
+            },
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              margin: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'Point the back camera at the station QR to continue Presence.',
+                style: TextStyle(color: Colors.white),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

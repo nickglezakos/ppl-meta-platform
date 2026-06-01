@@ -139,3 +139,41 @@ class PresenceMobileDetectionStatus {
     );
   }
 }
+
+class PresenceMobileQrPayload {
+  final bool found;
+  final String installationUuid;
+  final String? deviceReference;
+  final String? qrToken;
+  final String? expiresAt;
+  final String? sessionUuid;
+  final String? sessionStatus;
+  final String? qrStatus;
+  final Map<String, dynamic>? payload;
+
+  const PresenceMobileQrPayload({
+    required this.found,
+    required this.installationUuid,
+    required this.deviceReference,
+    required this.qrToken,
+    required this.expiresAt,
+    required this.sessionUuid,
+    required this.sessionStatus,
+    required this.qrStatus,
+    required this.payload,
+  });
+
+  factory PresenceMobileQrPayload.fromJson(Map<String, dynamic> json) {
+    return PresenceMobileQrPayload(
+      found: json['found'] == true,
+      installationUuid: (json['installation_uuid'] ?? '').toString(),
+      deviceReference: json['device_reference']?.toString(),
+      qrToken: json['qr_token']?.toString(),
+      expiresAt: json['expires_at']?.toString(),
+      sessionUuid: json['session_uuid']?.toString(),
+      sessionStatus: json['session_status']?.toString(),
+      qrStatus: json['qr_status']?.toString(),
+      payload: json['payload'] is Map<String, dynamic> ? json['payload'] as Map<String, dynamic> : null,
+    );
+  }
+}

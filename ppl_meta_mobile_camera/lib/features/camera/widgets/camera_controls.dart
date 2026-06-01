@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-// import 'dart:math' as math; // Unused import removed
-import '../../../shared/navigation/app_navigation.dart';
 import '../../../services/app_logger.dart';
 
 /// Camera controls widget with capture, flash, zoom, and gallery
@@ -9,8 +7,10 @@ class CameraControls extends StatefulWidget {
   final VoidCallback onSwitchCamera;
   final VoidCallback onToggleFlash;
   final Function(double) onZoomChanged;
-  final VoidCallback onOpenGallery;
   final VoidCallback onVideoTap; // NEW: Video icon handler for simplified streaming
+  final VoidCallback onPresenceQrTap;
+  final VoidCallback onPresenceCameraTap;
+  final VoidCallback onPresenceVerifiedTap;
   final bool isFlashOn;
   final double zoomLevel;
   final bool isFrontCamera;
@@ -22,8 +22,10 @@ class CameraControls extends StatefulWidget {
     required this.onSwitchCamera,
     required this.onToggleFlash,
     required this.onZoomChanged,
-    required this.onOpenGallery,
     required this.onVideoTap, // NEW: Video icon handler
+    required this.onPresenceQrTap,
+    required this.onPresenceCameraTap,
+    required this.onPresenceVerifiedTap,
     required this.isFlashOn,
     required this.zoomLevel,
     required this.isFrontCamera,
@@ -37,8 +39,6 @@ class CameraControls extends StatefulWidget {
 class _CameraControlsState extends State<CameraControls>
     with TickerProviderStateMixin {
   late AnimationController _captureAnimationController;
-  late AnimationController _zoomAnimationController;
-  bool _showZoomSlider = false;
 
   @override
   void initState() {
@@ -47,16 +47,11 @@ class _CameraControlsState extends State<CameraControls>
       duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _zoomAnimationController = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
   }
 
   @override
   void dispose() {
     _captureAnimationController.dispose();
-    _zoomAnimationController.dispose();
     super.dispose();
   }
 
@@ -77,11 +72,6 @@ class _CameraControlsState extends State<CameraControls>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Zoom Slider
-          _buildZoomSlider(),
-          
-          const SizedBox(height: 16),
-          
           // Main Controls Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -106,132 +96,17 @@ class _CameraControlsState extends State<CameraControls>
               // Flash Toggle
               _buildFlashButton(),
               
-              // Zoom Button
-              _buildZoomButton(),
+              // Presence QR button
+              _buildPresenceQrButton(),
               
-              // Timer Button (Future feature)
-              _buildTimerButton(),
+              // Presence Camera button
+              _buildPresenceCameraButton(),
               
-              // Gallery Button (moved from top row)
-              _buildGalleryButton(),
+              // Combined Presence button
+              _buildPresenceVerifiedButton(),
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildZoomSlider() {
-    return AnimatedBuilder(
-      animation: _zoomAnimationController,
-      builder: (context, child) {
-        if (!_showZoomSlider) {
-          return const SizedBox.shrink();
-        }
-        
-        return Transform.scale(
-          scale: _zoomAnimationController.value,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(25),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.3),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              children: [
-                Text(
-                  '${widget.zoomLevel.toStringAsFixed(1)}x',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: 200,
-                  child: SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: Theme.of(context).colorScheme.primary,
-                      inactiveTrackColor: Colors.white.withOpacity(0.3),
-                      thumbColor: Theme.of(context).colorScheme.primary,
-                      overlayColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
-                      trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-                    ),
-                    child: Slider(
-                      value: widget.zoomLevel,
-                      min: 1.0,
-                      max: 8.0,
-                      divisions: 70,
-                      onChanged: widget.onZoomChanged,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildGalleryButton() {
-    return GestureDetector(
-      onTap: () => AppNavigation.toGallery(context),
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withOpacity(0.5),
-            width: 2,
-          ),
-        ),
-        child: Stack(
-          children: [
-            const Center(
-              child: Icon(
-                Icons.photo_library,
-                color: Colors.white,
-                size: 24,
-              ),
-            ),
-            if (widget.galleryItemCount > 0)
-              Positioned(
-                top: 2,
-                right: 2,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                  constraints: const BoxConstraints(
-                    minWidth: 16,
-                    minHeight: 16,
-                  ),
-                  child: Text(
-                    widget.galleryItemCount > 99 
-                        ? '99+' 
-                        : widget.galleryItemCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }
@@ -394,40 +269,7 @@ class _CameraControlsState extends State<CameraControls>
 
   Widget _buildZoomButton() {
     return GestureDetector(
-      onTap: _toggleZoomSlider,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: _showZoomSlider 
-              ? Theme.of(context).colorScheme.primary
-              : Colors.white.withOpacity(0.2),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Colors.white.withOpacity(0.5),
-            width: 1,
-          ),
-        ),
-        child: const Icon(
-          Icons.zoom_in,
-          color: Colors.white,
-          size: 20,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTimerButton() {
-    return GestureDetector(
-      onTap: () {
-        // Future: Timer functionality
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Timer feature coming soon!'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      },
+      onTap: widget.onPresenceCameraTap,
       child: Container(
         width: 40,
         height: 40,
@@ -440,7 +282,57 @@ class _CameraControlsState extends State<CameraControls>
           ),
         ),
         child: const Icon(
-          Icons.timer,
+          Icons.videocam,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresenceQrButton() {
+    return GestureDetector(
+      onTap: widget.onPresenceQrTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withOpacity(0.5),
+            width: 1,
+          ),
+        ),
+        child: const Icon(
+          Icons.qr_code_scanner,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresenceCameraButton() {
+    return _buildZoomButton();
+  }
+
+  Widget _buildPresenceVerifiedButton() {
+    return GestureDetector(
+      onTap: widget.onPresenceVerifiedTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.2),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withOpacity(0.5),
+            width: 1,
+          ),
+        ),
+        child: const Icon(
+          Icons.verified_user,
           color: Colors.white,
           size: 20,
         ),
@@ -453,23 +345,5 @@ class _CameraControlsState extends State<CameraControls>
       _captureAnimationController.reverse();
     });
     widget.onCapturePhoto();
-  }
-
-  void _toggleZoomSlider() {
-    setState(() {
-      _showZoomSlider = !_showZoomSlider;
-    });
-    
-    if (_showZoomSlider) {
-      _zoomAnimationController.forward();
-      // Auto-hide after 5 seconds
-      Future.delayed(const Duration(seconds: 5), () {
-        if (_showZoomSlider) {
-          _toggleZoomSlider();
-        }
-      });
-    } else {
-      _zoomAnimationController.reverse();
-    }
   }
 }

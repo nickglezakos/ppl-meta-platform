@@ -24,6 +24,13 @@ The design goal is to reuse current platform capabilities rather than introduce 
 
 For the mobile side of the solution, this should mean explicit reuse of the current service and process layer already implemented in [ppl_meta_mobile_camera](/Users/nickgklezakos/Documents/ppl-meta-code/ppl_meta_mobile_camera).
 
+Updated mobile product direction:
+
+- Presence should not introduce a dedicated mobile Presence screen as the primary operator flow
+- Presence should be entered directly from the existing mobile camera surface
+- the mobile camera control bar should expose Presence-specific actions in place of low-priority controls such as timer and zoom when Presence mode is active
+- the preferred Presence architecture is to orchestrate the already-streaming registered platform camera rather than require a second burst-upload pipeline
+
 ---
 
 ## Scope
@@ -47,6 +54,7 @@ Out of scope for the first implementation:
 - replacing current camera or collection services
 - implementing arbitrary concurrent dual-camera mobile capture requirements
 - building a second independent mobile login, discovery, registration, or feed transport pipeline when those are already solved in `ppl_meta_mobile_camera`
+- introducing a permanently separate mobile Presence screen when the existing camera UI can host the full Presence workflow more directly
 
 ---
 
@@ -126,7 +134,7 @@ Manage short-lived mobile sessions that correlate:
 - authenticated user
 - device context
 - QR challenge
-- feed uploads
+- existing camera streaming state
 - instant detection attempts
 - final presence result
 
@@ -136,7 +144,47 @@ Generate and validate short-lived QR payloads for mobile presence interactions.
 
 ## 5. Instant Detection Orchestration
 
-Accept mobile front-camera burst uploads and translate them into existing instant detection requests.
+Prefer the existing platform camera streaming path as the authoritative source for instant detection. Front-camera burst upload remains available for mixed-mode experiments, but `camera_only` should rely on the already-registered, already-streaming platform camera rather than a second burst-ingestion path.
+
+Revised orchestration expectation for mobile-driven Presence:
+
+- mobile user taps a Presence action directly from the live camera UI
+- backend creates a Presence session for `qr_only`, `camera_only`, or `qr_plus_camera`
+- for `camera_only` and `qr_plus_camera`, backend remotely connects the reserved platform camera if needed
+- on successful connect, backend remotely starts instant detection on that same camera
+- for `qr_only`, mobile launches the QR scanner immediately
+- for `qr_plus_camera`, mobile runs camera and QR work as one asynchronous sequence rather than forcing the operator through a separate dedicated Presence screen
+- on success or terminal failure, backend remotely stops instant detection and disconnects the camera so the Presence lifecycle is self-cleaning
+
+Queueing note:
+
+- `qr_plus_camera` should be treated as an asynchronous orchestration flow
+- the existing Redis-backed platform infrastructure is the preferred first queueing/event coordination option unless a concrete limitation forces a second queue mechanism
+
+---
+
+## Mobile UX Direction
+
+The preferred mobile Presence UX is now a camera-overlay model rather than a dedicated Presence view.
+
+Expected control changes on the existing mobile camera screen:
+
+- replace the timer button with a QR Presence action
+- replace the zoom button with a camera-only Presence action
+- replace the gallery shortcut with a guided sequential Presence action for camera -> QR scan -> camera / verified-presence flow
+
+Behavioral rules:
+
+- tapping any Presence button should automatically transition the mobile camera app into Presence orchestration mode
+- operators should not need to separately open a dedicated Presence page before starting the flow
+- the app should continue to reuse existing authentication, registration, discovery, and streaming contracts already owned by the mobile camera app
+- the station-side web flow remains responsible for rendering the QR challenge when QR is part of the selected mode
+
+Mode-specific expectations:
+
+- `qr_only`: launch scanner immediately and submit the station QR
+- `camera_only`: remotely connect camera, start instant detection, wait for result, then remotely stop and disconnect
+- `qr_plus_camera`: orchestrate connect + instant detection + QR scan as one asynchronous sequence and then remotely stop and disconnect on terminal outcome
 
 ## 6. Presence Decisioning
 
@@ -521,10 +569,11 @@ The frontend presence module can support all three modes without splitting the b
 ### QR-Only Flow
 
 1. frontend loads current installation presence state
-2. frontend starts a `qr_only` session
-3. frontend renders a QR challenge in the target installation context
-4. user scans the QR successfully
-5. backend returns the QR-only check-in result
+2. mobile user taps the QR Presence action from the live camera controls
+3. backend starts a `qr_only` session
+4. station frontend renders a QR challenge in the target installation context
+5. mobile launches the QR scanner and submits the QR successfully
+6. backend returns the QR-only check-in result
 
 ### Web Or Mobile Camera-Only Flow
 
@@ -532,9 +581,12 @@ The frontend presence module can support all three modes without splitting the b
 2. frontend queries presence-eligible cameras
 3. user or operator chooses a camera when more than one candidate exists
 4. frontend requests reservation or binding through the presence backend
-5. frontend starts a `camera_only` session
-6. capture input is submitted
-7. backend completes the presence decision and returns the lower-assurance result
+5. mobile user taps the camera-only Presence action from the live camera controls
+6. backend starts a `camera_only` session
+7. backend remotely connects the reserved mobile camera when needed
+8. backend remotely starts instant detection on that same reserved platform camera
+9. backend completes the presence decision and returns the lower-assurance result
+10. backend remotely stops instant detection and disconnects the camera on terminal outcome
 
 ### Web Plus Mobile QR Flow
 
@@ -542,22 +594,30 @@ The frontend presence module can support all three modes without splitting the b
 2. web frontend queries presence-eligible cameras
 3. operator chooses the reserved presence camera when needed
 4. web frontend binds the context and renders a QR
-5. mobile app starts a `qr_plus_camera` session
-6. mobile app captures the front-camera burst
-7. mobile app scans the rendered QR
-8. backend correlates the QR-bound session and returns the higher-assurance result
+5. mobile user taps the guided combined Presence action from the live camera controls
+6. backend starts a `qr_plus_camera` session
+7. backend remotely connects the reserved mobile camera and starts instant detection
+8. mobile app launches QR scanning as part of the same asynchronous flow
+9. backend correlates camera-backed detection and QR resolution
+10. backend returns the higher-assurance result
+11. backend remotely stops instant detection and disconnects the camera on terminal outcome
 
 ### Responsibility Split
 
-- frontend: discovery, operator choice, QR presentation, session progress, result display
-- mobile app: authenticated user capture and QR scan surface
-- backend: validation, binding, orchestration, policy evaluation, action execution, analytics persistence
+- frontend: discovery, operator choice, station QR presentation, session progress, result display
+- mobile app: authenticated user capture surface, Presence action launch points, QR scan surface, streaming reuse
+- backend: validation, remote camera lifecycle orchestration, policy evaluation, action execution, analytics persistence
 
 Recommended product wording:
 
 - `qr_only`: check-in
 - `camera_only`: presence match
 - `qr_plus_camera`: verified presence
+
+Current operator note:
+
+- `camera_only` should be validated against the reserved streaming platform camera path, not against the experimental front-burst upload path
+- the preferred implementation direction is to remove the dedicated mobile Presence workflow in favor of camera-overlay actions on the normal camera screen
 
 ---
 
@@ -735,6 +795,14 @@ Validated local runtime outcome:
 - timed-out or failed camera-backed presence sessions now schedule instant-detection stop and camera disconnect cleanup so the reserved camera is released as part of terminal failure handling
 - installation-scoped presence session settings are now exposed at `#/settings` and persisted across restarts by selecting the most recently updated installation profile that actually contains saved `session_settings`
 - live PostgreSQL validation confirmed that the saved 30-second timeout remained present in persisted installation profile metadata and that duplicate legacy installation profiles were the root cause of the earlier restart regression
+
+Current camera-only validation checklist:
+
+1. keep the mobile camera connected and actively streaming through the existing camera app path
+2. reserve that same mobile camera in Presence settings
+3. ensure the generated Presence trigger points to that same reserved mobile camera
+4. start a fresh `camera_only` session
+5. verify the outcome through Presence result state plus cameras, presence, and communications logs
 
 Validated platform assets in local runtime:
 

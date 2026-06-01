@@ -192,6 +192,10 @@ class CameraService {
       _controller = null;
       print('🎬 Previous controller disposed');
 
+      // Older Android devices can keep the previous surface texture alive
+      // briefly after dispose, so wait before binding the next controller.
+      await Future.delayed(const Duration(milliseconds: 700));
+
       // Use provided config or default to back camera
       final CameraConfig cameraConfig;
       if (config != null) {

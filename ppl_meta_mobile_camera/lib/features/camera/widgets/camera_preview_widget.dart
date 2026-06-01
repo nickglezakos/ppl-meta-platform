@@ -35,9 +35,20 @@ class CameraPreviewWidget extends StatelessWidget {
                 child: FittedBox(
                   fit: BoxFit.contain,
                   child: SizedBox(
+                    key: ValueKey(
+                      '${controller!.description.name}-'
+                      '${controller!.description.lensDirection.name}-'
+                      '${controller.hashCode}',
+                    ),
                     width: controller!.value.previewSize?.height ?? 1,
                     height: controller!.value.previewSize?.width ?? 1,
-                    child: CameraPreview(controller!),
+                    child: CameraPreview(
+                      controller!,
+                      key: ValueKey(
+                        '${controller!.description.name}-preview-'
+                        '${controller.hashCode}',
+                      ),
+                    ),
                   ),
                 ),
               ),

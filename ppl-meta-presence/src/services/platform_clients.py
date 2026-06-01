@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import httpx
+from fastapi import HTTPException, status
 from jose import jwt
 
 from config import config
@@ -41,6 +42,60 @@ class PlatformClients:
         self.trigger_lookup: dict[str, dict[str, Any]] = {}
         self.action_lookup: dict[str, dict[str, Any]] = {}
         self._http_client = httpx.AsyncClient(timeout=httpx.Timeout(15.0), follow_redirects=True)
+
+    def _raise_downstream_http_error(self, response: httpx.Response, service_name: str) -> None:
+        detail: Any
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+
+        if isinstance(payload, dict):
+            detail = payload.get("detail") or payload.get("message") or payload
+        elif isinstance(payload, list):
+            detail = payload
+        else:
+            detail = response.text or f"{service_name} request failed"
+
+        raise HTTPException(
+            status_code=response.status_code if response.status_code >= 400 else status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "service": service_name,
+                "detail": detail,
+            },
+        )
+
+    async def _get_json(
+        self,
+        url: str,
+        *,
+        headers: Optional[Dict[str, str]] = None,
+        service_name: str,
+    ) -> Any:
+        try:
+            response = await self._http_client.get(url, headers=headers)
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "service": service_name,
+                    "detail": str(exc),
+                },
+            ) from exc
+
+        if response.status_code >= 400:
+            self._raise_downstream_http_error(response, service_name)
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "service": service_name,
+                    "detail": "Invalid JSON response from downstream service",
+                },
+            ) from exc
 
     async def startup(self) -> None:
         if SERVICE_DISCOVERY_AVAILABLE:
@@ -95,12 +150,11 @@ class PlatformClients:
         return response.json()
 
     async def list_cameras(self, token: str) -> list[dict[str, Any]]:
-        response = await self._http_client.get(
+        data = await self._get_json(
             "http://localhost:8005/api/v1/cameras/",
             headers={"Authorization": f"Bearer {token}"},
+            service_name="cameras",
         )
-        response.raise_for_status()
-        data = response.json()
         return data if isinstance(data, list) else []
 
     async def connect_camera(self, camera_id: str) -> Dict[str, Any]:

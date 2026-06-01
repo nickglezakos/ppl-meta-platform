@@ -266,6 +266,15 @@ class HomeScreen extends ConsumerWidget {
                         },
                       ),
                       _ActionCard(
+                        icon: Icons.qr_code_2,
+                        iconColor: AppColors.secondary,
+                        title: 'Presence Station',
+                        subtitle: 'Render QR for another device to scan',
+                        onTap: () {
+                          context.go('/presence-station');
+                        },
+                      ),
+                      _ActionCard(
                         icon: Icons.groups,
                         iconColor: AppColors.secondary, // Unified cyan color
                         title: 'Individual Groups',
