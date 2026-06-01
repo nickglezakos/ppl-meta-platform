@@ -115,6 +115,7 @@ SERVICES = {
     "cameras": "http://localhost:8005",
     "vmeta": "http://localhost:8008",
     "communications": "http://localhost:8009",
+    "presence": "http://localhost:8011",
 }
 
 # Add validation support
@@ -511,7 +512,66 @@ async def _proxy_to_media_service(request: Request) -> Response:
         )
 
 
+async def _proxy_to_presence_service(request: Request) -> Response:
+    """Helper function to proxy requests to the Presence service."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        path = str(request.url.path)
+        method = request.method
+        target_url = f"{SERVICES['presence']}{path}"
+
+        body = None
+        if request.method in ["POST", "PUT", "PATCH"]:
+            body = await request.body()
+
+        headers = dict(request.headers)
+        headers.pop("host", None)
+
+        auth_header = headers.get("authorization", "MISSING")
+        logger.info(
+            f"🔐 [PRESENCE-PROXY] {method} {path} - Auth header: {'Present' if auth_header != 'MISSING' else 'MISSING'}"
+        )
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.request(
+                method=method,
+                url=target_url,
+                headers=headers,
+                content=body,
+                params=dict(request.query_params),
+            )
+
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                media_type=response.headers.get(
+                    "content-type", "application/octet-stream"
+                ),
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=503, detail=f"Presence service unavailable: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal presence proxy error: {str(e)}"
+        )
+
+
 # Capabilities Service Routes
+@api_router.api_route(
+    "/presence/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def proxy_presence_service(request: Request):
+    """Proxy presence routes to the Presence service."""
+    return await _proxy_to_presence_service(request)
+
+
 @api_router.get("/capabilities/my-capabilities")
 async def get_my_capabilities(request: Request):
     """Proxy get my capabilities to Node service."""

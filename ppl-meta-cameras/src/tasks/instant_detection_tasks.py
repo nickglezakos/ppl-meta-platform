@@ -19,6 +19,14 @@ from celery import Task
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 from shared.queue_config import celery_app, redis_client
 
+LEGACY_MEDIA_TRIGGER_WEBHOOK_SUFFIX = "/api/v1/triggers/instant-detection"
+
+
+def _is_legacy_media_trigger_webhook(url: str | None) -> bool:
+    if not url:
+        return False
+    return url.rstrip("/").endswith(LEGACY_MEDIA_TRIGGER_WEBHOOK_SUFFIX)
+
 logger = logging.getLogger(__name__)
 
 
@@ -258,6 +266,12 @@ def _push_to_webhook(camera_id: str, result: Dict):
     webhook_enabled = os.getenv("INSTANT_DETECTION_WEBHOOK_ENABLED", "false").lower() == "true"
     
     if not webhook_enabled or not webhook_url:
+        return
+    if _is_legacy_media_trigger_webhook(webhook_url):
+        logger.info(
+            "ℹ️ [CELERY] Legacy Media trigger webhook suppressed: %s. Redis instant-detection subscriber is authoritative for trigger execution.",
+            webhook_url,
+        )
         return
     
     try:

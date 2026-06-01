@@ -38,6 +38,8 @@ class PlatformClients:
         self.service_port = int(os.getenv("PRESENCE_SERVICE_PORT", "8011"))
         self.service_version = os.getenv("PRESENCE_SERVICE_VERSION", "0.1.0")
         self._registered = False
+        self.trigger_lookup: dict[str, dict[str, Any]] = {}
+        self.action_lookup: dict[str, dict[str, Any]] = {}
         self._http_client = httpx.AsyncClient(timeout=httpx.Timeout(15.0), follow_redirects=True)
 
     async def startup(self) -> None:
@@ -179,6 +181,9 @@ class PlatformClients:
         if isinstance(payload, dict):
             triggers = payload.get("triggers")
             if isinstance(triggers, list):
+                for trigger in triggers:
+                    if isinstance(trigger, dict) and trigger.get("uuid"):
+                        self.trigger_lookup[str(trigger["uuid"])] = trigger
                 return triggers
         return []
 
@@ -197,7 +202,10 @@ class PlatformClients:
             headers={"Authorization": f"Bearer {token}"},
         )
         response.raise_for_status()
-        return response.json()
+        payload = response.json()
+        if isinstance(payload, dict) and payload.get("uuid"):
+            self.trigger_lookup[str(payload["uuid"])] = payload
+        return payload
 
     async def list_user_actions(self, token: str) -> list[dict[str, Any]]:
         response = await self._http_client.get(
@@ -209,6 +217,9 @@ class PlatformClients:
         if isinstance(payload, dict):
             actions = payload.get("actions")
             if isinstance(actions, list):
+                for action in actions:
+                    if isinstance(action, dict) and action.get("uuid"):
+                        self.action_lookup[str(action["uuid"])] = action
                 return actions
         return []
 
@@ -219,7 +230,10 @@ class PlatformClients:
             json=payload,
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        if isinstance(data, dict) and data.get("uuid"):
+            self.action_lookup[str(data["uuid"])] = data
+        return data
 
     async def list_individual_groups(self, token: str) -> list[dict[str, Any]]:
         response = await self._http_client.get(

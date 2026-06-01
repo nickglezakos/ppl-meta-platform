@@ -1,7 +1,7 @@
 # PPL Meta Presence Implementation Plan
 
-**Date**: May 30, 2026  
-**Status**: Draft  
+**Date**: June 1, 2026  
+**Status**: Active Implementation  
 **Depends On**: [docs/proposals/presence/Eyenet presence.md](/Users/nickgklezakos/Documents/ppl-meta-code/docs/proposals/presence/Eyenet%20presence.md)
 
 ---
@@ -462,6 +462,103 @@ The initial backend decision flow should be:
 
 If step 9 does not yield a sufficient result in time, the service should keep the session open and accept a retry burst.
 
+## Presence Assurance Modes
+
+The first frontend-integrated presence design should support three explicit assurance modes while keeping one backend orchestration model.
+
+### QR-Only Mode
+
+Suggested contract:
+
+- session mode: `qr_only`
+- required inputs: authenticated user, resolved installation context, QR hit bound to a rendered installation challenge
+- skipped inputs: camera-backed capture evidence and camera-match requirement
+- intended result: lowest-assurance presence outcome appropriate for QR-only check-in semantics
+
+This mode should not be treated as camera-backed identity verification.
+
+### Camera-Only Mode
+
+Suggested contract:
+
+- session mode: `camera_only`
+- required inputs: authenticated user, resolved installation context, validated reserved camera context, camera-backed capture evidence
+- skipped input: QR challenge
+- intended result: lower-assurance presence grant that still depends on successful backend decisioning and persisted analytics
+
+This mode is appropriate when the frontend already provides enough trusted installation context and the product does not require QR-based proof of interaction with a rendered station.
+
+### QR Plus Camera Mode
+
+Suggested contract:
+
+- session mode: `qr_plus_camera`
+- required inputs: authenticated user, resolved installation context, validated reserved camera context, camera-backed capture evidence, QR hit bound to a rendered installation challenge
+- intended result: higher-assurance presence grant tied both to the camera-backed match and the rendered session target
+
+This mode should remain the stronger and more explicit verification path.
+
+### Backend Semantics
+
+To keep the model coherent:
+
+- session records should persist the selected assurance mode
+- decision history and analytics should be able to differentiate the three modes
+- policy mapping should be able to distinguish actions allowed for `qr_only`, `camera_only`, and `qr_plus_camera`
+- the frontend should never make a skipped-QR session look equivalent to a QR-bound session unless policy intentionally treats them the same
+- the frontend should never make a QR-only session look equivalent to a camera-backed session unless policy intentionally treats them the same
+
+Suggested assurance ordering:
+
+- `qr_only`: lowest assurance
+- `camera_only`: medium assurance
+- `qr_plus_camera`: highest assurance
+
+## Frontend Flow Mapping
+
+The frontend presence module can support all three modes without splitting the backend into separate systems.
+
+### QR-Only Flow
+
+1. frontend loads current installation presence state
+2. frontend starts a `qr_only` session
+3. frontend renders a QR challenge in the target installation context
+4. user scans the QR successfully
+5. backend returns the QR-only check-in result
+
+### Web Or Mobile Camera-Only Flow
+
+1. frontend loads current installation presence state
+2. frontend queries presence-eligible cameras
+3. user or operator chooses a camera when more than one candidate exists
+4. frontend requests reservation or binding through the presence backend
+5. frontend starts a `camera_only` session
+6. capture input is submitted
+7. backend completes the presence decision and returns the lower-assurance result
+
+### Web Plus Mobile QR Flow
+
+1. web frontend loads current installation presence state
+2. web frontend queries presence-eligible cameras
+3. operator chooses the reserved presence camera when needed
+4. web frontend binds the context and renders a QR
+5. mobile app starts a `qr_plus_camera` session
+6. mobile app captures the front-camera burst
+7. mobile app scans the rendered QR
+8. backend correlates the QR-bound session and returns the higher-assurance result
+
+### Responsibility Split
+
+- frontend: discovery, operator choice, QR presentation, session progress, result display
+- mobile app: authenticated user capture and QR scan surface
+- backend: validation, binding, orchestration, policy evaluation, action execution, analytics persistence
+
+Recommended product wording:
+
+- `qr_only`: check-in
+- `camera_only`: presence match
+- `qr_plus_camera`: verified presence
+
 ---
 
 ## Provisioning Rules
@@ -537,6 +634,57 @@ Recommended action semantics:
 
 These should be represented through the existing trigger and action system and resolved by the presence service.
 
+## Assurance-Aware Policy Rules
+
+The backend policy layer should treat the three session modes as distinct outcome classes, not as cosmetic variants of the same grant.
+
+Suggested normalized mapping:
+
+- `qr_only` -> `assurance_level=low` -> `grant_type=check_in`
+- `camera_only` -> `assurance_level=medium` -> `grant_type=presence_match`
+- `qr_plus_camera` -> `assurance_level=high` -> `grant_type=verified_presence`
+
+Recommended first-release policy rules:
+
+- `qr_only`
+  - should succeed on valid authenticated QR correlation alone
+  - should not require `ppl_match`
+  - should not unlock actions that imply strong identity verification
+- `camera_only`
+  - should require successful camera-backed presence evaluation
+  - may succeed without QR correlation
+  - should remain weaker than `qr_plus_camera` when policy distinguishes stronger installation-bound assurance
+- `qr_plus_camera`
+  - should require both successful QR correlation and successful camera-backed presence evaluation
+  - should be the only mode eligible for the strongest verified-presence actions when policy requires the highest assurance
+
+Current backend policy behavior:
+
+- installation and group `action_policy` metadata may now provide mode-specific overrides under `qr_only`, `camera_only`, and `qr_plus_camera`
+- those override buckets may supply decision-specific trigger/action mappings and take precedence over the generic decision mapping for the same policy scope
+
+Recommended first-release action examples:
+
+- `qr_only`: attendance check-in, arrival mark, low-risk notification, audit log
+- `camera_only`: presence match, medium-trust notification, medium-trust workflow enablement, audit log
+- `qr_plus_camera`: verified presence grant, strongest workflow enablement, strongest automation path, audit log
+
+Current backend default mapping note:
+
+- granted `qr_only` sessions currently default to `trigger_type=presence_check_in` and `action_type=presence_log`
+- granted `camera_only` sessions currently default to `trigger_type=presence_match` and `action_type=presence_grant`
+- granted `qr_plus_camera` sessions currently default to `trigger_type=presence_verified_match` and `action_type=presence_grant`
+
+Frontend and backend should both surface the resolved `session_mode`, `assurance_level`, and `grant_type` so users and operators can understand what class of presence result was actually returned.
+
+Current frontend implementation status in `ppl-meta-frontend`:
+
+- a dedicated `Presence` screen now consumes the presence backend directly
+- the current screen exposes summary analytics, `session_mode` and `grant_type` breakdowns, recent session trace visibility, and a first execution panel for starting a session, retrieving current QR-backed state, validating the current QR token, submitting a test QR hit, and polling live result state
+- the current screen also exposes the admin flows already supported cleanly by the backend: installation policy editing, presence-group ensure, camera reservation, and reservation reset
+- direct collection reservation is not yet exposed in the frontend module because the current backend contract only exposes reserved collections, not a browsable platform collection inventory suitable for operator selection
+- reserving a camera remains the preferred operator flow for now because the backend auto-binds a linked media collection when one can be resolved from the selected camera
+
 ---
 
 ## Analytics Plan
@@ -551,6 +699,8 @@ The service should publish:
 - by-device breakdown
 - by-policy-source breakdown
 - by-installation breakdown
+- by-session-mode breakdown
+- by-grant-type breakdown
 - by-reserved-collection breakdown
 - action outcome breakdown
 
@@ -560,6 +710,8 @@ Operational note:
 
 - older analytics events may not have `policy_source`, `trigger_type`, or `action_type` in their saved payloads
 - the current service repairs that metadata lazily on startup by backfilling from persisted decision history and session state before analytics are served
+- the current backend also exposes analytics grouped by `session_mode` and `grant_type`, so dashboards can separate check-ins, presence matches, and verified presence outcomes directly from API aggregates
+- those `session_mode` and `grant_type` aggregates are now exposed through first-class HTTP endpoints, not just internal service methods
 
 Validation note:
 
@@ -578,6 +730,11 @@ Validated local runtime outcome:
 - an additional pre-existing alert trigger on the same camera also fired during local validation, which confirms the expected multi-trigger behavior for a shared camera feed in this runtime
 - the explicit empty-group validation path was also proven live: the validator cleared the existing presence group member, the first detection re-seeded the group, a second confirmation attempt was observed, and the session completed only after the follow-up `ppl_match`
 - the presence trigger was validated live with multiple bound actions, including a user-configured email action that delivered successfully after the same trigger-backed match
+- failed presence sessions now surface explicit user-facing unsuccessful alerts in both the web and mobile presence clients instead of ending silently when no grant is produced
+- presence session timeout enforcement is now wall-clock driven rather than poll-driven: session expiry schedules active backend timeout handling and no longer depends on a later read request to notice the expiry
+- timed-out or failed camera-backed presence sessions now schedule instant-detection stop and camera disconnect cleanup so the reserved camera is released as part of terminal failure handling
+- installation-scoped presence session settings are now exposed at `#/settings` and persisted across restarts by selecting the most recently updated installation profile that actually contains saved `session_settings`
+- live PostgreSQL validation confirmed that the saved 30-second timeout remained present in persisted installation profile metadata and that duplicate legacy installation profiles were the root cause of the earlier restart regression
 
 Validated platform assets in local runtime:
 
@@ -597,6 +754,7 @@ Operational note:
 - the repair route now requires admin-level authorization; presence resolves that either from token claims or by querying node's `user-permissions` endpoint with `SERVICE_SECRET`
 - analytics routes now expose the remaining Phase 4 dashboard breakdowns as first-class API surfaces: by installation, by reserved collection, and by action outcome
 - action outcome analytics now make downstream execution state visible without requiring an operator to inspect individual session traces one by one
+- local persistence debugging revealed many duplicate `installation` profiles for the same `local-installation` context in PostgreSQL; presence startup now prefers the newest installation profile carrying `session_settings` so operator-selected timeout and attempt settings are not lost behind older empty metadata rows
 
 ---
 
@@ -647,6 +805,7 @@ Backend completion status:
 - completed for the presence backend API surface
 - covered by the current implementation through stricter reservation validation, cross-session trace and decision-history queries, trigger fan-out observability, admin-gated analytics repair, and analytics breakdowns for policy source, installation, reserved collection, and action outcomes
 - frontend/admin widget work remains a separate consumer task rather than a backend gap
+- that statement is now only partially true: a first consumer slice exists in `ppl-meta-frontend`, including analytics, admin controls, session-detail drill-down for action plan, decision history, and trace inspection, plus initial execution controls for starting a session, validating and exercising QR flow, and retrieving current QR/state; an initial mobile execution slice now also exists inside `ppl_meta_mobile_camera`, reusing the existing authenticated node/gateway bootstrap and registered camera anchor for session creation, front-burst upload, QR scan submission, and result polling, while a fuller dedicated mobile flow remains follow-up work
 
 ---
 
@@ -654,7 +813,7 @@ Backend completion status:
 
 The recommended implementation order for the presence initiative is backend-first.
 
-The reason is that the mobile application and backend-facing widgets depend on stable backend contracts for:
+The reason is that the mobile application and backend-facing widgets depend on stable backend contracts for: 
 
 - presence session lifecycle
 - QR issuance and validation

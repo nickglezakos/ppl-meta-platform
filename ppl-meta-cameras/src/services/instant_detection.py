@@ -30,6 +30,14 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
+LEGACY_MEDIA_TRIGGER_WEBHOOK_SUFFIX = "/api/v1/triggers/instant-detection"
+
+
+def _is_legacy_media_trigger_webhook(url: Optional[str]) -> bool:
+    if not url:
+        return False
+    return url.rstrip("/").endswith(LEGACY_MEDIA_TRIGGER_WEBHOOK_SUFFIX)
+
 
 def _delete_instant_detection_redis_cache(camera_id: Optional[str] = None) -> None:
     """Remove cached instant-detection results from Redis."""
@@ -1969,6 +1977,14 @@ class InstantDetectionSampler:
             enabled: Whether webhook push is enabled
         """
         self.webhook_url = url
+        if enabled and _is_legacy_media_trigger_webhook(url):
+            self.webhook_enabled = False
+            logger.info(
+                "ℹ️ Legacy Media trigger webhook suppressed: %s. Redis instant-detection subscriber is authoritative for trigger execution.",
+                url,
+            )
+            return
+
         self.webhook_enabled = enabled
         logger.info(f"✅ Webhook configured: {url} (enabled={enabled})")
     

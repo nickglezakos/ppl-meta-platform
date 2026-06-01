@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EyeNet Channel Policy Outline</title>
+  <style>
+    :root {
+      --brand-primary: #1976d2;
+      --brand-primary-dark: #125ea7;
+      --brand-secondary: #22d3ee;
+      --brand-accent: linear-gradient(135deg, #0a0a0f 0%, #10131d 55%, #151826 100%);
+      --text: #ffffff;
+      --muted: #bbbbbb;
+      --line: #0f0f14;
+      --page: #f4f7fb;
+      --panel: #ffffff;
+      --panel-soft: #f8fbff;
+      --panel-line: rgba(25, 118, 210, 0.16);
+      --shadow: 0 18px 45px rgba(5, 5, 9, 0.12);
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 10px;
+      --max-width: 1120px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      background: linear-gradient(180deg, #eef4fb 0%, #f7fbff 30%, #ffffff 100%);
+      color: #0f172a;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    body { margin: 0; }
+
+    .page {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 32px 24px 72px;
+    }
+
+    .print-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-bottom: 20px;
+    }
+
+    .language-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: auto;
+      padding: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(25, 118, 210, 0.16);
+      box-shadow: var(--shadow);
+    }
+
+    .language-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #eff7ff 0%, #dbeafe 100%);
+      color: var(--brand-primary);
+      font-size: 18px;
+    }
+
+    .language-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      background: transparent;
+      color: #334155;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .language-button.is-active {
+      background: var(--brand-primary);
+      color: #fff;
+    }
+
+    .print-button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--brand-primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .hero {
+      background: radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 28%), linear-gradient(135deg, #0b1220 0%, #10203b 40%, #12284b 72%, #17345e 100%);
+      border: 1px solid rgba(34, 211, 238, 0.14);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      position: relative;
+      color: var(--text);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -80px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(25, 118, 210, 0.26);
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1.3fr 0.9fr;
+      gap: 28px;
+      padding: 34px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .brand-stack {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-stack img {
+      height: 36px;
+      width: auto;
+    }
+
+    .brand-chip {
+      padding: 8px 12px;
+      border: 1px solid rgba(34, 211, 238, 0.24);
+      border-radius: 999px;
+      background: rgba(21, 24, 38, 0.9);
+      color: #eef9ff;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.14);
+      color: var(--brand-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, h4, p { margin-top: 0; }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 18px;
+      color: #d7deea;
+      max-width: 62ch;
+    }
+
+    .brand-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--brand-secondary);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .meta-card, .section, .summary-card, .key-card, .note-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(34, 211, 238, 0.12);
+      padding: 24px;
+      align-self: start;
+      color: var(--text);
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 18px;
+    }
+
+    .meta-item {
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .meta-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #9fb0c3;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .section {
+      margin-top: 24px;
+      padding: 28px;
+      border-color: var(--panel-line);
+      background: linear-gradient(180deg, #ffffff 0%, var(--panel-soft) 100%);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: rgba(25, 118, 210, 0.1);
+      color: var(--brand-primary);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin-bottom: 0;
+      font-size: 24px;
+      letter-spacing: -0.02em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    .grid-two, .stats-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 24px;
+    }
+
+    .nav-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .nav-card {
+      display: block;
+      padding: 16px 18px;
+      border: 1px solid rgba(25, 118, 210, 0.12);
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, #ffffff 0%, #f3f8ff 100%);
+      color: #0f172a;
+      text-decoration: none;
+      box-shadow: var(--shadow);
+    }
+
+    .nav-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    .nav-card span {
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .grid-two {
+      grid-template-columns: 1.15fr 0.85fr;
+    }
+
+    .stats-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .summary-card, .key-card, .note-card {
+      padding: 22px;
+      border-color: var(--panel-line);
+      background: #ffffff;
+    }
+
+    .summary-highlight {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 22px;
+    }
+
+    .highlight-card {
+      padding: 20px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, rgba(16, 19, 29, 0.03) 0%, rgba(25, 118, 210, 0.08) 100%);
+      border: 1px solid rgba(25, 118, 210, 0.14);
+    }
+
+    .highlight-label {
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .highlight-value {
+      display: block;
+      margin: 10px 0 8px;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .callout {
+      padding: 18px 20px;
+      border-left: 4px solid var(--brand-secondary);
+      border-radius: 0 var(--radius-md) var(--radius-md) 0;
+      background: var(--brand-accent);
+      color: #f5fbff;
+      font-weight: 600;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 10px;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .bilingual {
+      margin-top: 18px;
+    }
+
+    .bilingual > * + * {
+      margin-top: 18px;
+    }
+
+    .lang-copy,
+    .lang-card[data-lang],
+    .lang-pane[data-lang] {
+      display: none;
+    }
+
+    body[data-lang="en"] .lang-copy[data-lang="en"],
+    body[data-lang="en"] .lang-card[data-lang="en"],
+    body[data-lang="en"] .lang-pane[data-lang="en"] {
+      display: block;
+    }
+
+    body[data-lang="el"] .lang-copy[data-lang="el"],
+    body[data-lang="el"] .lang-card[data-lang="el"],
+    body[data-lang="el"] .lang-pane[data-lang="el"] {
+      display: block;
+    }
+
+    .lang-pane[data-lang] {
+      margin-top: 24px;
+    }
+
+    .lang-pane[data-lang] h3 {
+      margin-bottom: 12px;
+    }
+
+    .bilingual {
+      margin-top: 18px;
+    }
+
+    .lang-card {
+      padding: 20px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      border-radius: var(--radius-md);
+      background: rgba(255,255,255,0.75);
+    }
+
+    ul { margin: 0; padding-left: 20px; }
+    li + li { margin-top: 8px; }
+
+    .footer-note {
+      margin-top: 18px;
+      color: #64748b;
+      font-size: 13px;
+    }
+
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner, .grid-two, .stats-grid, .nav-grid, .summary-highlight {
+        grid-template-columns: 1fr;
+      }
+
+      h1 { font-size: 34px; }
+      .page { padding: 18px 16px 54px; }
+    }
+
+    @media print {
+      html {
+        background: #fff;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page { max-width: none; padding: 0; }
+      .print-bar { display: none; }
+      .hero, .meta-card, .section, .summary-card, .key-card, .note-card {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="print-bar">
+      <div class="language-toggle" aria-label="Language switcher">
+        <span class="language-icon" aria-hidden="true">🌐</span>
+        <button class="language-button is-active" type="button" data-set-lang="en">English</button>
+        <button class="language-button" type="button" data-set-lang="el">Ελληνικά</button>
+      </div>
+      <button class="print-button" onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div>
+          <div class="brand-row">
+            <div class="brand-stack">
+              <img src="../../../ppl-meta-frontend/assets/images/eyenet-dark.svg" alt="EyeNet logo" />
+              <span class="brand-chip">Policy</span>
+            </div>
+          </div>
+          <span class="eyebrow">
+            <span class="lang-copy" data-lang="en">Business And Pricing Outline</span>
+            <span class="lang-copy" data-lang="el">Περίγραμμα Πολιτικής Καναλιού</span>
+          </span>
+          <h1>
+            <span class="lang-copy" data-lang="en">EyeNet Channel Policy Outline</span>
+            <span class="lang-copy" data-lang="el">Περίγραμμα Πολιτικής Καναλιού EyeNet</span>
+          </h1>
+          <p class="lead">
+            <span class="lang-copy" data-lang="en">A high-level outline of the EyeNet operating model, commercial responsibilities, and channel-led pricing logic across the licensor, distributor, reseller, and support ecosystem.</span>
+            <span class="lang-copy" data-lang="el">Μία υψηλού επιπέδου αποτύπωση του λειτουργικού μοντέλου του EyeNet, των εμπορικών ρόλων και της καναλικής τιμολογιακής λογικής σε όλο το οικοσύστημα licensor, distributor, reseller και support.</span>
+          </p>
+          <span class="brand-link">Eyenet Partner Network</span>
+        </div>
+
+        <aside class="meta-card">
+          <h3>Document Snapshot</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Document</span>
+              <span class="meta-value">Policy outline</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Languages</span>
+              <span class="meta-value">English + Greek</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Prepared On</span>
+              <span class="meta-value">28 May 2026</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Status</span>
+              <span class="meta-value">final draft</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Business Model</span>
+              <span class="meta-value">Licensor - Distributor - Reseller</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Focus</span>
+              <span class="meta-value">Operations + Pricing</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section" id="quick-nav">
+      <div class="section-title">
+        <span class="section-number">0</span>
+        <h2>
+          <span class="lang-copy" data-lang="en">Quick Navigation</span>
+          <span class="lang-copy" data-lang="el">Γρήγορη Πλοήγηση</span>
+        </h2>
+      </div>
+      <div class="nav-grid">
+        <a class="nav-card" href="#summary"><strong><span class="lang-copy" data-lang="en">Executive Summary</span><span class="lang-copy" data-lang="el">Επιτελική Σύνοψη</span></strong><span><span class="lang-copy" data-lang="en">High-level business position and commercial logic</span><span class="lang-copy" data-lang="el">Συνοπτική επιχειρηματική θέση και εμπορική λογική</span></span></a>
+        <a class="nav-card" href="#structure"><strong><span class="lang-copy" data-lang="en">Core Structure</span><span class="lang-copy" data-lang="el">Βασική Δομή</span></strong><span><span class="lang-copy" data-lang="en">Licensor, distributor, reseller, and support model</span><span class="lang-copy" data-lang="el">Μοντέλο licensor, distributor, reseller και support</span></span></a>
+        <a class="nav-card" href="#lifecycle"><strong><span class="lang-copy" data-lang="en">Lifecycle</span><span class="lang-copy" data-lang="el">Κύκλος Ζωής</span></strong><span><span class="lang-copy" data-lang="en">Role responsibilities across customer phases</span><span class="lang-copy" data-lang="el">Ρόλοι και ευθύνες σε όλες τις φάσεις πελάτη</span></span></a>
+        <a class="nav-card" href="#pricing"><strong><span class="lang-copy" data-lang="en">Pricing</span><span class="lang-copy" data-lang="el">Τιμολόγηση</span></strong><span><span class="lang-copy" data-lang="en">Layered pricing, packaging, and agreement structure</span><span class="lang-copy" data-lang="el">Επίπεδα τιμολόγησης, πακέτα και συμβατική δομή</span></span></a>
+      </div>
+    </section>
+
+    <section class="section" id="summary">
+      <div class="section-title">
+        <span class="section-number">1</span>
+        <h2><span class="lang-copy" data-lang="en">Executive Summary</span><span class="lang-copy" data-lang="el">Επιτελική Σύνοψη</span></h2>
+      </div>
+      <div class="callout" style="margin-bottom: 24px;"><span class="lang-copy" data-lang="en">EyeNet should be sold and operated as a channel-governed B2B software licensing business with reseller-led customized customer offers, not as a one-size-fits-all public software product.</span><span class="lang-copy" data-lang="el">Το EyeNet πρέπει να διατίθεται και να λειτουργεί ως καναλικά διοικούμενη B2B επιχείρηση αδειοδότησης λογισμικού, με εξατομικευμένες προτάσεις πελάτη από τον reseller και όχι ως δημόσιο προϊόν ενιαίας τιμής.</span></div>
+      <div class="summary-highlight">
+        <div class="highlight-card">
+          <span class="highlight-label">Commercial Model</span>
+          <span class="highlight-value">B2B Channel</span>
+          <p>Structured around licensor, distributor, and reseller responsibilities.</p>
+        </div>
+        <div class="highlight-card">
+          <span class="highlight-label">Offer Style</span>
+          <span class="highlight-value">Customized</span>
+          <p>Final customer offers combine software, services, training, and deployment scope.</p>
+        </div>
+        <div class="highlight-card">
+          <span class="highlight-label">Operating Rule</span>
+          <span class="highlight-value">Governed</span>
+          <p>Channel policy and technical continuity stay controlled even when delivery is partner-led.</p>
+        </div>
+      </div>
+      <div class="bilingual">
+        <div class="lang-card" data-lang="en">
+          <p>EyeNet should be operated and sold through a structured B2B channel model. The software company acts as the licensor, the distributor governs the channel and reseller network, the reseller owns the final customer offer and project delivery, and support protects technical continuity and recovery.</p>
+          <p>The final customer proposal should normally combine software licensing, use-case analysis, deployment planning, hardware prerequisites, implementation, training, and installation services.</p>
+        </div>
+        <div class="lang-card" data-lang="el">
+          <p>Το EyeNet πρέπει να λειτουργεί και να διατίθεται μέσω ενός δομημένου καναλικού μοντέλου B2B. Η εταιρεία λογισμικού λειτουργεί ως licensor, ο distributor διοικεί το κανάλι και το δίκτυο reseller, ο reseller αναλαμβάνει την τελική εμπορική πρόταση και την παράδοση του έργου, ενώ το support διασφαλίζει την τεχνική συνέχεια και την αποκατάσταση λειτουργίας.</p>
+          <p>Η τελική πρόταση προς τον πελάτη πρέπει συνήθως να συνδυάζει άδεια λογισμικού, ανάλυση επιχειρησιακού use case, σχεδιασμό deployment, προαπαιτούμενα hardware, υλοποίηση, εκπαίδευση και εγκατάσταση.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="structure">
+      <div class="section-title">
+        <span class="section-number">2</span>
+        <h2><span class="lang-copy" data-lang="en">Core Business Structure</span><span class="lang-copy" data-lang="el">Βασική Επιχειρηματική Δομή</span></h2>
+      </div>
+      <div class="stats-grid">
+        <div class="key-card">
+          <span class="stat-label">Licensor</span>
+          <span class="stat-value">Software</span>
+          <p>Controls licence logic, product policy, and channel rules.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Distributor</span>
+          <span class="stat-value">Channel</span>
+          <p>Applies policy, governs partners, and scales the reseller ecosystem.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Reseller</span>
+          <span class="stat-value">Customer</span>
+          <p>Owns the end-customer offer, presales, project delivery, and installation path.</p>
+        </div>
+        <div class="key-card">
+          <span class="stat-label">Support</span>
+          <span class="stat-value">Continuity</span>
+          <p>Owns diagnosis, technical recovery, and service continuity.</p>
+        </div>
+      </div>
+      <div class="bilingual">
+        <div class="lang-card" data-lang="en">
+          <ul>
+            <li>Admin owns governance, policy, and exceptional decisions.</li>
+            <li>Distributor owns partner scaling and channel supervision.</li>
+            <li>Reseller owns the direct customer relationship and the final offer.</li>
+            <li>Support owns technical continuity and operational recovery.</li>
+          </ul>
+        </div>
+        <div class="lang-card" data-lang="el">
+          <ul>
+            <li>Ο admin αναλαμβάνει τη διακυβέρνηση, την πολιτική και τις κατ’ εξαίρεση αποφάσεις.</li>
+            <li>Ο distributor αναλαμβάνει την ανάπτυξη του δικτύου συνεργατών και την εποπτεία του καναλιού.</li>
+            <li>Ο reseller αναλαμβάνει την άμεση σχέση με τον πελάτη και την τελική προσφορά.</li>
+            <li>Το support αναλαμβάνει την τεχνική συνέχεια και την επιχειρησιακή αποκατάσταση.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">3</span>
+        <h2><span class="lang-copy" data-lang="en">Role Definitions</span><span class="lang-copy" data-lang="el">Ορισμοί Ρόλων</span></h2>
+      </div>
+      <div class="lang-pane" data-lang="en">
+        <h3>Role Definitions</h3>
+          <ul>
+            <li><strong>Admin:</strong> Sets commercial and operational policy, governs channel structure, and handles exceptional decisions such as suspension or unusual commercial terms.</li>
+            <li><strong>Distributor:</strong> Recruits and supervises resellers, applies licensor policy, improves execution quality, and escalates non-standard cases.</li>
+            <li><strong>Reseller:</strong> Leads the opportunity from presales to signed project, understands the customer use case, shapes the final offer, and coordinates delivery, training, and installation.</li>
+            <li><strong>Support:</strong> Diagnoses issues, protects continuity, guides recovery, and separates product defects from deployment issues or misuse.</li>
+          </ul>
+      </div>
+      <div class="lang-pane" data-lang="el">
+        <h3>Ορισμοί Ρόλων</h3>
+          <ul>
+            <li><strong>Admin:</strong> Καθορίζει την εμπορική και λειτουργική πολιτική, διοικεί τη δομή του καναλιού και χειρίζεται εξαιρετικές αποφάσεις όπως αναστολές ή ειδικούς εμπορικούς όρους.</li>
+            <li><strong>Distributor:</strong> Αναπτύσσει και επιβλέπει το δίκτυο reseller, εφαρμόζει την πολιτική του licensor, βελτιώνει την ποιότητα εκτέλεσης και κλιμακώνει μη τυπικές περιπτώσεις.</li>
+            <li><strong>Reseller:</strong> Οδηγεί την ευκαιρία από το presales έως το υπογεγραμμένο έργο, κατανοεί το use case του πελάτη, διαμορφώνει την τελική πρόταση και συντονίζει παράδοση, εκπαίδευση και εγκατάσταση.</li>
+            <li><strong>Support:</strong> Διαγιγνώσκει ζητήματα, προστατεύει τη λειτουργική συνέχεια, καθοδηγεί την αποκατάσταση και διαχωρίζει product defects από deployment issues ή κακή χρήση.</li>
+          </ul>
+      </div>
+    </section>
+
+    <section class="section" id="lifecycle">
+      <div class="section-title">
+        <span class="section-number">4</span>
+        <h2><span class="lang-copy" data-lang="en">Lifecycle Responsibilities</span><span class="lang-copy" data-lang="el">Ευθύνες Κατά Τον Κύκλο Ζωής</span></h2>
+      </div>
+      <div class="bilingual">
+        <div class="lang-card" data-lang="en">
+          <ul>
+            <li><strong>Presales:</strong> reseller leads qualification, distributor aligns the channel path, admin defines boundaries, support clarifies feasibility.</li>
+            <li><strong>Sales:</strong> reseller owns the final proposal, distributor coordinates larger structures, admin governs exceptions, support validates delivery assumptions.</li>
+            <li><strong>Onboarding:</strong> reseller leads the customer journey, distributor monitors quality, admin approves exceptions, support resolves technical blockers.</li>
+            <li><strong>Operations Events:</strong> reseller handles routine customer coordination, distributor tracks systemic risk, admin governs policy-sensitive actions, support handles technical implications.</li>
+            <li><strong>Problem Solving / Success / Churn:</strong> reseller owns customer accountability, support owns diagnosis, distributor coordinates scale issues, admin decides exceptional resolutions.</li>
+          </ul>
+        </div>
+        <div class="lang-card" data-lang="el">
+          <ul>
+            <li><strong>Presales:</strong> ο reseller οδηγεί την αρχική αξιολόγηση, ο distributor ευθυγραμμίζει τη διαδρομή του καναλιού, ο admin θέτει τα όρια και το support επιβεβαιώνει την τεχνική εφικτότητα.</li>
+            <li><strong>Sales:</strong> ο reseller αναλαμβάνει την τελική πρόταση, ο distributor συντονίζει μεγαλύτερες εμπορικές δομές, ο admin εγκρίνει εξαιρέσεις και το support επιβεβαιώνει κρίσιμες παραδοχές παράδοσης.</li>
+            <li><strong>Onboarding:</strong> ο reseller οδηγεί τη διαδρομή του πελάτη, ο distributor παρακολουθεί την ποιότητα, ο admin εγκρίνει εξαιρέσεις και το support επιλύει τεχνικά εμπόδια.</li>
+            <li><strong>Operations Events:</strong> ο reseller χειρίζεται τη συνήθη επικοινωνία με τον πελάτη, ο distributor παρακολουθεί συστημικούς κινδύνους, ο admin κυβερνά policy-sensitive ενέργειες και το support διαχειρίζεται τα τεχνικά αποτελέσματα.</li>
+            <li><strong>Problem Solving / Success / Churn:</strong> ο reseller διατηρεί την ευθύνη της σχέσης με τον πελάτη, το support αναλαμβάνει τη διάγνωση, ο distributor συντονίζει θέματα κλίμακας και ο admin αποφασίζει σε εξαιρετικές περιπτώσεις.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="pricing">
+      <div class="section-title">
+        <span class="section-number">5</span>
+        <h2><span class="lang-copy" data-lang="en">Pricing Structure</span><span class="lang-copy" data-lang="el">Δομή Τιμολόγησης</span></h2>
+      </div>
+      <div class="lang-pane summary-card" data-lang="en" style="margin-bottom: 22px;">
+        <h3>Channel Economics Clarification</h3>
+        <ul>
+          <li>The software company sets the base licence price, channel policy, and discount rules.</li>
+          <li>The distributor receives channel discount or protected margin because it carries channel-governance and scaling responsibility.</li>
+          <li>The reseller also receives channel pricing so it can build the final customer offer and preserve delivery margin.</li>
+          <li>Installation, onboarding, training, local support, and project execution revenue should normally belong to the reseller.</li>
+          <li>For high-value or more strategic accounts, the distributor may also participate directly in services revenue.</li>
+        </ul>
+      </div>
+      <div class="lang-pane summary-card" data-lang="el" style="margin-bottom: 22px;">
+        <h3>Διευκρίνιση Εμπορικής Οικονομίας Καναλιού</h3>
+        <ul>
+          <li>Η εταιρεία λογισμικού καθορίζει τη βασική τιμή άδειας, την πολιτική καναλιού και τους κανόνες εκπτώσεων.</li>
+          <li>Ο distributor λαμβάνει καναλική έκπτωση ή προστατευμένο περιθώριο επειδή φέρει την ευθύνη διοίκησης και ανάπτυξης του καναλιού.</li>
+          <li>Ο reseller λαμβάνει επίσης καναλική τιμολόγηση ώστε να διαμορφώνει την τελική προσφορά προς τον πελάτη και να διατηρεί περιθώριο παράδοσης.</li>
+          <li>Τα έσοδα από εγκατάσταση, onboarding, εκπαίδευση, τοπική υποστήριξη και εκτέλεση έργου πρέπει κανονικά να ανήκουν στον reseller.</li>
+          <li>Για πελάτες υψηλής αξίας ή περισσότερο στρατηγικούς λογαριασμούς, ο distributor μπορεί επίσης να συμμετέχει άμεσα στα έσοδα υπηρεσιών.</li>
+        </ul>
+      </div>
+      <div class="lang-pane summary-card" data-lang="en">
+          <h3>Pricing Structure</h3>
+          <ul>
+            <li><strong>Software Licence Layer:</strong> licensor-controlled software charge based on product family, deployment mode, size, monitored points, edition, and term.</li>
+            <li><strong>Channel Commercial Layer:</strong> distributor and reseller margins, partner-tier logic, deal registration, strategic handling, and discount approvals.</li>
+            <li><strong>Project Services Layer:</strong> site study, use-case analysis, deployment design, installation, configuration, training, and rollout support.</li>
+            <li><strong>Hardware Layer:</strong> cameras, PCs, laptops, tablets, displays, servers, networking, and future specialized hardware, usually contracted by the reseller.</li>
+          </ul>
+      </div>
+      <div class="lang-pane summary-card" data-lang="el">
+          <h3>Δομή Τιμολόγησης</h3>
+          <ul>
+            <li><strong>Software Licence Layer:</strong> χρέωση λογισμικού που ελέγχεται από τον licensor με βάση product family, deployment mode, μέγεθος, monitored points, edition και term.</li>
+            <li><strong>Channel Commercial Layer:</strong> περιθώρια distributor και reseller, partner-tier logic, deal registration, strategic handling και εγκρίσεις εκπτώσεων.</li>
+            <li><strong>Project Services Layer:</strong> site study, use-case analysis, deployment design, installation, configuration, training και rollout support.</li>
+            <li><strong>Hardware Layer:</strong> cameras, PCs, laptops, tablets, displays, servers, networking και μελλονικό specialized hardware, συνήθως ενταγμένα στο συμβόλαιο του reseller.</li>
+          </ul>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">6</span>
+        <h2><span class="lang-copy" data-lang="en">Product Packaging Direction</span><span class="lang-copy" data-lang="el">Κατεύθυνση Πακετοποίησης Προϊόντων</span></h2>
+      </div>
+      <div class="bilingual">
+        <div class="lang-card" data-lang="en">
+          <p>Pricing should be organized by product family and deployment profile, not by one universal platform fee. The model should accommodate Intelligent Signage, Underage Detector, Gate Activity, Room &amp; Gate Protection, Sentinel, and Security Officer Agent.</p>
+          <ul>
+            <li>Single-product offers</li>
+            <li>Vertical bundles</li>
+            <li>Multi-site enterprise bundles</li>
+            <li>Fixed-installation packages</li>
+            <li>Mobile-operation packages</li>
+            <li>Premium security or compliance packages</li>
+          </ul>
+        </div>
+        <div class="lang-card" data-lang="el">
+          <p>Η τιμολόγηση πρέπει να οργανώνεται ανά product family και deployment profile, όχι μέσω ενός ενιαίου platform fee. Το μοντέλο πρέπει να καλύπτει τα Intelligent Signage, Underage Detector, Gate Activity, Room &amp; Gate Protection, Sentinel και Security Officer Agent.</p>
+          <ul>
+            <li>Single-product offers</li>
+            <li>Vertical bundles</li>
+            <li>Multi-site enterprise bundles</li>
+            <li>Fixed-installation packages</li>
+            <li>Mobile-operation packages</li>
+            <li>Premium security ή compliance packages</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">7</span>
+        <h2><span class="lang-copy" data-lang="en">Agreement Structure</span><span class="lang-copy" data-lang="el">Συμβατική Δομή</span></h2>
+      </div>
+      <div class="lang-pane" data-lang="en">
+          <h3>Agreement Structure</h3>
+          <ul>
+            <li><strong>Licensor - Distributor Agreement:</strong> licence rights, pricing policy, channel obligations, territory rules, governance, branding, reporting.</li>
+            <li><strong>Distributor - Reseller Agreement:</strong> reseller enablement, sales rights, margin structure, service expectations, policy compliance.</li>
+            <li><strong>Reseller - End Customer Agreement:</strong> commercial terms, project scope, implementation, hardware scope, support handling, deployment obligations.</li>
+          </ul>
+      </div>
+      <div class="lang-pane" data-lang="el">
+          <h3>Συμβατική Δομή</h3>
+          <ul>
+            <li><strong>Licensor - Distributor Agreement:</strong> licence rights, pricing policy, channel obligations, territory rules, governance, branding και reporting.</li>
+            <li><strong>Distributor - Reseller Agreement:</strong> reseller enablement, sales rights, margin structure, service expectations και συμμόρφωση με την πολιτική καναλιού.</li>
+            <li><strong>Reseller - End Customer Agreement:</strong> commercial terms, project scope, implementation, hardware scope, support handling και υποχρεώσεις deployment.</li>
+          </ul>
+      </div>
+      <div class="note-card" style="margin-top: 22px;">
+        <p><strong><span class="lang-copy" data-lang="en">Positioning note:</span><span class="lang-copy" data-lang="el">Σημείωση τοποθέτησης:</span></strong> <span class="lang-copy" data-lang="en">EyeNet should use a mature channel-governed agreement stack inspired by established enterprise ecosystems, while keeping the reseller as the main owner of the customer project contract.</span><span class="lang-copy" data-lang="el">Το EyeNet πρέπει να χρησιμοποιεί μια ώριμη οργανωτική δομή καναλιού προώθησης και πωλήσεων, εμπνευσμένη από καθιερωμένα enterprise οικοσυστήματα, διατηρώντας παράλληλα τον reseller ως κύριο κάτοχο της σύμβασης έργου με τον πελάτη.</span></p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">8</span>
+        <h2><span class="lang-copy" data-lang="en">Recommended High-Level Position</span><span class="lang-copy" data-lang="el">Προτεινόμενη στρατηγική τοποθέτηση</span></h2>
+      </div>
+      <div class="callout"><span class="lang-copy" data-lang="en">EyeNet should be positioned as a licensed software platform sold through the channel, with a customized customer price built around software, project services, hardware, training, and deployment rather than a fixed public-price software catalogue.</span><span class="lang-copy" data-lang="el">Το EyeNet πρέπει να τοποθετηθεί ως αδειοδοτημένη πλατφόρμα λογισμικού που διατίθεται μέσω του καναλιού, με εξατομικευμένη τιμή πελάτη βασισμένη σε λογισμικό, υπηρεσίες έργου, hardware, εκπαίδευση και deployment, αντί για έναν δημόσιο κατάλογο σταθερών τιμών.</span></div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <span class="section-number">9</span>
+        <h2><span class="lang-copy" data-lang="en">Addendum: Example Use Case For Annual Licence Allocation</span><span class="lang-copy" data-lang="el">Προσθήκη: Παράδειγμα Κατανομής Ετήσιας Αδειοδότησης</span></h2>
+      </div>
+      <div class="callout" style="margin-bottom: 24px;"><span class="lang-copy" data-lang="en">This example is illustrative only and is included to explain how channel economics may work in practice. It is not a fixed commercial policy.</span><span class="lang-copy" data-lang="el">Το παράδειγμα αυτό είναι αποκλειστικά ενδεικτικό και περιλαμβάνεται για να αποσαφηνίσει πώς μπορεί να λειτουργεί στην πράξη η εμπορική οικονομία του καναλιού. Δεν αποτελεί σταθερή εμπορική πολιτική.</span></div>
+      <div class="lang-pane summary-card" data-lang="en" style="margin-bottom: 22px;">
+        <h3>Example Scenario</h3>
+        <ul>
+          <li>Annual customer contract: <strong>20,000</strong></li>
+          <li>Scope: software licences only</li>
+          <li>No installation, training, support, or hardware included</li>
+        </ul>
+        <h3 style="margin-top: 18px;">Example Allocation</h3>
+        <ul>
+          <li><strong>Licensor:</strong> 13,000 or 65%</li>
+          <li><strong>Distributor:</strong> 2,000 or 10%</li>
+          <li><strong>Reseller:</strong> 5,000 or 25%</li>
+        </ul>
+        <h3 style="margin-top: 18px;">Example List Pricing Model</h3>
+        <ul>
+          <li><strong>List Price:</strong> 25,000</li>
+          <li><strong>Illustrative End-Customer Contract Value:</strong> 20,000</li>
+          <li><strong>Illustrative Floor Price:</strong> 18,500</li>
+          <li><strong>Pricing Rule:</strong> discounts below the floor price require licensor approval</li>
+        </ul>
+      </div>
+      <div class="lang-pane summary-card" data-lang="el" style="margin-bottom: 22px;">
+        <h3>Ενδεικτικό Σενάριο</h3>
+        <ul>
+          <li>Ετήσιο συμβόλαιο πελάτη: <strong>20,000</strong></li>
+          <li>Πεδίο: μόνο άδειες λογισμικού</li>
+          <li>Δεν περιλαμβάνονται εγκατάσταση, εκπαίδευση, υποστήριξη ή hardware</li>
+        </ul>
+        <h3 style="margin-top: 18px;">Ενδεικτική Κατανομή</h3>
+        <ul>
+          <li><strong>Licensor:</strong> 13,000 ή 65%</li>
+          <li><strong>Distributor:</strong> 2,000 ή 10%</li>
+          <li><strong>Reseller:</strong> 5,000 ή 25%</li>
+        </ul>
+        <h3 style="margin-top: 18px;">Ενδεικτικό Μοντέλο Τιμολόγησης Καταλόγου</h3>
+        <ul>
+          <li><strong>Τιμή Καταλόγου:</strong> 25,000</li>
+          <li><strong>Ενδεικτική Συμβατική Αξία Πελάτη:</strong> 20,000</li>
+          <li><strong>Ενδεικτική Κατώτατη Τιμή:</strong> 18,500</li>
+          <li><strong>Κανόνας Τιμολόγησης:</strong> εκπτώσεις κάτω από την κατώτατη τιμή απαιτούν έγκριση licensor</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+  <script>
+    (function () {
+      const body = document.body;
+      const buttons = Array.from(document.querySelectorAll('[data-set-lang]'));
+
+      function setLanguage(language) {
+        body.setAttribute('data-lang', language);
+        buttons.forEach((button) => {
+          button.classList.toggle('is-active', button.getAttribute('data-set-lang') === language);
+        });
+      }
+
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => setLanguage(button.getAttribute('data-set-lang')));
+      });
+
+      setLanguage('en');
+    }());
+  </script>
+</body>
+</html>

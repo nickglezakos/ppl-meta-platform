@@ -10,10 +10,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from models.presence_models import (  # noqa: E402
     BindResourcesRequest,
     PresenceAnalyticsEvent,
+    PresenceAssuranceLevel,
     PresenceDecisionState,
     PresenceDetectionAttempt,
+    PresenceGrantType,
     PresenceResource,
     PresenceSession,
+    PresenceSessionMode,
     PresenceSessionStatus,
 )
 from services import presence_service as presence_service_module  # noqa: E402
@@ -59,6 +62,12 @@ class _FakeRepository:
 
     def save_analytics_event(self, event):
         self.saved_analytics.append(event)
+
+    def save_resource(self, _resource):
+        return None
+
+    def delete_resources(self, _resource_uuids):
+        return None
 
 
 class _FakePlatformClients:
@@ -202,6 +211,85 @@ def _build_attempt(session_uuid: str) -> PresenceDetectionAttempt:
         attempt_index=1,
         capture_phase="initial",
     )
+
+
+@pytest.mark.asyncio
+async def test_create_session_sets_assurance_fields_from_session_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+
+    session = await service.create_session(
+        presence_service_module.CreatePresenceSessionRequest(
+            session_mode=PresenceSessionMode.CAMERA_ONLY,
+            device_uuid="presence-validation-device",
+            device_name="Presence Device",
+            device_platform="ios",
+            app_version="1.0.0",
+        ),
+        {"sub": "7", "token": "user-token", "username": "presence-user"},
+    )
+
+    assert session.session_mode == PresenceSessionMode.CAMERA_ONLY
+    assert session.assurance_level == PresenceAssuranceLevel.MEDIUM
+    assert session.grant_type == PresenceGrantType.PRESENCE_MATCH
+    assert session.status == PresenceSessionStatus.AWAITING_FRONT_BURST
+
+
+@pytest.mark.asyncio
+async def test_qr_only_mode_grants_check_in_after_qr_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    session = PresenceSession(
+        device_uuid="presence-validation-device",
+        user_uuid="7",
+        session_mode=PresenceSessionMode.QR_ONLY,
+        assurance_level=PresenceAssuranceLevel.LOW,
+        grant_type=PresenceGrantType.CHECK_IN,
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        status=PresenceSessionStatus.CREATED,
+    )
+    service.sessions[session.session_uuid] = session
+
+    service.qr_hit(
+        session.session_uuid,
+        presence_service_module.PresenceQrHitRequest(
+            qr_token=session.qr_token,
+            installation_uuid="local-installation",
+            scanned_at=datetime.utcnow(),
+        ),
+    )
+
+    result = await service.get_result(session.session_uuid, {"sub": "7", "token": "user-token"})
+
+    assert result.decision == PresenceDecisionState.GRANTED
+    assert result.session_mode == PresenceSessionMode.QR_ONLY
+    assert result.assurance_level == PresenceAssuranceLevel.LOW
+    assert result.grant_type == PresenceGrantType.CHECK_IN
+    assert result.reason_code == "presence_check_in"
+    assert result.action_type == "presence_log"
+
+
+def test_action_plan_uses_mode_specific_default_trigger_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    session = PresenceSession(
+        device_uuid="presence-validation-device",
+        user_uuid="7",
+        session_mode=PresenceSessionMode.QR_PLUS_CAMERA,
+        assurance_level=PresenceAssuranceLevel.HIGH,
+        grant_type=PresenceGrantType.VERIFIED_PRESENCE,
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        decision=PresenceDecisionState.GRANTED,
+    )
+    service.sessions[session.session_uuid] = session
+
+    action_plan = service.get_action_plan(session.session_uuid)
+
+    assert action_plan.session_mode == PresenceSessionMode.QR_PLUS_CAMERA
+    assert action_plan.assurance_level == PresenceAssuranceLevel.HIGH
+    assert action_plan.grant_type == PresenceGrantType.VERIFIED_PRESENCE
+    assert action_plan.trigger_type == "presence_verified_match"
+    assert action_plan.action_type == "presence_grant"
 
 
 def test_qr_current_returns_existing_session_qr_without_creating_new_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -417,6 +505,8 @@ def test_phase4_analytics_breakdowns_cover_installation_collection_and_action_ou
     ]
 
     by_installation = service.analytics_by_installation()
+    by_mode = service.analytics_by_session_mode()
+    by_grant_type = service.analytics_by_grant_type()
     by_collection = service.analytics_by_reserved_collection()
     action_outcomes = service.analytics_action_outcomes()
     repair_payload = service.repair_analytics_metadata()
@@ -429,6 +519,12 @@ def test_phase4_analytics_breakdowns_cover_installation_collection_and_action_ou
         "collection-1": 2,
         "unbound": 1,
     }
+    assert {item["session_mode"]: item["event_count"] for item in by_mode} == {
+        "qr_plus_camera": 3,
+    }
+    assert {item["grant_type"]: item["event_count"] for item in by_grant_type} == {
+        "verified_presence": 3,
+    }
     assert {
         (item["action_type"], item["action_execution_status"]): item["event_count"]
         for item in action_outcomes
@@ -438,8 +534,112 @@ def test_phase4_analytics_breakdowns_cover_installation_collection_and_action_ou
         ("unknown", "unknown"): 1,
     }
     assert repair_payload["installation_breakdown"] == by_installation
+    assert repair_payload["session_mode_breakdown"] == by_mode
+    assert repair_payload["grant_type_breakdown"] == by_grant_type
     assert repair_payload["reserved_collection_breakdown"] == by_collection
     assert repair_payload["action_outcome_breakdown"] == action_outcomes
+
+
+def test_analytics_breakdowns_cover_session_mode_and_grant_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    service.analytics_events = [
+        PresenceAnalyticsEvent(
+            session_uuid="session-1",
+            session_mode=PresenceSessionMode.QR_ONLY,
+            assurance_level=PresenceAssuranceLevel.LOW,
+            grant_type=PresenceGrantType.CHECK_IN,
+            installation_uuid="inst-a",
+            user_uuid="7",
+            device_uuid="device-a",
+            outcome="granted",
+            reason_code="presence_check_in",
+        ),
+        PresenceAnalyticsEvent(
+            session_uuid="session-2",
+            session_mode=PresenceSessionMode.CAMERA_ONLY,
+            assurance_level=PresenceAssuranceLevel.MEDIUM,
+            grant_type=PresenceGrantType.PRESENCE_MATCH,
+            installation_uuid="inst-a",
+            user_uuid="8",
+            device_uuid="device-b",
+            outcome="granted",
+            reason_code="presence_ppl_match",
+        ),
+        PresenceAnalyticsEvent(
+            session_uuid="session-3",
+            session_mode=PresenceSessionMode.QR_PLUS_CAMERA,
+            assurance_level=PresenceAssuranceLevel.HIGH,
+            grant_type=PresenceGrantType.VERIFIED_PRESENCE,
+            installation_uuid="inst-b",
+            user_uuid="9",
+            device_uuid="device-c",
+            outcome="granted",
+            reason_code="presence_ppl_match",
+        ),
+    ]
+
+    by_mode = service.analytics_by_session_mode()
+    by_grant_type = service.analytics_by_grant_type()
+    repair_payload = service.repair_analytics_metadata()
+
+    assert {item["session_mode"]: item["event_count"] for item in by_mode} == {
+        "qr_only": 1,
+        "camera_only": 1,
+        "qr_plus_camera": 1,
+    }
+    assert {item["grant_type"]: item["event_count"] for item in by_grant_type} == {
+        "check_in": 1,
+        "presence_match": 1,
+        "verified_presence": 1,
+    }
+    assert repair_payload["session_mode_breakdown"] == by_mode
+    assert repair_payload["grant_type_breakdown"] == by_grant_type
+
+
+def test_group_policy_can_override_by_session_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform_clients = _FakePlatformClients({"success": False})
+    service = _build_service(monkeypatch, platform_clients)
+    current_user = {"sub": "7", "token": "user-token", "username": "presence-user"}
+    group = service.ensure_group(
+        presence_service_module.CreatePresenceGroupRequest(
+            installation_uuid="local-installation",
+            user_uuid="7",
+            display_name="Presence Group 7",
+        ),
+        current_user,
+    )
+    profile = service.profiles[group.group_uuid]
+    profile.metadata = {
+        "action_policy": {
+            "granted": {
+                "trigger_type": "presence_match",
+                "action_type": "presence_grant",
+            },
+            "qr_only": {
+                "granted": {
+                    "trigger_type": "presence_check_in_custom",
+                    "action_type": "presence_notify",
+                }
+            },
+        }
+    }
+    session = PresenceSession(
+        device_uuid="presence-validation-device",
+        user_uuid="7",
+        session_mode=PresenceSessionMode.QR_ONLY,
+        assurance_level=PresenceAssuranceLevel.LOW,
+        grant_type=PresenceGrantType.CHECK_IN,
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        decision=PresenceDecisionState.GRANTED,
+    )
+    service.sessions[session.session_uuid] = session
+
+    action_plan = service.get_action_plan(session.session_uuid)
+
+    assert action_plan.trigger_type == "presence_check_in_custom"
+    assert action_plan.action_type == "presence_notify"
+    assert action_plan.policy_source == "group_policy"
 
 
 @pytest.mark.asyncio

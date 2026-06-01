@@ -130,6 +130,13 @@ Suggested inherited service mappings:
 - `AutoCameraRegistrationService` -> device identity and registration adapter
 - `MobileStreamingService` -> burst upload transport adapter
 
+Current implementation note:
+
+- the first in-repo mobile execution slice was added directly inside `ppl_meta_mobile_camera`, not as a separate `ppl-meta-presence-mobile` app yet
+- that slice currently reuses `AuthenticationService` and its persisted `ppl_meta_auth_token`, `ppl_meta_server_config`, and `platform_services` state from the existing camera client
+- the active in-app mobile flow resolves presence through the same authenticated node host and gateway host pattern already used by the camera client, rather than making direct mobile bootstrap calls to communications or bootcore
+- communications and bootcore still matter to the end-to-end presence outcome, but as backend-side dependencies behind the presence and node services rather than first-hop mobile bootstrap services
+
 ## Adapter Interface Layer
 
 The presence app should introduce a thin adapter layer so the inherited mobile camera services can be consumed without leaking their concrete implementations into feature UI code.
@@ -319,6 +326,12 @@ Recommended initial method mapping:
 - `InheritedBurstTransportAdapter.configure()` -> `MobileStreamingService.setBackendConnection()`
 - `InheritedBurstTransportAdapter.sendBurstFrame()` -> `MobileStreamingService.sendFrameToBackend()` after frame packaging
 - `InheritedBurstTransportAdapter.sendBurstFrames()` -> repeated `sendFrameToBackend()` calls under one presence burst envelope strategy
+
+Current in-app compatibility note:
+
+- because the first working client slice lives inside the existing camera app, the current code path uses `AuthenticationService.instance` as the concrete auth/session source of truth for token, node URL, and platform-services state
+- the presence mobile service currently derives the presence base URL from the authenticated node host and routes through the gateway on that same host
+- if a dedicated presence app is split out later, the adapter plan above still remains the preferred direction for isolating that future app from the inherited mobile camera implementation details
 
 Recommended return/input conventions:
 

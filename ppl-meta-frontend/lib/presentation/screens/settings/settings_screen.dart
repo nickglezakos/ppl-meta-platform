@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../../widgets/settings/communications_settings_section.dart';
+import '../../widgets/settings/presence_settings_section.dart';
 import 'cross_video_tracking_section.dart';
 import '../setup/platform_connection_setup_screen.dart';
 import '../../../core/api/api_client.dart';
@@ -34,6 +35,10 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             // Communications Settings Section (Email/SMTP)
             const CommunicationsSettingsSection(),
+
+            const SizedBox(height: 24),
+
+            const PresenceSettingsSection(),
 
             const SizedBox(height: 24),
 

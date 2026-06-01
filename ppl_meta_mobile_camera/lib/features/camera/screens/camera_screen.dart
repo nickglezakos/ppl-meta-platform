@@ -14,6 +14,7 @@ import '../widgets/camera_controls.dart';
 import '../widgets/camera_settings_panel.dart';
 // import '../widgets/streaming_panel.dart'; // Unused import removed
 import 'gallery_screen.dart';
+import '../../presence/screens/mobile_presence_screen.dart';
 import 'platform_connection_screen.dart';
 import 'camera_settings_screen.dart';
 import '../../authentication/screens/simple_setup_screen_new.dart';
@@ -278,6 +279,16 @@ class _CameraScreenState extends State<CameraScreen>
                       Icon(Icons.photo_library),
                       SizedBox(width: 8),
                       Text('Gallery'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'presence',
+                  child: Row(
+                    children: [
+                      Icon(Icons.badge_outlined),
+                      SizedBox(width: 8),
+                      Text('Presence'),
                     ],
                   ),
                 ),
@@ -754,6 +765,9 @@ class _CameraScreenState extends State<CameraScreen>
       case 'profile':
         _showUserProfile(authProvider);
         break;
+      case 'presence':
+        _openPresence();
+        break;
       case 'camera_settings':
         _openCameraSettings();
         break;
@@ -764,6 +778,14 @@ class _CameraScreenState extends State<CameraScreen>
         _handleLogout(authProvider);
         break;
     }
+  }
+
+  void _openPresence() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => const MobilePresenceScreen(),
+      ),
+    );
   }
 
   void _showUserProfile(AuthenticationProvider authProvider) {

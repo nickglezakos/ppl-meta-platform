@@ -193,6 +193,12 @@ class CircuitBreakerMiddleware(BaseHTTPMiddleware):
             )
         return self.circuit_breakers[service_name]
 
+    def _breaker_state(self, circuit_breaker: CircuitBreaker) -> str:
+        state = getattr(circuit_breaker, "state", None)
+        if state is None:
+            state = getattr(circuit_breaker, "current_state", None)
+        return str(state or "unknown")
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Apply circuit breaker pattern."""
         # Extract target service from headers or path
@@ -213,14 +219,15 @@ class CircuitBreakerMiddleware(BaseHTTPMiddleware):
             response = await circuit_breaker.call_async(call_next, request)
             return response
         except Exception as e:
+            breaker_state = self._breaker_state(circuit_breaker)
             logger.error(
                 "Circuit breaker opened",
                 service=target_service,
                 error=str(e),
-                state=circuit_breaker.state,
+                state=breaker_state,
             )
 
-            if circuit_breaker.state == "open":
+            if breaker_state == "open":
                 return JSONResponse(
                     status_code=503,
                     content={

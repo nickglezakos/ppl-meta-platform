@@ -30,6 +30,7 @@ import '../../screens/signage_management_screen.dart';
 import '../../screens/triggers_screen.dart';
 import '../../screens/individual_groups_screen.dart';
 import '../../screens/individual_group_detail_screen.dart';
+import '../../screens/presence_screen.dart';
 import '../../screens/storage_screen.dart';
 import '../../screens/network_screen.dart';
 // ARCHIVED: import '../../features/cameras/pages/multi_camera_page.dart';
@@ -290,6 +291,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         name: 'triggers',
         builder: (context, state) => const ProviderScreenWrapper(
           child: TriggersScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/presence',
+        name: 'presence',
+        builder: (context, state) => const ProviderScreenWrapper(
+          child: PresenceScreen(),
         ),
       ),
       GoRoute(

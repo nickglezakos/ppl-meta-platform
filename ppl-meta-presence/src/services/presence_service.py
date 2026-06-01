@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta
 import json
 import logging
@@ -13,12 +14,14 @@ logger = logging.getLogger(__name__)
 from config import config
 from models.presence_models import (
     PresenceActionPlan,
+    PresenceAssuranceLevel,
     PresenceAuditLogTrace,
     BindResourcesRequest,
     CreatePresenceGroupRequest,
     CreatePresenceSessionRequest,
     PresenceDecisionRecord,
     PresenceExternalAssets,
+    PresenceGrantType,
     PresenceGroup,
     PresenceGroupPolicy,
     PresenceAnalyticsEvent,
@@ -32,11 +35,14 @@ from models.presence_models import (
     PresenceResource,
     PresenceResult,
     PresenceSession,
+    PresenceSessionSettings,
+    PresenceSessionMode,
     PresenceSessionTrace,
     PresenceSessionStatus,
     PresenceTriggerObservation,
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
+    UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
 )
 from .platform_clients import PlatformClients
@@ -51,21 +57,44 @@ class PresenceService:
         self.profiles: Dict[str, PresenceProfile] = self.repository.load_profiles()
         self.analytics_events: List[PresenceAnalyticsEvent] = self.repository.load_analytics_events()
         self.decision_history: List[PresenceDecisionRecord] = self.repository.load_decision_history()
+        self._session_timeout_tasks: Dict[str, asyncio.Task[None]] = {}
         self._backfill_analytics_event_metadata()
         self.qr_tokens: Dict[str, str] = {}
         self.cameras: Dict[str, PresenceResource] = self.repository.load_resources("camera")
         self.collections: Dict[str, PresenceResource] = self.repository.load_resources("collection")
         self.platform_clients = platform_clients or PlatformClients()
-        self.installation_profile = PresenceProfile(
+        self.installation_profile = self._load_or_create_installation_profile()
+        for session in self.sessions.values():
+            self.qr_tokens[session.qr_token] = session.session_uuid
+
+    def _load_or_create_installation_profile(self) -> PresenceProfile:
+        installation_profiles = [
+            profile
+            for profile in self.profiles.values()
+            if profile.profile_type == "installation"
+            and (profile.installation_uuid == "local-installation" or profile.display_name == "Local Installation")
+        ]
+        existing = max(
+            installation_profiles,
+            key=lambda profile: (
+                isinstance(profile.metadata, dict) and "session_settings" in profile.metadata,
+                profile.updated_at,
+            ),
+            default=None,
+        )
+        if existing is not None:
+            self.profiles[existing.presence_profile_uuid] = existing
+            return existing
+
+        profile = PresenceProfile(
+            presence_profile_uuid="installation-local-installation",
             profile_type="installation",
             installation_uuid="local-installation",
             display_name="Local Installation",
         )
-        if self.installation_profile.presence_profile_uuid not in self.profiles:
-            self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
-            self.repository.save_profile(self.installation_profile)
-        for session in self.sessions.values():
-            self.qr_tokens[session.qr_token] = session.session_uuid
+        self.profiles[profile.presence_profile_uuid] = profile
+        self.repository.save_profile(profile)
+        return profile
 
     def get_current_user_profile(self, current_user: dict) -> dict:
         profile = self._get_or_create_user_profile(current_user=current_user)
@@ -103,6 +132,9 @@ class PresenceService:
         trigger_type, action_type, policy_source = self._resolve_trigger_and_action(session)
         return PresenceActionPlan(
             session_uuid=session_uuid,
+            session_mode=session.session_mode,
+            assurance_level=session.assurance_level,
+            grant_type=session.grant_type,
             matched_group_uuid=matched_group_uuid,
             decision=session.decision,
             policy_source=policy_source,
@@ -254,6 +286,7 @@ class PresenceService:
         if not test_connection():
             raise RuntimeError("Presence database connection failed")
         await self.platform_clients.startup()
+        self._schedule_existing_session_timeouts()
 
     async def shutdown(self) -> None:
         await self.platform_clients.shutdown()
@@ -271,6 +304,7 @@ class PresenceService:
             "preferred_camera_names": config.PREFERRED_CAMERA_NAMES,
             "allowed_camera_statuses": config.ALLOWED_CAMERA_STATUSES,
             "group_policy": self._group_policy_from_profile(self.installation_profile),
+            "session_settings": self._session_settings_from_profile(self.installation_profile).model_dump(),
             "reserved_camera_uuid": reserved_camera.platform_resource_uuid if reserved_camera else None,
             "reserved_collection_uuid": reserved_collection.platform_resource_uuid if reserved_collection else None,
             "reserved_camera": reserved_camera.model_dump() if reserved_camera else None,
@@ -282,6 +316,17 @@ class PresenceService:
         self.installation_profile.metadata = {
             **self.installation_profile.metadata,
             "action_policy": request.group_policy.model_dump(exclude_none=True),
+        }
+        self.installation_profile.updated_at = datetime.utcnow()
+        self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
+        self.repository.save_profile(self.installation_profile)
+        return self.get_current_installation_context()
+
+    def update_installation_settings(self, request: UpdateInstallationSettingsRequest) -> dict:
+        self.installation_profile.installation_uuid = request.installation_uuid
+        self.installation_profile.metadata = {
+            **self.installation_profile.metadata,
+            "session_settings": request.session_settings.model_dump(),
         }
         self.installation_profile.updated_at = datetime.utcnow()
         self.profiles[self.installation_profile.presence_profile_uuid] = self.installation_profile
@@ -303,6 +348,7 @@ class PresenceService:
 
     async def create_session(self, request: CreatePresenceSessionRequest, current_user: dict) -> PresenceSession:
         profile = self._get_or_create_user_profile(current_user=current_user, device_uuid=request.device_uuid)
+        session_settings = self._current_session_settings()
         await self._ensure_default_resources(current_user)
         self.ensure_group(
             CreatePresenceGroupRequest(
@@ -315,8 +361,15 @@ class PresenceService:
         session = PresenceSession(
             device_uuid=request.device_uuid,
             user_uuid=profile.user_uuid or "unknown-user",
-            expires_at=datetime.utcnow() + timedelta(minutes=5),
-            status=PresenceSessionStatus.AWAITING_FRONT_BURST,
+            session_mode=request.session_mode,
+            assurance_level=self._assurance_level_for_mode(request.session_mode),
+            grant_type=self._grant_type_for_mode(request.session_mode),
+            expires_at=datetime.utcnow() + timedelta(seconds=session_settings.session_timeout_seconds),
+            status=(
+                PresenceSessionStatus.CREATED
+                if request.session_mode in {PresenceSessionMode.QR_ONLY, PresenceSessionMode.CAMERA_ONLY}
+                else PresenceSessionStatus.AWAITING_FRONT_BURST
+            ),
             resolved_camera_uuid=self._get_default_camera_id(),
             resolved_collection_uuid=self._get_default_collection_id(),
         )
@@ -325,16 +378,69 @@ class PresenceService:
         self.sessions[session.session_uuid] = session
         self.qr_tokens[session.qr_token] = session.session_uuid
         self.repository.save_session(session)
+        self._schedule_session_timeout(session)
+
+        if request.session_mode == PresenceSessionMode.CAMERA_ONLY:
+            await self._start_camera_only_detection(session)
+
         return session
+
+    async def _start_camera_only_detection(self, session: PresenceSession) -> None:
+        if self._remaining_attempt_capacity(session) <= 0:
+            self._fail_session(session, "presence_attempt_limit_reached")
+            return
+
+        attempt = PresenceDetectionAttempt(
+            session_uuid=session.session_uuid,
+            attempt_index=len(self.attempts.get(session.session_uuid, [])) + 1,
+            capture_phase="camera_only_initial",
+        )
+        self.attempts.setdefault(session.session_uuid, []).append(attempt)
+
+        camera_id = session.resolved_camera_uuid or self._get_default_camera_id()
+        if not camera_id:
+            attempt.instant_detection_status = "camera_unbound"
+            session.detection_status = "camera_unbound"
+            session.updated_at = datetime.utcnow()
+            self.repository.save_attempt(attempt)
+            self.repository.save_session(session)
+            return
+
+        try:
+            await self.platform_clients.connect_camera(camera_id)
+            result = await self.platform_clients.start_instant_detection(camera_id)
+            attempt.instant_detection_request_id = result.get(
+                "session_uuid",
+                attempt.instant_detection_request_id,
+            )
+            attempt.instant_detection_status = "started"
+            session.instant_detection_request_id = attempt.instant_detection_request_id
+            session.detection_status = "started"
+            session.resolved_camera_uuid = camera_id
+        except httpx.HTTPError:
+            attempt.instant_detection_status = "start_failed"
+            session.detection_status = "start_failed"
+
+        session.updated_at = datetime.utcnow()
+        self.repository.save_attempt(attempt)
+        self.repository.save_session(session)
 
     def get_session(self, session_uuid: str) -> PresenceSession | None:
         session = self.sessions.get(session_uuid)
         if session:
+            self._apply_session_limits(session)
             self._sync_session_external_assets(session)
         return session
 
     async def upload_burst(self, session_uuid: str, request: PresenceBurstUploadRequest) -> PresenceDetectionAttempt:
         session = self.sessions[session_uuid]
+        self._apply_session_limits(session)
+        if session.status == PresenceSessionStatus.FAILED:
+            raise ValueError(self._human_reason_for_code(session.failure_reason_code))
+        if self._remaining_attempt_capacity(session) <= 0:
+            self._fail_session(session, "presence_attempt_limit_reached")
+            raise ValueError(self._human_reason_for_code(session.failure_reason_code))
+
         attempt = PresenceDetectionAttempt(
             session_uuid=session_uuid,
             attempt_index=len(self.attempts.get(session_uuid, [])) + 1,
@@ -430,6 +536,9 @@ class PresenceService:
 
     def qr_hit(self, session_uuid: str, request: PresenceQrHitRequest) -> PresenceSession:
         session = self.sessions[session_uuid]
+        self._apply_session_limits(session)
+        if session.status == PresenceSessionStatus.FAILED:
+            raise ValueError(self._human_reason_for_code(session.failure_reason_code))
         self.qr_tokens[request.qr_token] = session_uuid
         session.qr_status = "scanned"
         session.status = PresenceSessionStatus.QR_RESOLVED
@@ -570,6 +679,7 @@ class PresenceService:
 
     async def get_detection_status(self, session_uuid: str) -> dict:
         session = self.sessions[session_uuid]
+        self._apply_session_limits(session)
         attempts = self.attempts.get(session_uuid, [])
         latest_attempt = attempts[-1] if attempts else None
         external_result = None
@@ -637,15 +747,46 @@ class PresenceService:
 
     async def get_result(self, session_uuid: str, current_user: dict) -> PresenceResult:
         session = self.sessions[session_uuid]
+        self._apply_session_limits(session)
         self._sync_session_external_assets(session)
         latest_attempt = self._latest_attempt(session_uuid)
+        live_detection_ready = session.status == PresenceSessionStatus.QR_RESOLVED or session.session_mode == PresenceSessionMode.CAMERA_ONLY
 
-        if session.status == PresenceSessionStatus.QR_RESOLVED and session.decision == PresenceDecisionState.PENDING:
+        if session.status == PresenceSessionStatus.FAILED or session.decision == PresenceDecisionState.FAILED:
+            return PresenceResult(
+                session_uuid=session_uuid,
+                session_mode=session.session_mode,
+                assurance_level=session.assurance_level,
+                grant_type=session.grant_type,
+                status=session.status,
+                decision=session.decision,
+                reason_code=session.failure_reason_code or "presence_failed",
+                matched_group_uuid=session.matched_group_uuid,
+                policy_source=session.policy_source,
+                trigger_type=session.trigger_type,
+                action_type=session.action_type,
+                action_execution_status=session.action_execution_status,
+                resolved_camera_uuid=session.resolved_camera_uuid,
+                resolved_collection_uuid=session.resolved_collection_uuid,
+            )
+
+        if (
+            session.session_mode == PresenceSessionMode.QR_ONLY
+            and session.qr_status == "scanned"
+            and session.decision == PresenceDecisionState.PENDING
+        ):
+            await self._grant_qr_check_in(session, current_user)
+
+        if live_detection_ready and session.decision == PresenceDecisionState.PENDING:
             await self._advance_live_detection(session)
             latest_attempt = self._latest_attempt(session_uuid)
 
         simulated_detection = self._attempt_is_simulated(latest_attempt)
-        if session.status == PresenceSessionStatus.QR_RESOLVED and session.detection_status == "completed":
+        if (
+            live_detection_ready
+            and session.detection_status == "completed"
+            and session.decision == PresenceDecisionState.PENDING
+        ):
             seeded_member = await self._ensure_presence_group_seed_member(session, latest_attempt, current_user)
             if simulated_detection:
                 await self._grant_presence_match(session, simulated_detection, current_user, reason_code="presence_match_simulated")
@@ -664,25 +805,35 @@ class PresenceService:
                 else:
                     if seeded_member:
                         await self._start_confirmation_detection(session)
+                    if session.decision == PresenceDecisionState.PENDING and self._remaining_attempt_capacity(session) <= 0:
+                        self._fail_session(session, "presence_attempt_limit_reached")
                     session.trigger_type, session.action_type, session.policy_source = self._resolve_trigger_and_action(session)
                     session.action_execution_status = "pending_trigger_match"
-                    if session.detection_status == "completed":
+                    if session.status != PresenceSessionStatus.FAILED and session.detection_status == "completed":
                         session.detection_status = "awaiting_trigger_match"
                     session.updated_at = datetime.utcnow()
                     self.repository.save_session(session)
-        elif session.status == PresenceSessionStatus.QR_RESOLVED and session.decision == PresenceDecisionState.PENDING:
+        elif live_detection_ready and session.decision == PresenceDecisionState.PENDING:
             session.trigger_type, session.action_type, session.policy_source = self._resolve_trigger_and_action(session)
             session.action_execution_status = session.action_execution_status or "pending"
             self.repository.save_session(session)
         return PresenceResult(
             session_uuid=session_uuid,
+            session_mode=session.session_mode,
+            assurance_level=session.assurance_level,
+            grant_type=session.grant_type,
             status=session.status,
             decision=session.decision,
             reason_code=(
+                "presence_check_in"
+                if session.decision == PresenceDecisionState.GRANTED and session.session_mode == PresenceSessionMode.QR_ONLY
+                else
                 "presence_match_simulated"
                 if session.decision == PresenceDecisionState.GRANTED and simulated_detection
                 else "presence_ppl_match"
                 if session.decision == PresenceDecisionState.GRANTED
+                else session.failure_reason_code
+                if session.decision == PresenceDecisionState.FAILED
                 else "pending"
             ),
             matched_group_uuid=session.matched_group_uuid,
@@ -1041,6 +1192,7 @@ class PresenceService:
         reason_code: str,
         trigger_match: dict | None = None,
     ) -> None:
+        self._cancel_session_timeout(session.session_uuid)
         session.status = PresenceSessionStatus.COMPLETED
         session.decision = PresenceDecisionState.GRANTED
         session.matched_group_uuid = self._resolve_matched_group_uuid(session)
@@ -1060,11 +1212,51 @@ class PresenceService:
         if not any(event.session_uuid == session.session_uuid for event in self.analytics_events):
             event = PresenceAnalyticsEvent(
                 session_uuid=session.session_uuid,
+                session_mode=session.session_mode,
+                assurance_level=session.assurance_level,
+                grant_type=session.grant_type,
                 installation_uuid=session.installation_uuid,
                 user_uuid=session.user_uuid,
                 device_uuid=session.device_uuid,
                 outcome=session.decision.value,
                 reason_code=reason_code,
+                matched_group_uuid=session.matched_group_uuid,
+                policy_source=session.policy_source,
+                trigger_type=session.trigger_type,
+                action_type=session.action_type,
+                action_execution_status=session.action_execution_status,
+                resolved_camera_uuid=session.resolved_camera_uuid,
+                resolved_collection_uuid=session.resolved_collection_uuid,
+            )
+            self.analytics_events.append(event)
+            self.repository.save_analytics_event(event)
+
+    async def _grant_qr_check_in(self, session: PresenceSession, current_user: dict) -> None:
+        self._cancel_session_timeout(session.session_uuid)
+        session.status = PresenceSessionStatus.COMPLETED
+        session.decision = PresenceDecisionState.GRANTED
+        session.trigger_type, session.action_type, session.policy_source = self._resolve_trigger_and_action(session)
+        session.action_execution_status, action_log_uuid = await self._execute_action(
+            session,
+            simulated_detection=False,
+            current_user=current_user,
+        )
+        session.action_log_uuid = action_log_uuid
+        session.executed_at = datetime.utcnow()
+        session.updated_at = datetime.utcnow()
+        self.repository.save_session(session)
+        self._record_decision(session, simulated_detection=False, reason_code="presence_check_in")
+        if not any(event.session_uuid == session.session_uuid for event in self.analytics_events):
+            event = PresenceAnalyticsEvent(
+                session_uuid=session.session_uuid,
+                session_mode=session.session_mode,
+                assurance_level=session.assurance_level,
+                grant_type=session.grant_type,
+                installation_uuid=session.installation_uuid,
+                user_uuid=session.user_uuid,
+                device_uuid=session.device_uuid,
+                outcome=session.decision.value,
+                reason_code="presence_check_in",
                 matched_group_uuid=session.matched_group_uuid,
                 policy_source=session.policy_source,
                 trigger_type=session.trigger_type,
@@ -1171,6 +1363,26 @@ class PresenceService:
             for installation_uuid, count in aggregates.items()
         ]
 
+    def analytics_by_session_mode(self) -> list[dict]:
+        aggregates: Dict[str, int] = {}
+        for event in self.analytics_events:
+            key = event.session_mode.value if hasattr(event.session_mode, "value") else str(event.session_mode or "unknown")
+            aggregates[key] = aggregates.get(key, 0) + 1
+        return [
+            {"session_mode": session_mode, "event_count": count}
+            for session_mode, count in aggregates.items()
+        ]
+
+    def analytics_by_grant_type(self) -> list[dict]:
+        aggregates: Dict[str, int] = {}
+        for event in self.analytics_events:
+            key = event.grant_type.value if hasattr(event.grant_type, "value") else str(event.grant_type or "unknown")
+            aggregates[key] = aggregates.get(key, 0) + 1
+        return [
+            {"grant_type": grant_type, "event_count": count}
+            for grant_type, count in aggregates.items()
+        ]
+
     def analytics_by_reserved_collection(self) -> list[dict]:
         aggregates: Dict[str, int] = {}
         for event in self.analytics_events:
@@ -1204,6 +1416,8 @@ class PresenceService:
             "repaired_event_count": repaired_event_count,
             "policy_source_breakdown": self.analytics_by_policy_source(),
             "installation_breakdown": self.analytics_by_installation(),
+            "session_mode_breakdown": self.analytics_by_session_mode(),
+            "grant_type_breakdown": self.analytics_by_grant_type(),
             "reserved_collection_breakdown": self.analytics_by_reserved_collection(),
             "action_outcome_breakdown": self.analytics_action_outcomes(),
         }
@@ -1347,12 +1561,133 @@ class PresenceService:
             return installation_policy_rule.trigger_type, installation_policy_rule.action_type, "installation_policy"
 
         if session.decision == PresenceDecisionState.GRANTED:
+            if session.session_mode == PresenceSessionMode.QR_ONLY:
+                return "presence_check_in", "presence_log", "default_policy"
+            if session.session_mode == PresenceSessionMode.CAMERA_ONLY:
+                return "presence_match", "presence_grant", "default_policy"
+            if session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA:
+                return "presence_verified_match", "presence_grant", "default_policy"
             return "presence_match", "presence_grant", "default_policy"
         if session.decision == PresenceDecisionState.RETRY_REQUIRED:
             return "presence_retry_required", "presence_notify", "default_policy"
         if session.decision == PresenceDecisionState.DENIED:
             return "presence_no_match", "presence_deny", "default_policy"
+        if session.decision == PresenceDecisionState.FAILED:
+            return "presence_failed", "presence_notify", "default_policy"
         return None, None, None
+
+    def _session_settings_from_profile(self, profile: PresenceProfile) -> PresenceSessionSettings:
+        settings = profile.metadata.get("session_settings") if isinstance(profile.metadata, dict) else None
+        if not isinstance(settings, dict):
+            return PresenceSessionSettings()
+        try:
+            return PresenceSessionSettings.model_validate(settings)
+        except Exception:
+            return PresenceSessionSettings()
+
+    def _current_session_settings(self) -> PresenceSessionSettings:
+        return self._session_settings_from_profile(self.installation_profile)
+
+    def _remaining_attempt_capacity(self, session: PresenceSession) -> int:
+        max_attempts = max(1, self._current_session_settings().max_unsuccessful_attempts)
+        return max_attempts - len(self.attempts.get(session.session_uuid, []))
+
+    def _apply_session_limits(self, session: PresenceSession) -> None:
+        if session.decision == PresenceDecisionState.GRANTED:
+            return
+        now = datetime.utcnow()
+        if session.expires_at <= now:
+            self._fail_session(session, "presence_session_expired")
+            return
+        if session.decision == PresenceDecisionState.PENDING and self._remaining_attempt_capacity(session) <= 0:
+            self._fail_session(session, "presence_attempt_limit_reached")
+
+    def _fail_session(self, session: PresenceSession, reason_code: str) -> None:
+        camera_id = session.resolved_camera_uuid
+        self._cancel_session_timeout(session.session_uuid)
+        session.status = PresenceSessionStatus.FAILED
+        session.decision = PresenceDecisionState.FAILED
+        session.failure_reason_code = reason_code
+        session.retry_allowed = False
+        session.trigger_type, session.action_type, session.policy_source = self._resolve_trigger_and_action(session)
+        session.action_execution_status = "failed_user_alert_required"
+        session.detection_status = reason_code
+        session.instant_detection_request_id = None
+        session.updated_at = datetime.utcnow()
+        self.repository.save_session(session)
+        self._record_decision(session, simulated_detection=False, reason_code=reason_code)
+        if camera_id:
+            self._schedule_detection_cleanup(camera_id)
+
+    def _schedule_existing_session_timeouts(self) -> None:
+        for session in self.sessions.values():
+            if session.decision == PresenceDecisionState.GRANTED:
+                continue
+            if session.status in {PresenceSessionStatus.COMPLETED, PresenceSessionStatus.FAILED}:
+                continue
+            self._schedule_session_timeout(session)
+
+    def _schedule_session_timeout(self, session: PresenceSession) -> None:
+        if session.decision == PresenceDecisionState.GRANTED:
+            return
+        if session.status in {PresenceSessionStatus.COMPLETED, PresenceSessionStatus.FAILED}:
+            return
+
+        self._cancel_session_timeout(session.session_uuid)
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("No running event loop available to schedule timeout for session %s", session.session_uuid)
+            return
+
+        self._session_timeout_tasks[session.session_uuid] = loop.create_task(
+            self._enforce_session_timeout_after_delay(session.session_uuid)
+        )
+
+    def _cancel_session_timeout(self, session_uuid: str) -> None:
+        task = self._session_timeout_tasks.pop(session_uuid, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _enforce_session_timeout_after_delay(self, session_uuid: str) -> None:
+        try:
+            while True:
+                session = self.sessions.get(session_uuid)
+                if session is None:
+                    return
+                if session.decision == PresenceDecisionState.GRANTED:
+                    return
+                if session.status in {PresenceSessionStatus.COMPLETED, PresenceSessionStatus.FAILED}:
+                    return
+
+                remaining_seconds = (session.expires_at - datetime.utcnow()).total_seconds()
+                if remaining_seconds <= 0:
+                    self._fail_session(session, "presence_session_expired")
+                    return
+
+                await asyncio.sleep(min(remaining_seconds, 5.0))
+        except asyncio.CancelledError:
+            return
+        finally:
+            current_task = self._session_timeout_tasks.get(session_uuid)
+            if current_task is asyncio.current_task():
+                self._session_timeout_tasks.pop(session_uuid, None)
+
+    def _schedule_detection_cleanup(self, camera_id: str) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("No running event loop available to clean up detection camera %s", camera_id)
+            return
+        loop.create_task(self._cleanup_detection_camera(camera_id))
+
+    def _human_reason_for_code(self, reason_code: str | None) -> str:
+        if reason_code == "presence_session_expired":
+            return "Presence session expired before a successful match was completed."
+        if reason_code == "presence_attempt_limit_reached":
+            return "Presence session reached the maximum number of unsuccessful attempts."
+        return "Presence session failed."
 
     def _group_policy_from_profile(self, profile: PresenceProfile) -> PresenceGroupPolicy | None:
         policy = profile.metadata.get("action_policy") if isinstance(profile.metadata, dict) else None
@@ -1373,13 +1708,38 @@ class PresenceService:
         if not group_policy:
             return None
 
+        mode_specific_rule = self._mode_specific_policy_rule(group_policy, session)
+        if mode_specific_rule:
+            return mode_specific_rule
+
         return getattr(group_policy, session.decision.value, None)
 
     def _resolve_installation_policy_rule(self, session: PresenceSession) -> PresencePolicyRule | None:
         installation_policy = self._group_policy_from_profile(self.installation_profile)
         if not installation_policy:
             return None
+
+        mode_specific_rule = self._mode_specific_policy_rule(installation_policy, session)
+        if mode_specific_rule:
+            return mode_specific_rule
         return getattr(installation_policy, session.decision.value, None)
+
+    def _mode_specific_policy_rule(
+        self,
+        group_policy: PresenceGroupPolicy,
+        session: PresenceSession,
+    ) -> PresencePolicyRule | None:
+        mode_policy = None
+        if session.session_mode == PresenceSessionMode.QR_ONLY:
+            mode_policy = group_policy.qr_only
+        elif session.session_mode == PresenceSessionMode.CAMERA_ONLY:
+            mode_policy = group_policy.camera_only
+        elif session.session_mode == PresenceSessionMode.QR_PLUS_CAMERA:
+            mode_policy = group_policy.qr_plus_camera
+
+        if not isinstance(mode_policy, dict):
+            return None
+        return mode_policy.get(session.decision.value)
 
     async def _get_audit_log_trace(
         self,
@@ -1433,6 +1793,29 @@ class PresenceService:
         if not token:
             return "execution_skipped_missing_token", None
 
+        assets = session.external_assets or self._external_assets_for_user(session.user_uuid)
+        trigger_uuid = assets.trigger_uuid if assets else None
+        configured_action_uuid = assets.action_uuid if assets else None
+        trigger = self.platform_clients.trigger_lookup.get(trigger_uuid or "") if trigger_uuid else None
+        configured_action_uuids = []
+        configured_action_names = []
+        if isinstance(trigger, dict):
+            trigger_action_uuids = trigger.get("action_uuids") or []
+            if not trigger_action_uuids and trigger.get("action_uuid"):
+                trigger_action_uuids = [trigger.get("action_uuid")]
+            configured_action_uuids = [str(item) for item in trigger_action_uuids if item]
+
+            trigger_action_names = trigger.get("action_names") or []
+            if not trigger_action_names and trigger.get("action_name"):
+                trigger_action_names = [trigger.get("action_name")]
+            configured_action_names = [str(item) for item in trigger_action_names if item]
+
+        if configured_action_uuid and configured_action_uuid not in configured_action_uuids:
+            configured_action_uuids.append(configured_action_uuid)
+            action = self.platform_clients.action_lookup.get(configured_action_uuid)
+            if isinstance(action, dict) and action.get("name"):
+                configured_action_names.append(str(action["name"]))
+
         try:
             response = await self.platform_clients.create_audit_log(
                 token,
@@ -1442,6 +1825,10 @@ class PresenceService:
                     "event_data": {
                         "session_uuid": session.session_uuid,
                         "trigger_type": session.trigger_type,
+                        "trigger_uuid": trigger_uuid,
+                        "configured_action_uuid": configured_action_uuid,
+                        "configured_action_uuids": configured_action_uuids,
+                        "configured_action_names": configured_action_names,
                         "matched_group_uuid": session.matched_group_uuid,
                         "resolved_camera_uuid": session.resolved_camera_uuid,
                         "resolved_collection_uuid": session.resolved_collection_uuid,
@@ -1469,6 +1856,9 @@ class PresenceService:
         )
         if existing:
             existing.reason_code = reason_code
+            existing.session_mode = session.session_mode
+            existing.assurance_level = session.assurance_level
+            existing.grant_type = session.grant_type
             existing.matched_group_uuid = session.matched_group_uuid
             existing.policy_source = session.policy_source
             existing.trigger_type = session.trigger_type
@@ -1483,6 +1873,9 @@ class PresenceService:
 
         decision_record = PresenceDecisionRecord(
             session_uuid=session.session_uuid,
+            session_mode=session.session_mode,
+            assurance_level=session.assurance_level,
+            grant_type=session.grant_type,
             installation_uuid=session.installation_uuid,
             user_uuid=session.user_uuid,
             device_uuid=session.device_uuid,
@@ -1500,6 +1893,20 @@ class PresenceService:
         )
         self.decision_history.append(decision_record)
         self.repository.save_decision_record(decision_record)
+
+    def _assurance_level_for_mode(self, session_mode: PresenceSessionMode) -> PresenceAssuranceLevel:
+        if session_mode == PresenceSessionMode.QR_ONLY:
+            return PresenceAssuranceLevel.LOW
+        if session_mode == PresenceSessionMode.CAMERA_ONLY:
+            return PresenceAssuranceLevel.MEDIUM
+        return PresenceAssuranceLevel.HIGH
+
+    def _grant_type_for_mode(self, session_mode: PresenceSessionMode) -> PresenceGrantType:
+        if session_mode == PresenceSessionMode.QR_ONLY:
+            return PresenceGrantType.CHECK_IN
+        if session_mode == PresenceSessionMode.CAMERA_ONLY:
+            return PresenceGrantType.PRESENCE_MATCH
+        return PresenceGrantType.VERIFIED_PRESENCE
 
     def _group_from_profile(self, profile: PresenceProfile) -> PresenceGroup:
         return PresenceGroup(

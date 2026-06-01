@@ -9,7 +9,6 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authNotifierProvider);
     final authNotifier = ref.read(authNotifierProvider.notifier);
     final currentUser = ref.watch(currentUserProvider);
 
@@ -108,7 +107,7 @@ class HomeScreen extends ConsumerWidget {
               children: [
                 CircleAvatar(
                   radius: 16,
-                  backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+                  backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
                   child: Icon(
                     Icons.person,
                     color: Theme.of(context).colorScheme.onSurface, // Match dropdown icons
@@ -255,6 +254,15 @@ class HomeScreen extends ConsumerWidget {
                         subtitle: 'Organize your media',
                         onTap: () {
                           context.go('/collections');
+                        },
+                      ),
+                      _ActionCard(
+                        icon: Icons.how_to_reg,
+                        iconColor: AppColors.secondary,
+                        title: 'Presence',
+                        subtitle: 'Presence flows and assurance analytics',
+                        onTap: () {
+                          context.go('/presence');
                         },
                       ),
                       _ActionCard(

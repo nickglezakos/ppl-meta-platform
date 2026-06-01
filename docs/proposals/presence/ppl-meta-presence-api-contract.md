@@ -196,6 +196,40 @@ Response shape:
 
 ## Mobile Session Endpoints
 
+## Presence Assurance Fields
+
+The presence contract should expose explicit assurance metadata so clients and operators can distinguish lower-trust check-in results from stronger verified presence outcomes.
+
+Suggested shared fields:
+
+- `session_mode`: the requested or resolved session mode
+- `assurance_level`: the normalized assurance level derived from the completed flow
+- `grant_type`: the product-facing grant classification returned by the backend
+
+Suggested `session_mode` values:
+
+- `qr_only`
+- `camera_only`
+- `qr_plus_camera`
+
+Suggested `assurance_level` values:
+
+- `low`
+- `medium`
+- `high`
+
+Suggested `grant_type` values:
+
+- `check_in`
+- `presence_match`
+- `verified_presence`
+
+Expected normalization:
+
+- `qr_only` -> `low` -> `check_in`
+- `camera_only` -> `medium` -> `presence_match`
+- `qr_plus_camera` -> `high` -> `verified_presence`
+
 ## Create Presence Session
 
 ```text
@@ -206,6 +240,7 @@ Request body:
 
 ```json
 {
+  "session_mode": "qr_plus_camera",
   "device_uuid": "device_123",
   "device_name": "Nick iPhone",
   "device_platform": "ios",
@@ -220,6 +255,9 @@ Response body:
   "success": true,
   "data": {
     "session_uuid": "ps_123",
+    "session_mode": "qr_plus_camera",
+    "assurance_level": "high",
+    "grant_type": "verified_presence",
     "status": "created",
     "expires_at": "2026-05-30T12:00:00Z",
     "external_assets": {
@@ -234,6 +272,9 @@ Response body:
 Compatibility note:
 
 - `device_uuid` and related device fields should align with the device identity and registration conventions already used by `AutoCameraRegistrationService` in `ppl_meta_mobile_camera`
+- `qr_only` sessions may skip front-camera burst capture entirely and move directly toward QR correlation
+- `camera_only` sessions may complete without a QR hit
+- `qr_plus_camera` sessions require both camera-backed evidence and a QR-bound session target before a high-assurance result may be returned
 
 If the presence flow needs a registered mobile device anchor before session creation, the mobile client should first use the inherited mobile camera registration pattern:
 
@@ -311,6 +352,9 @@ Response body:
     "session_uuid": "ps_123",
     "status": "completed",
     "decision": "granted",
+    "session_mode": "qr_plus_camera",
+    "assurance_level": "high",
+    "grant_type": "verified_presence",
     "reason_code": "presence_ppl_match",
     "policy_source": "platform_trigger",
     "trigger_type": "group_presence_granted",
@@ -655,6 +699,8 @@ Current implementation note:
 
 - only `bind` is currently supported
 - unsupported modes fail fast with a validation error instead of being silently accepted
+- the current frontend presence module does not expose direct collection reservation yet because this route currently operates on explicit UUID input and the backend does not yet expose a browsable platform collection inventory through the presence service
+- the preferred operator flow remains reserving a camera through `POST /api/v1/presence/cameras/reserve`, which auto-binds the linked media collection when the backend can resolve one
 
 ## List Presence Collections
 
@@ -841,6 +887,36 @@ Purpose:
 
 - return per-installation event counts for multi-site dashboards and support tooling
 
+## Get Presence Analytics By Session Mode
+
+```text
+GET /api/v1/presence/analytics/by-session-mode
+```
+
+Purpose:
+
+- return counts grouped by `session_mode`
+- make it explicit how much traffic is landing as `qr_only`, `camera_only`, or `qr_plus_camera`
+
+Current implementation note:
+
+- this endpoint is now exposed by the presence API router
+
+## Get Presence Analytics By Grant Type
+
+```text
+GET /api/v1/presence/analytics/by-grant-type
+```
+
+Purpose:
+
+- return counts grouped by `grant_type`
+- let dashboards distinguish lower-assurance check-ins from medium-trust presence matches and high-trust verified presence results
+
+Current implementation note:
+
+- this endpoint is now exposed by the presence API router
+
 ## Get Presence Analytics By Reserved Collection
 
 ```text
@@ -892,6 +968,9 @@ Response body:
   "success": true,
   "data": {
     "session_uuid": "ps_123",
+    "session_mode": "qr_plus_camera",
+    "assurance_level": "high",
+    "grant_type": "verified_presence",
     "matched_group_uuid": "grp_presence_user_123",
     "decision": "granted",
     "policy_source": "platform_trigger",
@@ -925,12 +1004,44 @@ Current implementation note:
 
 - `trigger_observation` is an operational visibility surface derived from the provisioned trigger metadata currently visible to presence
 - it is intended to help operators verify which action UUIDs and names were configured on the presence trigger during debugging of multi-action fan-out or delivery issues
+- `session_mode`, `assurance_level`, and `grant_type` should make the returned outcome class explicit so low-assurance QR-only results are not confused with camera-backed verified presence
 
 Accepted `policy_source` values:
 
 - `group_policy`
 - `installation_policy`
 - `default_policy`
+
+## Policy And Grant Rules
+
+The contract should distinguish which backend outcomes are appropriate for each session mode.
+
+Recommended first-release rules:
+
+- `qr_only`
+  - may produce `grant_type=check_in`
+  - should not require camera-backed `ppl_match`
+  - should not be treated as high-confidence identity verification
+- `camera_only`
+  - may produce `grant_type=presence_match`
+  - requires successful camera-backed presence evaluation
+  - may drive medium-trust actions allowed by policy
+- `qr_plus_camera`
+  - may produce `grant_type=verified_presence`
+  - requires both successful camera-backed evaluation and QR-bound installation correlation
+  - may drive the strongest actions allowed by policy
+
+Mode-specific policy override note:
+
+- installation and group policy may now override trigger/action mapping per session mode
+- expected override buckets are `qr_only`, `camera_only`, and `qr_plus_camera`
+- each override bucket may define its own decision-specific mapping such as `granted`, `denied`, `retry_required`, or `failed`
+
+Recommended first-release action semantics by mode:
+
+- `qr_only`: check-in, notify, log, low-risk session enablement
+- `camera_only`: presence grant, notify, log, medium-trust automation
+- `qr_plus_camera`: verified grant, notify, log, highest-trust automation
 
 ## Get Presence Decision History
 

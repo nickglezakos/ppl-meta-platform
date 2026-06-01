@@ -405,6 +405,122 @@ Clarification:
 - successful QR scanning alone is not considered final success
 - final success means the presence session has completed, instant detection has yielded a sufficient result, presence decisioning has run, and the resulting event has been persisted for analytics
 
+## Presence Assurance Modes
+
+The frontend and backend design should explicitly support three presence assurance modes instead of treating every successful interaction as the same type of grant.
+
+### 1. QR-Only Presence Grant
+
+This mode uses a successful QR interaction without camera-backed identity evidence.
+
+Suggested meaning:
+
+- the authenticated user successfully interacted with a live QR challenge rendered by the target installation or frontend presence screen
+- the backend can bind the session to the intended installation context
+- the result proves authenticated session plus rendered-station interaction, but not camera-backed identity confirmation
+
+This mode should be treated as the lowest-assurance presence outcome and should only map to actions appropriate for QR-only check-in semantics.
+
+### 2. Camera-Only Presence Grant
+
+This mode uses a camera match without QR correlation.
+
+Suggested meaning:
+
+- the authenticated user completed a valid presence flow
+- the backend resolved a successful camera-backed match
+- the result is tied to the selected installation and reserved presence resources
+- no QR proof was required to bind the session to a rendered installation challenge
+
+This mode is suitable when the operator and user are already acting inside a known frontend-controlled context and the product only needs a lower-assurance presence result.
+
+### 3. QR Plus Camera Presence Grant
+
+This mode requires both camera evidence and a QR-bound session.
+
+Suggested meaning:
+
+- the authenticated user completed a valid presence flow
+- the backend resolved a successful camera-backed match
+- the session was also bound to a live QR challenge rendered by the target installation or frontend presence screen
+- the result therefore carries stronger proof that the user interacted with the intended installation context at that time
+
+This mode should be treated as the higher-assurance presence path.
+
+### Policy Requirement
+
+These three modes should not collapse into the same semantic outcome unless the product explicitly wants assurance levels to be interchangeable.
+
+The backend should therefore persist the presence mode used for the session and allow policy and action mapping to distinguish between:
+
+- `qr_only`
+- `camera_only`
+- `qr_plus_camera`
+
+This keeps one presence service and one frontend domain while allowing different assurance levels and action rules.
+
+Suggested assurance ordering:
+
+- `qr_only`: lowest assurance
+- `camera_only`: medium assurance
+- `qr_plus_camera`: highest assurance
+
+## Frontend-Oriented Presence Flow Variants
+
+The frontend presence module can drive all three variants while leaving final resource resolution and decisioning in the backend.
+
+### Variant A. Web Or Mobile QR-Only Presence
+
+High-level flow:
+
+1. the user opens the frontend presence module or presence mobile app
+2. the frontend starts a `qr_only` presence session in the target installation context
+3. the frontend or web presence screen renders a live QR challenge
+4. the mobile user scans the QR successfully
+5. the backend completes a QR-only presence result without requiring camera-backed identity evidence
+
+This path is suitable for lower-trust check-in or arrival acknowledgement flows.
+
+### Variant B. Web Or Mobile Camera-Only Presence
+
+High-level flow:
+
+1. the user opens the frontend presence module or presence mobile app
+2. the frontend loads the current installation presence state and available presence-eligible cameras
+3. if more than one camera is available, the user or operator selects the intended camera
+4. the frontend asks the presence backend to reserve or bind that camera context
+5. the frontend starts a `camera_only` presence session
+6. the user provides the required camera burst or camera-backed capture input
+7. the backend evaluates the presence result and returns a camera-only grant outcome
+
+This path can be completed without QR when the product only needs camera-backed assurance.
+
+### Variant C. Web Plus Mobile QR-Enabled Presence
+
+High-level flow:
+
+1. the user opens the frontend presence module in the backend application
+2. the frontend loads the current installation presence state and available presence-eligible cameras
+3. if more than one camera is available, the operator selects the intended reserved presence camera
+4. the frontend binds that presence context and renders a live QR for the target installation session
+5. the end user logs into the presence mobile app
+6. the mobile app starts a `qr_plus_camera` presence session
+7. the mobile app captures the front-camera burst and scans the QR rendered on the web frontend
+8. the backend correlates the burst, QR target, user, installation, and reserved resources before returning the final higher-assurance presence result
+
+This path keeps the web frontend as the installation or operator surface and the mobile app as the user validation surface.
+
+### Frontend Boundary
+
+The frontend may discover cameras, present eligible options, and let users choose among valid candidates, but it should not be the final authority for which platform resources are in force.
+
+The presence backend must remain responsible for:
+
+- validating the chosen camera or collection
+- binding the final reserved presence resources
+- recording which assurance mode was used
+- deciding the final presence result and action path
+
 ## Simple Presence Sequence Diagram
 
 ```mermaid

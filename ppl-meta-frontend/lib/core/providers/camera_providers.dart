@@ -11,6 +11,7 @@ import '../models/collection_models.dart';
 import '../api/api_client.dart';
 import '../../services/media_api_client.dart';
 import '../../services/analytics_api_client.dart';
+import '../../services/presence_api_client.dart';
 import '../../providers/settings_providers.dart';
 
 /// Provider for camera service
@@ -29,6 +30,12 @@ final mediaApiClientProvider = Provider<MediaApiClient>((ref) {
 final analyticsApiClientProvider = Provider<AnalyticsApiClient>((ref) {
   final apiClient = ref.watch(apiClientProvider);
   return AnalyticsApiClient(apiClient);
+});
+
+/// Provider for PresenceApiClient with authenticated ApiClient
+final presenceApiClientProvider = Provider<PresenceApiClient>((ref) {
+  final apiClient = ref.watch(apiClientProvider);
+  return PresenceApiClient(apiClient);
 });
 
 /// Provider for edge camera streaming state (device_id -> is_streaming)

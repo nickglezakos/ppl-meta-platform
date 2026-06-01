@@ -137,6 +137,82 @@ def _build_ppl_match_reason(best_match: Dict[str, Any]) -> str:
     return f"Matched {descriptor} score={similarity_score}"
 
 
+def _extract_ppl_match_context(match_info: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not match_info:
+        return {}
+
+    best_match = match_info.get("best_match") or {}
+    match_reason = _build_ppl_match_reason(best_match)
+
+    return {
+        "match_reason": match_reason,
+        "matched_member_uuid": best_match.get("matched_member_uuid") or "",
+        "matched_member_name": (best_match.get("existing_member_name") or "").strip(),
+        "group_member_number": best_match.get("group_member_number") or "",
+        "similarity_score": best_match.get("similarity_score") if best_match.get("similarity_score") is not None else "",
+    }
+
+
+def _interpolate_action_message(
+    base_message: str,
+    trigger: Trigger,
+    evaluation_reason: Optional[str],
+    match_info: Optional[Dict[str, Any]],
+) -> str:
+    message = base_message or ""
+
+    match_context = _extract_ppl_match_context(match_info)
+    replacements = {
+        "trigger_name": trigger.name,
+        "trigger_id": str(trigger.uuid),
+        "reason": evaluation_reason or "",
+        "match_reason": match_context.get("match_reason", ""),
+        "matched_member_uuid": match_context.get("matched_member_uuid", ""),
+        "matched_member_name": match_context.get("matched_member_name", ""),
+        "group_member_number": match_context.get("group_member_number", ""),
+        "similarity_score": match_context.get("similarity_score", ""),
+    }
+
+    used_template_variable = False
+    for key, value in replacements.items():
+        token = "{" + key + "}"
+        if token in message:
+            used_template_variable = True
+            message = message.replace(token, str(value))
+
+    if (
+        not used_template_variable
+        and match_context.get("match_reason")
+        and match_info
+        and (match_info.get("mode") == "ppl_match" or match_info.get("matched"))
+    ):
+        if message:
+            message = f"{message} - {match_context['match_reason']}"
+        else:
+            message = match_context["match_reason"]
+
+    return message
+
+
+def _build_action_context(
+    trigger: Trigger,
+    camera_id: str,
+    detection_payload: Optional[InstantDetectionPayload],
+    evaluation_reason: Optional[str],
+    match_info: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        "trigger_id": str(trigger.uuid),
+        "trigger_name": trigger.name,
+        "camera_id": camera_id,
+        "detection_timestamp": detection_payload.timestamp if detection_payload else None,
+        "people_count": detection_payload.people_count if detection_payload else None,
+        "demographics": detection_payload.demographics if detection_payload else {},
+        "reason": evaluation_reason,
+        "match": match_info,
+    }
+
+
 @router.post("", response_model=TriggerResponse, status_code=201)
 async def create_trigger(
     trigger: TriggerCreate,
@@ -1088,30 +1164,162 @@ async def _dispatch_trigger_actions(
                 logger.info(f"  ✅ digital_signage action sent: {result}")
 
             elif action.action_type in ("alert", "log", "email", "webhook", "messaging_app"):
-                # These action types are fully handled by the Redis subscriber path.
-                # When the /instant-detection HTTP endpoint is used, delegate to
-                # the communications client for best-effort execution.
                 comms_client = _get_communications_client()
+                action_context = _build_action_context(
+                    trigger=trigger,
+                    camera_id=camera_id,
+                    detection_payload=detection_payload,
+                    evaluation_reason=evaluation_reason,
+                    match_info=match_info,
+                )
+
                 if action.action_type == "log":
-                    message = config.get("message", f"Trigger '{trigger.name}' fired")
+                    message = _interpolate_action_message(
+                        base_message=config.get("message", f"Trigger '{trigger.name}' fired"),
+                        trigger=trigger,
+                        evaluation_reason=evaluation_reason,
+                        match_info=match_info,
+                    )
                     await comms_client.log_audit_event(
                         event_type="trigger_fired",
                         event_source="media_service_http",
                         event_data={
-                            "trigger_id": str(trigger.uuid),
-                            "trigger_name": trigger.name,
                             "action_name": action.name,
                             "message": message,
-                            "reason": evaluation_reason,
+                            **action_context,
                         },
                         severity=config.get("level", "info"),
                     )
                     logger.info(f"  ✅ log action dispatched")
-                else:
-                    logger.info(
-                        f"  ℹ️ Action type '{action.action_type}' is handled by the Redis subscriber "
-                        f"in real-time mode; skipped in HTTP fallback path."
+                elif action.action_type == "email":
+                    recipients = config.get("recipients")
+                    if not recipients:
+                        to_field = config.get("to", "")
+                        if isinstance(to_field, str):
+                            recipients = [email.strip() for email in to_field.split(',') if email.strip()]
+                        elif isinstance(to_field, list):
+                            recipients = [str(email).strip() for email in to_field if str(email).strip()]
+                        else:
+                            recipients = []
+
+                    cc = config.get("cc", [])
+                    if not isinstance(cc, list):
+                        cc = [str(cc)] if cc else []
+
+                    if not recipients:
+                        logger.error(f"  ❌ email action '{action.name}' has no recipients configured")
+                        continue
+
+                    subject = config.get("subject", "Trigger Alert")
+                    body = config.get("body", f"Trigger '{trigger.name}' was fired.")
+                    interpolated_subject = _interpolate_action_message(
+                        base_message=subject,
+                        trigger=trigger,
+                        evaluation_reason=evaluation_reason,
+                        match_info=match_info,
                     )
+                    interpolated_body = _interpolate_action_message(
+                        base_message=body,
+                        trigger=trigger,
+                        evaluation_reason=evaluation_reason,
+                        match_info=match_info,
+                    )
+                    result = await comms_client.send_email(
+                        to=recipients,
+                        cc=cc if cc else None,
+                        subject=interpolated_subject,
+                        text_body=interpolated_body,
+                        triggered_by="media_service_http",
+                        trigger_type="trigger_action",
+                        trigger_id=str(trigger.uuid),
+                        payload={
+                            "action_name": action.name,
+                            **action_context,
+                        },
+                    )
+                    if result.get("success"):
+                        logger.info(f"  ✅ email action dispatched")
+                    else:
+                        logger.error(f"  ❌ email action failed: {result.get('message')}")
+                elif action.action_type == "webhook":
+                    webhook_url = config.get("url")
+                    if not webhook_url:
+                        logger.error(f"  ❌ webhook action '{action.name}' missing url")
+                        continue
+
+                    result = await comms_client.send_webhook(
+                        url=webhook_url,
+                        payload={
+                            "event": "trigger_fired",
+                            "action_name": action.name,
+                            **action_context,
+                        },
+                        method=config.get("method", "POST"),
+                        headers=config.get("headers"),
+                        triggered_by="media_service_http",
+                        trigger_type="trigger_action",
+                        trigger_id=str(trigger.uuid),
+                    )
+                    if result.get("success"):
+                        logger.info(f"  ✅ webhook action dispatched")
+                    else:
+                        logger.error(f"  ❌ webhook action failed: {result.get('message')}")
+                elif action.action_type == "messaging_app":
+                    platform = (config.get("platform") or "slack").lower()
+                    webhook_url = config.get("webhook_url") or config.get("url")
+                    if not webhook_url:
+                        logger.error(f"  ❌ messaging_app action '{action.name}' missing webhook_url")
+                        continue
+
+                    message = config.get("message_template") or config.get("message") or f"Trigger '{trigger.name}' fired"
+                    message = _interpolate_action_message(
+                        base_message=message,
+                        trigger=trigger,
+                        evaluation_reason=evaluation_reason,
+                        match_info=match_info,
+                    )
+                    mention = config.get("mention", "")
+                    if platform == "slack":
+                        payload = {"text": f"{mention} {message}".strip() if mention else message}
+                    else:
+                        payload = {"text": message}
+
+                    result = await comms_client.send_webhook(
+                        url=webhook_url,
+                        payload=payload,
+                        method="POST",
+                        triggered_by="media_service_http",
+                        trigger_type="trigger_action",
+                        trigger_id=str(trigger.uuid),
+                    )
+                    if result.get("success"):
+                        logger.info(f"  ✅ messaging_app action dispatched")
+                    else:
+                        logger.error(f"  ❌ messaging_app action failed: {result.get('message')}")
+                elif action.action_type == "alert":
+                    result = await comms_client.log_audit_event(
+                        event_type="alert",
+                        event_source="media_service_http",
+                        event_data={
+                            "action_name": action.name,
+                            "message": _interpolate_action_message(
+                                base_message=config.get("message", "Alert triggered"),
+                                trigger=trigger,
+                                evaluation_reason=evaluation_reason,
+                                match_info=match_info,
+                            ),
+                            "severity": config.get("severity", "warning"),
+                            "duration_seconds": config.get("duration_seconds", 30),
+                            **action_context,
+                        },
+                        severity=config.get("severity", "warning"),
+                    )
+                    if result.get("success"):
+                        logger.info(f"  ✅ alert action dispatched")
+                    else:
+                        logger.error(f"  ❌ alert action failed: {result.get('message')}")
+                else:
+                    logger.warning(f"  ⚠️ Unsupported notification action type: {action.action_type}")
             else:
                 logger.warning(f"  ⚠️ Unsupported action type: {action.action_type}")
 

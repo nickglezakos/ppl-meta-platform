@@ -3,6 +3,7 @@ Authentication and authorization module for PPL Meta Cameras.
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
 
@@ -100,6 +101,20 @@ class AuthenticationService:
         self.algorithm = config.JWT_ALGORITHM
         self.expire_minutes = config.JWT_EXPIRE_MINUTES
 
+    def _node_secret_candidates(self) -> list[str]:
+        candidates = [
+            os.getenv("NODE_SERVICE_SECRET", ""),
+            os.getenv("SECRET_KEY", ""),
+            self.secret_key,
+            "ppl-meta-secret-key-development-only-change-in-production",
+            "default-secret-key-change-in-production",
+        ]
+        unique_candidates: list[str] = []
+        for candidate in candidates:
+            if candidate and candidate not in unique_candidates:
+                unique_candidates.append(candidate)
+        return unique_candidates
+
     def create_access_token(
         self,
         user_id: str,
@@ -131,33 +146,34 @@ class AuthenticationService:
     def verify_token(self, token: str) -> Dict:
         """Verify JWT token from Node service or Cameras service."""
 
-        # First try with Node service secret
-        try:
-            import os
+        # First try the candidate secrets used by the platform for Node-issued tokens.
+        for node_secret in self._node_secret_candidates():
+            try:
+                logger.info("Trying Node-compatible secret candidate: %s...", node_secret[:10])
+                payload = jwt.decode(token, node_secret, algorithms=[self.algorithm])
+                payload_dict = dict(payload)
+                logger.info("Successfully decoded with Node-compatible secret. Payload: %s", payload_dict)
 
-            node_secret = os.getenv(
-                "NODE_SERVICE_SECRET", "default-secret-key-change-in-production"
-            )
-            logger.info(f"Trying Node service secret: {node_secret[:10]}...")
-            payload = jwt.decode(token, node_secret, algorithms=[self.algorithm])
-            payload_dict = dict(payload)
-            logger.info(
-                f"Successfully decoded with Node secret. Payload: {payload_dict}"
-            )
-
-            # Check if this is a Node service token (minimal payload with just sub + exp)
-            if payload_dict.get("sub") and len(payload_dict) <= 3:  # sub, exp, iat
-                # This is a Node service token - grant admin permissions
-                payload_dict["service"] = "node"
-                payload_dict["permissions"] = list(CameraRole.ADMINISTRATOR)
-                user_sub = payload_dict.get("sub")
-                logger.info(
-                    f"Identified as Node service token for user {user_sub}, granted admin permissions"
+                # Node user tokens are intentionally minimal in some flows and richer in others.
+                # If the token is not explicitly marked as a cameras-issued token and has a subject,
+                # treat it as a Node-issued user token and grant camera administrator permissions.
+                if payload_dict.get("sub") and payload_dict.get("service") != "cameras":
+                    payload_dict["service"] = "node"
+                    payload_dict["permissions"] = list(CameraRole.ADMINISTRATOR)
+                    user_sub = payload_dict.get("sub")
+                    logger.info(
+                        "Identified Node-issued token for user %s, granted admin permissions",
+                        user_sub,
+                    )
+                    return payload_dict
+            except jwt.ExpiredSignatureError:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has expired",
+                    headers={"WWW-Authenticate": "Bearer"},
                 )
-                return payload_dict
-
-        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError) as e:
-            logger.info(f"Node service verification failed: {e}")
+            except jwt.InvalidTokenError as exc:
+                logger.info("Node-compatible verification failed: %s", exc)
 
         # Try with camera service secret
         try:

@@ -13,6 +13,7 @@ from models.presence_models import (
     PresenceQrValidateRequest,
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
+    UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
 )
 from services.presence_service import PresenceService
@@ -38,6 +39,15 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     @router.post("/installations/current/policy")
     async def update_current_installation_policy(request: UpdateInstallationPolicyRequest):
         return {"success": True, "data": service.update_installation_policy(request)}
+
+    @router.get("/installations/current/settings")
+    async def get_current_installation_settings():
+        context = service.get_current_installation_context()
+        return {"success": True, "data": {"session_settings": context.get("session_settings")}}
+
+    @router.post("/installations/current/settings")
+    async def update_current_installation_settings(request: UpdateInstallationSettingsRequest):
+        return {"success": True, "data": service.update_installation_settings(request)}
 
     @router.get("/profiles/me")
     async def get_current_user_profile(current_user: dict = Depends(get_current_user)):
@@ -154,14 +164,20 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     async def upload_front_burst(session_uuid: str, request: PresenceBurstUploadRequest):
         if session_uuid not in service.sessions:
             raise HTTPException(status_code=404, detail="Presence session not found")
-        attempt = await service.upload_burst(session_uuid, request)
+        try:
+            attempt = await service.upload_burst(session_uuid, request)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": attempt.model_dump()}
 
     @router.post("/mobile/sessions/{session_uuid}/feeds/front-burst/retry")
     async def upload_front_burst_retry(session_uuid: str, request: PresenceBurstUploadRequest):
         if session_uuid not in service.sessions:
             raise HTTPException(status_code=404, detail="Presence session not found")
-        attempt = await service.upload_burst(session_uuid, request)
+        try:
+            attempt = await service.upload_burst(session_uuid, request)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": attempt.model_dump()}
 
     @router.get("/mobile/sessions/{session_uuid}/instant-detection-status")
@@ -174,7 +190,10 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     async def submit_qr_hit(session_uuid: str, request: PresenceQrHitRequest):
         if session_uuid not in service.sessions:
             raise HTTPException(status_code=404, detail="Presence session not found")
-        session = service.qr_hit(session_uuid, request)
+        try:
+            session = service.qr_hit(session_uuid, request)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": session.model_dump()}
 
     @router.post("/mobile/sessions/{session_uuid}/bind-resources")
@@ -262,6 +281,14 @@ def build_presence_router(service: PresenceService) -> APIRouter:
     @router.get("/analytics/by-installation")
     async def analytics_by_installation():
         return {"success": True, "data": {"items": service.analytics_by_installation()}}
+
+    @router.get("/analytics/by-session-mode")
+    async def analytics_by_session_mode():
+        return {"success": True, "data": {"items": service.analytics_by_session_mode()}}
+
+    @router.get("/analytics/by-grant-type")
+    async def analytics_by_grant_type():
+        return {"success": True, "data": {"items": service.analytics_by_grant_type()}}
 
     @router.get("/analytics/by-reserved-collection")
     async def analytics_by_reserved_collection():
