@@ -371,6 +371,26 @@ class PresenceApiClient {
     }
   }
 
+  Future<ApiResponse<Map<String, dynamic>>> unreserveCamera({
+    required String installationUuid,
+    required String resourceUuid,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/presence/cameras/unreserve',
+        data: {
+          'installation_uuid': installationUuid,
+          'resource_uuid': resourceUuid,
+        },
+      );
+      return ApiResponse.success(_unwrapData(response.data));
+    } on DioException catch (e) {
+      return ApiResponse.error(_handleDioError(e));
+    } catch (e) {
+      return ApiResponse.error('Unexpected error: $e');
+    }
+  }
+
   Future<ApiResponse<PresenceInstallationContext>> updateInstallationPolicy({
     required String installationUuid,
     required PresenceGroupPolicy groupPolicy,

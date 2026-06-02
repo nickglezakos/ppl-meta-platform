@@ -15,6 +15,7 @@ from models.presence_models import (
     PresenceQrValidateRequest,
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
+    UnreserveResourceRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
 )
@@ -271,6 +272,17 @@ def build_presence_router(service: PresenceService) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"success": True, "data": resource.model_dump()}
+
+    @router.post("/cameras/unreserve")
+    async def unreserve_camera(
+        request: UnreserveResourceRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        try:
+            result = service.unreserve_camera(request, current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"success": True, "data": result}
 
     @router.get("/collections")
     async def list_collections():

@@ -168,6 +168,45 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
     }
   }
 
+  Future<void> _unreserveCamera(PresenceCameraOption camera) async {
+    final installationUuid = _installationContext?.installationUuid;
+    if (installationUuid == null || installationUuid.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = true;
+    });
+
+    final response = await _apiClient.unreserveCamera(
+      installationUuid: installationUuid,
+      resourceUuid: camera.deviceId,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSubmittingAdminAction = false;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          response.success
+              ? 'Released camera ${camera.name.isEmpty ? camera.deviceId : camera.name} from presence.'
+              : (response.error ?? 'Failed to unreserve camera'),
+        ),
+        backgroundColor: response.success ? null : Colors.red,
+      ),
+    );
+
+    if (response.success) {
+      await _loadPresenceDashboard();
+    }
+  }
+
   Future<void> _resetReservations() async {
     final installationUuid = _installationContext?.installationUuid;
     if (installationUuid == null || installationUuid.isEmpty) {
@@ -378,7 +417,7 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
     });
   }
 
-  Future<void> _openWebQrScanner() async {
+  Future<void> _openWebQrScanner({String sessionMode = 'qr_only'}) async {
     final scannedText = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -387,10 +426,10 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
     if (scannedText == null || scannedText.trim().isEmpty) {
       return;
     }
-    await _consumeScannedQr(scannedText.trim());
+    await _consumeScannedQr(scannedText.trim(), sessionMode: sessionMode);
   }
 
-  Future<void> _consumeScannedQr(String rawValue) async {
+  Future<void> _consumeScannedQr(String rawValue, {String sessionMode = 'qr_only'}) async {
     final installationUuid = _installationContext?.installationUuid;
     final deviceReference = _deviceReferenceController.text.trim();
     if (installationUuid == null || installationUuid.isEmpty || deviceReference.isEmpty) {
@@ -412,15 +451,34 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
     }
 
     var activeSession = _activeSession;
-    if (activeSession == null || activeSession.sessionUuid.isEmpty) {
+    final requiresNewSession =
+        activeSession == null ||
+        activeSession.sessionUuid.isEmpty ||
+        activeSession.sessionMode != sessionMode;
+    if (requiresNewSession) {
       final currentUser = ref.read(currentUserProvider);
       final sessionResponse = await _apiClient.createSession(
-        sessionMode: 'qr_only',
+        sessionMode: sessionMode,
         deviceUuid: deviceReference,
         deviceName: _deviceDisplayNameController.text.trim().isEmpty ? (currentUser?.username ?? 'presence-web-station') : _deviceDisplayNameController.text.trim(),
         devicePlatform: 'web',
-        appVersion: 'presence-web-scanner',
+        appVersion: sessionMode == 'qr_plus_camera' ? 'presence-web-scanner-verified' : 'presence-web-scanner',
       );
+      if (!sessionResponse.success || sessionResponse.data == null) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _isSubmittingAdminAction = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(sessionResponse.error ?? 'Failed to start scanner session'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
       activeSession = sessionResponse.data;
     }
 
@@ -451,12 +509,21 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(response.success ? 'Scanned QR submitted.' : (response.error ?? 'Failed to submit scanned QR')),
+        content: Text(
+          response.success
+              ? (sessionMode == 'qr_plus_camera'
+                  ? 'Scanned QR submitted. Camera verification is starting.'
+                  : 'Scanned QR submitted.')
+              : (response.error ?? 'Failed to submit scanned QR'),
+        ),
         backgroundColor: response.success ? null : Colors.red,
       ),
     );
 
     if (response.success) {
+      if (sessionMode == 'qr_plus_camera') {
+        _setAutoRefreshExecution(true);
+      }
       await _refreshExecutionState();
       await _loadPresenceDashboard();
     }
@@ -1035,7 +1102,12 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
                     title: Text(camera.name.isEmpty ? camera.deviceId : camera.name),
                     subtitle: Text('${camera.cameraType} • ${camera.status}'),
                     trailing: camera.reservedForPresence
-                        ? const Text('Reserved')
+                        ? (camera.reservedResourceUuid != null && camera.reservedResourceUuid!.isNotEmpty
+                            ? TextButton(
+                                onPressed: _isSubmittingAdminAction ? null : () => _unreserveCamera(camera),
+                                child: const Text('Unreserve'),
+                              )
+                            : const Text('Reserved'))
                         : TextButton(
                             onPressed: _isSubmittingAdminAction ? null : () => _reserveCamera(camera),
                             child: const Text('Reserve'),
@@ -1169,7 +1241,11 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
             runSpacing: 12,
             children: [
               ElevatedButton.icon(
-                onPressed: _isSubmittingAdminAction ? null : () => _refreshExecutionState(renderIfMissing: true),
+                onPressed: _isSubmittingAdminAction
+                    ? null
+                    : (widget.stationMode
+                        ? () => _refreshExecutionState(renderIfMissing: true)
+                        : _startExecutionSession),
                 icon: Icon(widget.stationMode ? Icons.qr_code_2 : Icons.play_arrow),
                 label: Text(widget.stationMode ? 'Render Station QR' : 'Start Session'),
               ),
@@ -1187,6 +1263,13 @@ class _PresenceScreenState extends ConsumerState<PresenceScreen> {
                 onPressed: _isSubmittingAdminAction ? null : _openWebQrScanner,
                 icon: const Icon(Icons.qr_code_scanner),
                 label: const Text('Open Web Scanner'),
+              ),
+              OutlinedButton.icon(
+                onPressed: widget.stationMode || _isSubmittingAdminAction || _selectedExecutionMode != 'qr_plus_camera'
+                    ? null
+                    : () => _openWebQrScanner(sessionMode: 'qr_plus_camera'),
+                icon: const Icon(Icons.video_call),
+                label: const Text('Scan QR + Camera'),
               ),
               OutlinedButton.icon(
                 onPressed: _isSubmittingAdminAction || _currentQr?.qrToken == null ? null : _validateCurrentQr,

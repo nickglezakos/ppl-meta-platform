@@ -46,6 +46,7 @@ from models.presence_models import (
     PresenceTriggerObservation,
     ResetInstallationReservationsRequest,
     ReserveResourceRequest,
+    UnreserveResourceRequest,
     UpdateInstallationSettingsRequest,
     UpdateInstallationPolicyRequest,
 )
@@ -824,6 +825,31 @@ class PresenceService:
             self.repository.save_resource(collection_resource)
 
         return resource
+
+    def unreserve_camera(self, request: UnreserveResourceRequest, _current_user: dict) -> dict:
+        target = self._find_reserved_resource(self.cameras, request.resource_uuid)
+        if not target:
+            raise ValueError(f"Camera '{request.resource_uuid}' is not reserved for presence")
+
+        stale_keys = [target.resource_uuid]
+        del self.cameras[target.resource_uuid]
+
+        linked_collection_keys = [
+            key
+            for key, resource in self.collections.items()
+            if resource.installation_uuid == target.installation_uuid
+            and resource.metadata.get("auto_bound_from_camera_uuid") == request.resource_uuid
+        ]
+        for key in linked_collection_keys:
+            del self.collections[key]
+        stale_keys.extend(linked_collection_keys)
+
+        self.repository.delete_resources(stale_keys)
+        return {
+            "installation_uuid": target.installation_uuid,
+            "resource_uuid": request.resource_uuid,
+            "released_collection_count": len(linked_collection_keys),
+        }
 
     async def reserve_collection(self, request: ReserveResourceRequest, current_user: dict) -> PresenceResource:
         self._validate_reservation_mode(request.mode, "collection")

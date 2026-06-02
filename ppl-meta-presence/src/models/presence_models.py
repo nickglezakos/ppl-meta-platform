@@ -230,6 +230,11 @@ class ReserveResourceRequest(BaseModel):
     mode: str = "bind"
 
 
+class UnreserveResourceRequest(BaseModel):
+    installation_uuid: str
+    resource_uuid: str
+
+
 class ResetInstallationReservationsRequest(BaseModel):
     installation_uuid: str = "local-installation"
 
